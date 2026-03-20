@@ -1336,11 +1336,23 @@ configure_mariadb() {
     mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
     mysql -e "FLUSH PRIVILEGES;"
 
-    # Create Jabali database
-    local db_password=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    # Create Jabali database — reuse existing password on reinstall
+    local db_password=""
+    if [[ -f /root/.jabali_db_credentials ]]; then
+        db_password=$(grep '^DB_PASSWORD=' /root/.jabali_db_credentials | cut -d= -f2-)
+    fi
+    if [[ -z "$db_password" ]] && [[ -f "$JABALI_DIR/.env" ]]; then
+        db_password=$(grep '^DB_PASSWORD=' "$JABALI_DIR/.env" | cut -d= -f2-)
+    fi
+    if [[ -z "$db_password" ]]; then
+        db_password=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    fi
+
     mysql -e "CREATE DATABASE IF NOT EXISTS jabali CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    mysql -e "CREATE USER IF NOT EXISTS 'jabali'@'localhost' IDENTIFIED BY '${db_password}';"
-    mysql -e "CREATE USER IF NOT EXISTS 'jabali'@'127.0.0.1' IDENTIFIED BY '${db_password}';"
+    mysql -e "DROP USER IF EXISTS 'jabali'@'localhost';" 2>/dev/null || true
+    mysql -e "DROP USER IF EXISTS 'jabali'@'127.0.0.1';" 2>/dev/null || true
+    mysql -e "CREATE USER 'jabali'@'localhost' IDENTIFIED BY '${db_password}';"
+    mysql -e "CREATE USER 'jabali'@'127.0.0.1' IDENTIFIED BY '${db_password}';"
     mysql -e "GRANT ALL PRIVILEGES ON jabali.* TO 'jabali'@'localhost';"
     mysql -e "GRANT ALL PRIVILEGES ON jabali.* TO 'jabali'@'127.0.0.1';"
     mysql -e "FLUSH PRIVILEGES;"
