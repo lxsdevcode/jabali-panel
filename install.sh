@@ -429,11 +429,18 @@ prompt_hostname() {
 add_repositories() {
     header "Adding Repositories"
 
+    # Disable needrestart interactive prompts (hangs non-interactive installs)
+    if [[ -d /etc/needrestart/conf.d ]]; then
+        echo '$nrconf{restart} = "a";' > /etc/needrestart/conf.d/99-jabali.conf
+    fi
+    export NEEDRESTART_MODE=a
+    export DEBIAN_FRONTEND=noninteractive
+
     # Update package list
     run_quiet "Updating package lists..." apt-get update -qq
 
     # Install prerequisites (software-properties-common is optional, mainly for Ubuntu)
-    run_quiet "Installing prerequisites..." apt-get install -y -qq apt-transport-https ca-certificates curl gnupg lsb-release sudo
+    run_quiet "Installing prerequisites..." env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-transport-https ca-certificates curl gnupg lsb-release sudo
     apt-get install -y -qq software-properties-common > /dev/null 2>&1 || true
 
     # Detect codename
