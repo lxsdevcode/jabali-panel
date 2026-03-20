@@ -3421,8 +3421,8 @@ Match Group shellusers
 # End Jabali SSH Jail
 SSHJAIL
 
-    # Restart SSH to apply changes
-    systemctl restart sshd
+    # Restart SSH to apply changes (Ubuntu uses 'ssh', Debian uses 'sshd')
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
     log "SSH jail configured"
 
     # Set up jail environment for shell users
