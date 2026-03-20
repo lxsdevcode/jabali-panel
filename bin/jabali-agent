@@ -1450,9 +1450,9 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl HTTP2_LISTEN_PLACEHOLDER;
+    listen [::]:443 ssl HTTP2_LISTEN_PLACEHOLDER;
+    HTTP2_DIRECTIVE_PLACEHOLDER
     server_name DOMAIN_PLACEHOLDER www.DOMAIN_PLACEHOLDER mail.DOMAIN_PLACEHOLDER;
     root DOCROOT_PLACEHOLDER;
 
@@ -1600,6 +1600,20 @@ NGINX;
     $config = str_replace('SOCKET_PLACEHOLDER', $fpmSocket, $config);
     $config = str_replace('LOGS_PLACEHOLDER', $logs, $config);
     $config = str_replace('STATS_PLACEHOLDER', $stats, $config);
+
+    // nginx >= 1.25 uses "http2 on;" directive; older uses "listen ... http2"
+    $nginxVer = '';
+    exec('nginx -v 2>&1', $verOutput);
+    if (!empty($verOutput[0]) && preg_match('/[\d.]+/', $verOutput[0], $m)) {
+        $nginxVer = $m[0];
+    }
+    if (version_compare($nginxVer, '1.25', '>=')) {
+        $config = str_replace('HTTP2_LISTEN_PLACEHOLDER', '', $config);
+        $config = str_replace('HTTP2_DIRECTIVE_PLACEHOLDER', 'http2 on;', $config);
+    } else {
+        $config = str_replace(' HTTP2_LISTEN_PLACEHOLDER', ' http2', $config);
+        $config = str_replace("    HTTP2_DIRECTIVE_PLACEHOLDER\n", '', $config);
+    }
 
     return $config;
 }
