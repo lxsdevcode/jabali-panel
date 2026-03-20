@@ -447,7 +447,8 @@ add_repositories() {
     local codename=$(lsb_release -sc)
 
     # Ensure Debian contrib repository for geoipupdate and related packages
-    if [[ -f /etc/debian_version ]]; then
+    # Only on actual Debian, not Ubuntu (which also has /etc/debian_version)
+    if [[ -f /etc/debian_version ]] && ! grep -qi ubuntu /etc/os-release 2>/dev/null; then
         info "Ensuring Debian contrib repository..."
         local contrib_list="/etc/apt/sources.list.d/jabali-contrib.list"
         if [[ ! -f "$contrib_list" ]]; then
@@ -459,13 +460,24 @@ EOF
         fi
     fi
 
-    # Sury supports: trixie (Debian) and jammy, focal, noble (Ubuntu)
-    info "Using Sury PHP repository for $codename"
-
-    # Add/update PHP repository (Sury) - always update to ensure correct codename
+    # Add PHP repository
     info "Configuring PHP repository..."
-    curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-php.gpg 2>/dev/null || true
-    echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ ${codename} main" > /etc/apt/sources.list.d/php.list
+    if grep -qi ubuntu /etc/os-release 2>/dev/null; then
+        # Ubuntu: use Sury's Ubuntu-specific repository
+        info "Using Sury PHP PPA for Ubuntu ($codename)"
+        curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-php.gpg 2>/dev/null || true
+        echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ubuntu/ ${codename} main" > /etc/apt/sources.list.d/php.list
+        # Fallback: try add-apt-repository if the above doesn't work
+        if ! apt-get update -qq 2>/dev/null; then
+            rm -f /etc/apt/sources.list.d/php.list
+            add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+        fi
+    else
+        # Debian: use Sury's Debian repository
+        info "Using Sury PHP repository for Debian ($codename)"
+        curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-php.gpg 2>/dev/null || true
+        echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ ${codename} main" > /etc/apt/sources.list.d/php.list
+    fi
 
     # Add NodeJS repository
     if [[ ! -f /usr/share/keyrings/nodesource.gpg ]]; then
