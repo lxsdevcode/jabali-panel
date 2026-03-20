@@ -1709,7 +1709,15 @@ ExecStartPre=/usr/sbin/nginx -t -q -g 'daemon on; master_process on;'
 OVERRIDE
     systemctl daemon-reload
 
-    nginx -t -q 2>/dev/null && systemctl reload nginx
+    # Start or reload nginx depending on whether it's already running
+    if nginx -t -q 2>/dev/null; then
+        systemctl enable nginx > /dev/null 2>&1
+        if systemctl is-active --quiet nginx; then
+            systemctl reload nginx
+        else
+            systemctl start nginx
+        fi
+    fi
 
     log "Nginx configured with HTTPS (self-signed certificate)"
 }
