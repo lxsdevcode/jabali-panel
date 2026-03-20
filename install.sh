@@ -1357,6 +1357,20 @@ configure_mariadb() {
 configure_nginx() {
     header "Configuring Nginx"
 
+    # Detect nginx version for http2 directive compatibility
+    # nginx >= 1.25: use "http2 on;" directive
+    # nginx < 1.25: use "listen ... http2" on the listen line
+    local nginx_ver
+    nginx_ver=$(nginx -v 2>&1 | grep -oP '[\d.]+' | head -1)
+    if [[ "$(echo -e "1.25\n$nginx_ver" | sort -V | head -1)" == "1.25" ]]; then
+        NGINX_HTTP2_LISTEN=""
+        NGINX_HTTP2_DIRECTIVE="http2 on;
+    "
+    else
+        NGINX_HTTP2_LISTEN=" http2"
+        NGINX_HTTP2_DIRECTIVE=""
+    fi
+
     # Remove default site
     rm -f /etc/nginx/sites-enabled/default
 
@@ -1507,10 +1521,9 @@ server {
 
 # HTTPS server
 server {
-    listen 443 ssl default_server;
-    listen [::]:443 ssl default_server;
-    http2 on;
-    server_name ${SERVER_HOSTNAME} _;
+    listen 443 ssl${NGINX_HTTP2_LISTEN} default_server;
+    listen [::]:443 ssl${NGINX_HTTP2_LISTEN} default_server;
+    ${NGINX_HTTP2_DIRECTIVE}server_name ${SERVER_HOSTNAME} _;
     root /var/www/jabali/public;
     index index.php index.html;
 
