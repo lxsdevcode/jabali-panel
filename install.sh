@@ -4311,11 +4311,16 @@ print_completion() {
 # Uninstall Jabali Panel
 uninstall() {
     local force_uninstall=false
+    local keep_packages="${UNINSTALL_KEEP_PACKAGES:-false}"
 
-    # Check for --force flag
-    if [[ "$1" == "--force" ]] || [[ "$1" == "-f" ]]; then
-        force_uninstall=true
-    fi
+    # Check for flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f) force_uninstall=true; shift ;;
+            --keep-packages|--keep) keep_packages=true; shift ;;
+            *) shift ;;
+        esac
+    done
 
     show_banner
     check_root
@@ -4326,17 +4331,26 @@ uninstall() {
     fi
     PHP_VERSION="${PHP_VERSION:-8.4}"
 
-    echo -e "${RED}${BOLD}WARNING: This will completely remove Jabali Panel and all related services!${NC}"
-    echo ""
-    echo "This will remove:"
-    echo "  - Jabali Panel files (/var/www/jabali)"
-    echo "  - Jabali database and user"
-    echo "  - Nginx, PHP-FPM, MariaDB, Redis"
-    echo "  - Mail server (Postfix, Dovecot, Rspamd)"
-    echo "  - DNS server (BIND9)"
-    echo "  - All user home directories (/home/*)"
-    echo "  - All virtual mail (/var/mail)"
-    echo "  - All domains and configurations"
+    if [[ "$keep_packages" == "true" ]]; then
+        echo -e "${YELLOW}${BOLD}This will remove Jabali Panel files and settings (packages will be kept).${NC}"
+        echo ""
+        echo "This will remove:"
+        echo "  - Jabali Panel files (/var/www/jabali)"
+        echo "  - Jabali database and user"
+        echo "  - Jabali services and configs"
+    else
+        echo -e "${RED}${BOLD}WARNING: This will completely remove Jabali Panel and all related services!${NC}"
+        echo ""
+        echo "This will remove:"
+        echo "  - Jabali Panel files (/var/www/jabali)"
+        echo "  - Jabali database and user"
+        echo "  - Nginx, PHP-FPM, MariaDB, Redis"
+        echo "  - Mail server (Postfix, Dovecot, Rspamd)"
+        echo "  - DNS server (BIND9)"
+        echo "  - All user home directories (/home/*)"
+        echo "  - All virtual mail (/var/mail)"
+        echo "  - All domains and configurations"
+    fi
     echo ""
     echo -e "${YELLOW}This action cannot be undone!${NC}"
     echo ""
@@ -4438,6 +4452,10 @@ uninstall() {
     mysql -e "DROP USER IF EXISTS 'jabali'@'localhost';" 2>/dev/null || true
     mysql -e "DROP USER IF EXISTS 'jabali'@'127.0.0.1';" 2>/dev/null || true
     log "Database removed"
+
+    if [[ "$keep_packages" == "true" ]]; then
+        log "Keeping packages installed (--keep-packages)"
+    else
 
     header "Removing Packages"
 
@@ -4604,6 +4622,8 @@ uninstall() {
     # Jabali contrib repository
     rm -f /etc/apt/sources.list.d/jabali-contrib.list
 
+    fi  # end of keep_packages check
+
     # Jabali-specific configs
     rm -rf /var/backups/users
     rm -f /etc/logrotate.d/jabali-users
@@ -4665,6 +4685,7 @@ show_usage() {
     echo "Commands:"
     echo "  install              Install Jabali Panel (default, interactive)"
     echo "  uninstall [--force]  Remove Jabali Panel and all components"
+    echo "  uninstall --keep     Remove Jabali only (keep packages like nginx, php, etc.)"
     echo "  --help               Show this help message"
     echo ""
     echo "Environment Variables (for non-interactive install):"
@@ -4825,6 +4846,10 @@ while [[ $# -gt 0 ]]; do
             UNINSTALL_FORCE="--force"
             shift
             ;;
+        --keep-packages|--keep)
+            UNINSTALL_KEEP_PACKAGES="true"
+            shift
+            ;;
         --debug)
             DEBUG=true
             shift
@@ -4842,7 +4867,7 @@ case "$COMMAND" in
         main
         ;;
     uninstall|remove|purge)
-        uninstall "$UNINSTALL_FORCE"
+        uninstall "$UNINSTALL_FORCE" ${UNINSTALL_KEEP_PACKAGES:+--keep-packages}
         ;;
     --help|-h|help)
         show_usage
