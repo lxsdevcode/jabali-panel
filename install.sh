@@ -4284,13 +4284,15 @@ create_admin() {
     export ADMIN_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
 
     php artisan tinker --execute="
-        \$user = App\Models\User::create([
-            'name' => 'Administrator',
-            'username' => 'admin',
-            'email' => '${ADMIN_EMAIL}',
-            'password' => bcrypt('${ADMIN_PASSWORD}'),
-            'is_admin' => true,
-        ]);
+        \$user = App\Models\User::updateOrCreate(
+            ['email' => '${ADMIN_EMAIL}'],
+            [
+                'name' => 'Administrator',
+                'username' => 'admin',
+                'password' => bcrypt('${ADMIN_PASSWORD}'),
+                'is_admin' => true,
+            ]
+        );
     " 2>/dev/null || true
 
     # Save credentials
