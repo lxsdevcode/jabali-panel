@@ -447,7 +447,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         }
 
         // Create temp directory for download
-        $tempPath = sys_get_temp_dir().'/jabali_restore_'.uniqid();
+        $tempPath = sys_get_temp_dir().'/jabali_restore_'.bin2hex(random_bytes(8));
         mkdir($tempPath, 0755, true);
 
         Notification::make()

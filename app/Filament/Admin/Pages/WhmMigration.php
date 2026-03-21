@@ -39,6 +39,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\On;
@@ -253,7 +254,7 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
     {
         session()->put('whm_migration.hostname', $this->hostname);
         session()->put('whm_migration.username', $this->whmUsername);
-        session()->put('whm_migration.token', $this->apiToken);
+        session()->put('whm_migration.token', Crypt::encryptString($this->apiToken));
         session()->put('whm_migration.port', $this->port);
         session()->put('whm_migration.useSSL', $this->useSSL);
         session()->put('whm_migration.isConnected', $this->isConnected);
@@ -273,7 +274,7 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
         if (session()->has('whm_migration.hostname')) {
             $this->hostname = session('whm_migration.hostname');
             $this->whmUsername = session('whm_migration.username', 'root');
-            $this->apiToken = session('whm_migration.token');
+            $this->apiToken = session('whm_migration.token') ? Crypt::decryptString(session('whm_migration.token')) : '';
             $this->port = session('whm_migration.port', 2087);
             $this->useSSL = session('whm_migration.useSSL', true);
             $this->isConnected = session('whm_migration.isConnected', false);

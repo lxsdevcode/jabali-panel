@@ -13,12 +13,13 @@ use App\Services\Migration\WhmMigrationStatusStore;
 use App\Support\Formatter;
 use App\Support\ServerFacts;
 use Exception;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
-class RunWhmMigrationBatch implements ShouldQueue
+class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 

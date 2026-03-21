@@ -260,8 +260,14 @@ class Email extends Page implements HasActions, HasForms, HasTable
             $password .= $allChars[random_int(0, strlen($allChars) - 1)];
         }
 
-        // Shuffle the password to randomize position of required characters
-        return str_shuffle($password);
+        // Shuffle using CSPRNG (Fisher-Yates with random_int)
+        $chars = str_split($password);
+        for ($i = count($chars) - 1; $i > 0; $i--) {
+            $j = random_int(0, $i);
+            [$chars[$i], $chars[$j]] = [$chars[$j], $chars[$i]];
+        }
+
+        return implode('', $chars);
     }
 
     protected function loadSpamSettings(): void
@@ -1122,7 +1128,6 @@ class Email extends Page implements HasActions, HasForms, HasTable
                     ->options(fn () => Domain::where('user_id', Auth::id())->pluck('domain', 'id')->toArray())
                     ->required()
                     ->searchable()
-                    ->live()
                     ->live(),
                 TextInput::make('local_part')
                     ->label(__('Email Address'))
@@ -1172,8 +1177,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                     ])
                     ->helperText(fn () => (bool) DnsSetting::get('passphrase_passwords')
                         ? __('Password will be generated as easy-to-remember words')
-                        : __('Minimum 8 characters with uppercase, lowercase, and numbers'))
-                    ->helperText(__('Minimum 8 characters with uppercase, lowercase, and numbers')),
+                        : __('Minimum 8 characters with uppercase, lowercase, and numbers')),
                 TextInput::make('quota_mb')
                     ->label(__('Quota (MB)'))
                     ->numeric()

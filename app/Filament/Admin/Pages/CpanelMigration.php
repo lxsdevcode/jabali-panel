@@ -40,6 +40,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -367,7 +368,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
     {
         session()->put('cpanel_migration.hostname', $this->hostname);
         session()->put('cpanel_migration.username', $this->cpanelUsername);
-        session()->put('cpanel_migration.token', $this->apiToken);
+        session()->put('cpanel_migration.token', Crypt::encryptString($this->apiToken));
         session()->put('cpanel_migration.port', $this->port);
         session()->put('cpanel_migration.useSSL', $this->useSSL);
         session()->put('cpanel_migration.targetUserId', $this->targetUserId);
@@ -397,7 +398,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
         if (session()->has('cpanel_migration.hostname')) {
             $this->hostname = session('cpanel_migration.hostname');
             $this->cpanelUsername = session('cpanel_migration.username');
-            $this->apiToken = session('cpanel_migration.token');
+            $this->apiToken = session('cpanel_migration.token') ? Crypt::decryptString(session('cpanel_migration.token')) : '';
             $this->port = session('cpanel_migration.port', 2083);
             $this->useSSL = session('cpanel_migration.useSSL', true);
             $this->targetUserId = session('cpanel_migration.targetUserId');
