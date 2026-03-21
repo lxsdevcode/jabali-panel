@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\DnsSetting;
 use App\Services\Agent\AgentClient;
+use Exception;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -25,8 +26,17 @@ return new class extends Migration
         $hostname = DnsSetting::get('hostname', gethostname() ?: 'localhost');
 
         // Find the best LE cert available
+        // Try: mail.hostname, then extract root domain and try mail.rootdomain, then hostname itself
+        $candidates = ["mail.{$hostname}"];
+        $parts = explode('.', $hostname);
+        if (count($parts) > 2) {
+            $rootDomain = implode('.', array_slice($parts, -2));
+            $candidates[] = "mail.{$rootDomain}";
+        }
+        $candidates[] = $hostname;
+
         $certDomain = null;
-        foreach (["mail.{$hostname}", $hostname] as $candidate) {
+        foreach ($candidates as $candidate) {
             if (File::exists("/etc/letsencrypt/live/{$candidate}/fullchain.pem")) {
                 $certDomain = $candidate;
                 break;
