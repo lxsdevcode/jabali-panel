@@ -312,6 +312,12 @@ class ServerSettings extends Page implements HasActions, HasForms
                             )),
                     ]),
                     Actions::make([
+                        FormAction::make('removeLogos')
+                            ->label(__('Remove Logos'))
+                            ->color('danger')
+                            ->icon('heroicon-o-trash')
+                            ->action(fn () => $this->removeLogo())
+                            ->visible(fn () => $this->currentLogo !== null || $this->currentLogoDark !== null),
                         FormAction::make('saveBranding')
                             ->label(__('Save Branding'))
                             ->action('saveBranding'),
@@ -835,7 +841,11 @@ class ServerSettings extends Page implements HasActions, HasForms
                 }
 
                 DnsSetting::set($settingKey, $path);
+                DnsSetting::clearCache();
                 $this->{$currentProperty} = $path;
+
+                Notification::make()->title(__('Logo uploaded'))->success()->send();
+                $this->redirect(static::getUrl());
             }
         } catch (Exception $e) {
             Notification::make()->title(__('Failed to upload logo'))->body(SafeError::message($e))->danger()->send();
@@ -857,6 +867,7 @@ class ServerSettings extends Page implements HasActions, HasForms
             $this->currentLogo = null;
             $this->currentLogoDark = null;
             Notification::make()->title(__('Logos removed'))->success()->send();
+            $this->redirect(static::getUrl());
         } catch (Exception $e) {
             Notification::make()->title(__('Failed to remove logo'))->body(SafeError::message($e))->danger()->send();
         }
@@ -1304,9 +1315,7 @@ class ServerSettings extends Page implements HasActions, HasForms
     {
         return [
             Action::make('uploadLogoLight')
-                ->label(__('Upload Light Logo'))
-                ->icon('heroicon-o-photo')
-                ->color('gray')
+                ->hidden()
                 ->modalHeading(__('Upload Light Logo'))
                 ->modalSubmitActionLabel(__('Upload'))
                 ->form([
@@ -1322,9 +1331,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ])
                 ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo')),
             Action::make('uploadLogoDark')
-                ->label(__('Upload Dark Logo'))
-                ->icon('heroicon-o-moon')
-                ->color('gray')
+                ->hidden()
                 ->modalHeading(__('Upload Dark Logo'))
                 ->modalSubmitActionLabel(__('Upload'))
                 ->form([
@@ -1339,13 +1346,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
                 ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark')),
-            Action::make('removeLogos')
-                ->label(__('Remove Logos'))
-                ->icon('heroicon-o-trash')
-                ->color('danger')
-                ->requiresConfirmation()
-                ->action(fn () => $this->removeLogo())
-                ->visible(fn () => $this->currentLogo !== null || $this->currentLogoDark !== null),
             Action::make('export_config')
                 ->label(__('Export'))
                 ->icon('heroicon-o-arrow-down-tray')
