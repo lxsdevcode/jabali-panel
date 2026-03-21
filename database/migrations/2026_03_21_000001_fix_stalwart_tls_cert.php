@@ -58,7 +58,7 @@ return new class extends Migration
 
         // Can't write as www-data — skip silently, postinst runs as root
         if (! is_writable($configPath)) {
-            Log::info("Migration: Stalwart TLS fix skipped (no write permission), will apply on next root upgrade");
+            Log::info('Migration: Stalwart TLS fix skipped (no write permission), will apply on next root upgrade');
 
             return;
         }
