@@ -1318,6 +1318,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ->label(__('Light Logo'))
                 ->icon('heroicon-o-photo')
                 ->color('gray')
+                ->visible(fn () => $this->activeTab === 'general')
                 ->modalHeading(__('Upload Light Logo'))
                 ->modalSubmitActionLabel(__('Upload'))
                 ->form([
@@ -1336,6 +1337,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ->label(__('Dark Logo'))
                 ->icon('heroicon-o-moon')
                 ->color('gray')
+                ->visible(fn () => $this->activeTab === 'general')
                 ->modalHeading(__('Upload Dark Logo'))
                 ->modalSubmitActionLabel(__('Upload'))
                 ->form([
