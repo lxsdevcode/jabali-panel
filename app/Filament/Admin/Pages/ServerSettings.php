@@ -36,7 +36,6 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
@@ -66,6 +65,10 @@ class ServerSettings extends Page implements HasActions, HasForms
     public ?array $brandingData = [];
 
     public mixed $brandingLogo = null;
+
+    public mixed $brandingLogoDark = null;
+
+    public ?string $currentLogoDark = null;
 
     public ?array $hostnameData = [];
 
@@ -138,6 +141,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         $serverIp = ServerFacts::serverIp('');
 
         $this->currentLogo = $settings['custom_logo'] ?? null;
+        $this->currentLogoDark = $settings['custom_logo_dark'] ?? null;
         $this->isSystemdResolved = ServerFacts::isSystemdResolved();
 
         // Load hostname from agent
@@ -285,9 +289,14 @@ class ServerSettings extends Page implements HasActions, HasForms
             Section::make(__('Panel Branding'))
                 ->icon('heroicon-o-paint-brush')
                 ->schema([
+                    TextInput::make('brandingData.panel_name')
+                        ->label(__('Control Panel Name'))
+                        ->placeholder(__('Jabali'))
+                        ->helperText(__('Appears in browser title and navigation'))
+                        ->required(),
                     Grid::make(['default' => 1, 'md' => 2])->schema([
                         FileUpload::make('brandingLogo')
-                            ->label(__('Panel Logo'))
+                            ->label(__('Logo (Light Theme)'))
                             ->image()
                             ->disk('public')
                             ->directory('branding')
@@ -295,22 +304,28 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
                             ->maxSize(1024)
                             ->helperText($this->currentLogo
-                                ? __('Current logo: :file', ['file' => basename($this->currentLogo)])
+                                ? __('Current: :file', ['file' => basename($this->currentLogo)])
                                 : __('PNG, JPEG, WebP or SVG, max 1MB')),
-                        TextInput::make('brandingData.panel_name')
-                            ->label(__('Control Panel Name'))
-                            ->placeholder(__('Jabali'))
-                            ->helperText(__('Appears in browser title and navigation'))
-                            ->required(),
+                        FileUpload::make('brandingLogoDark')
+                            ->label(__('Logo (Dark Theme)'))
+                            ->image()
+                            ->disk('public')
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                            ->maxSize(1024)
+                            ->helperText($this->currentLogoDark
+                                ? __('Current: :file', ['file' => basename($this->currentLogoDark)])
+                                : __('PNG, JPEG, WebP or SVG, max 1MB')),
                     ]),
                     Actions::make([
                         FormAction::make('removeLogo')
-                            ->label(__('Remove Logo'))
+                            ->label(__('Remove Logos'))
                             ->color('danger')
                             ->icon('heroicon-o-trash')
                             ->requiresConfirmation()
                             ->action(fn () => $this->removeLogo())
-                            ->visible(fn () => $this->currentLogo !== null),
+                            ->visible(fn () => $this->currentLogo !== null || $this->currentLogoDark !== null),
                         FormAction::make('saveBranding')
                             ->label(__('Save Branding'))
                             ->action('saveBranding'),
@@ -792,9 +807,14 @@ class ServerSettings extends Page implements HasActions, HasForms
 
         DnsSetting::set('panel_name', trim($data['panel_name']));
 
-        // Handle logo upload if a new file was selected
+        // Handle light logo upload
         if (! empty($this->brandingLogo)) {
-            $this->uploadLogo(['logo' => $this->brandingLogo]);
+            $this->uploadLogo(['logo' => $this->brandingLogo], 'custom_logo');
+        }
+
+        // Handle dark logo upload
+        if (! empty($this->brandingLogoDark)) {
+            $this->uploadLogo(['logo' => $this->brandingLogoDark], 'custom_logo_dark');
         }
 
         DnsSetting::clearCache();
@@ -810,30 +830,26 @@ class ServerSettings extends Page implements HasActions, HasForms
         Notification::make()->title(__('Security settings updated'))->success()->send();
     }
 
-    public function uploadLogo(array $data): void
+    public function uploadLogo(array $data, string $settingKey = 'custom_logo'): void
     {
         try {
             $logo = $data['logo'] ?? null;
             if (empty($logo)) {
-                Notification::make()->title(__('No file selected'))->warning()->send();
-
                 return;
             }
 
-            // Filament FileUpload returns an array of stored file paths
             $path = is_array($logo) ? ($logo[0] ?? null) : $logo;
 
             if ($path) {
+                $currentProperty = $settingKey === 'custom_logo_dark' ? 'currentLogoDark' : 'currentLogo';
+
                 // Delete old logo if exists
-                if ($this->currentLogo && Storage::disk('public')->exists($this->currentLogo)) {
-                    Storage::disk('public')->delete($this->currentLogo);
+                if ($this->{$currentProperty} && Storage::disk('public')->exists($this->{$currentProperty})) {
+                    Storage::disk('public')->delete($this->{$currentProperty});
                 }
 
-                DnsSetting::set('custom_logo', $path);
-                DnsSetting::clearCache();
-                $this->currentLogo = $path;
-
-                Notification::make()->title(__('Logo uploaded'))->body(__('Refresh to see changes.'))->success()->send();
+                DnsSetting::set($settingKey, $path);
+                $this->{$currentProperty} = $path;
             }
         } catch (Exception $e) {
             Notification::make()->title(__('Failed to upload logo'))->body(SafeError::message($e))->danger()->send();
@@ -846,10 +862,15 @@ class ServerSettings extends Page implements HasActions, HasForms
             if ($this->currentLogo && Storage::disk('public')->exists($this->currentLogo)) {
                 Storage::disk('public')->delete($this->currentLogo);
             }
+            if ($this->currentLogoDark && Storage::disk('public')->exists($this->currentLogoDark)) {
+                Storage::disk('public')->delete($this->currentLogoDark);
+            }
             DnsSetting::set('custom_logo', null);
+            DnsSetting::set('custom_logo_dark', null);
             DnsSetting::clearCache();
             $this->currentLogo = null;
-            Notification::make()->title(__('Logo removed'))->success()->send();
+            $this->currentLogoDark = null;
+            Notification::make()->title(__('Logos removed'))->success()->send();
         } catch (Exception $e) {
             Notification::make()->title(__('Failed to remove logo'))->body(SafeError::message($e))->danger()->send();
         }

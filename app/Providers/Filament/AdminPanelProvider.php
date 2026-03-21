@@ -43,7 +43,7 @@ class AdminPanelProvider extends PanelProvider
             ->darkMode()
             ->brandName(fn () => $this->getAdminBrandName())
             ->brandLogo(fn () => ($logo = DnsSetting::get('custom_logo')) ? asset('storage/'.$logo) : asset('images/jabali_logo.svg'))
-            ->darkModeBrandLogo(fn () => ($logo = DnsSetting::get('custom_logo')) ? asset('storage/'.$logo) : asset('images/jabali_logo_dark.svg'))
+            ->darkModeBrandLogo(fn () => ($logo = DnsSetting::get('custom_logo_dark', DnsSetting::get('custom_logo'))) ? asset('storage/'.$logo) : asset('images/jabali_logo_dark.svg'))
             ->brandLogoHeight('2rem')
             ->favicon(asset('favicon.ico'))
             ->renderHook(
