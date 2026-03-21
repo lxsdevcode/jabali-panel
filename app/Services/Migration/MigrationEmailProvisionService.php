@@ -257,7 +257,7 @@ class MigrationEmailProvisionService
                 }
 
                 // Strip the domain suffix from the name (BIND zone is relative)
-                $name = preg_replace('/\.?' . preg_quote($domain->domain, '/') . '\.?$/', '', $name);
+                $name = preg_replace('/\.?'.preg_quote($domain->domain, '/').'\.?$/', '', $name);
                 if (empty($name) || $name === $domain->domain) {
                     $name = '@';
                 }
