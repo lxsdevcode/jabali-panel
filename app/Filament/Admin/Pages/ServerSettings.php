@@ -286,12 +286,7 @@ class ServerSettings extends Page implements HasActions, HasForms
             Section::make(__('Panel Branding'))
                 ->icon('heroicon-o-paint-brush')
                 ->schema([
-                    TextInput::make('brandingData.panel_name')
-                        ->label(__('Control Panel Name'))
-                        ->placeholder(__('Jabali'))
-                        ->helperText(__('Appears in browser title and navigation'))
-                        ->required(),
-                    Grid::make(['default' => 1, 'md' => 2])->schema([
+                    Grid::make(['default' => 1, 'md' => 3])->schema([
                         Placeholder::make('currentLogoLight')
                             ->label(__('Light Logo'))
                             ->content(new HtmlString(
@@ -310,6 +305,11 @@ class ServerSettings extends Page implements HasActions, HasForms
                                 .'</div>'
                                 .'<button type="button" wire:click="mountAction(\'uploadLogoDark\')" class="mt-1 text-xs text-primary-500 hover:underline">'.__('Change').'</button>'
                             )),
+                        TextInput::make('brandingData.panel_name')
+                            ->label(__('Control Panel Name'))
+                            ->placeholder(__('Jabali'))
+                            ->helperText(__('Appears in browser title and navigation'))
+                            ->required(),
                     ]),
                     Actions::make([
                         FormAction::make('removeLogos')
