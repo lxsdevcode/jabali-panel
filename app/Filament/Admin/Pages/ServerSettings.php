@@ -295,28 +295,23 @@ class ServerSettings extends Page implements HasActions, HasForms
                         Placeholder::make('currentLogoLight')
                             ->label(__('Light Logo'))
                             ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4" style="min-height:80px">'
+                                '<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4 cursor-pointer" style="min-height:80px" wire:click="mountAction(\'uploadLogoLight\')" title="'.__('Click to change').'">'
                                 .'<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
                                 .'" alt="Light Logo" class="max-h-12 max-w-full object-contain">'
                                 .'</div>'
+                                .'<button type="button" wire:click="mountAction(\'uploadLogoLight\')" class="mt-1 text-xs text-primary-500 hover:underline">'.__('Change').'</button>'
                             )),
                         Placeholder::make('currentLogoDarkPreview')
                             ->label(__('Dark Logo'))
                             ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4" style="min-height:80px">'
+                                '<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4 cursor-pointer" style="min-height:80px" wire:click="mountAction(\'uploadLogoDark\')" title="'.__('Click to change').'">'
                                 .'<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
                                 .'" alt="Dark Logo" class="max-h-12 max-w-full object-contain">'
                                 .'</div>'
+                                .'<button type="button" wire:click="mountAction(\'uploadLogoDark\')" class="mt-1 text-xs text-primary-500 hover:underline">'.__('Change').'</button>'
                             )),
                     ]),
                     Actions::make([
-                        FormAction::make('removeLogo')
-                            ->label(__('Remove Logos'))
-                            ->color('danger')
-                            ->icon('heroicon-o-trash')
-                            ->requiresConfirmation()
-                            ->action(fn () => $this->removeLogo())
-                            ->visible(fn () => $this->currentLogo !== null || $this->currentLogoDark !== null),
                         FormAction::make('saveBranding')
                             ->label(__('Save Branding'))
                             ->action('saveBranding'),
@@ -1344,6 +1339,13 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
                 ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark')),
+            Action::make('removeLogos')
+                ->label(__('Remove Logos'))
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->action(fn () => $this->removeLogo())
+                ->visible(fn () => $this->currentLogo !== null || $this->currentLogoDark !== null),
             Action::make('export_config')
                 ->label(__('Export'))
                 ->icon('heroicon-o-arrow-down-tray')
