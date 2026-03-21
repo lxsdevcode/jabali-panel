@@ -2355,9 +2355,8 @@ EOF
     _db_pass_encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${_db_pass}', safe=''))" 2>/dev/null || echo "${_db_pass}")
 
     # Write Stalwart TOML configuration
-    # Generate admin password hash for Stalwart fallback-admin
-    local admin_hash
-    admin_hash=$(openssl passwd -6 "${api_token}")
+    # Stalwart 0.15.x requires plaintext secret for fallback-admin
+    local admin_hash="${api_token}"
 
     # Use stalwart --init to generate base config, then customize
     local stalwart_data="/var/lib/stalwart-mail"
