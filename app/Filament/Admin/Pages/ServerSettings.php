@@ -286,11 +286,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ->icon('heroicon-o-paint-brush')
                 ->schema([
                     Grid::make(['default' => 1, 'md' => 2])->schema([
-                        TextInput::make('brandingData.panel_name')
-                            ->label(__('Control Panel Name'))
-                            ->placeholder(__('Jabali'))
-                            ->helperText(__('Appears in browser title and navigation'))
-                            ->required(),
                         FileUpload::make('brandingLogo')
                             ->label(__('Panel Logo'))
                             ->image()
@@ -299,7 +294,14 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->visibility('public')
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
                             ->maxSize(1024)
-                            ->helperText(__('PNG, JPEG, WebP or SVG, max 1MB')),
+                            ->helperText($this->currentLogo
+                                ? __('Current logo: :file', ['file' => basename($this->currentLogo)])
+                                : __('PNG, JPEG, WebP or SVG, max 1MB')),
+                        TextInput::make('brandingData.panel_name')
+                            ->label(__('Control Panel Name'))
+                            ->placeholder(__('Jabali'))
+                            ->helperText(__('Appears in browser title and navigation'))
+                            ->required(),
                     ]),
                     Actions::make([
                         FormAction::make('removeLogo')
