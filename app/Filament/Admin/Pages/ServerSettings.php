@@ -1315,7 +1315,9 @@ class ServerSettings extends Page implements HasActions, HasForms
     {
         return [
             Action::make('uploadLogoLight')
-                ->hidden()
+                ->label(__('Light Logo'))
+                ->icon('heroicon-o-photo')
+                ->color('gray')
                 ->modalHeading(__('Upload Light Logo'))
                 ->modalSubmitActionLabel(__('Upload'))
                 ->form([
@@ -1331,7 +1333,9 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ])
                 ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo')),
             Action::make('uploadLogoDark')
-                ->hidden()
+                ->label(__('Dark Logo'))
+                ->icon('heroicon-o-moon')
+                ->color('gray')
                 ->modalHeading(__('Upload Dark Logo'))
                 ->modalSubmitActionLabel(__('Upload'))
                 ->form([
