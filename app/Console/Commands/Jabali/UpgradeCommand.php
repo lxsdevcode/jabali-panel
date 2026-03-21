@@ -540,6 +540,7 @@ class UpgradeCommand extends Command
         $paths = [
             $this->basePath.'/public/js',
             $this->basePath.'/public/css',
+            $this->basePath.'/public/fonts',
         ];
 
         foreach ($paths as $path) {
