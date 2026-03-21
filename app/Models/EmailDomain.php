@@ -52,6 +52,11 @@ class EmailDomain extends Model
         return $this->hasMany(Mailbox::class);
     }
 
+    public function forwarders(): HasMany
+    {
+        return $this->hasMany(EmailForwarder::class);
+    }
+
     /**
      * Get the domain name (e.g., example.com)
      */
