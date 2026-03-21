@@ -306,15 +306,12 @@ class ServerSettings extends Page implements HasActions, HasForms
                             )),
                         FileUpload::make('brandingLogo')
                             ->label(__('Upload Light Logo'))
-                            ->image()
                             ->disk('public')
                             ->directory('branding')
                             ->visibility('public')
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
                             ->maxSize(512)
-                            ->imageResizeTargetWidth('400')
-                            ->imageResizeTargetHeight('100')
-                            ->helperText(__('Max 512KB, 400x100px')),
+                            ->helperText(__('Max 512KB')),
                         Placeholder::make('currentLogoDarkPreview')
                             ->label(__('Dark Logo'))
                             ->content(new HtmlString(
@@ -325,15 +322,12 @@ class ServerSettings extends Page implements HasActions, HasForms
                             )),
                         FileUpload::make('brandingLogoDark')
                             ->label(__('Upload Dark Logo'))
-                            ->image()
                             ->disk('public')
                             ->directory('branding')
                             ->visibility('public')
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
                             ->maxSize(512)
-                            ->imageResizeTargetWidth('400')
-                            ->imageResizeTargetHeight('100')
-                            ->helperText(__('Max 512KB, 400x100px')),
+                            ->helperText(__('Max 512KB')),
                     ]),
                     Actions::make([
                         FormAction::make('removeLogo')
