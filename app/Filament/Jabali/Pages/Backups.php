@@ -7,11 +7,9 @@ namespace App\Filament\Jabali\Pages;
 use App\Models\Backup;
 use App\Models\BackupDestination;
 use App\Models\BackupRestore;
-use App\Models\Domain;
-use App\Models\EmailDomain;
-use App\Models\Mailbox;
 use App\Models\UserRemoteBackup;
 use App\Services\Agent\AgentClient;
+use App\Services\Migration\MigrationEmailProvisionService;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
@@ -43,9 +41,7 @@ use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
 
 class Backups extends Page implements HasActions, HasForms, HasTable
@@ -490,13 +486,12 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             if ($restoreResult['success'] ?? false) {
                 $restoredItems = [];
 
-                // Create database records for restored mailboxes
+                // Provision email accounts for restored mailboxes
                 $restoredMailboxes = $restoreResult['restored']['mailboxes'] ?? [];
                 if (! empty($restoredMailboxes)) {
-                    foreach ($restoredMailboxes as $mailboxEmail) {
-                        $this->createMailboxRecord($user, $mailboxEmail);
-                    }
-                    $restoredItems[] = count($restoredMailboxes).' '.__('mailbox(es)');
+                    $emailService = app(MigrationEmailProvisionService::class);
+                    $emailResult = $emailService->provisionFromEmailList($user, $restoredMailboxes);
+                    $restoredItems[] = count($emailResult->mailboxes).' '.__('mailbox(es)');
                 }
 
                 // Count other restored items
@@ -528,88 +523,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 ->danger()
                 ->send();
         }
-    }
-
-    /**
-     * Create database record for a restored mailbox.
-     * Files are restored by the agent, this creates the DB entry so the mailbox appears in the panel.
-     */
-    protected function createMailboxRecord($user, string $mailboxEmail): void
-    {
-        // Parse email
-        $parts = explode('@', $mailboxEmail);
-        if (count($parts) !== 2) {
-            return;
-        }
-
-        $localPart = $parts[0];
-        $domainName = $parts[1];
-
-        // Check if mailbox already exists
-        $existingMailbox = Mailbox::whereHas('emailDomain.domain', function ($query) use ($domainName) {
-            $query->where('domain', $domainName);
-        })->where('local_part', $localPart)->first();
-
-        if ($existingMailbox) {
-            return; // Already exists
-        }
-
-        // Find the domain
-        $domain = Domain::where('domain', $domainName)
-            ->where('user_id', $user->id)
-            ->first();
-
-        if (! $domain) {
-            return; // Domain not found for this user
-        }
-
-        // Find or create email domain
-        $emailDomain = EmailDomain::firstOrCreate(
-            ['domain_id' => $domain->id],
-            [
-                'is_active' => true,
-                'max_mailboxes' => 10,
-                'max_quota_bytes' => 10737418240, // 10GB
-            ]
-        );
-
-        // Generate a temporary password
-        $tempPassword = Str::random(16);
-
-        // Get password hash from agent
-        try {
-            $result = $this->getAgent()->send('email.hash_password', ['password' => $tempPassword]);
-            $passwordHash = $result['password_hash'] ?? '';
-        } catch (\Exception $e) {
-            // Fallback: generate SHA512-CRYPT hash in PHP
-            $passwordHash = '{SHA512-CRYPT}'.crypt($tempPassword, '$6$'.bin2hex(random_bytes(8)).'$');
-        }
-
-        // Get system user UID/GID
-        $userInfo = posix_getpwnam($user->username);
-        $systemUid = $userInfo['uid'] ?? null;
-        $systemGid = $userInfo['gid'] ?? null;
-
-        // The maildir path in user's home directory
-        $maildirPath = "/home/{$user->username}/mail/{$domainName}/{$localPart}/";
-
-        // Create the mailbox record
-        Mailbox::create([
-            'email_domain_id' => $emailDomain->id,
-            'user_id' => $user->id,
-            'local_part' => $localPart,
-            'password_hash' => $passwordHash,
-            'password_encrypted' => Crypt::encryptString($tempPassword),
-            'maildir_path' => $maildirPath,
-            'system_uid' => $systemUid,
-            'system_gid' => $systemGid,
-            'name' => $localPart,
-            'quota_bytes' => 1073741824, // 1GB default
-            'is_active' => true,
-            'imap_enabled' => true,
-            'pop3_enabled' => true,
-            'smtp_enabled' => true,
-        ]);
     }
 
     protected function getHeaderActions(): array

@@ -7,6 +7,7 @@ namespace App\Filament\Admin\Pages;
 use App\Jobs\RunWhmMigrationBatch;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
+use App\Services\Migration\MigrationEmailProvisionService;
 use App\Services\Migration\WhmApiService;
 use App\Services\Migration\WhmMigrationStatusStore;
 use App\Support\Formatter;
@@ -974,7 +975,7 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
 
             $this->addAccountLog($cpanelUser, __('Importing SSH key to cPanel...'), 'pending');
 
-            // Import SSH key to the cPanel user via WHM
+            // Import SSH private key to the cPanel user via WHM
             $importResult = $whm->importSshPrivateKey($cpanelUser, $keyName, $privateKey);
             if (! ($importResult['success'] ?? false)) {
                 throw new Exception($importResult['message'] ?? __('Failed to import SSH key'));
@@ -982,6 +983,12 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
 
             // Use actual key name if it was different (key already existed under different name)
             $actualKeyName = $importResult['actual_key_name'] ?? $keyName;
+
+            // Import SSH public key (cPanel needs both to authorize)
+            if (! empty($publicKey)) {
+                $whm->importSshPublicKey($cpanelUser, $actualKeyName, $publicKey);
+            }
+
             $this->addAccountLog($cpanelUser, __('SSH key imported'), 'success');
 
             // Authorize the key
@@ -1042,6 +1049,32 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
             if ($result['success'] ?? false) {
                 foreach ($result['log'] ?? [] as $entry) {
                     $this->addAccountLog($cpanelUser, $entry['message'], $entry['status'] ?? 'info');
+                }
+
+                // Provision email accounts
+                if ($this->restoreEmails) {
+                    $mailboxes = $discoveredData['mailboxes'] ?? [];
+                    $forwarders = $discoveredData['forwarders'] ?? [];
+
+                    if (! empty($mailboxes) || ! empty($forwarders)) {
+                        try {
+                            $this->addAccountLog($cpanelUser, __('Provisioning email accounts...'), 'pending');
+                            $emailService = app(MigrationEmailProvisionService::class);
+                            $emailResult = $emailService->provisionFromDiscoveredData(
+                                $user,
+                                $discoveredData,
+                                fn (string $msg, string $status) => $this->addAccountLog($cpanelUser, $msg, $status),
+                            );
+
+                            $summary = count($emailResult->mailboxes).' '.__('mailbox(es)').', '.count($emailResult->forwarders).' '.__('forwarder(s)');
+                            if (! empty($emailResult->errors)) {
+                                $summary .= ', '.count($emailResult->errors).' '.__('error(s)');
+                            }
+                            $this->addAccountLog($cpanelUser, __('Email provisioning complete: :summary', ['summary' => $summary]), empty($emailResult->errors) ? 'success' : 'warning');
+                        } catch (Exception $e) {
+                            $this->addAccountLog($cpanelUser, __('Email provisioning failed: :error', ['error' => $e->getMessage()]), 'warning');
+                        }
+                    }
                 }
 
                 $this->updateAccountStatus($cpanelUser, 'completed', __('Migration completed'));

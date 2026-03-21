@@ -782,6 +782,42 @@ class WhmApiService
     }
 
     /**
+     * Import an SSH public key to a cPanel user via WHM.
+     * cPanel needs both private and public key to authorize.
+     */
+    public function importSshPublicKey(string $user, string $keyName, string $publicKey): array
+    {
+        try {
+            $result = $this->api2($user, 'SSH', 'importkey', [
+                'key' => $publicKey,
+                'name' => $keyName,
+            ]);
+
+            $apiError = $result['cpanelresult']['error'] ?? '';
+            $reasonText = $apiError ?: ($result['cpanelresult']['data'][0]['reason'] ?? '');
+
+            if (str_contains($reasonText, 'already exists')) {
+                return ['success' => true, 'message' => 'SSH public key already exists'];
+            }
+
+            if ($apiError) {
+                throw new Exception($apiError);
+            }
+
+            $eventResult = $result['cpanelresult']['event']['result'] ?? null;
+            if ($eventResult == 1) {
+                return ['success' => true, 'message' => 'SSH public key imported successfully'];
+            }
+
+            throw new Exception($result['cpanelresult']['data'][0]['reason'] ?? 'Failed to import SSH public key');
+        } catch (Exception $e) {
+            Log::error('WHM SSH public key import failed', ['user' => $user, 'error' => $e->getMessage()]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Authorize an SSH key for a cPanel user via WHM
      * Uses API2 SSH::authkey through WHM proxy
      */

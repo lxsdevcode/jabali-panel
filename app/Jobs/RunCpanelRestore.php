@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
 use App\Services\Migration\MigrationDnsSyncService;
+use App\Services\Migration\MigrationEmailProvisionService;
 use Exception;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -37,7 +38,7 @@ class RunCpanelRestore implements ShouldQueue
         public ?array $discoveredData = null,
     ) {}
 
-    public function handle(AgentClient $agent, MigrationDnsSyncService $dnsSyncService): void
+    public function handle(AgentClient $agent, MigrationDnsSyncService $dnsSyncService, MigrationEmailProvisionService $emailProvisionService): void
     {
         $this->ensureLogPath();
         $this->appendLog(__('Restore started for user: :user', ['user' => $this->username]), 'pending');
@@ -59,6 +60,7 @@ class RunCpanelRestore implements ShouldQueue
                 $this->appendLog(__('Migration completed successfully.'), 'success');
                 Cache::put($this->getCacheKey(), ['status' => 'completed'], now()->addHours(2));
                 $this->syncDnsZones($dnsSyncService);
+                $this->provisionEmails($emailProvisionService);
 
                 return;
             }
@@ -101,6 +103,55 @@ class RunCpanelRestore implements ShouldQueue
     protected function getCacheKey(): string
     {
         return 'cpanel_restore_status_'.$this->jobId;
+    }
+
+    protected function provisionEmails(MigrationEmailProvisionService $emailProvisionService): void
+    {
+        if (! $this->restoreEmails) {
+            return;
+        }
+
+        $mailboxes = $this->discoveredData['mailboxes'] ?? [];
+        $forwarders = $this->discoveredData['forwarders'] ?? [];
+
+        if (empty($mailboxes) && empty($forwarders)) {
+            return;
+        }
+
+        $user = User::where('username', $this->username)->first();
+        if (! $user) {
+            Log::warning('Unable to provision emails after cPanel restore: user not found', [
+                'username' => $this->username,
+            ]);
+
+            return;
+        }
+
+        try {
+            $this->appendLog(__('Provisioning email accounts...'), 'pending');
+            $result = $emailProvisionService->provisionFromDiscoveredData(
+                $user,
+                $this->discoveredData,
+                fn (string $msg, string $status) => $this->appendLog($msg, $status),
+            );
+
+            $summary = __(':mb mailbox(es), :fw forwarder(s)', [
+                'mb' => count($result->mailboxes),
+                'fw' => count($result->forwarders),
+            ]);
+
+            if (! empty($result->errors)) {
+                $summary .= ', '.__(':err error(s)', ['err' => count($result->errors)]);
+            }
+
+            $this->appendLog(__('Email provisioning complete: :summary', ['summary' => $summary]), empty($result->errors) ? 'success' : 'warning');
+        } catch (Exception $e) {
+            Log::warning('Failed to provision emails after cPanel restore', [
+                'user' => $this->username,
+                'error' => $e->getMessage(),
+            ]);
+            $this->appendLog(__('Email provisioning failed: :error', ['error' => $e->getMessage()]), 'warning');
+        }
     }
 
     protected function syncDnsZones(MigrationDnsSyncService $dnsSyncService): void

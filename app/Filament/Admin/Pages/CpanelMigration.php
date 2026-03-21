@@ -1421,6 +1421,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
             'domains' => [],
             'databases' => [],
             'mailboxes' => [],
+            'forwarders' => [],
             'ssl_certificates' => [],
         ];
 
@@ -1457,6 +1458,24 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
                     'local_part' => $localPart,
                     'domain' => $domain,
                 ];
+            }
+        }
+
+        // Convert email forwarders
+        foreach ($apiData['email_forwarders'] ?? $apiData['forwarders'] ?? [] as $forwarder) {
+            if (is_array($forwarder)) {
+                $source = $forwarder['forward'] ?? $forwarder['source'] ?? '';
+                $dest = $forwarder['dest'] ?? $forwarder['destination'] ?? '';
+
+                if ($source && str_contains($source, '@') && $dest) {
+                    [$localPart, $domain] = explode('@', $source, 2);
+                    $result['forwarders'][] = [
+                        'email' => $source,
+                        'local_part' => $localPart,
+                        'domain' => $domain,
+                        'destinations' => $dest,
+                    ];
+                }
             }
         }
 

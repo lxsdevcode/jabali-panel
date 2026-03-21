@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
 use App\Services\Migration\MigrationDnsSyncService;
+use App\Services\Migration\MigrationEmailProvisionService;
 use App\Services\Migration\WhmApiService;
 use App\Services\Migration\WhmMigrationStatusStore;
 use App\Support\Formatter;
@@ -47,7 +48,7 @@ class RunWhmMigrationBatch implements ShouldQueue
         public bool $createLinuxUsers,
     ) {}
 
-    public function handle(AgentClient $agent, MigrationDnsSyncService $dnsSyncService): void
+    public function handle(AgentClient $agent, MigrationDnsSyncService $dnsSyncService, MigrationEmailProvisionService $emailProvisionService): void
     {
         $store = new WhmMigrationStatusStore($this->cacheKey);
         $store->initialize($this->selectedAccounts);
@@ -65,7 +66,7 @@ class RunWhmMigrationBatch implements ShouldQueue
             $accountsByUser = $this->indexAccountsByUser($this->accounts);
 
             foreach ($this->selectedAccounts as $cpanelUser) {
-                $this->migrateAccount($store, $whm, $agent, $dnsSyncService, $cpanelUser, $accountsByUser[$cpanelUser] ?? []);
+                $this->migrateAccount($store, $whm, $agent, $dnsSyncService, $emailProvisionService, $cpanelUser, $accountsByUser[$cpanelUser] ?? []);
             }
 
             $store->setMigrating(false);
@@ -99,7 +100,7 @@ class RunWhmMigrationBatch implements ShouldQueue
     /**
      * @param  array<string, mixed>  $account
      */
-    protected function migrateAccount(WhmMigrationStatusStore $store, WhmApiService $whm, AgentClient $agent, MigrationDnsSyncService $dnsSyncService, string $cpanelUser, array $account): void
+    protected function migrateAccount(WhmMigrationStatusStore $store, WhmApiService $whm, AgentClient $agent, MigrationDnsSyncService $dnsSyncService, MigrationEmailProvisionService $emailProvisionService, string $cpanelUser, array $account): void
     {
         $store->updateAccountStatus($cpanelUser, 'processing', __('Starting migration...'));
 
@@ -154,6 +155,12 @@ class RunWhmMigrationBatch implements ShouldQueue
             }
 
             $actualKeyName = $importResult['actual_key_name'] ?? $keyName;
+
+            // Import public key (cPanel needs both to authorize)
+            if (! empty($publicKey)) {
+                $whm->importSshPublicKey($cpanelUser, $actualKeyName, $publicKey);
+            }
+
             $store->addAccountLog($cpanelUser, __('SSH key imported'), 'success');
 
             $authResult = $whm->authorizeSshKey($cpanelUser, $actualKeyName);
@@ -212,6 +219,7 @@ class RunWhmMigrationBatch implements ShouldQueue
                 }
 
                 $this->syncDnsZones($dnsSyncService, $user, $discoveredData);
+                $this->provisionEmails($emailProvisionService, $store, $user, $cpanelUser, $discoveredData);
 
                 $store->updateAccountStatus($cpanelUser, 'completed', __('Migration completed'));
                 @unlink($backupPath);
@@ -380,6 +388,46 @@ class RunWhmMigrationBatch implements ShouldQueue
     /**
      * @param  array<string, mixed>  $discoveredData
      */
+    protected function provisionEmails(MigrationEmailProvisionService $emailProvisionService, WhmMigrationStatusStore $store, User $user, string $cpanelUser, array $discoveredData): void
+    {
+        if (! $this->restoreEmails) {
+            return;
+        }
+
+        $mailboxes = $discoveredData['mailboxes'] ?? [];
+        $forwarders = $discoveredData['forwarders'] ?? [];
+
+        if (empty($mailboxes) && empty($forwarders)) {
+            return;
+        }
+
+        try {
+            $store->addAccountLog($cpanelUser, __('Provisioning email accounts...'), 'pending');
+            $result = $emailProvisionService->provisionFromDiscoveredData(
+                $user,
+                $discoveredData,
+                fn (string $msg, string $status) => $store->addAccountLog($cpanelUser, $msg, $status),
+            );
+
+            $summary = __(':mb mailbox(es), :fw forwarder(s)', [
+                'mb' => count($result->mailboxes),
+                'fw' => count($result->forwarders),
+            ]);
+
+            if (! empty($result->errors)) {
+                $summary .= ', '.__(':err error(s)', ['err' => count($result->errors)]);
+            }
+
+            $store->addAccountLog($cpanelUser, __('Email provisioning complete: :summary', ['summary' => $summary]), empty($result->errors) ? 'success' : 'warning');
+        } catch (Exception $e) {
+            Log::warning('Failed to provision emails after WHM migration', [
+                'user' => $user->username,
+                'error' => $e->getMessage(),
+            ]);
+            $store->addAccountLog($cpanelUser, __('Email provisioning failed: :error', ['error' => $e->getMessage()]), 'warning');
+        }
+    }
+
     protected function syncDnsZones(MigrationDnsSyncService $dnsSyncService, User $user, array $discoveredData): void
     {
         try {

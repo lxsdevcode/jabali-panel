@@ -9,6 +9,7 @@ use App\Models\ServerImport;
 use App\Models\ServerImportAccount;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
+use App\Services\Migration\MigrationEmailProvisionService;
 use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
@@ -476,13 +477,20 @@ class ImportProcessCommand extends Command
 
     private function importEmails(ServerImport $import, ServerImportAccount $account, User $user): void
     {
-        // Email import is complex and requires the email system to be configured
-        // For now, just log the email accounts that would be created
-        foreach ($account->email_accounts ?? [] as $emailAccount) {
-            $account->addLog("Email account found (not imported): {$emailAccount}@{$account->main_domain}");
+        $emailService = app(MigrationEmailProvisionService::class);
+        $result = $emailService->provisionForImportAccount(
+            $user,
+            $account,
+            fn (string $msg, string $status) => $account->addLog($msg),
+        );
+
+        if (! empty($result->mailboxes)) {
+            $account->addLog('Created '.count($result->mailboxes).' mailbox(es)');
         }
 
-        $account->addLog('Note: Email accounts must be recreated manually');
+        if (! empty($result->errors)) {
+            $account->addLog('Email provisioning completed with '.count($result->errors).' error(s)');
+        }
     }
 
     private function resolveBackupFullPath(ServerImport $import): ?string
