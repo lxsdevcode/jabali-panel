@@ -1642,6 +1642,13 @@ NGINX
         sub_filter "http://127.0.0.1:8080" "https://${SERVER_HOSTNAME}";
     }
 
+    # Bulwark webmail branding assets
+    location /branding/ {
+        alias /opt/bulwark/public/branding/;
+        expires 7d;
+        access_log off;
+    }
+
     # Bulwark webmail
     location = /webmail {
         proxy_pass http://127.0.0.1:3000;
@@ -2918,6 +2925,23 @@ create_webmaster_mailbox() {
     log "Webmaster mailbox: webmaster@${SERVER_HOSTNAME}"
     log "Webmaster password: ${webmaster_password}"
 
+    # Configure authenticated SMTP in .env using the webmaster mailbox
+    local mail_host="mail.${SERVER_HOSTNAME}"
+    # If hostname already starts with mail., use it directly
+    if [[ "$SERVER_HOSTNAME" == mail.* ]]; then
+        mail_host="$SERVER_HOSTNAME"
+    fi
+
+    cd "$JABALI_DIR"
+    sed -i "s/^MAIL_HOST=.*/MAIL_HOST=${mail_host}/" .env
+    sed -i "s/^MAIL_PORT=.*/MAIL_PORT=587/" .env
+    sed -i "s/^MAIL_ENCRYPTION=.*/MAIL_ENCRYPTION=tls/" .env
+    sed -i "s/^MAIL_USERNAME=.*/MAIL_USERNAME=webmaster@${SERVER_HOSTNAME}/" .env
+    sed -i "s/^MAIL_PASSWORD=.*/MAIL_PASSWORD=${webmaster_password}/" .env
+    php artisan config:cache --quiet 2>/dev/null || true
+
+    log "SMTP configured: webmaster@${SERVER_HOSTNAME} via ${mail_host}:587"
+
     # Save credentials
     echo "" >> /root/jabali_credentials.txt
     echo "=== Webmaster Email ===" >> /root/jabali_credentials.txt
@@ -3742,7 +3766,12 @@ REDIS_USERNAME=jabali_admin
 REDIS_PASSWORD=${REDIS_ADMIN_PASSWORD}
 REDIS_PORT=6379
 
-MAIL_MAILER=sendmail
+MAIL_MAILER=smtp
+MAIL_HOST=127.0.0.1
+MAIL_PORT=25
+MAIL_ENCRYPTION=null
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
 MAIL_FROM_ADDRESS=webmaster@${SERVER_HOSTNAME}
 MAIL_FROM_NAME="Jabali Panel"
 
@@ -3750,7 +3779,7 @@ MAIL_BACKEND=${MAIL_BACKEND}
 ENV
 
     # Ensure mail settings are correct (in case .env.example was used)
-    sed -i "s/^MAIL_MAILER=.*/MAIL_MAILER=sendmail/" .env
+    sed -i "s/^MAIL_MAILER=.*/MAIL_MAILER=smtp/" .env
     sed -i "s/^MAIL_FROM_ADDRESS=.*/MAIL_FROM_ADDRESS=webmaster@${SERVER_HOSTNAME}/" .env
 
     # Install dependencies
