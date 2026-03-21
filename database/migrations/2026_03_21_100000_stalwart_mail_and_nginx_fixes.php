@@ -15,6 +15,15 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+/**
+ * Combined system migration for Stalwart mail backend servers:
+ * 1. Fix Stalwart TLS cert to use LE cert with %{file:...}% macro
+ * 2. Create webmaster mailbox and configure authenticated SMTP
+ * 3. Add /branding/ nginx alias for Bulwark webmail assets
+ * 4. Remove /storage/ from nginx deny blocks (logo uploads)
+ *
+ * All operations are idempotent and use the agent for root operations.
+ */
 return new class extends Migration
 {
     public function up(): void
@@ -24,8 +33,84 @@ return new class extends Migration
         }
 
         $hostname = DnsSetting::get('hostname', gethostname() ?: 'localhost');
+
+        $this->fixStalwartTls($hostname);
         $password = $this->ensureWebmasterMailbox($hostname);
         $this->configureSmtp($hostname, $password);
+        $this->fixNginxConfigs();
+    }
+
+    private function fixStalwartTls(string $hostname): void
+    {
+        $configPath = '/etc/stalwart-mail/config.toml';
+        if (! File::exists($configPath) || ! is_readable($configPath)) {
+            return;
+        }
+
+        $config = File::get($configPath);
+
+        // Find the best LE cert: mail.rootdomain > mail.hostname > hostname
+        $candidates = ["mail.{$hostname}"];
+        $parts = explode('.', $hostname);
+        if (count($parts) > 2) {
+            $rootDomain = implode('.', array_slice($parts, -2));
+            $candidates[] = "mail.{$rootDomain}";
+        }
+        $candidates[] = $hostname;
+
+        $certDomain = null;
+        foreach ($candidates as $candidate) {
+            if (File::exists("/etc/letsencrypt/live/{$candidate}/fullchain.pem")) {
+                $certDomain = $candidate;
+                break;
+            }
+        }
+
+        if (! $certDomain) {
+            return;
+        }
+
+        $expectedCert = "%{file:/etc/letsencrypt/live/{$certDomain}/fullchain.pem}%";
+
+        if (str_contains($config, $expectedCert)) {
+            return;
+        }
+
+        if (! is_writable($configPath)) {
+            // Try via agent
+            try {
+                $agent = app(AgentClient::class);
+                $agent->send('file.write', [
+                    'path' => $configPath,
+                    'search' => '[certificate.default]',
+                    'replace_block' => "[certificate.default]\ncert = \"{$expectedCert}\"\nprivate-key = \"%{file:/etc/letsencrypt/live/{$certDomain}/privkey.pem}%\"\ndefault = true",
+                ]);
+                $agent->send('service.restart', ['service' => 'stalwart-mail']);
+                Log::info("Migration: Stalwart TLS updated via agent for {$certDomain}");
+            } catch (\Exception $e) {
+                Log::warning("Migration: Could not fix Stalwart TLS: {$e->getMessage()}");
+            }
+
+            return;
+        }
+
+        $expectedKey = "%{file:/etc/letsencrypt/live/{$certDomain}/privkey.pem}%";
+        $config = preg_replace(
+            '/\[certificate\.default\]\s*\n(?:(?:cert|private-key|default)\s*=\s*[^\n]+\n?)+/',
+            "[certificate.default]\ncert = \"{$expectedCert}\"\nprivate-key = \"{$expectedKey}\"\ndefault = true\n",
+            $config
+        );
+
+        File::put($configPath, $config);
+
+        try {
+            $agent = app(AgentClient::class);
+            $agent->send('service.restart', ['service' => 'stalwart-mail']);
+        } catch (\Exception $e) {
+            Log::warning("Migration: Could not restart Stalwart: {$e->getMessage()}");
+        }
+
+        Log::info("Migration: Stalwart TLS updated for {$certDomain}");
     }
 
     private function ensureWebmasterMailbox(string $hostname): ?string
@@ -42,8 +127,6 @@ return new class extends Migration
             $agent = app(AgentClient::class);
             $admin = User::where('username', 'admin')->first();
             if (! $admin) {
-                Log::warning('Migration: No admin user found, skipping webmaster mailbox');
-
                 return null;
             }
 
@@ -51,7 +134,7 @@ return new class extends Migration
             if (! $domain) {
                 try {
                     $agent->domainCreate($admin->username, $hostname);
-                } catch (Exception $e) {
+                } catch (\Exception $e) {
                     // May already exist on disk
                 }
 
@@ -65,7 +148,7 @@ return new class extends Migration
 
             try {
                 $agent->emailEnableDomain($admin->username, $hostname);
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 // May already be enabled
             }
 
@@ -95,7 +178,7 @@ return new class extends Migration
             Log::info("Migration: Webmaster mailbox created: webmaster@{$hostname}");
 
             return $password;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             Log::warning("Migration: Failed to create webmaster mailbox: {$e->getMessage()}");
 
             return null;
@@ -111,12 +194,10 @@ return new class extends Migration
 
         $env = File::get($envFile);
 
-        // Skip if already using authenticated SMTP
         if (preg_match('/^MAIL_MAILER=smtp/m', $env) && preg_match('/^MAIL_USERNAME=webmaster@/m', $env)) {
             return;
         }
 
-        // Extract root domain for mail host (e.g., mx.jabali-panel.com -> jabali-panel.com)
         $parts = explode('.', $hostname);
         $rootDomain = count($parts) > 2 ? implode('.', array_slice($parts, -2)) : $hostname;
         $mailHost = str_starts_with($hostname, 'mail.') ? $hostname : "mail.{$rootDomain}";
@@ -130,8 +211,6 @@ return new class extends Migration
         }
 
         if (! $password) {
-            Log::warning('Migration: No webmaster password available, skipping SMTP config');
-
             return;
         }
 
@@ -168,8 +247,61 @@ return new class extends Migration
         Log::info("Migration: SMTP configured via webmaster@{$hostname}");
     }
 
+    private function fixNginxConfigs(): void
+    {
+        if (! File::isDirectory('/etc/nginx/sites-enabled')) {
+            return;
+        }
+
+        $brandingBlock = "    location /branding/ {\n        alias /opt/bulwark/public/branding/;\n        expires 7d;\n        access_log off;\n    }\n";
+        $modified = false;
+
+        foreach (array_merge(
+            File::glob('/etc/nginx/sites-enabled/*'),
+            File::glob('/etc/nginx/sites-available/*')
+        ) as $conf) {
+            if (! is_writable($conf)) {
+                continue;
+            }
+
+            $content = File::get($conf);
+            $changed = false;
+
+            // Remove |storage from deny block
+            if (str_contains($content, 'vendor|node_modules|storage')) {
+                $content = str_replace('vendor|node_modules|storage', 'vendor|node_modules', $content);
+                $changed = true;
+            }
+
+            // Add /branding/ alias if missing
+            if (! str_contains($content, 'location /branding/') && str_contains($content, 'location = /webmail')) {
+                $content = str_replace(
+                    '    location = /webmail {',
+                    "{$brandingBlock}\n    location = /webmail {",
+                    $content
+                );
+                $changed = true;
+            }
+
+            if ($changed) {
+                File::put($conf, $content);
+                $modified = true;
+            }
+        }
+
+        if ($modified) {
+            try {
+                $agent = app(AgentClient::class);
+                $agent->send('service.reload', ['service' => 'nginx']);
+                Log::info('Migration: Fixed nginx configs (storage access + branding alias)');
+            } catch (\Exception $e) {
+                Log::warning("Migration: Could not reload nginx: {$e->getMessage()}");
+            }
+        }
+    }
+
     public function down(): void
     {
-        // Reverting mail config changes is not safe automatically
+        // System config changes are not safely reversible
     }
 };

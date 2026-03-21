@@ -538,7 +538,8 @@ if [[ "$SKIP_SYNC" -eq 0 ]]; then
     fi
 
     echo "Pulling latest on ${REMOTE}..."
-    remote_run "cd \"$DEPLOY_PATH\" && git config --global --add safe.directory \"$DEPLOY_PATH\" 2>/dev/null; git fetch --all && git reset --hard origin/main 2>/dev/null || git reset --hard gitea/main 2>/dev/null || git pull --ff-only"
+    PULL_URL="${GITEA_URL:-origin}"
+    remote_run "cd \"$DEPLOY_PATH\" && git config --global --add safe.directory \"$DEPLOY_PATH\" 2>/dev/null; git remote set-url gitea \"$PULL_URL\" 2>/dev/null || git remote add gitea \"$PULL_URL\" 2>/dev/null || true; git fetch gitea main && git reset --hard gitea/main"
 fi
 
 echo "Ensuring remote permissions..."

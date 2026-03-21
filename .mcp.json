@@ -1,23 +1,12 @@
 {
     "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/mcp.schema.json",
     "mcpServers": {
-        "filesystem": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "@anthropic-ai/mcp-server-filesystem@latest",
-                "/var/www/jabali",
-                "/home",
-                "/etc/nginx",
-                "/var/log"
-            ],
-            "description": "File system access for Jabali project and server configs"
-        },
         "mysql": {
-            "command": "npx",
+            "command": "/home/shuki/.local/bin/mcp-ssh",
             "args": [
-                "-y",
-                "@anthropic-ai/mcp-server-mysql@latest"
+                "npx",
+                "--yes",
+                "@benborla29/mcp-server-mysql@latest"
             ],
             "env": {
                 "MYSQL_HOST": "localhost",
@@ -33,11 +22,10 @@
             ]
         },
         "tailwindcss": {
-            "command": "ssh",
+            "command": "/home/shuki/.local/bin/mcp-ssh",
             "args": [
-                "rasp",
                 "npx",
-                "-y",
+                "--yes",
                 "tailwindcss-mcp-server"
             ],
             "description": "Tailwind CSS MCP server running on Raspberry Pi via SSH"
