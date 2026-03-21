@@ -138,7 +138,7 @@ return new class extends Migration
             '/^MAIL_PORT=.*/m' => 'MAIL_PORT=587',
             '/^MAIL_ENCRYPTION=.*/m' => 'MAIL_ENCRYPTION=tls',
             '/^MAIL_USERNAME=.*/m' => "MAIL_USERNAME=webmaster@{$hostname}",
-            '/^MAIL_PASSWORD=.*/m' => "MAIL_PASSWORD={$password}",
+            '/^MAIL_PASSWORD=.*/m' => "MAIL_PASSWORD=\"{$password}\"",
         ];
 
         foreach ($replacements as $pattern => $replacement) {
@@ -147,7 +147,15 @@ return new class extends Migration
             }
         }
 
-        foreach (['MAIL_HOST' => $mailHost, 'MAIL_PORT' => '587', 'MAIL_ENCRYPTION' => 'tls', 'MAIL_USERNAME' => "webmaster@{$hostname}", 'MAIL_PASSWORD' => $password] as $key => $value) {
+        $missing = [
+            'MAIL_HOST' => $mailHost,
+            'MAIL_PORT' => '587',
+            'MAIL_ENCRYPTION' => 'tls',
+            'MAIL_USERNAME' => "webmaster@{$hostname}",
+            'MAIL_PASSWORD' => "\"{$password}\"",
+        ];
+
+        foreach ($missing as $key => $value) {
             if (! str_contains($env, "{$key}=")) {
                 $env .= "\n{$key}={$value}";
             }

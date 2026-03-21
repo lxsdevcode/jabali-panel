@@ -86,6 +86,6 @@ class EmailDomain extends Model
      */
     public function canCreateMailbox(): bool
     {
-        return $this->mailbox_count < $this->max_mailboxes;
+        return $this->max_mailboxes === null || $this->mailbox_count < $this->max_mailboxes;
     }
 }

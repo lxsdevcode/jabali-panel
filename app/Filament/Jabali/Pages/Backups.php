@@ -782,7 +782,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     public function downloadFromRemote(int $destinationId, string $remotePath): void
     {
         $user = $this->getUser();
-        $destination = BackupDestination::find($destinationId);
+        $destination = BackupDestination::where('id', $destinationId)
+            ->where('user_id', $user->id)
+            ->first();
 
         if (! $destination) {
             Notification::make()->title(__('Destination not found'))->danger()->send();

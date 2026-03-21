@@ -54,6 +54,7 @@ class ImportProcessCommand extends Command
 
         $totalAccounts = $accounts->count();
         $completedAccounts = 0;
+        $failedCount = 0;
 
         $import->addLog("Starting import of $totalAccounts account(s)");
 
@@ -65,6 +66,7 @@ class ImportProcessCommand extends Command
                 $progress = (int) (($completedAccounts / $totalAccounts) * 100);
                 $import->update(['progress' => $progress]);
             } catch (Exception $e) {
+                $failedCount++;
                 $account->update([
                     'status' => 'failed',
                     'error' => $e->getMessage(),
@@ -73,8 +75,6 @@ class ImportProcessCommand extends Command
                 $import->addError("Account {$account->source_username}: ".$e->getMessage());
             }
         }
-
-        $failedCount = $accounts->where('status', 'failed')->count();
 
         if ($failedCount === $totalAccounts) {
             $import->update([
