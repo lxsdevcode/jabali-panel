@@ -199,8 +199,9 @@ class SslCheckCommand extends Command
         } elseif ($ssl->needsRenewal()) {
             $this->renewCertificate($domain);
         } else {
-            $this->log("Certificate is valid for {$domainName}, expires: {$ssl->expires_at->format('Y-m-d')}");
-            $this->line("  - Certificate is valid, expires: {$ssl->expires_at->format('Y-m-d')}");
+            $expiresAt = $ssl->expires_at ? $ssl->expires_at->format('Y-m-d') : 'unknown';
+            $this->log("Certificate is valid for {$domainName}, expires: {$expiresAt}");
+            $this->line("  - Certificate is valid, expires: {$expiresAt}");
             $this->skipped++;
         }
     }
