@@ -295,45 +295,49 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->placeholder(__('Jabali'))
                         ->helperText(__('Appears in browser title and navigation'))
                         ->required(),
-                    Grid::make(['default' => 2, 'md' => 4])->schema([
-                        Placeholder::make('currentLogoLight')
+                    Grid::make(['default' => 1, 'md' => 2])->schema([
+                        FileUpload::make('brandingLogo')
                             ->label(__('Light Logo'))
-                            ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4" style="min-height:80px">'
+                            ->image()
+                            ->disk('public')
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                            ->maxSize(512)
+                            ->imageResizeTargetWidth('400')
+                            ->imageResizeTargetHeight('100')
+                            ->panelLayout('integrated')
+                            ->helperText(__('Max 512KB, recommended 400x100px'))
+                            ->placeholder(new HtmlString(
+                                '<div class="flex flex-col items-center gap-2 p-4">'
+                                .'<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700" style="min-height:80px;min-width:160px">'
                                 .'<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
                                 .'" alt="Light Logo" class="max-h-12 max-w-full object-contain">'
                                 .'</div>'
-                                .'<span class="mt-1 text-xs '.($this->currentLogo ? 'text-success-500' : 'text-gray-400').'">'
-                                .($this->currentLogo ? __('Custom') : __('Default')).'</span>'
+                                .'<span class="text-xs text-gray-400">'.($this->currentLogo ? __('Click to replace') : __('Click to upload')).'</span>'
+                                .'</div>'
                             )),
-                        FileUpload::make('brandingLogo')
-                            ->label(__('Upload Light Logo'))
+                        FileUpload::make('brandingLogoDark')
+                            ->label(__('Dark Logo'))
                             ->image()
                             ->disk('public')
                             ->directory('branding')
                             ->visibility('public')
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                            ->maxSize(1024)
-                            ->helperText(__('PNG, JPEG, WebP or SVG, max 1MB')),
-                        Placeholder::make('currentLogoDarkPreview')
-                            ->label(__('Dark Logo'))
-                            ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4" style="min-height:80px">'
+                            ->maxSize(512)
+                            ->imageResizeTargetWidth('400')
+                            ->imageResizeTargetHeight('100')
+                            ->panelLayout('integrated')
+                            ->helperText(__('Max 512KB, recommended 400x100px'))
+                            ->placeholder(new HtmlString(
+                                '<div class="flex flex-col items-center gap-2 p-4">'
+                                .'<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4" style="min-height:80px;min-width:160px">'
                                 .'<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
                                 .'" alt="Dark Logo" class="max-h-12 max-w-full object-contain">'
                                 .'</div>'
-                                .'<span class="mt-1 text-xs '.($this->currentLogoDark ? 'text-success-500' : 'text-gray-400').'">'
-                                .($this->currentLogoDark ? __('Custom') : __('Default')).'</span>'
+                                .'<span class="text-xs text-gray-400">'.($this->currentLogoDark ? __('Click to replace') : __('Click to upload')).'</span>'
+                                .'</div>'
                             )),
-                        FileUpload::make('brandingLogoDark')
-                            ->label(__('Upload Dark Logo'))
-                            ->image()
-                            ->disk('public')
-                            ->directory('branding')
-                            ->visibility('public')
-                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                            ->maxSize(1024)
-                            ->helperText(__('PNG, JPEG, WebP or SVG, max 1MB')),
                     ]),
                     Actions::make([
                         FormAction::make('removeLogo')
