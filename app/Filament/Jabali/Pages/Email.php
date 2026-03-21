@@ -978,8 +978,8 @@ class Email extends Page implements HasActions, HasForms, HasTable
         $emailDomain = $domain->emailDomain;
 
         if (! $emailDomain) {
-            // Enable email for this domain on the server
-            $this->getAgent()->emailEnableDomain($this->getUsername(), $domain->domain);
+            // Enable email for this domain on the server (also generates DKIM)
+            $enableResult = $this->getAgent()->emailEnableDomain($this->getUsername(), $domain->domain);
 
             // Create EmailDomain record
             $emailDomain = EmailDomain::create([
@@ -989,52 +989,49 @@ class Email extends Page implements HasActions, HasForms, HasTable
 
             $this->syncMailRouting();
 
-            // Generate DKIM
+            // Sync Stalwart's DNS records (DKIM, SPF, DMARC, etc.) to BIND
             try {
-                $dkimResult = $this->getAgent()->emailGenerateDkim($this->getUsername(), $domain->domain);
-                if (isset($dkimResult['public_key'])) {
-                    $selector = $dkimResult['selector'] ?? 'default';
-                    $publicKey = $dkimResult['public_key'];
+                $stalwartDns = $enableResult['stalwart_dns_records'] ?? [];
 
-                    $emailDomain->update([
-                        'dkim_selector' => $selector,
-                        'dkim_public_key' => $publicKey,
-                        'dkim_private_key' => $dkimResult['private_key'] ?? null,
-                    ]);
+                // Sync Stalwart's recommended DNS records (DKIM, SPF, DMARC, etc.) to BIND
+                foreach ($stalwartDns as $rec) {
+                    $name = rtrim($rec['name'] ?? '', '.');
+                    $type = $rec['type'] ?? '';
+                    $content = $rec['content'] ?? '';
 
-                    // Add DKIM record to DNS
-                    $dkimRecord = DnsRecord::where('domain_id', $domain->id)
-                        ->where('name', "{$selector}._domainkey")
-                        ->where('type', 'TXT')
-                        ->first();
-
-                    // Format the DKIM public key (remove headers and newlines)
-                    $cleanKey = str_replace([
-                        '-----BEGIN PUBLIC KEY-----',
-                        '-----END PUBLIC KEY-----',
-                        "\n",
-                        "\r",
-                    ], '', $publicKey);
-
-                    $dkimContent = "v=DKIM1; k=rsa; p={$cleanKey}";
-
-                    if (! $dkimRecord) {
-                        DnsRecord::create([
-                            'domain_id' => $domain->id,
-                            'name' => "{$selector}._domainkey",
-                            'type' => 'TXT',
-                            'content' => $dkimContent,
-                            'ttl' => 3600,
-                        ]);
-                    } else {
-                        $dkimRecord->update(['content' => $dkimContent]);
+                    if (empty($name) || empty($type) || empty($content)) {
+                        continue;
                     }
 
-                    // Regenerate DNS zone to include the new DKIM record
-                    $this->regenerateDnsZone($domain);
+                    // Strip the domain suffix from the name (BIND zone is relative)
+                    $name = preg_replace('/\.?' . preg_quote($domain->domain, '/') . '\.?$/', '', $name);
+                    if (empty($name) || $name === $domain->domain) {
+                        $name = '@';
+                    }
+
+                    // Update DKIM selector on EmailDomain
+                    if (str_contains($name, '_domainkey')) {
+                        $selector = explode('.', $name)[0] ?? 'default';
+                        $emailDomain->update(['dkim_selector' => $selector]);
+                    }
+
+                    DnsRecord::updateOrCreate(
+                        [
+                            'domain_id' => $domain->id,
+                            'name' => $name,
+                            'type' => $type,
+                        ],
+                        [
+                            'content' => $content,
+                            'ttl' => 3600,
+                        ]
+                    );
                 }
+
+                // Regenerate DNS zone
+                $this->regenerateDnsZone($domain);
             } catch (Exception $e) {
-                // DKIM generation failed, but email can still work
+                // DNS sync failed, but email can still work
             }
 
             // Create autoconfig/autodiscover A records and SRV records

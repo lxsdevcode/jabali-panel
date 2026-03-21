@@ -10301,6 +10301,27 @@ function stalwartDkimRemoveSigner(string $signerId): void
     logger("Removed DKIM signer {$signerId} from Stalwart config");
 }
 
+/**
+ * Get recommended DNS records from Stalwart for a domain.
+ * Returns MX, DKIM, SPF, DMARC, SRV, etc.
+ *
+ * @return array<int, array{type: string, name: string, content: string}>
+ */
+function stalwartGetDnsRecords(string $domain): array
+{
+    try {
+        $api = new StalwartApiClient();
+        $response = $api->get("dns/records/{$domain}");
+        if (($response['http_code'] ?? 0) === 200) {
+            return $response['body']['data'] ?? [];
+        }
+    } catch (RuntimeException $e) {
+        logger("Warning: could not fetch Stalwart DNS records for {$domain}: " . $e->getMessage());
+    }
+
+    return [];
+}
+
 function stalwartEmailEnableDomain(array $params): array
 {
     $username = $params['username'] ?? '';
@@ -10355,12 +10376,17 @@ function stalwartEmailEnableDomain(array $params): array
     // Generate DKIM key for the domain
     $dkimResult = stalwartEmailGenerateDkim(['domain' => $domain, 'selector' => 'default']);
 
+    // Return Stalwart's recommended DNS records (DKIM, SPF, DMARC, MX, SRV, etc.)
+    // The panel caller should sync these to the BIND zone
+    $stalwartDnsRecords = $dkimResult['stalwart_dns_records'] ?? stalwartGetDnsRecords($domain);
+
     logger("Enabled email for domain: {$domain} (user: {$username}) via Stalwart");
     return [
         'success' => true,
         'message' => "Email enabled for {$domain}",
         'dkim_dns_record' => $dkimResult['dns_record'] ?? '',
         'dkim_selector' => $dkimResult['selector'] ?? 'default',
+        'stalwart_dns_records' => $stalwartDnsRecords,
     ];
 }
 
@@ -10425,24 +10451,31 @@ function stalwartEmailGenerateDkim(array $params): array
             return ['success' => false, 'error' => 'Failed to generate DKIM: ' . ($response['body']['detail'] ?? $response['raw'])];
         }
 
-        $data = $response['body']['data'] ?? $response['body'] ?? [];
-        $dnsRecord = $data['dns_record'] ?? '';
-        $publicKey = $data['public_key'] ?? '';
-        $actualSelector = $data['selector'] ?? $selector;
-
         // Add signer to auth.dkim.sign in TOML config
         // Stalwart 0.15.x settings API doesn't support "set", so we update the TOML file
         $signerId = "ed25519-{$domain}";
         stalwartDkimAddSigner($signerId);
 
-        logger("Generated DKIM key for {$domain} (selector: {$actualSelector})");
+        // POST /api/dkim returns null on 0.15.x, so fetch DNS records
+        // from /api/dns/records/{domain} which has the DKIM TXT record
+        $dnsRecords = stalwartGetDnsRecords($domain);
+        $dkimRecord = '';
+        foreach ($dnsRecords as $rec) {
+            if (str_contains($rec['name'] ?? '', '_domainkey')) {
+                $dkimRecord = $rec['content'] ?? '';
+                break;
+            }
+        }
+
+        logger("Generated DKIM key for {$domain} (selector: {$selector})");
 
         return [
             'success' => true,
             'message' => "DKIM key generated for {$domain}",
-            'selector' => $actualSelector,
-            'public_key' => $publicKey,
-            'dns_record' => $dnsRecord,
+            'selector' => $selector,
+            'public_key' => '',
+            'dns_record' => $dkimRecord,
+            'stalwart_dns_records' => $dnsRecords,
         ];
     } catch (RuntimeException $e) {
         return ['success' => false, 'error' => $e->getMessage()];
