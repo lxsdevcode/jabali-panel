@@ -21937,6 +21937,22 @@ function clamavStop(array $params): array
 
 function clamavUpdateSignatures(array $params): array
 {
+    // If freshclam daemon is running, restart it to trigger an update
+    // Running freshclam directly conflicts with the daemon's log lock
+    $pids = [];
+    exec('pgrep -x freshclam 2>/dev/null', $pids);
+    if (!empty($pids)) {
+        $restartOutput = [];
+        exec('systemctl restart clamav-freshclam 2>&1', $restartOutput, $restartCode);
+        if ($restartCode === 0) {
+            sleep(3);
+            $logOutput = [];
+            exec('tail -20 /var/log/clamav/freshclam.log 2>/dev/null', $logOutput);
+            return ['success' => true, 'output' => implode("\n", $logOutput)];
+        }
+    }
+
+    $output = [];
     exec('freshclam 2>&1', $output, $code);
     return ['success' => $code === 0, 'output' => implode("\n", $output)];
 }
@@ -21975,6 +21991,42 @@ function clamavRealtimeStop(array $params): array
 
 function clamavRealtimeEnable(array $params): array
 {
+    // Create the systemd service if it doesn't exist
+    $serviceFile = '/etc/systemd/system/jabali-realtime-scan.service';
+    if (!file_exists($serviceFile)) {
+        // Ensure clamd has OnAccess config
+        $clamdConf = '/etc/clamav/clamd.conf';
+        if (file_exists($clamdConf)) {
+            $conf = file_get_contents($clamdConf);
+            if (strpos($conf, 'OnAccessIncludePath') === false) {
+                $onAccess = "\n# Jabali real-time protection\n"
+                    . "OnAccessIncludePath /home\n"
+                    . "OnAccessExcludeUname clamav\n"
+                    . "OnAccessExcludeRootUID true\n"
+                    . "OnAccessPrevention false\n"
+                    . "OnAccessExtraScanning true\n";
+                file_put_contents($clamdConf, $conf . $onAccess);
+                // Restart clamd to pick up the config
+                exec('systemctl restart clamav-daemon 2>&1');
+                sleep(2);
+            }
+        }
+
+        $unit = "[Unit]\n"
+            . "Description=Jabali ClamAV Real-time Scanner\n"
+            . "After=clamav-daemon.service\n"
+            . "Requires=clamav-daemon.service\n\n"
+            . "[Service]\n"
+            . "ExecStart=/usr/sbin/clamonacc --foreground --config-file=/etc/clamav/clamd.conf --log=/var/log/clamav/clamonacc.log\n"
+            . "Restart=on-failure\n"
+            . "RestartSec=10\n\n"
+            . "[Install]\n"
+            . "WantedBy=multi-user.target\n";
+        file_put_contents($serviceFile, $unit);
+        exec('systemctl daemon-reload 2>&1');
+    }
+
+    $output = [];
     exec('systemctl enable jabali-realtime-scan && systemctl start jabali-realtime-scan 2>&1', $output, $code);
     return ['success' => $code === 0, 'error' => $code !== 0 ? implode("\n", $output) : null];
 }
