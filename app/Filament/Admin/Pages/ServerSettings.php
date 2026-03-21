@@ -314,7 +314,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->label(__('Upload Light Logo'))
                             ->icon('heroicon-o-arrow-up-tray')
                             ->color('gray')
-                            ->form([
+                            ->schema([
                                 FileUpload::make('logo')
                                     ->label(__('Logo Image'))
                                     ->disk('public')
@@ -330,7 +330,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->label(__('Upload Dark Logo'))
                             ->icon('heroicon-o-arrow-up-tray')
                             ->color('gray')
-                            ->form([
+                            ->schema([
                                 FileUpload::make('logo')
                                     ->label(__('Logo Image'))
                                     ->disk('public')
