@@ -47,6 +47,11 @@ return [
             'native' => 'עברית',
             'direction' => 'rtl',
         ],
+        'tr' => [
+            'name' => 'Turkish',
+            'native' => 'Türkçe',
+            'direction' => 'ltr',
+        ],
     ],
 
     /*
