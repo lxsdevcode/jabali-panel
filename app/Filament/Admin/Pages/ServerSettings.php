@@ -65,10 +65,6 @@ class ServerSettings extends Page implements HasActions, HasForms
     // Form data arrays
     public ?array $brandingData = [];
 
-    public mixed $brandingLogo = null;
-
-    public mixed $brandingLogoDark = null;
-
     public ?string $currentLogoDark = null;
 
     public ?array $hostnameData = [];
@@ -295,7 +291,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->placeholder(__('Jabali'))
                         ->helperText(__('Appears in browser title and navigation'))
                         ->required(),
-                    Grid::make(['default' => 2, 'md' => 4])->schema([
+                    Grid::make(['default' => 1, 'md' => 2])->schema([
                         Placeholder::make('currentLogoLight')
                             ->label(__('Light Logo'))
                             ->content(new HtmlString(
@@ -304,14 +300,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                                 .'" alt="Light Logo" class="max-h-12 max-w-full object-contain">'
                                 .'</div>'
                             )),
-                        FileUpload::make('brandingLogo')
-                            ->label(__('Upload Light Logo'))
-                            ->disk('public')
-                            ->directory('branding')
-                            ->visibility('public')
-                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                            ->maxSize(512)
-                            ->helperText(__('Max 512KB')),
                         Placeholder::make('currentLogoDarkPreview')
                             ->label(__('Dark Logo'))
                             ->content(new HtmlString(
@@ -320,16 +308,40 @@ class ServerSettings extends Page implements HasActions, HasForms
                                 .'" alt="Dark Logo" class="max-h-12 max-w-full object-contain">'
                                 .'</div>'
                             )),
-                        FileUpload::make('brandingLogoDark')
-                            ->label(__('Upload Dark Logo'))
-                            ->disk('public')
-                            ->directory('branding')
-                            ->visibility('public')
-                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                            ->maxSize(512)
-                            ->helperText(__('Max 512KB')),
                     ]),
                     Actions::make([
+                        FormAction::make('uploadLogoLight')
+                            ->label(__('Upload Light Logo'))
+                            ->icon('heroicon-o-arrow-up-tray')
+                            ->color('gray')
+                            ->form([
+                                FileUpload::make('logo')
+                                    ->label(__('Logo Image'))
+                                    ->disk('public')
+                                    ->directory('branding')
+                                    ->visibility('public')
+                                    ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                                    ->maxSize(512)
+                                    ->required()
+                                    ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
+                            ])
+                            ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo')),
+                        FormAction::make('uploadLogoDark')
+                            ->label(__('Upload Dark Logo'))
+                            ->icon('heroicon-o-arrow-up-tray')
+                            ->color('gray')
+                            ->form([
+                                FileUpload::make('logo')
+                                    ->label(__('Logo Image'))
+                                    ->disk('public')
+                                    ->directory('branding')
+                                    ->visibility('public')
+                                    ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                                    ->maxSize(512)
+                                    ->required()
+                                    ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
+                            ])
+                            ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark')),
                         FormAction::make('removeLogo')
                             ->label(__('Remove Logos'))
                             ->color('danger')
