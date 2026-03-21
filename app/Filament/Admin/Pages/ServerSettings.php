@@ -39,7 +39,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Url;
 use Livewire\WithFileUploads;
 
@@ -295,17 +294,9 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->placeholder(__('Jabali'))
                         ->helperText(__('Appears in browser title and navigation'))
                         ->required(),
-                    Grid::make(['default' => 2, 'md' => 4])->schema([
-                        Placeholder::make('currentLogoLight')
-                            ->label(__('Light Logo'))
-                            ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4" style="min-height:80px">'
-                                .'<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
-                                .'" alt="Light Logo" class="max-h-12 max-w-full object-contain">'
-                                .'</div>'
-                            )),
+                    Grid::make(['default' => 1, 'md' => 2])->schema([
                         FileUpload::make('brandingLogo')
-                            ->label(__('Upload Light Logo'))
+                            ->label(__('Light Logo').($this->currentLogo ? ' ('.__('Custom').')' : ' ('.__('Default').')'))
                             ->image()
                             ->disk('public')
                             ->directory('branding')
@@ -314,17 +305,10 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->maxSize(512)
                             ->imageResizeTargetWidth('400')
                             ->imageResizeTargetHeight('100')
+                            ->placeholder($this->currentLogo ? __('Current: :file — drop new file to replace', ['file' => basename($this->currentLogo)]) : __('Drop file or click to upload'))
                             ->helperText(__('Max 512KB, 400x100px')),
-                        Placeholder::make('currentLogoDarkPreview')
-                            ->label(__('Dark Logo'))
-                            ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4" style="min-height:80px">'
-                                .'<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
-                                .'" alt="Dark Logo" class="max-h-12 max-w-full object-contain">'
-                                .'</div>'
-                            )),
                         FileUpload::make('brandingLogoDark')
-                            ->label(__('Upload Dark Logo'))
+                            ->label(__('Dark Logo').($this->currentLogoDark ? ' ('.__('Custom').')' : ' ('.__('Default').')'))
                             ->image()
                             ->disk('public')
                             ->directory('branding')
@@ -333,6 +317,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->maxSize(512)
                             ->imageResizeTargetWidth('400')
                             ->imageResizeTargetHeight('100')
+                            ->placeholder($this->currentLogoDark ? __('Current: :file — drop new file to replace', ['file' => basename($this->currentLogoDark)]) : __('Drop file or click to upload'))
                             ->helperText(__('Max 512KB, 400x100px')),
                     ]),
                     Actions::make([
