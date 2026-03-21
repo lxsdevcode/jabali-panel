@@ -65,6 +65,8 @@ class ServerSettings extends Page implements HasActions, HasForms
     // Form data arrays
     public ?array $brandingData = [];
 
+    public mixed $brandingLogo = null;
+
     public ?array $hostnameData = [];
 
     public ?array $dnsData = [];
@@ -289,27 +291,17 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->placeholder(__('Jabali'))
                             ->helperText(__('Appears in browser title and navigation'))
                             ->required(),
+                        FileUpload::make('brandingLogo')
+                            ->label(__('Panel Logo'))
+                            ->image()
+                            ->disk('public')
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                            ->maxSize(1024)
+                            ->helperText(__('PNG, JPEG, WebP or SVG, max 1MB')),
                     ]),
                     Actions::make([
-                        FormAction::make('uploadLogo')
-                            ->label(__('Upload Logo'))
-                            ->icon('heroicon-o-arrow-up-tray')
-                            ->color('gray')
-                            ->form([
-                                FileUpload::make('logo')
-                                    ->label(__('Logo Image'))
-                                    ->image()
-                                    ->disk('public')
-                                    ->directory('branding')
-                                    ->visibility('public')
-                                    ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp'])
-                                    ->maxSize(1024)
-                                    ->required()
-                                    ->helperText(__('PNG, JPEG or WebP, max 1MB')),
-                            ])
-                            ->action(function (array $data): void {
-                                $this->uploadLogo($data);
-                            }),
                         FormAction::make('removeLogo')
                             ->label(__('Remove Logo'))
                             ->color('danger')
@@ -797,6 +789,12 @@ class ServerSettings extends Page implements HasActions, HasForms
         }
 
         DnsSetting::set('panel_name', trim($data['panel_name']));
+
+        // Handle logo upload if a new file was selected
+        if (! empty($this->brandingLogo)) {
+            $this->uploadLogo(['logo' => $this->brandingLogo]);
+        }
+
         DnsSetting::clearCache();
 
         Notification::make()->title(__('Branding updated'))->body(__('Refresh to see changes.'))->success()->send();
