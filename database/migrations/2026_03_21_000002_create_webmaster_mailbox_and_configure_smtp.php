@@ -116,7 +116,10 @@ return new class extends Migration
             return;
         }
 
-        $mailHost = str_starts_with($hostname, 'mail.') ? $hostname : "mail.{$hostname}";
+        // Extract root domain for mail host (e.g., mx.jabali-panel.com -> jabali-panel.com)
+        $parts = explode('.', $hostname);
+        $rootDomain = count($parts) > 2 ? implode('.', array_slice($parts, -2)) : $hostname;
+        $mailHost = str_starts_with($hostname, 'mail.') ? $hostname : "mail.{$rootDomain}";
 
         if (! $password) {
             $mailbox = Mailbox::whereHas('emailDomain.domain', function ($q) use ($hostname) {
