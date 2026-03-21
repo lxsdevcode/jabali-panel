@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Services\Agent\AgentClient;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\Process\Process;
 
 return new class extends Migration
 {
@@ -19,6 +19,10 @@ return new class extends Migration
         $modified = false;
 
         foreach (File::glob('/etc/nginx/sites-enabled/*.conf') as $conf) {
+            if (! is_writable($conf)) {
+                continue;
+            }
+
             $content = File::get($conf);
 
             if (str_contains($content, 'location /branding/') || ! str_contains($content, 'location = /webmail')) {
@@ -36,14 +40,12 @@ return new class extends Migration
         }
 
         if ($modified) {
-            $test = new Process(['nginx', '-t']);
-            $test->run();
-
-            if ($test->isSuccessful()) {
-                (new Process(['systemctl', 'reload', 'nginx']))->run();
+            try {
+                $agent = app(AgentClient::class);
+                $agent->send('service.reload', ['service' => 'nginx']);
                 Log::info('Migration: Branding nginx alias added to vhosts');
-            } else {
-                Log::warning('Migration: Nginx config test failed after adding branding alias');
+            } catch (Exception $e) {
+                Log::warning("Migration: Could not reload nginx: {$e->getMessage()}");
             }
         }
     }

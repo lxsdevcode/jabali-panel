@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Models\DnsSetting;
+use App\Services\Agent\AgentClient;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\Process\Process;
 
 return new class extends Migration
 {
@@ -17,7 +17,7 @@ return new class extends Migration
         }
 
         $configPath = '/etc/stalwart-mail/config.toml';
-        if (! File::exists($configPath)) {
+        if (! File::exists($configPath) || ! is_readable($configPath)) {
             return;
         }
 
@@ -46,6 +46,13 @@ return new class extends Migration
             return;
         }
 
+        // Can't write as www-data — skip silently, postinst runs as root
+        if (! is_writable($configPath)) {
+            Log::info("Migration: Stalwart TLS fix skipped (no write permission), will apply on next root upgrade");
+
+            return;
+        }
+
         $expectedKey = "%{file:{$keyPath}}%";
         $config = preg_replace(
             '/\[certificate\.default\]\s*\n(?:(?:cert|private-key|default)\s*=\s*[^\n]+\n?)+/',
@@ -54,7 +61,14 @@ return new class extends Migration
         );
 
         File::put($configPath, $config);
-        (new Process(['systemctl', 'restart', 'stalwart-mail']))->setTimeout(30)->run();
+
+        try {
+            $agent = app(AgentClient::class);
+            $agent->send('service.restart', ['service' => 'stalwart-mail']);
+        } catch (Exception $e) {
+            Log::warning("Migration: Could not restart Stalwart: {$e->getMessage()}");
+        }
+
         Log::info("Migration: Stalwart TLS updated to use LE cert for {$certDomain}");
     }
 
