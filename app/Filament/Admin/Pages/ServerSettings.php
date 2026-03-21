@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Url;
 use Livewire\WithFileUploads;
 
@@ -295,28 +296,46 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->helperText(__('Appears in browser title and navigation'))
                         ->required(),
                     Grid::make(['default' => 1, 'md' => 2])->schema([
+                        Placeholder::make('currentLogoLight')
+                            ->label(__('Current Light Logo'))
+                            ->content(new HtmlString(
+                                '<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700" style="min-height:80px">'
+                                .'<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
+                                .'" alt="Light Logo" class="max-h-12 max-w-full object-contain">'
+                                .'</div>'
+                                .'<span class="mt-1 text-xs '.($this->currentLogo ? 'text-success-500' : 'text-gray-400').'">'
+                                .($this->currentLogo ? __('Custom') : __('Default')).'</span>'
+                            )),
+                        Placeholder::make('currentLogoDarkPreview')
+                            ->label(__('Current Dark Logo'))
+                            ->content(new HtmlString(
+                                '<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4" style="min-height:80px">'
+                                .'<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
+                                .'" alt="Dark Logo" class="max-h-12 max-w-full object-contain">'
+                                .'</div>'
+                                .'<span class="mt-1 text-xs '.($this->currentLogoDark ? 'text-success-500' : 'text-gray-400').'">'
+                                .($this->currentLogoDark ? __('Custom') : __('Default')).'</span>'
+                            )),
+                    ]),
+                    Grid::make(['default' => 1, 'md' => 2])->schema([
                         FileUpload::make('brandingLogo')
-                            ->label(__('Logo (Light Theme)'))
+                            ->label(__('Upload Light Logo'))
                             ->image()
                             ->disk('public')
                             ->directory('branding')
                             ->visibility('public')
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
                             ->maxSize(1024)
-                            ->helperText($this->currentLogo
-                                ? __('Current: :file', ['file' => basename($this->currentLogo)])
-                                : __('PNG, JPEG, WebP or SVG, max 1MB')),
+                            ->helperText(__('PNG, JPEG, WebP or SVG, max 1MB')),
                         FileUpload::make('brandingLogoDark')
-                            ->label(__('Logo (Dark Theme)'))
+                            ->label(__('Upload Dark Logo'))
                             ->image()
                             ->disk('public')
                             ->directory('branding')
                             ->visibility('public')
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
                             ->maxSize(1024)
-                            ->helperText($this->currentLogoDark
-                                ? __('Current: :file', ['file' => basename($this->currentLogoDark)])
-                                : __('PNG, JPEG, WebP or SVG, max 1MB')),
+                            ->helperText(__('PNG, JPEG, WebP or SVG, max 1MB')),
                     ]),
                     Actions::make([
                         FormAction::make('removeLogo')
