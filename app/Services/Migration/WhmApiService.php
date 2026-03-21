@@ -782,6 +782,20 @@ class WhmApiService
     }
 
     /**
+     * Delete an SSH key from a cPanel user (both private and public).
+     * Used to clear stale keys before reimporting.
+     */
+    public function deleteSshKey(string $user, string $keyName): void
+    {
+        try {
+            $this->api2($user, 'SSH', 'deletekey', ['key' => $keyName]);
+            $this->api2($user, 'SSH', 'deletekey', ['key' => "{$keyName}.pub"]);
+        } catch (Exception $e) {
+            // Ignore errors — key may not exist
+        }
+    }
+
+    /**
      * Import an SSH public key to a cPanel user via WHM.
      * cPanel needs both private and public key to authorize.
      */

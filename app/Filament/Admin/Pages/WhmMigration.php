@@ -976,6 +976,9 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
 
             $this->addAccountLog($cpanelUser, __('Importing SSH key to cPanel...'), 'pending');
 
+            // Delete any existing key first to avoid private/public mismatch
+            $whm->deleteSshKey($cpanelUser, $keyName);
+
             // Import SSH private key to the cPanel user via WHM
             $importResult = $whm->importSshPrivateKey($cpanelUser, $keyName, $privateKey);
             if (! ($importResult['success'] ?? false)) {
@@ -1108,7 +1111,9 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
 
         // Check if email already exists
         if (User::where('email', $email)->exists()) {
-            $email = "{$cpanelUser}.".time().'@'.explode('@', $email)[1];
+            $parts = explode('@', $email);
+            $emailDomain = $parts[1] ?? 'localhost';
+            $email = "{$cpanelUser}.".time()."@{$emailDomain}";
         }
 
         $password = bin2hex(random_bytes(12));

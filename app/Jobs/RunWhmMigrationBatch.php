@@ -150,6 +150,9 @@ class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
 
             $store->addAccountLog($cpanelUser, __('Importing SSH key to cPanel...'), 'pending');
 
+            // Delete any existing key first to avoid private/public mismatch
+            $whm->deleteSshKey($cpanelUser, $keyName);
+
             $importResult = $whm->importSshPrivateKey($cpanelUser, $keyName, $privateKey);
             if (! ($importResult['success'] ?? false)) {
                 throw new Exception($importResult['message'] ?? __('Failed to import SSH key'));
@@ -241,7 +244,9 @@ class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
         }
 
         if (User::where('email', $email)->exists()) {
-            $email = "{$cpanelUser}.".time().'@'.explode('@', $email)[1];
+            $parts = explode('@', $email);
+            $emailDomain = $parts[1] ?? 'localhost';
+            $email = "{$cpanelUser}.".time()."@{$emailDomain}";
         }
 
         $password = bin2hex(random_bytes(12));
