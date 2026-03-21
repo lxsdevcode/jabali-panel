@@ -2467,6 +2467,10 @@ renew-before = "30d"
 cert = "/etc/ssl/jabali/panel.crt"
 private-key = "/etc/ssl/jabali/panel.key"
 
+[auth.dkim]
+sign = [ { if = "listener != 'smtp'", then = "[]" },
+         { else = false } ]
+
 [authentication.fallback-admin]
 user = "admin"
 secret = "${admin_hash}"

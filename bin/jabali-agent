@@ -10234,6 +10234,73 @@ function stalwartAcmeRemoveDomain(string $domain): void
     logger("Removed {$mailHostname} from Stalwart ACME domains");
 }
 
+/**
+ * Add a DKIM signer to the auth.dkim.sign config in Stalwart's TOML.
+ * Stalwart 0.15.x settings API doesn't support "set" operations,
+ * so we manage the TOML file directly.
+ */
+function stalwartDkimAddSigner(string $signerId): void
+{
+    $configFile = '/etc/stalwart-mail/config.toml';
+    if (!file_exists($configFile)) {
+        return;
+    }
+
+    $config = file_get_contents($configFile);
+
+    // If auth.dkim section doesn't exist, add it
+    if (!str_contains($config, '[auth.dkim]')) {
+        $config .= "\n[auth.dkim]\nsign = [ { if = \"listener != 'smtp'\", then = \"['{$signerId}']\" },\n         { else = false } ]\n";
+        file_put_contents($configFile, $config, LOCK_EX);
+        exec('systemctl reload stalwart-mail 2>/dev/null || systemctl restart stalwart-mail 2>/dev/null');
+        return;
+    }
+
+    // If signer already in config, skip
+    if (str_contains($config, "'{$signerId}'")) {
+        return;
+    }
+
+    // Update existing sign line to include new signer
+    $config = preg_replace(
+        "/then\s*=\s*\"\[([^\]]*)\]\"/",
+        "then = \"[$1, '{$signerId}']\"",
+        $config
+    );
+
+    file_put_contents($configFile, $config, LOCK_EX);
+    exec('systemctl reload stalwart-mail 2>/dev/null || systemctl restart stalwart-mail 2>/dev/null');
+
+    logger("Added DKIM signer {$signerId} to Stalwart config");
+}
+
+/**
+ * Remove a DKIM signer from the auth.dkim.sign config.
+ */
+function stalwartDkimRemoveSigner(string $signerId): void
+{
+    $configFile = '/etc/stalwart-mail/config.toml';
+    if (!file_exists($configFile)) {
+        return;
+    }
+
+    $config = file_get_contents($configFile);
+
+    if (!str_contains($config, "'{$signerId}'")) {
+        return;
+    }
+
+    // Remove the signer from the list
+    $config = str_replace(", '{$signerId}'", '', $config);
+    $config = str_replace("'{$signerId}', ", '', $config);
+    $config = str_replace("'{$signerId}'", '', $config);
+
+    file_put_contents($configFile, $config, LOCK_EX);
+    exec('systemctl reload stalwart-mail 2>/dev/null || systemctl restart stalwart-mail 2>/dev/null');
+
+    logger("Removed DKIM signer {$signerId} from Stalwart config");
+}
+
 function stalwartEmailEnableDomain(array $params): array
 {
     $username = $params['username'] ?? '';
@@ -10362,6 +10429,11 @@ function stalwartEmailGenerateDkim(array $params): array
         $dnsRecord = $data['dns_record'] ?? '';
         $publicKey = $data['public_key'] ?? '';
         $actualSelector = $data['selector'] ?? $selector;
+
+        // Add signer to auth.dkim.sign in TOML config
+        // Stalwart 0.15.x settings API doesn't support "set", so we update the TOML file
+        $signerId = "ed25519-{$domain}";
+        stalwartDkimAddSigner($signerId);
 
         logger("Generated DKIM key for {$domain} (selector: {$actualSelector})");
 
