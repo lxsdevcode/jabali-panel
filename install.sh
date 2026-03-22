@@ -440,7 +440,7 @@ add_repositories() {
     run_quiet "Updating package lists..." apt-get update -qq
 
     # Install prerequisites (software-properties-common is optional, mainly for Ubuntu)
-    run_quiet "Installing prerequisites..." env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-transport-https ca-certificates curl gnupg lsb-release sudo
+    run_quiet "Installing prerequisites..." env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-transport-https ca-certificates curl gnupg lsb-release sudo whois
     apt-get install -y -qq software-properties-common > /dev/null 2>&1 || true
 
     # Detect codename
