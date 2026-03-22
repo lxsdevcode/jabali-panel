@@ -64,24 +64,47 @@ class DomainHealthService
     }
 
     /**
-     * @return array{status: string, expiry: string|null, registrar: string|null}
+     * Extract root domain from a hostname (e.g., mx.jabali-panel.com -> jabali-panel.com).
+     */
+    private function getRootDomain(string $domain): string
+    {
+        $parts = explode('.', $domain);
+
+        if (count($parts) <= 2) {
+            return $domain;
+        }
+
+        // Handle known two-part TLDs (co.uk, com.tr, com.br, etc.)
+        $twoPartTlds = ['co.uk', 'co.il', 'com.tr', 'com.br', 'com.au', 'co.nz', 'co.za', 'com.mx', 'org.uk', 'net.au', 'org.au'];
+        $lastTwo = implode('.', array_slice($parts, -2));
+
+        if (in_array($lastTwo, $twoPartTlds, true)) {
+            return implode('.', array_slice($parts, -3));
+        }
+
+        return implode('.', array_slice($parts, -2));
+    }
+
+    /**
+     * @return array{status: string, expiry: string|null, registrar: string|null, raw: string|null}
      */
     public function checkWhois(Domain $domain): array
     {
         try {
-            $process = new Process(['whois', $domain->domain]);
+            $whoisDomain = $this->getRootDomain($domain->domain);
+            $process = new Process(['whois', $whoisDomain]);
             $process->setTimeout(10);
             $process->run();
 
             if (! $process->isSuccessful()) {
-                return ['status' => 'whois_error', 'expiry' => null, 'registrar' => null];
+                return ['status' => 'whois_error', 'expiry' => null, 'registrar' => null, 'raw' => $process->getErrorOutput()];
             }
 
             $output = $process->getOutput();
 
             // Check for "not found" / unregistered indicators
             if (preg_match('/No match|NOT FOUND|No Data Found|No entries found/i', $output)) {
-                return ['status' => 'unregistered', 'expiry' => null, 'registrar' => null];
+                return ['status' => 'unregistered', 'expiry' => null, 'registrar' => null, 'raw' => $output];
             }
 
             // Parse expiry date
@@ -106,12 +129,12 @@ class DomainHealthService
 
             // Check if expired
             if ($expiry && Carbon::parse($expiry)->isPast()) {
-                return ['status' => 'expired', 'expiry' => $expiry, 'registrar' => $registrar];
+                return ['status' => 'expired', 'expiry' => $expiry, 'registrar' => $registrar, 'raw' => $output];
             }
 
-            return ['status' => 'registered', 'expiry' => $expiry, 'registrar' => $registrar];
+            return ['status' => 'registered', 'expiry' => $expiry, 'registrar' => $registrar, 'raw' => $output];
         } catch (\Throwable $e) {
-            return ['status' => 'whois_error', 'expiry' => null, 'registrar' => null];
+            return ['status' => 'whois_error', 'expiry' => null, 'registrar' => null, 'raw' => null];
         }
     }
 

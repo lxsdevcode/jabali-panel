@@ -147,11 +147,17 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->icon('heroicon-o-information-circle')
                     ->color('info')
                     ->modalHeading(fn (Domain $record): string => $record->domain)
-                    ->modalContent(fn (Domain $record) => view('filament.admin.pages.domain-info-modal', [
-                        'domain' => $record,
-                    ]))
+                    ->modalContent(function (Domain $record) {
+                        $whoisData = app(DomainHealthService::class)->checkWhois($record);
+
+                        return view('filament.admin.pages.domain-info-modal', [
+                            'domain' => $record,
+                            'whoisData' => $whoisData,
+                        ]);
+                    })
                     ->modalSubmitAction(false)
-                    ->modalCancelActionLabel(__('Close')),
+                    ->modalCancelActionLabel(__('Close'))
+                    ->modalWidth('3xl'),
             ])
             ->headerActions([
                 Action::make('checkAllDns')
