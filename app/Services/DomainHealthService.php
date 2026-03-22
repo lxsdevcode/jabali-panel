@@ -42,10 +42,11 @@ class DomainHealthService
         $serverIp = ServerFacts::serverIp('127.0.0.1');
 
         try {
-            $resolvedIp = gethostbyname($domain->domain);
+            // Use dns_get_record for external DNS lookup (bypasses /etc/hosts)
+            $records = dns_get_record($domain->domain, DNS_A);
+            $resolvedIp = $records[0]['ip'] ?? null;
 
-            // gethostbyname returns the hostname if it can't resolve
-            if ($resolvedIp === $domain->domain) {
+            if (! $resolvedIp) {
                 return ['status' => 'dns_missing', 'resolved_ip' => null, 'server_ip' => $serverIp];
             }
 
