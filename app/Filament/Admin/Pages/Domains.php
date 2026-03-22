@@ -57,7 +57,8 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 TextColumn::make('domain')
                     ->label(__('Domain'))
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->url(fn (Domain $record): string => "https://{$record->domain}", shouldOpenInNewTab: true),
                 TextColumn::make('user.username')
                     ->label(__('Owner'))
                     ->searchable()
@@ -158,14 +159,6 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->color(fn (Domain $record): string => $record->is_active ? 'warning' : 'success')
                     ->requiresConfirmation()
                     ->action(fn (Domain $record) => $this->toggleDomain($record)),
-                Action::make('deleteDomain')
-                    ->label(__('Delete'))
-                    ->icon('heroicon-o-trash')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->modalHeading(fn (Domain $record): string => __('Delete :domain', ['domain' => $record->domain]))
-                    ->modalDescription(__('This will permanently delete the domain, its DNS records, SSL certificates, and all associated data. This cannot be undone.'))
-                    ->action(fn (Domain $record) => $this->deleteDomain($record)),
                 Action::make('domainInfo')
                     ->label(__('Domain Info'))
                     ->icon('heroicon-o-information-circle')
@@ -182,6 +175,14 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel(__('Close'))
                     ->modalWidth('3xl'),
+                Action::make('deleteDomain')
+                    ->iconButton()
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Domain $record): string => __('Delete :domain', ['domain' => $record->domain]))
+                    ->modalDescription(__('This will permanently delete the domain, its DNS records, SSL certificates, and all associated data. This cannot be undone.'))
+                    ->action(fn (Domain $record) => $this->deleteDomain($record)),
             ])
             ->headerActions([
                 Action::make('checkAllDns')
