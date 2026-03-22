@@ -58,6 +58,7 @@ class UsersTable
 
                 TextColumn::make('disk_usage')
                     ->label(__('Disk Usage'))
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->getStateUsing(function ($record) {
                         $used = $record->disk_usage_formatted;
                         $quotaMb = $record->disk_quota_mb;

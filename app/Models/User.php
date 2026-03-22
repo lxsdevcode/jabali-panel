@@ -144,8 +144,14 @@ class User extends Authenticatable implements FilamentUser
     /**
      * Get disk usage in bytes.
      */
+    private ?int $cachedDiskUsageBytes = null;
+
     public function getDiskUsageBytes(): int
     {
+        if ($this->cachedDiskUsageBytes !== null) {
+            return $this->cachedDiskUsageBytes;
+        }
+
         // Disk usage must be obtained via the agent (root) to avoid permission-based undercounting.
         try {
             $agent = app(\App\Services\Agent\AgentClient::class);
@@ -154,13 +160,17 @@ class User extends Authenticatable implements FilamentUser
             $result = $agent->quotaGet($this->username, $mount);
 
             if (($result['success'] ?? false) && isset($result['used_mb'])) {
-                return (int) ($result['used_mb'] * 1024 * 1024);
+                $this->cachedDiskUsageBytes = (int) ($result['used_mb'] * 1024 * 1024);
+
+                return $this->cachedDiskUsageBytes;
             }
         } catch (\Throwable $e) {
             \Log::warning('Disk usage read failed via agent: '.$e->getMessage(), [
                 'username' => $this->username,
             ]);
         }
+
+        $this->cachedDiskUsageBytes = 0;
 
         return 0;
     }
