@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Pages;
 
 use App\Models\Domain;
 use App\Models\User;
+use App\Services\Agent\AgentClient;
 use App\Services\DomainHealthService;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -24,6 +25,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class Domains extends Page implements HasActions, HasForms, HasTable
 {
@@ -55,8 +57,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 TextColumn::make('domain')
                     ->label(__('Domain'))
                     ->searchable()
-                    ->sortable()
-                    ->description(fn (Domain $record): string => $record->document_root ?? ''),
+                    ->sortable(),
                 TextColumn::make('user.username')
                     ->label(__('Owner'))
                     ->searchable()
@@ -97,6 +98,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         'whois_error' => __('Error'),
                         default => __('Unchecked'),
                     })
+                    ->description(fn (Domain $record): ?string => $record->whois_expiry?->format('Y-m-d'))
                     ->color(fn (?string $state): string => match ($state) {
                         'registered' => 'success',
                         'expired' => 'danger',
@@ -142,6 +144,20 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->icon('heroicon-o-document-magnifying-glass')
                     ->color('gray')
                     ->action(fn (Domain $record) => $this->checkWhois($record)),
+                Action::make('toggleDomain')
+                    ->label(fn (Domain $record): string => $record->is_active ? __('Disable') : __('Enable'))
+                    ->icon(fn (Domain $record): string => $record->is_active ? 'heroicon-o-pause-circle' : 'heroicon-o-play-circle')
+                    ->color(fn (Domain $record): string => $record->is_active ? 'warning' : 'success')
+                    ->requiresConfirmation()
+                    ->action(fn (Domain $record) => $this->toggleDomain($record)),
+                Action::make('deleteDomain')
+                    ->label(__('Delete'))
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Domain $record): string => __('Delete :domain', ['domain' => $record->domain]))
+                    ->modalDescription(__('This will permanently delete the domain, its DNS records, SSL certificates, and all associated data. This cannot be undone.'))
+                    ->action(fn (Domain $record) => $this->deleteDomain($record)),
                 Action::make('domainInfo')
                     ->label(__('Domain Info'))
                     ->icon('heroicon-o-information-circle')
@@ -168,6 +184,14 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->modalHeading(__('Check All DNS'))
                     ->modalDescription(__('This will check DNS resolution for all domains. This may take a while.'))
                     ->action(fn () => $this->checkAllDns()),
+                Action::make('checkAllWhois')
+                    ->label(__('Check All Registration'))
+                    ->icon('heroicon-o-document-magnifying-glass')
+                    ->color('gray')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Check All Registration'))
+                    ->modalDescription(__('This will run WHOIS lookups for all domains. This may take a while.'))
+                    ->action(fn () => $this->checkAllWhois()),
             ])
             ->defaultSort('domain', 'asc')
             ->heading(__('Domains'));
@@ -240,6 +264,68 @@ class Domains extends Page implements HasActions, HasForms, HasTable
         Notification::make()
             ->title(__('DNS Check Complete'))
             ->body(__('All domains have been checked.'))
+            ->success()
+            ->send();
+    }
+
+    public function checkAllWhois(): void
+    {
+        $service = app(DomainHealthService::class);
+        $domains = Domain::all();
+
+        foreach ($domains as $domain) {
+            $result = $service->checkWhois($domain);
+            $domain->update([
+                'whois_status' => $result['status'],
+                'whois_expiry' => $result['expiry'],
+            ]);
+        }
+
+        Notification::make()
+            ->title(__('Registration Check Complete'))
+            ->body(__('All domains have been checked.'))
+            ->success()
+            ->send();
+    }
+
+    public function toggleDomain(Domain $domain): void
+    {
+        $domain->update(['is_active' => ! $domain->is_active]);
+
+        if ($domain->is_active) {
+            try {
+                app(AgentClient::class)->send('domain.enable', ['domain' => $domain->domain]);
+            } catch (\Throwable $e) {
+                Log::warning("Failed to enable domain {$domain->domain}: {$e->getMessage()}");
+            }
+        } else {
+            try {
+                app(AgentClient::class)->send('domain.disable', ['domain' => $domain->domain]);
+            } catch (\Throwable $e) {
+                Log::warning("Failed to disable domain {$domain->domain}: {$e->getMessage()}");
+            }
+        }
+
+        Notification::make()
+            ->title($domain->is_active ? __('Domain enabled') : __('Domain disabled'))
+            ->body($domain->domain)
+            ->success()
+            ->send();
+    }
+
+    public function deleteDomain(Domain $domain): void
+    {
+        try {
+            app(AgentClient::class)->domainDelete($domain->user->username, $domain->domain);
+        } catch (\Throwable $e) {
+            Log::warning("Failed to delete domain {$domain->domain} from server: {$e->getMessage()}");
+        }
+
+        $domain->delete();
+
+        Notification::make()
+            ->title(__('Domain deleted'))
+            ->body($domain->domain)
             ->success()
             ->send();
     }
