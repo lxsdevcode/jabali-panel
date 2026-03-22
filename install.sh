@@ -1394,6 +1394,11 @@ configure_nginx() {
             sed -i '/server_tokens/a\    client_max_body_size 512M;\n    client_body_timeout 600s;\n    fastcgi_read_timeout 600s;\n    proxy_read_timeout 600s;' "$nginx_conf"
         fi
 
+        # Increase server_names_hash for hosting servers with many domains
+        if ! grep -q "^[[:space:]]*server_names_hash_max_size" "$nginx_conf"; then
+            sed -i '/server_tokens/a\    server_names_hash_max_size 1024;\n    server_names_hash_bucket_size 128;' "$nginx_conf"
+        fi
+
         # Add FastCGI cache settings if not present
         if ! grep -q "fastcgi_cache_path" "$nginx_conf"; then
             # Create cache directory
@@ -1705,7 +1710,7 @@ for conf in /etc/nginx/sites-enabled/*; do
                 logdir=$(dirname "$logpath")
                 if [ ! -d "$logdir" ]; then
                     mkdir -p "$logdir"
-                    if [[ "$logdir" =~ ^/home/([^/]+)/domains/([^/]+)/logs$ ]]; then
+                    if [[ "$logdir" =~ ^/home/([^/]+)/ ]]; then
                         username="${BASH_REMATCH[1]}"
                         id "$username" &>/dev/null && chown "$username:$username" "$logdir"
                     fi
