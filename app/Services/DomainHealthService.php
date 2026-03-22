@@ -97,11 +97,12 @@ class DomainHealthService
             $process->setTimeout(10);
             $process->run();
 
-            if (! $process->isSuccessful()) {
+            $output = $process->getOutput();
+
+            // whois may exit non-zero but still return useful data on stdout
+            if (empty(trim($output))) {
                 return ['status' => 'whois_error', 'expiry' => null, 'registrar' => null, 'raw' => $process->getErrorOutput()];
             }
-
-            $output = $process->getOutput();
 
             // Check for "not found" / unregistered indicators
             if (preg_match('/No match|NOT FOUND|No Data Found|No entries found/i', $output)) {
