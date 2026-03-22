@@ -120,6 +120,13 @@ Schedule::call(function () {
     }
 })->everyFiveMinutes()->name('sso-token-cleanup')->withoutOverlapping();
 
+// Domain DNS Health Check - runs every 6 hours to check DNS resolution status
+Schedule::command('jabali:check-domain-dns')
+    ->everySixHours()
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/domain-dns-check.log'));
+
 // Impersonation Token Cleanup - runs daily to remove expired/used tokens
 Schedule::call(function () {
     \App\Models\ImpersonationToken::where(function ($q) {

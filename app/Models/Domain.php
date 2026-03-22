@@ -73,6 +73,11 @@ class Domain extends Model
         'ssl_enabled',
         'directory_index',
         'page_cache_enabled',
+        'dns_status',
+        'dns_resolved_ip',
+        'dns_checked_at',
+        'whois_status',
+        'whois_expiry',
     ];
 
     protected function casts(): array
@@ -82,6 +87,8 @@ class Domain extends Model
             'is_active' => 'boolean',
             'ssl_enabled' => 'boolean',
             'page_cache_enabled' => 'boolean',
+            'dns_checked_at' => 'datetime',
+            'whois_expiry' => 'date',
         ];
 
     }
