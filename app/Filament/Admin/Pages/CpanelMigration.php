@@ -81,9 +81,6 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
     // Track step completion for proper Next button state
     public bool $step1Complete = false;
 
-    // Current active tab for data display
-    public string $activeDataTab = 'domains';
-
     // User mode: 'create' (new user from backup) or 'existing' (select existing user)
     public string $userMode = 'create';
 

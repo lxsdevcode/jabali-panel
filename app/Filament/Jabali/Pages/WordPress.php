@@ -67,12 +67,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
     public array $credentials = [];
 
-    // Scan modal
-    public bool $showScanModal = false;
-
     public array $scannedSites = [];
-
-    public bool $isScanning = false;
 
     // Security scan
     public bool $showSecurityScanModal = false;

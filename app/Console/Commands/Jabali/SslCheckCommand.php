@@ -12,7 +12,6 @@ use App\Services\Agent\AgentClient;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 
 class SslCheckCommand extends Command
 {

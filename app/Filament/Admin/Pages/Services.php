@@ -42,8 +42,6 @@ class Services extends Page implements HasActions, HasForms, HasTable
 
     public array $services = [];
 
-    public ?string $selectedService = null;
-
     protected ?array $managedServices = null;
 
     protected function getManagedServices(): array

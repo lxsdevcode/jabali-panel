@@ -128,14 +128,6 @@ class Backup extends Model
     }
 
     /**
-     * Check if backup is a server-wide backup.
-     */
-    public function isServerBackup(): bool
-    {
-        return $this->type === 'server';
-    }
-
-    /**
      * Check if backup is stored locally.
      */
     public function isLocal(): bool
@@ -157,18 +149,6 @@ class Backup extends Model
     public function canDownload(): bool
     {
         return $this->status === 'completed' && $this->local_path && file_exists($this->local_path);
-    }
-
-    /**
-     * Get the download path for the backup.
-     */
-    public function getDownloadPath(): ?string
-    {
-        if ($this->canDownload()) {
-            return $this->local_path;
-        }
-
-        return null;
     }
 
     /**

@@ -83,14 +83,6 @@ class BackupDestination extends Model
     }
 
     /**
-     * Get config value by key.
-     */
-    public function getConfigValue(string $key, mixed $default = null): mixed
-    {
-        return $this->config[$key] ?? $default;
-    }
-
-    /**
      * Scope for active destinations.
      */
     public function scopeActive($query)

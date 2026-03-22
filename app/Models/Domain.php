@@ -131,22 +131,6 @@ class Domain extends Model
         return $this->hasOne(DomainHotlinkSetting::class);
     }
 
-    public function getOrCreateHotlinkSetting(): DomainHotlinkSetting
-    {
-        return $this->hotlinkSetting ?? $this->hotlinkSetting()->create([
-            'is_enabled' => false,
-            'protected_extensions' => DomainHotlinkSetting::getDefaultExtensions(),
-        ]);
-    }
-
-    /**
-     * Check if email is enabled for this domain
-     */
-    public function hasEmailEnabled(): bool
-    {
-        return $this->emailDomain()->exists() && $this->emailDomain->is_active;
-    }
-
     /**
      * Check if SSL is active for this domain
      */

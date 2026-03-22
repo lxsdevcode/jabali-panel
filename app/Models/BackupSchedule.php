@@ -79,22 +79,6 @@ class BackupSchedule extends Model
     }
 
     /**
-     * Check if the schedule should run now.
-     */
-    public function shouldRun(): bool
-    {
-        if (! $this->is_active) {
-            return false;
-        }
-
-        if (! $this->next_run_at) {
-            return true;
-        }
-
-        return $this->next_run_at->isPast();
-    }
-
-    /**
      * Calculate and set the next run time.
      */
     public function calculateNextRun(): Carbon

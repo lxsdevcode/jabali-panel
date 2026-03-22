@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Jabali;
 
 use App\Models\User;
+use App\Support\PasswordGenerator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 
@@ -29,17 +30,7 @@ class UserCommand extends Command
 
     private function generateSecurePassword(int $length = 16): string
     {
-        $lower = 'abcdefghijklmnopqrstuvwxyz';
-        $upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        $numbers = '0123456789';
-        $special = '!@#$%^&*';
-        $password = $lower[random_int(0, 25)].$upper[random_int(0, 25)].$numbers[random_int(0, 9)].$special[random_int(0, 7)];
-        $all = $lower.$upper.$numbers.$special;
-        for ($i = 4; $i < $length; $i++) {
-            $password .= $all[random_int(0, strlen($all) - 1)];
-        }
-
-        return str_shuffle($password);
+        return PasswordGenerator::generate($length);
     }
 
     private function validatePassword(string $password): ?string

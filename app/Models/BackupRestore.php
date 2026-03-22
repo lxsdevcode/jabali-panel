@@ -89,20 +89,6 @@ class BackupRestore extends Model
     }
 
     /**
-     * Update progress.
-     */
-    public function updateProgress(int $progress, ?string $message = null): void
-    {
-        $this->progress = min(100, max(0, $progress));
-
-        if ($message) {
-            $this->appendLog($message);
-        } else {
-            $this->save();
-        }
-    }
-
-    /**
      * Mark as running.
      */
     public function markAsRunning(): void

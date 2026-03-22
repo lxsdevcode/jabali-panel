@@ -145,12 +145,4 @@ class SslCertificate extends Model
         $this->increment('renewal_attempts');
         $this->update(['last_check_at' => now()]);
     }
-
-    public function resetRenewalAttempts(): void
-    {
-        $this->update([
-            'renewal_attempts' => 0,
-            'last_error' => null,
-        ]);
-    }
 }

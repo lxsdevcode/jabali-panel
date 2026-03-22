@@ -67,15 +67,6 @@ class Mailbox extends Model
         }
     }
 
-    /**
-     * Store encrypted password
-     */
-    public function setPlainPassword(string $password): void
-    {
-        $this->password_encrypted = Crypt::encryptString($password);
-        $this->save();
-    }
-
     public function emailDomain(): BelongsTo
     {
         return $this->belongsTo(EmailDomain::class);
@@ -143,21 +134,5 @@ class Mailbox extends Model
     public function getQuotaUsedFormattedAttribute(): string
     {
         return Formatter::bytes($this->quota_used_bytes);
-    }
-
-    /**
-     * Check if mailbox is near quota (>80%)
-     */
-    public function isNearQuota(): bool
-    {
-        return $this->quota_percent >= 80;
-    }
-
-    /**
-     * Check if mailbox is over quota
-     */
-    public function isOverQuota(): bool
-    {
-        return $this->quota_used_bytes >= $this->quota_bytes;
     }
 }

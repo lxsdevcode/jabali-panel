@@ -69,8 +69,6 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
     public ?string $selectedUser = null;
 
-    public ?string $selectedDatabase = null;
-
     public string $credDatabase = '';
 
     public string $credUser = '';

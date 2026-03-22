@@ -6,6 +6,7 @@ namespace App\Livewire;
 
 use App\Models\MysqlCredential;
 use App\Services\Agent\AgentClient;
+use App\Support\PasswordGenerator;
 use App\Support\SafeError;
 use Exception;
 use Filament\Actions\Action;
@@ -39,8 +40,6 @@ class DatabaseUsersTable extends Component implements HasActions, HasForms, HasT
     public array $userGrants = [];
 
     public array $databases = [];
-
-    public ?string $selectedUser = null;
 
     protected $listeners = ['refresh-database-users' => 'refreshData'];
 
@@ -299,13 +298,7 @@ class DatabaseUsersTable extends Component implements HasActions, HasForms, HasT
 
     public function generateSecurePassword(int $length = 16): string
     {
-        $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
-        $password = '';
-        for ($i = 0; $i < $length; $i++) {
-            $password .= $chars[random_int(0, strlen($chars) - 1)];
-        }
-
-        return $password;
+        return PasswordGenerator::generate($length);
     }
 
     public function render()
