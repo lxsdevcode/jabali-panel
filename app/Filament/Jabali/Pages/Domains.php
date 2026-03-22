@@ -78,7 +78,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Domain'))
                     ->icon('heroicon-o-globe-alt')
                     ->iconColor('primary')
-                    ->description(fn (Domain $record) => $record->document_root)
+                    ->description(fn (Domain $record) => preg_replace('#^/home/[^/]+/#', '', $record->document_root ?? ''))
                     ->url(fn (Domain $record) => 'http://'.$record->domain, shouldOpenInNewTab: true)
                     ->searchable()
                     ->sortable(),
