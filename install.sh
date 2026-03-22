@@ -1396,7 +1396,7 @@ configure_nginx() {
 
         # Increase server_names_hash for hosting servers with many domains
         if ! grep -q "^[[:space:]]*server_names_hash_max_size" "$nginx_conf"; then
-            sed -i '/server_tokens/a\    server_names_hash_max_size 1024;\n    server_names_hash_bucket_size 128;' "$nginx_conf"
+            sed -i '/server_tokens/a\    server_names_hash_max_size 4096;\n    server_names_hash_bucket_size 128;' "$nginx_conf"
         fi
 
         # Add FastCGI cache settings if not present
