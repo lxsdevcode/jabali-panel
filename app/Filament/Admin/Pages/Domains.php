@@ -91,14 +91,21 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Registration'))
                     ->badge()
                     ->toggleable()
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'registered' => __('Registered'),
-                        'expired' => __('Expired'),
-                        'unregistered' => __('Unregistered'),
-                        'whois_error' => __('Error'),
-                        default => __('Unchecked'),
+                    ->formatStateUsing(function (?string $state, Domain $record): string {
+                        $label = match ($state) {
+                            'registered' => __('Registered'),
+                            'expired' => __('Expired'),
+                            'unregistered' => __('Unregistered'),
+                            'whois_error' => __('Error'),
+                            default => __('Unchecked'),
+                        };
+
+                        if ($record->whois_expiry) {
+                            $label .= ' · '.$record->whois_expiry->format('Y-m-d');
+                        }
+
+                        return $label;
                     })
-                    ->description(fn (Domain $record): ?string => $record->whois_expiry?->format('Y-m-d'))
                     ->color(fn (?string $state): string => match ($state) {
                         'registered' => 'success',
                         'expired' => 'danger',
