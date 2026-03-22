@@ -61,7 +61,8 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 TextColumn::make('user.username')
                     ->label(__('Owner'))
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->url(fn (Domain $record) => $record->user ? route('impersonate.start', ['user' => $record->user_id]) : null, shouldOpenInNewTab: true),
                 IconColumn::make('is_active')
                     ->label(__('Active'))
                     ->boolean()
