@@ -74,6 +74,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 TextColumn::make('dns_status')
                     ->label(__('DNS Status'))
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'points_here' => __('Points Here'),
                         'cloudflare' => __('Cloudflare'),
@@ -92,6 +93,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 TextColumn::make('whois_status')
                     ->label(__('Registration'))
                     ->badge()
+                    ->sortable()
                     ->toggleable()
                     ->formatStateUsing(function (?string $state, Domain $record): string {
                         $label = match ($state) {
