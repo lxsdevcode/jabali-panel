@@ -8,6 +8,7 @@ use App\Models\Backup;
 use App\Models\BackupSchedule;
 use App\Services\AdminNotificationService;
 use App\Services\Agent\AgentClient;
+use App\Services\Backup\BackupOrchestrator;
 use Exception;
 use Illuminate\Console\Command;
 
@@ -19,10 +20,13 @@ class RunBackupSchedules extends Command
 
     protected AgentClient $agent;
 
+    protected BackupOrchestrator $orchestrator;
+
     public function __construct()
     {
         parent::__construct();
         $this->agent = app(AgentClient::class);
+        $this->orchestrator = app(BackupOrchestrator::class);
     }
 
     public function handle(): int
@@ -94,10 +98,7 @@ class RunBackupSchedules extends Command
             if ($schedule->is_server_backup) {
                 if ($isIncrementalRemote) {
                     // Dirvish-style: rsync directly to remote with --link-dest
-                    $config = array_merge(
-                        $schedule->destination->config ?? [],
-                        ['type' => $schedule->destination->type]
-                    );
+                    $config = $this->orchestrator->buildDestinationConfig($schedule->destination);
                     $result = $this->agent->backupIncrementalDirect($config, [
                         'users' => $schedule->users,
                         'include_files' => $schedule->include_files,
@@ -148,14 +149,11 @@ class RunBackupSchedules extends Command
                 // Upload to remote if destination configured
                 if ($schedule->destination) {
                     $backup->load('destination'); // Load the relationship
-                    $uploadSuccess = $this->uploadToRemote($backup);
-
-                    // Delete local file after successful remote upload (unless keep_local is set)
                     $keepLocal = $schedule->metadata['keep_local_copy'] ?? false;
-                    if (! $keepLocal && $uploadSuccess && $backup->local_path) {
-                        $this->agent->backupDeleteServer($backup->local_path);
-                        $backup->update(['local_path' => null]);
-                        $this->info('Local backup deleted after remote upload');
+                    $uploadSuccess = $this->orchestrator->uploadToRemote($backup, $keepLocal);
+
+                    if ($uploadSuccess) {
+                        $this->info("Uploaded to remote: {$backup->destination->name}");
                     }
                 }
 
@@ -168,7 +166,7 @@ class RunBackupSchedules extends Command
                 $this->info("Backup completed: {$backup->name}");
 
                 // Apply retention policy
-                $this->applyRetention($schedule);
+                $this->orchestrator->applyRetention($schedule);
             } else {
                 throw new Exception($result['error'] ?? 'Backup failed');
             }
@@ -194,101 +192,5 @@ class RunBackupSchedules extends Command
         // Calculate next run
         $schedule->calculateNextRun();
         $schedule->save();
-    }
-
-    protected function uploadToRemote(Backup $backup): bool
-    {
-        if (! $backup->destination || ! $backup->local_path) {
-            return false;
-        }
-
-        try {
-            $backup->update(['status' => 'uploading']);
-
-            $config = array_merge(
-                $backup->destination->config ?? [],
-                ['type' => $backup->destination->type]
-            );
-            $backupType = $backup->metadata['backup_type'] ?? 'full';
-
-            $result = $this->agent->backupUploadRemote($backup->local_path, $config, $backupType);
-
-            if ($result['success']) {
-                $backup->update([
-                    'status' => 'completed',
-                    'remote_path' => $result['remote_path'] ?? null,
-                ]);
-                $this->info("Uploaded to remote: {$backup->destination->name}");
-
-                return true;
-            } else {
-                throw new Exception($result['error'] ?? 'Upload failed');
-            }
-        } catch (Exception $e) {
-            $backup->update([
-                'status' => 'completed', // Keep as completed since local exists
-                'error_message' => 'Remote upload failed: '.$e->getMessage(),
-            ]);
-            $this->warn("Remote upload failed: {$e->getMessage()}");
-
-            return false;
-        }
-    }
-
-    protected function applyRetention(BackupSchedule $schedule): void
-    {
-        $retentionCount = $schedule->retention_count ?? 7;
-
-        // Get backups from this schedule, ordered by date
-        // schedule_id is a top-level field on the backups table
-        $backups = Backup::where('schedule_id', $schedule->id)
-            ->where('status', 'completed')
-            ->orderByDesc('created_at')
-            ->get();
-
-        if ($backups->count() <= $retentionCount) {
-            return;
-        }
-
-        // Get backups to delete
-        $toDelete = $backups->slice($retentionCount);
-
-        foreach ($toDelete as $backup) {
-            $this->info("Deleting old backup: {$backup->name}");
-
-            // Delete local file
-            if ($backup->local_path && file_exists($backup->local_path)) {
-                $path = $backup->local_path;
-                $isValidPath = ! empty($path)
-                    && ! str_contains($path, '..')
-                    && (str_starts_with($path, '/home/') || str_starts_with($path, '/var/backups/'));
-
-                if (! $isValidPath) {
-                    $this->warn("Skipping deletion of invalid path: {$path}");
-                } elseif (is_file($path)) {
-                    unlink($path);
-                } else {
-                    exec('rm -rf '.escapeshellarg($path));
-                }
-            }
-
-            // Delete from remote if exists
-            if ($backup->remote_path && $backup->destination) {
-                try {
-                    $config = array_merge(
-                        $backup->destination->config ?? [],
-                        ['type' => $backup->destination->type]
-                    );
-                    $this->agent->backupDeleteRemote($backup->remote_path, $config);
-                } catch (Exception $e) {
-                    // Silent fail for remote deletion
-                }
-            }
-
-            $backup->delete();
-        }
-
-        $deletedCount = $toDelete->count();
-        $this->info("Deleted {$deletedCount} old backup(s) per retention policy.");
     }
 }

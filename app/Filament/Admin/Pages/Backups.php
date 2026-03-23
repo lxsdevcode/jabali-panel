@@ -1324,29 +1324,15 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
-            $result = $this->agent()->backupTestDestination($config);
-
-            $destination->update([
-                'last_tested_at' => now(),
-                'test_status' => $result['success'] ? 'success' : 'failed',
-                'test_message' => $result['message'] ?? $result['error'] ?? null,
-            ]);
+            $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
+            $result = $orchestrator->testDestination($destination);
 
             if ($result['success'] ?? false) {
-                Log::info("BackupDestination: Test passed for '{$destination->name}'");
                 Notification::make()->title(__('Connection successful'))->body(__('Connection and write permission verified.'))->success()->send();
             } else {
-                Log::warning("BackupDestination: Test failed for '{$destination->name}': ".($result['error'] ?? 'Unknown error'));
                 Notification::make()->title(__('Connection failed'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
             }
         } catch (Exception $e) {
-            Log::error("BackupDestination: Test error for '{$destination->name}': ".$e->getMessage());
-            $destination->update([
-                'last_tested_at' => now(),
-                'test_status' => 'failed',
-                'test_message' => $e->getMessage(),
-            ]);
             Notification::make()->title(__('Test failed'))->body(SafeError::message($e))->danger()->send();
         }
 
@@ -1418,40 +1404,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
     protected function uploadToRemote(Backup $backup, bool $keepLocal = false): bool
     {
-        if (! $backup->destination || ! $backup->local_path) {
-            return false;
-        }
+        $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
 
-        try {
-            $backup->update(['status' => 'uploading']);
-
-            $config = array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type]);
-            $backupType = $backup->metadata['backup_type'] ?? 'full';
-            $result = $this->agent()->backupUploadRemote($backup->local_path, $config, $backupType);
-
-            if ($result['success']) {
-                $backup->update([
-                    'status' => 'completed',
-                    'remote_path' => $result['remote_path'] ?? null,
-                ]);
-
-                if (! $keepLocal && $backup->local_path) {
-                    $this->agent()->backupDeleteServer($backup->local_path);
-                    $backup->update(['local_path' => null]);
-                }
-
-                return true;
-            } else {
-                throw new Exception($result['error'] ?? __('Upload failed'));
-            }
-        } catch (Exception $e) {
-            $backup->update([
-                'status' => 'completed',
-                'error_message' => __('Remote upload failed').': '.$e->getMessage(),
-            ]);
-
-            return false;
-        }
+        return $orchestrator->uploadToRemote($backup, $keepLocal);
     }
 
     public function deleteBackup(int $id): void
@@ -1461,43 +1416,20 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        // Delete local file/folder
-        if ($backup->local_path) {
-            try {
-                $result = $this->agent()->backupDeleteServer($backup->local_path);
-                if (! ($result['success'] ?? false)) {
-                    throw new Exception($result['error'] ?? __('Failed to delete local backup'));
-                }
-            } catch (Exception $e) {
-                Notification::make()
-                    ->title(__('Failed to delete local backup'))
-                    ->body(SafeError::message($e))
-                    ->danger()
-                    ->send();
+        try {
+            $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
+            $orchestrator->deleteBackup($backup);
+            Notification::make()->title(__('Backup deleted'))->success()->send();
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('Failed to delete backup'))
+                ->body(SafeError::message($e))
+                ->danger()
+                ->send();
 
-                return;
-            }
+            return;
         }
 
-        // Delete from remote destination if exists
-        if ($backup->remote_path && $backup->destination) {
-            try {
-                $config = array_merge(
-                    $backup->destination->config ?? [],
-                    ['type' => $backup->destination->type]
-                );
-                $this->agent()->send('backup.delete_remote', [
-                    'remote_path' => $backup->remote_path,
-                    'destination' => $config,
-                ]);
-            } catch (Exception $e) {
-                // Log but continue - we still want to delete the DB record
-                logger()->warning('Failed to delete remote backup: '.$e->getMessage());
-            }
-        }
-
-        $backup->delete();
-        Notification::make()->title(__('Backup deleted'))->success()->send();
         $this->resetTable();
     }
 
@@ -2021,91 +1953,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
     protected function getBackupManifest(Backup $backup, ?string $forUser = null): array
     {
-        $backupPath = $backup->local_path;
+        $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
 
-        if (! $backupPath || ! file_exists($backupPath)) {
-            return [
-                'username' => $forUser ?? ($backup->users[0] ?? ''),
-                'domains' => $backup->domains ?? [],
-                'databases' => $backup->databases ?? [],
-                'mailboxes' => $backup->mailboxes ?? [],
-                'mysql_users' => $backup->metadata['mysql_users'] ?? [],
-                'ssl_certificates' => $backup->ssl_certificates ?? [],
-                'dns_zones' => $backup->dns_zones ?? [],
-                'users' => $backup->users ?? [],
-            ];
-        }
-
-        try {
-            $result = $this->agent()->send('backup.get_info', [
-                'backup_path' => $backupPath,
-            ]);
-
-            if ($result['success'] ?? false) {
-                $manifest = $result['manifest'] ?? [];
-
-                if (isset($manifest['users']) && is_array($manifest['users']) && $manifest['type'] === 'server') {
-                    $userList = array_keys($manifest['users']);
-
-                    if ($forUser === null) {
-                        return [
-                            'username' => $userList[0] ?? '',
-                            'users' => $userList,
-                            'type' => 'server',
-                            'domains' => $this->aggregateFromUsers($manifest['users'], 'domains'),
-                            'databases' => $this->aggregateFromUsers($manifest['users'], 'databases'),
-                            'mailboxes' => $this->aggregateFromUsers($manifest['users'], 'mailboxes'),
-                            'mysql_users' => [],
-                            'ssl_certificates' => [],
-                            'dns_zones' => [],
-                        ];
-                    }
-
-                    if (isset($manifest['users'][$forUser])) {
-                        $userData = $manifest['users'][$forUser];
-
-                        return [
-                            'username' => $forUser,
-                            'users' => $userList,
-                            'type' => 'server',
-                            'domains' => $userData['domains'] ?? [],
-                            'databases' => $userData['databases'] ?? [],
-                            'mailboxes' => $userData['mailboxes'] ?? [],
-                            'mysql_users' => [],
-                            'ssl_certificates' => [],
-                            'dns_zones' => [],
-                        ];
-                    }
-                }
-
-                return $manifest;
-            }
-        } catch (Exception $e) {
-            // Fall back to stored data
-        }
-
-        return [
-            'username' => $forUser ?? ($backup->users[0] ?? ''),
-            'domains' => $backup->domains ?? [],
-            'databases' => $backup->databases ?? [],
-            'mailboxes' => $backup->mailboxes ?? [],
-            'mysql_users' => [],
-            'ssl_certificates' => [],
-            'dns_zones' => [],
-            'users' => $backup->users ?? [],
-        ];
-    }
-
-    protected function aggregateFromUsers(array $users, string $key): array
-    {
-        $result = [];
-        foreach ($users as $userData) {
-            if (isset($userData[$key]) && is_array($userData[$key])) {
-                $result = array_merge($result, $userData[$key]);
-            }
-        }
-
-        return array_unique($result);
+        return $orchestrator->getBackupManifest($backup, $forUser);
     }
 
     /**

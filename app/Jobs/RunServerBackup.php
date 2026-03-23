@@ -8,6 +8,7 @@ use App\Models\Backup;
 use App\Models\BackupSchedule;
 use App\Services\AdminNotificationService;
 use App\Services\Agent\AgentClient;
+use App\Services\Backup\BackupOrchestrator;
 use Exception;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -46,6 +47,7 @@ class RunServerBackup implements ShouldQueue
 
         $backupType = $backup->metadata['backup_type'] ?? 'full';
         $isIncrementalRemote = $backupType === 'incremental' && $backup->destination_id;
+        $orchestrator = app(BackupOrchestrator::class);
 
         try {
             $agent = app(AgentClient::class);
@@ -56,7 +58,7 @@ class RunServerBackup implements ShouldQueue
                     throw new Exception('Backup destination not found');
                 }
 
-                $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
+                $config = $orchestrator->buildDestinationConfig($destination);
 
                 $result = $agent->send('backup.incremental_direct', [
                     'destination' => $config,
@@ -87,7 +89,12 @@ class RunServerBackup implements ShouldQueue
                     IndexRemoteBackups::dispatch($backup->destination_id);
 
                     // Apply retention policy if this backup is from a schedule
-                    $this->applyRetention($backup);
+                    if ($backup->schedule_id) {
+                        $schedule = BackupSchedule::find($backup->schedule_id);
+                        if ($schedule) {
+                            $orchestrator->applyRetention($schedule);
+                        }
+                    }
 
                     // Send success notification
                     AdminNotificationService::backupSuccess(
@@ -125,13 +132,18 @@ class RunServerBackup implements ShouldQueue
 
                     // Upload to remote if destination configured
                     if ($backup->destination_id) {
-                        $this->uploadToRemote($backup, $agent);
+                        $orchestrator->uploadToRemote($backup);
                     }
 
                     Log::info("RunServerBackup: Backup {$this->backupId} completed successfully (full)");
 
                     // Apply retention policy if this backup is from a schedule
-                    $this->applyRetention($backup);
+                    if ($backup->schedule_id) {
+                        $schedule = BackupSchedule::find($backup->schedule_id);
+                        if ($schedule) {
+                            $orchestrator->applyRetention($schedule);
+                        }
+                    }
 
                     // Send success notification
                     AdminNotificationService::backupSuccess(
@@ -155,131 +167,5 @@ class RunServerBackup implements ShouldQueue
             // Send failure notification
             AdminNotificationService::backupFailure($backup->name, $e->getMessage());
         }
-    }
-
-    protected function uploadToRemote(Backup $backup, AgentClient $agent): void
-    {
-        if (! $backup->destination || ! $backup->local_path) {
-            return;
-        }
-
-        try {
-            $backup->update(['status' => 'uploading']);
-
-            $config = array_merge(
-                $backup->destination->config ?? [],
-                ['type' => $backup->destination->type]
-            );
-            $backupType = $backup->metadata['backup_type'] ?? 'full';
-
-            $result = $agent->send('backup.upload_remote', [
-                'local_path' => $backup->local_path,
-                'destination' => $config,
-                'backup_type' => $backupType,
-            ]);
-
-            if ($result['success'] ?? false) {
-                $backup->update([
-                    'status' => 'completed',
-                    'remote_path' => $result['remote_path'] ?? null,
-                ]);
-
-                Log::info("RunServerBackup: Uploaded backup {$this->backupId} to remote");
-
-                // Re-index remote backups for user discovery
-                IndexRemoteBackups::dispatch($backup->destination_id);
-            } else {
-                // Keep as completed since local exists, just log warning
-                $backup->update([
-                    'status' => 'completed',
-                    'error_message' => 'Remote upload failed: '.($result['error'] ?? 'Unknown error'),
-                ]);
-
-                Log::warning("RunServerBackup: Remote upload failed for {$this->backupId}");
-            }
-        } catch (Exception $e) {
-            $backup->update([
-                'status' => 'completed',
-                'error_message' => 'Remote upload failed: '.$e->getMessage(),
-            ]);
-
-            Log::warning("RunServerBackup: Remote upload exception for {$this->backupId}: ".$e->getMessage());
-        }
-    }
-
-    protected function applyRetention(Backup $backup): void
-    {
-        Log::info("RunServerBackup: applyRetention called for backup {$backup->id}, schedule_id: ".($backup->schedule_id ?? 'NULL'));
-
-        // Only apply retention if backup has a schedule
-        if (! $backup->schedule_id) {
-            Log::info('RunServerBackup: No schedule_id, skipping retention');
-
-            return;
-        }
-
-        $schedule = BackupSchedule::find($backup->schedule_id);
-        if (! $schedule) {
-            Log::info("RunServerBackup: Schedule not found for id {$backup->schedule_id}");
-
-            return;
-        }
-
-        $retentionCount = $schedule->retention_count ?? 7;
-        Log::info("RunServerBackup: Retention count is {$retentionCount}");
-
-        // Get backups from this schedule, ordered by date
-        $backups = Backup::where('schedule_id', $schedule->id)
-            ->where('status', 'completed')
-            ->orderByDesc('created_at')
-            ->get();
-
-        if ($backups->count() <= $retentionCount) {
-            return;
-        }
-
-        // Get backups to delete (keep newest $retentionCount)
-        $toDelete = $backups->slice($retentionCount);
-        $agent = app(AgentClient::class);
-
-        foreach ($toDelete as $oldBackup) {
-            Log::info("RunServerBackup: Deleting old backup per retention: {$oldBackup->name}");
-
-            // Delete local file/folder
-            if ($oldBackup->local_path && file_exists($oldBackup->local_path)) {
-                $deletePath = $oldBackup->local_path;
-                $isValidPath = ! empty($deletePath)
-                    && ! str_contains($deletePath, '..')
-                    && (str_starts_with($deletePath, '/home/') || str_starts_with($deletePath, '/var/backups/'));
-
-                if (! $isValidPath) {
-                    Log::warning("RunServerBackup: Skipping deletion of invalid path: {$deletePath}");
-                } elseif (is_file($deletePath)) {
-                    unlink($deletePath);
-                } else {
-                    exec('rm -rf '.escapeshellarg($deletePath));
-                }
-            }
-
-            // Delete from remote if exists
-            if ($oldBackup->remote_path && $oldBackup->destination) {
-                try {
-                    $config = array_merge(
-                        $oldBackup->destination->config ?? [],
-                        ['type' => $oldBackup->destination->type]
-                    );
-                    $agent->send('backup.delete_remote', [
-                        'remote_path' => $oldBackup->remote_path,
-                        'destination' => $config,
-                    ]);
-                } catch (Exception $e) {
-                    Log::warning('RunServerBackup: Failed to delete remote backup: '.$e->getMessage());
-                }
-            }
-
-            $oldBackup->delete();
-        }
-
-        Log::info('RunServerBackup: Deleted '.$toDelete->count().' old backup(s) per retention policy');
     }
 }

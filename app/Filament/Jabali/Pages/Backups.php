@@ -656,41 +656,22 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        try {
-            $backup->update(['status' => 'uploading']);
+        $backup->update(['destination_id' => $destination->id]);
+        $backup->load('destination');
 
-            $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
+        $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
+        $success = $orchestrator->uploadToRemote($backup, true);
 
-            $result = $this->agent()->send('backup.upload_remote', [
-                'local_path' => $backup->local_path,
-                'destination' => $config,
-                'backup_type' => 'full',
-            ]);
-
-            if ($result['success'] ?? false) {
-                $backup->update([
-                    'status' => 'completed',
-                    'remote_path' => $result['remote_path'] ?? null,
-                ]);
-                Notification::make()
-                    ->title(__('Backup created and uploaded'))
-                    ->body(__('Backup saved to :destination', ['destination' => $destination->name]))
-                    ->success()
-                    ->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Upload failed'));
-            }
-        } catch (Exception $e) {
-            $backup->update([
-                'status' => 'completed',
-                'error_message' => __('Local backup created, but upload failed: ').$e->getMessage(),
-            ]);
+        if ($success) {
+            Notification::make()
+                ->title(__('Backup created and uploaded'))
+                ->body(__('Backup saved to :destination', ['destination' => $destination->name]))
+                ->success()
+                ->send();
+        } else {
             Notification::make()
                 ->title(__('Backup created locally'))
-                ->body(__('Upload to :destination failed: :error', [
-                    'destination' => $destination->name,
-                    'error' => $e->getMessage(),
-                ]))
+                ->body(__('Upload to :destination failed', ['destination' => $destination->name]))
                 ->warning()
                 ->send();
         }
@@ -1131,26 +1112,15 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
-            $result = $this->agent()->backupTestDestination($config);
+            $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
+            $result = $orchestrator->testDestination($destination);
 
-            $destination->update([
-                'last_tested_at' => now(),
-                'test_status' => $result['success'] ? 'success' : 'failed',
-                'test_message' => $result['message'] ?? $result['error'] ?? null,
-            ]);
-
-            if ($result['success']) {
+            if ($result['success'] ?? false) {
                 Notification::make()->title(__('Connection successful'))->success()->send();
             } else {
                 Notification::make()->title(__('Connection failed'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
             }
         } catch (Exception $e) {
-            $destination->update([
-                'last_tested_at' => now(),
-                'test_status' => 'failed',
-                'test_message' => $e->getMessage(),
-            ]);
             Notification::make()->title(__('Test failed'))->body(SafeError::message($e))->danger()->send();
         }
 
