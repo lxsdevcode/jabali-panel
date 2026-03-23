@@ -547,6 +547,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         'include_databases' => $record->include_databases,
                         'include_mailboxes' => $record->include_mailboxes,
                         'include_dns' => $record->include_dns,
+                        'include_ssl' => $record->include_ssl ?? true,
                     ])
                     ->form([
                         TextInput::make('name')->label(__('Schedule Name'))->required(),
@@ -586,6 +587,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                     Toggle::make('include_databases')->label(__('Databases')),
                                     Toggle::make('include_mailboxes')->label(__('Mailboxes')),
                                     Toggle::make('include_dns')->label(__('DNS Records')),
+                                    Toggle::make('include_ssl')->label(__('SSL Certificates')),
                                 ]),
                             ]),
                     ])
@@ -602,6 +604,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             'include_databases' => $data['include_databases'] ?? true,
                             'include_mailboxes' => $data['include_mailboxes'] ?? true,
                             'include_dns' => $data['include_dns'] ?? true,
+                            'include_ssl' => $data['include_ssl'] ?? true,
                             'metadata' => array_merge($record->metadata ?? [], ['backup_type' => $data['backup_type'] ?? 'full']),
                         ]);
 
@@ -866,7 +869,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                             ->placeholder(__('All mailboxes'))
                                             ->visible(fn ($get): bool => (bool) $get('restore_mailboxes') && $get('restore_username') !== '__all__'),
                                     ]),
-                                Tab::make(__('Security'))
+                                Tab::make(__('SSL / DNS'))
                                     ->icon('heroicon-o-shield-check')
                                     ->schema([
                                         Toggle::make('restore_ssl')
@@ -981,6 +984,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 Toggle::make('include_databases')->label(__('Databases'))->default(true),
                                 Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
                                 Toggle::make('include_dns')->label(__('DNS Records'))->default(true),
+                                Toggle::make('include_ssl')->label(__('SSL Certificates'))->default(true),
                             ]),
                         ]),
                     Select::make('users')
@@ -1353,6 +1357,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             'include_databases' => $data['include_databases'] ?? true,
             'include_mailboxes' => $data['include_mailboxes'] ?? true,
             'include_dns' => $data['include_dns'] ?? true,
+            'include_ssl' => $data['include_ssl'] ?? true,
             'users' => ! empty($data['users']) ? $data['users'] : null,
             'destination_id' => ! empty($data['destination_id']) ? $data['destination_id'] : null,
             'schedule_id' => $data['schedule_id'] ?? null,
@@ -1490,6 +1495,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     'include_databases' => $data['include_databases'] ?? true,
                     'include_mailboxes' => $data['include_mailboxes'] ?? true,
                     'include_dns' => $data['include_dns'] ?? true,
+                    'include_ssl' => $data['include_ssl'] ?? true,
                     'metadata' => ['backup_type' => $data['backup_type'] ?? 'full'],
                 ]);
 
@@ -1551,6 +1557,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     'include_databases' => $schedule->include_databases,
                     'include_mailboxes' => $schedule->include_mailboxes,
                     'include_dns' => $schedule->include_dns,
+                    'include_ssl' => $schedule->include_ssl ?? true,
                 ];
             })
             ->form([
@@ -1612,6 +1619,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     'include_databases' => $data['include_databases'] ?? true,
                     'include_mailboxes' => $data['include_mailboxes'] ?? true,
                     'include_dns' => $data['include_dns'] ?? true,
+                    'include_ssl' => $data['include_ssl'] ?? true,
                     'metadata' => array_merge($schedule->metadata ?? [], ['backup_type' => $data['backup_type'] ?? 'full']),
                 ]);
 
@@ -1709,6 +1717,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     'include_databases' => $data['include_databases'] ?? true,
                     'include_mailboxes' => $data['include_mailboxes'] ?? true,
                     'include_dns' => $data['include_dns'] ?? true,
+                    'include_ssl' => $data['include_ssl'] ?? true,
                     'status' => 'pending',
                     'local_path' => $outputPath,
                     'metadata' => ['backup_type' => 'full'],
@@ -1723,6 +1732,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         'include_databases' => $data['include_databases'] ?? true,
                         'include_mailboxes' => $data['include_mailboxes'] ?? true,
                         'include_dns' => $data['include_dns'] ?? true,
+                        'include_ssl' => $data['include_ssl'] ?? true,
                     ]);
 
                     if ($result['success']) {
@@ -1881,9 +1891,16 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 'selected_mailboxes' => ! empty($data['selected_mailboxes']) ? $data['selected_mailboxes'] : null,
             ]);
 
-            // Cleanup temp download if used
+            // Cleanup temp download if used (root-owned, fallback to agent)
             if ($tempDownloadPath && is_dir($tempDownloadPath)) {
-                File::deleteDirectory($tempDownloadPath);
+                try {
+                    File::deleteDirectory($tempDownloadPath);
+                } catch (\Throwable) {
+                    try {
+                        $this->agent()->backupDeleteServer($tempDownloadPath);
+                    } catch (\Throwable) {
+                    }
+                }
             }
 
             if ($result['success'] ?? false) {
@@ -1918,9 +1935,16 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 throw new Exception($result['error'] ?? __('Restore failed'));
             }
         } catch (Exception $e) {
-            // Cleanup temp download on failure
+            // Cleanup temp download on failure (root-owned, fallback to agent)
             if ($tempDownloadPath && is_dir($tempDownloadPath)) {
-                File::deleteDirectory($tempDownloadPath);
+                try {
+                    File::deleteDirectory($tempDownloadPath);
+                } catch (\Throwable) {
+                    try {
+                        $this->agent()->backupDeleteServer($tempDownloadPath);
+                    } catch (\Throwable) {
+                    }
+                }
             }
             Notification::make()
                 ->title(__('Restore failed'))

@@ -67,6 +67,7 @@ class RunServerBackup implements ShouldQueue
                     'include_databases' => $backup->include_databases,
                     'include_mailboxes' => $backup->include_mailboxes,
                     'include_dns' => $backup->include_dns,
+                    'include_ssl' => $backup->include_ssl ?? true,
                 ]);
 
                 if ($result['success'] ?? false) {
@@ -117,6 +118,7 @@ class RunServerBackup implements ShouldQueue
                     'include_databases' => $backup->include_databases,
                     'include_mailboxes' => $backup->include_mailboxes,
                     'include_dns' => $backup->include_dns,
+                    'include_ssl' => $backup->include_ssl ?? true,
                 ]);
 
                 if ($result['success'] ?? false) {

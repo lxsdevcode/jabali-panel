@@ -83,6 +83,7 @@ class RunBackupSchedules extends Command
             'include_databases' => $schedule->include_databases,
             'include_mailboxes' => $schedule->include_mailboxes,
             'include_dns' => $schedule->include_dns,
+            'include_ssl' => $schedule->include_ssl ?? true,
             'users' => $schedule->users,
             'status' => 'pending',
             'local_path' => $outputPath,
@@ -105,6 +106,7 @@ class RunBackupSchedules extends Command
                         'include_databases' => $schedule->include_databases,
                         'include_mailboxes' => $schedule->include_mailboxes,
                         'include_dns' => $schedule->include_dns,
+                        'include_ssl' => $schedule->include_ssl ?? true,
                     ]);
 
                     // Update backup record with remote path
@@ -122,6 +124,7 @@ class RunBackupSchedules extends Command
                         'include_databases' => $schedule->include_databases,
                         'include_mailboxes' => $schedule->include_mailboxes,
                         'include_dns' => $schedule->include_dns,
+                        'include_ssl' => $schedule->include_ssl ?? true,
                     ]);
                 }
             } else {
