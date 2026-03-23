@@ -542,6 +542,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         'day_of_week' => $record->day_of_week,
                         'day_of_month' => $record->day_of_month,
                         'destination_id' => $record->destination_id ?? '',
+                        'local_path' => $record->metadata['local_path'] ?? '/var/backups/jabali',
+                        'users' => $record->users ?? [],
                         'retention_count' => $record->retention_count,
                         'include_files' => $record->include_files,
                         'include_databases' => $record->include_databases,
@@ -565,6 +567,11 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 ? ['incremental' => __('Incremental'), 'full' => __('Full')]
                                 : ['full' => __('Full')])
                             ->required(),
+                        TextInput::make('local_path')
+                            ->label(__('Local Backup Folder'))
+                            ->default('/var/backups/jabali')
+                            ->helperText(__('Path on the server where backups will be stored'))
+                            ->visible(fn ($get) => empty($get('destination_id'))),
                         Select::make('frequency')
                             ->label(__('Frequency'))
                             ->options(['hourly' => __('Hourly'), 'daily' => __('Daily'), 'weekly' => __('Weekly'), 'monthly' => __('Monthly')])
@@ -580,6 +587,13 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             ->options(array_combine(range(1, 28), range(1, 28)))
                             ->visible(fn ($get) => $get('frequency') === 'monthly'),
                         TextInput::make('retention_count')->label(__('Keep Last N Backups'))->numeric(),
+                        Select::make('users')
+                            ->label(__('Users to Backup'))
+                            ->multiple()
+                            ->options(fn () => User::where('is_admin', false)
+                                ->where('is_active', true)
+                                ->pluck('username', 'username'))
+                            ->placeholder(__('All Users')),
                         Section::make(__('Include'))
                             ->schema([
                                 Grid::make(2)->schema([
@@ -605,7 +619,11 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             'include_mailboxes' => $data['include_mailboxes'] ?? true,
                             'include_dns' => $data['include_dns'] ?? true,
                             'include_ssl' => $data['include_ssl'] ?? true,
-                            'metadata' => array_merge($record->metadata ?? [], ['backup_type' => $data['backup_type'] ?? 'full']),
+                            'users' => ! empty($data['users']) ? $data['users'] : null,
+                            'metadata' => array_merge($record->metadata ?? [], [
+                                'backup_type' => $data['backup_type'] ?? 'full',
+                                'local_path' => $data['local_path'] ?? '/var/backups/jabali',
+                            ]),
                         ]);
 
                         $record->calculateNextRun();
@@ -1441,6 +1459,11 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         ])
                     ->default('full')
                     ->required(),
+                TextInput::make('local_path')
+                    ->label(__('Local Backup Folder'))
+                    ->default('/var/backups/jabali')
+                    ->helperText(__('Path on the server where backups will be stored'))
+                    ->visible(fn ($get) => empty($get('destination_id'))),
                 Select::make('frequency')
                     ->label(__('Frequency'))
                     ->options([
@@ -1470,6 +1493,13 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Keep Last N Backups'))
                     ->numeric()
                     ->default(7),
+                Select::make('users')
+                    ->label(__('Users to Backup'))
+                    ->multiple()
+                    ->options(fn () => User::where('is_admin', false)
+                        ->where('is_active', true)
+                        ->pluck('username', 'username'))
+                    ->placeholder(__('All Users')),
                 Section::make(__('Include'))
                     ->schema([
                         Grid::make(2)->schema([
@@ -1497,7 +1527,11 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     'include_mailboxes' => $data['include_mailboxes'] ?? true,
                     'include_dns' => $data['include_dns'] ?? true,
                     'include_ssl' => $data['include_ssl'] ?? true,
-                    'metadata' => ['backup_type' => $data['backup_type'] ?? 'full'],
+                    'users' => ! empty($data['users']) ? $data['users'] : null,
+                    'metadata' => [
+                        'backup_type' => $data['backup_type'] ?? 'full',
+                        'local_path' => $data['local_path'] ?? '/var/backups/jabali',
+                    ],
                 ]);
 
                 $schedule->calculateNextRun();
