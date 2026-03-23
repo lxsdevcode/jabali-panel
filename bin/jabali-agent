@@ -756,6 +756,9 @@ function handleAction(array $request): array
         'backup.delete_remote' => backupDeleteRemote($params),
         'backup.test_destination' => backupTestDestination($params),
         'backup.download_user_archive' => backupDownloadUserArchive($params),
+        'backup.list_contents' => backupListContents($params),
+        'backup.list_domain_files' => backupListDomainFiles($params),
+        'backup.list_snapshot_tree' => backupListSnapshotTree($params),
         // cPanel migration operations
         'cpanel.analyze_backup' => cpanelAnalyzeBackup($params),
         'cpanel.validate_backup' => cpanelValidateBackup($params),
@@ -19302,6 +19305,837 @@ function backupGetInfo(array $params): array
 }
 
 /**
+ * List the contents of a backup categorized by type.
+ * Supports tar.gz archives (user and server backups) and incremental directories.
+ */
+function backupListContents(array $params): array
+{
+    $backupPath = $params['backup_path'] ?? '';
+    $username = $params['username'] ?? '';
+    $destination = $params['destination'] ?? null;
+
+    $result = [
+        'success' => true,
+        'domains' => [],
+        'databases' => [],
+        'mailboxes' => [],
+        'dns_zones' => [],
+        'ssl_certificates' => [],
+        'has_cron' => false,
+        'has_mysql_users' => false,
+        'manifest' => null,
+    ];
+
+    // Remote listing via SSH
+    if (!empty($destination) && ($destination['type'] ?? '') === 'sftp') {
+        $result = backupListContentsRemote($backupPath, $username, $destination, $result);
+    } elseif (empty($backupPath) || !file_exists($backupPath)) {
+        return ['success' => false, 'error' => 'Backup path not found'];
+    } elseif (is_file($backupPath) && preg_match('/\.(tar\.gz|tgz)$/i', $backupPath)) {
+        $result = backupListContentsTarGz($backupPath, $username, $result);
+    } elseif (is_dir($backupPath)) {
+        $result = backupListContentsDirectory($backupPath, $username, $result);
+    } else {
+        return ['success' => false, 'error' => 'Unsupported backup format'];
+    }
+
+    // Deduplicate and sort all arrays
+    $result['domains'] = array_values(array_unique($result['domains']));
+    $result['databases'] = array_values(array_unique($result['databases']));
+    $result['mailboxes'] = array_values(array_unique($result['mailboxes']));
+    $result['dns_zones'] = array_values(array_unique($result['dns_zones']));
+    $result['ssl_certificates'] = array_values(array_unique($result['ssl_certificates']));
+
+    sort($result['domains']);
+    sort($result['databases']);
+    sort($result['mailboxes']);
+    sort($result['dns_zones']);
+    sort($result['ssl_certificates']);
+
+    return $result;
+}
+
+/**
+ * List contents of a remote incremental backup via SSH.
+ */
+function backupListContentsRemote(string $remotePath, string $username, array $destination, array $result): array
+{
+    $host = $destination['host'] ?? '';
+    $port = (string) ($destination['port'] ?? 22);
+    $sshUser = $destination['username'] ?? '';
+    $password = $destination['password'] ?? '';
+    $privateKey = $destination['private_key'] ?? '';
+
+    if (empty($host) || empty($sshUser)) {
+        return array_merge($result, ['success' => false, 'error' => 'Invalid destination']);
+    }
+
+    // Build the path to scan — if username provided, look in user subdirectory
+    $scanPath = rtrim($remotePath, '/');
+    if (!empty($username)) {
+        $scanPath .= '/' . $username;
+    }
+
+    $sshOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port=" . escapeshellarg($port);
+    $keyFile = null;
+
+    // Build find command — depth 5 to handle nested home/{username}/ prefix
+    $findCmd = "find " . escapeshellarg($scanPath) . " -maxdepth 5 -type f -o -type d 2>/dev/null | head -500";
+
+    if (!empty($privateKey)) {
+        $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
+        file_put_contents($keyFile, $privateKey);
+        chmod($keyFile, 0600);
+        $cmd = "ssh $sshOpts -i " . escapeshellarg($keyFile) . " " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($findCmd) . " 2>&1";
+    } else {
+        $cmd = "sshpass -p " . escapeshellarg($password) . " ssh $sshOpts " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($findCmd) . " 2>&1";
+    }
+
+    exec($cmd, $output, $retval);
+    if ($keyFile) {
+        @unlink($keyFile);
+    }
+
+    if ($retval !== 0 || empty($output)) {
+        return array_merge($result, ['success' => true]); // Return empty but successful
+    }
+
+    $basePath = $scanPath . '/';
+    foreach ($output as $line) {
+        $line = trim($line);
+        if (empty($line) || $line === $scanPath) {
+            continue;
+        }
+
+        // Make path relative to scanPath
+        if (str_starts_with($line, $basePath)) {
+            $relative = substr($line, strlen($basePath));
+        } else {
+            continue;
+        }
+
+        // Strip home/{username}/ prefix from incremental backups
+        if (preg_match('#^home/[^/]+/(.+)$#', $relative, $homeMatch)) {
+            $relative = $homeMatch[1];
+        }
+
+        $parts = explode('/', $relative);
+        $category = $parts[0] ?? '';
+        $entry = $parts[1] ?? '';
+
+        if (empty($entry)) {
+            continue;
+        }
+
+        switch ($category) {
+            case 'domains':
+            case 'files':
+                // Only top-level entries are domain names
+                if (count($parts) === 2 && !str_contains($entry, '.tar.gz')) {
+                    $result['domains'][] = $entry;
+                } elseif (count($parts) === 2 && str_ends_with($entry, '.tar.gz')) {
+                    $result['domains'][] = str_replace('.tar.gz', '', $entry);
+                }
+                break;
+
+            case 'mysql':
+            case 'databases':
+                if (count($parts) === 2) {
+                    if ($entry === 'users.sql' || $entry === 'users.sql.gz') {
+                        $result['has_mysql_users'] = true;
+                    } elseif (preg_match('/^(.+)\.(sql|sql\.gz)$/', $entry, $m)) {
+                        $result['databases'][] = $m[1];
+                    }
+                }
+                break;
+
+            case 'mail':
+            case 'mailboxes':
+                if ($category === 'mail' && count($parts) === 3) {
+                    // mail/domain/user → user@domain
+                    $domain = $parts[1];
+                    $user = $parts[2];
+                    $result['mailboxes'][] = "$user@$domain";
+                } elseif ($category === 'mailboxes' && count($parts) === 2 && str_ends_with($entry, '.tar.gz')) {
+                    $name = str_replace('.tar.gz', '', $entry);
+                    $nameparts = explode('_', $name);
+                    if (count($nameparts) >= 2) {
+                        $mailUser = array_pop($nameparts);
+                        $domain = implode('_', $nameparts);
+                        $result['mailboxes'][] = "$mailUser@$domain";
+                    }
+                }
+                break;
+
+            case 'dns':
+            case 'zones':
+                if (count($parts) === 2) {
+                    $zone = preg_replace('/^db\./', '', $entry);
+                    $zone = preg_replace('/\.zone$/', '', $zone);
+                    $result['dns_zones'][] = $zone;
+                }
+                break;
+
+            case 'ssl':
+                if (count($parts) === 2) {
+                    $result['ssl_certificates'][] = $entry;
+                }
+                break;
+
+            case 'cron':
+                $result['has_cron'] = true;
+                break;
+        }
+    }
+
+    // If has_mysql_users, read users.sql to extract usernames
+    if ($result['has_mysql_users']) {
+        $usersPath = $scanPath . '/home/' . $username . '/mysql/users.sql';
+        if (empty($username)) {
+            $usersPath = $scanPath . '/mysql/users.sql';
+        }
+        $catCmd = "cat " . escapeshellarg($usersPath) . " 2>/dev/null | grep 'CREATE USER'";
+
+        if (!empty($privateKey)) {
+            $keyFile2 = tempnam(sys_get_temp_dir(), 'ssh_key_');
+            file_put_contents($keyFile2, $privateKey);
+            chmod($keyFile2, 0600);
+            $cmd2 = "ssh $sshOpts -i " . escapeshellarg($keyFile2) . " " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($catCmd) . " 2>&1";
+        } else {
+            $cmd2 = "sshpass -p " . escapeshellarg($password) . " ssh $sshOpts " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($catCmd) . " 2>&1";
+        }
+
+        $mysqlUsers = [];
+        exec($cmd2, $userLines, $ret2);
+        if (isset($keyFile2)) {
+            @unlink($keyFile2);
+        }
+        foreach ($userLines as $uLine) {
+            if (preg_match("/CREATE USER [`']([^`']+)[`']/", $uLine, $um)) {
+                $mysqlUsers[] = $um[1];
+            }
+        }
+        $result['mysql_users'] = $mysqlUsers;
+    }
+
+    return $result;
+}
+
+/**
+ * List entire user snapshot tree (domains, mail, mysql, etc.) for file browser.
+ */
+function backupListSnapshotTree(array $params): array
+{
+    $backupPath = $params['backup_path'] ?? '';
+    $username = $params['username'] ?? '';
+    $destination = $params['destination'] ?? null;
+
+    if (empty($username)) {
+        return ['success' => false, 'error' => 'Username is required'];
+    }
+
+    $files = [];
+
+    if (!empty($destination) && ($destination['type'] ?? '') === 'sftp') {
+        $host = $destination['host'] ?? '';
+        $port = (string) ($destination['port'] ?? 22);
+        $sshUser = $destination['username'] ?? '';
+        $password = $destination['password'] ?? '';
+        $privateKey = $destination['private_key'] ?? '';
+
+        // The user's data root — handles home/{username}/ prefix
+        $userPath = rtrim($backupPath, '/') . '/' . $username . '/home/' . $username;
+
+        $sshOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port=" . escapeshellarg($port);
+        $findCmd = "find " . escapeshellarg($userPath) . " -maxdepth 4 \\( -type f -o -type d \\) 2>/dev/null | head -500";
+
+        $keyFile = null;
+        if (!empty($privateKey)) {
+            $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
+            file_put_contents($keyFile, $privateKey);
+            chmod($keyFile, 0600);
+            $cmd = "ssh $sshOpts -i " . escapeshellarg($keyFile) . " " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($findCmd) . " 2>&1";
+        } else {
+            $cmd = "sshpass -p " . escapeshellarg($password) . " ssh $sshOpts " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($findCmd) . " 2>&1";
+        }
+
+        exec($cmd, $output, $retval);
+        if ($keyFile) {
+            @unlink($keyFile);
+        }
+
+        $basePath = $userPath . '/';
+        foreach ($output as $line) {
+            $line = trim($line);
+            if (empty($line) || $line === $userPath) {
+                continue;
+            }
+            if (str_starts_with($line, $basePath)) {
+                $relative = substr($line, strlen($basePath));
+                if (!empty($relative)) {
+                    $files[] = $relative;
+                }
+            }
+        }
+    } elseif (!empty($backupPath) && is_dir($backupPath)) {
+        $userDir = $backupPath . '/' . $username;
+        if (!is_dir($userDir)) {
+            $userDir = $backupPath;
+        }
+
+        exec("find " . escapeshellarg($userDir) . " -maxdepth 4 \\( -type f -o -type d \\) 2>/dev/null | head -500", $output);
+        $basePath = $userDir . '/';
+        foreach ($output as $line) {
+            $line = trim($line);
+            if (str_starts_with($line, $basePath)) {
+                $relative = substr($line, strlen($basePath));
+                if (!empty($relative)) {
+                    $files[] = $relative;
+                }
+            }
+        }
+    }
+
+    sort($files);
+
+    return ['success' => true, 'files' => $files];
+}
+
+/**
+ * List files/folders within a specific domain's backup directory.
+ */
+function backupListDomainFiles(array $params): array
+{
+    $backupPath = $params['backup_path'] ?? '';
+    $username = $params['username'] ?? '';
+    $domain = $params['domain'] ?? '';
+    $destination = $params['destination'] ?? null;
+
+    if (empty($domain)) {
+        return ['success' => false, 'error' => 'Domain is required'];
+    }
+
+    // Validate domain name (no path traversal)
+    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $domain)) {
+        return ['success' => false, 'error' => 'Invalid domain name'];
+    }
+
+    $files = [];
+
+    if (!empty($destination) && ($destination['type'] ?? '') === 'sftp') {
+        // Remote: list via SSH
+        $host = $destination['host'] ?? '';
+        $port = (string) ($destination['port'] ?? 22);
+        $sshUser = $destination['username'] ?? '';
+        $password = $destination['password'] ?? '';
+        $privateKey = $destination['private_key'] ?? '';
+
+        // Build domain path — handle home/{username}/domains/ prefix
+        $domainPath = rtrim($backupPath, '/') . '/' . $username . '/home/' . $username . '/domains/' . $domain;
+
+        $sshOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port=" . escapeshellarg($port);
+        $findCmd = "find " . escapeshellarg($domainPath) . " -maxdepth 3 \\( -type f -o -type d \\) 2>/dev/null | head -200";
+
+        $keyFile = null;
+        if (!empty($privateKey)) {
+            $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
+            file_put_contents($keyFile, $privateKey);
+            chmod($keyFile, 0600);
+            $cmd = "ssh $sshOpts -i " . escapeshellarg($keyFile) . " " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($findCmd) . " 2>&1";
+        } else {
+            $cmd = "sshpass -p " . escapeshellarg($password) . " ssh $sshOpts " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($findCmd) . " 2>&1";
+        }
+
+        exec($cmd, $output, $retval);
+        if ($keyFile) {
+            @unlink($keyFile);
+        }
+
+        $basePath = $domainPath . '/';
+        foreach ($output as $line) {
+            $line = trim($line);
+            if (empty($line) || $line === $domainPath) {
+                continue;
+            }
+            if (str_starts_with($line, $basePath)) {
+                $relative = substr($line, strlen($basePath));
+                if (!empty($relative)) {
+                    $files[] = $relative;
+                }
+            }
+        }
+    } elseif (!empty($backupPath) && is_dir($backupPath)) {
+        // Local directory backup
+        $domainDir = $backupPath . '/' . $username . '/domains/' . $domain;
+        if (!is_dir($domainDir)) {
+            $domainDir = $backupPath . '/domains/' . $domain;
+        }
+        if (!is_dir($domainDir)) {
+            $domainDir = $backupPath . '/files/' . $domain;
+        }
+
+        if (is_dir($domainDir)) {
+            exec("find " . escapeshellarg($domainDir) . " -maxdepth 3 \\( -type f -o -type d \\) 2>/dev/null | head -200", $output);
+            $basePath = $domainDir . '/';
+            foreach ($output as $line) {
+                $line = trim($line);
+                if (str_starts_with($line, $basePath)) {
+                    $relative = substr($line, strlen($basePath));
+                    if (!empty($relative)) {
+                        $files[] = $relative;
+                    }
+                }
+            }
+        }
+    }
+
+    sort($files);
+
+    return ['success' => true, 'files' => $files];
+}
+
+/**
+ * List contents of a tar.gz backup by parsing tar listing output.
+ */
+function backupListContentsTarGz(string $backupPath, string $username, array $result): array
+{
+    // Check if this is a server backup containing per-user tar.gz files
+    $isServerBackup = false;
+    $listing = [];
+    exec("tar -I pigz -tf " . escapeshellarg($backupPath) . " 2>/dev/null", $listing);
+
+    if (empty($listing)) {
+        return ['success' => false, 'error' => 'Failed to read backup archive'];
+    }
+
+    // Detect server backup: contains user .tar.gz files at the top level
+    foreach ($listing as $entry) {
+        if (preg_match('/^[^\/]+\.tar\.gz$/', $entry) || preg_match('/^[^\/]+\/[^\/]+\.tar\.gz$/', $entry)) {
+            $isServerBackup = true;
+            break;
+        }
+    }
+
+    if ($isServerBackup && !empty($username)) {
+        // Server backup: extract the user's tar.gz to a temp dir, then list its contents
+        return backupListContentsServerTarGz($backupPath, $username, $listing, $result);
+    }
+
+    // User backup: parse the listing directly
+    // Read manifest from archive
+    $result['manifest'] = backupReadManifestFromTarGz($backupPath, $listing);
+
+    // Detect if the listing has a top-level directory prefix
+    $prefix = '';
+    if (!empty($listing)) {
+        $first = $listing[0];
+        // Check for common top-level directory (e.g., "username/" or "backup_2026-01-19/")
+        if (preg_match('/^([^\/]+)\/$/', $first, $m)) {
+            // Verify most entries share this prefix
+            $matchCount = 0;
+            foreach (array_slice($listing, 0, 20) as $entry) {
+                if (str_starts_with($entry, $m[1] . '/')) {
+                    $matchCount++;
+                }
+            }
+            if ($matchCount >= count(array_slice($listing, 0, 20)) * 0.8) {
+                $prefix = $m[1] . '/';
+            }
+        }
+    }
+
+    foreach ($listing as $entry) {
+        $relative = $prefix !== '' && str_starts_with($entry, $prefix)
+            ? substr($entry, strlen($prefix))
+            : $entry;
+
+        if ($relative === '' || $relative === '/') {
+            continue;
+        }
+
+        backupCategorizePath($relative, $result);
+    }
+
+    return $result;
+}
+
+/**
+ * Extract a user's tar.gz from a server backup archive and list its contents.
+ */
+function backupListContentsServerTarGz(string $backupPath, string $username, array $serverListing, array $result): array
+{
+    if (!validateUsername($username)) {
+        return ['success' => false, 'error' => 'Invalid username'];
+    }
+
+    // Find the user's tar.gz in the server listing
+    $userTarGz = null;
+    foreach ($serverListing as $entry) {
+        $basename = basename($entry);
+        if ($basename === "$username.tar.gz") {
+            $userTarGz = $entry;
+            break;
+        }
+    }
+
+    if ($userTarGz === null) {
+        return ['success' => false, 'error' => "User archive not found in server backup: $username.tar.gz"];
+    }
+
+    // Read server-level manifest
+    $serverManifest = backupReadManifestFromTarGz($backupPath, $serverListing);
+
+    // Extract the user's tar.gz to a temp file
+    $tempDir = sys_get_temp_dir() . '/jabali_list_' . uniqid();
+    mkdir($tempDir, 0755, true);
+
+    try {
+        exec(
+            "tar -I pigz -xf " . escapeshellarg($backupPath) .
+            " -C " . escapeshellarg($tempDir) .
+            " " . escapeshellarg($userTarGz) . " 2>&1",
+            $output,
+            $retval
+        );
+
+        if ($retval !== 0) {
+            return ['success' => false, 'error' => 'Failed to extract user archive from server backup'];
+        }
+
+        $extractedFile = "$tempDir/$userTarGz";
+        if (!file_exists($extractedFile)) {
+            return ['success' => false, 'error' => 'Extracted user archive not found'];
+        }
+
+        // Now list the contents of the user's tar.gz
+        $userListing = [];
+        exec("tar -I pigz -tf " . escapeshellarg($extractedFile) . " 2>/dev/null", $userListing);
+
+        $result['manifest'] = backupReadManifestFromTarGz($extractedFile, $userListing);
+        if ($result['manifest'] === null && $serverManifest !== null) {
+            $result['manifest'] = $serverManifest;
+        }
+
+        // Detect top-level prefix
+        $prefix = '';
+        if (!empty($userListing)) {
+            $first = $userListing[0];
+            if (preg_match('/^([^\/]+)\/$/', $first, $m)) {
+                $matchCount = 0;
+                foreach (array_slice($userListing, 0, 20) as $entry) {
+                    if (str_starts_with($entry, $m[1] . '/')) {
+                        $matchCount++;
+                    }
+                }
+                if ($matchCount >= count(array_slice($userListing, 0, 20)) * 0.8) {
+                    $prefix = $m[1] . '/';
+                }
+            }
+        }
+
+        foreach ($userListing as $entry) {
+            $relative = $prefix !== '' && str_starts_with($entry, $prefix)
+                ? substr($entry, strlen($prefix))
+                : $entry;
+
+            if ($relative === '' || $relative === '/') {
+                continue;
+            }
+
+            backupCategorizePath($relative, $result);
+        }
+    } finally {
+        exec("rm -rf " . escapeshellarg($tempDir));
+    }
+
+    return $result;
+}
+
+/**
+ * List contents of a directory-based backup (incremental or extracted).
+ */
+function backupListContentsDirectory(string $backupPath, string $username, array $result): array
+{
+    // Determine the scan root
+    $scanRoot = $backupPath;
+
+    // Check if this is a server backup directory (contains per-user tar.gz files or user subdirs)
+    if (!empty($username)) {
+        if (!validateUsername($username)) {
+            return ['success' => false, 'error' => 'Invalid username'];
+        }
+
+        // Server backup with per-user tar.gz files
+        $userTarGz = "$backupPath/$username.tar.gz";
+        if (file_exists($userTarGz)) {
+            return backupListContentsTarGz($userTarGz, '', $result);
+        }
+
+        // Incremental server backup with user subdirectories
+        $userDir = "$backupPath/$username";
+        if (is_dir($userDir)) {
+            $scanRoot = $userDir;
+        }
+    }
+
+    // Read manifest
+    if (file_exists("$scanRoot/manifest.json")) {
+        $result['manifest'] = json_decode(file_get_contents("$scanRoot/manifest.json"), true);
+    } elseif (file_exists("$backupPath/manifest.json")) {
+        $result['manifest'] = json_decode(file_get_contents("$backupPath/manifest.json"), true);
+    }
+
+    // Scan for files/domains
+    $filesDir = null;
+    if (is_dir("$scanRoot/files")) {
+        $filesDir = "$scanRoot/files";
+    } elseif (is_dir("$scanRoot/domains")) {
+        $filesDir = "$scanRoot/domains";
+    }
+
+    if ($filesDir !== null) {
+        foreach (scandir($filesDir) as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            if (is_dir("$filesDir/$item")) {
+                $result['domains'][] = $item;
+            } elseif (preg_match('/^(.+)\.tar\.gz$/i', $item, $m)) {
+                $result['domains'][] = $m[1];
+            }
+        }
+    }
+
+    // Scan for databases
+    $dbDir = null;
+    if (is_dir("$scanRoot/mysql")) {
+        $dbDir = "$scanRoot/mysql";
+    } elseif (is_dir("$scanRoot/databases")) {
+        $dbDir = "$scanRoot/databases";
+    }
+
+    if ($dbDir !== null) {
+        foreach (scandir($dbDir) as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            if ($item === 'users.sql') {
+                $result['has_mysql_users'] = true;
+                continue;
+            }
+            if (preg_match('/\.sql(\.gz)?$/i', $item)) {
+                $result['databases'][] = preg_replace('/\.sql(\.gz)?$/i', '', $item);
+            }
+        }
+    }
+
+    // Scan for mailboxes
+    $mailDir = null;
+    if (is_dir("$scanRoot/mailboxes")) {
+        $mailDir = "$scanRoot/mailboxes";
+    } elseif (is_dir("$scanRoot/mail")) {
+        $mailDir = "$scanRoot/mail";
+    }
+
+    if ($mailDir !== null) {
+        foreach (scandir($mailDir) as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $itemPath = "$mailDir/$item";
+
+            // tar.gz format: domain_user.tar.gz
+            if (is_file($itemPath) && preg_match('/\.tar\.gz$/i', $item)) {
+                $parts = explode('_', preg_replace('/\.tar\.gz$/i', '', $item));
+                if (count($parts) >= 2) {
+                    $mailUser = array_pop($parts);
+                    $domain = implode('_', $parts);
+                    $result['mailboxes'][] = "$mailUser@$domain";
+                }
+            }
+            // Directory format: mail/domain/user/ or mailboxes/domain/user/
+            elseif (is_dir($itemPath)) {
+                $domain = $item;
+                foreach (scandir($itemPath) as $mailUser) {
+                    if ($mailUser === '.' || $mailUser === '..') {
+                        continue;
+                    }
+                    if (is_dir("$itemPath/$mailUser")) {
+                        $result['mailboxes'][] = "$mailUser@$domain";
+                    }
+                }
+            }
+        }
+    }
+
+    // Scan for DNS zones
+    $dnsDir = null;
+    if (is_dir("$scanRoot/dns")) {
+        $dnsDir = "$scanRoot/dns";
+    } elseif (is_dir("$scanRoot/zones")) {
+        $dnsDir = "$scanRoot/zones";
+    }
+
+    if ($dnsDir !== null) {
+        foreach (scandir($dnsDir) as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            // Zone files are typically named db.domain.com or domain.com.zone
+            $zone = $item;
+            $zone = preg_replace('/^db\./', '', $zone);
+            $zone = preg_replace('/\.zone$/', '', $zone);
+            $result['dns_zones'][] = $zone;
+        }
+    }
+
+    // Scan for SSL certificates
+    if (is_dir("$scanRoot/ssl")) {
+        foreach (scandir("$scanRoot/ssl") as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            if (is_dir("$scanRoot/ssl/$item")) {
+                $result['ssl_certificates'][] = $item;
+            }
+        }
+    }
+
+    // Check for cron
+    if (is_dir("$scanRoot/cron")) {
+        $result['has_cron'] = file_exists("$scanRoot/cron/crontab");
+    }
+
+    // Check for metadata
+    if (is_dir("$scanRoot/metadata") && file_exists("$scanRoot/metadata/panel_data.json")) {
+        // Metadata exists but we don't parse it into the result by default
+    }
+
+    return $result;
+}
+
+/**
+ * Read manifest.json from a tar.gz archive without full extraction.
+ */
+function backupReadManifestFromTarGz(string $archivePath, array $listing): ?array
+{
+    $manifestEntry = null;
+    foreach ($listing as $entry) {
+        if (str_ends_with($entry, 'manifest.json')) {
+            $manifestEntry = $entry;
+            break;
+        }
+    }
+
+    if ($manifestEntry === null) {
+        return null;
+    }
+
+    $manifestContent = [];
+    exec(
+        "tar -I pigz -xf " . escapeshellarg($archivePath) .
+        " -O " . escapeshellarg(trim($manifestEntry)) . " 2>/dev/null",
+        $manifestContent
+    );
+
+    if (empty($manifestContent)) {
+        return null;
+    }
+
+    return json_decode(implode("\n", $manifestContent), true);
+}
+
+/**
+ * Categorize a relative path from a tar listing into backup content arrays.
+ */
+function backupCategorizePath(string $path, array &$result): void
+{
+    $parts = explode('/', $path);
+    $topDir = $parts[0];
+    $secondLevel = $parts[1] ?? '';
+
+    if ($secondLevel === '') {
+        return;
+    }
+
+    switch ($topDir) {
+        case 'files':
+        case 'domains':
+            // files/domain.com/ or files/domain.com.tar.gz
+            $domain = preg_replace('/\.tar\.gz$/i', '', $secondLevel);
+            if ($domain !== '' && $domain !== '.' && $domain !== '..') {
+                $result['domains'][] = $domain;
+            }
+            break;
+
+        case 'mysql':
+        case 'databases':
+            if ($secondLevel === 'users.sql') {
+                $result['has_mysql_users'] = true;
+            } elseif (preg_match('/\.sql(\.gz)?$/i', $secondLevel)) {
+                $result['databases'][] = preg_replace('/\.sql(\.gz)?$/i', '', $secondLevel);
+            }
+            break;
+
+        case 'mailboxes':
+            // mailboxes/domain_user.tar.gz (tar format)
+            if (preg_match('/\.tar\.gz$/i', $secondLevel)) {
+                $nameParts = explode('_', preg_replace('/\.tar\.gz$/i', '', $secondLevel));
+                if (count($nameParts) >= 2) {
+                    $mailUser = array_pop($nameParts);
+                    $domain = implode('_', $nameParts);
+                    $result['mailboxes'][] = "$mailUser@$domain";
+                }
+            }
+            // mailboxes/domain/user/ (directory format in tar listing)
+            elseif (isset($parts[2]) && $parts[2] !== '') {
+                $domain = $secondLevel;
+                $mailUser = rtrim($parts[2], '/');
+                if ($mailUser !== '' && $mailUser !== '.' && $mailUser !== '..') {
+                    $result['mailboxes'][] = "$mailUser@$domain";
+                }
+            }
+            break;
+
+        case 'mail':
+            // mail/domain/user/ (incremental format)
+            if (isset($parts[2]) && $parts[2] !== '') {
+                $domain = $secondLevel;
+                $mailUser = rtrim($parts[2], '/');
+                if ($mailUser !== '' && $mailUser !== '.' && $mailUser !== '..') {
+                    $result['mailboxes'][] = "$mailUser@$domain";
+                }
+            }
+            break;
+
+        case 'dns':
+        case 'zones':
+            $zone = $secondLevel;
+            $zone = preg_replace('/^db\./', '', $zone);
+            $zone = preg_replace('/\.zone$/', '', $zone);
+            $zone = rtrim($zone, '/');
+            if ($zone !== '' && $zone !== '.' && $zone !== '..') {
+                $result['dns_zones'][] = $zone;
+            }
+            break;
+
+        case 'ssl':
+            // ssl/domain.com/ or ssl/domain.com/fullchain.pem
+            $domain = rtrim($secondLevel, '/');
+            if ($domain !== '' && $domain !== '.' && $domain !== '..') {
+                $result['ssl_certificates'][] = $domain;
+            }
+            break;
+
+        case 'cron':
+            if (str_contains($secondLevel, 'crontab')) {
+                $result['has_cron'] = true;
+            }
+            break;
+    }
+}
+
+/**
  * Upload backup to remote destination (SFTP, NFS, S3).
  * For incremental backups with SFTP/NFS, uses rsync with --link-dest for dirvish-style snapshots.
  */
@@ -19345,7 +20179,7 @@ function backupUploadRemote(array $params): array
 function uploadViaSftp(string $localPath, array $destination): array
 {
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -19420,7 +20254,7 @@ function syncViaRsyncIncremental(string $localPath, array $destination): array
 {
     $type = $destination['type'] ?? 'sftp';
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -19586,7 +20420,7 @@ function backupServerIncrementalDirect(array $params): array
     }
 
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -20175,7 +21009,7 @@ function backupDownloadRemote(array $params): array
 function downloadViaSftp(string $remotePath, string $localPath, array $destination): array
 {
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -20372,7 +21206,7 @@ function backupListRemote(array $params): array
 function listRemoteSftp(array $destination, string $path): array
 {
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -20548,7 +21382,7 @@ function backupDeleteRemote(array $params): array
 function deleteRemoteSftp(string $remotePath, array $destination): array
 {
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -20768,7 +21602,7 @@ function backupDownloadUserArchive(array $params): array
 function downloadUserFolderSftp(string $remotePath, string $localPath, array $destination): array
 {
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -20879,7 +21713,7 @@ function backupTestDestination(array $params): array
 function testSftpConnection(array $destination): array
 {
     $host = $destination['host'] ?? '';
-    $port = $destination['port'] ?? 22;
+    $port = (string) ($destination['port'] ?? 22);
     $username = $destination['username'] ?? '';
     $password = $destination['password'] ?? '';
     $privateKey = $destination['private_key'] ?? '';
@@ -20889,47 +21723,98 @@ function testSftpConnection(array $destination): array
         return ['success' => false, 'error' => 'Host and username required'];
     }
 
-    $testFile = ".jabali_write_test_" . uniqid();
+    $testFileName = ".jabali_write_test_" . uniqid();
     $keyFile = null;
+    $sshOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port=" . escapeshellarg($port);
 
-    // Build SFTP batch commands: connect, cd to path, create test file, delete it
-    $sftpCommands = "cd " . escapeshellarg($remotePath) . "
-put /dev/null $testFile
-rm $testFile
-quit";
-
+    // Step 1: Create the remote directory via SSH (mkdir -p)
     if (!empty($privateKey)) {
         $keyFile = tempnam(sys_get_temp_dir(), 'sftp_key_');
         file_put_contents($keyFile, $privateKey);
         chmod($keyFile, 0600);
 
-        $cmd = "echo " . escapeshellarg($sftpCommands) . " | sftp -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 -o Port=" . escapeshellarg($port) . " -i " .
+        $mkdirCmd = "ssh $sshOpts -i " . escapeshellarg($keyFile) . " " .
+                    escapeshellarg("$username@$host") . " " .
+                    escapeshellarg("mkdir -p $remotePath") . " 2>&1";
+    } else {
+        $mkdirCmd = "sshpass -p " . escapeshellarg($password) .
+                    " ssh $sshOpts " . escapeshellarg("$username@$host") . " " .
+                    escapeshellarg("mkdir -p $remotePath") . " 2>&1";
+    }
+
+    exec($mkdirCmd, $mkdirOutput, $mkdirRetval);
+
+    if ($mkdirRetval !== 0) {
+        if ($keyFile) {
+            @unlink($keyFile);
+        }
+        $mkdirOutputStr = implode("\n", $mkdirOutput);
+        if (stripos($mkdirOutputStr, 'Permission denied') !== false) {
+            return ['success' => false, 'error' => "Cannot create remote path '$remotePath': permission denied"];
+        }
+        return ['success' => false, 'error' => "Cannot create remote path '$remotePath': " . $mkdirOutputStr];
+    }
+
+    // Step 2: Upload a real test file via SFTP
+    // Note: sshpass requires interactive mode (no -b flag), so we pipe commands
+    // and validate success by parsing the output for upload confirmation
+    $localTestFile = tempnam(sys_get_temp_dir(), 'jabali_test_');
+    file_put_contents($localTestFile, "Jabali backup test - " . date('Y-m-d H:i:s') . "\n");
+
+    $sftpCommands = "cd " . escapeshellarg($remotePath) . "\nput " . escapeshellarg($localTestFile) . " $testFileName\nrm $testFileName\nquit";
+
+    if (!empty($privateKey)) {
+        // Key auth can use -b (batch mode) for strict error checking
+        $batchFile = tempnam(sys_get_temp_dir(), 'sftp_batch_');
+        file_put_contents($batchFile, "cd $remotePath\nput $localTestFile $testFileName\nrm $testFileName\n");
+
+        $cmd = "sftp -b " . escapeshellarg($batchFile) . " $sshOpts -i " .
                escapeshellarg($keyFile) . " " . escapeshellarg("$username@$host") . " 2>&1";
 
         exec($cmd, $output, $retval);
         unlink($keyFile);
+        @unlink($batchFile);
     } else {
+        // Password auth: pipe commands (sshpass is incompatible with sftp -b)
         $cmd = "echo " . escapeshellarg($sftpCommands) . " | sshpass -p " . escapeshellarg($password) .
-               " sftp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port=" . escapeshellarg($port) . " " .
-               escapeshellarg("$username@$host") . " 2>&1";
+               " sftp $sshOpts " . escapeshellarg("$username@$host") . " 2>&1";
 
         exec($cmd, $output, $retval);
     }
 
+    @unlink($localTestFile);
     $outputStr = implode("\n", $output);
 
-    if ($retval !== 0) {
-        // Check for specific errors
-        if (stripos($outputStr, 'No such file') !== false || stripos($outputStr, 'not found') !== false) {
-            return ['success' => false, 'error' => "Remote path '$remotePath' does not exist"];
-        }
-        if (stripos($outputStr, 'Permission denied') !== false) {
-            return ['success' => false, 'error' => "No write permission to '$remotePath'"];
-        }
+    // Check for connection failures
+    if ($retval !== 0 && (
+        stripos($outputStr, 'Connection') !== false ||
+        stripos($outputStr, 'Permission denied') !== false ||
+        stripos($outputStr, 'No route') !== false ||
+        stripos($outputStr, 'Network is unreachable') !== false
+    )) {
         return ['success' => false, 'error' => 'SFTP connection failed: ' . $outputStr];
     }
 
-    return ['success' => true, 'message' => 'SFTP connection and write permission verified'];
+    // Check output for upload errors (works for both -b and pipe modes)
+    if (stripos($outputStr, 'No such file') !== false || stripos($outputStr, 'not found') !== false) {
+        return ['success' => false, 'error' => "Remote path '$remotePath' does not exist"];
+    }
+    if (stripos($outputStr, 'Permission denied') !== false || stripos($outputStr, 'Failure') !== false) {
+        return ['success' => false, 'error' => "No write permission to '$remotePath'"];
+    }
+
+    // For pipe mode (password auth), verify the upload actually happened
+    // sftp prints "Uploading <file>" when put succeeds
+    if (empty($privateKey) && stripos($outputStr, 'Uploading') === false) {
+        return ['success' => false, 'error' => 'SFTP upload test failed: ' . $outputStr];
+    }
+
+    // For batch mode (key auth), non-zero exit means failure
+    if (!empty($privateKey) && $retval !== 0) {
+        return ['success' => false, 'error' => 'SFTP upload test failed: ' . $outputStr];
+    }
+
+    return ['success' => true, 'message' => "SFTP connection and file upload to '$remotePath' verified"];
 }
 
 /**

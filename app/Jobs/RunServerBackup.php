@@ -81,7 +81,7 @@ class RunServerBackup implements ShouldQueue
                         ]),
                     ]);
 
-                    Log::info("RunServerBackup: Incremental backup {$this->backupId} completed");
+                    Log::info("RunServerBackup: Backup {$this->backupId} completed successfully (incremental)");
 
                     // Re-index remote backups for user discovery
                     IndexRemoteBackups::dispatch($backup->destination_id);
@@ -128,7 +128,7 @@ class RunServerBackup implements ShouldQueue
                         $this->uploadToRemote($backup, $agent);
                     }
 
-                    Log::info("RunServerBackup: Full backup {$this->backupId} completed");
+                    Log::info("RunServerBackup: Backup {$this->backupId} completed successfully (full)");
 
                     // Apply retention policy if this backup is from a schedule
                     $this->applyRetention($backup);

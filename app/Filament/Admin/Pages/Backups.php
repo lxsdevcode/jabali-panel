@@ -7,6 +7,7 @@ namespace App\Filament\Admin\Pages;
 use App\Models\Backup;
 use App\Models\BackupDestination;
 use App\Models\BackupSchedule;
+use App\Models\DnsSetting;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
 use App\Support\SafeError;
@@ -40,6 +41,7 @@ use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Url;
 
 class Backups extends Page implements HasActions, HasForms, HasTable
@@ -75,7 +77,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     protected function normalizeTabName(?string $tab): string
     {
         return match ($tab) {
-            'destinations', 'schedules', 'backups' => $tab,
+            'destinations', 'schedules', 'backups', 'logs' => $tab,
             default => 'destinations',
         };
     }
@@ -123,8 +125,13 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             ->schema([
                                 View::make('filament.admin.pages.backups-tab-table'),
                             ]),
-                        'backups' => Tab::make(__('Backups'))
+                        'backups' => Tab::make(__('Snapshots / Restore'))
                             ->icon('heroicon-o-archive-box')
+                            ->schema([
+                                View::make('filament.admin.pages.backups-tab-table'),
+                            ]),
+                        'logs' => Tab::make(__('Logs'))
+                            ->icon('heroicon-o-document-text')
                             ->schema([
                                 View::make('filament.admin.pages.backups-tab-table'),
                             ]),
@@ -135,6 +142,245 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     public function getAgent(): AgentClient
     {
         return app(AgentClient::class);
+    }
+
+    protected function logsTable(Table $table): Table
+    {
+        return $table
+            ->records(function (int $page, int $recordsPerPage): \Illuminate\Pagination\LengthAwarePaginator {
+                $allEntries = $this->readBackupLogEntries();
+                $collection = collect($allEntries)->values();
+
+                return new \Illuminate\Pagination\LengthAwarePaginator(
+                    $collection->forPage($page, $recordsPerPage)->values(),
+                    total: $collection->count(),
+                    perPage: $recordsPerPage,
+                    currentPage: $page,
+                    options: ['pageName' => 'logsPage'],
+                );
+            })
+            ->columns([
+                TextColumn::make('timestamp')
+                    ->label(__('Time'))
+                    ->fontFamily('mono')
+                    ->color('gray')
+                    ->sortable(),
+                TextColumn::make('level')
+                    ->label(__('Level'))
+                    ->badge()
+                    ->color(fn (string $state, array $record): string => match ($state) {
+                        'ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY' => 'danger',
+                        'WARNING' => 'warning',
+                        'INFO' => str_contains($record['message'] ?? '', 'successfully') ? 'success' : 'gray',
+                        'DEBUG' => 'info',
+                        default => 'gray',
+                    })
+                    ->formatStateUsing(fn (string $state, array $record): string => match ($state) {
+                        'INFO' => str_contains($record['message'] ?? '', 'successfully') ? 'SUCCESS' : 'INFO',
+                        default => $state,
+                    }),
+                TextColumn::make('message')
+                    ->label(__('Message'))
+                    ->wrap()
+                    ->lineClamp(3)
+                    ->tooltip(fn (array $record): string => $record['message']),
+            ])
+            ->filters([
+                \Filament\Tables\Filters\SelectFilter::make('level')
+                    ->label(__('Level'))
+                    ->options([
+                        'ERROR' => __('Errors'),
+                        'WARNING' => __('Warnings'),
+                        'INFO' => __('Info'),
+                        'DEBUG' => __('Debug'),
+                    ])
+                    ->multiple()
+                    ->query(fn () => null),
+            ])
+            ->headerActions([
+                Action::make('clearLogs')
+                    ->label(__('Clear Logs'))
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->size('sm')
+                    ->requiresConfirmation()
+                    ->modalDescription(__('This will remove all backup log entries from the log file. This action cannot be undone.'))
+                    ->action(function () {
+                        $this->clearBackupLogs();
+                        Notification::make()->title(__('Backup logs cleared'))->success()->send();
+                    }),
+            ])
+            ->defaultSort('timestamp', 'desc')
+            ->emptyStateHeading(__('No backup logs found'))
+            ->emptyStateDescription(__('Backup activity will appear here once backups start running.'))
+            ->emptyStateIcon('heroicon-o-document-text')
+            ->striped()
+            ->defaultPaginationPageOption(25)
+            ->queryStringIdentifier('logs')
+            ->poll('30s');
+    }
+
+    /**
+     * Read backup-related entries from the Laravel log file.
+     *
+     * @return array<int, array{id: int, level: string, timestamp: string, message: string}>
+     */
+    protected function readBackupLogEntries(): array
+    {
+        $logFile = storage_path('logs/laravel.log');
+
+        if (! file_exists($logFile)) {
+            return [];
+        }
+
+        $prefixes = ['RunServerBackup:', 'RunRestore:', 'IndexRemoteBackups:', 'RunBackupSchedules:', 'BackupSchedule:', 'BackupDestination:'];
+        $backupKeywords = ['Backup', 'Restore', 'retention'];
+        $retentionDays = (int) DnsSetting::get('backup_log_retention_days', 60);
+        $cutoffDate = now()->subDays($retentionDays)->format('Y-m-d H:i:s');
+
+        // Get active level filter from table state
+        $levelFilter = $this->tableFilters['level']['values'] ?? [];
+
+        // Read last 500KB of the log file
+        $maxBytes = 500 * 1024;
+        $fileSize = filesize($logFile);
+        $offset = max(0, $fileSize - $maxBytes);
+
+        $handle = fopen($logFile, 'r');
+        if (! $handle) {
+            return [];
+        }
+
+        if ($offset > 0) {
+            fseek($handle, $offset);
+            fgets($handle);
+        }
+
+        $entries = [];
+        $currentEntry = null;
+        $id = 0;
+
+        while (($line = fgets($handle)) !== false) {
+            $line = rtrim($line);
+
+            if (preg_match('/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \S+\.(INFO|WARNING|ERROR|DEBUG|CRITICAL|ALERT|EMERGENCY):\s*(.*)$/', $line, $matches)) {
+                if ($currentEntry !== null) {
+                    $entries[$currentEntry['id']] = $currentEntry;
+                }
+
+                $currentEntry = null;
+                $timestamp = $matches[1];
+                $level = $matches[2];
+                $message = $matches[3];
+
+                // Skip entries older than retention
+                if ($timestamp < $cutoffDate) {
+                    continue;
+                }
+
+                // Apply level filter
+                if (! empty($levelFilter)) {
+                    $normalizedLevel = in_array($level, ['CRITICAL', 'ALERT', 'EMERGENCY']) ? 'ERROR' : $level;
+                    if (! in_array($normalizedLevel, $levelFilter)) {
+                        continue;
+                    }
+                }
+
+                $isBackup = false;
+                foreach ($prefixes as $prefix) {
+                    if (str_contains($message, $prefix)) {
+                        $isBackup = true;
+                        break;
+                    }
+                }
+
+                if (! $isBackup) {
+                    foreach ($backupKeywords as $keyword) {
+                        if (str_contains($message, $keyword)) {
+                            $isBackup = true;
+                            break;
+                        }
+                    }
+                }
+
+                if ($isBackup) {
+                    $id++;
+                    $currentEntry = [
+                        'id' => $id,
+                        'timestamp' => $timestamp,
+                        'level' => $level,
+                        'message' => $message,
+                    ];
+                }
+            } elseif ($currentEntry !== null && $line !== '') {
+                $currentEntry['message'] .= "\n".$line;
+            }
+        }
+
+        fclose($handle);
+
+        if ($currentEntry !== null) {
+            $entries[$currentEntry['id']] = $currentEntry;
+        }
+
+        return array_reverse($entries, true);
+    }
+
+    /**
+     * Remove backup-related log entries from the Laravel log file.
+     */
+    protected function clearBackupLogs(): void
+    {
+        $logFile = storage_path('logs/laravel.log');
+
+        if (! file_exists($logFile)) {
+            return;
+        }
+
+        $prefixes = ['RunServerBackup:', 'RunRestore:', 'IndexRemoteBackups:', 'RunBackupSchedules:', 'BackupSchedule:', 'BackupDestination:'];
+        $backupKeywords = ['Backup', 'Restore', 'retention'];
+
+        $content = file_get_contents($logFile);
+        if ($content === false) {
+            return;
+        }
+
+        $lines = explode("\n", $content);
+        $filtered = [];
+        $skipMultiline = false;
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] \S+\.(INFO|WARNING|ERROR|DEBUG|CRITICAL|ALERT|EMERGENCY):\s*(.*)$/', $line, $matches)) {
+                $message = $matches[2];
+                $isBackup = false;
+
+                foreach ($prefixes as $prefix) {
+                    if (str_contains($message, $prefix)) {
+                        $isBackup = true;
+                        break;
+                    }
+                }
+
+                if (! $isBackup) {
+                    foreach ($backupKeywords as $keyword) {
+                        if (str_contains($message, $keyword)) {
+                            $isBackup = true;
+                            break;
+                        }
+                    }
+                }
+
+                $skipMultiline = $isBackup;
+                if (! $isBackup) {
+                    $filtered[] = $line;
+                }
+            } elseif (! $skipMultiline) {
+                $filtered[] = $line;
+            }
+        }
+
+        file_put_contents($logFile, implode("\n", $filtered), LOCK_EX);
+        Log::info('BackupDestination: Backup logs cleared by admin');
     }
 
     protected function supportsIncremental($destinationId): bool
@@ -157,6 +403,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             'destinations' => $this->destinationsTable($table),
             'schedules' => $this->schedulesTable($table),
             'backups' => $this->backupsTable($table),
+            'logs' => $this->logsTable($table),
             default => $this->destinationsTable($table),
         };
     }
@@ -201,6 +448,22 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->color('gray'),
             ])
             ->recordActions([
+                Action::make('edit')
+                    ->label(__('Edit'))
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('gray')
+                    ->size('sm')
+                    ->fillForm(function (BackupDestination $record): array {
+                        $config = $record->config ?? [];
+
+                        return array_merge($config, [
+                            'name' => $record->name,
+                            'type' => $record->type,
+                            'is_default' => $record->is_default,
+                        ]);
+                    })
+                    ->form($this->getDestinationForm())
+                    ->action(fn (array $data, BackupDestination $record) => $this->updateDestination($record, $data)),
                 Action::make('test')
                     ->label(__('Test'))
                     ->icon('heroicon-o-check-circle')
@@ -275,7 +538,83 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->icon('heroicon-o-pencil')
                     ->color('gray')
                     ->size('sm')
-                    ->action(fn (BackupSchedule $record) => $this->mountAction('editSchedule', ['id' => $record->id])),
+                    ->fillForm(fn (BackupSchedule $record): array => [
+                        'name' => $record->name,
+                        'backup_type' => $record->metadata['backup_type'] ?? 'full',
+                        'frequency' => $record->frequency,
+                        'time' => $record->time,
+                        'day_of_week' => $record->day_of_week,
+                        'day_of_month' => $record->day_of_month,
+                        'destination_id' => $record->destination_id ?? '',
+                        'retention_count' => $record->retention_count,
+                        'include_files' => $record->include_files,
+                        'include_databases' => $record->include_databases,
+                        'include_mailboxes' => $record->include_mailboxes,
+                        'include_dns' => $record->include_dns,
+                    ])
+                    ->form([
+                        TextInput::make('name')->label(__('Schedule Name'))->required(),
+                        Select::make('destination_id')
+                            ->label(__('Destination'))
+                            ->options(fn () => BackupDestination::where('is_server_backup', true)
+                                ->where('is_active', true)
+                                ->pluck('name', 'id')
+                                ->prepend(__('Local Storage'), ''))
+                            ->default('')
+                            ->live(),
+                        Radio::make('backup_type')
+                            ->label(__('Backup Type'))
+                            ->options(fn ($get) => $this->supportsIncremental($get('destination_id'))
+                                ? ['incremental' => __('Incremental'), 'full' => __('Full')]
+                                : ['full' => __('Full')])
+                            ->required(),
+                        Select::make('frequency')
+                            ->label(__('Frequency'))
+                            ->options(['hourly' => __('Hourly'), 'daily' => __('Daily'), 'weekly' => __('Weekly'), 'monthly' => __('Monthly')])
+                            ->required()
+                            ->live(),
+                        TextInput::make('time')->label(__('Time (HH:MM)'))->visible(fn ($get) => in_array($get('frequency'), ['daily', 'weekly', 'monthly'])),
+                        Select::make('day_of_week')
+                            ->label(__('Day of Week'))
+                            ->options([0 => __('Sunday'), 1 => __('Monday'), 2 => __('Tuesday'), 3 => __('Wednesday'), 4 => __('Thursday'), 5 => __('Friday'), 6 => __('Saturday')])
+                            ->visible(fn ($get) => $get('frequency') === 'weekly'),
+                        Select::make('day_of_month')
+                            ->label(__('Day of Month'))
+                            ->options(array_combine(range(1, 28), range(1, 28)))
+                            ->visible(fn ($get) => $get('frequency') === 'monthly'),
+                        TextInput::make('retention_count')->label(__('Keep Last N Backups'))->numeric(),
+                        Section::make(__('Include'))
+                            ->schema([
+                                Grid::make(2)->schema([
+                                    Toggle::make('include_files')->label(__('Website Files')),
+                                    Toggle::make('include_databases')->label(__('Databases')),
+                                    Toggle::make('include_mailboxes')->label(__('Mailboxes')),
+                                    Toggle::make('include_dns')->label(__('DNS Records')),
+                                ]),
+                            ]),
+                    ])
+                    ->action(function (array $data, BackupSchedule $record) {
+                        $record->update([
+                            'name' => $data['name'],
+                            'frequency' => $data['frequency'],
+                            'time' => $data['time'] ?? '02:00',
+                            'day_of_week' => $data['day_of_week'] ?? null,
+                            'day_of_month' => $data['day_of_month'] ?? null,
+                            'destination_id' => ! empty($data['destination_id']) ? $data['destination_id'] : null,
+                            'retention_count' => $data['retention_count'] ?? 7,
+                            'include_files' => $data['include_files'] ?? true,
+                            'include_databases' => $data['include_databases'] ?? true,
+                            'include_mailboxes' => $data['include_mailboxes'] ?? true,
+                            'include_dns' => $data['include_dns'] ?? true,
+                            'metadata' => array_merge($record->metadata ?? [], ['backup_type' => $data['backup_type'] ?? 'full']),
+                        ]);
+
+                        $record->calculateNextRun();
+                        $record->save();
+
+                        Notification::make()->title(__('Schedule updated'))->success()->send();
+                        $this->resetTable();
+                    }),
                 Action::make('toggle')
                     ->label(fn (BackupSchedule $record): string => $record->is_active ? __('Disable') : __('Enable'))
                     ->icon(fn (BackupSchedule $record): string => $record->is_active ? 'heroicon-o-pause' : 'heroicon-o-play')
@@ -339,48 +678,66 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->modalDescription(__('Select what you want to restore. Warning: Existing data may be overwritten.'))
                     ->modalWidth('xl')
                     ->form(function (Backup $record): array {
-                        // Check if this is a remote backup (no local files)
                         $isRemoteBackup = ! $record->local_path || ! file_exists($record->local_path);
-
                         $manifest = $this->getBackupManifest($record);
                         $users = $manifest['users'] ?? $record->users ?? [];
                         if (empty($users)) {
                             $users = [$manifest['username'] ?? ''];
                         }
                         $users = array_filter($users);
-
                         $isServerBackup = ($manifest['type'] ?? $record->type) === 'server' && count($users) > 1;
-
-                        // For server backups, get data for first user by default
                         $selectedUser = $users[0] ?? '';
-                        if ($isServerBackup && ! empty($selectedUser) && ! $isRemoteBackup) {
-                            $manifest = $this->getBackupManifest($record, $selectedUser);
-                        }
 
-                        // For remote backups, use include_* flags from record
-                        if ($isRemoteBackup) {
-                            $hasFiles = $record->include_files ?? true;
-                            $hasDatabases = $record->include_databases ?? true;
-                            $hasMailboxes = $record->include_mailboxes ?? true;
-                            $hasDns = $record->include_dns ?? true;
-                            $hasSsl = true; // Assume SSL is included
-                            $domains = [];
-                            $databases = [];
-                            $mailboxes = [];
-                        } else {
-                            $domains = $manifest['domains'] ?? [];
-                            $databases = $manifest['databases'] ?? [];
-                            $mailboxes = $manifest['mailboxes'] ?? [];
-                            $hasFiles = ! empty($domains);
-                            $hasDatabases = ! empty($databases);
-                            $hasMailboxes = ! empty($mailboxes);
-                            $hasDns = ! empty($manifest['dns_zones'] ?? []);
-                            $hasSsl = ! empty($manifest['ssl_certificates'] ?? []);
-                        }
+                        // Helper to get contents for a specific user (cached per request)
+                        $getContentsForUser = function (?string $username) use ($record, $isRemoteBackup, $manifest): array {
+                            if (empty($username) || $username === '__all__') {
+                                return $manifest;
+                            }
+
+                            static $cache = [];
+                            $cacheKey = $record->id.'_'.$username;
+                            if (isset($cache[$cacheKey])) {
+                                return $cache[$cacheKey];
+                            }
+
+                            // For local backups, use manifest
+                            if (! $isRemoteBackup) {
+                                $result = $this->getBackupManifest($record, $username);
+                                $cache[$cacheKey] = $result;
+
+                                return $result;
+                            }
+
+                            // For remote backups, call agent to list contents via SSH
+                            if ($record->destination) {
+                                try {
+                                    $destConfig = array_merge(
+                                        $record->destination->config ?? [],
+                                        ['type' => $record->destination->type]
+                                    );
+                                    $contents = $this->getAgent()->backupListContents(
+                                        $record->remote_path ?? '',
+                                        $username,
+                                        $destConfig
+                                    );
+                                    if ($contents['success'] ?? false) {
+                                        $cache[$cacheKey] = $contents;
+
+                                        return $contents;
+                                    }
+                                } catch (Exception $e) {
+                                    // Fall back
+                                }
+                            }
+
+                            $cache[$cacheKey] = $manifest;
+
+                            return $manifest;
+                        };
 
                         $schema = [];
 
-                        // Backup info section
+                        // Step 1: User selection
                         $infoSchema = [
                             TextInput::make('backup_name')
                                 ->label(__('Backup'))
@@ -388,19 +745,17 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 ->disabled(),
                         ];
 
-                        // Add user selector for server backups with multiple users
                         if ($isServerBackup || count($users) > 1) {
-                            $userOptions = [
-                                '__all__' => __('All users'),
-                            ];
+                            $userOptions = ['__all__' => __('All users')];
                             foreach ($users as $userOption) {
                                 $userOptions[$userOption] = $userOption;
                             }
                             $infoSchema[] = Select::make('restore_username')
                                 ->label(__('User to Restore'))
                                 ->options($userOptions)
-                                ->default($selectedUser)
+                                ->placeholder(__('Select an option'))
                                 ->required()
+                                ->live()
                                 ->helperText(__('Backup contains :count user(s)', ['count' => count($users)]));
                         } else {
                             $infoSchema[] = TextInput::make('restore_username')
@@ -412,7 +767,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         $schema[] = Section::make(__('Backup Information'))
                             ->schema([Grid::make(2)->schema($infoSchema)]);
 
-                        // Remote backup notice
                         if ($isRemoteBackup) {
                             $schema[] = Section::make(__('Remote Backup'))
                                 ->description(__('This backup will be downloaded from the remote destination before restoring.'))
@@ -420,87 +774,165 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 ->iconColor('info');
                         }
 
-                        // Restore options section
-                        $restoreOptions = [];
-
-                        // Website Files
-                        $filesLabel = __('Website Files');
-                        if (! $isRemoteBackup && ! empty($domains)) {
-                            $filesLabel .= ' ('.count($domains).')';
-                        }
-                        $restoreOptions[] = Toggle::make('restore_files')
-                            ->label($filesLabel)
-                            ->helperText($isRemoteBackup
-                                ? __('Restore all domain files')
-                                : (! empty($domains) ? implode(', ', array_slice($domains, 0, 3)).(count($domains) > 3 ? '...' : '') : __('No files')))
-                            ->default($hasFiles)
-                            ->disabled(! $hasFiles && ! $isRemoteBackup);
-
-                        if (! $isRemoteBackup && count($domains) > 1) {
-                            $restoreOptions[] = Select::make('selected_domains')
-                                ->label(__('Specific Domains'))
-                                ->multiple()
-                                ->options(fn () => array_combine($domains, $domains))
-                                ->placeholder(__('All domains'))
-                                ->visible(fn ($get) => $get('restore_files'));
-                        }
-
-                        // Databases
-                        $dbLabel = __('Databases');
-                        if (! $isRemoteBackup && ! empty($databases)) {
-                            $dbLabel .= ' ('.count($databases).')';
-                        }
-                        $restoreOptions[] = Toggle::make('restore_databases')
-                            ->label($dbLabel)
-                            ->helperText($isRemoteBackup
-                                ? __('Restore all databases')
-                                : (! empty($databases) ? implode(', ', array_slice($databases, 0, 3)).(count($databases) > 3 ? '...' : '') : __('No databases')))
-                            ->default($hasDatabases)
-                            ->disabled(! $hasDatabases && ! $isRemoteBackup);
-
-                        if (! $isRemoteBackup && count($databases) > 1) {
-                            $restoreOptions[] = Select::make('selected_databases')
-                                ->label(__('Specific Databases'))
-                                ->multiple()
-                                ->options(fn () => array_combine($databases, $databases))
-                                ->placeholder(__('All databases'))
-                                ->visible(fn ($get) => $get('restore_databases'));
-                        }
-
-                        // MySQL Users
-                        $restoreOptions[] = Toggle::make('restore_mysql_users')
-                            ->label(__('MySQL Users'))
-                            ->default($hasDatabases)
-                            ->helperText(__('Restore MySQL users and their permissions'));
-
-                        // Mailboxes
-                        $mailLabel = __('Mailboxes');
-                        if (! $isRemoteBackup && ! empty($mailboxes)) {
-                            $mailLabel .= ' ('.count($mailboxes).')';
-                        }
-                        $restoreOptions[] = Toggle::make('restore_mailboxes')
-                            ->label($mailLabel)
-                            ->helperText($isRemoteBackup
-                                ? __('Restore all mailboxes')
-                                : (! empty($mailboxes) ? implode(', ', array_slice($mailboxes, 0, 3)).(count($mailboxes) > 3 ? '...' : '') : __('No mailboxes')))
-                            ->default($hasMailboxes)
-                            ->disabled(! $hasMailboxes && ! $isRemoteBackup);
-
-                        // SSL Certificates
-                        $restoreOptions[] = Toggle::make('restore_ssl')
-                            ->label(__('SSL Certificates'))
-                            ->default(false)
-                            ->helperText(__('Restore SSL certificates for domains'));
-
-                        // DNS Zones
-                        $restoreOptions[] = Toggle::make('restore_dns')
-                            ->label(__('DNS Zones'))
-                            ->default($hasDns)
-                            ->helperText(__('Restore DNS zone files'));
-
+                        // Step 2: Restore options — dynamic based on selected user
                         $schema[] = Section::make(__('Restore Options'))
                             ->description(__('Toggle items you want to restore.'))
-                            ->schema($restoreOptions);
+                            ->visible(fn ($get): bool => ! empty($get('restore_username')))
+                            ->schema([
+                                Toggle::make('select_all')
+                                    ->label(__('Select All / None'))
+                                    ->default(false)
+                                    ->live()
+                                    ->afterStateUpdated(function (bool $state, $set): void {
+                                        $set('restore_files', $state);
+                                        $set('restore_databases', $state);
+                                        $set('restore_mysql_users', $state);
+                                        $set('restore_mailboxes', $state);
+                                        $set('restore_ssl', $state);
+                                        $set('restore_dns', $state);
+                                    }),
+
+                                Toggle::make('restore_files')
+                                    ->label(__('Website Files'))
+                                    ->default(false)
+                                    ->live(),
+                                Radio::make('files_restore_mode')
+                                    ->label(__('Restore Mode'))
+                                    ->options([
+                                        'domains' => __('Full Domains'),
+                                        'files' => __('Specific Files / Folders'),
+                                    ])
+                                    ->default('domains')
+                                    ->inline()
+                                    ->live()
+                                    ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('restore_username') !== '__all__'),
+                                Select::make('selected_domains')
+                                    ->label(__('Select Domains'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($getContentsForUser): array {
+                                        $c = $getContentsForUser($get('restore_username'));
+                                        $d = $c['domains'] ?? [];
+
+                                        return ! empty($d) ? array_combine($d, $d) : [];
+                                    })
+                                    ->placeholder(__('All domains'))
+                                    ->helperText(__('Leave empty to restore all domains, or select specific ones'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'domains' && $get('restore_username') !== '__all__'),
+                                Select::make('selected_files')
+                                    ->label(__('Browse Snapshot'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($record): array {
+                                        $username = $get('restore_username');
+                                        if (empty($username)) {
+                                            return [];
+                                        }
+
+                                        $isRemote = ! $record->local_path || ! file_exists($record->local_path);
+                                        $path = $isRemote ? ($record->remote_path ?? '') : ($record->local_path ?? '');
+                                        $destConfig = null;
+                                        if ($isRemote && $record->destination) {
+                                            $destConfig = array_merge(
+                                                $record->destination->config ?? [],
+                                                ['type' => $record->destination->type]
+                                            );
+                                        }
+
+                                        try {
+                                            $result = $this->getAgent()->send('backup.list_snapshot_tree', [
+                                                'backup_path' => $path,
+                                                'username' => $username,
+                                                'destination' => $destConfig,
+                                            ]);
+                                            $files = $result['files'] ?? [];
+
+                                            return ! empty($files) ? array_combine($files, $files) : [];
+                                        } catch (Exception $e) {
+                                            return [];
+                                        }
+                                    })
+                                    ->placeholder(__('Select files or folders'))
+                                    ->searchable()
+                                    ->helperText(__('Browse the entire snapshot and select specific files or folders to restore'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'files' && $get('restore_username') !== '__all__'),
+
+                                Toggle::make('restore_databases')
+                                    ->label(__('Databases'))
+                                    ->default(false)
+                                    ->live(),
+                                Select::make('selected_databases')
+                                    ->label(__('Select Databases'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($getContentsForUser): array {
+                                        $c = $getContentsForUser($get('restore_username'));
+                                        $d = $c['databases'] ?? [];
+
+                                        return ! empty($d) ? array_combine($d, $d) : [];
+                                    })
+                                    ->placeholder(__('All databases'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_databases') && $get('restore_username') !== '__all__'),
+
+                                Toggle::make('restore_mysql_users')
+                                    ->label(__('MySQL Users'))
+                                    ->default(false)
+                                    ->live(),
+                                Select::make('selected_mysql_users')
+                                    ->label(__('Select MySQL Users'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($getContentsForUser): array {
+                                        $c = $getContentsForUser($get('restore_username'));
+                                        $d = $c['mysql_users'] ?? [];
+
+                                        return ! empty($d) ? array_combine($d, $d) : [];
+                                    })
+                                    ->placeholder(__('All MySQL users'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_mysql_users') && $get('restore_username') !== '__all__'),
+
+                                Toggle::make('restore_mailboxes')
+                                    ->label(__('Mailboxes'))
+                                    ->default(false)
+                                    ->live(),
+                                Select::make('selected_mailboxes')
+                                    ->label(__('Select Mailboxes'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($getContentsForUser): array {
+                                        $c = $getContentsForUser($get('restore_username'));
+                                        $d = $c['mailboxes'] ?? [];
+
+                                        return ! empty($d) ? array_combine($d, $d) : [];
+                                    })
+                                    ->placeholder(__('All mailboxes'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_mailboxes') && $get('restore_username') !== '__all__'),
+
+                                Toggle::make('restore_ssl')
+                                    ->label(__('SSL Certificates'))
+                                    ->default(false),
+                                Select::make('selected_ssl')
+                                    ->label(__('Select Certificates'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($getContentsForUser): array {
+                                        $c = $getContentsForUser($get('restore_username'));
+                                        $d = $c['ssl_certificates'] ?? [];
+
+                                        return ! empty($d) ? array_combine($d, $d) : [];
+                                    })
+                                    ->placeholder(__('All certificates'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_ssl') && $get('restore_username') !== '__all__'),
+
+                                Toggle::make('restore_dns')
+                                    ->label(__('DNS Zones'))
+                                    ->default(false),
+                                Select::make('selected_dns')
+                                    ->label(__('Select Zones'))
+                                    ->multiple()
+                                    ->options(function ($get) use ($getContentsForUser): array {
+                                        $c = $getContentsForUser($get('restore_username'));
+                                        $d = $c['dns_zones'] ?? [];
+
+                                        return ! empty($d) ? array_combine($d, $d) : [];
+                                    })
+                                    ->placeholder(__('All zones'))
+                                    ->visible(fn ($get): bool => (bool) $get('restore_dns') && $get('restore_username') !== '__all__'),
+                            ]);
 
                         return $schema;
                     })
@@ -718,7 +1150,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             if ($result['success']) {
                                 Notification::make()
                                     ->title(__('Connection successful'))
-                                    ->body(__('The destination is reachable and ready to use.'))
+                                    ->body(__('Connection and write permission verified.'))
                                     ->success()
                                     ->send();
                             } else {
@@ -810,7 +1242,81 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             'test_status' => 'success',
         ]);
 
+        Log::info("BackupDestination: Added destination '{$data['name']}' ({$type})");
         Notification::make()->title(__('Destination verified and added'))->success()->send();
+        $this->resetTable();
+    }
+
+    public function updateDestination(BackupDestination $destination, array $data): void
+    {
+        $config = [];
+        $type = $data['type'];
+
+        switch ($type) {
+            case 'sftp':
+                $config = [
+                    'host' => $data['host'] ?? '',
+                    'port' => (int) ($data['port'] ?? 22),
+                    'username' => $data['username'] ?? '',
+                    'password' => $data['password'] ?? '',
+                    'private_key' => $data['private_key'] ?? '',
+                    'path' => $data['path'] ?? '/backups',
+                ];
+                break;
+
+            case 'nfs':
+                $config = [
+                    'server' => $data['server'] ?? '',
+                    'share' => $data['share'] ?? '',
+                    'path' => $data['path'] ?? '',
+                ];
+                break;
+
+            case 's3':
+                $config = [
+                    'endpoint' => $data['endpoint'] ?? '',
+                    'bucket' => $data['bucket'] ?? '',
+                    'access_key' => $data['access_key'] ?? '',
+                    'secret_key' => $data['secret_key'] ?? '',
+                    'region' => $data['region'] ?? 'us-east-1',
+                    'path' => $data['path'] ?? 'backups',
+                ];
+                break;
+        }
+
+        $testConfig = array_merge($config, ['type' => $type]);
+        try {
+            $result = $this->getAgent()->backupTestDestination($testConfig);
+            if (! ($result['success'] ?? false)) {
+                Notification::make()
+                    ->title(__('Connection failed'))
+                    ->body($result['error'] ?? __('Could not connect to destination'))
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('Connection test failed'))
+                ->body(SafeError::message($e))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $destination->update([
+            'name' => $data['name'],
+            'type' => $type,
+            'config' => $config,
+            'is_default' => $data['is_default'] ?? false,
+            'last_tested_at' => now(),
+            'test_status' => 'success',
+        ]);
+
+        Log::info("BackupDestination: Updated destination '{$data['name']}' ({$type})");
+        Notification::make()->title(__('Destination updated and verified'))->success()->send();
         $this->resetTable();
     }
 
@@ -831,12 +1337,15 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 'test_message' => $result['message'] ?? $result['error'] ?? null,
             ]);
 
-            if ($result['success']) {
-                Notification::make()->title(__('Connection successful'))->success()->send();
+            if ($result['success'] ?? false) {
+                Log::info("BackupDestination: Test passed for '{$destination->name}'");
+                Notification::make()->title(__('Connection successful'))->body(__('Connection and write permission verified.'))->success()->send();
             } else {
+                Log::warning("BackupDestination: Test failed for '{$destination->name}': ".($result['error'] ?? 'Unknown error'));
                 Notification::make()->title(__('Connection failed'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
             }
         } catch (Exception $e) {
+            Log::error("BackupDestination: Test error for '{$destination->name}': ".$e->getMessage());
             $destination->update([
                 'last_tested_at' => now(),
                 'test_status' => 'failed',
@@ -850,7 +1359,10 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
     public function deleteDestination(int $id): void
     {
+        $dest = BackupDestination::find($id);
+        $name = $dest?->name ?? "ID $id";
         BackupDestination::where('id', $id)->delete();
+        Log::info("BackupDestination: Deleted destination '{$name}'");
         Notification::make()->title(__('Destination deleted'))->success()->send();
         $this->resetTable();
     }
@@ -1516,7 +2028,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         $backupPath = $backup->local_path;
 
         if (! $backupPath || ! file_exists($backupPath)) {
-            // For remote backups, try to get info from stored metadata
             return [
                 'username' => $forUser ?? ($backup->users[0] ?? ''),
                 'domains' => $backup->domains ?? [],
@@ -1537,11 +2048,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             if ($result['success'] ?? false) {
                 $manifest = $result['manifest'] ?? [];
 
-                // Handle server backup manifest format (has nested 'users' object)
                 if (isset($manifest['users']) && is_array($manifest['users']) && $manifest['type'] === 'server') {
                     $userList = array_keys($manifest['users']);
 
-                    // If no specific user requested, return aggregated data
                     if ($forUser === null) {
                         return [
                             'username' => $userList[0] ?? '',
@@ -1556,7 +2065,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         ];
                     }
 
-                    // Return specific user's data
                     if (isset($manifest['users'][$forUser])) {
                         $userData = $manifest['users'][$forUser];
 

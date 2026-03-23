@@ -81,6 +81,8 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     public ?array $notificationsData = [];
 
+    public ?array $logsData = [];
+
     public ?array $phpFpmData = [];
 
     public ?array $securityData = [];
@@ -245,6 +247,11 @@ class ServerSettings extends Page implements HasActions, HasForms
             'memory_limit' => $settings['fpm_memory_limit'] ?? '512M',
         ];
 
+        $this->logsData = [
+            'backup_log_retention_days' => (int) ($settings['backup_log_retention_days'] ?? 60),
+            'audit_log_retention_days' => (int) ($settings['audit_log_retention_days'] ?? 90),
+        ];
+
     }
 
     public function settingsForm(Schema $schema): Schema
@@ -276,6 +283,9 @@ class ServerSettings extends Page implements HasActions, HasForms
                         'database' => Tab::make(__('Database Tuning'))
                             ->icon('heroicon-o-circle-stack')
                             ->schema($this->databaseTabContent()),
+                        'logs' => Tab::make(__('Logs'))
+                            ->icon('heroicon-o-document-text')
+                            ->schema($this->logsTabContent()),
                     ]),
             ]);
     }
@@ -787,6 +797,49 @@ class ServerSettings extends Page implements HasActions, HasForms
                     EmbeddedTable::make(DatabaseTuningTable::class),
                 ]),
         ];
+    }
+
+    protected function logsTabContent(): array
+    {
+        return [
+            Section::make(__('Log Retention'))
+                ->description(__('Configure how long log entries are kept before being cleaned up.'))
+                ->icon('heroicon-o-clock')
+                ->schema([
+                    Grid::make(['default' => 1, 'md' => 2])
+                        ->schema([
+                            TextInput::make('logsData.backup_log_retention_days')
+                                ->label(__('Backup Log Retention'))
+                                ->numeric()
+                                ->minValue(7)
+                                ->maxValue(365)
+                                ->suffix(__('days'))
+                                ->helperText(__('Backup logs older than this will be hidden from the Backups log viewer')),
+                            TextInput::make('logsData.audit_log_retention_days')
+                                ->label(__('Audit Log Retention'))
+                                ->numeric()
+                                ->minValue(7)
+                                ->maxValue(365)
+                                ->suffix(__('days'))
+                                ->helperText(__('Audit log records older than this will be pruned automatically')),
+                        ]),
+                    Actions::make([
+                        FormAction::make('saveLogSettings')
+                            ->label(__('Save'))
+                            ->action('saveLogSettings'),
+                    ]),
+                ]),
+        ];
+    }
+
+    public function saveLogSettings(): void
+    {
+        $data = $this->logsData;
+
+        DnsSetting::set('backup_log_retention_days', (int) ($data['backup_log_retention_days'] ?? 60));
+        DnsSetting::set('audit_log_retention_days', (int) ($data['audit_log_retention_days'] ?? 90));
+
+        Notification::make()->title(__('Log settings saved'))->success()->send();
     }
 
     protected function getForms(): array

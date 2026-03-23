@@ -60,10 +60,7 @@ class AgentClient implements AgentClientInterface
             throw new Exception('Invalid response from agent: '.$response);
         }
 
-        if (isset($decoded['error'])) {
-            throw new Exception($decoded['error']);
-        }
-
+        // Callers must check $decoded['success'] — error responses are returned as-is, not thrown.
         return $decoded;
     }
 
@@ -929,7 +926,7 @@ class AgentClient implements AgentClientInterface
      *
      * @param  string  $username  System username
      * @param  string  $backupPath  Path to the backup archive
-     * @param  array  $options  Restore options (restore_files, restore_databases, restore_mailboxes, restore_dns, selected_domains, selected_databases, selected_mailboxes)
+     * @param  array  $options  Restore options (restore_files, restore_databases, restore_mailboxes, restore_dns, restore_ssl, restore_cron, restore_mysql_users, selected_domains, selected_databases, selected_mailboxes)
      */
     public function backupRestore(string $username, string $backupPath, array $options = []): array
     {
@@ -1073,6 +1070,27 @@ class AgentClient implements AgentClientInterface
         return $this->send('backup.test_destination', [
             'destination' => $destination,
         ]);
+    }
+
+    /**
+     * List the contents of a backup categorized by type.
+     *
+     * @param  string  $backupPath  Path to the backup archive or directory
+     * @param  string|null  $username  For server backups, which user's contents to list
+     */
+    public function backupListContents(string $backupPath, ?string $username = null, ?array $destination = null): array
+    {
+        $params = ['backup_path' => $backupPath];
+
+        if ($username !== null) {
+            $params['username'] = $username;
+        }
+
+        if ($destination !== null) {
+            $params['destination'] = $destination;
+        }
+
+        return $this->send('backup.list_contents', $params);
     }
 
     // ============ CRON JOB OPERATIONS ============

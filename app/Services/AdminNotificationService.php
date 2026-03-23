@@ -24,7 +24,7 @@ class AdminNotificationService
 
         $recipients = DnsSetting::get('admin_email_recipients', '');
         if (empty($recipients)) {
-            Log::warning("AdminNotification: No recipients configured for {$type}");
+            Log::warning("AdminNotification: Skipped {$type} notification — no admin email recipients configured in Server Settings");
             self::logNotification($type, $subject, $message, [], 'skipped', $context, 'No recipients configured');
 
             return false;
