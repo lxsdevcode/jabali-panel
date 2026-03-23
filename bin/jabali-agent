@@ -759,6 +759,7 @@ function handleAction(array $request): array
         'backup.list_contents' => backupListContents($params),
         'backup.list_domain_files' => backupListDomainFiles($params),
         'backup.list_snapshot_tree' => backupListSnapshotTree($params),
+        'backup.list_snapshot_dir' => backupListSnapshotDir($params),
         // cPanel migration operations
         'cpanel.analyze_backup' => cpanelAnalyzeBackup($params),
         'cpanel.validate_backup' => cpanelValidateBackup($params),
@@ -19599,6 +19600,85 @@ function backupListSnapshotTree(array $params): array
     sort($files);
 
     return ['success' => true, 'files' => $files];
+}
+
+/**
+ * List a single directory on a remote backup snapshot (for file browser navigation).
+ * Returns items with name, is_dir, size, mtime, permissions — same format as file.list.
+ */
+function backupListSnapshotDir(array $params): array
+{
+    $remotePath = $params['remote_path'] ?? '';
+    $destination = $params['destination'] ?? [];
+    $showHidden = $params['show_hidden'] ?? false;
+
+    if (empty($remotePath) || empty($destination)) {
+        return ['success' => false, 'error' => 'remote_path and destination required'];
+    }
+
+    $host = $destination['host'] ?? '';
+    $port = (string) ($destination['port'] ?? 22);
+    $sshUser = $destination['username'] ?? '';
+    $password = $destination['password'] ?? '';
+    $privateKey = $destination['private_key'] ?? '';
+    $sshOpts = "-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port=" . escapeshellarg($port);
+
+    // Use ls -la with epoch timestamps for easy parsing
+    $lsCmd = "ls -la --time-style=+%s " . escapeshellarg($remotePath) . " 2>/dev/null";
+
+    $keyFile = null;
+    if (!empty($privateKey)) {
+        $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
+        file_put_contents($keyFile, $privateKey);
+        chmod($keyFile, 0600);
+        $cmd = "ssh $sshOpts -i " . escapeshellarg($keyFile) . " " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($lsCmd) . " 2>&1";
+    } else {
+        $cmd = "sshpass -p " . escapeshellarg($password) . " ssh $sshOpts " . escapeshellarg("$sshUser@$host") . " " . escapeshellarg($lsCmd) . " 2>&1";
+    }
+
+    exec($cmd, $output, $retval);
+    if ($keyFile) {
+        @unlink($keyFile);
+    }
+
+    $items = [];
+    foreach ($output as $line) {
+        $line = trim($line);
+        if (empty($line) || str_starts_with($line, 'total ')) {
+            continue;
+        }
+
+        // Parse: drwxr-xr-x 2 user group 4096 1711234567 filename
+        if (!preg_match('/^([d\-l])([rwxsStT\-]{9})\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/', $line, $m)) {
+            continue;
+        }
+
+        $name = $m[5];
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        if (!$showHidden && str_starts_with($name, '.')) {
+            continue;
+        }
+
+        $isDir = $m[1] === 'd';
+
+        // Convert permission string to octal
+        $p = $m[2];
+        $owner = (($p[0] === 'r') ? 4 : 0) + (($p[1] === 'w') ? 2 : 0) + (in_array($p[2], ['x', 's']) ? 1 : 0);
+        $group = (($p[3] === 'r') ? 4 : 0) + (($p[4] === 'w') ? 2 : 0) + (in_array($p[5], ['x', 's']) ? 1 : 0);
+        $other = (($p[6] === 'r') ? 4 : 0) + (($p[7] === 'w') ? 2 : 0) + (in_array($p[8], ['x', 't']) ? 1 : 0);
+
+        $items[] = [
+            'name' => $name,
+            'is_dir' => $isDir,
+            'size' => $isDir ? null : (int) $m[3],
+            'mtime' => (int) $m[4],
+            'permissions' => sprintf('0%d%d%d', $owner, $group, $other),
+        ];
+    }
+
+    return ['success' => true, 'items' => $items];
 }
 
 /**

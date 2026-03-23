@@ -88,6 +88,10 @@ $this->getRtlScript()
             ->authMiddleware([
                 Authenticate::class,
                 RedirectAdminFromUserPanel::class,
+            ])
+            ->plugins([
+                \Jabali\FileBrowser\FileBrowserPlugin::make()
+                    ->slug('files'),
             ]);
     }
 

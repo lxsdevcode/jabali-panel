@@ -814,41 +814,13 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                     ->placeholder(__('All domains'))
                                     ->helperText(__('Leave empty to restore all domains, or select specific ones'))
                                     ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'domains' && $get('restore_username') !== '__all__'),
-                                Select::make('selected_files')
-                                    ->label(__('Browse Snapshot'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($record): array {
-                                        $username = $get('restore_username');
-                                        if (empty($username)) {
-                                            return [];
-                                        }
-
-                                        $isRemote = ! $record->local_path || ! file_exists($record->local_path);
-                                        $path = $isRemote ? ($record->remote_path ?? '') : ($record->local_path ?? '');
-                                        $destConfig = null;
-                                        if ($isRemote && $record->destination) {
-                                            $destConfig = array_merge(
-                                                $record->destination->config ?? [],
-                                                ['type' => $record->destination->type]
-                                            );
-                                        }
-
-                                        try {
-                                            $result = $this->agent()->send('backup.list_snapshot_tree', [
-                                                'backup_path' => $path,
-                                                'username' => $username,
-                                                'destination' => $destConfig,
-                                            ]);
-                                            $files = $result['files'] ?? [];
-
-                                            return ! empty($files) ? array_combine($files, $files) : [];
-                                        } catch (Exception $e) {
-                                            return [];
-                                        }
-                                    })
-                                    ->placeholder(__('Select files or folders'))
-                                    ->searchable()
-                                    ->helperText(__('Browse the entire snapshot and select specific files or folders to restore'))
+                                \Filament\Schemas\Components\Livewire::make(\App\Livewire\BackupSnapshotBrowser::class)
+                                    ->data(fn ($get) => [
+                                        'backupPath' => $record->remote_path ?? $record->local_path ?? '',
+                                        'username' => $get('restore_username') ?? '',
+                                        'destinationId' => $record->destination_id ?? 0,
+                                    ])
+                                    ->key('snapshot-browser')
                                     ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'files' && $get('restore_username') !== '__all__'),
 
                                 Toggle::make('restore_databases')
