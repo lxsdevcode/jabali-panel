@@ -1842,7 +1842,14 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             } catch (Exception $e) {
                 // Cleanup temp directory on failure
                 if (is_dir($tempDownloadPath)) {
-                    File::deleteDirectory($tempDownloadPath);
+                    try {
+                        File::deleteDirectory($tempDownloadPath);
+                    } catch (\Throwable) {
+                        try {
+                            $this->agent()->backupDeleteServer($tempDownloadPath);
+                        } catch (\Throwable) {
+                        }
+                    }
                 }
                 Notification::make()
                     ->title(__('Download failed'))
