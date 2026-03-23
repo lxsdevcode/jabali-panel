@@ -770,136 +770,136 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 ->iconColor('info');
                         }
 
-                        // Step 2: Restore options — dynamic based on selected user
-                        $schema[] = Section::make(__('Restore Options'))
-                            ->description(__('Toggle items you want to restore.'))
+                        // Step 2: Restore options with tabs
+                        $schema[] = Tabs::make(__('Restore Options'))
+                            ->contained()
                             ->visible(fn ($get): bool => ! empty($get('restore_username')))
-                            ->schema([
-                                Toggle::make('select_all')
-                                    ->label(__('Select All / None'))
-                                    ->default(false)
-                                    ->live()
-                                    ->afterStateUpdated(function (bool $state, $set): void {
-                                        $set('restore_files', $state);
-                                        $set('restore_databases', $state);
-                                        $set('restore_mysql_users', $state);
-                                        $set('restore_mailboxes', $state);
-                                        $set('restore_ssl', $state);
-                                        $set('restore_dns', $state);
-                                    }),
+                            ->tabs([
+                                Tab::make(__('Files'))
+                                    ->icon('heroicon-o-folder')
+                                    ->schema([
+                                        Toggle::make('restore_files')
+                                            ->label(__('Restore Website Files'))
+                                            ->default(false)
+                                            ->live(),
+                                        Radio::make('files_restore_mode')
+                                            ->label(__('Restore Mode'))
+                                            ->options([
+                                                'domains' => __('Full Domains'),
+                                                'files' => __('Specific Files / Folders'),
+                                            ])
+                                            ->default('domains')
+                                            ->inline()
+                                            ->live()
+                                            ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('restore_username') !== '__all__'),
+                                        Select::make('selected_domains')
+                                            ->label(__('Select Domains'))
+                                            ->multiple()
+                                            ->options(function ($get) use ($getContentsForUser): array {
+                                                $c = $getContentsForUser($get('restore_username'));
+                                                $d = $c['domains'] ?? [];
 
-                                Toggle::make('restore_files')
-                                    ->label(__('Website Files'))
-                                    ->default(false)
-                                    ->live(),
-                                Radio::make('files_restore_mode')
-                                    ->label(__('Restore Mode'))
-                                    ->options([
-                                        'domains' => __('Full Domains'),
-                                        'files' => __('Specific Files / Folders'),
-                                    ])
-                                    ->default('domains')
-                                    ->inline()
-                                    ->live()
-                                    ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('restore_username') !== '__all__'),
-                                Select::make('selected_domains')
-                                    ->label(__('Select Domains'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($getContentsForUser): array {
-                                        $c = $getContentsForUser($get('restore_username'));
-                                        $d = $c['domains'] ?? [];
+                                                return ! empty($d) ? array_combine($d, $d) : [];
+                                            })
+                                            ->placeholder(__('All domains'))
+                                            ->helperText(__('Leave empty to restore all domains, or select specific ones'))
+                                            ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'domains' && $get('restore_username') !== '__all__'),
+                                        \Filament\Schemas\Components\Livewire::make(\App\Livewire\BackupSnapshotBrowser::class)
+                                            ->data(fn ($get) => [
+                                                'backupPath' => $record->remote_path ?? $record->local_path ?? '',
+                                                'username' => $get('restore_username') ?? '',
+                                                'destinationId' => $record->destination_id ?? 0,
+                                            ])
+                                            ->key('snapshot-browser')
+                                            ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'files' && $get('restore_username') !== '__all__'),
+                                    ]),
+                                Tab::make(__('Databases'))
+                                    ->icon('heroicon-o-circle-stack')
+                                    ->schema([
+                                        Toggle::make('restore_databases')
+                                            ->label(__('Restore Databases'))
+                                            ->default(false)
+                                            ->live(),
+                                        Select::make('selected_databases')
+                                            ->label(__('Select Databases'))
+                                            ->multiple()
+                                            ->options(function ($get) use ($getContentsForUser): array {
+                                                $c = $getContentsForUser($get('restore_username'));
+                                                $d = $c['databases'] ?? [];
 
-                                        return ! empty($d) ? array_combine($d, $d) : [];
-                                    })
-                                    ->placeholder(__('All domains'))
-                                    ->helperText(__('Leave empty to restore all domains, or select specific ones'))
-                                    ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'domains' && $get('restore_username') !== '__all__'),
-                                \Filament\Schemas\Components\Livewire::make(\App\Livewire\BackupSnapshotBrowser::class)
-                                    ->data(fn ($get) => [
-                                        'backupPath' => $record->remote_path ?? $record->local_path ?? '',
-                                        'username' => $get('restore_username') ?? '',
-                                        'destinationId' => $record->destination_id ?? 0,
-                                    ])
-                                    ->key('snapshot-browser')
-                                    ->visible(fn ($get): bool => (bool) $get('restore_files') && $get('files_restore_mode') === 'files' && $get('restore_username') !== '__all__'),
+                                                return ! empty($d) ? array_combine($d, $d) : [];
+                                            })
+                                            ->placeholder(__('All databases'))
+                                            ->visible(fn ($get): bool => (bool) $get('restore_databases') && $get('restore_username') !== '__all__'),
+                                        Toggle::make('restore_mysql_users')
+                                            ->label(__('Restore MySQL Users'))
+                                            ->default(false)
+                                            ->live(),
+                                        Select::make('selected_mysql_users')
+                                            ->label(__('Select MySQL Users'))
+                                            ->multiple()
+                                            ->options(function ($get) use ($getContentsForUser): array {
+                                                $c = $getContentsForUser($get('restore_username'));
+                                                $d = $c['mysql_users'] ?? [];
 
-                                Toggle::make('restore_databases')
-                                    ->label(__('Databases'))
-                                    ->default(false)
-                                    ->live(),
-                                Select::make('selected_databases')
-                                    ->label(__('Select Databases'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($getContentsForUser): array {
-                                        $c = $getContentsForUser($get('restore_username'));
-                                        $d = $c['databases'] ?? [];
+                                                return ! empty($d) ? array_combine($d, $d) : [];
+                                            })
+                                            ->placeholder(__('All MySQL users'))
+                                            ->visible(fn ($get): bool => (bool) $get('restore_mysql_users') && $get('restore_username') !== '__all__'),
+                                    ]),
+                                Tab::make(__('Email'))
+                                    ->icon('heroicon-o-envelope')
+                                    ->schema([
+                                        Toggle::make('restore_mailboxes')
+                                            ->label(__('Restore Mailboxes'))
+                                            ->default(false)
+                                            ->live(),
+                                        Select::make('selected_mailboxes')
+                                            ->label(__('Select Mailboxes'))
+                                            ->multiple()
+                                            ->options(function ($get) use ($getContentsForUser): array {
+                                                $c = $getContentsForUser($get('restore_username'));
+                                                $d = $c['mailboxes'] ?? [];
 
-                                        return ! empty($d) ? array_combine($d, $d) : [];
-                                    })
-                                    ->placeholder(__('All databases'))
-                                    ->visible(fn ($get): bool => (bool) $get('restore_databases') && $get('restore_username') !== '__all__'),
+                                                return ! empty($d) ? array_combine($d, $d) : [];
+                                            })
+                                            ->placeholder(__('All mailboxes'))
+                                            ->visible(fn ($get): bool => (bool) $get('restore_mailboxes') && $get('restore_username') !== '__all__'),
+                                    ]),
+                                Tab::make(__('Security'))
+                                    ->icon('heroicon-o-shield-check')
+                                    ->schema([
+                                        Toggle::make('restore_ssl')
+                                            ->label(__('Restore SSL Certificates'))
+                                            ->default(false)
+                                            ->live(),
+                                        Select::make('selected_ssl')
+                                            ->label(__('Select Certificates'))
+                                            ->multiple()
+                                            ->options(function ($get) use ($getContentsForUser): array {
+                                                $c = $getContentsForUser($get('restore_username'));
+                                                $d = $c['ssl_certificates'] ?? [];
 
-                                Toggle::make('restore_mysql_users')
-                                    ->label(__('MySQL Users'))
-                                    ->default(false)
-                                    ->live(),
-                                Select::make('selected_mysql_users')
-                                    ->label(__('Select MySQL Users'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($getContentsForUser): array {
-                                        $c = $getContentsForUser($get('restore_username'));
-                                        $d = $c['mysql_users'] ?? [];
+                                                return ! empty($d) ? array_combine($d, $d) : [];
+                                            })
+                                            ->placeholder(__('All certificates'))
+                                            ->visible(fn ($get): bool => (bool) $get('restore_ssl') && $get('restore_username') !== '__all__'),
+                                        Toggle::make('restore_dns')
+                                            ->label(__('Restore DNS Zones'))
+                                            ->default(false)
+                                            ->live(),
+                                        Select::make('selected_dns')
+                                            ->label(__('Select Zones'))
+                                            ->multiple()
+                                            ->options(function ($get) use ($getContentsForUser): array {
+                                                $c = $getContentsForUser($get('restore_username'));
+                                                $d = $c['dns_zones'] ?? [];
 
-                                        return ! empty($d) ? array_combine($d, $d) : [];
-                                    })
-                                    ->placeholder(__('All MySQL users'))
-                                    ->visible(fn ($get): bool => (bool) $get('restore_mysql_users') && $get('restore_username') !== '__all__'),
-
-                                Toggle::make('restore_mailboxes')
-                                    ->label(__('Mailboxes'))
-                                    ->default(false)
-                                    ->live(),
-                                Select::make('selected_mailboxes')
-                                    ->label(__('Select Mailboxes'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($getContentsForUser): array {
-                                        $c = $getContentsForUser($get('restore_username'));
-                                        $d = $c['mailboxes'] ?? [];
-
-                                        return ! empty($d) ? array_combine($d, $d) : [];
-                                    })
-                                    ->placeholder(__('All mailboxes'))
-                                    ->visible(fn ($get): bool => (bool) $get('restore_mailboxes') && $get('restore_username') !== '__all__'),
-
-                                Toggle::make('restore_ssl')
-                                    ->label(__('SSL Certificates'))
-                                    ->default(false),
-                                Select::make('selected_ssl')
-                                    ->label(__('Select Certificates'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($getContentsForUser): array {
-                                        $c = $getContentsForUser($get('restore_username'));
-                                        $d = $c['ssl_certificates'] ?? [];
-
-                                        return ! empty($d) ? array_combine($d, $d) : [];
-                                    })
-                                    ->placeholder(__('All certificates'))
-                                    ->visible(fn ($get): bool => (bool) $get('restore_ssl') && $get('restore_username') !== '__all__'),
-
-                                Toggle::make('restore_dns')
-                                    ->label(__('DNS Zones'))
-                                    ->default(false),
-                                Select::make('selected_dns')
-                                    ->label(__('Select Zones'))
-                                    ->multiple()
-                                    ->options(function ($get) use ($getContentsForUser): array {
-                                        $c = $getContentsForUser($get('restore_username'));
-                                        $d = $c['dns_zones'] ?? [];
-
-                                        return ! empty($d) ? array_combine($d, $d) : [];
-                                    })
-                                    ->placeholder(__('All zones'))
-                                    ->visible(fn ($get): bool => (bool) $get('restore_dns') && $get('restore_username') !== '__all__'),
+                                                return ! empty($d) ? array_combine($d, $d) : [];
+                                            })
+                                            ->placeholder(__('All zones'))
+                                            ->visible(fn ($get): bool => (bool) $get('restore_dns') && $get('restore_username') !== '__all__'),
+                                    ]),
                             ]);
 
                         return $schema;

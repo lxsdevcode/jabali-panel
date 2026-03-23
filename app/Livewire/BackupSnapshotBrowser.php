@@ -118,15 +118,23 @@ class BackupSnapshotBrowser extends Component implements \Filament\Actions\Contr
                         default => 'gray',
                     })
                     ->weight(fn (array $record): string => ($record['is_dir'] ?? false) ? 'medium' : 'normal')
-                    ->action(function (array $record): void {
+                    ->formatStateUsing(function (string $state, array $record): \Illuminate\Support\HtmlString {
+                        $name = e($state);
                         if ($record['is_dir'] ?? false) {
-                            $this->navigateTo($record['path'] ?? '');
+                            $path = e($record['path'] ?? '');
+
+                            return new \Illuminate\Support\HtmlString(
+                                "<button type=\"button\" wire:click=\"navigateTo('{$path}')\" class=\"text-left hover:underline cursor-pointer\">{$name}</button>"
+                            );
                         }
+
+                        return new \Illuminate\Support\HtmlString($name);
                     })
+                    ->html()
                     ->searchable(isIndividual: true),
                 TextColumn::make('size')
                     ->label(__('Size'))
-                    ->formatStateUsing(fn ($state): string => $state ? Formatter::fileSize((int) $state) : '-')
+                    ->formatStateUsing(fn ($state): string => $state ? Formatter::bytes((int) $state) : '-')
                     ->color('gray'),
                 TextColumn::make('permissions')
                     ->label(__('Permissions'))
@@ -137,6 +145,56 @@ class BackupSnapshotBrowser extends Component implements \Filament\Actions\Contr
                     ->formatStateUsing(fn ($state): string => $state ? date('M j, Y H:i', (int) $state) : '-')
                     ->color('gray'),
             ])
+            ->checkIfRecordIsSelectableUsing(fn (array $record): bool => ! ($record['is_parent'] ?? false))
+            ->resolveSelectedRecordsUsing(function (array $keys): array {
+                // Re-fetch current directory items and return only selected ones
+                if (empty($this->backupPath) || empty($this->username) || empty($this->destinationId)) {
+                    return [];
+                }
+
+                $destination = BackupDestination::find($this->destinationId);
+                if (! $destination) {
+                    return [];
+                }
+
+                try {
+                    $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
+                    $adapter = new BackupSnapshotAdapter(
+                        app(AgentClient::class),
+                        $this->backupPath,
+                        $this->username,
+                        $config,
+                    );
+                    $result = $adapter->files()->list($this->currentPath);
+                    $all = [];
+                    foreach ($result['items'] ?? [] as $i => $item) {
+                        $item['id'] = $i + 1;
+                        $key = $item['path'] ?? (string) ($i + 1);
+                        $all[$key] = $item;
+                    }
+
+                    return array_intersect_key($all, array_flip($keys));
+                } catch (\Throwable) {
+                    return [];
+                }
+            })
+            ->toolbarActions([
+                \Filament\Actions\BulkAction::make('confirmSelection')
+                    ->label(__('Use Selected for Restore'))
+                    ->icon('heroicon-o-check')
+                    ->color('success')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (\Illuminate\Support\Collection $records): void {
+                        $paths = $records->map(fn (array $r): string => $r['path'] ?? '')->filter()->values()->toArray();
+                        $this->selectedFiles = $paths;
+                        $this->dispatch('snapshot-files-selected', files: $this->selectedFiles);
+
+                        Notification::make()
+                            ->title(__(':count item(s) selected for restore', ['count' => count($this->selectedFiles)]))
+                            ->success()
+                            ->send();
+                    }),
+            ])
             ->paginated(false)
             ->emptyStateHeading(__('This folder is empty'))
             ->emptyStateIcon('heroicon-o-folder')
@@ -145,7 +203,7 @@ class BackupSnapshotBrowser extends Component implements \Filament\Actions\Contr
 
     public function getTableRecordKey(Model|array $record): string
     {
-        return (string) ($record['id'] ?? 0);
+        return $record['path'] ?? (string) ($record['id'] ?? 0);
     }
 
     public function getBreadcrumbs(): array

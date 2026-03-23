@@ -16,6 +16,16 @@
         @endforeach
     </nav>
 
+    @if(count($this->selectedFiles) > 0)
+        <x-filament::section compact class="mb-3">
+            <span class="text-sm text-success-600 dark:text-success-400 font-medium">
+                {{ __(':count file(s)/folder(s) selected for restore', ['count' => count($this->selectedFiles)]) }}
+            </span>
+        </x-filament::section>
+    @endif
+
     {{-- Table --}}
     {{ $this->table }}
+
+    <x-filament-actions::modals />
 </div>
