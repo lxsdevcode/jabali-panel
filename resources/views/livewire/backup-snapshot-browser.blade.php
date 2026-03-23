@@ -24,6 +24,15 @@
         </x-filament::section>
     @endif
 
+    {{-- Confirm selection button --}}
+    @if(count($this->selectedTableRecords) > 0)
+        <div class="mb-3">
+            <x-filament::button wire:click="confirmSelection" color="success" icon="heroicon-o-check">
+                {{ __('Use Selected for Restore') }} ({{ count($this->selectedTableRecords) }})
+            </x-filament::button>
+        </div>
+    @endif
+
     {{-- Table --}}
     {{ $this->table }}
 

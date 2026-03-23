@@ -50,15 +50,16 @@ class BackupSnapshotBrowser extends Component implements \Filament\Actions\Contr
         $this->resetTable();
     }
 
-    public function toggleFileSelection(string $path): void
+    public function confirmSelection(): void
     {
-        if (in_array($path, $this->selectedFiles)) {
-            $this->selectedFiles = array_values(array_diff($this->selectedFiles, [$path]));
-        } else {
-            $this->selectedFiles[] = $path;
-        }
-
+        // $selectedTableRecords contains the record keys (file paths) from Filament's checkbox selection
+        $this->selectedFiles = array_values(array_filter($this->selectedTableRecords));
         $this->dispatch('snapshot-files-selected', files: $this->selectedFiles);
+
+        Notification::make()
+            ->title(__(':count item(s) selected for restore', ['count' => count($this->selectedFiles)]))
+            ->success()
+            ->send();
     }
 
     public function table(Table $table): Table
@@ -146,54 +147,23 @@ class BackupSnapshotBrowser extends Component implements \Filament\Actions\Contr
                     ->color('gray'),
             ])
             ->checkIfRecordIsSelectableUsing(fn (array $record): bool => ! ($record['is_parent'] ?? false))
-            ->resolveSelectedRecordsUsing(function (array $keys): array {
-                // Re-fetch current directory items and return only selected ones
-                if (empty($this->backupPath) || empty($this->username) || empty($this->destinationId)) {
-                    return [];
-                }
-
-                $destination = BackupDestination::find($this->destinationId);
-                if (! $destination) {
-                    return [];
-                }
-
-                try {
-                    $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
-                    $adapter = new BackupSnapshotAdapter(
-                        app(AgentClient::class),
-                        $this->backupPath,
-                        $this->username,
-                        $config,
-                    );
-                    $result = $adapter->files()->list($this->currentPath);
-                    $all = [];
-                    foreach ($result['items'] ?? [] as $i => $item) {
-                        $item['id'] = $i + 1;
-                        $key = $item['path'] ?? (string) ($i + 1);
-                        $all[$key] = $item;
-                    }
-
-                    return array_intersect_key($all, array_flip($keys));
-                } catch (\Throwable) {
-                    return [];
-                }
-            })
             ->toolbarActions([
-                \Filament\Actions\BulkAction::make('confirmSelection')
-                    ->label(__('Use Selected for Restore'))
-                    ->icon('heroicon-o-check')
-                    ->color('success')
-                    ->deselectRecordsAfterCompletion()
-                    ->action(function (\Illuminate\Support\Collection $records): void {
-                        $paths = $records->map(fn (array $r): string => $r['path'] ?? '')->filter()->values()->toArray();
-                        $this->selectedFiles = $paths;
-                        $this->dispatch('snapshot-files-selected', files: $this->selectedFiles);
+                \Filament\Actions\BulkActionGroup::make([
+                    \Filament\Actions\BulkAction::make('selectForRestore')
+                        ->label(__('Use Selected for Restore'))
+                        ->icon('heroicon-o-check')
+                        ->color('success')
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (): void {
+                            $this->selectedFiles = array_values(array_filter($this->selectedTableRecords));
+                            $this->dispatch('snapshot-files-selected', files: $this->selectedFiles);
 
-                        Notification::make()
-                            ->title(__(':count item(s) selected for restore', ['count' => count($this->selectedFiles)]))
-                            ->success()
-                            ->send();
-                    }),
+                            Notification::make()
+                                ->title(__(':count item(s) selected for restore', ['count' => count($this->selectedFiles)]))
+                                ->success()
+                                ->send();
+                        }),
+                ]),
             ])
             ->paginated(false)
             ->emptyStateHeading(__('This folder is empty'))
