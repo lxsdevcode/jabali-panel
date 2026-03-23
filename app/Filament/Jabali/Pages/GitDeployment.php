@@ -7,7 +7,7 @@ namespace App\Filament\Jabali\Pages;
 use App\Jobs\RunGitDeployment;
 use App\Models\Domain;
 use App\Models\GitDeployment as GitDeploymentModel;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use BackedEnum;
 use Exception;
 use Filament\Actions\Action;
@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
 class GitDeployment extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -54,11 +55,6 @@ class GitDeployment extends Page implements HasActions, HasForms, HasTable
     public static function getNavigationLabel(): string
     {
         return __('Git Deployment');
-    }
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     protected function getUsername(): string
@@ -87,7 +83,7 @@ class GitDeployment extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->gitGenerateKey($this->getUsername());
+            $result = $this->agent()->gitGenerateKey($this->getUsername());
             $this->deployKey = $result['public_key'] ?? '';
         } catch (Exception) {
             $this->deployKey = '';

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Widgets\Settings;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -23,6 +23,7 @@ use Livewire\Component;
 class DatabaseTuningTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -38,11 +39,6 @@ class DatabaseTuningTable extends Component implements HasActions, HasSchemas, H
         $this->loadVariables();
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function loadVariables(): void
     {
         $names = [
@@ -55,7 +51,7 @@ class DatabaseTuningTable extends Component implements HasActions, HasSchemas, H
         ];
 
         try {
-            $result = $this->getAgent()->databaseGetVariables($names);
+            $result = $this->agent()->databaseGetVariables($names);
             if (! ($result['success'] ?? false)) {
                 throw new \RuntimeException($result['error'] ?? __('Unable to load variables'));
             }
@@ -101,7 +97,7 @@ class DatabaseTuningTable extends Component implements HasActions, HasSchemas, H
                     ])
                     ->action(function (array $record, array $data): void {
                         try {
-                            $agent = $this->getAgent();
+                            $agent = $this->agent();
                             $setResult = $agent->databaseSetGlobal($record['name'], (string) $data['value']);
                             if (! ($setResult['success'] ?? false)) {
                                 throw new \RuntimeException($setResult['error'] ?? __('Update failed'));

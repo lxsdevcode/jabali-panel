@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -22,6 +22,7 @@ use Illuminate\Contracts\Support\Htmlable;
 class EmailQueue extends Page implements HasActions, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedQueueList;
@@ -53,15 +54,10 @@ class EmailQueue extends Page implements HasActions, HasTable
         $this->redirect(EmailLogs::getUrl());
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function loadQueue(bool $refreshTable = true): void
     {
         try {
-            $result = $this->getAgent()->send('mail.queue_list');
+            $result = $this->agent()->send('mail.queue_list');
             $this->queueItems = $result['queue'] ?? [];
             $this->queueLoaded = true;
         } catch (\Exception $e) {
@@ -133,7 +129,7 @@ class EmailQueue extends Page implements HasActions, HasTable
                     ->color('info')
                     ->action(function (array $record): void {
                         try {
-                            $result = $this->getAgent()->send('mail.queue_retry', ['id' => $record['id'] ?? '']);
+                            $result = $this->agent()->send('mail.queue_retry', ['id' => $record['id'] ?? '']);
                             if ($result['success'] ?? false) {
                                 Notification::make()->title(__('Message retried'))->success()->send();
                                 $this->loadQueue();
@@ -151,7 +147,7 @@ class EmailQueue extends Page implements HasActions, HasTable
                     ->requiresConfirmation()
                     ->action(function (array $record): void {
                         try {
-                            $result = $this->getAgent()->send('mail.queue_delete', ['id' => $record['id'] ?? '']);
+                            $result = $this->agent()->send('mail.queue_delete', ['id' => $record['id'] ?? '']);
                             if ($result['success'] ?? false) {
                                 Notification::make()->title(__('Message deleted'))->success()->send();
                                 $this->loadQueue();

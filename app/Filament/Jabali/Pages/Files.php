@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Jabali\Pages;
 
 use App\Models\DnsSetting;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
@@ -38,6 +38,7 @@ use Livewire\WithFileUploads;
 class Files extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
     use WithFileUploads;
@@ -64,11 +65,6 @@ class Files extends Page implements HasActions, HasForms, HasTable
     public function getTitle(): string|Htmlable
     {
         return __('File Manager');
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function mount(): void
@@ -197,7 +193,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->fileList($this->getUsername(), $this->currentPath, $this->showHidden);
+            $result = $this->agent()->fileList($this->getUsername(), $this->currentPath, $this->showHidden);
             $items = $result['items'] ?? [];
 
             // Add ".." entry for navigating up (only if not in root)
@@ -352,7 +348,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitActionLabel(__('Save Changes'))
                     ->fillForm(function (array $record): array {
                         try {
-                            $result = $this->getAgent()->fileRead($this->getUsername(), $record['path']);
+                            $result = $this->agent()->fileRead($this->getUsername(), $record['path']);
 
                             return ['content' => base64_decode($result['content'])];
                         } catch (Exception) {
@@ -368,7 +364,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     ])
                     ->action(function (array $data, array $record): void {
                         try {
-                            $this->getAgent()->fileWrite($this->getUsername(), $record['path'], $data['content']);
+                            $this->agent()->fileWrite($this->getUsername(), $record['path'], $data['content']);
                             Notification::make()->title(__('File saved'))->success()->send();
                         } catch (Exception $e) {
                             Notification::make()->title(__('Error saving file'))->body(SafeError::message($e))->danger()->send();
@@ -393,7 +389,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitActionLabel(__('Extract'))
                     ->action(function (array $record): void {
                         try {
-                            $this->getAgent()->fileExtract($this->getUsername(), $record['path']);
+                            $this->agent()->fileExtract($this->getUsername(), $record['path']);
                             Notification::make()->title(__('Archive extracted successfully'))->success()->send();
                             $this->loadDirectory();
                             $this->resetTable();
@@ -413,7 +409,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitActionLabel(__('Apply'))
                     ->fillForm(function (array $record): array {
                         try {
-                            $result = $this->getAgent()->fileInfo($this->getUsername(), $record['path']);
+                            $result = $this->agent()->fileInfo($this->getUsername(), $record['path']);
                             $perms = $result['info']['permissions'] ?? '0644';
 
                             return $this->parsePermissions($perms);
@@ -452,7 +448,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     ->action(function (array $data, array $record): void {
                         try {
                             $mode = ! empty($data['mode']) ? $data['mode'] : $this->buildPermissionMode($data);
-                            $this->getAgent()->fileChmod($this->getUsername(), $record['path'], $mode);
+                            $this->agent()->fileChmod($this->getUsername(), $record['path'], $mode);
                             Notification::make()->title(__('Permissions changed'))->success()->send();
                             $this->loadDirectory();
                             $this->resetTable();
@@ -478,7 +474,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                             // Build full new path by replacing filename in old path
                             $oldPath = $record['path'];
                             $newPath = dirname($oldPath).'/'.$newName;
-                            $this->getAgent()->fileRename($this->getUsername(), $oldPath, $newPath);
+                            $this->agent()->fileRename($this->getUsername(), $oldPath, $newPath);
                             Notification::make()->title(__('Renamed successfully'))->success()->send();
                             $this->loadDirectory();
                             $this->resetTable();
@@ -494,7 +490,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     ->requiresConfirmation()
                     ->action(function (array $record): void {
                         try {
-                            $this->getAgent()->fileTrash($this->getUsername(), $record['path']);
+                            $this->agent()->fileTrash($this->getUsername(), $record['path']);
                             Notification::make()->title(__('Moved to trash'))->success()->send();
                             $this->loadDirectory();
                             $this->resetTable();
@@ -521,7 +517,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                         $failed = 0;
                         foreach ($records as $record) {
                             try {
-                                $this->getAgent()->fileTrash($this->getUsername(), $record['path']);
+                                $this->agent()->fileTrash($this->getUsername(), $record['path']);
                                 $trashed++;
                             } catch (Exception $e) {
                                 $failed++;
@@ -566,7 +562,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                             try {
                                 $filename = basename($record['path']);
                                 $newPath = $destination.'/'.$filename;
-                                $this->getAgent()->fileMove($this->getUsername(), $record['path'], $newPath);
+                                $this->agent()->fileMove($this->getUsername(), $record['path'], $newPath);
                                 $moved++;
                             } catch (Exception $e) {
                                 $failed++;
@@ -611,7 +607,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                             try {
                                 $filename = basename($record['path']);
                                 $newPath = $destination.'/'.$filename;
-                                $this->getAgent()->fileCopy($this->getUsername(), $record['path'], $newPath);
+                                $this->agent()->fileCopy($this->getUsername(), $record['path'], $newPath);
                                 $copied++;
                             } catch (Exception $e) {
                                 $failed++;
@@ -748,7 +744,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
         try {
             $sourcePath = $this->sanitizePath($sourcePath);
             $destPath = $this->sanitizePath($destPath);
-            $this->getAgent()->fileMove($this->getUsername(), $sourcePath, $destPath);
+            $this->agent()->fileMove($this->getUsername(), $sourcePath, $destPath);
 
             Notification::make()
                 ->title(__('Item moved successfully'))
@@ -781,7 +777,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                 throw new Exception(__('File too large (max :size MB)', ['size' => $maxSizeMb]));
             }
 
-            $this->getAgent()->fileUpload(
+            $this->agent()->fileUpload(
                 $this->getUsername(),
                 $this->currentPath,
                 $filename,
@@ -831,7 +827,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                         ? $folderName
                         : $this->currentPath.'/'.$folderName;
 
-                    $this->getAgent()->fileMkdir($this->getUsername(), $path);
+                    $this->agent()->fileMkdir($this->getUsername(), $path);
 
                     Notification::make()
                         ->title(__('Folder created'))
@@ -882,7 +878,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                         ? $fileName
                         : $this->currentPath.'/'.$fileName;
 
-                    $this->getAgent()->fileWrite($this->getUsername(), $path, $data['content'] ?? '');
+                    $this->agent()->fileWrite($this->getUsername(), $path, $data['content'] ?? '');
 
                     Notification::make()
                         ->title(__('File created'))
@@ -931,7 +927,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
                     try {
                         $filename = $this->sanitizeFilename($file->getClientOriginalName());
                         $content = file_get_contents($file->getRealPath());
-                        $this->getAgent()->fileUpload(
+                        $this->agent()->fileUpload(
                             $this->getUsername(),
                             $this->currentPath,
                             $filename,
@@ -1002,7 +998,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
     public function downloadFile(string $path): void
     {
         try {
-            $result = $this->getAgent()->fileRead($this->getUsername(), $path);
+            $result = $this->agent()->fileRead($this->getUsername(), $path);
             $this->dispatch('download-file',
                 content: base64_encode(base64_decode($result['content'])),
                 filename: basename($path)
@@ -1047,7 +1043,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
     public function getImageData(string $path): ?string
     {
         try {
-            $result = $this->getAgent()->fileRead($this->getUsername(), $path);
+            $result = $this->agent()->fileRead($this->getUsername(), $path);
             $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
             $mimeTypes = [
                 'jpg' => 'image/jpeg',
@@ -1147,7 +1143,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
     public function getTrashItems(): array
     {
         try {
-            $result = $this->getAgent()->fileListTrash($this->getUsername());
+            $result = $this->agent()->fileListTrash($this->getUsername());
 
             return $result['items'] ?? [];
         } catch (Exception) {
@@ -1158,7 +1154,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
     public function restoreFromTrash(string $trashName): void
     {
         try {
-            $result = $this->getAgent()->fileRestore($this->getUsername(), $trashName);
+            $result = $this->agent()->fileRestore($this->getUsername(), $trashName);
             Notification::make()
                 ->title(__('Restored'))
                 ->body(__('Restored to: :path', ['path' => $result['restored_path'] ?? '']))
@@ -1175,7 +1171,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
     {
         try {
             $trashPath = ".trash/$trashName";
-            $this->getAgent()->fileDelete($this->getUsername(), $trashPath);
+            $this->agent()->fileDelete($this->getUsername(), $trashPath);
             Notification::make()->title(__('Permanently deleted'))->success()->send();
         } catch (Exception $e) {
             Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
@@ -1185,7 +1181,7 @@ class Files extends Page implements HasActions, HasForms, HasTable
     public function emptyTrash(): void
     {
         try {
-            $result = $this->getAgent()->fileEmptyTrash($this->getUsername());
+            $result = $this->agent()->fileEmptyTrash($this->getUsername());
             Notification::make()
                 ->title(__('Trash emptied'))
                 ->body(__(':count items deleted', ['count' => $result['deleted'] ?? 0]))

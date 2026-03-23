@@ -8,7 +8,7 @@ use App\Filament\Admin\Widgets\SslStatsOverview;
 use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Artisan;
 
 class SslManager extends Page implements HasTable
 {
+    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
@@ -60,11 +61,6 @@ class SslManager extends Page implements HasTable
     public function getHeaderWidgetsColumns(): int|array
     {
         return 6;
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function mount(): void
@@ -186,7 +182,7 @@ class SslManager extends Page implements HasTable
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $result = $this->getAgent()->sslIssue(
+            $result = $this->agent()->sslIssue(
                 $domain->domain,
                 $domain->user->username,
                 $domain->user->email,
@@ -250,7 +246,7 @@ class SslManager extends Page implements HasTable
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $result = $this->getAgent()->sslRenew($domain->domain, $domain->user->username);
+            $result = $this->agent()->sslRenew($domain->domain, $domain->user->username);
 
             if ($result['success'] ?? false) {
                 $ssl = $domain->sslCertificate;
@@ -293,7 +289,7 @@ class SslManager extends Page implements HasTable
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $result = $this->getAgent()->sslCheck($domain->domain, $domain->user->username);
+            $result = $this->agent()->sslCheck($domain->domain, $domain->user->username);
 
             if ($result['success'] ?? false) {
                 $sslData = $result['ssl'] ?? [];
@@ -343,7 +339,7 @@ class SslManager extends Page implements HasTable
             $domain = Domain::with('user')->findOrFail($domainId);
             $mailHostname = 'mail.'.$domain->domain;
 
-            $result = $this->getAgent()->sslMailIssue($mailHostname, $domain->user->email);
+            $result = $this->agent()->sslMailIssue($mailHostname, $domain->user->email);
 
             if ($result['success'] ?? false) {
                 SslCertificate::updateOrCreate(
@@ -502,7 +498,7 @@ class SslManager extends Page implements HasTable
 
         foreach ($domainsWithoutSsl as $domain) {
             try {
-                $result = $this->getAgent()->sslIssue(
+                $result = $this->agent()->sslIssue(
                     $domain->domain,
                     $domain->user->username,
                     $domain->user->email,
@@ -552,7 +548,7 @@ class SslManager extends Page implements HasTable
         foreach ($domainsWithoutMailSsl as $domain) {
             try {
                 $mailHostname = 'mail.'.$domain->domain;
-                $result = $this->getAgent()->sslMailIssue($mailHostname, $domain->user->email);
+                $result = $this->agent()->sslMailIssue($mailHostname, $domain->user->email);
 
                 if ($result['success'] ?? false) {
                     SslCertificate::updateOrCreate(

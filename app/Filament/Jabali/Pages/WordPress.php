@@ -9,7 +9,7 @@ use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
 use App\Models\MysqlCredential;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -42,6 +42,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     protected static ?string $slug = 'wordpress';
 
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -85,11 +86,6 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
         return __('WordPress Manager');
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function getUsername(): string
     {
         return Auth::user()->username;
@@ -104,7 +100,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     {
         // Load WordPress sites
         try {
-            $result = $this->getAgent()->wpList($this->getUsername());
+            $result = $this->agent()->wpList($this->getUsername());
             $this->sites = $result['sites'] ?? [];
         } catch (Exception $e) {
             $this->sites = [];
@@ -112,7 +108,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
         // Load domains for the install form
         try {
-            $result = $this->getAgent()->domainList($this->getUsername());
+            $result = $this->agent()->domainList($this->getUsername());
             $this->domains = $result['domains'] ?? [];
         } catch (Exception $e) {
             $this->domains = [];
@@ -275,7 +271,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                         ])
                         ->action(function (array $data, array $record): void {
                             try {
-                                $result = $this->getAgent()->wpDelete(
+                                $result = $this->agent()->wpDelete(
                                     $this->getUsername(),
                                     $record['id'],
                                     $data['delete_files'] ?? true,
@@ -382,7 +378,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
             ->modalSubmitActionLabel(__('Scan'))
             ->form(function (): array {
                 // Perform scan when form is loaded
-                $result = $this->getAgent()->wpScan($this->getUsername());
+                $result = $this->agent()->wpScan($this->getUsername());
                 $this->scannedSites = ($result['success'] ?? false) ? ($result['found'] ?? []) : [];
 
                 if (empty($this->scannedSites)) {
@@ -429,7 +425,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
                 foreach ($sitesToImport as $path) {
                     try {
-                        $result = $this->getAgent()->wpImport($this->getUsername(), $path);
+                        $result = $this->agent()->wpImport($this->getUsername(), $path);
                         if ($result['success'] ?? false) {
                             $imported++;
                         } else {
@@ -602,7 +598,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                         ->info()
                         ->send();
 
-                    $result = $this->getAgent()->wpInstall($this->getUsername(), $data['domain'], [
+                    $result = $this->agent()->wpInstall($this->getUsername(), $data['domain'], [
                         'path' => $data['path'] ?? '',
                         'site_title' => $data['site_title'],
                         'admin_user' => $data['admin_user'],
@@ -629,7 +625,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                             $siteId = $result['site_id'] ?? null;
                             if ($siteId) {
                                 try {
-                                    $this->getAgent()->wpCacheEnable($this->getUsername(), $siteId);
+                                    $this->agent()->wpCacheEnable($this->getUsername(), $siteId);
                                     $this->credentials['cache_enabled'] = true;
                                 } catch (Exception $e) {
                                     // Cache enable failed, but installation succeeded
@@ -678,7 +674,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     public function autoLogin(string $siteId): void
     {
         try {
-            $result = $this->getAgent()->wpAutoLogin($this->getUsername(), $siteId);
+            $result = $this->agent()->wpAutoLogin($this->getUsername(), $siteId);
 
             if ($result['success'] ?? false) {
                 $loginUrl = $result['login_url'];
@@ -723,7 +719,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
             ->color('danger')
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->wpDelete(
+                    $result = $this->agent()->wpDelete(
                         $this->getUsername(),
                         $this->selectedSiteId,
                         $data['delete_files'] ?? true,
@@ -760,12 +756,12 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
             $siteDomain = $site['domain'] ?? '';
 
             // Get current cache status (Redis object cache)
-            $statusResult = $this->getAgent()->wpCacheStatus($this->getUsername(), $siteId);
+            $statusResult = $this->agent()->wpCacheStatus($this->getUsername(), $siteId);
             $isEnabled = ($statusResult['status']['enabled'] ?? false);
 
             if ($isEnabled) {
                 // Disable Redis object cache and nginx page cache
-                $result = $this->getAgent()->wpCacheDisable($this->getUsername(), $siteId, $removePlugin, $resetData);
+                $result = $this->agent()->wpCacheDisable($this->getUsername(), $siteId, $removePlugin, $resetData);
                 if ($result['success'] ?? false) {
                     // Also update Domain model's page_cache_enabled field
                     if ($siteDomain) {
@@ -790,7 +786,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                 }
             } else {
                 // Enable Redis object cache and nginx page cache
-                $result = $this->getAgent()->wpCacheEnable($this->getUsername(), $siteId);
+                $result = $this->agent()->wpCacheEnable($this->getUsername(), $siteId);
                 if ($result['success'] ?? false) {
                     // Also update Domain model's page_cache_enabled field
                     if ($siteDomain) {
@@ -834,7 +830,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     public function toggleDebug(string $siteId): void
     {
         try {
-            $result = $this->getAgent()->send('wp.toggle_debug', [
+            $result = $this->agent()->send('wp.toggle_debug', [
                 'username' => $this->getUsername(),
                 'site_id' => $siteId,
             ]);
@@ -865,7 +861,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     public function toggleAutoUpdate(string $siteId): void
     {
         try {
-            $result = $this->getAgent()->send('wp.toggle_auto_update', [
+            $result = $this->agent()->send('wp.toggle_auto_update', [
                 'username' => $this->getUsername(),
                 'site_id' => $siteId,
             ]);
@@ -902,7 +898,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                 ->info()
                 ->send();
 
-            $result = $this->getAgent()->send('wp.update', [
+            $result = $this->agent()->send('wp.update', [
                 'username' => $this->getUsername(),
                 'site_id' => $siteId,
                 'type' => 'all',
@@ -969,7 +965,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                 ->info()
                 ->send();
 
-            $result = $this->getAgent()->send('wp.create_staging', $agentPayload);
+            $result = $this->agent()->send('wp.create_staging', $agentPayload);
 
             if ($result['success'] ?? false) {
                 $stagingDomain = (string) ($result['staging_domain'] ?? '');
@@ -1026,7 +1022,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                 ->info()
                 ->send();
 
-            $result = $this->getAgent()->wpPushStaging($this->getUsername(), $stagingSiteId);
+            $result = $this->agent()->wpPushStaging($this->getUsername(), $stagingSiteId);
 
             if ($result['success'] ?? false) {
                 Notification::make()
@@ -1050,7 +1046,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     public function flushCache(string $siteId): void
     {
         try {
-            $result = $this->getAgent()->wpCacheFlush($this->getUsername(), $siteId);
+            $result = $this->agent()->wpCacheFlush($this->getUsername(), $siteId);
 
             if ($result['success'] ?? false) {
                 $keysDeleted = $result['keys_deleted'] ?? null;
@@ -1080,7 +1076,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
     public function getCacheStatus(string $siteId): array
     {
         try {
-            $result = $this->getAgent()->wpCacheStatus($this->getUsername(), $siteId);
+            $result = $this->agent()->wpCacheStatus($this->getUsername(), $siteId);
             if ($result['success'] ?? false) {
                 return $result['status'];
             }
@@ -1112,7 +1108,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
         // Check if WPScan is available (scan runs asynchronously via the queue).
         try {
-            $status = $this->getAgent()->send('scanner.status', ['tool' => 'wpscan']);
+            $status = $this->agent()->send('scanner.status', ['tool' => 'wpscan']);
         } catch (Exception $e) {
             $status = ['installed' => false, 'error' => $e->getMessage()];
         }
@@ -1526,7 +1522,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                 return;
             }
 
-            $result = $this->getAgent()->send('screenshot.capture', [
+            $result = $this->agent()->send('screenshot.capture', [
                 'url' => $url,
                 'site_id' => $siteId,
             ]);
@@ -1690,7 +1686,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
         $hostname = gethostname() ?: 'localhost';
         $serverIp = ServerFacts::serverIp('');
 
-        $this->getAgent()->dnsSyncZone($domain->domain, $records, [
+        $this->agent()->dnsSyncZone($domain->domain, $records, [
             'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",
             'ns2' => $settings['ns2'] ?? "ns2.{$hostname}",
             'admin_email' => $settings['admin_email'] ?? "admin.{$hostname}",

@@ -9,7 +9,7 @@ use App\Models\BackupDestination;
 use App\Models\BackupSchedule;
 use App\Models\DnsSetting;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -47,6 +47,7 @@ use Livewire\Attributes\Url;
 class Backups extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -137,11 +138,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             ]),
                     ]),
             ]);
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     protected function logsTable(Table $table): Table
@@ -715,7 +711,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                         $record->destination->config ?? [],
                                         ['type' => $record->destination->type]
                                     );
-                                    $contents = $this->getAgent()->backupListContents(
+                                    $contents = $this->agent()->backupListContents(
                                         $record->remote_path ?? '',
                                         $username,
                                         $destConfig
@@ -838,7 +834,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                         }
 
                                         try {
-                                            $result = $this->getAgent()->send('backup.list_snapshot_tree', [
+                                            $result = $this->agent()->send('backup.list_snapshot_tree', [
                                                 'backup_path' => $path,
                                                 'username' => $username,
                                                 'destination' => $destConfig,
@@ -1146,7 +1142,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         }
 
                         try {
-                            $result = $livewire->getAgent()->backupTestDestination($config);
+                            $result = $livewire->agent()->backupTestDestination($config);
                             if ($result['success']) {
                                 Notification::make()
                                     ->title(__('Connection successful'))
@@ -1211,7 +1207,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
         $testConfig = array_merge($config, ['type' => $type]);
         try {
-            $result = $this->getAgent()->backupTestDestination($testConfig);
+            $result = $this->agent()->backupTestDestination($testConfig);
             if (! $result['success']) {
                 Notification::make()
                     ->title(__('Connection failed'))
@@ -1286,7 +1282,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
         $testConfig = array_merge($config, ['type' => $type]);
         try {
-            $result = $this->getAgent()->backupTestDestination($testConfig);
+            $result = $this->agent()->backupTestDestination($testConfig);
             if (! ($result['success'] ?? false)) {
                 Notification::make()
                     ->title(__('Connection failed'))
@@ -1329,7 +1325,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
         try {
             $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
-            $result = $this->getAgent()->backupTestDestination($config);
+            $result = $this->agent()->backupTestDestination($config);
 
             $destination->update([
                 'last_tested_at' => now(),
@@ -1431,7 +1427,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
             $config = array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type]);
             $backupType = $backup->metadata['backup_type'] ?? 'full';
-            $result = $this->getAgent()->backupUploadRemote($backup->local_path, $config, $backupType);
+            $result = $this->agent()->backupUploadRemote($backup->local_path, $config, $backupType);
 
             if ($result['success']) {
                 $backup->update([
@@ -1440,7 +1436,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 ]);
 
                 if (! $keepLocal && $backup->local_path) {
-                    $this->getAgent()->backupDeleteServer($backup->local_path);
+                    $this->agent()->backupDeleteServer($backup->local_path);
                     $backup->update(['local_path' => null]);
                 }
 
@@ -1468,7 +1464,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         // Delete local file/folder
         if ($backup->local_path) {
             try {
-                $result = $this->getAgent()->backupDeleteServer($backup->local_path);
+                $result = $this->agent()->backupDeleteServer($backup->local_path);
                 if (! ($result['success'] ?? false)) {
                     throw new Exception($result['error'] ?? __('Failed to delete local backup'));
                 }
@@ -1490,7 +1486,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     $backup->destination->config ?? [],
                     ['type' => $backup->destination->type]
                 );
-                $this->getAgent()->send('backup.delete_remote', [
+                $this->agent()->send('backup.delete_remote', [
                     'remote_path' => $backup->remote_path,
                     'destination' => $config,
                 ]);
@@ -1817,7 +1813,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 try {
                     $backup->update(['status' => 'running', 'started_at' => now()]);
 
-                    $result = $this->getAgent()->backupCreate($user->username, $outputPath, [
+                    $result = $this->agent()->backupCreate($user->username, $outputPath, [
                         'backup_type' => 'full',
                         'include_files' => $data['include_files'] ?? true,
                         'include_databases' => $data['include_databases'] ?? true,
@@ -1925,7 +1921,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 ->send();
 
             try {
-                $downloadResult = $this->getAgent()->send('backup.download_remote', [
+                $downloadResult = $this->agent()->send('backup.download_remote', [
                     'remote_path' => $userRemotePath,
                     'local_path' => $tempDownloadPath,
                     'destination' => array_merge(
@@ -1961,7 +1957,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->send('backup.restore', [
+            $result = $this->agent()->send('backup.restore', [
                 'username' => $username,
                 'backup_path' => $backupPath,
                 'restore_files' => $data['restore_files'] ?? false,
@@ -2041,7 +2037,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->send('backup.get_info', [
+            $result = $this->agent()->send('backup.get_info', [
                 'backup_path' => $backupPath,
             ]);
 

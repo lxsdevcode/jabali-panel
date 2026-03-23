@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -31,6 +31,7 @@ use Livewire\Attributes\Url;
 class EmailLogs extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -126,15 +127,10 @@ class EmailLogs extends Page implements HasActions, HasForms, HasTable
         $this->resetTable();
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function loadLogs(bool $refreshTable = true): void
     {
         try {
-            $result = $this->getAgent()->send('email.get_logs', [
+            $result = $this->agent()->send('email.get_logs', [
                 'limit' => 200,
             ]);
 
@@ -159,7 +155,7 @@ class EmailLogs extends Page implements HasActions, HasForms, HasTable
     public function loadQueue(bool $refreshTable = true): void
     {
         try {
-            $result = $this->getAgent()->send('mail.queue_list');
+            $result = $this->agent()->send('mail.queue_list');
             $this->queueItems = $result['queue'] ?? [];
             $this->queueLoaded = true;
         } catch (\Exception $e) {
@@ -334,7 +330,7 @@ class EmailLogs extends Page implements HasActions, HasForms, HasTable
                 ->color('info')
                 ->action(function (array $record): void {
                     try {
-                        $result = $this->getAgent()->send('mail.queue_retry', ['id' => $record['id'] ?? '']);
+                        $result = $this->agent()->send('mail.queue_retry', ['id' => $record['id'] ?? '']);
                         if ($result['success'] ?? false) {
                             Notification::make()->title(__('Message retried'))->success()->send();
                             $this->loadQueue();
@@ -352,7 +348,7 @@ class EmailLogs extends Page implements HasActions, HasForms, HasTable
                 ->requiresConfirmation()
                 ->action(function (array $record): void {
                     try {
-                        $result = $this->getAgent()->send('mail.queue_delete', ['id' => $record['id'] ?? '']);
+                        $result = $this->agent()->send('mail.queue_delete', ['id' => $record['id'] ?? '']);
                         if ($result['success'] ?? false) {
                             Notification::make()->title(__('Message deleted'))->success()->send();
                             $this->loadQueue();

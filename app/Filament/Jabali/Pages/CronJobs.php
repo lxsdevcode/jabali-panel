@@ -6,7 +6,7 @@ namespace App\Filament\Jabali\Pages;
 
 use App\Models\CronJob;
 use App\Models\Domain;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -33,6 +33,7 @@ use Illuminate\Support\HtmlString;
 class CronJobs extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -54,11 +55,6 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
         return __('Cron Jobs');
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function getUsername(): string
     {
         return Auth::user()->username;
@@ -73,7 +69,7 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
     {
         try {
             // Get WordPress sites from the agent
-            $result = $this->getAgent()->wpList($this->getUsername());
+            $result = $this->agent()->wpList($this->getUsername());
             $sites = $result['sites'] ?? [];
 
             // Build options array: domain_id => domain name (with path if subdirectory install)
@@ -333,7 +329,7 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
                     $username = $this->getUsername();
 
                     // Add DISABLE_WP_CRON to wp-config.php
-                    $result = $this->getAgent()->cronWordPressSetup(
+                    $result = $this->agent()->cronWordPressSetup(
                         $username,
                         $domain->domain,
                         $data['schedule'],
@@ -463,7 +459,7 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
 
             // If it's a WordPress cron, remove the wp-config DISABLE_WP_CRON constant
             if ($cronJob->type === 'wordpress' && isset($cronJob->metadata['domain'])) {
-                $this->getAgent()->cronWordPressSetup(
+                $this->agent()->cronWordPressSetup(
                     $this->getUsername(),
                     $cronJob->metadata['domain'],
                     $cronJob->schedule,
@@ -548,7 +544,7 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
         try {
             $cronJob = CronJob::where('user_id', Auth::id())->findOrFail($id);
 
-            $result = $this->getAgent()->cronRun(
+            $result = $this->agent()->cronRun(
                 $this->getUsername(),
                 $cronJob->command
             );

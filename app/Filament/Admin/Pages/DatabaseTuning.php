@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -23,6 +23,7 @@ use Illuminate\Contracts\Support\Htmlable;
 class DatabaseTuning extends Page implements HasActions, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCircleStack;
@@ -52,11 +53,6 @@ class DatabaseTuning extends Page implements HasActions, HasTable
         $this->loadVariables();
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function loadVariables(): void
     {
         $names = [
@@ -69,7 +65,7 @@ class DatabaseTuning extends Page implements HasActions, HasTable
         ];
 
         try {
-            $result = $this->getAgent()->databaseGetVariables($names);
+            $result = $this->agent()->databaseGetVariables($names);
             if (! ($result['success'] ?? false)) {
                 throw new \RuntimeException($result['error'] ?? __('Unable to load variables'));
             }
@@ -116,7 +112,7 @@ class DatabaseTuning extends Page implements HasActions, HasTable
                     ->action(function (array $record, array $data): void {
                         try {
                             try {
-                                $agent = $this->getAgent();
+                                $agent = $this->agent();
                                 $setResult = $agent->databaseSetGlobal($record['name'], (string) $data['value']);
                                 if (! ($setResult['success'] ?? false)) {
                                     throw new \RuntimeException($setResult['error'] ?? __('Update failed'));

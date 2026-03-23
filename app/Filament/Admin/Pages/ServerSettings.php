@@ -11,6 +11,7 @@ use App\Models\DnsSetting;
 use App\Models\HostingPackage;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -46,6 +47,7 @@ use Livewire\WithFileUploads;
 class ServerSettings extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use WithFileUploads;
 
@@ -104,11 +106,6 @@ class ServerSettings extends Page implements HasActions, HasForms
         return null;
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function getTitle(): string|Htmlable
     {
         return __('Server Settings');
@@ -146,7 +143,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         // Load hostname from agent
         $agentHostname = $hostname;
         try {
-            $result = $this->getAgent()->send('server.info', []);
+            $result = $this->agent()->send('server.info', []);
             if ($result['success'] ?? false) {
                 $agentHostname = $result['info']['hostname'] ?? $hostname;
             }
@@ -556,7 +553,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->label('')
                         ->content(function () {
                             try {
-                                $status = $this->getAgent()->sslMailStatus();
+                                $status = $this->agent()->sslMailStatus();
                                 if (! ($status['configured'] ?? false)) {
                                     return __('No SSL certificate configured. Mail clients will show security warnings.');
                                 }
@@ -945,7 +942,7 @@ class ServerSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->getAgent()->send('server.set_hostname', ['hostname' => $hostname]);
+        $result = $this->agent()->send('server.set_hostname', ['hostname' => $hostname]);
 
         if (! ($result['success'] ?? false)) {
             Notification::make()->title(__('Failed to update hostname'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
@@ -961,7 +958,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         foreach ($services as $service) {
             try {
                 $action = $service === 'nginx' ? 'reload' : 'restart';
-                $result = $this->getAgent()->send("service.{$action}", ['service' => $service]);
+                $result = $this->agent()->send("service.{$action}", ['service' => $service]);
                 if ($result['success'] ?? false) {
                     $updatedServices[] = $service;
                 } else {
@@ -1001,7 +998,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         DnsSetting::set('admin_email', $data['admin_email']);
         DnsSetting::clearCache();
 
-        $result = $this->getAgent()->send('server.create_zone', [
+        $result = $this->agent()->send('server.create_zone', [
             'hostname' => $this->hostnameData['hostname'],
             'ns1' => $data['ns1'],
             'ns1_ip' => $data['ns1_ip'],
@@ -1037,7 +1034,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                 return;
             }
 
-            $result = $this->getAgent()->send('server.set_resolvers', [
+            $result = $this->agent()->send('server.set_resolvers', [
                 'nameservers' => array_values($nameservers),
                 'search_domains' => ! empty($data['search_domain']) ? [$data['search_domain']] : [],
             ]);
@@ -1075,7 +1072,7 @@ class ServerSettings extends Page implements HasActions, HasForms
 
         if ($data['quotas_enabled'] && ! $wasEnabled) {
             try {
-                $result = $this->getAgent()->send('quota.enable', ['mount' => '/home']);
+                $result = $this->agent()->send('quota.enable', ['mount' => '/home']);
                 if ($result['success'] ?? false) {
                     Notification::make()->title(__('Disk quotas enabled'))->body(__('Quota system has been initialized on /home'))->success()->send();
                 } else {
@@ -1098,7 +1095,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         DnsSetting::clearCache();
 
         try {
-            $result = $this->getAgent()->send('server.set_upload_limits', ['size_mb' => $size]);
+            $result = $this->agent()->send('server.set_upload_limits', ['size_mb' => $size]);
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('File manager settings saved'))->body(__('Server upload limits updated to :size MB', ['size' => $size]))->success()->send();
             } else {
@@ -1160,7 +1157,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         }
 
         try {
-            $result = $this->getAgent()->sslMailIssue($mailHostname);
+            $result = $this->agent()->sslMailIssue($mailHostname);
             if ($result['success'] ?? false) {
                 Notification::make()
                     ->title(__('Mail SSL certificate issued'))
@@ -1328,7 +1325,7 @@ class ServerSettings extends Page implements HasActions, HasForms
         $data = $this->phpFpmData;
 
         try {
-            $result = $this->getAgent()->send('php.update_all_pool_limits', [
+            $result = $this->agent()->send('php.update_all_pool_limits', [
                 'pm_max_children' => (int) $data['pm_max_children'],
                 'pm_max_requests' => (int) $data['pm_max_requests'],
                 'rlimit_files' => (int) $data['rlimit_files'],

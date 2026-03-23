@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Jabali\Pages;
 
 use App\Models\Setting;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Auth;
 class SshKeys extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -81,7 +83,7 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
     protected function loadShellStatus(): void
     {
         try {
-            $result = $this->getAgent()->send('ssh.shell_status', ['username' => $this->getUsername()]);
+            $result = $this->agent()->send('ssh.shell_status', ['username' => $this->getUsername()]);
             $this->shellEnabled = $result['shell_enabled'] ?? false;
         } catch (\Exception $e) {
             $this->shellEnabled = false;
@@ -102,7 +104,7 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
 
         try {
             $command = $this->shellEnabled ? 'ssh.disable_shell' : 'ssh.enable_shell';
-            $result = $this->getAgent()->send($command, ['username' => $this->getUsername()]);
+            $result = $this->agent()->send($command, ['username' => $this->getUsername()]);
 
             if ($result['success'] ?? false) {
                 $this->shellEnabled = ! $this->shellEnabled;
@@ -132,15 +134,10 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
         return $user->system_username ?? $user->username ?? $user->email;
     }
 
-    protected function getAgent()
-    {
-        return app(\App\Services\Agent\AgentClient::class);
-    }
-
     protected function loadSshKeys(): void
     {
         try {
-            $result = $this->getAgent()->send('ssh.list_keys', ['username' => $this->getUsername()]);
+            $result = $this->agent()->send('ssh.list_keys', ['username' => $this->getUsername()]);
             $this->sshKeys = $result['keys'] ?? [];
         } catch (\Exception $e) {
             $this->sshKeys = [];
@@ -182,7 +179,7 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitActionLabel(__('Delete Key'))
                     ->action(function (array $record): void {
                         try {
-                            $result = $this->getAgent()->send('ssh.delete_key', [
+                            $result = $this->agent()->send('ssh.delete_key', [
                                 'username' => $this->getUsername(),
                                 'key_id' => $record['id'],
                             ]);
@@ -298,7 +295,7 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
                 ])
                 ->action(function (array $data): void {
                     try {
-                        $result = $this->getAgent()->send('ssh.add_key', [
+                        $result = $this->agent()->send('ssh.add_key', [
                             'username' => $this->getUsername(),
                             'name' => $data['name'],
                             'public_key' => trim($data['public_key']),
@@ -326,7 +323,7 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
 
     protected function generateSshKey(string $name, string $type, string $passphrase = ''): array
     {
-        $result = $this->getAgent()->send('ssh.generate_key', [
+        $result = $this->agent()->send('ssh.generate_key', [
             'name' => $name,
             'type' => $type,
             'passphrase' => $passphrase,
@@ -337,7 +334,7 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
         }
 
         // Add public key to user authorized_keys
-        $addResult = $this->getAgent()->send('ssh.add_key', [
+        $addResult = $this->agent()->send('ssh.add_key', [
             'username' => $this->getUsername(),
             'name' => $name,
             'public_key' => trim($result['public_key']),

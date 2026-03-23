@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Auth;
 class PhpSettings extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-cog-6-tooth';
@@ -51,11 +52,6 @@ class PhpSettings extends Page implements HasActions, HasForms
 
     // PHP Settings form data
     public ?array $data = [];
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
 
     protected function getUsername(): string
     {
@@ -87,7 +83,7 @@ class PhpSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->getAgent()->send('domain.list', [
+        $result = $this->agent()->send('domain.list', [
             'username' => $this->getUsername(),
         ]);
 
@@ -107,7 +103,7 @@ class PhpSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->getAgent()->send('php.list_versions', []);
+        $result = $this->agent()->send('php.list_versions', []);
 
         $this->phpVersions = [];
         if ($result['success'] ?? false) {
@@ -149,7 +145,7 @@ class PhpSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->getAgent()->send('php.getSettings', [
+        $result = $this->agent()->send('php.getSettings', [
             'domain' => $this->selectedDomain,
             'username' => $this->getUsername(),
         ]);
@@ -320,7 +316,7 @@ class PhpSettings extends Page implements HasActions, HasForms
     {
         $formData = $this->form->getState();
 
-        $result = $this->getAgent()->send('php.setSettings', [
+        $result = $this->agent()->send('php.setSettings', [
             'domain' => $this->selectedDomain,
             'username' => $this->getUsername(),
             'settings' => [

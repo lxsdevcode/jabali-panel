@@ -6,7 +6,7 @@ namespace App\Filament\Jabali\Pages;
 
 use App\Jobs\RunCpanelRestore;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Services\Migration\CpanelApiService;
 use App\Support\Formatter;
 use App\Support\SafeError;
@@ -42,6 +42,7 @@ use Livewire\Attributes\Url;
 class CpanelMigration extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-arrow-down-tray';
@@ -231,11 +232,6 @@ class CpanelMigration extends Page implements HasActions, HasForms
         $this->selectLocalBackup();
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     protected function getUser(): User
     {
         return Auth::user();
@@ -285,18 +281,18 @@ class CpanelMigration extends Page implements HasActions, HasForms
     {
         $this->availableBackups = [];
 
-        $result = $this->getAgent()->send('file.list', [
+        $result = $this->agent()->send('file.list', [
             'username' => $this->getUser()->username,
             'path' => 'backups',
         ]);
 
         if (! ($result['success'] ?? false)) {
-            $this->getAgent()->send('file.mkdir', [
+            $this->agent()->send('file.mkdir', [
                 'username' => $this->getUser()->username,
                 'path' => 'backups',
             ]);
 
-            $result = $this->getAgent()->send('file.list', [
+            $result = $this->agent()->send('file.list', [
                 'username' => $this->getUser()->username,
                 'path' => 'backups',
             ]);
@@ -354,7 +350,7 @@ class CpanelMigration extends Page implements HasActions, HasForms
             return;
         }
 
-        $info = $this->getAgent()->send('file.info', [
+        $info = $this->agent()->send('file.info', [
             'username' => $this->getUser()->username,
             'path' => $this->localBackupPath,
         ]);
@@ -1330,7 +1326,7 @@ class CpanelMigration extends Page implements HasActions, HasForms
             $this->downloadProgress = 0;
             $this->addStatusLog(__('Starting backup on cPanel...'), 'pending');
 
-            $this->getAgent()->send('file.mkdir', [
+            $this->agent()->send('file.mkdir', [
                 'path' => $destPath,
                 'username' => $user->username,
             ]);
@@ -1488,7 +1484,7 @@ class CpanelMigration extends Page implements HasActions, HasForms
                 $this->downloadProgress = 100;
                 $this->backupInProgress = false;
 
-                $this->getAgent()->send('file.chown', [
+                $this->agent()->send('file.chown', [
                     'path' => $localPath,
                     'username' => $user->username,
                 ]);
@@ -1533,7 +1529,7 @@ class CpanelMigration extends Page implements HasActions, HasForms
             $this->analysisLog = [];
             $this->addAnalysisLog(__('Analyzing backup contents...'), 'pending');
 
-            $result = $this->getAgent()->send('cpanel.analyze_backup', [
+            $result = $this->agent()->send('cpanel.analyze_backup', [
                 'backup_path' => $this->backupPath,
             ]);
 

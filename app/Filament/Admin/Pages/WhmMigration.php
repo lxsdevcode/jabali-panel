@@ -6,7 +6,7 @@ namespace App\Filament\Admin\Pages;
 
 use App\Jobs\RunWhmMigrationBatch;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Services\Migration\MigrationEmailProvisionService;
 use App\Services\Migration\WhmApiService;
 use App\Services\Migration\WhmMigrationStatusStore;
@@ -48,6 +48,7 @@ use Livewire\Attributes\Url;
 class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithInfolists;
     use InteractsWithTable;
@@ -200,11 +201,6 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
         $this->serverInfo = [];
         $this->accounts = [];
         $this->selectedAccounts = [];
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function getMigrationCacheKey(): string
@@ -948,23 +944,23 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
             }
 
             // Ensure Jabali SSH key exists (via agent which runs as root)
-            $this->getAgent()->send('jabali_ssh.ensure_exists', []);
+            $this->agent()->send('jabali_ssh.ensure_exists', []);
 
             // Get Jabali's public key and add to authorized_keys
-            $publicKeyResult = $this->getAgent()->send('jabali_ssh.get_public_key', []);
+            $publicKeyResult = $this->agent()->send('jabali_ssh.get_public_key', []);
             if (! ($publicKeyResult['success'] ?? false) || ! ($publicKeyResult['exists'] ?? false)) {
                 throw new Exception(__('Failed to get Jabali public key'));
             }
             $publicKey = $publicKeyResult['public_key'] ?? null;
 
             // Add to authorized_keys so cPanel can SCP to us
-            $this->getAgent()->send('jabali_ssh.add_to_authorized_keys', [
+            $this->agent()->send('jabali_ssh.add_to_authorized_keys', [
                 'public_key' => $publicKey,
                 'comment' => 'whm-migration-'.$cpanelUser,
             ]);
 
             // Read Jabali's SSH private key via agent (runs as root)
-            $privateKeyResult = $this->getAgent()->send('jabali_ssh.get_private_key', []);
+            $privateKeyResult = $this->agent()->send('jabali_ssh.get_private_key', []);
             if (! ($privateKeyResult['success'] ?? false) || ! ($privateKeyResult['exists'] ?? false)) {
                 throw new Exception(__('Failed to read Jabali private key'));
             }
@@ -1040,7 +1036,7 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
             // Step 6: Restore backup
             $this->updateAccountStatus($cpanelUser, 'restoring', __('Restoring data...'));
 
-            $result = $this->getAgent()->send('cpanel.restore_backup', [
+            $result = $this->agent()->send('cpanel.restore_backup', [
                 'backup_path' => $backupPath,
                 'username' => $user->username,
                 'restore_files' => $this->restoreFiles,
@@ -1129,7 +1125,7 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
                 }
 
                 if (! $linuxUserExists) {
-                    $result = $this->getAgent()->send('user.create', [
+                    $result = $this->agent()->send('user.create', [
                         'username' => $cpanelUser,
                         'password' => $password,
                     ]);
@@ -1208,7 +1204,7 @@ class WhmMigration extends Page implements HasActions, HasForms, HasInfolists, H
             // Require size to be stable for 3 checks (15 seconds) and at least 10KB
             if ($sizeStableCount >= 3 && $currentSize >= 10 * 1024) {
                 // Fix permissions - file arrives as root via SCP
-                $this->getAgent()->send('file.chown', [
+                $this->agent()->send('file.chown', [
                     'path' => $backupFile,
                     'owner' => 'www-data',
                     'group' => 'www-data',

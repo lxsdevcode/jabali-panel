@@ -7,7 +7,7 @@ namespace App\Filament\Admin\Pages;
 use App\Filament\Admin\Widgets\ServerChartsWidget;
 use App\Filament\Admin\Widgets\ServerInfoWidget;
 use App\Models\ServerProcess;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 class ServerStatus extends Page implements HasTable
 {
+    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-chart-bar';
@@ -127,11 +128,6 @@ class ServerStatus extends Page implements HasTable
         $this->dispatch('refresh-interval-changed', interval: $interval);
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function mount(): void
     {
         $this->loadMetrics();
@@ -140,13 +136,13 @@ class ServerStatus extends Page implements HasTable
     public function loadMetrics(): void
     {
         try {
-            $this->overview = $this->getAgent()->metricsOverview();
-            $this->disk = $this->getAgent()->metricsDisk()['data'] ?? [];
-            $this->network = $this->getAgent()->metricsNetwork()['data'] ?? [];
+            $this->overview = $this->agent()->metricsOverview();
+            $this->disk = $this->agent()->metricsDisk()['data'] ?? [];
+            $this->network = $this->agent()->metricsNetwork()['data'] ?? [];
 
             // Get processes with configurable limit (0 = all)
             $limit = $this->processLimit === 0 ? 500 : $this->processLimit;
-            $processData = $this->getAgent()->metricsProcesses($limit)['data'] ?? [];
+            $processData = $this->agent()->metricsProcesses($limit)['data'] ?? [];
             $this->processTotal = $processData['total'] ?? 0;
             $this->processRunning = $processData['running'] ?? 0;
 
@@ -312,7 +308,7 @@ class ServerStatus extends Page implements HasTable
     public function killProcess(ServerProcess $process, int $signal = 15): void
     {
         try {
-            $result = $this->getAgent()->send('system.kill_process', [
+            $result = $this->agent()->send('system.kill_process', [
                 'pid' => $process->pid,
                 'signal' => $signal,
             ]);
@@ -348,7 +344,7 @@ class ServerStatus extends Page implements HasTable
 
         foreach ($records as $process) {
             try {
-                $result = $this->getAgent()->send('system.kill_process', [
+                $result = $this->agent()->send('system.kill_process', [
                     'pid' => $process->pid,
                     'signal' => $signal,
                 ]);

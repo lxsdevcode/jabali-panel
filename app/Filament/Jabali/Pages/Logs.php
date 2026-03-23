@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Jabali\Pages;
 
 use App\Filament\Jabali\Widgets\ActivityLogTable;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
@@ -28,6 +28,7 @@ use Livewire\Attributes\Url;
 class Logs extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-document-text';
@@ -134,11 +135,6 @@ class Logs extends Page implements HasActions, HasForms
         };
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     protected function getUsername(): string
     {
         return Auth::user()->username ?? Auth::user()->name ?? 'unknown';
@@ -147,7 +143,7 @@ class Logs extends Page implements HasActions, HasForms
     protected function loadDomains(): void
     {
         try {
-            $result = $this->getAgent()->send('domain.list', [
+            $result = $this->agent()->send('domain.list', [
                 'username' => $this->getUsername(),
             ]);
 
@@ -191,7 +187,7 @@ class Logs extends Page implements HasActions, HasForms
         }
 
         try {
-            $result = $this->getAgent()->send('logs.tail', [
+            $result = $this->agent()->send('logs.tail', [
                 'username' => $this->getUsername(),
                 'domain' => $this->selectedDomain,
                 'type' => $this->logType,
@@ -236,7 +232,7 @@ class Logs extends Page implements HasActions, HasForms
         }
 
         try {
-            $result = $this->getAgent()->send('logs.goaccess', [
+            $result = $this->agent()->send('logs.goaccess', [
                 'username' => $this->getUsername(),
                 'domain' => $this->selectedDomain,
                 'period' => 'all',

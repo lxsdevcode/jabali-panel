@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Pages;
 
 use App\Models\DnsSetting;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -26,6 +26,7 @@ use Illuminate\Contracts\Support\Htmlable;
 class IpAddresses extends Page implements HasActions, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-signal';
@@ -57,15 +58,10 @@ class IpAddresses extends Page implements HasActions, HasTable
         $this->loadAddresses();
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     protected function loadAddresses(): void
     {
         try {
-            $result = $this->getAgent()->ipList();
+            $result = $this->agent()->ipList();
             $this->addresses = $result['addresses'] ?? [];
             $this->interfaces = $result['interfaces'] ?? [];
         } catch (Exception $e) {
@@ -130,7 +126,7 @@ class IpAddresses extends Page implements HasActions, HasTable
                 ])
                 ->action(function (array $data): void {
                     try {
-                        $result = $this->getAgent()->ipAdd($data['ip'], (int) $data['cidr'], $data['interface']);
+                        $result = $this->agent()->ipAdd($data['ip'], (int) $data['cidr'], $data['interface']);
 
                         if ($result['success'] ?? false) {
                             $message = $result['message'] ?? __('IP added successfully');
@@ -304,7 +300,7 @@ class IpAddresses extends Page implements HasActions, HasTable
         }
 
         try {
-            $result = $this->getAgent()->ipRemove($ip, (int) $cidr, $interface);
+            $result = $this->agent()->ipRemove($ip, (int) $cidr, $interface);
             if (! ($result['success'] ?? false)) {
                 throw new Exception($result['error'] ?? __('Failed to remove IP address'));
             }

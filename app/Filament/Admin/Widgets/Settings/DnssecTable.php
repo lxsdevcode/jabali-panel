@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Widgets\Settings;
 
 use App\Models\Domain;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -23,6 +23,7 @@ use Livewire\Component;
 class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -31,15 +32,10 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
         return null;
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     protected function getDnssecStatus(string $domain): array
     {
         try {
-            $result = $this->getAgent()->dnsGetDnssecStatus($domain);
+            $result = $this->agent()->dnsGetDnssecStatus($domain);
             if ($result['success'] ?? false) {
                 return [
                     'enabled' => $result['enabled'] ?? false,
@@ -57,7 +53,7 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
     protected function getDsRecords(string $domain): ?array
     {
         try {
-            $result = $this->getAgent()->dnsGetDsRecords($domain);
+            $result = $this->agent()->dnsGetDsRecords($domain);
             if ($result['success'] ?? false) {
                 return $result;
             }
@@ -137,7 +133,7 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
                     })
                     ->action(function (Domain $record): void {
                         try {
-                            $result = $this->getAgent()->dnsEnableDnssec($record->domain);
+                            $result = $this->agent()->dnsEnableDnssec($record->domain);
                             if ($result['success'] ?? false) {
                                 Notification::make()
                                     ->title(__('DNSSEC Enabled'))
@@ -190,7 +186,7 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
                     })
                     ->action(function (Domain $record): void {
                         try {
-                            $result = $this->getAgent()->dnsDisableDnssec($record->domain);
+                            $result = $this->agent()->dnsDisableDnssec($record->domain);
                             if ($result['success'] ?? false) {
                                 Notification::make()
                                     ->title(__('DNSSEC Disabled'))

@@ -9,7 +9,7 @@ use App\Models\Domain;
 use App\Models\DomainAlias;
 use App\Models\DomainHotlinkSetting;
 use App\Models\DomainRedirect;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -40,6 +40,7 @@ use Illuminate\Support\Facades\Auth;
 class Domains extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -57,11 +58,6 @@ class Domains extends Page implements HasActions, HasForms, HasTable
     public function getTitle(): string|Htmlable
     {
         return __('Domains');
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function getUsername(): string
@@ -465,7 +461,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         return;
                     }
 
-                    $result = $this->getAgent()->domainCreate($this->getUsername(), $data['domain']);
+                    $result = $this->agent()->domainCreate($this->getUsername(), $data['domain']);
 
                     if ($result['success'] ?? false) {
                         $created = Domain::create([
@@ -586,7 +582,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             'wildcard' => $r->is_wildcard,
         ])->toArray();
 
-        $this->getAgent()->send('domain.set_redirects', [
+        $this->agent()->send('domain.set_redirects', [
             'username' => $this->getUsername(),
             'domain' => $domain->domain,
             'redirects' => $redirects,
@@ -611,7 +607,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             $setting->save();
 
             // Apply hotlink protection via agent
-            $this->getAgent()->send('domain.set_hotlink_protection', [
+            $this->agent()->send('domain.set_hotlink_protection', [
                 'username' => $this->getUsername(),
                 'domain' => $domain->domain,
                 'enabled' => $setting->is_enabled,
@@ -641,7 +637,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             $domain->update(['directory_index' => $data['directory_index']]);
 
             // Apply index settings via agent
-            $this->getAgent()->send('domain.set_directory_index', [
+            $this->agent()->send('domain.set_directory_index', [
                 'username' => $this->getUsername(),
                 'domain' => $domain->domain,
                 'directory_index' => $data['directory_index'],
@@ -665,7 +661,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
     {
         try {
             $newStatus = ! $domain->is_active;
-            $result = $this->getAgent()->domainToggle($this->getUsername(), $domain->domain, $newStatus);
+            $result = $this->agent()->domainToggle($this->getUsername(), $domain->domain, $newStatus);
 
             if ($result['success'] ?? false) {
                 $domain->update(['is_active' => $newStatus]);
@@ -696,13 +692,13 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             // Delete WordPress sites first (via Agent)
             if ($options['delete_wordpress'] ?? false) {
                 try {
-                    $wpResult = $this->getAgent()->send('wp.list', [
+                    $wpResult = $this->agent()->send('wp.list', [
                         'username' => $this->getUsername(),
                     ]);
 
                     foreach ($wpResult['sites'] ?? [] as $site) {
                         if (($site['domain'] ?? '') === $domain->domain) {
-                            $this->getAgent()->send('wp.delete', [
+                            $this->agent()->send('wp.delete', [
                                 'username' => $this->getUsername(),
                                 'site_id' => $site['id'],
                                 'delete_files' => true,
@@ -720,7 +716,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             if ($options['delete_ssl'] ?? false) {
                 if ($domain->sslCertificate) {
                     try {
-                        $this->getAgent()->send('ssl.delete', [
+                        $this->agent()->send('ssl.delete', [
                             'username' => $this->getUsername(),
                             'domain' => $domain->domain,
                         ]);
@@ -737,14 +733,14 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 if ($domain->emailDomain) {
                     try {
                         foreach ($domain->emailDomain->mailboxes as $mailbox) {
-                            $this->getAgent()->send('email.mailbox_delete', [
+                            $this->agent()->send('email.mailbox_delete', [
                                 'username' => $this->getUsername(),
                                 'email' => $mailbox->email,
                                 'delete_files' => true,
                                 'maildir_path' => $mailbox->maildir_path,
                             ]);
                         }
-                        $this->getAgent()->send('email.disable_domain', [
+                        $this->agent()->send('email.disable_domain', [
                             'username' => $this->getUsername(),
                             'domain' => $domain->domain,
                         ]);
@@ -764,7 +760,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                 try {
                     $dnsCount = $domain->dnsRecords()->count();
                     if ($dnsCount > 0) {
-                        $this->getAgent()->send('dns.delete_zone', [
+                        $this->agent()->send('dns.delete_zone', [
                             'domain' => $domain->domain,
                         ]);
                         $domain->dnsRecords()->delete();
@@ -780,7 +776,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             $domain->hotlinkSetting?->delete();
 
             // Delete domain files and configuration via Agent
-            $result = $this->getAgent()->domainDelete(
+            $result = $this->agent()->domainDelete(
                 $this->getUsername(),
                 $domain->domain,
                 $options['delete_files'] ?? false
@@ -877,7 +873,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
 
         foreach ($toAdd as $alias) {
             try {
-                $result = $this->getAgent()->domainAliasAdd($this->getUsername(), $record->domain, $alias);
+                $result = $this->agent()->domainAliasAdd($this->getUsername(), $record->domain, $alias);
                 if (! ($result['success'] ?? false)) {
                     throw new Exception($result['error'] ?? 'Failed to add alias');
                 }
@@ -892,7 +888,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
 
         foreach ($toRemove as $alias) {
             try {
-                $result = $this->getAgent()->domainAliasRemove($this->getUsername(), $record->domain, $alias);
+                $result = $this->agent()->domainAliasRemove($this->getUsername(), $record->domain, $alias);
                 if (! ($result['success'] ?? false)) {
                     throw new Exception($result['error'] ?? 'Failed to remove alias');
                 }
@@ -948,7 +944,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
     protected function saveErrorPages(Domain $record, array $data): void
     {
         try {
-            $result = $this->getAgent()->domainEnsureErrorPages($this->getUsername(), $record->domain);
+            $result = $this->agent()->domainEnsureErrorPages($this->getUsername(), $record->domain);
             if (! ($result['success'] ?? false)) {
                 throw new Exception($result['error'] ?? 'Failed to enable error pages');
             }
@@ -959,7 +955,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
 
                 if ($content === '') {
                     try {
-                        $this->getAgent()->fileDelete($this->getUsername(), $path);
+                        $this->agent()->fileDelete($this->getUsername(), $path);
                     } catch (Exception) {
                         // Ignore missing file
                     }
@@ -967,7 +963,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     continue;
                 }
 
-                $this->getAgent()->fileWrite($this->getUsername(), $path, $content);
+                $this->agent()->fileWrite($this->getUsername(), $path, $content);
             }
 
             Notification::make()
@@ -987,7 +983,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
     {
         $path = $this->getErrorPagePath($record, $filename);
         try {
-            $result = $this->getAgent()->fileRead($this->getUsername(), $path);
+            $result = $this->agent()->fileRead($this->getUsername(), $path);
             if ($result['success'] ?? false) {
                 return (string) base64_decode($result['content'] ?? '');
             }

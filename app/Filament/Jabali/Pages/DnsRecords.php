@@ -8,7 +8,7 @@ use App\Filament\Jabali\Widgets\DnsPendingAddsTable;
 use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -43,6 +43,7 @@ use Livewire\Attributes\On;
 class DnsRecords extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -67,11 +68,6 @@ class DnsRecords extends Page implements HasActions, HasForms, HasTable
     public function getTitle(): string|Htmlable
     {
         return __('DNS Records');
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function mount(): void
@@ -783,7 +779,7 @@ class DnsRecords extends Page implements HasActions, HasForms, HasTable
             $records = DnsRecord::whereHas('domain', fn ($q) => $q->where('domain', $domain))->get();
             $settings = DnsSetting::getAll();
             $defaultIp = $settings['default_ip'] ?? ServerFacts::serverIp('127.0.0.1');
-            $this->getAgent()->send('dns.sync_zone', [
+            $this->agent()->send('dns.sync_zone', [
                 'domain' => $domain,
                 'records' => $records->toArray(),
                 'ns1' => $settings['ns1'] ?? 'ns1.example.com',

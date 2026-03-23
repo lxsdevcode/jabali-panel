@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -26,6 +26,7 @@ use Illuminate\Contracts\Support\Htmlable;
 class PhpManager extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -53,11 +54,6 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
         return __('PHP Manager');
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function mount(): void
     {
         $this->loadPhpVersions();
@@ -81,7 +77,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->send('php.list_versions', []);
+            $result = $this->agent()->send('php.list_versions', []);
         } catch (\Exception $e) {
             $this->installedVersions = [];
             $this->defaultVersion = null;
@@ -217,7 +213,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public function installPhp(string $version): void
     {
-        $result = $this->getAgent()->send('php.install', ['version' => $version]);
+        $result = $this->agent()->send('php.install', ['version' => $version]);
 
         if ($result['success'] ?? false) {
             $this->loadPhpVersions();
@@ -247,7 +243,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        $result = $this->getAgent()->send('php.uninstall', ['version' => $version]);
+        $result = $this->agent()->send('php.uninstall', ['version' => $version]);
 
         if ($result['success'] ?? false) {
             $this->loadPhpVersions();
@@ -267,7 +263,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public function setDefaultPhp(string $version): void
     {
-        $result = $this->getAgent()->send('php.set_default', ['version' => $version]);
+        $result = $this->agent()->send('php.set_default', ['version' => $version]);
 
         if ($result['success'] ?? false) {
             $this->defaultVersion = $version;
@@ -288,7 +284,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public function reloadFpm(string $version): void
     {
-        $result = $this->getAgent()->send('php.reload_fpm', ['version' => $version]);
+        $result = $this->agent()->send('php.reload_fpm', ['version' => $version]);
 
         if ($result['success'] ?? false) {
             $this->loadPhpVersions();

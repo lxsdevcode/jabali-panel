@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Jabali\Pages;
 
 use App\Models\Domain;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Auth;
 class ImageOptimization extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-photo';
@@ -63,11 +64,6 @@ class ImageOptimization extends Page implements HasActions, HasForms
     public static function getNavigationLabel(): string
     {
         return __('Image Optimization');
-    }
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     protected function getUsername(): string
@@ -140,7 +136,7 @@ class ImageOptimization extends Page implements HasActions, HasForms
         }
 
         try {
-            $result = $this->getAgent()->imageOptimize(
+            $result = $this->agent()->imageOptimize(
                 $this->getUsername(),
                 $path,
                 (bool) ($data['convert_webp'] ?? false),

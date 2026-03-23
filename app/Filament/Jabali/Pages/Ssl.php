@@ -6,7 +6,7 @@ namespace App\Filament\Jabali\Pages;
 
 use App\Models\Domain;
 use App\Models\SslCertificate;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Auth;
 class Ssl extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -47,11 +48,6 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
     public function getTitle(): string|Htmlable
     {
         return __('SSL Certificates');
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function getUsername(): string
@@ -185,7 +181,7 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->getAgent()->sslIssue(
+            $result = $this->agent()->sslIssue(
                 $domainName,
                 $this->getUsername(),
                 Auth::user()->email,
@@ -253,7 +249,7 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->getAgent()->sslGenerateSelfSigned(
+            $result = $this->agent()->sslGenerateSelfSigned(
                 $domainName,
                 $this->getUsername(),
                 365
@@ -304,7 +300,7 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->getAgent()->sslRenew($domainName, $this->getUsername());
+            $result = $this->agent()->sslRenew($domainName, $this->getUsername());
 
             if ($result['success'] ?? false) {
                 $ssl = $domain->sslCertificate;
@@ -347,7 +343,7 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->getAgent()->sslCheck($domainName, $this->getUsername());
+            $result = $this->agent()->sslCheck($domainName, $this->getUsername());
 
             if ($result['success'] ?? false) {
                 $sslData = $result['ssl'] ?? [];
@@ -462,7 +458,7 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                         ->where('user_id', Auth::id())
                         ->firstOrFail();
 
-                    $result = $this->getAgent()->sslInstall(
+                    $result = $this->agent()->sslInstall(
                         $data['domain'],
                         $this->getUsername(),
                         $data['certificate'],

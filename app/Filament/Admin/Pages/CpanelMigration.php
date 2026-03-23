@@ -6,7 +6,7 @@ namespace App\Filament\Admin\Pages;
 
 use App\Jobs\RunCpanelRestore;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Services\Migration\CpanelApiService;
 use App\Support\Formatter;
 use App\Support\SafeError;
@@ -50,6 +50,7 @@ use Livewire\Attributes\Url;
 class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithInfolists;
     use InteractsWithTable;
@@ -225,11 +226,6 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
         $this->connectionInfo = [];
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     protected function getTargetUser(): ?User
     {
         if ($this->userMode === 'existing') {
@@ -296,7 +292,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
                 // Create Linux user via agent
                 $this->addLog(__('Creating system user: :username', ['username' => $this->cpanelUsername]), 'pending');
 
-                $result = $this->getAgent()->send('user.create', [
+                $result = $this->agent()->send('user.create', [
                     'username' => $this->cpanelUsername,
                     'password' => $password,
                 ]);
@@ -1566,7 +1562,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
 
         // Quick validation - try to list contents (via agent)
         try {
-            $result = $this->getAgent()->send('cpanel.validate_backup', [
+            $result = $this->agent()->send('cpanel.validate_backup', [
                 'backup_path' => $path,
             ]);
         } catch (Exception $e) {
@@ -1691,7 +1687,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
         try {
             $this->addStatusLog(__('Checking Jabali SSH key...'), 'pending');
 
-            $sshKeyResult = $this->getAgent()->send('jabali_ssh.ensure_exists', []);
+            $sshKeyResult = $this->agent()->send('jabali_ssh.ensure_exists', []);
             if (! ($sshKeyResult['success'] ?? false)) {
                 throw new Exception($sshKeyResult['error'] ?? __('Failed to generate Jabali SSH key'));
             }
@@ -1707,7 +1703,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
 
             $this->addStatusLog(__('Configuring SSH access on Jabali...'), 'pending');
 
-            $privateKeyResult = $this->getAgent()->send('jabali_ssh.get_private_key', []);
+            $privateKeyResult = $this->agent()->send('jabali_ssh.get_private_key', []);
             if (! ($privateKeyResult['success'] ?? false) || ! ($privateKeyResult['exists'] ?? false)) {
                 throw new Exception(__('Failed to read Jabali private key'));
             }
@@ -1717,7 +1713,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
                 throw new Exception(__('Private key is empty'));
             }
 
-            $authKeysResult = $this->getAgent()->send('jabali_ssh.add_to_authorized_keys', [
+            $authKeysResult = $this->agent()->send('jabali_ssh.add_to_authorized_keys', [
                 'public_key' => $publicKey,
                 'comment' => 'cpanel-migration-'.$this->cpanelUsername,
             ]);
@@ -1831,7 +1827,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
             }
 
             // Fix file permissions (SCP creates files as root, need agent to fix)
-            $this->getAgent()->send('cpanel.fix_backup_permissions', [
+            $this->agent()->send('cpanel.fix_backup_permissions', [
                 'backup_path' => $backupFile,
             ]);
 
@@ -2076,7 +2072,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
         $this->addStatusLog(__('Analyzing backup contents...'), 'pending');
 
         try {
-            $result = $this->getAgent()->send('cpanel.analyze_backup', [
+            $result = $this->agent()->send('cpanel.analyze_backup', [
                 'backup_path' => $this->backupPath,
             ]);
 
@@ -2119,7 +2115,7 @@ class CpanelMigration extends Page implements HasActions, HasForms, HasInfolists
             // Step 1: Extracting backup
             $this->addAnalysisLog(__('Extracting backup archive...'), 'pending');
 
-            $result = $this->getAgent()->send('cpanel.analyze_backup', [
+            $result = $this->agent()->send('cpanel.analyze_backup', [
                 'backup_path' => $this->backupPath,
             ]);
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\File;
 class ServerUpdates extends Page implements HasActions, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowPathRoundedSquare;
@@ -90,15 +91,10 @@ class ServerUpdates extends Page implements HasActions, HasTable
         return __(':count commit(s) behind', ['count' => $this->behindCount]);
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function loadUpdates(bool $refreshTable = true, bool $refreshApt = false): void
     {
         try {
-            $result = $this->getAgent()->updatesList($refreshApt);
+            $result = $this->agent()->updatesList($refreshApt);
             $this->packages = $result['packages'] ?? [];
             $this->updatesLoaded = true;
 
@@ -221,7 +217,7 @@ class ServerUpdates extends Page implements HasActions, HasTable
     public function runUpdates(): void
     {
         try {
-            $result = $this->getAgent()->updatesRun();
+            $result = $this->agent()->updatesRun();
             $output = $result['output'] ?? [];
             $outputLines = is_array($output) ? $output : [$output];
             $this->refreshOutput = ! empty(array_filter($outputLines, static fn ($line) => $line !== null && $line !== ''))

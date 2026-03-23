@@ -6,7 +6,7 @@ namespace App\Filament\Jabali\Pages;
 
 use App\Models\ServerImport;
 use App\Models\ServerImportAccount;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
@@ -40,6 +40,7 @@ use Livewire\Attributes\Url;
 class DirectAdminMigration extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-arrow-down-tray';
@@ -264,7 +265,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
 
                                             // Ensure backups folder exists (mkdir will error if it already exists).
                                             try {
-                                                $this->getAgent()->fileMkdir($user->username, 'backups');
+                                                $this->agent()->fileMkdir($user->username, 'backups');
                                             } catch (Exception $e) {
                                                 if ($e->getMessage() !== 'Path already exists') {
                                                     throw $e;
@@ -288,7 +289,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
                                             }
                                             @chmod($tmpPath, 0600);
 
-                                            $result = $this->getAgent()->send('file.upload_temp', [
+                                            $result = $this->agent()->send('file.upload_temp', [
                                                 'username' => $user->username,
                                                 'path' => 'backups',
                                                 'filename' => $safeName,
@@ -504,7 +505,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
                 }
             }
 
-            $result = $this->getAgent()->importDiscover(
+            $result = $this->agent()->importDiscover(
                 $import->id,
                 'directadmin',
                 $import->import_method,
@@ -635,7 +636,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
             'started_at' => now(),
         ]);
 
-        $result = $this->getAgent()->importStart($import->id);
+        $result = $this->agent()->importStart($import->id);
 
         if (! ($result['success'] ?? false)) {
             Notification::make()
@@ -681,11 +682,6 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
         $this->importSsl = true;
     }
 
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     protected function getUser()
     {
         return Auth::user();
@@ -700,18 +696,18 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->getAgent()->send('file.list', [
+        $result = $this->agent()->send('file.list', [
             'username' => $user->username,
             'path' => 'backups',
         ]);
 
         if (! ($result['success'] ?? false)) {
-            $this->getAgent()->send('file.mkdir', [
+            $this->agent()->send('file.mkdir', [
                 'username' => $user->username,
                 'path' => 'backups',
             ]);
 
-            $result = $this->getAgent()->send('file.list', [
+            $result = $this->agent()->send('file.list', [
                 'username' => $user->username,
                 'path' => 'backups',
             ]);
@@ -771,7 +767,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
             return;
         }
 
-        $info = $this->getAgent()->send('file.info', [
+        $info = $this->agent()->send('file.info', [
             'username' => $user->username,
             'path' => $this->localBackupPath,
         ]);

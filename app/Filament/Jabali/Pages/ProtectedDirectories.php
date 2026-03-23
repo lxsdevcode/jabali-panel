@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Pages;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Auth;
 class ProtectedDirectories extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -51,11 +52,6 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
     public ?string $selectedDomain = null;
 
     public array $protectedDirs = [];
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
 
     protected function getUsername(): string
     {
@@ -84,7 +80,7 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
             return;
         }
 
-        $result = $this->getAgent()->send('domain.list', [
+        $result = $this->agent()->send('domain.list', [
             'username' => $this->getUsername(),
         ]);
 
@@ -130,7 +126,7 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
             return;
         }
 
-        $result = $this->getAgent()->send('domain.list_protected_dirs', [
+        $result = $this->agent()->send('domain.list_protected_dirs', [
             'domain' => $this->selectedDomain,
             'username' => $this->getUsername(),
         ]);
@@ -188,7 +184,7 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
                             return;
                         }
 
-                        $result = $this->getAgent()->send('domain.add_protected_dir_user', [
+                        $result = $this->agent()->send('domain.add_protected_dir_user', [
                             'domain' => $this->selectedDomain,
                             'username' => $this->getUsername(),
                             'path' => $record['path'],
@@ -219,7 +215,7 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
                     ->modalHeading(__('Remove Directory Protection'))
                     ->modalDescription(fn (array $record): string => __('Are you sure you want to remove password protection from ":path"? Anyone will be able to access this directory.', ['path' => $record['path']]))
                     ->action(function (array $record): void {
-                        $result = $this->getAgent()->send('domain.remove_protected_dir', [
+                        $result = $this->agent()->send('domain.remove_protected_dir', [
                             'domain' => $this->selectedDomain,
                             'username' => $this->getUsername(),
                             'path' => $record['path'],
@@ -293,7 +289,7 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
                 // Normalize path
                 $path = '/'.ltrim(trim($data['path']), '/');
 
-                $result = $this->getAgent()->send('domain.add_protected_dir', [
+                $result = $this->agent()->send('domain.add_protected_dir', [
                     'domain' => $this->selectedDomain,
                     'username' => $this->getUsername(),
                     'path' => $path,
@@ -322,7 +318,7 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
 
     public function deleteProtectedDirUser(string $path, string $authUsername): void
     {
-        $result = $this->getAgent()->send('domain.remove_protected_dir_user', [
+        $result = $this->agent()->send('domain.remove_protected_dir_user', [
             'domain' => $this->selectedDomain,
             'username' => $this->getUsername(),
             'path' => $path,

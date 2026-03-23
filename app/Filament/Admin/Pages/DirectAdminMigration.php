@@ -6,7 +6,7 @@ namespace App\Filament\Admin\Pages;
 
 use App\Models\ServerImport;
 use App\Models\ServerImportAccount;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -37,6 +37,7 @@ use Livewire\Attributes\Url;
 class DirectAdminMigration extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-arrow-down-tray';
@@ -403,7 +404,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
                 }
             }
 
-            $result = $this->getAgent()->importDiscover(
+            $result = $this->agent()->importDiscover(
                 $import->id,
                 'directadmin',
                 $import->import_method,
@@ -617,7 +618,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
             'started_at' => now(),
         ]);
 
-        $result = $this->getAgent()->importStart($import->id);
+        $result = $this->agent()->importStart($import->id);
 
         if (! ($result['success'] ?? false)) {
             Notification::make()
@@ -659,11 +660,6 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
         $this->importDatabases = true;
         $this->importEmails = true;
         $this->importSsl = true;
-    }
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     protected function getImport(): ?ServerImport

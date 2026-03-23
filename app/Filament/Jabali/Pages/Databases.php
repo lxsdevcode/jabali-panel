@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Jabali\Pages;
 
 use App\Models\MysqlCredential;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
@@ -42,6 +42,7 @@ use Livewire\Attributes\Url;
 class Databases extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -82,11 +83,6 @@ class Databases extends Page implements HasActions, HasForms, HasTable
     public function getTitle(): string|Htmlable
     {
         return __('Databases');
-    }
-
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function getUsername(): string
@@ -161,11 +157,11 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
         try {
             // Try to create the admin user
-            $this->getAgent()->mysqlCreateUser($this->getUsername(), $adminUsername, $password);
+            $this->agent()->mysqlCreateUser($this->getUsername(), $adminUsername, $password);
         } catch (Exception $e) {
             // User might already exist, try to change password instead
             try {
-                $this->getAgent()->mysqlChangePassword($this->getUsername(), $adminUsername, $password);
+                $this->agent()->mysqlChangePassword($this->getUsername(), $adminUsername, $password);
             } catch (Exception $e2) {
                 // Can't create or update user
                 return;
@@ -175,7 +171,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
         try {
             // Grant privileges on all user's databases (using wildcard pattern)
             $wildcardDb = $this->getUsername().'_%';
-            $this->getAgent()->mysqlGrantPrivileges($this->getUsername(), $adminUsername, $wildcardDb, ['ALL']);
+            $this->agent()->mysqlGrantPrivileges($this->getUsername(), $adminUsername, $wildcardDb, ['ALL']);
 
             // Store credentials
             MysqlCredential::updateOrCreate(
@@ -202,7 +198,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->mysqlListDatabases($this->getUsername());
+            $result = $this->agent()->mysqlListDatabases($this->getUsername());
             $this->databases = $result['databases'] ?? [];
         } catch (Exception $e) {
             $this->databases = [];
@@ -214,7 +210,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->getAgent()->mysqlListUsers($this->getUsername());
+            $result = $this->agent()->mysqlListUsers($this->getUsername());
             $this->users = $result['users'] ?? [];
 
             // Filter out the master admin user from display
@@ -234,7 +230,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
     protected function loadUserGrants(string $user, string $host): void
     {
         try {
-            $result = $this->getAgent()->mysqlGetPrivileges($this->getUsername(), $user, $host);
+            $result = $this->agent()->mysqlGetPrivileges($this->getUsername(), $user, $host);
             $this->userGrants["$user@$host"] = $result['parsed'] ?? [];
         } catch (Exception $e) {
             $this->userGrants["$user@$host"] = [];
@@ -251,7 +247,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
     protected function loadPgDatabases(): void
     {
         try {
-            $result = $this->getAgent()->postgresListDatabases($this->getUsername());
+            $result = $this->agent()->postgresListDatabases($this->getUsername());
             $this->pgDatabases = $result['databases'] ?? [];
         } catch (Exception) {
             $this->pgDatabases = [];
@@ -261,7 +257,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
     protected function loadPgUsers(): void
     {
         try {
-            $result = $this->getAgent()->postgresListUsers($this->getUsername());
+            $result = $this->agent()->postgresListUsers($this->getUsername());
             $this->pgUsers = $result['users'] ?? [];
         } catch (Exception) {
             $this->pgUsers = [];
@@ -400,7 +396,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitActionLabel(__('Delete Database'))
                     ->action(function (array $record): void {
                         try {
-                            $this->getAgent()->mysqlDeleteDatabase($this->getUsername(), $record['name']);
+                            $this->agent()->mysqlDeleteDatabase($this->getUsername(), $record['name']);
                             Notification::make()->title(__('Database deleted'))->success()->send();
                             $this->loadData();
                             $this->resetTable();
@@ -432,7 +428,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
                         ->color('danger')
                         ->requiresConfirmation()
                         ->action(function (array $record): void {
-                            $result = $this->getAgent()->postgresDeleteUser($this->getUsername(), $record['username']);
+                            $result = $this->agent()->postgresDeleteUser($this->getUsername(), $record['username']);
                             if ($result['success'] ?? false) {
                                 Notification::make()->title(__('User deleted'))->success()->send();
                                 $this->loadPgUsers();
@@ -466,7 +462,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
                     ->color('danger')
                     ->requiresConfirmation()
                     ->action(function (array $record): void {
-                        $result = $this->getAgent()->postgresDeleteDatabase($this->getUsername(), $record['name']);
+                        $result = $this->agent()->postgresDeleteDatabase($this->getUsername(), $record['name']);
                         if ($result['success'] ?? false) {
                             Notification::make()->title(__('Database deleted'))->success()->send();
                             $this->loadPgDatabases();
@@ -652,13 +648,13 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
                 try {
                     // Create database
-                    $this->getAgent()->mysqlCreateDatabase($this->getUsername(), $name);
+                    $this->agent()->mysqlCreateDatabase($this->getUsername(), $name);
 
                     // Create user with same name
-                    $result = $this->getAgent()->mysqlCreateUser($this->getUsername(), $name, $password);
+                    $result = $this->agent()->mysqlCreateUser($this->getUsername(), $name, $password);
 
                     // Grant all privileges
-                    $this->getAgent()->mysqlGrantPrivileges($this->getUsername(), $name, $name, ['ALL']);
+                    $this->agent()->mysqlGrantPrivileges($this->getUsername(), $name, $name, ['ALL']);
 
                     // Store credentials
                     MysqlCredential::updateOrCreate(
@@ -722,7 +718,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
                 $name = $this->getUsername().'_'.$data['name'];
                 try {
-                    $this->getAgent()->mysqlCreateDatabase($this->getUsername(), $name);
+                    $this->agent()->mysqlCreateDatabase($this->getUsername(), $name);
                     Notification::make()->title(__('Database created'))->success()->send();
                     $this->loadData();
                     $this->resetTable();
@@ -789,7 +785,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
             ->action(function (array $data): void {
                 try {
                     $prefixedUsername = $this->getUsername().'_'.$data['username'];
-                    $result = $this->getAgent()->mysqlCreateUser(
+                    $result = $this->agent()->mysqlCreateUser(
                         $this->getUsername(),
                         $prefixedUsername,
                         $data['password']
@@ -846,7 +842,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 $name = $this->getUsername().'_'.$data['database'];
-                $result = $this->getAgent()->postgresCreateDatabase(
+                $result = $this->agent()->postgresCreateDatabase(
                     $this->getUsername(),
                     $name,
                     $data['owner']
@@ -895,7 +891,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 $username = $this->getUsername().'_'.$data['db_user'];
-                $result = $this->getAgent()->postgresCreateUser(
+                $result = $this->agent()->postgresCreateUser(
                     $this->getUsername(),
                     $username,
                     $data['password']
@@ -940,7 +936,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
             ->action(function (): void {
                 [$user, $host] = explode('@', $this->selectedUser);
                 try {
-                    $this->getAgent()->mysqlDeleteUser($this->getUsername(), $user, $host);
+                    $this->agent()->mysqlDeleteUser($this->getUsername(), $user, $host);
 
                     // Delete stored credentials
                     MysqlCredential::where('user_id', Auth::id())
@@ -1006,7 +1002,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
             ->action(function (array $data): void {
                 [$user, $host] = explode('@', $this->selectedUser);
                 try {
-                    $this->getAgent()->mysqlChangePassword($this->getUsername(), $user, $data['password'], $host);
+                    $this->agent()->mysqlChangePassword($this->getUsername(), $user, $data['password'], $host);
 
                     // Update stored MySQL credentials
                     MysqlCredential::updateOrCreate(
@@ -1101,7 +1097,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
                 }
 
                 try {
-                    $this->getAgent()->mysqlGrantPrivileges($this->getUsername(), $user, $data['database'], $privs, $host);
+                    $this->agent()->mysqlGrantPrivileges($this->getUsername(), $user, $data['database'], $privs, $host);
 
                     $privDisplay = ($privilegeType === 'all') ? __('ALL PRIVILEGES') : implode(', ', $privs);
                     Notification::make()
@@ -1119,7 +1115,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
     public function revokePrivileges(string $user, string $host, string $database): void
     {
         try {
-            $this->getAgent()->mysqlRevokePrivileges($this->getUsername(), $user, $database, $host);
+            $this->agent()->mysqlRevokePrivileges($this->getUsername(), $user, $database, $host);
             Notification::make()->title(__('Access revoked'))->success()->send();
             $this->loadData();
         } catch (Exception $e) {
@@ -1140,7 +1136,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
             $filename = $database.'_'.date('Y-m-d_His').$extension;
             $outputPath = '/home/'.$this->getUsername().'/backups/'.$filename;
 
-            $result = $this->getAgent()->mysqlExportDatabase($this->getUsername(), $database, $outputPath, $compress);
+            $result = $this->agent()->mysqlExportDatabase($this->getUsername(), $database, $outputPath, $compress);
 
             if ($result['success'] ?? false) {
                 // Store the backup path for download
@@ -1187,7 +1183,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
     public function downloadBackup(string $path): void
     {
         try {
-            $result = $this->getAgent()->fileRead($this->getUsername(), $path);
+            $result = $this->agent()->fileRead($this->getUsername(), $path);
             $this->dispatch('download-backup-file',
                 content: $result['content'],
                 filename: basename($path)
@@ -1244,7 +1240,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
                 throw new Exception(__('Invalid file type. Supported: .sql, .sql.gz, .gz, .zip'));
             }
 
-            $result = $this->getAgent()->mysqlImportDatabase($this->getUsername(), $database, $filePath);
+            $result = $this->agent()->mysqlImportDatabase($this->getUsername(), $database, $filePath);
 
             // Clean up the uploaded file
             $storage->delete($relativePath);

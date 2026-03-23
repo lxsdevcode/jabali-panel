@@ -7,7 +7,7 @@ namespace App\Filament\Admin\Widgets;
 use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use Exception;
@@ -29,6 +29,7 @@ use Livewire\Component;
 class DomainIpAssignmentsTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -58,11 +59,6 @@ class DomainIpAssignmentsTable extends Component implements HasActions, HasSchem
         $settings = DnsSetting::getAll();
         $this->defaultIp = $settings['default_ip'] ?? null;
         $this->defaultIpv6 = $settings['default_ipv6'] ?? null;
-    }
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     public function table(Table $table): Table
@@ -162,7 +158,7 @@ class DomainIpAssignmentsTable extends Component implements HasActions, HasSchem
     protected function getIpOptionsByVersion(int $version): array
     {
         try {
-            $result = $this->getAgent()->ipList();
+            $result = $this->agent()->ipList();
         } catch (Exception) {
             return [];
         }
@@ -294,7 +290,7 @@ class DomainIpAssignmentsTable extends Component implements HasActions, HasSchem
 
         try {
             $records = $domain->dnsRecords()->get()->toArray();
-            $this->getAgent()->send('dns.sync_zone', [
+            $this->agent()->send('dns.sync_zone', [
                 'domain' => $domain->domain,
                 'records' => $records,
                 'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",

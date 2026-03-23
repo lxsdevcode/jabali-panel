@@ -6,7 +6,7 @@ namespace App\Filament\Admin\Pages;
 
 use App\Models\ServerImport;
 use App\Models\ServerImportAccount;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -35,6 +35,7 @@ use Livewire\Attributes\Url;
 class HestiaCpMigration extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-server-stack';
@@ -343,7 +344,7 @@ class HestiaCpMigration extends Page implements HasActions, HasForms
                 throw new Exception(__('Backup file not found: :path', ['path' => $import->backup_path]));
             }
 
-            $result = $this->getAgent()->importDiscover(
+            $result = $this->agent()->importDiscover(
                 $import->id,
                 'hestiacp',
                 $import->import_method,
@@ -547,7 +548,7 @@ class HestiaCpMigration extends Page implements HasActions, HasForms
             'started_at' => now(),
         ]);
 
-        $result = $this->getAgent()->importStart($import->id);
+        $result = $this->agent()->importStart($import->id);
 
         if (! ($result['success'] ?? false)) {
             Notification::make()
@@ -585,11 +586,6 @@ class HestiaCpMigration extends Page implements HasActions, HasForms
         $this->importDatabases = true;
         $this->importEmails = true;
         $this->importSsl = true;
-    }
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     protected function getImport(): ?ServerImport

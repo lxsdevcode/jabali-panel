@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Widgets;
 
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use Exception;
 use Filament\Actions\Action;
@@ -24,6 +24,7 @@ use Livewire\Component;
 class TrashTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -36,11 +37,6 @@ class TrashTable extends Component implements HasActions, HasSchemas, HasTable
         $this->loadTrashItems();
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function getUsername(): string
     {
         return Auth::user()->username;
@@ -49,7 +45,7 @@ class TrashTable extends Component implements HasActions, HasSchemas, HasTable
     public function loadTrashItems(): void
     {
         try {
-            $result = $this->getAgent()->fileListTrash($this->getUsername());
+            $result = $this->agent()->fileListTrash($this->getUsername());
             $this->trashItems = $result['items'] ?? [];
         } catch (Exception) {
             $this->trashItems = [];
@@ -128,7 +124,7 @@ class TrashTable extends Component implements HasActions, HasSchemas, HasTable
     public function restoreItem(string $trashName): void
     {
         try {
-            $result = $this->getAgent()->fileRestore($this->getUsername(), $trashName);
+            $result = $this->agent()->fileRestore($this->getUsername(), $trashName);
             Notification::make()
                 ->title(__('Restored'))
                 ->body(__('Restored to: :path', ['path' => $result['restored_path'] ?? '']))
@@ -150,7 +146,7 @@ class TrashTable extends Component implements HasActions, HasSchemas, HasTable
     {
         try {
             $trashPath = ".trash/$trashName";
-            $this->getAgent()->fileDelete($this->getUsername(), $trashPath);
+            $this->agent()->fileDelete($this->getUsername(), $trashPath);
             Notification::make()
                 ->title(__('Permanently deleted'))
                 ->success()
@@ -169,7 +165,7 @@ class TrashTable extends Component implements HasActions, HasSchemas, HasTable
     public function emptyTrash(): void
     {
         try {
-            $result = $this->getAgent()->fileEmptyTrash($this->getUsername());
+            $result = $this->agent()->fileEmptyTrash($this->getUsername());
             Notification::make()
                 ->title(__('Trash emptied'))
                 ->body(__(':count items deleted', ['count' => $result['deleted'] ?? 0]))

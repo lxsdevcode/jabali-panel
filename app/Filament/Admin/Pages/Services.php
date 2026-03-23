@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Pages;
 
 use App\Models\AuditLog;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Model;
 class Services extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -124,11 +125,6 @@ class Services extends Page implements HasActions, HasForms, HasTable
         return __('Service Manager');
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function mount(): void
     {
         $this->loadServices();
@@ -139,7 +135,7 @@ class Services extends Page implements HasActions, HasForms, HasTable
         $managedServices = $this->getManagedServices();
 
         try {
-            $result = $this->getAgent()->send('service.list', [
+            $result = $this->agent()->send('service.list', [
                 'services' => array_keys($managedServices),
             ]);
 
@@ -278,7 +274,7 @@ class Services extends Page implements HasActions, HasForms, HasTable
     protected function executeServiceAction(string $service, string $action): void
     {
         try {
-            $result = $this->getAgent()->send("service.{$action}", [
+            $result = $this->agent()->send("service.{$action}", [
                 'service' => $service,
             ]);
 

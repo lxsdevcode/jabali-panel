@@ -20,7 +20,7 @@ use App\Jobs\RunWpscanScan;
 use App\Models\AuditLog;
 use App\Models\Setting;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -58,6 +58,7 @@ use Livewire\Attributes\Url;
 class Security extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -195,11 +196,6 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function getTitle(): string|Htmlable
     {
         return __('Security Center');
-    }
-
-    protected function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
     }
 
     protected function normalizeTabName(?string $tab): string
@@ -1074,14 +1070,14 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadFirewallStatus(): void
     {
         try {
-            $result = $this->getAgent()->send('ufw.status');
+            $result = $this->agent()->send('ufw.status');
             $this->firewallInstalled = true;
             $this->firewallEnabled = $result['active'] ?? false;
             $this->defaultIncoming = $result['default_incoming'] ?? 'deny';
             $this->defaultOutgoing = $result['default_outgoing'] ?? 'allow';
             $this->firewallStatusText = $result['status_text'] ?? '';
 
-            $rulesResult = $this->getAgent()->send('ufw.list_rules');
+            $rulesResult = $this->agent()->send('ufw.list_rules');
             $this->firewallRules = $rulesResult['rules'] ?? [];
         } catch (Exception $e) {
             $this->firewallInstalled = false;
@@ -1115,7 +1111,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadFail2banStatusLight(): void
     {
         try {
-            $result = $this->getAgent()->send('fail2ban.status_light');
+            $result = $this->agent()->send('fail2ban.status_light');
             $this->fail2banInstalled = $result['installed'] ?? false;
             $this->fail2banRunning = $result['running'] ?? false;
             $this->fail2banVersion = $result['version'] ?? 'Unknown';
@@ -1137,7 +1133,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadFail2banStatus(): void
     {
         try {
-            $result = $this->getAgent()->send('fail2ban.status');
+            $result = $this->agent()->send('fail2ban.status');
             $this->fail2banInstalled = $result['installed'] ?? false;
 
             if ($this->fail2banInstalled) {
@@ -1149,10 +1145,10 @@ class Security extends Page implements HasActions, HasForms, HasTable
                 $this->banTime = $result['ban_time'] ?? 600;
                 $this->findTime = $result['find_time'] ?? 600;
 
-                $jailsResult = $this->getAgent()->send('fail2ban.list_jails');
+                $jailsResult = $this->agent()->send('fail2ban.list_jails');
                 $this->availableJails = $jailsResult['jails'] ?? [];
 
-                $logsResult = $this->getAgent()->send('fail2ban.logs');
+                $logsResult = $this->agent()->send('fail2ban.logs');
                 $this->fail2banLogs = $logsResult['logs'] ?? [];
             } else {
                 $this->fail2banRunning = false;
@@ -1176,7 +1172,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadClamavStatusLight(): void
     {
         try {
-            $result = $this->getAgent()->send('clamav.status_light');
+            $result = $this->agent()->send('clamav.status_light');
             $this->clamavInstalled = $result['installed'] ?? false;
             $this->clamavRunning = $result['running'] ?? false;
             $this->clamavVersion = $result['version'] ?? 'Unknown';
@@ -1208,7 +1204,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadClamavStatus(): void
     {
         try {
-            $result = $this->getAgent()->send('clamav.status');
+            $result = $this->agent()->send('clamav.status');
             $this->clamavInstalled = $result['installed'] ?? false;
 
             if ($this->clamavInstalled) {
@@ -1252,7 +1248,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadSshSettings(): void
     {
         try {
-            $result = $this->getAgent()->send('ssh.get_settings');
+            $result = $this->agent()->send('ssh.get_settings');
             if ($result['success'] ?? false) {
                 $this->sshPasswordAuth = $result['password_auth'] ?? false;
                 $this->sshPubkeyAuth = $result['pubkey_auth'] ?? true;
@@ -1278,7 +1274,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
                 return;
             }
 
-            $result = $this->getAgent()->send('ssh.save_settings', [
+            $result = $this->agent()->send('ssh.save_settings', [
                 'password_auth' => $this->sshPasswordAuth,
                 'pubkey_auth' => $this->sshPubkeyAuth,
                 'port' => $this->sshPort,
@@ -1323,7 +1319,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
                         continue;
                     }
                     try {
-                        $result = $this->getAgent()->send('ssh.disable_shell', ['username' => $username]);
+                        $result = $this->agent()->send('ssh.disable_shell', ['username' => $username]);
                         if (! ($result['success'] ?? false)) {
                             $failures++;
                         }
@@ -1352,7 +1348,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     {
         try {
             $action = $this->firewallEnabled ? 'ufw.disable' : 'ufw.enable';
-            $result = $this->getAgent()->send($action);
+            $result = $this->agent()->send($action);
 
             if ($result['success'] ?? false) {
                 $this->firewallEnabled = ! $this->firewallEnabled;
@@ -1376,10 +1372,10 @@ class Security extends Page implements HasActions, HasForms, HasTable
     {
         Notification::make()->title(__('Installing firewall...'))->info()->send();
         try {
-            $this->getAgent()->send('ufw.enable');
-            $this->getAgent()->send('ufw.allow_service', ['service' => 'ssh']);
-            $this->getAgent()->send('ufw.allow_service', ['service' => 'http']);
-            $this->getAgent()->send('ufw.allow_service', ['service' => 'https']);
+            $this->agent()->send('ufw.enable');
+            $this->agent()->send('ufw.allow_service', ['service' => 'ssh']);
+            $this->agent()->send('ufw.allow_service', ['service' => 'http']);
+            $this->agent()->send('ufw.allow_service', ['service' => 'https']);
             AuditLog::logFirewallAction('installed', 'default rules configured');
             Notification::make()->title(__('Firewall configured with default rules'))->success()->send();
         } catch (Exception $e) {
@@ -1404,7 +1400,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ->color('danger')
             ->action(function (): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.delete_rule', ['rule_number' => $this->ruleToDelete]);
+                    $result = $this->agent()->send('ufw.delete_rule', ['rule_number' => $this->ruleToDelete]);
                     if ($result['success'] ?? false) {
                         AuditLog::logFirewallAction('deleted', "rule #{$this->ruleToDelete}");
                         Notification::make()->title(__('Rule deleted'))->success()->send();
@@ -1439,7 +1435,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data, array $arguments): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.set_default', [
+                    $result = $this->agent()->send('ufw.set_default', [
                         'direction' => $arguments['direction'] ?? 'incoming',
                         'policy' => $data['policy'],
                     ]);
@@ -1458,7 +1454,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function reloadFirewall(): void
     {
         try {
-            $result = $this->getAgent()->send('ufw.reload');
+            $result = $this->agent()->send('ufw.reload');
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Firewall reloaded'))->success()->send();
                 $this->loadFirewallStatus();
@@ -1485,7 +1481,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ->color('danger')
             ->action(function (): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.reset');
+                    $result = $this->agent()->send('ufw.reset');
                     if ($result['success'] ?? false) {
                         AuditLog::logFirewallAction('reset', 'all rules deleted');
                         Notification::make()->title(__('Firewall reset'))->body(__('All rules have been deleted.'))->success()->send();
@@ -1525,7 +1521,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.allow_port', $data);
+                    $result = $this->agent()->send('ufw.allow_port', $data);
                     if ($result['success'] ?? false) {
                         $rule = "allow port {$data['port']}".($data['protocol'] ? "/{$data['protocol']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
@@ -1564,7 +1560,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.deny_port', $data);
+                    $result = $this->agent()->send('ufw.deny_port', $data);
                     if ($result['success'] ?? false) {
                         $rule = "deny port {$data['port']}".($data['protocol'] ? "/{$data['protocol']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
@@ -1607,7 +1603,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.allow_ip', $data);
+                    $result = $this->agent()->send('ufw.allow_ip', $data);
                     if ($result['success'] ?? false) {
                         $rule = "allow from {$data['ip']}".($data['port'] ? " to port {$data['port']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
@@ -1649,7 +1645,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.deny_ip', $data);
+                    $result = $this->agent()->send('ufw.deny_ip', $data);
                     if ($result['success'] ?? false) {
                         $rule = "deny from {$data['ip']}".($data['port'] ? " to port {$data['port']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
@@ -1690,7 +1686,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.allow_service', $data);
+                    $result = $this->agent()->send('ufw.allow_service', $data);
                     if ($result['success'] ?? false) {
                         AuditLog::logFirewallAction('added', "allow service {$data['service']}", $data);
                         Notification::make()->title(__('Service allowed'))->success()->send();
@@ -1726,7 +1722,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $result = $this->getAgent()->send('ufw.limit_port', $data);
+                    $result = $this->agent()->send('ufw.limit_port', $data);
                     if ($result['success'] ?? false) {
                         AuditLog::logFirewallAction('added', "limit port {$data['port']}/{$data['protocol']}", $data);
                         Notification::make()->title(__('Rate limit applied'))->success()->send();
@@ -1787,7 +1783,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     {
         Notification::make()->title(__('Installing Fail2ban...'))->info()->send();
         try {
-            $result = $this->getAgent()->send('fail2ban.install');
+            $result = $this->agent()->send('fail2ban.install');
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Fail2ban installed'))->success()->send();
             } else {
@@ -1802,9 +1798,9 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function startFail2ban(): void
     {
         try {
-            $result = $this->getAgent()->send('service.enable', ['service' => 'fail2ban']);
+            $result = $this->agent()->send('service.enable', ['service' => 'fail2ban']);
             if ($result['success'] ?? false) {
-                $result = $this->getAgent()->send('service.start', ['service' => 'fail2ban']);
+                $result = $this->agent()->send('service.start', ['service' => 'fail2ban']);
             }
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Fail2ban started'))->success()->send();
@@ -1820,7 +1816,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function stopFail2ban(): void
     {
         try {
-            $result = $this->getAgent()->send('service.stop', ['service' => 'fail2ban']);
+            $result = $this->agent()->send('service.stop', ['service' => 'fail2ban']);
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Fail2ban stopped'))->success()->send();
             } else {
@@ -1835,9 +1831,9 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function disableFail2ban(): void
     {
         try {
-            $result = $this->getAgent()->send('service.stop', ['service' => 'fail2ban']);
+            $result = $this->agent()->send('service.stop', ['service' => 'fail2ban']);
             if ($result['success'] ?? false) {
-                $result = $this->getAgent()->send('service.disable', ['service' => 'fail2ban']);
+                $result = $this->agent()->send('service.disable', ['service' => 'fail2ban']);
             }
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Fail2ban disabled'))->success()->send();
@@ -1853,7 +1849,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function saveFail2banSettings(): void
     {
         try {
-            $result = $this->getAgent()->send('fail2ban.save_settings', [
+            $result = $this->agent()->send('fail2ban.save_settings', [
                 'max_retry' => $this->maxRetry,
                 'ban_time' => $this->banTime,
                 'find_time' => $this->findTime,
@@ -1872,7 +1868,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function unbanIp(string $jail, string $ip): void
     {
         try {
-            $result = $this->getAgent()->send('fail2ban.unban_ip', ['jail' => $jail, 'ip' => $ip]);
+            $result = $this->agent()->send('fail2ban.unban_ip', ['jail' => $jail, 'ip' => $ip]);
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Unbanned :ip', ['ip' => $ip]))->success()->send();
             } else {
@@ -1887,7 +1883,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function enableJail(string $jail): void
     {
         try {
-            $result = $this->getAgent()->send('fail2ban.enable_jail', ['jail' => $jail]);
+            $result = $this->agent()->send('fail2ban.enable_jail', ['jail' => $jail]);
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Jail :jail enabled', ['jail' => $jail]))->success()->send();
             } else {
@@ -1902,7 +1898,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function disableJail(string $jail): void
     {
         try {
-            $result = $this->getAgent()->send('fail2ban.disable_jail', ['jail' => $jail]);
+            $result = $this->agent()->send('fail2ban.disable_jail', ['jail' => $jail]);
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Jail :jail disabled', ['jail' => $jail]))->success()->send();
             } else {
@@ -1919,7 +1915,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     {
         Notification::make()->title(__('Installing ClamAV...'))->body(__('This may take a few minutes.'))->info()->send();
         try {
-            $result = $this->getAgent()->send('clamav.install');
+            $result = $this->agent()->send('clamav.install');
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('ClamAV installed'))->body(__('Daemon disabled by default to save memory.'))->success()->send();
             } else {
@@ -1934,7 +1930,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function updateSignatures(): void
     {
         try {
-            $result = $this->getAgent()->send('clamav.update_signatures');
+            $result = $this->agent()->send('clamav.update_signatures');
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Signatures updated'))->success()->send();
             } else {
@@ -1949,7 +1945,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function startClamav(): void
     {
         try {
-            $result = $this->getAgent()->send('clamav.start');
+            $result = $this->agent()->send('clamav.start');
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('ClamAV started'))->success()->send();
             } else {
@@ -1964,9 +1960,9 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function enableClamav(): void
     {
         try {
-            $result = $this->getAgent()->send('service.enable', ['service' => 'clamav-daemon']);
+            $result = $this->agent()->send('service.enable', ['service' => 'clamav-daemon']);
             if ($result['success'] ?? false) {
-                $result = $this->getAgent()->send('service.start', ['service' => 'clamav-daemon']);
+                $result = $this->agent()->send('service.start', ['service' => 'clamav-daemon']);
             }
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('ClamAV enabled'))->success()->send();
@@ -1982,7 +1978,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function stopClamav(): void
     {
         try {
-            $result = $this->getAgent()->send('clamav.stop');
+            $result = $this->agent()->send('clamav.stop');
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('ClamAV stopped'))->success()->send();
             } else {
@@ -1997,9 +1993,9 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function disableClamav(): void
     {
         try {
-            $result = $this->getAgent()->send('service.stop', ['service' => 'clamav-daemon']);
+            $result = $this->agent()->send('service.stop', ['service' => 'clamav-daemon']);
             if ($result['success'] ?? false) {
-                $result = $this->getAgent()->send('service.disable', ['service' => 'clamav-daemon']);
+                $result = $this->agent()->send('service.disable', ['service' => 'clamav-daemon']);
             }
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('ClamAV disabled'))->success()->send();
@@ -2016,10 +2012,10 @@ class Security extends Page implements HasActions, HasForms, HasTable
     {
         try {
             if ($this->realtimeRunning) {
-                $result = $this->getAgent()->send('clamav.realtime_disable');
+                $result = $this->agent()->send('clamav.realtime_disable');
                 $message = __('Real-time protection disabled');
             } else {
-                $result = $this->getAgent()->send('clamav.realtime_enable');
+                $result = $this->agent()->send('clamav.realtime_enable');
                 $message = __('Real-time protection enabled');
             }
             if ($result['success'] ?? false) {
@@ -2037,7 +2033,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     {
         try {
             $action = $this->clamavLightMode ? 'clamav.set_full_mode' : 'clamav.set_light_mode';
-            $result = $this->getAgent()->send($action);
+            $result = $this->agent()->send($action);
 
             if ($result['success'] ?? false) {
                 $this->clamavLightMode = ! $this->clamavLightMode;
@@ -2065,7 +2061,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function deleteQuarantined(string $filename): void
     {
         try {
-            $result = $this->getAgent()->send('clamav.delete_quarantined', ['filename' => $filename]);
+            $result = $this->agent()->send('clamav.delete_quarantined', ['filename' => $filename]);
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('File deleted'))->success()->send();
             } else {
@@ -2081,7 +2077,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function checkScannerToolStatus(): void
     {
         try {
-            $status = $this->getAgent()->send('scanner.status');
+            $status = $this->agent()->send('scanner.status');
 
             $lynis = $status['lynis'] ?? [];
             $this->lynisInstalled = (bool) ($lynis['installed'] ?? false);
@@ -2205,7 +2201,7 @@ class Security extends Page implements HasActions, HasForms, HasTable
             $users = \App\Models\User::where('is_admin', false)->get();
 
             foreach ($users as $user) {
-                $result = $this->getAgent()->wpList($user->username);
+                $result = $this->agent()->wpList($user->username);
                 $userSites = $result['sites'] ?? [];
 
                 foreach ($userSites as $site) {

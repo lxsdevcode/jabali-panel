@@ -14,7 +14,7 @@ use App\Models\EmailForwarder;
 use App\Models\Mailbox;
 use App\Models\MailboxShare;
 use App\Models\UserSetting;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Services\MailboxSharingService;
 use App\Services\RoundcubeIdentityService;
 use App\Services\System\MailRoutingSyncService;
@@ -58,6 +58,7 @@ use Livewire\Attributes\Url;
 class Email extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -232,11 +233,6 @@ class Email extends Page implements HasActions, HasForms, HasTable
         $this->resetTable();
     }
 
-    public function getAgent(): AgentClient
-    {
-        return app(AgentClient::class);
-    }
-
     public function getUsername(): string
     {
         return Auth::user()->username;
@@ -275,7 +271,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             'score' => $score,
         ]);
 
-        $result = $this->getAgent()->rspamdUserSettings($this->getUsername(), $whitelist, $blacklist, $score);
+        $result = $this->agent()->rspamdUserSettings($this->getUsername(), $whitelist, $blacklist, $score);
         if (! ($result['success'] ?? false)) {
             Notification::make()
                 ->title(__('Failed to update spam settings'))
@@ -962,7 +958,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
 
         if (! $emailDomain) {
             // Enable email for this domain on the server (also generates DKIM)
-            $enableResult = $this->getAgent()->emailEnableDomain($this->getUsername(), $domain->domain);
+            $enableResult = $this->agent()->emailEnableDomain($this->getUsername(), $domain->domain);
 
             // Create EmailDomain record
             $emailDomain = EmailDomain::create([
@@ -1071,7 +1067,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             $serverIp = ServerFacts::serverIp('127.0.0.1');
             $serverIpv6 = $settings['default_ipv6'] ?? null;
 
-            $this->getAgent()->send('dns.sync_zone', [
+            $this->agent()->send('dns.sync_zone', [
                 'domain' => $domain->domain,
                 'records' => $records,
                 'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",
@@ -1196,7 +1192,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                         return;
                     }
 
-                    $result = $this->getAgent()->mailboxCreate(
+                    $result = $this->agent()->mailboxCreate(
                         $this->getUsername(),
                         $email,
                         $data['password'],
@@ -1239,7 +1235,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
     public function changeMailboxPasswordDirect(Mailbox $mailbox, string $password): void
     {
         try {
-            $result = $this->getAgent()->mailboxChangePassword(
+            $result = $this->agent()->mailboxChangePassword(
                 $this->getUsername(),
                 $mailbox->email,
                 $password
@@ -1274,7 +1270,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
 
         try {
             $newStatus = ! $mailbox->is_active;
-            $this->getAgent()->mailboxToggle($this->getUsername(), $mailbox->email, $newStatus);
+            $this->agent()->mailboxToggle($this->getUsername(), $mailbox->email, $newStatus);
             $mailbox->update(['is_active' => $newStatus]);
 
             $this->syncMailRouting();
@@ -1293,7 +1289,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
     public function deleteMailboxDirect(Mailbox $mailbox, bool $deleteFiles): void
     {
         try {
-            $this->getAgent()->mailboxDelete(
+            $this->agent()->mailboxDelete(
                 $this->getUsername(),
                 $mailbox->email,
                 $deleteFiles,
@@ -1382,7 +1378,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                         return;
                     }
 
-                    $this->getAgent()->send('email.forwarder_create', [
+                    $this->agent()->send('email.forwarder_create', [
                         'username' => $this->getUsername(),
                         'email' => $email,
                         'destinations' => $destinations,
@@ -1426,7 +1422,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
         try {
             $oldDestinations = $forwarder->destinations;
 
-            $this->getAgent()->send('email.forwarder_update', [
+            $this->agent()->send('email.forwarder_update', [
                 'username' => $this->getUsername(),
                 'email' => $forwarder->email,
                 'destinations' => $destinations,
@@ -1462,7 +1458,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
 
         try {
             $newStatus = ! $forwarder->is_active;
-            $this->getAgent()->send('email.forwarder_toggle', [
+            $this->agent()->send('email.forwarder_toggle', [
                 'username' => $this->getUsername(),
                 'email' => $forwarder->email,
                 'active' => $newStatus,
@@ -1486,7 +1482,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             $forwarderEmail = $forwarder->email;
             $forwarderDestinations = $forwarder->destinations;
 
-            $this->getAgent()->send('email.forwarder_delete', [
+            $this->agent()->send('email.forwarder_delete', [
                 'username' => $this->getUsername(),
                 'email' => $forwarderEmail,
             ]);
@@ -1561,7 +1557,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                     continue;
                 }
 
-                $result = $this->getAgent()->send('email.stalwart_add_identity', [
+                $result = $this->agent()->send('email.stalwart_add_identity', [
                     'email' => $mailbox->email,
                     'identity' => $forwarderEmail,
                     'password' => $mailbox->plain_password ?? '',
@@ -1584,7 +1580,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                     continue;
                 }
 
-                $result = $this->getAgent()->send('email.stalwart_remove_identity', [
+                $result = $this->agent()->send('email.stalwart_remove_identity', [
                     'email' => $mailbox->email,
                     'identity' => $forwarderEmail,
                     'password' => $mailbox->plain_password ?? '',
@@ -1686,7 +1682,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                     ]);
 
                     // Configure on mail server via agent
-                    $this->getAgent()->send('email.autoresponder_set', [
+                    $this->agent()->send('email.autoresponder_set', [
                         'username' => $this->getUsername(),
                         'email' => $mailbox->email,
                         'subject' => $data['subject'],
@@ -1717,7 +1713,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             ]);
 
             // Update on mail server
-            $this->getAgent()->send('email.autoresponder_set', [
+            $this->agent()->send('email.autoresponder_set', [
                 'username' => $this->getUsername(),
                 'email' => $autoresponder->mailbox->email,
                 'subject' => $data['subject'],
@@ -1740,7 +1736,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             $autoresponder->update(['is_active' => $newStatus]);
 
             // Update on mail server
-            $this->getAgent()->send('email.autoresponder_toggle', [
+            $this->agent()->send('email.autoresponder_toggle', [
                 'username' => $this->getUsername(),
                 'email' => $autoresponder->mailbox->email,
                 'active' => $newStatus,
@@ -1759,7 +1755,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
     {
         try {
             // Remove from mail server
-            $this->getAgent()->send('email.autoresponder_delete', [
+            $this->agent()->send('email.autoresponder_delete', [
                 'username' => $this->getUsername(),
                 'email' => $autoresponder->mailbox->email,
             ]);
@@ -1837,7 +1833,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                         }
 
                         try {
-                            $service = new MailboxSharingService($this->getAgent());
+                            $service = new MailboxSharingService($this->agent());
                             $service->updatePermissions($record, $data['acl_rights']);
                             Notification::make()->title(__('Permissions updated'))->success()->send();
                         } catch (Exception $e) {
@@ -1866,7 +1862,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                         }
 
                         try {
-                            $service = new MailboxSharingService($this->getAgent());
+                            $service = new MailboxSharingService($this->agent());
                             $service->revokeShare($record);
                             Notification::make()->title(__('Share revoked'))->success()->send();
                         } catch (Exception $e) {
@@ -1960,7 +1956,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
                 }
 
                 try {
-                    $service = new MailboxSharingService($this->getAgent());
+                    $service = new MailboxSharingService($this->agent());
                     $service->shareFolder($owner, $recipient, $data['folder'], $data['acl_rights']);
                     Notification::make()->title(__('Folder shared successfully'))->success()->send();
                     $this->setTab('sharing');
@@ -2006,7 +2002,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             }
 
             // Update in Postfix virtual alias maps
-            $this->getAgent()->send('email.catchall_update', [
+            $this->agent()->send('email.catchall_update', [
                 'username' => $this->getUsername(),
                 'domain' => $emailDomain->domain->domain,
                 'enabled' => $enabled,
@@ -2035,7 +2031,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             $enabled = $data['enabled'] ?? false;
             $text = $data['text'] ?? '';
 
-            $this->getAgent()->send('email.disclaimer_update', [
+            $this->agent()->send('email.disclaimer_update', [
                 'domain' => $emailDomain->domain->domain,
                 'enabled' => $enabled,
                 'text' => $text,
@@ -2059,7 +2055,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
     public function getEmailLogs(): array
     {
         try {
-            $result = $this->getAgent()->send('email.get_logs', [
+            $result = $this->agent()->send('email.get_logs', [
                 'username' => $this->getUsername(),
                 'limit' => 100,
             ]);
