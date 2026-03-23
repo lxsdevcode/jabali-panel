@@ -118,86 +118,100 @@ class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
 
             $store->updateAccountStatus($cpanelUser, 'backup_creating', __('Setting up backup transfer...'));
 
-            $keyName = $this->getSshKeyName();
             $destPath = $this->getBackupDestPath();
 
             if (! is_dir($destPath)) {
                 mkdir($destPath, 0755, true);
             }
 
-            $agent->send('jabali_ssh.ensure_exists', []);
+            $backupPath = null;
 
-            $publicKeyResult = $agent->send('jabali_ssh.get_public_key', []);
-            if (! ($publicKeyResult['success'] ?? false) || ! ($publicKeyResult['exists'] ?? false)) {
-                throw new Exception(__('Failed to get Jabali public key'));
+            // Try SCP transfer first (requires SSH key setup)
+            try {
+                $keyName = $this->getSshKeyName();
+
+                $agent->send('jabali_ssh.ensure_exists', []);
+
+                $publicKeyResult = $agent->send('jabali_ssh.get_public_key', []);
+                if (! ($publicKeyResult['success'] ?? false) || ! ($publicKeyResult['exists'] ?? false)) {
+                    throw new Exception(__('Failed to get Jabali public key'));
+                }
+                $publicKey = $publicKeyResult['public_key'] ?? null;
+
+                $agent->send('jabali_ssh.add_to_authorized_keys', [
+                    'public_key' => $publicKey,
+                    'comment' => 'whm-migration-'.$cpanelUser,
+                ]);
+
+                $privateKeyResult = $agent->send('jabali_ssh.get_private_key', []);
+                if (! ($privateKeyResult['success'] ?? false) || ! ($privateKeyResult['exists'] ?? false)) {
+                    throw new Exception(__('Failed to read Jabali private key'));
+                }
+
+                $privateKey = $privateKeyResult['private_key'] ?? null;
+                if (empty($privateKey)) {
+                    throw new Exception(__('Private key is empty'));
+                }
+
+                $store->addAccountLog($cpanelUser, __('Importing SSH key to cPanel...'), 'pending');
+
+                // Delete any existing key first to avoid private/public mismatch
+                $whm->deleteSshKey($cpanelUser, $keyName);
+
+                $importResult = $whm->importSshPrivateKey($cpanelUser, $keyName, $privateKey);
+                if (! ($importResult['success'] ?? false)) {
+                    throw new Exception($importResult['message'] ?? __('Failed to import SSH key'));
+                }
+
+                $actualKeyName = $importResult['actual_key_name'] ?? $keyName;
+
+                // Import public key (cPanel needs both to authorize)
+                if (! empty($publicKey)) {
+                    $whm->importSshPublicKey($cpanelUser, $actualKeyName, $publicKey);
+                }
+
+                $store->addAccountLog($cpanelUser, __('SSH key imported'), 'success');
+
+                $authResult = $whm->authorizeSshKey($cpanelUser, $actualKeyName);
+                if (! ($authResult['success'] ?? false)) {
+                    $store->addAccountLog($cpanelUser, __('SSH key authorization skipped'), 'info');
+                } else {
+                    $store->addAccountLog($cpanelUser, __('SSH key authorized'), 'success');
+                }
+
+                $store->addAccountLog($cpanelUser, __('Initiating backup transfer...'), 'pending');
+
+                $jabaliIp = $this->getJabaliPublicIp();
+
+                $backupResult = $whm->createBackupToScpWithKey(
+                    $cpanelUser,
+                    $jabaliIp,
+                    'root',
+                    $destPath,
+                    $actualKeyName,
+                    22
+                );
+
+                if ($backupResult['success'] ?? false) {
+                    $store->addAccountLog($cpanelUser, __('Backup initiated, transferring via SCP...'), 'success');
+                    $store->updateAccountStatus($cpanelUser, 'backup_downloading', __('Waiting for backup file...'));
+                    $backupPath = $this->waitForBackupFile($agent, $store, $cpanelUser, $destPath);
+                }
+            } catch (Exception $e) {
+                Log::warning('SCP backup transfer failed, will try HTTP download', [
+                    'user' => $cpanelUser,
+                    'error' => $e->getMessage(),
+                ]);
             }
-            $publicKey = $publicKeyResult['public_key'] ?? null;
 
-            $agent->send('jabali_ssh.add_to_authorized_keys', [
-                'public_key' => $publicKey,
-                'comment' => 'whm-migration-'.$cpanelUser,
-            ]);
-
-            $privateKeyResult = $agent->send('jabali_ssh.get_private_key', []);
-            if (! ($privateKeyResult['success'] ?? false) || ! ($privateKeyResult['exists'] ?? false)) {
-                throw new Exception(__('Failed to read Jabali private key'));
-            }
-
-            $privateKey = $privateKeyResult['private_key'] ?? null;
-            if (empty($privateKey)) {
-                throw new Exception(__('Private key is empty'));
-            }
-
-            $store->addAccountLog($cpanelUser, __('Importing SSH key to cPanel...'), 'pending');
-
-            // Delete any existing key first to avoid private/public mismatch
-            $whm->deleteSshKey($cpanelUser, $keyName);
-
-            $importResult = $whm->importSshPrivateKey($cpanelUser, $keyName, $privateKey);
-            if (! ($importResult['success'] ?? false)) {
-                throw new Exception($importResult['message'] ?? __('Failed to import SSH key'));
-            }
-
-            $actualKeyName = $importResult['actual_key_name'] ?? $keyName;
-
-            // Import public key (cPanel needs both to authorize)
-            if (! empty($publicKey)) {
-                $whm->importSshPublicKey($cpanelUser, $actualKeyName, $publicKey);
-            }
-
-            $store->addAccountLog($cpanelUser, __('SSH key imported'), 'success');
-
-            $authResult = $whm->authorizeSshKey($cpanelUser, $actualKeyName);
-            if (! ($authResult['success'] ?? false)) {
-                $store->addAccountLog($cpanelUser, __('SSH key authorization skipped'), 'info');
-            } else {
-                $store->addAccountLog($cpanelUser, __('SSH key authorized'), 'success');
-            }
-
-            $store->addAccountLog($cpanelUser, __('Initiating backup transfer...'), 'pending');
-
-            $jabaliIp = $this->getJabaliPublicIp();
-
-            $backupResult = $whm->createBackupToScpWithKey(
-                $cpanelUser,
-                $jabaliIp,
-                'root',
-                $destPath,
-                $actualKeyName,
-                22
-            );
-
-            if (! ($backupResult['success'] ?? false)) {
-                throw new Exception($backupResult['message'] ?? __('Failed to start backup'));
-            }
-
-            $store->addAccountLog($cpanelUser, __('Backup initiated, transferring via SCP...'), 'success');
-
-            $store->updateAccountStatus($cpanelUser, 'backup_downloading', __('Waiting for backup file...'));
-
-            $backupPath = $this->waitForBackupFile($agent, $store, $cpanelUser, $destPath);
+            // Fallback to HTTP download if SCP failed or file didn't arrive
             if (! $backupPath) {
-                throw new Exception(__('Backup file did not arrive'));
+                $store->addAccountLog($cpanelUser, __('SCP transfer unavailable, downloading backup via HTTP...'), 'info');
+                $backupPath = $this->downloadBackupViaHttp($whm, $store, $cpanelUser, $destPath);
+            }
+
+            if (! $backupPath) {
+                throw new Exception(__('Failed to obtain backup file via SCP or HTTP download'));
             }
 
             $store->addAccountLog($cpanelUser, __('Backup received: :size', ['size' => Formatter::bytes(filesize($backupPath))]), 'success');
@@ -360,6 +374,140 @@ class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
         }
 
         return null;
+    }
+
+    /**
+     * Download a cPanel backup via HTTP when SCP transfer is unavailable.
+     *
+     * Creates a backup in the user's homedir, polls until complete, then
+     * downloads the file via a cPanel session.
+     *
+     * @return string|null Local path to the downloaded backup file, or null on failure
+     */
+    private function downloadBackupViaHttp(WhmApiService $whm, WhmMigrationStatusStore $store, string $cpanelUser, string $destPath): ?string
+    {
+        try {
+            // Snapshot existing backups so we can detect the new one
+            $existingBackups = [];
+            $listResult = $whm->listBackupsForUser($cpanelUser);
+            if ($listResult['success'] ?? false) {
+                foreach ($listResult['backups'] ?? [] as $backup) {
+                    $existingBackups[$backup['file']] = true;
+                }
+            }
+
+            $store->updateAccountStatus($cpanelUser, 'backup_creating', __('Creating backup in cPanel homedir...'));
+
+            $createResult = $whm->createBackupForUser($cpanelUser);
+            if (! ($createResult['success'] ?? false)) {
+                Log::error('HTTP fallback: failed to create backup in homedir', [
+                    'user' => $cpanelUser,
+                    'message' => $createResult['message'] ?? 'Unknown error',
+                ]);
+                $store->addAccountLog($cpanelUser, __('Failed to create backup in homedir: :error', [
+                    'error' => $createResult['message'] ?? __('Unknown error'),
+                ]), 'error');
+
+                return null;
+            }
+
+            $store->addAccountLog($cpanelUser, __('Backup creation started in cPanel homedir'), 'success');
+
+            // Poll for the new backup to reach 'complete' status
+            $maxAttempts = 120;
+            $pollInterval = 10;
+            $remotePath = null;
+
+            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+                sleep($pollInterval);
+
+                $listResult = $whm->listBackupsForUser($cpanelUser);
+                if (! ($listResult['success'] ?? false)) {
+                    if ($attempt % 6 === 0) {
+                        $store->addAccountLog($cpanelUser, __('Waiting for backup to complete... (:time s)', [
+                            'time' => $attempt * $pollInterval,
+                        ]), 'pending');
+                    }
+
+                    continue;
+                }
+
+                foreach ($listResult['backups'] ?? [] as $backup) {
+                    $file = $backup['file'] ?? '';
+                    if (isset($existingBackups[$file])) {
+                        continue;
+                    }
+
+                    if (($backup['status'] ?? '') === 'complete') {
+                        $remotePath = $backup['path'] ?? null;
+                        break 2;
+                    }
+                }
+
+                // Log progress every 60 seconds
+                if ($attempt % 6 === 0) {
+                    $store->addAccountLog($cpanelUser, __('Waiting for backup to complete... (:time s)', [
+                        'time' => $attempt * $pollInterval,
+                    ]), 'pending');
+                }
+            }
+
+            if (! $remotePath) {
+                Log::error('HTTP fallback: backup did not complete in time', ['user' => $cpanelUser]);
+                $store->addAccountLog($cpanelUser, __('Backup did not complete in time'), 'error');
+
+                return null;
+            }
+
+            $store->addAccountLog($cpanelUser, __('Backup ready, downloading via HTTP...'), 'success');
+            $store->updateAccountStatus($cpanelUser, 'backup_downloading', __('Downloading backup via HTTP...'));
+
+            $localPath = "{$destPath}/backup-{$cpanelUser}.tar.gz";
+
+            $downloadResult = $whm->downloadFileFromUser($cpanelUser, $remotePath, $localPath);
+            if (! ($downloadResult['success'] ?? false)) {
+                Log::error('HTTP fallback: download failed', [
+                    'user' => $cpanelUser,
+                    'message' => $downloadResult['message'] ?? 'Unknown error',
+                ]);
+                $store->addAccountLog($cpanelUser, __('HTTP download failed: :error', [
+                    'error' => $downloadResult['message'] ?? __('Unknown error'),
+                ]), 'error');
+
+                return null;
+            }
+
+            // Validate the downloaded file is a valid gzip archive
+            $handle = fopen($localPath, 'rb');
+            $magic = $handle ? fread($handle, 2) : '';
+            if ($handle) {
+                fclose($handle);
+            }
+
+            if ($magic !== "\x1f\x8b") {
+                Log::error('HTTP fallback: downloaded file is not a valid gzip archive', ['user' => $cpanelUser]);
+                $store->addAccountLog($cpanelUser, __('Downloaded file is not a valid backup archive'), 'error');
+                @unlink($localPath);
+
+                return null;
+            }
+
+            $store->addAccountLog($cpanelUser, __('Backup downloaded via HTTP: :size', [
+                'size' => Formatter::bytes($downloadResult['size'] ?? filesize($localPath)),
+            ]), 'success');
+
+            return $localPath;
+        } catch (Exception $e) {
+            Log::error('HTTP fallback: unexpected error', [
+                'user' => $cpanelUser,
+                'error' => $e->getMessage(),
+            ]);
+            $store->addAccountLog($cpanelUser, __('HTTP download failed: :error', [
+                'error' => $e->getMessage(),
+            ]), 'error');
+
+            return null;
+        }
     }
 
     /**
