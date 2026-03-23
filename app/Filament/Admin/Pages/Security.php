@@ -1346,24 +1346,19 @@ class Security extends Page implements HasActions, HasForms, HasTable
     // Firewall actions
     public function toggleFirewall(): void
     {
-        try {
-            $action = $this->firewallEnabled ? 'ufw.disable' : 'ufw.enable';
-            $result = $this->agent()->send($action);
+        $action = $this->firewallEnabled ? 'ufw.disable' : 'ufw.enable';
+        $label = $this->firewallEnabled ? 'disabled' : 'enabled';
 
-            if ($result['success'] ?? false) {
+        $this->agentCall(
+            action: $action,
+            params: [],
+            successTitle: 'Firewall '.$label,
+            errorTitle: 'Error',
+            onSuccess: function () use ($label): void {
                 $this->firewallEnabled = ! $this->firewallEnabled;
-                $auditAction = $this->firewallEnabled ? 'enabled' : 'disabled';
-                AuditLog::logFirewallAction($auditAction);
-                Notification::make()
-                    ->title($this->firewallEnabled ? __('Firewall enabled') : __('Firewall disabled'))
-                    ->success()
-                    ->send();
-            } else {
-                throw new Exception($result['message'] ?? __('Unknown error'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+                AuditLog::logFirewallAction($label);
+            },
+        );
 
         $this->loadFirewallStatus();
     }
@@ -1399,18 +1394,16 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ->modalSubmitActionLabel(__('Delete'))
             ->color('danger')
             ->action(function (): void {
-                try {
-                    $result = $this->agent()->send('ufw.delete_rule', ['rule_number' => $this->ruleToDelete]);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.delete_rule',
+                    params: ['rule_number' => $this->ruleToDelete],
+                    successTitle: 'Rule deleted',
+                    errorTitle: 'Error',
+                    onSuccess: function (): void {
                         AuditLog::logFirewallAction('deleted', "rule #{$this->ruleToDelete}");
-                        Notification::make()->title(__('Rule deleted'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1434,36 +1427,28 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->required(),
             ])
             ->action(function (array $data, array $arguments): void {
-                try {
-                    $result = $this->agent()->send('ufw.set_default', [
+                $this->agentCall(
+                    action: 'ufw.set_default',
+                    params: [
                         'direction' => $arguments['direction'] ?? 'incoming',
                         'policy' => $data['policy'],
-                    ]);
-                    if ($result['success'] ?? false) {
-                        Notification::make()->title(__('Default policy updated'))->success()->send();
-                        $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    ],
+                    successTitle: 'Default policy updated',
+                    errorTitle: 'Error',
+                    onSuccess: fn () => $this->loadFirewallStatus(),
+                );
             });
     }
 
     public function reloadFirewall(): void
     {
-        try {
-            $result = $this->agent()->send('ufw.reload');
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Firewall reloaded'))->success()->send();
-                $this->loadFirewallStatus();
-            } else {
-                throw new Exception($result['message'] ?? __('Unknown error'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'ufw.reload',
+            params: [],
+            successTitle: 'Firewall reloaded',
+            errorTitle: 'Error',
+            onSuccess: fn () => $this->loadFirewallStatus(),
+        );
     }
 
     public function resetFirewall(): void
@@ -1480,18 +1465,16 @@ class Security extends Page implements HasActions, HasForms, HasTable
             ->modalSubmitActionLabel(__('Reset Everything'))
             ->color('danger')
             ->action(function (): void {
-                try {
-                    $result = $this->agent()->send('ufw.reset');
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.reset',
+                    params: [],
+                    successTitle: 'Firewall reset',
+                    errorTitle: 'Error',
+                    onSuccess: function (): void {
                         AuditLog::logFirewallAction('reset', 'all rules deleted');
-                        Notification::make()->title(__('Firewall reset'))->body(__('All rules have been deleted.'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1520,19 +1503,17 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->placeholder(__('e.g., Web server')),
             ])
             ->action(function (array $data): void {
-                try {
-                    $result = $this->agent()->send('ufw.allow_port', $data);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.allow_port',
+                    params: $data,
+                    successTitle: 'Port allowed',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($data): void {
                         $rule = "allow port {$data['port']}".($data['protocol'] ? "/{$data['protocol']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
-                        Notification::make()->title(__('Port allowed'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1559,19 +1540,17 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Comment (optional)')),
             ])
             ->action(function (array $data): void {
-                try {
-                    $result = $this->agent()->send('ufw.deny_port', $data);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.deny_port',
+                    params: $data,
+                    successTitle: 'Port blocked',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($data): void {
                         $rule = "deny port {$data['port']}".($data['protocol'] ? "/{$data['protocol']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
-                        Notification::make()->title(__('Port blocked'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1602,19 +1581,17 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Comment (optional)')),
             ])
             ->action(function (array $data): void {
-                try {
-                    $result = $this->agent()->send('ufw.allow_ip', $data);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.allow_ip',
+                    params: $data,
+                    successTitle: 'IP allowed',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($data): void {
                         $rule = "allow from {$data['ip']}".($data['port'] ? " to port {$data['port']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
-                        Notification::make()->title(__('IP allowed'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1644,19 +1621,17 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Comment (optional)')),
             ])
             ->action(function (array $data): void {
-                try {
-                    $result = $this->agent()->send('ufw.deny_ip', $data);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.deny_ip',
+                    params: $data,
+                    successTitle: 'IP blocked',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($data): void {
                         $rule = "deny from {$data['ip']}".($data['port'] ? " to port {$data['port']}" : '');
                         AuditLog::logFirewallAction('added', $rule, $data);
-                        Notification::make()->title(__('IP blocked'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1685,18 +1660,16 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->searchable(),
             ])
             ->action(function (array $data): void {
-                try {
-                    $result = $this->agent()->send('ufw.allow_service', $data);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.allow_service',
+                    params: $data,
+                    successTitle: 'Service allowed',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($data): void {
                         AuditLog::logFirewallAction('added', "allow service {$data['service']}", $data);
-                        Notification::make()->title(__('Service allowed'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 
@@ -1721,18 +1694,16 @@ class Security extends Page implements HasActions, HasForms, HasTable
                     ->default('tcp'),
             ])
             ->action(function (array $data): void {
-                try {
-                    $result = $this->agent()->send('ufw.limit_port', $data);
-                    if ($result['success'] ?? false) {
+                $this->agentCall(
+                    action: 'ufw.limit_port',
+                    params: $data,
+                    successTitle: 'Rate limit applied',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($data): void {
                         AuditLog::logFirewallAction('added', "limit port {$data['port']}/{$data['protocol']}", $data);
-                        Notification::make()->title(__('Rate limit applied'))->success()->send();
                         $this->loadFirewallStatus();
-                    } else {
-                        throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-                    }
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                    },
+                );
             });
     }
 

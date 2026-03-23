@@ -273,51 +273,27 @@ class Services extends Page implements HasActions, HasForms, HasTable
 
     protected function executeServiceAction(string $service, string $action): void
     {
-        try {
-            $result = $this->agent()->send("service.{$action}", [
-                'service' => $service,
-            ]);
+        $actionPast = match ($action) {
+            'start' => 'started',
+            'stop' => 'stopped',
+            'restart' => 'restarted',
+            'reload' => 'reloaded',
+            'enable' => 'enabled',
+            'disable' => 'disabled',
+            default => $action,
+        };
 
-            if ($result['success'] ?? false) {
-                $notificationTitle = match ($action) {
-                    'start' => __(':service started', ['service' => ucfirst($service)]),
-                    'stop' => __(':service stopped', ['service' => ucfirst($service)]),
-                    'restart' => __(':service restarted', ['service' => ucfirst($service)]),
-                    'reload' => __(':service reloaded', ['service' => ucfirst($service)]),
-                    'enable' => __(':service enabled', ['service' => ucfirst($service)]),
-                    'disable' => __(':service disabled', ['service' => ucfirst($service)]),
-                    default => ucfirst($service).' '.$action
-                };
-
-                $actionPast = match ($action) {
-                    'start' => 'started',
-                    'stop' => 'stopped',
-                    'restart' => 'restarted',
-                    'reload' => 'reloaded',
-                    'enable' => 'enabled',
-                    'disable' => 'disabled',
-                    default => $action
-                };
-
-                Notification::make()
-                    ->title($notificationTitle)
-                    ->success()
-                    ->send();
-
+        $this->agentCall(
+            action: "service.{$action}",
+            params: ['service' => $service],
+            successTitle: ':service '.$actionPast,
+            errorTitle: 'Action failed',
+            onSuccess: function () use ($actionPast, $service): void {
                 AuditLog::logServiceAction($actionPast, $service);
-
                 $this->loadServices();
                 $this->resetTable();
-            } else {
-                throw new Exception($result['error'] ?? $result['message'] ?? __('Unknown error'));
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Action failed'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
     }
 
     protected function getHeaderActions(): array
