@@ -1477,6 +1477,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             Toggle::make('include_databases')->label(__('Databases'))->default(true),
                             Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
                             Toggle::make('include_dns')->label(__('DNS Records'))->default(true),
+                            Toggle::make('include_ssl')->label(__('SSL Certificates'))->default(true),
                         ]),
                     ]),
             ])
@@ -1598,6 +1599,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             Toggle::make('include_databases')->label(__('Databases')),
                             Toggle::make('include_mailboxes')->label(__('Mailboxes')),
                             Toggle::make('include_dns')->label(__('DNS Records')),
+                            Toggle::make('include_ssl')->label(__('SSL Certificates')),
                         ]),
                     ]),
             ])
@@ -1693,6 +1695,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             Toggle::make('include_databases')->label(__('Databases'))->default(true),
                             Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
                             Toggle::make('include_dns')->label(__('DNS Records'))->default(true),
+                            Toggle::make('include_ssl')->label(__('SSL Certificates'))->default(true),
                         ]),
                     ]),
             ])
