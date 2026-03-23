@@ -22,6 +22,7 @@ use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -88,6 +89,8 @@ class ServerSettings extends Page implements HasActions, HasForms
     public ?array $phpFpmData = [];
 
     public ?array $securityData = [];
+
+    public ?array $timezoneData = [];
 
     // Version info (non-form)
     public bool $isSystemdResolved = false;
@@ -175,6 +178,10 @@ class ServerSettings extends Page implements HasActions, HasForms
         // Fill form data
         $this->brandingData = [
             'panel_name' => $settings['panel_name'] ?? 'Jabali',
+        ];
+
+        $this->timezoneData = [
+            'timezone' => $settings['server_timezone'] ?? @date_default_timezone_get(),
         ];
 
         $this->securityData = [
@@ -350,6 +357,26 @@ class ServerSettings extends Page implements HasActions, HasForms
                         FormAction::make('saveHostname')
                             ->label(__('Save Hostname'))
                             ->action('saveHostname'),
+                    ]),
+                ]),
+            Section::make(__('Server Timezone'))
+                ->icon('heroicon-o-clock')
+                ->schema([
+                    Select::make('timezoneData.timezone')
+                        ->label(__('Timezone'))
+                        ->options(fn (): array => collect(timezone_identifiers_list())
+                            ->mapWithKeys(fn (string $tz): array => [$tz => $tz])
+                            ->toArray())
+                        ->searchable()
+                        ->required()
+                        ->helperText(fn () => __('Current server time: :time (:tz)', [
+                            'time' => now()->format('Y-m-d H:i:s'),
+                            'tz' => date_default_timezone_get(),
+                        ])),
+                    Actions::make([
+                        FormAction::make('saveTimezone')
+                            ->label(__('Save Timezone'))
+                            ->action('saveTimezone'),
                     ]),
                 ]),
             Section::make(__('Security'))
@@ -871,6 +898,35 @@ class ServerSettings extends Page implements HasActions, HasForms
         DnsSetting::clearCache();
 
         Notification::make()->title(__('Branding updated'))->body(__('Refresh to see changes.'))->success()->send();
+    }
+
+    public function saveTimezone(): void
+    {
+        $timezone = $this->timezoneData['timezone'] ?? '';
+
+        if (empty($timezone) || ! in_array($timezone, timezone_identifiers_list())) {
+            Notification::make()->title(__('Invalid timezone'))->danger()->send();
+
+            return;
+        }
+
+        // Save to panel settings
+        DnsSetting::set('server_timezone', $timezone);
+
+        // Set system timezone via agent (timedatectl + php.ini update)
+        $result = $this->agent()->send('server.set_timezone', ['timezone' => $timezone]);
+
+        if (! ($result['success'] ?? false)) {
+            Notification::make()
+                ->title(__('Panel timezone updated'))
+                ->body(__('System timezone could not be set: :error', ['error' => $result['error'] ?? '']))
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()->title(__('Timezone updated to :tz', ['tz' => $timezone]))->success()->send();
     }
 
     public function saveSecurity(): void

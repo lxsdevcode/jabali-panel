@@ -650,6 +650,7 @@ function handleAction(array $request): array
         'usage.bandwidth_total' => usageBandwidthTotal($params),
         'usage.user_resources' => usageUserResources($params),
         'server.set_hostname' => setHostname($params),
+        'server.set_timezone' => setTimezone($params),
         'server.set_upload_limits' => setUploadLimits($params),
         'server.update_bind' => updateBindConfig($params),
         'server.info' => getServerInfo($params),
@@ -680,6 +681,7 @@ function handleAction(array $request): array
         'php.install_wp_modules' => phpInstallWordPressModules($params),
         'ssh.generate_key' => sshGenerateKey($params),
         'server.set_hostname' => setHostname($params),
+        'server.set_timezone' => setTimezone($params),
         'server.set_upload_limits' => setUploadLimits($params),
         'server.update_bind' => updateBindConfig($params),
         'server.info' => getServerInfo($params),
@@ -14370,6 +14372,46 @@ function is_mounted(string $path): bool
 }
 
 // ============ SERVER SETTINGS ============
+
+function setTimezone(array $params): array
+{
+    $timezone = $params['timezone'] ?? '';
+
+    if (empty($timezone) || !in_array($timezone, timezone_identifiers_list())) {
+        return ['success' => false, 'error' => 'Invalid timezone'];
+    }
+
+    // Set system timezone via timedatectl
+    exec("timedatectl set-timezone " . escapeshellarg($timezone) . " 2>&1", $output, $retval);
+
+    if ($retval !== 0) {
+        return ['success' => false, 'error' => 'Failed to set timezone: ' . implode("\n", $output)];
+    }
+
+    // Update PHP timezone in all php.ini files (fpm, fpm-panel, cli)
+    $phpVersions = array_merge(
+        glob('/etc/php/*/fpm/php.ini'),
+        glob('/etc/php/*/fpm-panel/php.ini'),
+        glob('/etc/php/*/cli/php.ini')
+    );
+    foreach ($phpVersions as $phpIni) {
+        $content = file_get_contents($phpIni);
+        if (preg_match('/^date\.timezone\s*=/m', $content)) {
+            $content = preg_replace('/^date\.timezone\s*=.*/m', "date.timezone = $timezone", $content);
+        } else {
+            $content .= "\ndate.timezone = $timezone\n";
+        }
+        file_put_contents($phpIni, $content);
+    }
+
+    // Schedule FPM reload 3 seconds from now using at (doesn't block this process)
+    $reloadScript = tempnam(sys_get_temp_dir(), 'tz_reload_');
+    file_put_contents($reloadScript, "#!/bin/bash\nsleep 3\nsystemctl list-units --type=service --state=running --no-legend 2>/dev/null | grep 'php.*fpm' | awk '{print \$1}' | xargs -I{} systemctl reload {} 2>/dev/null\nrm -f $reloadScript\n");
+    chmod($reloadScript, 0755);
+    exec("nohup $reloadScript > /dev/null 2>&1 &");
+
+    return ['success' => true, 'timezone' => $timezone];
+}
 
 function setHostname(array $params): array
 {
