@@ -68,7 +68,7 @@
                     </x-slot>
                 @endif
                 <div class="fi-section-header-description">
-                    <pre class="whitespace-pre-wrap break-words rounded bg-gray-50 p-4 fi-section-header-description">{{ $jabaliOutput }}</pre>
+                    <pre class="whitespace-pre-wrap break-words rounded bg-gray-50 dark:bg-white/5 p-4 fi-section-header-description">{{ $jabaliOutput }}</pre>
                 </div>
             </x-filament::section>
         @endif
@@ -112,7 +112,7 @@
                     @php
                         $outputLines = is_array($refreshOutput) ? $refreshOutput : [$refreshOutput];
                     @endphp
-                    <pre class="whitespace-pre-wrap break-words rounded bg-gray-50 p-4 fi-section-header-description">{{ implode("\n", $outputLines) }}</pre>
+                    <pre class="whitespace-pre-wrap break-words rounded bg-gray-50 dark:bg-white/5 p-4 fi-section-header-description">{{ implode("\n", $outputLines) }}</pre>
                 </div>
             </x-filament::section>
         @endif
