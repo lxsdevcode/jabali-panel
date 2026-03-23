@@ -89,10 +89,11 @@ $this->getRtlScript()
                 Authenticate::class,
                 RedirectAdminFromUserPanel::class,
             ])
-            ->plugins([
-                \Jabali\FileBrowser\FileBrowserPlugin::make()
-                    ->slug('files'),
-            ]);
+            ->plugins(array_filter([
+                class_exists(\Jabali\FileBrowser\FileBrowserPlugin::class)
+                    ? \Jabali\FileBrowser\FileBrowserPlugin::make()->slug('files')
+                    : null,
+            ]));
     }
 
     protected function getRtlScript(): string
