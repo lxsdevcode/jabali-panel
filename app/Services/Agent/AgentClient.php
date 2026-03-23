@@ -64,6 +64,11 @@ class AgentClient implements AgentClientInterface
         return $decoded;
     }
 
+    public function call(string $action, array $params = []): AgentResult
+    {
+        return AgentResult::fromResponse($this->send($action, $params));
+    }
+
     /**
      * Cache lightweight metrics to reduce socket churn on polling pages.
      */
