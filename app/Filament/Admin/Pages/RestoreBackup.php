@@ -315,6 +315,14 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
 
     public function startRestore(): void
     {
+        // Rate limit: 1 restore per minute per admin
+        $key = 'restore-backup:'.auth()->id();
+        if (! \Illuminate\Support\Facades\RateLimiter::attempt($key, 1, fn () => true, 60)) {
+            Notification::make()->title(__('Please wait before starting another restore'))->warning()->send();
+
+            return;
+        }
+
         $backup = $this->getBackup();
         if (! $backup) {
             Notification::make()->title(__('Backup not found'))->danger()->send();
