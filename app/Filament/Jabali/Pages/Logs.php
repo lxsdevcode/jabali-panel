@@ -143,11 +143,11 @@ class Logs extends Page implements HasActions, HasForms
     protected function loadDomains(): void
     {
         try {
-            $result = $this->agent()->send('domain.list', [
+            $result = $this->agent()->call('domain.list', [
                 'username' => $this->getUsername(),
             ]);
 
-            $this->domains = ($result['success'] ?? false) ? ($result['domains'] ?? []) : [];
+            $this->domains = $result->success ? $result->get('domains', []) : [];
         } catch (\Throwable $exception) {
             $this->domains = [];
         }
@@ -187,19 +187,19 @@ class Logs extends Page implements HasActions, HasForms
         }
 
         try {
-            $result = $this->agent()->send('logs.tail', [
+            $result = $this->agent()->call('logs.tail', [
                 'username' => $this->getUsername(),
                 'domain' => $this->selectedDomain,
                 'type' => $this->logType,
                 'lines' => $this->logLines,
             ]);
 
-            if ($result['success'] ?? false) {
-                $this->logContent = $result['content'] ?? '';
+            if ($result->success) {
+                $this->logContent = $result->get('content', '');
                 $this->logInfo = [
-                    'file_size' => Formatter::bytes($result['file_size'] ?? 0),
-                    'last_modified' => $result['last_modified'] ?? '',
-                    'lines' => $result['lines'] ?? 0,
+                    'file_size' => Formatter::bytes($result->get('file_size', 0)),
+                    'last_modified' => $result->get('last_modified', ''),
+                    'lines' => $result->get('lines', 0),
                 ];
             } else {
                 $this->logContent = '';

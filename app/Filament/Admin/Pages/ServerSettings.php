@@ -146,9 +146,10 @@ class ServerSettings extends Page implements HasActions, HasForms
         // Load hostname from agent
         $agentHostname = $hostname;
         try {
-            $result = $this->agent()->send('server.info', []);
-            if ($result['success'] ?? false) {
-                $agentHostname = $result['info']['hostname'] ?? $hostname;
+            $result = $this->agent()->call('server.info');
+            if ($result->success) {
+                $info = $result->get('info', []);
+                $agentHostname = $info['hostname'] ?? $hostname;
             }
         } catch (Exception $e) {
             // Use default

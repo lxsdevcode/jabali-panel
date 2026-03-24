@@ -659,28 +659,22 @@ class Domains extends Page implements HasActions, HasForms, HasTable
 
     public function toggleDomain(Domain $domain): void
     {
-        try {
-            $newStatus = ! $domain->is_active;
-            $result = $this->agent()->domainToggle($this->getUsername(), $domain->domain, $newStatus);
+        $newStatus = ! $domain->is_active;
+        $label = $newStatus ? 'Domain Enabled' : 'Domain Disabled';
 
-            if ($result['success'] ?? false) {
+        $this->agentCall(
+            action: 'domain.toggle',
+            params: [
+                'username' => $this->getUsername(),
+                'domain' => $domain->domain,
+                'enable' => $newStatus,
+            ],
+            successTitle: $label,
+            errorTitle: 'Error toggling domain',
+            onSuccess: function () use ($domain, $newStatus): void {
                 $domain->update(['is_active' => $newStatus]);
-
-                $status = $newStatus ? __('Enabled') : __('Disabled');
-                Notification::make()
-                    ->title(__('Domain')." {$status}")
-                    ->success()
-                    ->send();
-            } else {
-                throw new Exception($result['error'] ?? 'Unknown error');
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Error toggling domain'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
     }
 
     public function deleteDomain(Domain $domain, array $options): void

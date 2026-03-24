@@ -9,6 +9,7 @@ use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
 use App\Models\MysqlCredential;
+use App\Services\Agent\AgentResult;
 use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
@@ -829,99 +830,60 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
     public function toggleDebug(string $siteId): void
     {
-        try {
-            $result = $this->agent()->send('wp.toggle_debug', [
+        $this->agentCall(
+            action: 'wp.toggle_debug',
+            params: [
                 'username' => $this->getUsername(),
                 'site_id' => $siteId,
-            ]);
-
-            if ($result['success'] ?? false) {
-                $enabled = $result['debug_enabled'] ?? false;
-                Notification::make()
-                    ->title($enabled ? __('Debug Mode Enabled') : __('Debug Mode Disabled'))
-                    ->body($enabled
-                        ? __('WP_DEBUG is now ON. Check wp-content/debug.log for errors.')
-                        : __('WP_DEBUG has been turned OFF.'))
-                    ->color($enabled ? 'warning' : 'success')
-                    ->send();
+            ],
+            successTitle: 'Debug mode toggled',
+            errorTitle: 'Debug Toggle Failed',
+            onSuccess: function (AgentResult $result): void {
                 $this->loadData();
                 $this->resetTable();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to toggle debug mode'));
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Debug Toggle Failed'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
     }
 
     public function toggleAutoUpdate(string $siteId): void
     {
-        try {
-            $result = $this->agent()->send('wp.toggle_auto_update', [
+        $this->agentCall(
+            action: 'wp.toggle_auto_update',
+            params: [
                 'username' => $this->getUsername(),
                 'site_id' => $siteId,
-            ]);
-
-            if ($result['success'] ?? false) {
-                $enabled = $result['auto_update'] ?? false;
-                Notification::make()
-                    ->title($enabled ? __('Auto-Update Enabled') : __('Auto-Update Disabled'))
-                    ->body($enabled
-                        ? __('WordPress core, plugins, and themes will be updated automatically.')
-                        : __('Automatic updates have been disabled.'))
-                    ->success()
-                    ->send();
+            ],
+            successTitle: 'Auto-update toggled',
+            errorTitle: 'Auto-Update Toggle Failed',
+            onSuccess: function (AgentResult $result): void {
                 $this->loadData();
                 $this->resetTable();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to toggle auto-update'));
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Auto-Update Toggle Failed'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
     }
 
     public function updateWordPress(string $siteId): void
     {
-        try {
-            Notification::make()
-                ->title(__('Updating WordPress...'))
-                ->body(__('This may take a moment.'))
-                ->info()
-                ->send();
+        Notification::make()
+            ->title(__('Updating WordPress...'))
+            ->body(__('This may take a moment.'))
+            ->info()
+            ->send();
 
-            $result = $this->agent()->send('wp.update', [
+        $this->agentCall(
+            action: 'wp.update',
+            params: [
                 'username' => $this->getUsername(),
                 'site_id' => $siteId,
                 'type' => 'all',
-            ]);
-
-            if ($result['success'] ?? false) {
-                Notification::make()
-                    ->title(__('WordPress Updated'))
-                    ->body(__('Core, plugins, and themes have been updated.'))
-                    ->success()
-                    ->send();
+            ],
+            successTitle: 'WordPress Updated',
+            errorTitle: 'Update Failed',
+            onSuccess: function (AgentResult $result): void {
                 $this->loadData();
                 $this->resetTable();
-            } else {
-                throw new Exception($result['error'] ?? __('Update failed'));
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Update Failed'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
     }
 
     public function createStaging(string $siteId, string $subdomain, string $targetDomain = '', string $targetType = 'subdomain'): void

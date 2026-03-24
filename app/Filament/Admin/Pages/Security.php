@@ -1070,15 +1070,15 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadFirewallStatus(): void
     {
         try {
-            $result = $this->agent()->send('ufw.status');
+            $result = $this->agent()->call('ufw.status');
             $this->firewallInstalled = true;
-            $this->firewallEnabled = $result['active'] ?? false;
-            $this->defaultIncoming = $result['default_incoming'] ?? 'deny';
-            $this->defaultOutgoing = $result['default_outgoing'] ?? 'allow';
-            $this->firewallStatusText = $result['status_text'] ?? '';
+            $this->firewallEnabled = $result->get('active', false);
+            $this->defaultIncoming = $result->get('default_incoming', 'deny');
+            $this->defaultOutgoing = $result->get('default_outgoing', 'allow');
+            $this->firewallStatusText = $result->get('status_text', '');
 
-            $rulesResult = $this->agent()->send('ufw.list_rules');
-            $this->firewallRules = $rulesResult['rules'] ?? [];
+            $rulesResult = $this->agent()->call('ufw.list_rules');
+            $this->firewallRules = $rulesResult->get('rules', []);
         } catch (Exception $e) {
             $this->firewallInstalled = false;
         }
@@ -1111,10 +1111,10 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadFail2banStatusLight(): void
     {
         try {
-            $result = $this->agent()->send('fail2ban.status_light');
-            $this->fail2banInstalled = $result['installed'] ?? false;
-            $this->fail2banRunning = $result['running'] ?? false;
-            $this->fail2banVersion = $result['version'] ?? 'Unknown';
+            $result = $this->agent()->call('fail2ban.status_light');
+            $this->fail2banInstalled = $result->get('installed', false);
+            $this->fail2banRunning = $result->get('running', false);
+            $this->fail2banVersion = $result->get('version', 'Unknown');
             $this->jails = [];
             $this->availableJails = [];
             $this->totalBanned = null;
@@ -1133,23 +1133,23 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadFail2banStatus(): void
     {
         try {
-            $result = $this->agent()->send('fail2ban.status');
-            $this->fail2banInstalled = $result['installed'] ?? false;
+            $result = $this->agent()->call('fail2ban.status');
+            $this->fail2banInstalled = $result->get('installed', false);
 
             if ($this->fail2banInstalled) {
-                $this->fail2banRunning = $result['running'] ?? false;
-                $this->fail2banVersion = $result['version'] ?? 'Unknown';
-                $this->jails = $result['jails'] ?? [];
-                $this->totalBanned = $result['total_banned'] ?? 0;
-                $this->maxRetry = $result['max_retry'] ?? 5;
-                $this->banTime = $result['ban_time'] ?? 600;
-                $this->findTime = $result['find_time'] ?? 600;
+                $this->fail2banRunning = $result->get('running', false);
+                $this->fail2banVersion = $result->get('version', 'Unknown');
+                $this->jails = $result->get('jails', []);
+                $this->totalBanned = $result->get('total_banned', 0);
+                $this->maxRetry = $result->get('max_retry', 5);
+                $this->banTime = $result->get('ban_time', 600);
+                $this->findTime = $result->get('find_time', 600);
 
-                $jailsResult = $this->agent()->send('fail2ban.list_jails');
-                $this->availableJails = $jailsResult['jails'] ?? [];
+                $jailsResult = $this->agent()->call('fail2ban.list_jails');
+                $this->availableJails = $jailsResult->get('jails', []);
 
-                $logsResult = $this->agent()->send('fail2ban.logs');
-                $this->fail2banLogs = $logsResult['logs'] ?? [];
+                $logsResult = $this->agent()->call('fail2ban.logs');
+                $this->fail2banLogs = $logsResult->get('logs', []);
             } else {
                 $this->fail2banRunning = false;
                 $this->fail2banVersion = '';
@@ -1172,13 +1172,13 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadClamavStatusLight(): void
     {
         try {
-            $result = $this->agent()->send('clamav.status_light');
-            $this->clamavInstalled = $result['installed'] ?? false;
-            $this->clamavRunning = $result['running'] ?? false;
-            $this->clamavVersion = $result['version'] ?? 'Unknown';
-            $this->realtimeEnabled = $result['realtime_enabled'] ?? false;
-            $this->realtimeRunning = $result['realtime_running'] ?? false;
-            $this->clamavLightMode = $result['light_mode'] ?? false;
+            $result = $this->agent()->call('clamav.status_light');
+            $this->clamavInstalled = $result->get('installed', false);
+            $this->clamavRunning = $result->get('running', false);
+            $this->clamavVersion = $result->get('version', 'Unknown');
+            $this->realtimeEnabled = $result->get('realtime_enabled', false);
+            $this->realtimeRunning = $result->get('realtime_running', false);
+            $this->clamavLightMode = $result->get('light_mode', false);
 
             $this->signatureCount = 0;
             $this->lastUpdate = '';
@@ -1204,20 +1204,20 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadClamavStatus(): void
     {
         try {
-            $result = $this->agent()->send('clamav.status');
-            $this->clamavInstalled = $result['installed'] ?? false;
+            $result = $this->agent()->call('clamav.status');
+            $this->clamavInstalled = $result->get('installed', false);
 
             if ($this->clamavInstalled) {
-                $this->clamavRunning = $result['running'] ?? false;
-                $this->clamavVersion = $result['version'] ?? 'Unknown';
-                $this->signatureCount = $result['signature_count'] ?? 0;
-                $this->lastUpdate = $result['last_update'] ?? '';
-                $this->recentThreats = $result['recent_threats'] ?? [];
-                $this->quarantinedFiles = $result['quarantined_files'] ?? [];
-                $this->realtimeEnabled = $result['realtime_enabled'] ?? false;
-                $this->realtimeRunning = $result['realtime_running'] ?? false;
-                $this->clamavLightMode = $result['light_mode'] ?? false;
-                $this->signatureDatabases = $result['signature_databases'] ?? [];
+                $this->clamavRunning = $result->get('running', false);
+                $this->clamavVersion = $result->get('version', 'Unknown');
+                $this->signatureCount = $result->get('signature_count', 0);
+                $this->lastUpdate = $result->get('last_update', '');
+                $this->recentThreats = $result->get('recent_threats', []);
+                $this->quarantinedFiles = $result->get('quarantined_files', []);
+                $this->realtimeEnabled = $result->get('realtime_enabled', false);
+                $this->realtimeRunning = $result->get('realtime_running', false);
+                $this->clamavLightMode = $result->get('light_mode', false);
+                $this->signatureDatabases = $result->get('signature_databases', []);
             } else {
                 $this->clamavRunning = false;
                 $this->clamavVersion = '';
@@ -1248,11 +1248,11 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function loadSshSettings(): void
     {
         try {
-            $result = $this->agent()->send('ssh.get_settings');
-            if ($result['success'] ?? false) {
-                $this->sshPasswordAuth = $result['password_auth'] ?? false;
-                $this->sshPubkeyAuth = $result['pubkey_auth'] ?? true;
-                $this->sshPort = $result['port'] ?? 22;
+            $result = $this->agent()->call('ssh.get_settings');
+            if ($result->success) {
+                $this->sshPasswordAuth = $result->get('password_auth', false);
+                $this->sshPubkeyAuth = $result->get('pubkey_auth', true);
+                $this->sshPort = $result->get('port', 22);
             }
             $this->sshShellAccessEnabled = Setting::get('ssh_shell_access_enabled', '1') === '1';
         } catch (Exception $e) {
@@ -1263,44 +1263,33 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function saveSshSettings(): void
     {
-        try {
-            if (! $this->sshPasswordAuth && ! $this->sshPubkeyAuth) {
-                Notification::make()
-                    ->title(__('Invalid Configuration'))
-                    ->body(__('At least one authentication method must be enabled.'))
-                    ->danger()
-                    ->send();
+        if (! $this->sshPasswordAuth && ! $this->sshPubkeyAuth) {
+            Notification::make()
+                ->title(__('Invalid Configuration'))
+                ->body(__('At least one authentication method must be enabled.'))
+                ->danger()
+                ->send();
 
-                return;
-            }
+            return;
+        }
 
-            $result = $this->agent()->send('ssh.save_settings', [
+        $this->agentCall(
+            action: 'ssh.save_settings',
+            params: [
                 'password_auth' => $this->sshPasswordAuth,
                 'pubkey_auth' => $this->sshPubkeyAuth,
                 'port' => $this->sshPort,
-            ]);
-
-            if ($result['success'] ?? false) {
+            ],
+            successTitle: 'SSH settings saved',
+            errorTitle: 'Failed to save SSH settings',
+            onSuccess: function (): void {
                 $previousShellAccessEnabled = Setting::get('ssh_shell_access_enabled', '1') === '1';
                 Setting::set('ssh_shell_access_enabled', $this->sshShellAccessEnabled ? '1' : '0');
                 if ($previousShellAccessEnabled && ! $this->sshShellAccessEnabled) {
                     $this->disableShellAccessForUsers();
                 }
-                Notification::make()
-                    ->title(__('SSH settings saved'))
-                    ->body(__('Changes will take effect immediately. Make sure you have key access if disabling passwords.'))
-                    ->success()
-                    ->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to save settings'));
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Failed to save SSH settings'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
         $this->loadSshSettings();
     }
 
@@ -1753,16 +1742,12 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function installFail2ban(): void
     {
         Notification::make()->title(__('Installing Fail2ban...'))->info()->send();
-        try {
-            $result = $this->agent()->send('fail2ban.install');
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Fail2ban installed'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Installation failed'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to install Fail2ban'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'fail2ban.install',
+            params: [],
+            successTitle: 'Fail2ban installed',
+            errorTitle: 'Failed to install Fail2ban',
+        );
         $this->loadFail2banStatus();
     }
 
@@ -1786,16 +1771,12 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function stopFail2ban(): void
     {
-        try {
-            $result = $this->agent()->send('service.stop', ['service' => 'fail2ban']);
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Fail2ban stopped'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to stop'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to stop Fail2ban'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'service.stop',
+            params: ['service' => 'fail2ban'],
+            successTitle: 'Fail2ban stopped',
+            errorTitle: 'Failed to stop Fail2ban',
+        );
         $this->loadFail2banStatus();
     }
 
@@ -1819,65 +1800,49 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function saveFail2banSettings(): void
     {
-        try {
-            $result = $this->agent()->send('fail2ban.save_settings', [
+        $this->agentCall(
+            action: 'fail2ban.save_settings',
+            params: [
                 'max_retry' => $this->maxRetry,
                 'ban_time' => $this->banTime,
                 'find_time' => $this->findTime,
-            ]);
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Settings saved'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to save'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to save settings'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: 'Settings saved',
+            errorTitle: 'Failed to save settings',
+        );
         $this->loadFail2banStatus();
     }
 
     public function unbanIp(string $jail, string $ip): void
     {
-        try {
-            $result = $this->agent()->send('fail2ban.unban_ip', ['jail' => $jail, 'ip' => $ip]);
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Unbanned :ip', ['ip' => $ip]))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to unban'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to unban IP'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'fail2ban.unban_ip',
+            params: ['jail' => $jail, 'ip' => $ip],
+            successTitle: 'Unbanned '.$ip,
+            errorTitle: 'Failed to unban IP',
+        );
         $this->loadFail2banStatus();
     }
 
     public function enableJail(string $jail): void
     {
-        try {
-            $result = $this->agent()->send('fail2ban.enable_jail', ['jail' => $jail]);
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Jail :jail enabled', ['jail' => $jail]))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to enable jail'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to enable jail'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'fail2ban.enable_jail',
+            params: ['jail' => $jail],
+            successTitle: 'Jail '.$jail.' enabled',
+            errorTitle: 'Failed to enable jail',
+        );
         $this->loadFail2banStatus();
     }
 
     public function disableJail(string $jail): void
     {
-        try {
-            $result = $this->agent()->send('fail2ban.disable_jail', ['jail' => $jail]);
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('Jail :jail disabled', ['jail' => $jail]))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to disable jail'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to disable jail'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'fail2ban.disable_jail',
+            params: ['jail' => $jail],
+            successTitle: 'Jail '.$jail.' disabled',
+            errorTitle: 'Failed to disable jail',
+        );
         $this->loadFail2banStatus();
     }
 
@@ -1885,16 +1850,12 @@ class Security extends Page implements HasActions, HasForms, HasTable
     public function installClamav(): void
     {
         Notification::make()->title(__('Installing ClamAV...'))->body(__('This may take a few minutes.'))->info()->send();
-        try {
-            $result = $this->agent()->send('clamav.install');
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('ClamAV installed'))->body(__('Daemon disabled by default to save memory.'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Installation failed'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to install ClamAV'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'clamav.install',
+            params: [],
+            successTitle: 'ClamAV installed',
+            errorTitle: 'Failed to install ClamAV',
+        );
         $this->loadClamavStatus();
     }
 
@@ -1915,16 +1876,12 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function startClamav(): void
     {
-        try {
-            $result = $this->agent()->send('clamav.start');
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('ClamAV started'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to start'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to start ClamAV'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'clamav.start',
+            params: [],
+            successTitle: 'ClamAV started',
+            errorTitle: 'Failed to start ClamAV',
+        );
         $this->loadClamavStatus();
     }
 
@@ -1948,16 +1905,12 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function stopClamav(): void
     {
-        try {
-            $result = $this->agent()->send('clamav.stop');
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('ClamAV stopped'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to stop'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to stop ClamAV'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'clamav.stop',
+            params: [],
+            successTitle: 'ClamAV stopped',
+            errorTitle: 'Failed to stop ClamAV',
+        );
         $this->loadClamavStatus();
     }
 
@@ -1981,22 +1934,15 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function toggleRealtime(): void
     {
-        try {
-            if ($this->realtimeRunning) {
-                $result = $this->agent()->send('clamav.realtime_disable');
-                $message = __('Real-time protection disabled');
-            } else {
-                $result = $this->agent()->send('clamav.realtime_enable');
-                $message = __('Real-time protection enabled');
-            }
-            if ($result['success'] ?? false) {
-                Notification::make()->title($message)->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to toggle real-time protection'))->body(SafeError::message($e))->danger()->send();
-        }
+        $action = $this->realtimeRunning ? 'clamav.realtime_disable' : 'clamav.realtime_enable';
+        $title = $this->realtimeRunning ? 'Real-time protection disabled' : 'Real-time protection enabled';
+
+        $this->agentCall(
+            action: $action,
+            params: [],
+            successTitle: $title,
+            errorTitle: 'Failed to toggle real-time protection',
+        );
         $this->loadClamavStatus();
     }
 
@@ -2031,16 +1977,12 @@ class Security extends Page implements HasActions, HasForms, HasTable
 
     public function deleteQuarantined(string $filename): void
     {
-        try {
-            $result = $this->agent()->send('clamav.delete_quarantined', ['filename' => $filename]);
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('File deleted'))->success()->send();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to delete'));
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to delete file'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'clamav.delete_quarantined',
+            params: ['filename' => $filename],
+            successTitle: 'File deleted',
+            errorTitle: 'Failed to delete file',
+        );
         $this->loadClamavStatus();
     }
 
@@ -2048,17 +1990,17 @@ class Security extends Page implements HasActions, HasForms, HasTable
     protected function checkScannerToolStatus(): void
     {
         try {
-            $status = $this->agent()->send('scanner.status');
+            $result = $this->agent()->call('scanner.status');
 
-            $lynis = $status['lynis'] ?? [];
+            $lynis = $result->get('lynis', []);
             $this->lynisInstalled = (bool) ($lynis['installed'] ?? false);
             $this->lynisVersion = (string) ($lynis['version'] ?? '');
 
-            $wpscan = $status['wpscan'] ?? [];
+            $wpscan = $result->get('wpscan', []);
             $this->wpscanInstalled = (bool) ($wpscan['installed'] ?? false);
             $this->wpscanVersion = (string) ($wpscan['version'] ?? '');
 
-            $nikto = $status['nikto'] ?? [];
+            $nikto = $result->get('nikto', []);
             $this->niktoInstalled = (bool) ($nikto['installed'] ?? false);
             $this->niktoVersion = (string) ($nikto['version'] ?? '');
         } catch (Exception) {

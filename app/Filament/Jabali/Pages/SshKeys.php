@@ -83,8 +83,8 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
     protected function loadShellStatus(): void
     {
         try {
-            $result = $this->agent()->send('ssh.shell_status', ['username' => $this->getUsername()]);
-            $this->shellEnabled = $result['shell_enabled'] ?? false;
+            $result = $this->agent()->call('ssh.shell_status', ['username' => $this->getUsername()]);
+            $this->shellEnabled = $result->get('shell_enabled', false);
         } catch (\Exception $e) {
             $this->shellEnabled = false;
         }
@@ -126,8 +126,8 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
     protected function loadSshKeys(): void
     {
         try {
-            $result = $this->agent()->send('ssh.list_keys', ['username' => $this->getUsername()]);
-            $this->sshKeys = $result['keys'] ?? [];
+            $result = $this->agent()->call('ssh.list_keys', ['username' => $this->getUsername()]);
+            $this->sshKeys = $result->get('keys', []);
         } catch (\Exception $e) {
             $this->sshKeys = [];
         }
