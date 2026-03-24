@@ -94,7 +94,14 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
 
     protected function getBackup(): ?Backup
     {
-        return Backup::with('destination')->find($this->backupId);
+        $backup = Backup::with('destination')->find($this->backupId);
+
+        // Only server backups (admin-created) are accessible from admin panel
+        if ($backup && $backup->type !== 'server' && $backup->user_id !== null) {
+            abort(403);
+        }
+
+        return $backup;
     }
 
     public function isIncremental(): bool
@@ -173,6 +180,11 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
 
     public function toggleFile(string $path): void
     {
+        // Reject path traversal attempts
+        if (str_contains($path, '..') || str_starts_with($path, '/')) {
+            return;
+        }
+
         if (in_array($path, $this->selectedFiles)) {
             $this->selectedFiles = array_values(array_diff($this->selectedFiles, [$path]));
         } else {
@@ -310,6 +322,14 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
+        // Validate username against known users from backup manifest
+        $validUsers = $this->getUsers();
+        if ($this->restoreUsername !== '__all__' && ! array_key_exists($this->restoreUsername, $validUsers)) {
+            Notification::make()->title(__('Invalid user selected'))->danger()->send();
+
+            return;
+        }
+
         if (empty($this->restoreUsername)) {
             Notification::make()->title(__('Please select a user'))->warning()->send();
 
@@ -341,11 +361,11 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
             'restore_ssl' => $this->restoreSsl,
             'restore_dns' => $this->restoreDns,
             'files_restore_mode' => $this->isIncremental() ? $this->filesRestoreMode : 'domains',
-            'selected_files' => $this->isIncremental() ? $this->selectedFiles : [],
+            'selected_files' => $this->isIncremental()
+                ? array_filter($this->selectedFiles, fn (string $p): bool => ! str_contains($p, '..') && ! str_starts_with($p, '/'))
+                : [],
         ];
 
-        // Get contents for granular selectors if needed
-        // For now, pass selected_files to agent for file-level restore
         $this->executeRestore($backup, $data);
     }
 
@@ -368,6 +388,13 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
 
     protected function restoreForUser(Backup $backup, string $username, array $data, bool $isRemote): void
     {
+        // Reject path traversal in username
+        if (str_contains($username, '..') || str_contains($username, '/') || empty($username)) {
+            Notification::make()->title(__('Invalid username'))->danger()->send();
+
+            return;
+        }
+
         $tempDownloadPath = null;
         $backupPath = $backup->local_path;
 
