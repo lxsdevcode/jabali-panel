@@ -55,18 +55,18 @@ class IndexRemoteBackups implements ShouldQueue
         $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
 
         // List root directory to get all backup timestamps
-        $result = $agent->send('backup.list_remote', [
+        $result = $agent->call('backup.list_remote', [
             'destination' => $config,
             'path' => '',
         ]);
 
-        if (! ($result['success'] ?? false) || empty($result['files'])) {
+        if ($result->failed() || empty($result->get('files'))) {
             return;
         }
 
         $indexedBackups = [];
 
-        foreach ($result['files'] as $file) {
+        foreach ($result->get('files') as $file) {
             if (! $file['is_directory']) {
                 continue;
             }
@@ -79,17 +79,17 @@ class IndexRemoteBackups implements ShouldQueue
             }
 
             // List the backup directory to find user subdirectories
-            $backupContents = $agent->send('backup.list_remote', [
+            $backupContents = $agent->call('backup.list_remote', [
                 'destination' => $config,
                 'path' => $backupName,
             ]);
 
-            if (! ($backupContents['success'] ?? false) || empty($backupContents['files'])) {
+            if ($backupContents->failed() || empty($backupContents->get('files'))) {
                 continue;
             }
 
             // Check each subdirectory to see if it's a user
-            foreach ($backupContents['files'] as $subFile) {
+            foreach ($backupContents->get('files') as $subFile) {
                 if (! $subFile['is_directory']) {
                     continue;
                 }
@@ -133,7 +133,7 @@ class IndexRemoteBackups implements ShouldQueue
 
         // Clean up old entries that no longer exist on the remote
         // (backups that were deleted via retention policy)
-        $this->cleanupDeletedBackups($destination->id, $result['files']);
+        $this->cleanupDeletedBackups($destination->id, $result->get('files', []));
     }
 
     protected function cleanupDeletedBackups(int $destinationId, array $remoteFiles): void

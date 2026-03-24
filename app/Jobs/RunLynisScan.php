@@ -30,11 +30,11 @@ class RunLynisScan implements ShouldQueue
 
         try {
             $agent = app(AgentClient::class);
-            $result = $agent->send('scanner.run_lynis');
+            $result = $agent->call('scanner.run_lynis');
 
-            if (! ($result['success'] ?? false)) {
+            if ($result->failed()) {
                 Log::warning('RunLynisScan: scan failed', [
-                    'error' => $result['error'] ?? null,
+                    'error' => $result->error,
                 ]);
 
                 return;
@@ -45,7 +45,7 @@ class RunLynisScan implements ShouldQueue
                 mkdir($scanDir, 0755, true);
             }
 
-            $results = $result['results'] ?? [];
+            $results = $result->get('results', []);
             $results['scan_time'] = $results['scan_time'] ?? date('Y-m-d H:i:s');
 
             file_put_contents(

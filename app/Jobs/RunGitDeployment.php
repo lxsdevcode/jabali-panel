@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Models\GitDeployment;
 use App\Services\Agent\AgentClient;
+use App\Services\Agent\AgentException;
 use Exception;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -38,24 +39,20 @@ class RunGitDeployment implements ShouldQueue
         $agent = app(AgentClient::class);
 
         try {
-            $result = $agent->send('git.deploy', [
+            $agent->call('git.deploy', [
                 'username' => $deployment->user->username,
                 'repo_url' => $deployment->repo_url,
                 'branch' => $deployment->branch,
                 'deploy_path' => $deployment->deploy_path,
                 'deploy_script' => $deployment->deploy_script,
-            ]);
-
-            if (! ($result['success'] ?? false)) {
-                throw new Exception($result['error'] ?? 'Deployment failed');
-            }
+            ])->orFail();
 
             $deployment->update([
                 'last_status' => 'success',
                 'last_deployed_at' => now(),
                 'last_error' => null,
             ]);
-        } catch (Exception $e) {
+        } catch (AgentException|Exception $e) {
             $deployment->update([
                 'last_status' => 'failed',
                 'last_error' => $e->getMessage(),

@@ -40,11 +40,11 @@ class RunWpscanScan implements ShouldQueue
 
         try {
             $agent = app(AgentClient::class);
-            $result = $agent->send('scanner.run_wpscan', ['url' => $this->url]);
+            $result = $agent->call('scanner.run_wpscan', ['url' => $this->url]);
 
-            if (! ($result['success'] ?? false)) {
+            if ($result->failed()) {
                 Log::warning('RunWpscanScan: scan failed', [
-                    'error' => $result['error'] ?? null,
+                    'error' => $result->error,
                 ]);
 
                 return;
@@ -55,7 +55,7 @@ class RunWpscanScan implements ShouldQueue
                 mkdir($scanDir, 0755, true);
             }
 
-            $results = $result['results'] ?? [];
+            $results = $result->get('results', []);
             $results['scan_time'] = $results['scan_time'] ?? date('Y-m-d H:i:s');
             $results['target_url'] = $results['target_url'] ?? $this->url;
 

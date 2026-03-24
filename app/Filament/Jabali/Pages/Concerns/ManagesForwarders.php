@@ -8,7 +8,6 @@ use App\Models\Domain;
 use App\Models\EmailForwarder;
 use App\Models\Mailbox;
 use App\Services\RoundcubeIdentityService;
-use App\Support\SafeError;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -141,51 +140,51 @@ trait ManagesForwarders
                     return;
                 }
 
-                try {
-                    // Get or create EmailDomain (enables email on server if needed)
-                    $emailDomain = $this->getOrCreateEmailDomain($domain);
+                // Get or create EmailDomain (enables email on server if needed)
+                $emailDomain = $this->getOrCreateEmailDomain($domain);
 
-                    $email = $data['local_part'].'@'.$domain->domain;
+                $email = $data['local_part'].'@'.$domain->domain;
 
-                    if (EmailForwarder::where('email_domain_id', $emailDomain->id)->where('local_part', $data['local_part'])->exists()) {
-                        Notification::make()->title(__('Forwarder already exists'))->danger()->send();
+                if (EmailForwarder::where('email_domain_id', $emailDomain->id)->where('local_part', $data['local_part'])->exists()) {
+                    Notification::make()->title(__('Forwarder already exists'))->danger()->send();
 
-                        return;
-                    }
+                    return;
+                }
 
-                    if (Mailbox::where('email_domain_id', $emailDomain->id)->where('local_part', $data['local_part'])->exists()) {
-                        Notification::make()->title(__('A mailbox with this address already exists'))->danger()->send();
+                if (Mailbox::where('email_domain_id', $emailDomain->id)->where('local_part', $data['local_part'])->exists()) {
+                    Notification::make()->title(__('A mailbox with this address already exists'))->danger()->send();
 
-                        return;
-                    }
+                    return;
+                }
 
-                    $this->agent()->send('email.forwarder_create', [
+                $this->agentCall(
+                    action: 'email.forwarder_create',
+                    params: [
                         'username' => $this->getUsername(),
                         'email' => $email,
                         'destinations' => $destinations,
-                    ]);
+                    ],
+                    successTitle: 'Forwarder created',
+                    errorTitle: 'Error creating forwarder',
+                    onSuccess: function () use ($emailDomain, $data, $email, $destinations): void {
+                        EmailForwarder::create([
+                            'email_domain_id' => $emailDomain->id,
+                            'user_id' => Auth::id(),
+                            'local_part' => $data['local_part'],
+                            'destinations' => $destinations,
+                            'is_active' => true,
+                        ]);
 
-                    EmailForwarder::create([
-                        'email_domain_id' => $emailDomain->id,
-                        'user_id' => Auth::id(),
-                        'local_part' => $data['local_part'],
-                        'destinations' => $destinations,
-                        'is_active' => true,
-                    ]);
+                        // Sync identities for local mailboxes in destinations
+                        if (config('jabali.mail_backend') === 'stalwart') {
+                            $this->syncStalwartIdentitiesForForwarder($email, $destinations);
+                        } else {
+                            $this->syncRoundcubeIdentitiesForForwarder($email, $destinations);
+                        }
 
-                    // Sync identities for local mailboxes in destinations
-                    if (config('jabali.mail_backend') === 'stalwart') {
-                        $this->syncStalwartIdentitiesForForwarder($email, $destinations);
-                    } else {
-                        $this->syncRoundcubeIdentitiesForForwarder($email, $destinations);
-                    }
-
-                    $this->syncMailRouting();
-
-                    Notification::make()->title(__('Forwarder created'))->success()->send();
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error creating forwarder'))->body(SafeError::message($e))->danger()->send();
-                }
+                        $this->syncMailRouting();
+                    },
+                );
             });
     }
 
@@ -200,32 +199,32 @@ trait ManagesForwarders
             return;
         }
 
-        try {
-            $oldDestinations = $forwarder->destinations;
+        $oldDestinations = $forwarder->destinations;
 
-            $this->agent()->send('email.forwarder_update', [
+        $this->agentCall(
+            action: 'email.forwarder_update',
+            params: [
                 'username' => $this->getUsername(),
                 'email' => $forwarder->email,
                 'destinations' => $destinations,
-            ]);
+            ],
+            successTitle: 'Forwarder updated',
+            errorTitle: 'Error',
+            onSuccess: function () use ($forwarder, $destinations, $oldDestinations): void {
+                $forwarder->update(['destinations' => $destinations]);
 
-            $forwarder->update(['destinations' => $destinations]);
+                // Update identities: remove old, add new
+                if (config('jabali.mail_backend') === 'stalwart') {
+                    $this->removeStalwartIdentitiesForForwarder($forwarder->email, $oldDestinations);
+                    $this->syncStalwartIdentitiesForForwarder($forwarder->email, $destinations);
+                } else {
+                    $this->removeRoundcubeIdentitiesForForwarder($forwarder->email, $oldDestinations);
+                    $this->syncRoundcubeIdentitiesForForwarder($forwarder->email, $destinations);
+                }
 
-            // Update identities: remove old, add new
-            if (config('jabali.mail_backend') === 'stalwart') {
-                $this->removeStalwartIdentitiesForForwarder($forwarder->email, $oldDestinations);
-                $this->syncStalwartIdentitiesForForwarder($forwarder->email, $destinations);
-            } else {
-                $this->removeRoundcubeIdentitiesForForwarder($forwarder->email, $oldDestinations);
-                $this->syncRoundcubeIdentitiesForForwarder($forwarder->email, $destinations);
-            }
-
-            $this->syncMailRouting();
-
-            Notification::make()->title(__('Forwarder updated'))->success()->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+                $this->syncMailRouting();
+            },
+        );
     }
 
     public function toggleForwarder(int $forwarderId): void
@@ -237,52 +236,50 @@ trait ManagesForwarders
             return;
         }
 
-        try {
-            $newStatus = ! $forwarder->is_active;
-            $this->agent()->send('email.forwarder_toggle', [
+        $newStatus = ! $forwarder->is_active;
+
+        $this->agentCall(
+            action: 'email.forwarder_toggle',
+            params: [
                 'username' => $this->getUsername(),
                 'email' => $forwarder->email,
                 'active' => $newStatus,
-            ]);
-            $forwarder->update(['is_active' => $newStatus]);
-
-            $this->syncMailRouting();
-
-            Notification::make()
-                ->title($newStatus ? __('Forwarder enabled') : __('Forwarder disabled'))
-                ->success()
-                ->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: $newStatus ? 'Forwarder enabled' : 'Forwarder disabled',
+            errorTitle: 'Error',
+            onSuccess: function () use ($forwarder, $newStatus): void {
+                $forwarder->update(['is_active' => $newStatus]);
+                $this->syncMailRouting();
+            },
+        );
     }
 
     public function deleteForwarderDirect(EmailForwarder $forwarder): void
     {
-        try {
-            $forwarderEmail = $forwarder->email;
-            $forwarderDestinations = $forwarder->destinations;
+        $forwarderEmail = $forwarder->email;
+        $forwarderDestinations = $forwarder->destinations;
 
-            $this->agent()->send('email.forwarder_delete', [
+        $this->agentCall(
+            action: 'email.forwarder_delete',
+            params: [
                 'username' => $this->getUsername(),
                 'email' => $forwarderEmail,
-            ]);
+            ],
+            successTitle: 'Forwarder deleted',
+            errorTitle: 'Error',
+            onSuccess: function () use ($forwarder, $forwarderEmail, $forwarderDestinations): void {
+                $forwarder->delete();
 
-            $forwarder->delete();
+                // Remove identities for this forwarder
+                if (config('jabali.mail_backend') === 'stalwart') {
+                    $this->removeStalwartIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
+                } else {
+                    $this->removeRoundcubeIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
+                }
 
-            // Remove identities for this forwarder
-            if (config('jabali.mail_backend') === 'stalwart') {
-                $this->removeStalwartIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
-            } else {
-                $this->removeRoundcubeIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
-            }
-
-            $this->syncMailRouting();
-
-            Notification::make()->title(__('Forwarder deleted'))->success()->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+                $this->syncMailRouting();
+            },
+        );
     }
 
     /**
@@ -338,7 +335,7 @@ trait ManagesForwarders
                     continue;
                 }
 
-                $result = $this->agent()->send('email.stalwart_add_identity', [
+                $this->agent()->call('email.stalwart_add_identity', [
                     'email' => $mailbox->email,
                     'identity' => $forwarderEmail,
                     'password' => $mailbox->plain_password ?? '',
@@ -361,7 +358,7 @@ trait ManagesForwarders
                     continue;
                 }
 
-                $result = $this->agent()->send('email.stalwart_remove_identity', [
+                $this->agent()->call('email.stalwart_remove_identity', [
                     'email' => $mailbox->email,
                     'identity' => $forwarderEmail,
                     'password' => $mailbox->plain_password ?? '',

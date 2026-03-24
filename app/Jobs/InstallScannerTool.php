@@ -41,16 +41,15 @@ class InstallScannerTool implements ShouldQueue
         try {
             // Installs can take a while; keep socket timeouts generous.
             $agent = app(AgentClient::class);
-            $result = $agent->send('scanner.install', ['tool' => $this->tool]);
+            $result = $agent->call('scanner.install', ['tool' => $this->tool]);
 
-            if (! ($result['success'] ?? false)) {
-                $error = (string) ($result['error'] ?? 'Unknown error');
-                Log::warning("InstallScannerTool: install failed for {$this->tool}: {$error}", [
-                    'output' => $result['output'] ?? null,
+            if ($result->failed()) {
+                Log::warning("InstallScannerTool: install failed for {$this->tool}: {$result->error}", [
+                    'output' => $result->get('output'),
                 ]);
             } else {
                 Log::info("InstallScannerTool: installed {$this->tool}", [
-                    'version' => $result['version'] ?? null,
+                    'version' => $result->get('version'),
                 ]);
             }
         } finally {

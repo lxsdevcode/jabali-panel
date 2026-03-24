@@ -7,8 +7,6 @@ namespace App\Filament\Jabali\Pages\Concerns;
 use App\Models\EmailDomain;
 use App\Models\Mailbox;
 use App\Models\UserSetting;
-use App\Support\SafeError;
-use Exception;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -146,68 +144,61 @@ trait ManagesEmailSettings
 
     public function updateCatchAll(EmailDomain $emailDomain, array $data): void
     {
-        try {
-            $enabled = $data['enabled'] ?? false;
-            $address = $data['address'] ?? null;
+        $enabled = $data['enabled'] ?? false;
+        $address = $data['address'] ?? null;
 
-            if ($enabled && empty($address)) {
-                Notification::make()
-                    ->title(__('Error'))
-                    ->body(__('Please select a mailbox to receive catch-all emails'))
-                    ->danger()
-                    ->send();
+        if ($enabled && empty($address)) {
+            Notification::make()
+                ->title(__('Error'))
+                ->body(__('Please select a mailbox to receive catch-all emails'))
+                ->danger()
+                ->send();
 
-                return;
-            }
+            return;
+        }
 
-            // Update in Postfix virtual alias maps
-            $this->agent()->send('email.catchall_update', [
+        $this->agentCall(
+            action: 'email.catchall_update',
+            params: [
                 'username' => $this->getUsername(),
                 'domain' => $emailDomain->domain->domain,
                 'enabled' => $enabled,
                 'address' => $address,
-            ]);
+            ],
+            successTitle: $enabled ? 'Catch-all enabled' : 'Catch-all disabled',
+            errorTitle: 'Error',
+            onSuccess: function () use ($emailDomain, $enabled, $address): void {
+                $emailDomain->update([
+                    'catch_all_enabled' => $enabled,
+                    'catch_all_address' => $enabled ? $address : null,
+                ]);
 
-            $emailDomain->update([
-                'catch_all_enabled' => $enabled,
-                'catch_all_address' => $enabled ? $address : null,
-            ]);
-
-            $this->syncMailRouting();
-
-            Notification::make()
-                ->title($enabled ? __('Catch-all enabled') : __('Catch-all disabled'))
-                ->success()
-                ->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+                $this->syncMailRouting();
+            },
+        );
     }
 
     public function updateDisclaimer(EmailDomain $emailDomain, array $data): void
     {
-        try {
-            $enabled = $data['enabled'] ?? false;
-            $text = $data['text'] ?? '';
+        $enabled = $data['enabled'] ?? false;
+        $text = $data['text'] ?? '';
 
-            $this->agent()->send('email.disclaimer_update', [
+        $this->agentCall(
+            action: 'email.disclaimer_update',
+            params: [
                 'domain' => $emailDomain->domain->domain,
                 'enabled' => $enabled,
                 'text' => $text,
-            ]);
-
-            $emailDomain->update([
-                'disclaimer_enabled' => $enabled,
-                'disclaimer_text' => $text,
-            ]);
-
-            Notification::make()
-                ->title($enabled ? __('Disclaimer enabled') : __('Disclaimer disabled'))
-                ->success()
-                ->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: $enabled ? 'Disclaimer enabled' : 'Disclaimer disabled',
+            errorTitle: 'Error',
+            onSuccess: function () use ($emailDomain, $enabled, $text): void {
+                $emailDomain->update([
+                    'disclaimer_enabled' => $enabled,
+                    'disclaimer_text' => $text,
+                ]);
+            },
+        );
     }
 
     public function spamForm(Schema $schema): Schema
@@ -257,27 +248,24 @@ trait ManagesEmailSettings
         $blacklist = $this->linesToArray($data['blacklist'] ?? '');
         $score = isset($data['score']) && $data['score'] !== '' ? (float) $data['score'] : null;
 
-        UserSetting::setForUser(Auth::id(), 'spam_settings', [
-            'whitelist' => $whitelist,
-            'blacklist' => $blacklist,
-            'score' => $score,
-        ]);
-
-        $result = $this->agent()->rspamdUserSettings($this->getUsername(), $whitelist, $blacklist, $score);
-        if (! ($result['success'] ?? false)) {
-            Notification::make()
-                ->title(__('Failed to update spam settings'))
-                ->body($result['error'] ?? '')
-                ->danger()
-                ->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->title(__('Spam settings updated'))
-            ->success()
-            ->send();
+        $this->agentCall(
+            action: 'rspamd.user_settings',
+            params: [
+                'username' => $this->getUsername(),
+                'whitelist' => $whitelist,
+                'blacklist' => $blacklist,
+                'score' => $score,
+            ],
+            successTitle: 'Spam settings updated',
+            errorTitle: 'Failed to update spam settings',
+            onSuccess: function () use ($whitelist, $blacklist, $score): void {
+                UserSetting::setForUser(Auth::id(), 'spam_settings', [
+                    'whitelist' => $whitelist,
+                    'blacklist' => $blacklist,
+                    'score' => $score,
+                ]);
+            },
+        );
     }
 
     protected function linesToArray(string $value): array

@@ -45,7 +45,7 @@ class RunCpanelRestore implements ShouldQueue
         Cache::put($this->getCacheKey(), ['status' => 'running'], now()->addHours(2));
 
         try {
-            $result = $agent->send('cpanel.restore_backup', [
+            $result = $agent->call('cpanel.restore_backup', [
                 'backup_path' => $this->backupPath,
                 'username' => $this->username,
                 'restore_files' => $this->restoreFiles,
@@ -56,7 +56,7 @@ class RunCpanelRestore implements ShouldQueue
                 'log_path' => $this->logPath,
             ]);
 
-            if ($result['success'] ?? false) {
+            if ($result->success) {
                 $this->appendLog(__('Migration completed successfully.'), 'success');
                 Cache::put($this->getCacheKey(), ['status' => 'completed'], now()->addHours(2));
                 $this->syncDnsZones($dnsSyncService);
@@ -65,7 +65,7 @@ class RunCpanelRestore implements ShouldQueue
                 return;
             }
 
-            $error = $result['error'] ?? __('Migration failed');
+            $error = $result->error ?? __('Migration failed');
             $this->appendLog(__('Migration failed: :error', ['error' => $error]), 'error');
             Cache::put($this->getCacheKey(), ['status' => 'failed'], now()->addHours(2));
         } catch (Exception $e) {

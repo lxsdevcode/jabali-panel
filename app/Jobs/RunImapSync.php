@@ -51,7 +51,7 @@ class RunImapSync implements ShouldQueue
                 throw new Exception(__('Destination mailbox password not available'));
             }
 
-            $result = $agent->send('email.imap_sync_run', [
+            $result = $agent->call('email.imap_sync_run', [
                 'source_host' => $task->source_host,
                 'source_port' => $task->source_port,
                 'source_encryption' => $task->source_encryption,
@@ -63,14 +63,14 @@ class RunImapSync implements ShouldQueue
                 'log_path' => $task->log_path,
             ]);
 
-            if ($result['success'] ?? false) {
+            if ($result->success) {
                 // Only update if not cancelled during sync
                 $task->refresh();
                 if ($task->status === 'running') {
                     $task->update([
                         'status' => 'completed',
-                        'messages_synced' => $result['messages_synced'] ?? 0,
-                        'messages_total' => $result['messages_total'] ?? 0,
+                        'messages_synced' => $result->get('messages_synced', 0),
+                        'messages_total' => $result->get('messages_total', 0),
                         'completed_at' => now(),
                     ]);
                 }
@@ -80,7 +80,7 @@ class RunImapSync implements ShouldQueue
                 return;
             }
 
-            $error = $result['error'] ?? __('IMAP sync failed');
+            $error = $result->error ?? __('IMAP sync failed');
             $task->refresh();
             if ($task->status === 'running') {
                 $task->update([

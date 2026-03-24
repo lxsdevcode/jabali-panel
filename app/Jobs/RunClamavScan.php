@@ -52,17 +52,17 @@ class RunClamavScan implements ShouldQueue
 
         try {
             $agent = app(AgentClient::class);
-            $result = $agent->send('clamav.scan', ['path' => $this->path]);
+            $result = $agent->call('clamav.scan', ['path' => $this->path]);
 
-            if (! ($result['success'] ?? false)) {
+            if ($result->failed()) {
                 Log::warning('RunClamavScan: scan failed', [
-                    'error' => $result['error'] ?? null,
+                    'error' => $result->error,
                 ]);
 
                 return;
             }
 
-            $output = (string) ($result['output'] ?? '');
+            $output = (string) ($result->get('output', ''));
             $lines = $output === '' ? [] : preg_split('/\\r\\n|\\n|\\r/', $output);
             $lines = array_values(array_filter(array_map('trim', $lines ?? []), static fn ($v) => $v !== ''));
 

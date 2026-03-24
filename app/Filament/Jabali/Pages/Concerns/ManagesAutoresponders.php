@@ -6,8 +6,6 @@ namespace App\Filament\Jabali\Pages\Concerns;
 
 use App\Models\Autoresponder;
 use App\Models\Mailbox;
-use App\Support\SafeError;
-use Exception;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
@@ -201,19 +199,9 @@ trait ManagesAutoresponders
                     return;
                 }
 
-                try {
-                    // Create autoresponder in database
-                    $autoresponder = Autoresponder::create([
-                        'mailbox_id' => $mailbox->id,
-                        'subject' => $data['subject'],
-                        'message' => $data['message'],
-                        'start_date' => $data['start_date'] ?? null,
-                        'end_date' => $data['end_date'] ?? null,
-                        'is_active' => true,
-                    ]);
-
-                    // Configure on mail server via agent
-                    $this->agent()->send('email.autoresponder_set', [
+                $this->agentCall(
+                    action: 'email.autoresponder_set',
+                    params: [
                         'username' => $this->getUsername(),
                         'email' => $mailbox->email,
                         'subject' => $data['subject'],
@@ -221,30 +209,30 @@ trait ManagesAutoresponders
                         'start_date' => $data['start_date'] ?? null,
                         'end_date' => $data['end_date'] ?? null,
                         'active' => true,
-                    ]);
+                    ],
+                    successTitle: 'Autoresponder created',
+                    errorTitle: 'Error',
+                    onSuccess: function () use ($mailbox, $data): void {
+                        Autoresponder::create([
+                            'mailbox_id' => $mailbox->id,
+                            'subject' => $data['subject'],
+                            'message' => $data['message'],
+                            'start_date' => $data['start_date'] ?? null,
+                            'end_date' => $data['end_date'] ?? null,
+                            'is_active' => true,
+                        ]);
 
-                    Notification::make()->title(__('Autoresponder created'))->success()->send();
-
-                    $this->setTab('autoresponders');
-                } catch (Exception $e) {
-                    Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-                }
+                        $this->setTab('autoresponders');
+                    },
+                );
             });
     }
 
     public function updateAutoresponder(Autoresponder $autoresponder, array $data): void
     {
-        try {
-            $autoresponder->update([
-                'subject' => $data['subject'],
-                'message' => $data['message'],
-                'start_date' => $data['start_date'] ?? null,
-                'end_date' => $data['end_date'] ?? null,
-                'is_active' => $data['is_active'] ?? true,
-            ]);
-
-            // Update on mail server
-            $this->agent()->send('email.autoresponder_set', [
+        $this->agentCall(
+            action: 'email.autoresponder_set',
+            params: [
                 'username' => $this->getUsername(),
                 'email' => $autoresponder->mailbox->email,
                 'subject' => $data['subject'],
@@ -252,50 +240,53 @@ trait ManagesAutoresponders
                 'start_date' => $data['start_date'] ?? null,
                 'end_date' => $data['end_date'] ?? null,
                 'active' => $data['is_active'] ?? true,
-            ]);
-
-            Notification::make()->title(__('Autoresponder updated'))->success()->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: 'Autoresponder updated',
+            errorTitle: 'Error',
+            onSuccess: function () use ($autoresponder, $data): void {
+                $autoresponder->update([
+                    'subject' => $data['subject'],
+                    'message' => $data['message'],
+                    'start_date' => $data['start_date'] ?? null,
+                    'end_date' => $data['end_date'] ?? null,
+                    'is_active' => $data['is_active'] ?? true,
+                ]);
+            },
+        );
     }
 
     public function toggleAutoresponder(Autoresponder $autoresponder): void
     {
-        try {
-            $newStatus = ! $autoresponder->is_active;
-            $autoresponder->update(['is_active' => $newStatus]);
+        $newStatus = ! $autoresponder->is_active;
 
-            // Update on mail server
-            $this->agent()->send('email.autoresponder_toggle', [
+        $this->agentCall(
+            action: 'email.autoresponder_toggle',
+            params: [
                 'username' => $this->getUsername(),
                 'email' => $autoresponder->mailbox->email,
                 'active' => $newStatus,
-            ]);
-
-            Notification::make()
-                ->title($newStatus ? __('Autoresponder enabled') : __('Autoresponder disabled'))
-                ->success()
-                ->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: $newStatus ? 'Autoresponder enabled' : 'Autoresponder disabled',
+            errorTitle: 'Error',
+            onSuccess: function () use ($autoresponder, $newStatus): void {
+                $autoresponder->update(['is_active' => $newStatus]);
+            },
+        );
     }
 
     public function deleteAutoresponder(Autoresponder $autoresponder): void
     {
-        try {
-            // Remove from mail server
-            $this->agent()->send('email.autoresponder_delete', [
+        $this->agentCall(
+            action: 'email.autoresponder_delete',
+            params: [
                 'username' => $this->getUsername(),
                 'email' => $autoresponder->mailbox->email,
-            ]);
-
-            $autoresponder->delete();
-
-            Notification::make()->title(__('Autoresponder deleted'))->success()->send();
-        } catch (Exception $e) {
-            Notification::make()->title(__('Error'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: 'Autoresponder deleted',
+            errorTitle: 'Error',
+            onSuccess: function () use ($autoresponder): void {
+                $autoresponder->delete();
+            },
+        );
     }
 }

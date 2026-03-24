@@ -102,12 +102,12 @@ trait ManagesEmailLogs
     public function getEmailLogs(): array
     {
         try {
-            $result = $this->agent()->send('email.get_logs', [
+            $result = $this->agent()->call('email.get_logs', [
                 'username' => $this->getUsername(),
                 'limit' => 100,
             ]);
 
-            return $result['logs'] ?? [];
+            return $result->get('logs', []);
         } catch (Exception $e) {
             return [];
         }
