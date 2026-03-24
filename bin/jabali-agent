@@ -504,6 +504,7 @@ function handleAction(array $request): array
     
     return match ($action) {
         'ping' => ['success' => true, 'message' => 'pong', 'version' => '1.0.0'],
+        'server.restart_agent' => restartAgent($params),
         'user.create' => createUser($params),
         'user.delete' => deleteUser($params),
         'user.exists' => userExists($params),
@@ -14371,6 +14372,22 @@ function is_mounted(string $path): bool
 {
     exec("mountpoint -q " . escapeshellarg($path), $output, $returnCode);
     return $returnCode === 0;
+}
+
+// ============ SELF-RESTART ============
+
+function restartAgent(array $params): array
+{
+    $delay = (int) ($params['delay'] ?? 2);
+    $delay = max(1, min($delay, 10));
+
+    // Schedule restart in background so the response is sent first
+    $script = tempnam(sys_get_temp_dir(), 'agent_restart_');
+    file_put_contents($script, "#!/bin/bash\nsleep {$delay}\nsystemctl restart jabali-agent\nrm -f {$script}\n");
+    chmod($script, 0755);
+    exec("nohup {$script} > /dev/null 2>&1 &");
+
+    return ['success' => true, 'message' => "Agent will restart in {$delay} seconds"];
 }
 
 // ============ SERVER SETTINGS ============

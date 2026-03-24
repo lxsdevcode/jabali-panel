@@ -720,24 +720,40 @@ class UpgradeCommand extends Command
             $this->warn('Queue restart warning: '.$e->getMessage());
         }
 
-        if (! $this->isRunningAsRoot()) {
-            $this->warn('Skipping system service reloads (requires root).');
-
-            return;
+        // Restart agent via socket (works even when running as www-data)
+        try {
+            $agent = app(\App\Services\Agent\AgentClient::class);
+            $result = $agent->send('server.restart_agent', ['delay' => 3]);
+            if ($result['success'] ?? false) {
+                $this->line('  - jabali-agent scheduled for restart');
+            } else {
+                $this->warn('  - jabali-agent restart via socket failed, trying systemctl...');
+                $this->executeCommand('systemctl restart jabali-agent');
+            }
+        } catch (\Throwable $e) {
+            $this->warn('  - jabali-agent restart failed: '.$e->getMessage());
+            if ($this->isRunningAsRoot()) {
+                $this->executeCommand('systemctl restart jabali-agent');
+            }
         }
 
-        $agentResult = $this->executeCommand('systemctl restart jabali-agent');
-        if ($agentResult['exitCode'] === 0) {
-            $this->line('  - jabali-agent restarted');
+        // Reload PHP-FPM (requires root or agent)
+        if ($this->isRunningAsRoot()) {
+            $fpmResult = $this->executeCommand('systemctl reload php*-fpm');
+            if ($fpmResult['exitCode'] === 0) {
+                $this->line('  - PHP-FPM reloaded (all versions)');
+            } else {
+                $this->warn('  - PHP-FPM reload failed');
+            }
         } else {
-            $this->warn('  - jabali-agent restart failed');
-        }
-
-        $fpmResult = $this->executeCommand('systemctl reload php*-fpm');
-        if ($fpmResult['exitCode'] === 0) {
-            $this->line('  - PHP-FPM reloaded (all versions)');
-        } else {
-            $this->warn('  - PHP-FPM reload failed');
+            // Try via agent
+            try {
+                $agent = app(\App\Services\Agent\AgentClient::class);
+                $agent->send('php.reload_all_fpm');
+                $this->line('  - PHP-FPM reload requested via agent');
+            } catch (\Throwable) {
+                $this->warn('  - PHP-FPM reload skipped (not root)');
+            }
         }
     }
 
