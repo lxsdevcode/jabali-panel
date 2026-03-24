@@ -395,7 +395,7 @@ class CpanelMigration extends Page implements HasActions, HasForms
         session()->put('user_cpanel_migration.localBackupPath', $this->localBackupPath);
         session()->put('user_cpanel_migration.hostname', $this->hostname);
         session()->put('user_cpanel_migration.username', $this->cpanelUsername);
-        session()->put('user_cpanel_migration.token', $this->apiToken);
+        session()->put('user_cpanel_migration.token', $this->apiToken ? \Illuminate\Support\Facades\Crypt::encryptString($this->apiToken) : '');
         session()->put('user_cpanel_migration.port', $this->port);
         session()->put('user_cpanel_migration.useSSL', $this->useSSL);
         session()->put('user_cpanel_migration.isConnected', $this->isConnected);
@@ -428,7 +428,7 @@ class CpanelMigration extends Page implements HasActions, HasForms
         $this->localBackupPath = session('user_cpanel_migration.localBackupPath');
         $this->hostname = session('user_cpanel_migration.hostname');
         $this->cpanelUsername = session('user_cpanel_migration.username');
-        $this->apiToken = session('user_cpanel_migration.token');
+        $this->apiToken = session('user_cpanel_migration.token') ? \Illuminate\Support\Facades\Crypt::decryptString(session('user_cpanel_migration.token')) : '';
         $this->port = session('user_cpanel_migration.port', 2083);
         $this->useSSL = session('user_cpanel_migration.useSSL', true);
         $this->isConnected = session('user_cpanel_migration.isConnected', false);
