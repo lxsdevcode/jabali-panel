@@ -213,22 +213,16 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public function installPhp(string $version): void
     {
-        $result = $this->agent()->send('php.install', ['version' => $version]);
-
-        if ($result['success'] ?? false) {
-            $this->loadPhpVersions();
-            $this->resetTable();
-            Notification::make()
-                ->title(__('PHP :version installed successfully!', ['version' => $version]))
-                ->success()
-                ->send();
-        } else {
-            Notification::make()
-                ->title(__('Failed to install PHP :version', ['version' => $version]))
-                ->body($result['error'] ?? __('Unknown error'))
-                ->danger()
-                ->send();
-        }
+        $this->agentCall(
+            action: 'php.install',
+            params: ['version' => $version],
+            successTitle: __('PHP :version installed successfully!', ['version' => $version]),
+            errorTitle: __('Failed to install PHP :version', ['version' => $version]),
+            onSuccess: function () {
+                $this->loadPhpVersions();
+                $this->resetTable();
+            },
+        );
     }
 
     public function uninstallPhp(string $version): void
@@ -243,63 +237,45 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        $result = $this->agent()->send('php.uninstall', ['version' => $version]);
-
-        if ($result['success'] ?? false) {
-            $this->loadPhpVersions();
-            $this->resetTable();
-            Notification::make()
-                ->title(__('PHP :version uninstalled successfully!', ['version' => $version]))
-                ->success()
-                ->send();
-        } else {
-            Notification::make()
-                ->title(__('Failed to uninstall PHP :version', ['version' => $version]))
-                ->body($result['error'] ?? __('Unknown error'))
-                ->danger()
-                ->send();
-        }
+        $this->agentCall(
+            action: 'php.uninstall',
+            params: ['version' => $version],
+            successTitle: __('PHP :version uninstalled successfully!', ['version' => $version]),
+            errorTitle: __('Failed to uninstall PHP :version', ['version' => $version]),
+            onSuccess: function () {
+                $this->loadPhpVersions();
+                $this->resetTable();
+            },
+        );
     }
 
     public function setDefaultPhp(string $version): void
     {
-        $result = $this->agent()->send('php.set_default', ['version' => $version]);
-
-        if ($result['success'] ?? false) {
-            $this->defaultVersion = $version;
-            $this->loadPhpVersions();
-            $this->resetTable();
-            Notification::make()
-                ->title(__('PHP :version set as default', ['version' => $version]))
-                ->success()
-                ->send();
-        } else {
-            Notification::make()
-                ->title(__('Failed to set default PHP version'))
-                ->body($result['error'] ?? __('Unknown error'))
-                ->danger()
-                ->send();
-        }
+        $this->agentCall(
+            action: 'php.set_default',
+            params: ['version' => $version],
+            successTitle: __('PHP :version set as default', ['version' => $version]),
+            errorTitle: 'Failed to set default PHP version',
+            onSuccess: function () use ($version) {
+                $this->defaultVersion = $version;
+                $this->loadPhpVersions();
+                $this->resetTable();
+            },
+        );
     }
 
     public function reloadFpm(string $version): void
     {
-        $result = $this->agent()->send('php.reload_fpm', ['version' => $version]);
-
-        if ($result['success'] ?? false) {
-            $this->loadPhpVersions();
-            $this->resetTable();
-            Notification::make()
-                ->title(__('PHP :version FPM reloaded', ['version' => $version]))
-                ->success()
-                ->send();
-        } else {
-            Notification::make()
-                ->title(__('Failed to reload PHP-FPM'))
-                ->body($result['error'] ?? __('Unknown error'))
-                ->danger()
-                ->send();
-        }
+        $this->agentCall(
+            action: 'php.reload_fpm',
+            params: ['version' => $version],
+            successTitle: __('PHP :version FPM reloaded', ['version' => $version]),
+            errorTitle: 'Failed to reload PHP-FPM',
+            onSuccess: function () {
+                $this->loadPhpVersions();
+                $this->resetTable();
+            },
+        );
     }
 
     protected function getHeaderActions(): array

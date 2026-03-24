@@ -12,7 +12,6 @@ use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -316,32 +315,23 @@ class PhpSettings extends Page implements HasActions, HasForms
     {
         $formData = $this->form->getState();
 
-        $result = $this->agent()->send('php.setSettings', [
-            'domain' => $this->selectedDomain,
-            'username' => $this->getUsername(),
-            'settings' => [
-                'php_version' => $formData['php_version'],
-                'memory_limit' => $formData['memory_limit'],
-                'upload_max_filesize' => $formData['upload_max_filesize'],
-                'post_max_size' => $formData['post_max_size'],
-                'max_input_vars' => $formData['max_input_vars'],
-                'max_execution_time' => $formData['max_execution_time'],
-                'max_input_time' => $formData['max_input_time'],
+        $this->agentCall(
+            action: 'php.setSettings',
+            params: [
+                'domain' => $this->selectedDomain,
+                'username' => $this->getUsername(),
+                'settings' => [
+                    'php_version' => $formData['php_version'],
+                    'memory_limit' => $formData['memory_limit'],
+                    'upload_max_filesize' => $formData['upload_max_filesize'],
+                    'post_max_size' => $formData['post_max_size'],
+                    'max_input_vars' => $formData['max_input_vars'],
+                    'max_execution_time' => $formData['max_execution_time'],
+                    'max_input_time' => $formData['max_input_time'],
+                ],
             ],
-        ]);
-
-        if ($result['success'] ?? false) {
-            Notification::make()
-                ->title(__('PHP settings saved'))
-                ->body(__('PHP-FPM has been reloaded to apply your changes.'))
-                ->success()
-                ->send();
-        } else {
-            Notification::make()
-                ->title(__('Failed to save settings'))
-                ->body($result['error'] ?? __('Unknown error'))
-                ->danger()
-                ->send();
-        }
+            successTitle: 'PHP settings saved',
+            errorTitle: 'Failed to save settings',
+        );
     }
 }

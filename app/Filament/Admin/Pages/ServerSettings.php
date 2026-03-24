@@ -369,10 +369,15 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->toArray())
                         ->searchable()
                         ->required()
-                        ->helperText(fn () => __('Current server time: :time (:tz)', [
-                            'time' => now()->format('Y-m-d H:i:s'),
-                            'tz' => date_default_timezone_get(),
-                        ])),
+                        ->helperText(function (): string {
+                            $tz = DnsSetting::get('server_timezone', date_default_timezone_get());
+                            $dt = new \DateTime('now', new \DateTimeZone($tz));
+
+                            return __('Current server time: :time (:tz)', [
+                                'time' => $dt->format('Y-m-d H:i:s'),
+                                'tz' => $tz,
+                            ]);
+                        }),
                     Actions::make([
                         FormAction::make('saveTimezone')
                             ->label(__('Save Timezone'))
@@ -1077,32 +1082,27 @@ class ServerSettings extends Page implements HasActions, HasForms
     {
         $data = $this->resolversData;
 
-        try {
-            $nameservers = array_filter([
-                $data['resolver1'],
-                $data['resolver2'],
-                $data['resolver3'],
-            ], fn ($ns) => ! empty(trim($ns ?? '')));
+        $nameservers = array_filter([
+            $data['resolver1'],
+            $data['resolver2'],
+            $data['resolver3'],
+        ], fn ($ns) => ! empty(trim($ns ?? '')));
 
-            if (empty($nameservers)) {
-                Notification::make()->title(__('Failed to update DNS resolvers'))->body(__('At least one nameserver is required'))->danger()->send();
+        if (empty($nameservers)) {
+            Notification::make()->title(__('Failed to update DNS resolvers'))->body(__('At least one nameserver is required'))->danger()->send();
 
-                return;
-            }
+            return;
+        }
 
-            $result = $this->agent()->send('server.set_resolvers', [
+        $this->agentCall(
+            action: 'server.set_resolvers',
+            params: [
                 'nameservers' => array_values($nameservers),
                 'search_domains' => ! empty($data['search_domain']) ? [$data['search_domain']] : [],
-            ]);
-
-            if ($result['success'] ?? false) {
-                Notification::make()->title(__('DNS resolvers updated'))->success()->send();
-            } else {
-                Notification::make()->title(__('Failed to update DNS resolvers'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
-            }
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed to update DNS resolvers'))->body(SafeError::message($e))->danger()->send();
-        }
+            ],
+            successTitle: 'DNS resolvers updated',
+            errorTitle: 'Failed to update DNS resolvers',
+        );
     }
 
     protected static function isZfsFilesystem(): bool

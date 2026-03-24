@@ -128,17 +128,13 @@ class EmailQueue extends Page implements HasActions, HasTable
                     ->icon('heroicon-o-arrow-path')
                     ->color('info')
                     ->action(function (array $record): void {
-                        try {
-                            $result = $this->agent()->send('mail.queue_retry', ['id' => $record['id'] ?? '']);
-                            if ($result['success'] ?? false) {
-                                Notification::make()->title(__('Message retried'))->success()->send();
-                                $this->loadQueue();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Failed to retry message'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()->title(__('Retry failed'))->body(SafeError::message($e))->danger()->send();
-                        }
+                        $this->agentCall(
+                            action: 'mail.queue_retry',
+                            params: ['id' => $record['id'] ?? ''],
+                            successTitle: 'Message retried',
+                            errorTitle: 'Retry failed',
+                            onSuccess: fn () => $this->loadQueue(),
+                        );
                     }),
                 Action::make('delete')
                     ->label(__('Delete'))
@@ -146,17 +142,13 @@ class EmailQueue extends Page implements HasActions, HasTable
                     ->color('danger')
                     ->requiresConfirmation()
                     ->action(function (array $record): void {
-                        try {
-                            $result = $this->agent()->send('mail.queue_delete', ['id' => $record['id'] ?? '']);
-                            if ($result['success'] ?? false) {
-                                Notification::make()->title(__('Message deleted'))->success()->send();
-                                $this->loadQueue();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Failed to delete message'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()->title(__('Delete failed'))->body(SafeError::message($e))->danger()->send();
-                        }
+                        $this->agentCall(
+                            action: 'mail.queue_delete',
+                            params: ['id' => $record['id'] ?? ''],
+                            successTitle: 'Message deleted',
+                            errorTitle: 'Delete failed',
+                            onSuccess: fn () => $this->loadQueue(),
+                        );
                     }),
             ])
             ->emptyStateHeading(__('Mail queue is empty'))

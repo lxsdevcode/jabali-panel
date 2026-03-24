@@ -12,7 +12,6 @@ use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Tables\Columns\TextColumn;
@@ -184,28 +183,22 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
                             return;
                         }
 
-                        $result = $this->agent()->send('domain.add_protected_dir_user', [
-                            'domain' => $this->selectedDomain,
-                            'username' => $this->getUsername(),
-                            'path' => $record['path'],
-                            'auth_username' => $data['new_username'],
-                            'auth_password' => $data['new_password'],
-                        ]);
-
-                        if ($result['success'] ?? false) {
-                            Notification::make()
-                                ->title(__('User added'))
-                                ->success()
-                                ->send();
-                            $this->loadProtectedDirectories();
-                            $this->resetTable();
-                        } else {
-                            Notification::make()
-                                ->title(__('Failed to add user'))
-                                ->body($result['error'] ?? __('Unknown error'))
-                                ->danger()
-                                ->send();
-                        }
+                        $this->agentCall(
+                            action: 'domain.add_protected_dir_user',
+                            params: [
+                                'domain' => $this->selectedDomain,
+                                'username' => $this->getUsername(),
+                                'path' => $record['path'],
+                                'auth_username' => $data['new_username'],
+                                'auth_password' => $data['new_password'],
+                            ],
+                            successTitle: 'User added',
+                            errorTitle: 'Failed to add user',
+                            onSuccess: function () {
+                                $this->loadProtectedDirectories();
+                                $this->resetTable();
+                            },
+                        );
                     }),
                 \Filament\Actions\Action::make('remove')
                     ->label(__('Remove Protection'))
@@ -215,27 +208,20 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
                     ->modalHeading(__('Remove Directory Protection'))
                     ->modalDescription(fn (array $record): string => __('Are you sure you want to remove password protection from ":path"? Anyone will be able to access this directory.', ['path' => $record['path']]))
                     ->action(function (array $record): void {
-                        $result = $this->agent()->send('domain.remove_protected_dir', [
-                            'domain' => $this->selectedDomain,
-                            'username' => $this->getUsername(),
-                            'path' => $record['path'],
-                        ]);
-
-                        if ($result['success'] ?? false) {
-                            Notification::make()
-                                ->title(__('Protection removed'))
-                                ->body(__('Directory ":path" is no longer password protected.', ['path' => $record['path']]))
-                                ->success()
-                                ->send();
-                            $this->loadProtectedDirectories();
-                            $this->resetTable();
-                        } else {
-                            Notification::make()
-                                ->title(__('Failed to remove protection'))
-                                ->body($result['error'] ?? __('Unknown error'))
-                                ->danger()
-                                ->send();
-                        }
+                        $this->agentCall(
+                            action: 'domain.remove_protected_dir',
+                            params: [
+                                'domain' => $this->selectedDomain,
+                                'username' => $this->getUsername(),
+                                'path' => $record['path'],
+                            ],
+                            successTitle: 'Protection removed',
+                            errorTitle: 'Failed to remove protection',
+                            onSuccess: function () {
+                                $this->loadProtectedDirectories();
+                                $this->resetTable();
+                            },
+                        );
                     }),
             ])
             ->emptyStateHeading(__('No protected directories'))
@@ -289,55 +275,42 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
                 // Normalize path
                 $path = '/'.ltrim(trim($data['path']), '/');
 
-                $result = $this->agent()->send('domain.add_protected_dir', [
-                    'domain' => $this->selectedDomain,
-                    'username' => $this->getUsername(),
-                    'path' => $path,
-                    'name' => $data['name'],
-                    'auth_username' => $data['auth_username'],
-                    'auth_password' => $data['auth_password'],
-                ]);
-
-                if ($result['success'] ?? false) {
-                    Notification::make()
-                        ->title(__('Directory protected'))
-                        ->body(__('Password protection has been added to ":path".', ['path' => $path]))
-                        ->success()
-                        ->send();
-                    $this->loadProtectedDirectories();
-                    $this->resetTable();
-                } else {
-                    Notification::make()
-                        ->title(__('Failed to protect directory'))
-                        ->body($result['error'] ?? __('Unknown error'))
-                        ->danger()
-                        ->send();
-                }
+                $this->agentCall(
+                    action: 'domain.add_protected_dir',
+                    params: [
+                        'domain' => $this->selectedDomain,
+                        'username' => $this->getUsername(),
+                        'path' => $path,
+                        'name' => $data['name'],
+                        'auth_username' => $data['auth_username'],
+                        'auth_password' => $data['auth_password'],
+                    ],
+                    successTitle: 'Directory protected',
+                    errorTitle: 'Failed to protect directory',
+                    onSuccess: function () {
+                        $this->loadProtectedDirectories();
+                        $this->resetTable();
+                    },
+                );
             });
     }
 
     public function deleteProtectedDirUser(string $path, string $authUsername): void
     {
-        $result = $this->agent()->send('domain.remove_protected_dir_user', [
-            'domain' => $this->selectedDomain,
-            'username' => $this->getUsername(),
-            'path' => $path,
-            'auth_username' => $authUsername,
-        ]);
-
-        if ($result['success'] ?? false) {
-            Notification::make()
-                ->title(__('User removed'))
-                ->success()
-                ->send();
-            $this->loadProtectedDirectories();
-            $this->resetTable();
-        } else {
-            Notification::make()
-                ->title(__('Failed to remove user'))
-                ->body($result['error'] ?? __('Unknown error'))
-                ->danger()
-                ->send();
-        }
+        $this->agentCall(
+            action: 'domain.remove_protected_dir_user',
+            params: [
+                'domain' => $this->selectedDomain,
+                'username' => $this->getUsername(),
+                'path' => $path,
+                'auth_username' => $authUsername,
+            ],
+            successTitle: 'User removed',
+            errorTitle: 'Failed to remove user',
+            onSuccess: function () {
+                $this->loadProtectedDirectories();
+                $this->resetTable();
+            },
+        );
     }
 }

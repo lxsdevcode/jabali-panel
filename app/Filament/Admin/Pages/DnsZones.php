@@ -863,19 +863,19 @@ class DnsZones extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        try {
-            $this->agent()->send('dns.delete_zone', ['domain' => $domain->domain]);
-            DnsRecord::where('domain_id', $this->selectedDomainId)->delete();
-
-            Notification::make()->title(__('Zone deleted for :domain', ['domain' => $domain->domain]))->success()->send();
-
-            $this->selectedDomainId = null;
-            $this->pendingEdits = [];
-            $this->pendingDeletes = [];
-            $this->pendingAdds = [];
-        } catch (Exception $e) {
-            Notification::make()->title(__('Failed'))->body(SafeError::message($e))->danger()->send();
-        }
+        $this->agentCall(
+            action: 'dns.delete_zone',
+            params: ['domain' => $domain->domain],
+            successTitle: __('Zone deleted for :domain', ['domain' => $domain->domain]),
+            errorTitle: 'Failed',
+            onSuccess: function () {
+                DnsRecord::where('domain_id', $this->selectedDomainId)->delete();
+                $this->selectedDomainId = null;
+                $this->pendingEdits = [];
+                $this->pendingDeletes = [];
+                $this->pendingAdds = [];
+            },
+        );
     }
 
     protected function syncZoneFile(string $domain): void

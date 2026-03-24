@@ -102,29 +102,18 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        try {
-            $command = $this->shellEnabled ? 'ssh.disable_shell' : 'ssh.enable_shell';
-            $result = $this->agent()->send($command, ['username' => $this->getUsername()]);
+        $command = $this->shellEnabled ? 'ssh.disable_shell' : 'ssh.enable_shell';
+        $label = $this->shellEnabled ? 'SSH Shell Disabled' : 'SSH Shell Enabled';
 
-            if ($result['success'] ?? false) {
+        $this->agentCall(
+            action: $command,
+            params: ['username' => $this->getUsername()],
+            successTitle: $label,
+            errorTitle: 'Error',
+            onSuccess: function () {
                 $this->shellEnabled = ! $this->shellEnabled;
-                Notification::make()
-                    ->title($this->shellEnabled ? __('SSH Shell Enabled') : __('SSH Shell Disabled'))
-                    ->body($this->shellEnabled
-                        ? __('You now have jailed shell access with wp-cli support (you can run wp-cli here).')
-                        : __('Shell access disabled. You can still use SFTP for file transfers.'))
-                    ->success()
-                    ->send();
-            } else {
-                throw new \Exception($result['error'] ?? __('Failed to toggle shell access'));
-            }
-        } catch (\Exception $e) {
-            Notification::make()
-                ->title(__('Error'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            },
+        );
     }
 
     protected function getUsername(): string
@@ -178,29 +167,19 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
                     ->modalIconColor('danger')
                     ->modalSubmitActionLabel(__('Delete Key'))
                     ->action(function (array $record): void {
-                        try {
-                            $result = $this->agent()->send('ssh.delete_key', [
+                        $this->agentCall(
+                            action: 'ssh.delete_key',
+                            params: [
                                 'username' => $this->getUsername(),
                                 'key_id' => $record['id'],
-                            ]);
-
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title(__('SSH Key Deleted'))
-                                    ->success()
-                                    ->send();
+                            ],
+                            successTitle: 'SSH Key Deleted',
+                            errorTitle: 'Error',
+                            onSuccess: function () {
                                 $this->loadSshKeys();
                                 $this->resetTable();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Failed to delete key'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title(__('Error'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                            },
+                        );
                     }),
             ])
             ->emptyStateHeading(__('No SSH keys added yet'))
@@ -294,29 +273,17 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
                         ->helperText(__('Paste your public key (usually from ~/.ssh/id_rsa.pub or ~/.ssh/id_ed25519.pub)')),
                 ])
                 ->action(function (array $data): void {
-                    try {
-                        $result = $this->agent()->send('ssh.add_key', [
+                    $this->agentCall(
+                        action: 'ssh.add_key',
+                        params: [
                             'username' => $this->getUsername(),
                             'name' => $data['name'],
                             'public_key' => trim($data['public_key']),
-                        ]);
-
-                        if ($result['success'] ?? false) {
-                            Notification::make()
-                                ->title(__('SSH Key Added'))
-                                ->success()
-                                ->send();
-                            $this->loadSshKeys();
-                        } else {
-                            throw new \Exception($result['error'] ?? __('Failed to add key'));
-                        }
-                    } catch (\Exception $e) {
-                        Notification::make()
-                            ->title(__('Error'))
-                            ->body(SafeError::message($e))
-                            ->danger()
-                            ->send();
-                    }
+                        ],
+                        successTitle: 'SSH Key Added',
+                        errorTitle: 'Error',
+                        onSuccess: fn () => $this->loadSshKeys(),
+                    );
                 }),
         ];
     }
