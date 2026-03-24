@@ -56,7 +56,7 @@ class MigrationDnsSyncService
             $serverIp = $this->getServerIp();
             $serverIpv6 = $settings['default_ipv6'] ?? null;
 
-            $this->agent->send('dns.sync_zone', [
+            $this->agent->call('dns.sync_zone', [
                 'domain' => $domain->domain,
                 'records' => $this->formatRecords($records),
                 'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",

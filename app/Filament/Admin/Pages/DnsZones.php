@@ -593,7 +593,7 @@ class DnsZones extends Page implements HasActions, HasForms, HasTable
                     foreach ($domains as $domain) {
                         try {
                             $records = DnsRecord::where('domain_id', $domain->id)->get()->toArray();
-                            $this->agent()->send('dns.sync_zone', [
+                            $this->agent()->call('dns.sync_zone', [
                                 'domain' => $domain->domain,
                                 'records' => $records,
                                 'ns1' => $settings['ns1'] ?? 'ns1.example.com',
@@ -884,7 +884,7 @@ class DnsZones extends Page implements HasActions, HasForms, HasTable
         $settings = DnsSetting::getAll();
         $defaultIp = $settings['default_ip'] ?? ServerFacts::serverIp('127.0.0.1');
 
-        $this->agent()->send('dns.sync_zone', [
+        $this->agent()->call('dns.sync_zone', [
             'domain' => $domain,
             'records' => $records,
             'ns1' => $settings['ns1'] ?? 'ns1.example.com',

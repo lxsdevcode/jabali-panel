@@ -82,11 +82,11 @@ class PhpSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->agent()->send('domain.list', [
+        $result = $this->agent()->call('domain.list', [
             'username' => $this->getUsername(),
         ]);
 
-        $this->domains = ($result['success'] ?? false) ? ($result['domains'] ?? []) : [];
+        $this->domains = $result->success ? ($result->get('domains', [])) : [];
     }
 
     protected function loadPhpVersions(): void
@@ -102,11 +102,11 @@ class PhpSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->agent()->send('php.list_versions', []);
+        $result = $this->agent()->call('php.list_versions', []);
 
         $this->phpVersions = [];
-        if ($result['success'] ?? false) {
-            foreach ($result['versions'] ?? [] as $v) {
+        if ($result->success) {
+            foreach ($result->get('versions', []) as $v) {
                 $version = $v['version'] ?? $v;
                 $this->phpVersions[$version] = "PHP $version";
             }
@@ -144,13 +144,13 @@ class PhpSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->agent()->send('php.getSettings', [
+        $result = $this->agent()->call('php.getSettings', [
             'domain' => $this->selectedDomain,
             'username' => $this->getUsername(),
         ]);
 
-        if ($result['success'] ?? false) {
-            $settings = $result['settings'] ?? [];
+        if ($result->success) {
+            $settings = $result->get('settings', []);
             $this->data = [
                 'php_version' => $settings['php_version'] ?? array_key_first($this->phpVersions),
                 'memory_limit' => $settings['memory_limit'] ?? '256M',

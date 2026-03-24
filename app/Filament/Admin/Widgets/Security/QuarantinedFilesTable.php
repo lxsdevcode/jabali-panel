@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Widgets\Security;
 
-use App\Services\Agent\AgentClient;
-use App\Support\SafeError;
+use App\Services\Agent\InteractsWithAgent;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Tables\Columns\TextColumn;
@@ -21,6 +19,7 @@ use Livewire\Component;
 class QuarantinedFilesTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -57,29 +56,13 @@ class QuarantinedFilesTable extends Component implements HasActions, HasSchemas,
                     ->modalHeading(__('Delete Quarantined File'))
                     ->modalDescription(__('Are you sure you want to permanently delete this file? This action cannot be undone.'))
                     ->action(function (array $record): void {
-                        try {
-                            $agent = app(AgentClient::class);
-                            $result = $agent->send('clamav.delete_quarantined', [
-                                'filename' => $record['name'],
-                            ]);
-
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title(__('File Deleted'))
-                                    ->success()
-                                    ->send();
-
-                                $this->dispatch('refresh-security-data');
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Failed to delete file'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title(__('Error'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                        $this->agentCall(
+                            action: 'clamav.delete_quarantined',
+                            params: ['filename' => $record['name']],
+                            successTitle: 'File Deleted',
+                            errorTitle: 'Error',
+                            onSuccess: fn () => $this->dispatch('refresh-security-data'),
+                        );
                     }),
             ])
             ->striped()

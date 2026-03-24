@@ -204,11 +204,11 @@ class DiagnosticReportCommand extends Command
         // Services
         try {
             $agent = app(AgentClient::class);
-            $result = $agent->send('service.list', ['services' => [
+            $result = $agent->call('service.list', ['services' => [
                 'nginx', 'mariadb', 'mysql', 'postfix', 'dovecot',
                 'named', 'bind9', 'redis-server', 'fail2ban', 'jabali-agent',
             ]]);
-            $data['services'] = $result;
+            $data['services'] = $result->toArray();
         } catch (Exception) {
             try {
                 $result = $this->executeCommand('systemctl is-active nginx mariadb postfix dovecot named redis-server fail2ban');

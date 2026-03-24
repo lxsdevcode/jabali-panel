@@ -135,13 +135,13 @@ class Services extends Page implements HasActions, HasForms, HasTable
         $managedServices = $this->getManagedServices();
 
         try {
-            $result = $this->agent()->send('service.list', [
+            $result = $this->agent()->call('service.list', [
                 'services' => array_keys($managedServices),
             ]);
 
-            if ($result['success'] ?? false) {
+            if ($result->success) {
                 $this->services = [];
-                foreach ($result['services'] ?? [] as $name => $status) {
+                foreach ($result->get('services', []) as $name => $status) {
                     $config = $managedServices[$name] ?? [
                         'name' => ucfirst($name),
                         'description' => '',

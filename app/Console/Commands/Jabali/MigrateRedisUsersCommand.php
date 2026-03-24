@@ -99,12 +99,12 @@ class MigrateRedisUsersCommand extends Command
         $redisUser = 'jabali_'.$user->username;
 
         try {
-            $result = $this->agent->send('redis.create_user', [
+            $result = $this->agent->call('redis.create_user', [
                 'username' => $user->username,
                 'password' => $redisPassword,
             ]);
 
-            if ($result['success'] ?? false) {
+            if ($result->success) {
                 // Save credentials file
                 $credContent = "REDIS_USER={$redisUser}\n".
                                "REDIS_PASS={$redisPassword}\n".
@@ -118,7 +118,7 @@ class MigrateRedisUsersCommand extends Command
                 $this->info("    ✓ Created Redis user for {$user->username}");
                 $this->created++;
             } else {
-                $error = $result['error'] ?? 'Unknown error';
+                $error = $result->error ?? 'Unknown error';
                 $this->error("    ✗ Failed for {$user->username}: {$error}");
                 $this->failed++;
             }

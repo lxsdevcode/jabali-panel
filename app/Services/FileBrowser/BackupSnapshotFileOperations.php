@@ -33,7 +33,7 @@ class BackupSnapshotFileOperations implements FileOperations
         }
 
         // Use the agent to list the remote directory via SSH
-        $result = $this->agent->send('backup.list_snapshot_dir', [
+        $result = $this->agent->call('backup.list_snapshot_dir', [
             'remote_path' => $remotePath,
             'destination' => $this->destinationConfig,
             'show_hidden' => $showHidden,
@@ -58,7 +58,7 @@ class BackupSnapshotFileOperations implements FileOperations
             ];
         }
 
-        foreach ($result['items'] ?? [] as $file) {
+        foreach ($result->get('items', []) as $file) {
             $name = $file['name'] ?? '';
             if ($name === '.' || $name === '..' || empty($name)) {
                 continue;

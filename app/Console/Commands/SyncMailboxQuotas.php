@@ -32,12 +32,12 @@ class SyncMailboxQuotas extends Command
 
         foreach ($mailboxes as $mailbox) {
             try {
-                $response = $agent->send('email.mailbox_quota_usage', [
+                $result = $agent->call('email.mailbox_quota_usage', [
                     'email' => $mailbox->email,
                     'maildir_path' => $mailbox->getRawOriginal('maildir_path'),
                 ]);
 
-                $mailbox->quota_used_bytes = $response['quota_used_bytes'] ?? 0;
+                $mailbox->quota_used_bytes = $result->get('quota_used_bytes', 0);
                 $mailbox->save();
                 $synced++;
             } catch (\Exception $e) {

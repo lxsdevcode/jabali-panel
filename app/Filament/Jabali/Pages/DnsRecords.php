@@ -779,7 +779,7 @@ class DnsRecords extends Page implements HasActions, HasForms, HasTable
             $records = DnsRecord::whereHas('domain', fn ($q) => $q->where('domain', $domain))->get();
             $settings = DnsSetting::getAll();
             $defaultIp = $settings['default_ip'] ?? ServerFacts::serverIp('127.0.0.1');
-            $this->agent()->send('dns.sync_zone', [
+            $this->agent()->call('dns.sync_zone', [
                 'domain' => $domain,
                 'records' => $records->toArray(),
                 'ns1' => $settings['ns1'] ?? 'ns1.example.com',

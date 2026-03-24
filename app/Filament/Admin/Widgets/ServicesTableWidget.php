@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Widgets;
 
-use App\Services\Agent\AgentClient;
-use App\Support\SafeError;
+use App\Services\Agent\InteractsWithAgent;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Tables\Columns\IconColumn;
@@ -23,6 +21,7 @@ use Livewire\Component;
 class ServicesTableWidget extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -75,11 +74,11 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
 
         $statuses = [];
         try {
-            $agent = app(AgentClient::class);
-            $result = $agent->send('service.list', ['services' => $servicesToCheck]);
+            $result = $this->agent()->call('service.list', ['services' => $servicesToCheck]);
 
-            if ($result['success'] ?? false) {
-                $statuses = is_array($result['services'] ?? null) ? $result['services'] : [];
+            if ($result->success) {
+                $services = $result->get('services', []);
+                $statuses = is_array($services) ? $services : [];
             }
         } catch (Exception) {
             $statuses = [];
@@ -211,29 +210,16 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
                     ->size('sm')
                     ->visible(fn (array $record): bool => ! ($record['active'] ?? true))
                     ->action(function (array $record): void {
-                        try {
-                            $agent = app(AgentClient::class);
-                            $result = $agent->send('service.start', ['service' => $record['key']]);
-
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title(__('Service started'))
-                                    ->body(__(':service has been started successfully.', ['service' => $record['name']]))
-                                    ->success()
-                                    ->send();
-
+                        $this->agentCall(
+                            action: 'service.start',
+                            params: ['service' => $record['key']],
+                            successTitle: 'Service started',
+                            errorTitle: 'Failed to start service',
+                            onSuccess: function () {
                                 $this->loadServices();
                                 $this->resetTable();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Failed to start service'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title(__('Failed to start service'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                            },
+                        );
                     }),
                 Action::make('restart')
                     ->label(fn (array $record): string => $this->shouldReloadService($record['key']) ? __('Reload') : __('Restart'))
@@ -248,32 +234,18 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
                         : __('Are you sure you want to restart :service?', ['service' => $record['name']])
                     )
                     ->action(function (array $record): void {
-                        try {
-                            $agent = app(AgentClient::class);
-                            $action = $this->shouldReloadService($record['key']) ? 'reload' : 'restart';
-                            $result = $agent->send("service.{$action}", ['service' => $record['key']]);
-
-                            if ($result['success'] ?? false) {
-                                $verb = $action === 'reload' ? __('reloaded') : __('restarted');
-                                Notification::make()
-                                    ->title($action === 'reload' ? __('Service reloaded') : __('Service restarted'))
-                                    ->body(__(':service has been :action successfully.', ['service' => $record['name'], 'action' => $verb]))
-                                    ->success()
-                                    ->send();
-
+                        $action = $this->shouldReloadService($record['key']) ? 'reload' : 'restart';
+                        $this->agentCall(
+                            action: "service.{$action}",
+                            params: ['service' => $record['key']],
+                            successTitle: $action === 'reload' ? 'Service reloaded' : 'Service restarted',
+                            errorTitle: $action === 'reload' ? 'Failed to reload service' : 'Failed to restart service',
+                            onSuccess: function () {
                                 sleep(1);
                                 $this->loadServices();
                                 $this->resetTable();
-                            } else {
-                                throw new \Exception($result['error'] ?? ($action === 'reload' ? __('Failed to reload service') : __('Failed to restart service')));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title($this->shouldReloadService($record['key']) ? __('Failed to reload service') : __('Failed to restart service'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                            },
+                        );
                     }),
             ])
             ->paginated(false)

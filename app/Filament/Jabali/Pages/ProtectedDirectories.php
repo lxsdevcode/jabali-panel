@@ -79,11 +79,11 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
             return;
         }
 
-        $result = $this->agent()->send('domain.list', [
+        $result = $this->agent()->call('domain.list', [
             'username' => $this->getUsername(),
         ]);
 
-        $this->domains = ($result['success'] ?? false) ? ($result['domains'] ?? []) : [];
+        $this->domains = $result->success ? $result->get('domains', []) : [];
     }
 
     public function selectDomain(string $domain): void
@@ -125,12 +125,12 @@ class ProtectedDirectories extends Page implements HasActions, HasForms, HasTabl
             return;
         }
 
-        $result = $this->agent()->send('domain.list_protected_dirs', [
+        $result = $this->agent()->call('domain.list_protected_dirs', [
             'domain' => $this->selectedDomain,
             'username' => $this->getUsername(),
         ]);
 
-        $this->protectedDirs = ($result['success'] ?? false) ? ($result['directories'] ?? []) : [];
+        $this->protectedDirs = $result->success ? $result->get('directories', []) : [];
     }
 
     public function table(Table $table): Table

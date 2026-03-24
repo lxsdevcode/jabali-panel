@@ -290,34 +290,26 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
 
     protected function generateSshKey(string $name, string $type, string $passphrase = ''): array
     {
-        $result = $this->agent()->send('ssh.generate_key', [
+        $result = $this->agent()->call('ssh.generate_key', [
             'name' => $name,
             'type' => $type,
             'passphrase' => $passphrase,
-        ]);
-
-        if (! ($result['success'] ?? false)) {
-            throw new \Exception($result['error'] ?? __('Failed to generate SSH key'));
-        }
+        ])->orFail();
 
         // Add public key to user authorized_keys
-        $addResult = $this->agent()->send('ssh.add_key', [
+        $this->agent()->call('ssh.add_key', [
             'username' => $this->getUsername(),
             'name' => $name,
-            'public_key' => trim($result['public_key']),
-        ]);
-
-        if (! ($addResult['success'] ?? false)) {
-            throw new \Exception($addResult['error'] ?? __('Failed to add key to server'));
-        }
+            'public_key' => trim($result->get('public_key', '')),
+        ])->orFail();
 
         return [
-            'name' => $result['name'],
-            'type' => $result['type'],
-            'private_key' => $result['private_key'],
-            'public_key' => $result['public_key'],
-            'ppk_key' => $result['ppk_key'] ?? null,
-            'fingerprint' => $result['fingerprint'] ?? '',
+            'name' => $result->get('name'),
+            'type' => $result->get('type'),
+            'private_key' => $result->get('private_key'),
+            'public_key' => $result->get('public_key'),
+            'ppk_key' => $result->get('ppk_key'),
+            'fingerprint' => $result->get('fingerprint', ''),
         ];
     }
 

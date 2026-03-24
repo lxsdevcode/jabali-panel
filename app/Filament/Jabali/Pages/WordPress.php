@@ -927,45 +927,45 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
                 ->info()
                 ->send();
 
-            $result = $this->agent()->send('wp.create_staging', $agentPayload);
+            $result = $this->agent()->call('wp.create_staging', $agentPayload);
 
-            if ($result['success'] ?? false) {
-                $stagingDomain = (string) ($result['staging_domain'] ?? '');
-                if ($stagingDomain !== '') {
-                    Domain::firstOrCreate(
-                        [
-                            'user_id' => Auth::id(),
-                            'domain' => $stagingDomain,
-                        ],
-                        [
-                            'document_root' => '/home/'.$this->getUsername().'/domains/'.$stagingDomain.'/public_html',
-                            'is_active' => true,
-                            'ssl_enabled' => false,
-                            'directory_index' => 'index.php index.html',
-                            'page_cache_enabled' => false,
-                        ]
-                    );
-                }
-
-                if (
-                    $sourceDomain !== ''
-                    && $stagingDomain !== ''
-                    && str_ends_with(strtolower($stagingDomain), '.'.strtolower($sourceDomain))
-                ) {
-                    $this->ensureStagingDnsRecords($sourceDomain, $stagingDomain);
-                }
-
-                Notification::make()
-                    ->title(__('Staging Environment Created'))
-                    ->body(__('Your staging site is available at: :url', ['url' => $result['staging_url'] ?? '']))
-                    ->success()
-                    ->persistent()
-                    ->send();
-                $this->loadData();
-                $this->resetTable();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to create staging environment'));
+            if ($result->failed()) {
+                throw new Exception($result->error ?? __('Failed to create staging environment'));
             }
+
+            $stagingDomain = (string) $result->get('staging_domain', '');
+            if ($stagingDomain !== '') {
+                Domain::firstOrCreate(
+                    [
+                        'user_id' => Auth::id(),
+                        'domain' => $stagingDomain,
+                    ],
+                    [
+                        'document_root' => '/home/'.$this->getUsername().'/domains/'.$stagingDomain.'/public_html',
+                        'is_active' => true,
+                        'ssl_enabled' => false,
+                        'directory_index' => 'index.php index.html',
+                        'page_cache_enabled' => false,
+                    ]
+                );
+            }
+
+            if (
+                $sourceDomain !== ''
+                && $stagingDomain !== ''
+                && str_ends_with(strtolower($stagingDomain), '.'.strtolower($sourceDomain))
+            ) {
+                $this->ensureStagingDnsRecords($sourceDomain, $stagingDomain);
+            }
+
+            Notification::make()
+                ->title(__('Staging Environment Created'))
+                ->body(__('Your staging site is available at: :url', ['url' => $result->get('staging_url', '')]))
+                ->success()
+                ->persistent()
+                ->send();
+            $this->loadData();
+            $this->resetTable();
         } catch (Exception $e) {
             Notification::make()
                 ->title(__('Staging Creation Failed'))
@@ -1070,12 +1070,12 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
         // Check if WPScan is available (scan runs asynchronously via the queue).
         try {
-            $status = $this->agent()->send('scanner.status', ['tool' => 'wpscan']);
+            $status = $this->agent()->call('scanner.status', ['tool' => 'wpscan']);
         } catch (Exception $e) {
-            $status = ['installed' => false, 'error' => $e->getMessage()];
+            $status = null;
         }
 
-        if (! ($status['installed'] ?? false)) {
+        if (! ($status?->get('installed', false))) {
             Notification::make()
                 ->title(__('WPScan not available'))
                 ->body(__('Please contact your administrator to enable security scanning.'))
@@ -1473,42 +1473,25 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
         $url = (string) ($site['url'] ?? '');
 
-        try {
-            if ($url === '' || filter_var($url, FILTER_VALIDATE_URL) === false) {
-                Notification::make()
-                    ->title(__('Screenshot failed'))
-                    ->body(__('Invalid site URL.'))
-                    ->warning()
-                    ->send();
-
-                return;
-            }
-
-            $result = $this->agent()->send('screenshot.capture', [
-                'url' => $url,
-                'site_id' => $siteId,
-            ]);
-
-            if ($result['success'] ?? false) {
-                Notification::make()
-                    ->title(__('Screenshot captured'))
-                    ->body(__('Website screenshot has been updated.'))
-                    ->success()
-                    ->send();
-            } else {
-                Notification::make()
-                    ->title(__('Screenshot failed'))
-                    ->body($result['error'] ?? __('Could not capture screenshot.'))
-                    ->warning()
-                    ->send();
-            }
-        } catch (Exception $e) {
+        if ($url === '' || filter_var($url, FILTER_VALIDATE_URL) === false) {
             Notification::make()
                 ->title(__('Screenshot failed'))
-                ->body(SafeError::message($e))
-                ->danger()
+                ->body(__('Invalid site URL.'))
+                ->warning()
                 ->send();
+
+            return;
         }
+
+        $this->agentCall(
+            action: 'screenshot.capture',
+            params: [
+                'url' => $url,
+                'site_id' => $siteId,
+            ],
+            successTitle: 'Screenshot captured',
+            errorTitle: 'Screenshot failed',
+        );
     }
 
     public function getScreenshotUrl(string $siteId): ?string

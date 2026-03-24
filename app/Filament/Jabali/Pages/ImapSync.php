@@ -7,7 +7,7 @@ namespace App\Filament\Jabali\Pages;
 use App\Jobs\RunImapSync;
 use App\Models\ImapSyncTask;
 use App\Models\Mailbox;
-use App\Services\Agent\AgentClient;
+use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -35,6 +35,7 @@ use Illuminate\Support\Str;
 class ImapSync extends Page implements HasActions, HasForms
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithForms;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-envelope';
@@ -260,8 +261,7 @@ class ImapSync extends Page implements HasActions, HasForms
         }
 
         try {
-            $agent = app(AgentClient::class);
-            $result = $agent->send('email.imap_test_connection', [
+            $result = $this->agent()->call('email.imap_test_connection', [
                 'host' => $this->sourceHost,
                 'port' => $this->sourcePort,
                 'encryption' => $this->sourceEncryption,
@@ -269,9 +269,9 @@ class ImapSync extends Page implements HasActions, HasForms
                 'password' => $this->sourcePassword,
             ]);
 
-            if ($result['success'] ?? false) {
+            if ($result->success) {
                 $this->isConnected = true;
-                $this->availableFolders = $result['folders'] ?? [];
+                $this->availableFolders = $result->get('folders', []);
                 Notification::make()
                     ->title(__('Connection successful'))
                     ->body(__(':count folders found', ['count' => count($this->availableFolders)]))
@@ -282,7 +282,7 @@ class ImapSync extends Page implements HasActions, HasForms
                 $this->availableFolders = [];
                 Notification::make()
                     ->title(__('Connection failed'))
-                    ->body($result['error'] ?? __('Unable to connect to IMAP server'))
+                    ->body($result->error ?? __('Unable to connect to IMAP server'))
                     ->danger()
                     ->send();
             }

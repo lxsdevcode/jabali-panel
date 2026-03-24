@@ -130,11 +130,11 @@ class EmailLogs extends Page implements HasActions, HasForms, HasTable
     public function loadLogs(bool $refreshTable = true): void
     {
         try {
-            $result = $this->agent()->send('email.get_logs', [
+            $result = $this->agent()->call('email.get_logs', [
                 'limit' => 200,
             ]);
 
-            $this->logs = $result['logs'] ?? [];
+            $this->logs = $result->get('logs', []);
             $this->logsLoaded = true;
         } catch (\Exception $e) {
             $this->logs = [];
@@ -155,8 +155,8 @@ class EmailLogs extends Page implements HasActions, HasForms, HasTable
     public function loadQueue(bool $refreshTable = true): void
     {
         try {
-            $result = $this->agent()->send('mail.queue_list');
-            $this->queueItems = $result['queue'] ?? [];
+            $result = $this->agent()->call('mail.queue_list');
+            $this->queueItems = $result->get('queue', []);
             $this->queueLoaded = true;
         } catch (\Exception $e) {
             $this->queueItems = [];

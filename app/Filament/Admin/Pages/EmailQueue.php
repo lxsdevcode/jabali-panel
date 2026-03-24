@@ -57,8 +57,8 @@ class EmailQueue extends Page implements HasActions, HasTable
     public function loadQueue(bool $refreshTable = true): void
     {
         try {
-            $result = $this->agent()->send('mail.queue_list');
-            $this->queueItems = $result['queue'] ?? [];
+            $result = $this->agent()->call('mail.queue_list');
+            $this->queueItems = $result->get('queue', []);
             $this->queueLoaded = true;
         } catch (\Exception $e) {
             $this->queueItems = [];

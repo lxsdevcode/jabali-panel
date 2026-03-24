@@ -8,7 +8,6 @@ use App\Filament\Admin\Widgets\ServerChartsWidget;
 use App\Filament\Admin\Widgets\ServerInfoWidget;
 use App\Models\ServerProcess;
 use App\Services\Agent\InteractsWithAgent;
-use App\Support\SafeError;
 use BackedEnum;
 use Exception;
 use Filament\Actions\Action;
@@ -307,34 +306,16 @@ class ServerStatus extends Page implements HasTable
 
     public function killProcess(ServerProcess $process, int $signal = 15): void
     {
-        try {
-            $result = $this->agent()->send('system.kill_process', [
+        $this->agentCall(
+            action: 'system.kill_process',
+            params: [
                 'pid' => $process->pid,
                 'signal' => $signal,
-            ]);
-
-            if ($result['success'] ?? false) {
-                Notification::make()
-                    ->title(__('Process killed'))
-                    ->body(__('Process :pid has been terminated with signal :signal.', [
-                        'pid' => $process->pid,
-                        'signal' => $signal,
-                    ]))
-                    ->success()
-                    ->send();
-
-                // Refresh the process list
-                $this->loadMetrics();
-            } else {
-                throw new Exception($result['error'] ?? __('Unknown error'));
-            }
-        } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Failed to kill process'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
-        }
+            ],
+            successTitle: 'Process killed',
+            errorTitle: 'Failed to kill process',
+            onSuccess: fn () => $this->loadMetrics(),
+        );
     }
 
     public function killProcesses(Collection $records, int $signal = 15): void
@@ -344,12 +325,12 @@ class ServerStatus extends Page implements HasTable
 
         foreach ($records as $process) {
             try {
-                $result = $this->agent()->send('system.kill_process', [
+                $result = $this->agent()->call('system.kill_process', [
                     'pid' => $process->pid,
                     'signal' => $signal,
                 ]);
 
-                if ($result['success'] ?? false) {
+                if ($result->success) {
                     $killed++;
                 } else {
                     $failed++;

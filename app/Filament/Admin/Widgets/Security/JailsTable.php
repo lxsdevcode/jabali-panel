@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Widgets\Security;
 
-use App\Services\Agent\AgentClient;
-use App\Support\SafeError;
+use App\Services\Agent\InteractsWithAgent;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Tables\Columns\IconColumn;
@@ -22,6 +20,7 @@ use Livewire\Component;
 class JailsTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -30,10 +29,9 @@ class JailsTable extends Component implements HasActions, HasSchemas, HasTable
     protected function reloadJails(): void
     {
         try {
-            $agent = app(AgentClient::class);
-            $result = $agent->send('fail2ban.list_jails', []);
-            if ($result['success'] ?? false) {
-                $this->jails = $result['jails'] ?? [];
+            $result = $this->agent()->call('fail2ban.list_jails', []);
+            if ($result->success) {
+                $this->jails = $result->get('jails', []);
                 $this->resetTable();
             }
         } catch (\Exception $e) {
@@ -83,30 +81,15 @@ class JailsTable extends Component implements HasActions, HasSchemas, HasTable
                     ->action(function (array $record): void {
                         $name = $record['name'] ?? '';
                         $enabled = $record['enabled'] ?? false;
+                        $action = $enabled ? 'fail2ban.disable_jail' : 'fail2ban.enable_jail';
 
-                        try {
-                            $agent = app(AgentClient::class);
-                            $action = $enabled ? 'fail2ban.disable_jail' : 'fail2ban.enable_jail';
-                            $result = $agent->send($action, ['jail' => $name]);
-
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title($enabled ? __('Jail disabled') : __('Jail enabled'))
-                                    ->success()
-                                    ->send();
-
-                                // Reload jails data directly
-                                $this->reloadJails();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Operation failed'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title(__('Error'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                        $this->agentCall(
+                            action: $action,
+                            params: ['jail' => $name],
+                            successTitle: $enabled ? 'Jail disabled' : 'Jail enabled',
+                            errorTitle: 'Error',
+                            onSuccess: fn () => $this->reloadJails(),
+                        );
                     }),
             ])
             ->striped()

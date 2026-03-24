@@ -345,7 +345,7 @@ class Email extends Page implements HasActions, HasForms, HasTable
             $serverIp = ServerFacts::serverIp('127.0.0.1');
             $serverIpv6 = $settings['default_ipv6'] ?? null;
 
-            $this->agent()->send('dns.sync_zone', [
+            $this->agent()->call('dns.sync_zone', [
                 'domain' => $domain->domain,
                 'records' => $records,
                 'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",

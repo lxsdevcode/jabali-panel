@@ -290,7 +290,7 @@ class DomainIpAssignmentsTable extends Component implements HasActions, HasSchem
 
         try {
             $records = $domain->dnsRecords()->get()->toArray();
-            $this->agent()->send('dns.sync_zone', [
+            $this->agent()->call('dns.sync_zone', [
                 'domain' => $domain->domain,
                 'records' => $records,
                 'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",

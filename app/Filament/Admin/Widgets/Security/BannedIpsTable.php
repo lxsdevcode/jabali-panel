@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Widgets\Security;
 
-use App\Services\Agent\AgentClient;
-use App\Support\SafeError;
+use App\Services\Agent\InteractsWithAgent;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Tables\Columns\TextColumn;
@@ -21,6 +19,7 @@ use Livewire\Component;
 class BannedIpsTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
+    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -29,10 +28,9 @@ class BannedIpsTable extends Component implements HasActions, HasSchemas, HasTab
     protected function reloadBannedIps(): void
     {
         try {
-            $agent = app(AgentClient::class);
-            $result = $agent->send('fail2ban.status', []);
-            if ($result['success'] ?? false) {
-                $this->jails = $result['jails'] ?? [];
+            $result = $this->agent()->call('fail2ban.status', []);
+            if ($result->success) {
+                $this->jails = $result->get('jails', []);
                 $this->resetTable();
             }
         } catch (\Exception $e) {
@@ -92,35 +90,16 @@ class BannedIpsTable extends Component implements HasActions, HasSchemas, HasTab
                         'jail' => ucfirst($record['jail'] ?? ''),
                     ]))
                     ->action(function (array $record): void {
-                        try {
-                            $agent = app(AgentClient::class);
-                            $result = $agent->send('fail2ban.unban_ip', [
+                        $this->agentCall(
+                            action: 'fail2ban.unban_ip',
+                            params: [
                                 'jail' => $record['jail'],
                                 'ip' => $record['ip'],
-                            ]);
-
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title(__('IP Unbanned'))
-                                    ->body(__(':ip has been unbanned from :jail', [
-                                        'ip' => $record['ip'],
-                                        'jail' => ucfirst($record['jail']),
-                                    ]))
-                                    ->success()
-                                    ->send();
-
-                                // Reload banned IPs data directly
-                                $this->reloadBannedIps();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Failed to unban IP'));
-                            }
-                        } catch (\Exception $e) {
-                            Notification::make()
-                                ->title(__('Error'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                            ],
+                            successTitle: 'IP Unbanned',
+                            errorTitle: 'Error',
+                            onSuccess: fn () => $this->reloadBannedIps(),
+                        );
                     }),
             ])
             ->striped()

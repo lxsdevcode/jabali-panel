@@ -77,7 +77,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
         }
 
         try {
-            $result = $this->agent()->send('php.list_versions', []);
+            $result = $this->agent()->call('php.list_versions', []);
         } catch (\Exception $e) {
             $this->installedVersions = [];
             $this->defaultVersion = null;
@@ -86,9 +86,9 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        if ($result['success'] ?? false) {
-            $this->installedVersions = $result['versions'] ?? [];
-            $this->defaultVersion = $result['default'] ?? null;
+        if ($result->success) {
+            $this->installedVersions = $result->get('versions', []);
+            $this->defaultVersion = $result->get('default');
         } else {
             $this->installedVersions = [];
             $this->defaultVersion = null;
