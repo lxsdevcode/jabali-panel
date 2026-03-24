@@ -9505,13 +9505,15 @@ function phpSetSettings(array $params): array
         return ['success' => false, 'error' => 'Domain not found'];
     }
     
-    $phpVersion = $params['php_version'] ?? '8.4';
-    $memoryLimit = $params['memory_limit'] ?? '256M';
-    $uploadMaxFilesize = $params['upload_max_filesize'] ?? '64M';
-    $postMaxSize = $params['post_max_size'] ?? '64M';
-    $maxExecutionTime = $params['max_execution_time'] ?? '300';
-    $maxInputTime = $params['max_input_time'] ?? '300';
-    $maxInputVars = $params['max_input_vars'] ?? '3000';
+    // Settings can be nested under 'settings' key or flat at top level
+    $s = $params['settings'] ?? $params;
+    $phpVersion = $s['php_version'] ?? '8.4';
+    $memoryLimit = $s['memory_limit'] ?? '256M';
+    $uploadMaxFilesize = $s['upload_max_filesize'] ?? '64M';
+    $postMaxSize = $s['post_max_size'] ?? '64M';
+    $maxExecutionTime = $s['max_execution_time'] ?? '300';
+    $maxInputTime = $s['max_input_time'] ?? '300';
+    $maxInputVars = $s['max_input_vars'] ?? '3000';
     
     // Save settings to JSON file
     $settings = [
