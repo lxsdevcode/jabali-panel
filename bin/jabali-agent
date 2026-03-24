@@ -505,6 +505,7 @@ function handleAction(array $request): array
     return match ($action) {
         'ping' => ['success' => true, 'message' => 'pong', 'version' => '1.0.0'],
         'server.restart_agent' => restartAgent($params),
+        'server.git_pull' => gitPull($params),
         'user.create' => createUser($params),
         'user.delete' => deleteUser($params),
         'user.exists' => userExists($params),
@@ -14388,6 +14389,52 @@ function restartAgent(array $params): array
     exec("nohup {$script} > /dev/null 2>&1 &");
 
     return ['success' => true, 'message' => "Agent will restart in {$delay} seconds"];
+}
+
+// ============ GIT OPERATIONS ============
+
+function gitPull(array $params): array
+{
+    $path = $params['path'] ?? '/var/www/jabali';
+    $remote = $params['remote'] ?? 'origin';
+    $branch = $params['branch'] ?? 'main';
+    $wwwUser = $params['www_user'] ?? 'www-data';
+
+    // Only allow pulling into /var/www/jabali for security
+    $realPath = realpath($path);
+    if ($realPath === false || $realPath !== '/var/www/jabali') {
+        return ['success' => false, 'error' => 'Invalid project path'];
+    }
+
+    // Fix ownership before pull so git can unlink files
+    exec("chown -R " . escapeshellarg($wwwUser) . ":" . escapeshellarg($wwwUser) . " " . escapeshellarg($realPath) . " 2>&1", $chownOut, $chownRet);
+
+    // Configure git safe directory
+    exec("git config --global --add safe.directory " . escapeshellarg($realPath) . " 2>/dev/null");
+
+    // Try fast-forward pull first
+    exec("cd " . escapeshellarg($realPath) . " && git fetch " . escapeshellarg($remote) . " " . escapeshellarg($branch) . " 2>&1", $fetchOut, $fetchRet);
+    if ($fetchRet !== 0) {
+        return ['success' => false, 'error' => 'Git fetch failed: ' . implode("\n", $fetchOut)];
+    }
+
+    exec("cd " . escapeshellarg($realPath) . " && git reset --hard " . escapeshellarg($remote . '/' . $branch) . " 2>&1", $resetOut, $resetRet);
+    if ($resetRet !== 0) {
+        return ['success' => false, 'error' => 'Git reset failed: ' . implode("\n", $resetOut)];
+    }
+
+    // Fix ownership again after pull (new files may be owned by root)
+    exec("chown -R " . escapeshellarg($wwwUser) . ":" . escapeshellarg($wwwUser) . " " . escapeshellarg($realPath) . " 2>&1");
+
+    // Get current HEAD
+    exec("cd " . escapeshellarg($realPath) . " && git log --oneline -1 2>&1", $headOut);
+
+    return [
+        'success' => true,
+        'message' => 'Git pull completed',
+        'head' => trim(implode('', $headOut)),
+        'output' => implode("\n", $resetOut),
+    ];
 }
 
 // ============ SERVER SETTINGS ============

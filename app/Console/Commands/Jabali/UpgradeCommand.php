@@ -133,20 +133,34 @@ class UpgradeCommand extends Command
         $oldHead = trim($this->executeCommandOrFail('git rev-parse HEAD'));
         $this->info('[3/9] Pulling latest changes...');
         try {
-            $pullResult = $this->executeCommand("git pull --ff-only {$updateSource['pullRemote']} main");
-            if ($pullResult['exitCode'] !== 0) {
-                // Fast-forward failed — likely divergent history from a history rewrite.
-                // Reset to the remote branch to adopt the canonical history.
-                $this->warn('Fast-forward not possible. Resetting to remote branch...');
-                $resetResult = $this->executeCommand("git reset --hard {$updateSource['remoteRef']}");
-                if ($resetResult['exitCode'] !== 0) {
-                    throw new Exception($resetResult['output'] ?: 'Git reset failed.');
+            if (! $this->isRunningAsRoot()) {
+                // Running as www-data (from web UI) — use agent to pull as root
+                // This fixes permission issues when files are owned by root
+                $this->info('Delegating git pull to agent (running as '.get_current_user().')...');
+                $agent = app(\App\Services\Agent\AgentClient::class);
+                $result = $agent->send('server.git_pull', [
+                    'path' => $this->basePath,
+                    'remote' => $updateSource['pullRemote'] ?? 'origin',
+                    'branch' => 'main',
+                ]);
+                if (! ($result['success'] ?? false)) {
+                    throw new Exception($result['error'] ?? 'Agent git pull failed');
                 }
-                if ($resetResult['output'] !== '') {
-                    $this->line($resetResult['output']);
+                $this->line($result['head'] ?? 'Updated');
+            } else {
+                $pullResult = $this->executeCommand("git pull --ff-only {$updateSource['pullRemote']} main");
+                if ($pullResult['exitCode'] !== 0) {
+                    $this->warn('Fast-forward not possible. Resetting to remote branch...');
+                    $resetResult = $this->executeCommand("git reset --hard {$updateSource['remoteRef']}");
+                    if ($resetResult['exitCode'] !== 0) {
+                        throw new Exception($resetResult['output'] ?: 'Git reset failed.');
+                    }
+                    if ($resetResult['output'] !== '') {
+                        $this->line($resetResult['output']);
+                    }
+                } elseif ($pullResult['output'] !== '') {
+                    $this->line($pullResult['output']);
                 }
-            } elseif ($pullResult['output'] !== '') {
-                $this->line($pullResult['output']);
             }
         } catch (Exception $e) {
             $this->error('Failed to pull changes: '.$e->getMessage());
