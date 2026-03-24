@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\FileBrowser;
 
+use App\FileBrowser\Adapters\PermissionManager;
 use App\Services\Agent\AgentClient;
-use Jabali\FileBrowser\Adapters\PermissionManager;
 
 class AgentPermissionManager implements PermissionManager
 {

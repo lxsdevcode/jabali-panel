@@ -39,7 +39,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Override jabali-file-browser's adapter with the agent-backed adapter
         // Must be in boot() to run after the package's register()
-        $this->app->bind(\Jabali\FileBrowser\Adapters\FileBrowserAdapter::class, function ($app) {
+        $this->app->bind(\App\FileBrowser\Adapters\FileBrowserAdapter::class, function ($app) {
             $user = \Illuminate\Support\Facades\Auth::user();
             $username = $user?->username ?? 'nobody';
 
@@ -50,7 +50,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Override trash manager with agent-backed version
-        $this->app->singleton(\Jabali\FileBrowser\Services\TrashManager::class, function ($app) {
+        $this->app->singleton(\App\FileBrowser\Services\TrashManager::class, function ($app) {
             $user = \Illuminate\Support\Facades\Auth::user();
             $username = $user?->username ?? 'nobody';
 

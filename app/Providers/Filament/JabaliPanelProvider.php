@@ -90,8 +90,8 @@ $this->getRtlScript()
                 RedirectAdminFromUserPanel::class,
             ])
             ->plugins(array_filter([
-                class_exists(\Jabali\FileBrowser\FileBrowserPlugin::class)
-                    ? \Jabali\FileBrowser\FileBrowserPlugin::make()->slug('files')
+                class_exists(\App\FileBrowser\FileBrowserPlugin::class)
+                    ? \App\FileBrowser\FileBrowserPlugin::make()->slug('files')
                     : null,
             ]));
     }

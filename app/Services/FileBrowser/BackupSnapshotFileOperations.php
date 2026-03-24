@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\FileBrowser;
 
+use App\FileBrowser\Adapters\FileOperations;
 use App\Services\Agent\AgentClient;
-use Jabali\FileBrowser\Adapters\FileOperations;
 use RuntimeException;
 
 /**

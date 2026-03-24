@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
+use App\FileBrowser\Support\Formatter;
 use App\Models\BackupDestination;
 use App\Services\Agent\AgentClient;
 use App\Services\FileBrowser\BackupSnapshotAdapter;
@@ -14,7 +15,6 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
-use Jabali\FileBrowser\Support\Formatter;
 use Livewire\Component;
 
 /**

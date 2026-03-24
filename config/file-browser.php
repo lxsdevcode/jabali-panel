@@ -49,7 +49,7 @@ return [
     'navigation' => [
         'icon' => 'heroicon-o-folder',
         'label' => 'File Manager',
-        'slug' => 'files',
+        'slug' => 'file-browser',
         'sort' => 6,
         'group' => null,
     ],

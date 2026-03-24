@@ -691,9 +691,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->color('warning')
                     ->size('sm')
                     ->visible(fn (Backup $record): bool => $record->status === 'completed' && ($record->local_path || $record->remote_path))
-                    ->modalHeading(__('Restore Backup'))
-                    ->modalDescription(__('Select what you want to restore. Warning: Existing data may be overwritten.'))
-                    ->modalWidth('xl')
+                    ->url(fn (Backup $record): string => RestoreBackup::getUrl(['backupId' => $record->id])),
+                Action::make('_OLD_RESTORE_MODAL_REMOVED_')
+                    ->hidden()
                     ->form(function (Backup $record): array {
                         $isRemoteBackup = ! $record->local_path || ! file_exists($record->local_path);
                         $manifest = $this->getBackupManifest($record);

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\FileBrowser;
 
+use App\FileBrowser\Services\TrashStore;
 use App\Services\Agent\AgentClient;
-use Jabali\FileBrowser\Services\TrashStore;
 
 /**
  * TrashStore that delegates to the Jabali agent daemon.

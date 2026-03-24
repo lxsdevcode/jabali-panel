@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\FileBrowser;
 
+use App\FileBrowser\Adapters\Archiver;
+use App\FileBrowser\Adapters\FileBrowserAdapter;
+use App\FileBrowser\Adapters\FileOperations;
+use App\FileBrowser\Adapters\PermissionManager;
 use App\Services\Agent\AgentClient;
-use Jabali\FileBrowser\Adapters\Archiver;
-use Jabali\FileBrowser\Adapters\FileBrowserAdapter;
-use Jabali\FileBrowser\Adapters\FileOperations;
-use Jabali\FileBrowser\Adapters\PermissionManager;
 
 /**
  * Read-only adapter for browsing backup snapshots on remote destinations.
