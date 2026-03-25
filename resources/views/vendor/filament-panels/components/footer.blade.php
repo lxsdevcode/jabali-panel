@@ -9,13 +9,13 @@
     }
 @endphp
 
-<footer class="mt-auto border-t border-gray-200/20 px-6 py-5 dark:border-white/10">
+<footer class="mt-auto border-t border-gray-200 px-6 py-5 dark:border-white/10">
     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div class="flex items-center gap-3">
             <img
                 src="{{ asset('images/jabali_logo.svg') }}"
                 alt="{{ __('Jabali') }}"
-                class="h-8 w-8 dark:filter dark:invert dark:brightness-200"
+                class="h-8 w-8 opacity-80 dark:invert dark:brightness-200"
             >
 
             <div class="leading-tight">
@@ -41,7 +41,7 @@
                 {{ __('GitHub') }}
             </x-filament::link>
 
-            <span class="text-gray-400/50 dark:text-white/20">•</span>
+            <span class="text-gray-300 dark:text-white/20">•</span>
 
             <span>© {{ date('Y') }} Jabali</span>
 
