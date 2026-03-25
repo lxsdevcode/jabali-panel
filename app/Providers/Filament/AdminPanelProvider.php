@@ -7,7 +7,6 @@ namespace App\Providers\Filament;
 use App\Filament\Admin\Pages\Auth\Login as AdminLogin;
 use App\Filament\Admin\Pages\Dashboard;
 use App\Filament\AvatarProviders\InitialsAvatarProvider;
-use App\Http\Middleware\EnforceTwoFactor;
 use App\Http\Middleware\SetLocale;
 use App\Models\DnsSetting;
 use Filament\Http\Middleware\Authenticate;
@@ -88,7 +87,6 @@ $this->getRtlScript()
             ])
             ->authMiddleware([
                 Authenticate::class,
-                EnforceTwoFactor::class,
             ]);
     }
 

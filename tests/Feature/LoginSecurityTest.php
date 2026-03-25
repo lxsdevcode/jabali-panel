@@ -8,7 +8,6 @@ use App\Filament\Admin\Pages\Auth\Login as AdminLogin;
 use App\Filament\Jabali\Pages\Auth\Login as JabaliLogin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -108,59 +107,6 @@ class LoginSecurityTest extends TestCase
             ->set('data.password', 'correctpassword')
             ->call('authenticate')
             ->assertHasFormErrors(['email']);
-    }
-
-    // ── Feature 4: 2FA enforcement for admins ──
-
-    public function test_admin_without_2fa_is_redirected_to_setup(): void
-    {
-        $admin = User::factory()->admin()->create([
-            'email' => 'admin@example.com',
-            'password' => 'password',
-            'two_factor_secret' => null,
-            'two_factor_confirmed_at' => null,
-        ]);
-
-        Auth::guard('admin')->login($admin);
-
-        // Accessing admin dashboard should redirect to 2FA setup
-        $response = $this->get('/jabali-admin');
-
-        $response->assertRedirect('/jabali-admin/two-factor-setup');
-    }
-
-    public function test_admin_with_2fa_can_access_dashboard(): void
-    {
-        $admin = User::factory()->admin()->create([
-            'email' => 'admin@example.com',
-            'password' => 'password',
-            'two_factor_secret' => encrypt('test-secret'),
-            'two_factor_confirmed_at' => now(),
-        ]);
-
-        Auth::guard('admin')->login($admin);
-
-        // /jabali-admin redirects to /jabali-admin/dashboard — follow the redirect
-        $response = $this->get('/jabali-admin');
-
-        // Should NOT redirect to 2FA setup
-        $this->assertStringNotContainsString('two-factor-setup', $response->headers->get('Location', ''));
-    }
-
-    public function test_regular_user_not_forced_to_setup_2fa(): void
-    {
-        $user = User::factory()->create([
-            'email' => 'user@example.com',
-            'password' => 'password',
-            'two_factor_secret' => null,
-        ]);
-
-        Auth::guard('web')->login($user);
-
-        $response = $this->get('/jabali-panel');
-
-        // Should not redirect to 2FA setup — 2FA is optional for regular users
-        $response->assertOk();
     }
 
     public function test_account_lockout_expires_after_cooldown(): void
