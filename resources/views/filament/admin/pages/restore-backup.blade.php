@@ -18,80 +18,18 @@
         @endif
     </x-filament::section>
 
-    {{-- User selector --}}
+    {{-- Restore options form --}}
     <x-filament::section>
-        <x-slot name="heading">{{ __('User to Restore') }}</x-slot>
-        <div class="max-w-md">
-            <select wire:model.live="restoreUsername" aria-label="{{ __('User to Restore') }}" class="w-full rounded-lg border-gray-300 bg-white text-gray-950 shadow-sm transition duration-75 focus:border-primary-500 focus:ring-1 focus:ring-inset focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white dark:[color-scheme:dark]">
-                <option value="">{{ __('Select a user...') }}</option>
-                @foreach($this->getUsers() as $value => $label)
-                    <option value="{{ $value }}">{{ $label }}</option>
-                @endforeach
-            </select>
-        </div>
+        <x-slot name="heading">{{ $this->isIncremental() ? __('Restore Options') : __('User to Restore') }}</x-slot>
+        @if($this->isIncremental())
+            <x-slot name="description">{{ __('Select what to restore from this incremental backup.') }}</x-slot>
+        @endif
+
+        {{ $this->restoreOptionsForm }}
     </x-filament::section>
 
     @if($restoreUsername)
-        @if($this->isIncremental())
-            {{-- Incremental backup: granular restore options --}}
-            <x-filament::section>
-                <x-slot name="heading">{{ __('Restore Options') }}</x-slot>
-                <x-slot name="description">{{ __('Select what to restore from this incremental backup.') }}</x-slot>
-
-                <div class="space-y-4">
-                    {{-- Website Files --}}
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreFiles" class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                        <span class="font-medium">{{ __('Website Files') }}</span>
-                    </label>
-
-                    @if($restoreFiles && $restoreUsername !== '__all__')
-                        <div class="ml-8 space-y-3">
-                            <div class="flex gap-4">
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" wire:model.live="filesRestoreMode" value="domains" class="border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                                    {{ __('Full Domains') }}
-                                </label>
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" wire:model.live="filesRestoreMode" value="files" class="border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                                    {{ __('Specific Files / Folders') }}
-                                </label>
-                            </div>
-                        </div>
-                    @endif
-
-                    {{-- Databases --}}
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreDatabases" class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                        <span class="font-medium">{{ __('Databases') }}</span>
-                    </label>
-
-                    {{-- MySQL Users --}}
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreMysqlUsers" class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                        <span class="font-medium">{{ __('MySQL Users') }}</span>
-                    </label>
-
-                    {{-- Mailboxes --}}
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreMailboxes" class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                        <span class="font-medium">{{ __('Mailboxes') }}</span>
-                    </label>
-
-                    {{-- SSL --}}
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreSsl" class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                        <span class="font-medium">{{ __('SSL Certificates') }}</span>
-                    </label>
-
-                    {{-- DNS --}}
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreDns" class="rounded border-gray-300 text-primary-600 shadow-sm focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:checked:bg-primary-500">
-                        <span class="font-medium">{{ __('DNS Zones') }}</span>
-                    </label>
-                </div>
-            </x-filament::section>
-        @else
+        @if(!$this->isIncremental())
             {{-- Full (tar.gz) backup: restore everything --}}
             <x-filament::section>
                 <x-slot name="heading">{{ __('Full Backup Restore') }}</x-slot>

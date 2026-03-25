@@ -16,11 +16,14 @@ use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
@@ -112,6 +115,62 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
         }
 
         return ($backup->metadata['backup_type'] ?? 'full') === 'incremental';
+    }
+
+    public function restoreOptionsForm(Schema $schema): Schema
+    {
+        return $schema
+            ->schema([
+                Select::make('restoreUsername')
+                    ->label(__('User to Restore'))
+                    ->options(fn (): array => $this->getUsers())
+                    ->placeholder(__('Select a user...'))
+                    ->searchable()
+                    ->live()
+                    ->columnSpanFull(),
+
+                Checkbox::make('restoreFiles')
+                    ->label(__('Website Files'))
+                    ->live()
+                    ->visible(fn (): bool => filled($this->restoreUsername) && $this->isIncremental()),
+
+                Radio::make('filesRestoreMode')
+                    ->label(__('Files Restore Mode'))
+                    ->options([
+                        'domains' => __('Full Domains'),
+                        'files' => __('Specific Files / Folders'),
+                    ])
+                    ->inline()
+                    ->visible(fn (): bool => $this->restoreFiles && $this->restoreUsername !== '__all__' && $this->isIncremental())
+                    ->live(),
+
+                Checkbox::make('restoreDatabases')
+                    ->label(__('Databases'))
+                    ->visible(fn (): bool => filled($this->restoreUsername) && $this->isIncremental()),
+
+                Checkbox::make('restoreMysqlUsers')
+                    ->label(__('MySQL Users'))
+                    ->visible(fn (): bool => filled($this->restoreUsername) && $this->isIncremental()),
+
+                Checkbox::make('restoreMailboxes')
+                    ->label(__('Mailboxes'))
+                    ->visible(fn (): bool => filled($this->restoreUsername) && $this->isIncremental()),
+
+                Checkbox::make('restoreSsl')
+                    ->label(__('SSL Certificates'))
+                    ->visible(fn (): bool => filled($this->restoreUsername) && $this->isIncremental()),
+
+                Checkbox::make('restoreDns')
+                    ->label(__('DNS Zones'))
+                    ->visible(fn (): bool => filled($this->restoreUsername) && $this->isIncremental()),
+            ]);
+    }
+
+    protected function getForms(): array
+    {
+        return [
+            'restoreOptionsForm',
+        ];
     }
 
     protected function getUsers(): array
