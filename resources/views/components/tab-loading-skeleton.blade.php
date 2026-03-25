@@ -29,7 +29,7 @@ document.addEventListener('livewire:init', () => {
         }
         skeleton = document.createElement('div');
         skeleton.setAttribute('data-tab-skeleton', '');
-        skeleton.style.cssText = 'padding:2rem 0;display:none;flex-direction:column;gap:0.75rem;';
+        skeleton.style.cssText = 'padding:2rem 1.5rem;display:none;flex-direction:column;gap:0.75rem;';
         skeleton.appendChild(createSkeletonBar('75%'));
         skeleton.appendChild(createSkeletonBar('100%'));
         skeleton.appendChild(createSkeletonBar('66%'));
