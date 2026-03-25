@@ -125,4 +125,51 @@ class UserCommandTest extends TestCase
         $user = User::where('username', 'regular')->first();
         $this->assertFalse((bool) $user->is_admin);
     }
+
+    public function test_user_show_displays_user_details(): void
+    {
+        User::factory()->create(['username' => 'showme', 'email' => 'show@example.com', 'is_admin' => false]);
+
+        $this->artisan('jabali:user:show', ['username' => 'showme'])
+            ->assertExitCode(0)
+            ->expectsOutputToContain('showme')
+            ->expectsOutputToContain('show@example.com');
+    }
+
+    public function test_user_show_not_found_returns_failure(): void
+    {
+        $this->artisan('jabali:user:show', ['username' => 'ghost'])
+            ->assertExitCode(1);
+    }
+
+    public function test_user_password_updates_password(): void
+    {
+        $agent = $this->createMock(AgentClientInterface::class);
+        $agent->method('send')->willReturn(['success' => true]);
+        $this->app->instance(AgentClientInterface::class, $agent);
+
+        User::factory()->create(['username' => 'pwuser', 'email' => 'pw@example.com']);
+
+        $this->artisan('jabali:user:password', ['username' => 'pwuser', '--password' => 'NewPass1word'])
+            ->assertExitCode(0);
+    }
+
+    public function test_user_password_rejects_weak_password(): void
+    {
+        User::factory()->create(['username' => 'pwuser2', 'email' => 'pw2@example.com']);
+
+        $this->artisan('jabali:user:password', ['username' => 'pwuser2', '--password' => 'short'])
+            ->assertExitCode(1);
+    }
+
+    public function test_user_unsuspend_reactivates_user(): void
+    {
+        User::factory()->create(['username' => 'frozen', 'email' => 'frozen@example.com', 'is_active' => false]);
+
+        $this->artisan('jabali:user:unsuspend', ['username' => 'frozen'])
+            ->assertExitCode(0);
+
+        $user = User::where('username', 'frozen')->first();
+        $this->assertTrue((bool) $user->is_active);
+    }
 }

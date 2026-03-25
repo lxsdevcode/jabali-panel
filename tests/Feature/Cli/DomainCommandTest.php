@@ -118,4 +118,59 @@ class DomainCommandTest extends TestCase
         $this->artisan('jabali:domain:list', ['--json' => true])
             ->assertExitCode(0);
     }
+
+    public function test_domain_show_displays_details(): void
+    {
+        $user = User::factory()->create(['username' => 'testuser']);
+        Domain::create([
+            'user_id' => $user->id,
+            'domain' => 'show-me.com',
+            'is_active' => true,
+        ]);
+
+        $this->artisan('jabali:domain:show', ['domain' => 'show-me.com'])
+            ->assertExitCode(0)
+            ->expectsOutputToContain('show-me.com')
+            ->expectsOutputToContain('testuser');
+    }
+
+    public function test_domain_show_not_found_returns_failure(): void
+    {
+        $this->artisan('jabali:domain:show', ['domain' => 'ghost.com'])
+            ->assertExitCode(1);
+    }
+
+    public function test_domain_disable_updates_model(): void
+    {
+        $user = User::factory()->create(['username' => 'testuser']);
+        $domain = Domain::create([
+            'user_id' => $user->id,
+            'domain' => 'to-disable.com',
+            'is_active' => true,
+        ]);
+
+        $this->artisan('jabali:domain:disable', ['domain' => 'to-disable.com'])
+            ->assertExitCode(0);
+
+        $this->assertFalse($domain->fresh()->is_active);
+    }
+
+    public function test_domain_delete_with_yes_deletes_record(): void
+    {
+        $user = User::factory()->create(['username' => 'testuser']);
+        Domain::create([
+            'user_id' => $user->id,
+            'domain' => 'bye.com',
+            'is_active' => true,
+        ]);
+
+        $agent = $this->createMock(AgentClientInterface::class);
+        $agent->method('send')->willReturn(['success' => true]);
+        $this->app->instance(AgentClientInterface::class, $agent);
+
+        $this->artisan('jabali:domain:delete', ['domain' => 'bye.com', '--yes' => true])
+            ->assertExitCode(0);
+
+        $this->assertDatabaseMissing('domains', ['domain' => 'bye.com']);
+    }
 }
