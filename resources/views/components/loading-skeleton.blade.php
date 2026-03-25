@@ -1,30 +1,40 @@
-<div
-    id="loading-skeleton"
-    class="fixed inset-0 z-40 flex items-center justify-center bg-white/60 backdrop-blur-[1px] dark:bg-gray-900/60 transition-opacity duration-200"
-    style="display: none; opacity: 0;"
->
-    <div class="flex w-full max-w-2xl flex-col gap-3 px-8">
-        <div class="h-4 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-white/10"></div>
-        <div class="h-4 w-full animate-pulse rounded bg-gray-200 dark:bg-white/10"></div>
-        <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-white/10"></div>
-    </div>
+<div id="loading-bar" class="fixed top-0 inset-x-0 z-50 h-0.5" style="display: none;">
+    <div id="loading-bar-inner" class="h-full bg-primary-500 rounded-r-full" style="width: 0%; transition: width 0.3s ease;"></div>
 </div>
 
 <script>
 document.addEventListener('livewire:init', () => {
     let timer = null
-    const el = document.getElementById('loading-skeleton')
+    let interval = null
+    const bar = document.getElementById('loading-bar')
+    const inner = document.getElementById('loading-bar-inner')
 
     Livewire.hook('request', ({ respond, fail }) => {
+        let width = 15
+
         timer = setTimeout(() => {
-            el.style.display = 'flex'
-            requestAnimationFrame(() => { el.style.opacity = '1' })
-        }, 200)
+            inner.style.width = '0%'
+            bar.style.display = 'block'
+
+            requestAnimationFrame(() => {
+                inner.style.width = width + '%'
+            })
+
+            interval = setInterval(() => {
+                width += Math.random() * 10
+                if (width > 90) width = 90
+                inner.style.width = width + '%'
+            }, 300)
+        }, 100)
 
         const hide = () => {
             clearTimeout(timer)
-            el.style.opacity = '0'
-            setTimeout(() => { el.style.display = 'none' }, 200)
+            clearInterval(interval)
+            inner.style.width = '100%'
+            setTimeout(() => {
+                bar.style.display = 'none'
+                inner.style.width = '0%'
+            }, 300)
         }
 
         respond(hide)
