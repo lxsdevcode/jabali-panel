@@ -38,25 +38,6 @@ Optional flags:
 - `JABALI_FULL=1` to force all optional components
 - `--debug` to show full command output instead of spinner
 
-APT repository (recommended):
-
-```
-curl -fsSL https://deb.jabali-panel.com/jabali-panel.gpg | sudo gpg --dearmor -o /usr/share/keyrings/jabali-panel-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/jabali-panel-archive-keyring.gpg] https://deb.jabali-panel.com stable main" | sudo tee /etc/apt/sources.list.d/jabali-panel.list
-sudo apt update
-sudo apt install jabali-deps jabali-panel
-```
-
-Build packages locally:
-
-```
-./scripts/build-jabali-deps-deb.sh
-./scripts/build-jabali-panel-deb.sh
-sudo dpkg -i ./jabali-deps_<version>_all.deb
-sudo apt-get -f install -y
-sudo dpkg -i ./jabali-panel_<version>_all.deb
-```
-
 After install:
 
 - Admin panel: `https://your-host/jabali-admin`

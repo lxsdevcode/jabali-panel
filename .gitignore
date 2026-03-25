@@ -19,8 +19,6 @@ yarn-error.log
 /.vscode
 /.claude
 CLAUDE.md
-/jabali-panel_*.deb
-/jabali-deps_*.deb
 .git-credentials
 
 # Local repository configuration (do not commit)
