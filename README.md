@@ -38,6 +38,20 @@ Optional flags:
 - `JABALI_FULL=1` to force all optional components
 - `--debug` to show full command output instead of spinner
 
+If Jabali is already installed, the script will detect it and offer to re-install (uninstall + fresh install). Your `.env` and credentials are backed up to `/root/.jabali_reinstall_backup_<timestamp>/` before wiping.
+
+Uninstall:
+
+```
+curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh | sudo bash -s -- uninstall
+```
+
+Force uninstall (no confirmation prompts, keeps home directories):
+
+```
+curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh | sudo bash -s -- uninstall --force
+```
+
 After install:
 
 - Admin panel: `https://your-host/jabali-admin`
@@ -207,26 +221,30 @@ See [SECURITY.md](SECURITY.md) for the full security policy, architecture, and a
 - CSP, HSTS, and other security headers on all panel responses
 - Git deployment webhooks support signed payloads via `X-Jabali-Signature` / `X-Hub-Signature-256` (HMAC-SHA256)
 
-## Upgrades
+## Updates
+
+Update the panel (code, dependencies, database migrations, and infrastructure):
 
 ```
-cd /var/www/jabali
-php artisan jabali:upgrade
+jabali update
 ```
 
-Check for updates only:
+This pulls the latest code from GitHub, runs composer/npm, applies database migrations, rebuilds caches, and upgrades infrastructure (PHP config, nginx config, systemd services). Safe to run on a live server — the panel enters maintenance mode during the update.
+
+Force a full update even if already on the latest version:
 
 ```
-php artisan jabali:upgrade --check
+jabali update --force
 ```
 
 ## CLI
 
 ```
-jabali --help
+jabali --help            # Show available commands
+jabali update            # Update panel to latest version
 jabali backup create <user>
 jabali backup restore <path> --user=<user>
-jabali report
+jabali report            # Encrypted diagnostic report
 jabali cpanel analyze <file>
 jabali cpanel restore <file> <user>
 ```

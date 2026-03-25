@@ -2,6 +2,24 @@
 
 All notable changes to Jabali Panel will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **`jabali update` command** -- One-command panel update: pulls latest code, runs composer/npm, migrates database, rebuilds caches, and upgrades infrastructure (PHP, nginx, systemd configs). Use `--force` to re-run all steps even when already up to date.
+- **Granular backup restore** -- Selective restore from rsync incremental snapshots. Users can restore individual domains, databases, MySQL users, mailboxes, DNS zones, or SSL certificates instead of full account restores. Includes file browser, conflict resolution (overwrite/merge/skip/rename), and optional safety backup. New user-facing Restore page at Backups > Restore.
+- **Install script re-install detection** -- Running `install.sh` on an existing installation now detects it and offers to re-install. Backs up `.env` and credentials to `/root/.jabali_reinstall_backup_<timestamp>/` before wiping.
+- **Install script `upgrade` command** -- `install.sh upgrade` re-runs safe infrastructure config functions (PHP, nginx, systemd, cron, logrotate) without touching database, Redis, or firewall. Called automatically by `jabali update`.
+
+### Fixed
+
+- **Silent service failures during install** -- PHP-FPM start failure is now fatal instead of silently ignored. Cron, nginx, Postfix, and Dovecot reload failures now emit warnings.
+- **Uninstall home directory safety** -- The home directory deletion prompt now always appears, even in `--force` mode. Defaults to "no" when piped via `curl | bash`.
+
+### Removed
+
+- **Debian package** -- Removed `packaging/` directory and deb build scripts. Installation is now exclusively via `curl | bash` with `install.sh`.
+
 ## [0.9-rc124] - 2026-03-17
 
 ### Added
