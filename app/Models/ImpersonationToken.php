@@ -71,12 +71,9 @@ class ImpersonationToken extends Model
             return null;
         }
 
-        // Skip IP check when behind a reverse proxy (e.g., Cloudflare)
-        // where the edge IP changes between requests. The token is already
-        // single-use and expires in 5 minutes.
-        $request = request();
-        $behindProxy = ! empty($request->getTrustedProxies());
-        if (! $behindProxy && $ipAddress && $record->ip_address && $record->ip_address !== $ipAddress) {
+        // Always validate IP — request()->ip() already returns the forwarded
+        // client IP when behind a trusted proxy, so there's no reason to skip
+        if ($ipAddress && $record->ip_address && $record->ip_address !== $ipAddress) {
             return null;
         }
 

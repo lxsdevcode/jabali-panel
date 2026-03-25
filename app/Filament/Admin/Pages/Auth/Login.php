@@ -10,6 +10,7 @@ use Filament\Auth\Pages\Login as BaseLogin;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\HtmlString;
 use SensitiveParameter;
@@ -32,18 +33,45 @@ class Login extends BaseLogin
     {
         $data = $this->form->getState();
 
+        $login = mb_strtolower($data['email']);
+        $lockoutKey = 'login_lockout:'.sha1($login);
+        $attemptsKey = 'login_attempts:'.sha1($login);
+
+        // Check if account is locked out
+        if (Cache::has($lockoutKey)) {
+            $this->throwFailureValidationException();
+        }
+
         // Check credentials without logging in — support email or username
-        $login = $data['email'];
-        $user = str_contains($login, '@')
-            ? User::where('email', $login)->first()
-            : User::where('username', $login)->first();
+        $user = str_contains($data['email'], '@')
+            ? User::where('email', $data['email'])->first()
+            : User::where('username', $data['email'])->first();
 
         if (! $user) {
             // Constant-time: prevent user enumeration via timing
             Hash::check($data['password'], '$2y$12$VG9EWpdymMd.phHpJLWwauaoYk0mufInpXAzNUqZcMXm/WszkDs42');
         }
 
-        if ($user && Hash::check($data['password'], $user->password)) {
+        $credentialsValid = $user && Hash::check($data['password'], $user->password);
+
+        if (! $credentialsValid) {
+            // Track failed attempts and lock after 10
+            $attempts = (int) Cache::get($attemptsKey, 0) + 1;
+            Cache::put($attemptsKey, $attempts, now()->addMinutes(15));
+
+            if ($attempts >= 10) {
+                Cache::put($lockoutKey, true, now()->addMinutes(15));
+                Cache::forget($attemptsKey);
+            }
+        }
+
+        if ($credentialsValid) {
+            // Clear failed attempts on successful login
+            Cache::forget($attemptsKey);
+            Cache::forget($lockoutKey);
+        }
+
+        if ($credentialsValid) {
             if (! $user->is_admin) {
                 $this->redirect(route('filament.jabali.pages.dashboard'));
 

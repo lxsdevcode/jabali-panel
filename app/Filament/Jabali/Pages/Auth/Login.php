@@ -14,6 +14,8 @@ use Filament\Models\Contracts\FilamentUser;
 use Filament\Schemas\Components\Component;
 use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\HtmlString;
 use SensitiveParameter;
 
@@ -46,6 +48,15 @@ class Login extends BaseLogin
 
         $data = $this->form->getState();
 
+        $login = mb_strtolower($data['email']);
+        $lockoutKey = 'login_lockout:'.sha1($login);
+        $attemptsKey = 'login_attempts:'.sha1($login);
+
+        // Check if account is locked out
+        if (Cache::has($lockoutKey)) {
+            $this->throwFailureValidationException();
+        }
+
         /** @var Guard $authGuard */
         $authGuard = Auth::guard($panel->getAuthGuard());
         $authProvider = $authGuard->getProvider();
@@ -53,12 +64,30 @@ class Login extends BaseLogin
 
         $user = $authProvider->retrieveByCredentials($credentials);
 
+        if (! $user) {
+            // Constant-time: prevent user enumeration via timing
+            Hash::check($credentials['password'], '$2y$12$VG9EWpdymMd.phHpJLWwauaoYk0mufInpXAzNUqZcMXm/WszkDs42');
+        }
+
         if ((! $user) || (! $authProvider->validateCredentials($user, $credentials))) {
             $this->userUndertakingMultiFactorAuthentication = null;
+
+            // Track failed attempts and lock after 10
+            $attempts = (int) Cache::get($attemptsKey, 0) + 1;
+            Cache::put($attemptsKey, $attempts, now()->addMinutes(15));
+
+            if ($attempts >= 10) {
+                Cache::put($lockoutKey, true, now()->addMinutes(15));
+                Cache::forget($attemptsKey);
+            }
 
             $this->fireFailedEvent($authGuard, $user, $credentials);
             $this->throwFailureValidationException();
         }
+
+        // Clear failed attempts on successful login
+        Cache::forget($attemptsKey);
+        Cache::forget($lockoutKey);
 
         if (
             filled($this->userUndertakingMultiFactorAuthentication) &&
