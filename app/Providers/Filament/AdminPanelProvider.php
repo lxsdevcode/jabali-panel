@@ -57,6 +57,10 @@ $this->getRtlScript()
                 fn () => request()->routeIs('filament.admin.auth.login') ? $this->getLoginWordCloud() : ''
             )
             ->renderHook(
+                PanelsRenderHook::SCRIPTS_AFTER,
+                fn () => view('components.tab-skeleton-script'),
+            )
+            ->renderHook(
                 PanelsRenderHook::FOOTER,
                 fn () => view('vendor.filament-panels.components.footer')
             )
