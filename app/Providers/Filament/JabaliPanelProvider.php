@@ -128,12 +128,12 @@ $this->getRtlScript()
         $userUsername = e($currentUser->username);
 
         return <<<HTML
-        <div style="background: linear-gradient(90deg, #f59e0b, #d97706); color: white; padding: 8px 16px; text-align: center; font-size: 13px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 12px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <div class="bg-warning-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             <span>You are logged in as: <strong>{$userName}</strong> ({$userUsername})</span>
-            <form method="POST" action="{$stopUrl}" style="display: inline; margin: 0;">
+            <form method="POST" action="{$stopUrl}" class="inline m-0">
                 <input type="hidden" name="_token" value="{$csrfToken}">
-                <button type="submit" style="background: rgba(255,255,255,0.2); color: white; padding: 4px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; margin-left: 8px;">
+                <button type="submit" class="bg-white/20 text-white px-3 py-1 rounded text-xs cursor-pointer border-0 ms-2 hover:bg-white/30">
                     Return to Admin
                 </button>
             </form>

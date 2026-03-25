@@ -22,7 +22,7 @@
     <x-filament::section>
         <x-slot name="heading">{{ __('User to Restore') }}</x-slot>
         <div class="max-w-md">
-            <select wire:model.live="restoreUsername" class="fi-select-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+            <select wire:model.live="restoreUsername" aria-label="{{ __('User to Restore') }}" class="fi-select-input w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
                 <option value="">{{ __('Select a user...') }}</option>
                 @foreach($this->getUsers() as $value => $label)
                     <option value="{{ $value }}">{{ $label }}</option>
@@ -40,10 +40,10 @@
 
                 <div class="space-y-4">
                     {{-- Website Files --}}
-                    <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model.live="restoreFiles" class="fi-checkbox-input rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700">
                         <span class="font-medium">{{ __('Website Files') }}</span>
-                    </div>
+                    </label>
 
                     @if($restoreFiles && $restoreUsername !== '__all__')
                         <div class="ml-8 space-y-3">
@@ -61,34 +61,34 @@
                     @endif
 
                     {{-- Databases --}}
-                    <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model.live="restoreDatabases" class="fi-checkbox-input rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700">
                         <span class="font-medium">{{ __('Databases') }}</span>
-                    </div>
+                    </label>
 
                     {{-- MySQL Users --}}
-                    <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model.live="restoreMysqlUsers" class="fi-checkbox-input rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700">
                         <span class="font-medium">{{ __('MySQL Users') }}</span>
-                    </div>
+                    </label>
 
                     {{-- Mailboxes --}}
-                    <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model.live="restoreMailboxes" class="fi-checkbox-input rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700">
                         <span class="font-medium">{{ __('Mailboxes') }}</span>
-                    </div>
+                    </label>
 
                     {{-- SSL --}}
-                    <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model.live="restoreSsl" class="fi-checkbox-input rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700">
                         <span class="font-medium">{{ __('SSL Certificates') }}</span>
-                    </div>
+                    </label>
 
                     {{-- DNS --}}
-                    <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model.live="restoreDns" class="fi-checkbox-input rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700">
                         <span class="font-medium">{{ __('DNS Zones') }}</span>
-                    </div>
+                    </label>
                 </div>
             </x-filament::section>
         @else
@@ -109,7 +109,7 @@
                 <x-slot name="heading">{{ __('Browse Snapshot') }}</x-slot>
 
                 {{-- Breadcrumbs --}}
-                <nav class="flex items-center gap-1 text-sm mb-3">
+                <nav class="flex items-center gap-1 text-sm mb-3" aria-label="{{ __('Snapshot path') }}">
                     @foreach($this->getBreadcrumbs() as $path => $label)
                         @if(!$loop->last)
                             <button wire:click="navigateTo('{{ $path }}')" class="fi-link fi-link-size-sm text-primary-600 dark:text-primary-400 hover:underline">
@@ -120,7 +120,7 @@
                             </button>
                             <x-filament::icon icon="heroicon-o-chevron-right" class="h-3 w-3 text-gray-400" />
                         @else
-                            <span class="text-gray-500 dark:text-gray-400">{{ $label }}</span>
+                            <span class="text-gray-500 dark:text-gray-400" aria-current="location">{{ $label }}</span>
                         @endif
                     @endforeach
                 </nav>

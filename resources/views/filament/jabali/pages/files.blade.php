@@ -61,7 +61,7 @@
     </x-filament::section>
 
     {{-- Breadcrumbs --}}
-    <nav class="fi-breadcrumbs mb-4">
+    <nav class="fi-breadcrumbs mb-4" aria-label="{{ __('File path') }}">
         <ol class="flex flex-wrap items-center gap-x-2">
             @foreach($this->getPathBreadcrumbs() as $crumb)
                 <li class="flex items-center gap-x-2">
@@ -74,7 +74,7 @@
                     @endif
 
                     @if($loop->last)
-                        <span class="fi-section-header-description">
+                        <span class="fi-section-header-description" aria-current="location">
                             {{ $crumb['name'] }}
                         </span>
                     @else

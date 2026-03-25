@@ -7,10 +7,10 @@
         @php
             $ok = $item['ok'] ?? false;
             $icon = $ok ? 'heroicon-o-check-circle' : 'heroicon-o-exclamation-triangle';
-            $iconColor = $ok ? '#22c55e' : '#f59e0b';
+            $colorClass = $ok ? 'text-success-500' : 'text-warning-500';
         @endphp
         <div class="flex items-start gap-3">
-            <x-filament::icon :icon="$icon" style="color: {{ $iconColor }};" />
+            <x-filament::icon :icon="$icon" class="{{ $colorClass }}" />
             <div>
                 <h3 class="fi-section-header-heading">{{ $item['title'] }}</h3>
                 <p class="fi-section-header-description">{{ $item['description'] }}</p>

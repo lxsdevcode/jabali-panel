@@ -204,7 +204,7 @@ $this->getRtlScript()
                 z-index: 10;
             }
         </style>
-        <div class="word-pattern-container">{$rows}</div>
+        <div class="word-pattern-container" aria-hidden="true">{$rows}</div>
         HTML;
     }
 }
