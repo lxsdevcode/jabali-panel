@@ -56,6 +56,7 @@ abstract class JabaliCommand extends Command
 
         if ($result->failed()) {
             $this->formatter()->error($result->error ?? 'Agent call failed');
+
             return null;
         }
 

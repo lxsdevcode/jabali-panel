@@ -11,7 +11,7 @@ class CliRouterTest extends TestCase
 {
     public function test_noun_verb_maps_to_artisan_command(): void
     {
-        $router = new CliRouter();
+        $router = new CliRouter;
 
         $result = $router->resolve(['user', 'create']);
 
@@ -21,7 +21,7 @@ class CliRouterTest extends TestCase
 
     public function test_noun_verb_with_flags_passes_arguments(): void
     {
-        $router = new CliRouter();
+        $router = new CliRouter;
 
         $result = $router->resolve(['user', 'create', '--name=Alice', '--email=alice@example.com']);
 
@@ -32,7 +32,7 @@ class CliRouterTest extends TestCase
 
     public function test_help_flag_returns_help_command(): void
     {
-        $router = new CliRouter();
+        $router = new CliRouter;
 
         $result = $router->resolve(['--help']);
 
@@ -41,7 +41,7 @@ class CliRouterTest extends TestCase
 
     public function test_empty_args_returns_help_command(): void
     {
-        $router = new CliRouter();
+        $router = new CliRouter;
 
         $result = $router->resolve([]);
 
@@ -50,7 +50,7 @@ class CliRouterTest extends TestCase
 
     public function test_noun_only_returns_exit_code_2(): void
     {
-        $router = new CliRouter();
+        $router = new CliRouter;
 
         $result = $router->resolve(['user']);
 
@@ -59,7 +59,7 @@ class CliRouterTest extends TestCase
 
     public function test_space_separated_flag_value(): void
     {
-        $router = new CliRouter();
+        $router = new CliRouter;
 
         $result = $router->resolve(['user', 'create', '--name', 'Alice']);
 

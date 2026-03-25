@@ -11,7 +11,7 @@ class OutputFormatterTest extends TestCase
 {
     public function test_table_produces_columnar_output_with_headers(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'normal');
 
         $formatter->table(
@@ -33,7 +33,7 @@ class OutputFormatterTest extends TestCase
 
     public function test_json_produces_valid_json(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'json');
 
         $formatter->json(['name' => 'Alice', 'email' => 'alice@example.com']);
@@ -48,7 +48,7 @@ class OutputFormatterTest extends TestCase
 
     public function test_quiet_mode_suppresses_table_output(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'quiet');
 
         $formatter->table(
@@ -61,7 +61,7 @@ class OutputFormatterTest extends TestCase
 
     public function test_quiet_mode_suppresses_json_output(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'quiet');
 
         $formatter->json(['name' => 'Alice']);
@@ -71,7 +71,7 @@ class OutputFormatterTest extends TestCase
 
     public function test_quiet_mode_suppresses_info_output(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'quiet');
 
         $formatter->info('Hello');
@@ -82,8 +82,8 @@ class OutputFormatterTest extends TestCase
 
     public function test_error_outputs_even_in_quiet_mode(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
-        $errorOutput = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
+        $errorOutput = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'quiet', $errorOutput);
 
         $formatter->error('Something broke');
@@ -94,8 +94,8 @@ class OutputFormatterTest extends TestCase
 
     public function test_error_outputs_in_normal_mode(): void
     {
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
-        $errorOutput = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new \Symfony\Component\Console\Output\BufferedOutput;
+        $errorOutput = new \Symfony\Component\Console\Output\BufferedOutput;
         $formatter = new OutputFormatter($output, 'normal', $errorOutput);
 
         $formatter->error('Something broke');

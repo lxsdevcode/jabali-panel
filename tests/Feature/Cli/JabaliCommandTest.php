@@ -15,6 +15,7 @@ use Tests\TestCase;
 class StubCommand extends JabaliCommand
 {
     protected $signature = 'jabali:stub:list {--json} {--yes}';
+
     protected $description = 'Stub command for testing';
 
     protected function execute(\Symfony\Component\Console\Input\InputInterface $input, \Symfony\Component\Console\Output\OutputInterface $output): int
@@ -45,6 +46,7 @@ class StubCommand extends JabaliCommand
 class StubDeleteCommand extends JabaliCommand
 {
     protected $signature = 'jabali:stub:delete {--json} {--yes}';
+
     protected $description = 'Stub delete command for testing';
 
     protected function execute(\Symfony\Component\Console\Input\InputInterface $input, \Symfony\Component\Console\Output\OutputInterface $output): int
@@ -66,7 +68,7 @@ class JabaliCommandTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->app[\Illuminate\Contracts\Console\Kernel::class]->registerCommand(new StubCommand());
+        $this->app[\Illuminate\Contracts\Console\Kernel::class]->registerCommand(new StubCommand);
     }
 
     public function test_json_flag_produces_json_output(): void
@@ -110,7 +112,7 @@ class JabaliCommandTest extends TestCase
         $this->app->instance(AgentClientInterface::class, $agent);
 
         // Register a command that requires confirmation
-        $this->app[\Illuminate\Contracts\Console\Kernel::class]->registerCommand(new StubDeleteCommand());
+        $this->app[\Illuminate\Contracts\Console\Kernel::class]->registerCommand(new StubDeleteCommand);
 
         // With --yes, should not prompt and should succeed
         $this->artisan('jabali:stub:delete', ['--yes' => true])
