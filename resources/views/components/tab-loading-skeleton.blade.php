@@ -3,29 +3,37 @@
 {{ $slot }}
 
 @once
+<style>
+@keyframes tab-skeleton-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+</style>
 <script>
 document.addEventListener('livewire:init', () => {
+    const isDark = () => document.documentElement.classList.contains('dark');
+
     function createSkeletonBar(widthPercent) {
         const bar = document.createElement('div');
-        bar.style.height = '1rem';
-        bar.style.width = widthPercent;
-        bar.style.borderRadius = '0.25rem';
-        bar.className = 'animate-pulse bg-gray-200 dark:bg-white/10';
+        bar.style.cssText = `height:1rem;width:${widthPercent};border-radius:0.25rem;animation:tab-skeleton-pulse 2s ease-in-out infinite;background:${isDark() ? 'rgba(255,255,255,0.1)' : '#e5e7eb'};`;
         return bar;
     }
 
     function getOrCreateSkeleton(container) {
         let skeleton = container.querySelector('[data-tab-skeleton]');
-        if (!skeleton) {
-            skeleton = document.createElement('div');
-            skeleton.setAttribute('data-tab-skeleton', '');
-            skeleton.style.cssText = 'padding:2rem 0;display:none;flex-direction:column;gap:0.75rem;';
-            skeleton.appendChild(createSkeletonBar('75%'));
-            skeleton.appendChild(createSkeletonBar('100%'));
-            skeleton.appendChild(createSkeletonBar('66%'));
-            skeleton.appendChild(createSkeletonBar('83%'));
-            container.appendChild(skeleton);
+        if (skeleton) {
+            skeleton.querySelectorAll('div').forEach(bar => {
+                bar.style.background = isDark() ? 'rgba(255,255,255,0.1)' : '#e5e7eb';
+            });
+            return skeleton;
         }
+        skeleton = document.createElement('div');
+        skeleton.setAttribute('data-tab-skeleton', '');
+        skeleton.style.cssText = 'padding:2rem 0;display:none;flex-direction:column;gap:0.75rem;';
+        skeleton.appendChild(createSkeletonBar('75%'));
+        skeleton.appendChild(createSkeletonBar('100%'));
+        skeleton.appendChild(createSkeletonBar('66%'));
+        skeleton.appendChild(createSkeletonBar('83%'));
         return skeleton;
     }
 
@@ -37,18 +45,18 @@ document.addEventListener('livewire:init', () => {
             const tabBar = container.querySelector('.fi-tabs');
             if (!tabBar) return;
 
-            // Fade out current content
+            // Hide all content after the tab bar
             let sibling = tabBar.nextElementSibling;
             while (sibling) {
                 if (!sibling.hasAttribute('data-tab-skeleton')) {
-                    sibling.style.opacity = '0.15';
-                    sibling.style.pointerEvents = 'none';
+                    sibling.style.display = 'none';
                 }
                 sibling = sibling.nextElementSibling;
             }
 
-            // Show skeleton
+            // Insert skeleton right after tab bar
             const skeleton = getOrCreateSkeleton(container);
+            tabBar.after(skeleton);
             skeleton.style.display = 'flex';
         });
 
@@ -57,12 +65,11 @@ document.addEventListener('livewire:init', () => {
                 const tabBar = container.querySelector('.fi-tabs');
                 if (!tabBar) return;
 
-                // Restore content
+                // Show all content
                 let sibling = tabBar.nextElementSibling;
                 while (sibling) {
                     if (!sibling.hasAttribute('data-tab-skeleton')) {
-                        sibling.style.opacity = '';
-                        sibling.style.pointerEvents = '';
+                        sibling.style.display = '';
                     }
                     sibling = sibling.nextElementSibling;
                 }
