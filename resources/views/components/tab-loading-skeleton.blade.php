@@ -1,11 +1,7 @@
 @props(['target' => 'activeTab'])
 
 <div x-data="{ loading: false }" x-init="
-    const wireId = $wire.__instance?.id;
-    if (!wireId) return;
-
-    Livewire.hook('commit', ({ component, commit, succeed }) => {
-        if (component.id !== wireId) return;
+    Livewire.hook('commit', ({ commit, succeed }) => {
         if (!commit.updates || !commit.updates.hasOwnProperty('{{ $target }}')) return;
         loading = true;
         succeed(() => { loading = false; });
