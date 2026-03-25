@@ -39,7 +39,9 @@ class ServiceStatusCommand extends JabaliCommand
             return Command::SUCCESS;
         }
 
-        $active = ($status['is_active'] ?? false) ? 'Running' : 'Stopped';
+        $active = ($status['is_active'] ?? false)
+            ? '<fg=green>Running</>'
+            : '<fg=red>Stopped</>';
         $enabled = ($status['is_enabled'] ?? false) ? 'Enabled' : 'Disabled';
         $this->formatter()->info("{$service}: {$active} (Boot: {$enabled})");
 

@@ -40,10 +40,12 @@ class ServiceCommand extends JabaliCommand
 
         $rows = [];
         foreach ($data as $name => $status) {
+            $active = ($status['is_active'] ?? false);
+            $enabled = ($status['is_enabled'] ?? false);
             $rows[] = [
                 $name,
-                ($status['is_active'] ?? false) ? 'Running' : 'Stopped',
-                ($status['is_enabled'] ?? false) ? 'Enabled' : 'Disabled',
+                $active ? '<fg=green>Running</>' : '<fg=red>Stopped</>',
+                $enabled ? '<fg=green>Enabled</>' : '<fg=gray>Disabled</>',
             ];
         }
 
