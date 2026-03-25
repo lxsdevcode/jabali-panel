@@ -4403,8 +4403,18 @@ print_completion() {
     fi
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}║${NC}  CLI Usage: ${CYAN}jabali --help${NC}                                   ${GREEN}║${NC}"
+    echo -e "${GREEN}║${NC}  Update:    ${CYAN}jabali update${NC}                                    ${GREEN}║${NC}"
     echo -e "${GREEN}║${NC}  Credentials: ${CYAN}/root/.jabali_db_credentials${NC}                  ${GREEN}║${NC}"
     echo -e "${GREEN}║                                                            ║${NC}"
+
+    # Show previous .env backup location if this was a re-install
+    local latest_backup=$(ls -td /root/.jabali_reinstall_backup_* 2>/dev/null | head -1)
+    if [[ -n "$latest_backup" ]]; then
+        echo -e "${GREEN}║${NC}  ${YELLOW}Previous .env backed up to:${NC}                                ${GREEN}║${NC}"
+        printf "${GREEN}║${NC}  ${CYAN}%-56s${NC} ${GREEN}║${NC}\n" "$latest_backup"
+        echo -e "${GREEN}║                                                            ║${NC}"
+    fi
+
     echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -4852,6 +4862,14 @@ main() {
 
         case "$reinstall_choice" in
             1)
+                # Back up .env and credentials before wiping
+                local backup_dir="/root/.jabali_reinstall_backup_$(date +%Y%m%d_%H%M%S)"
+                mkdir -p "$backup_dir"
+                cp /var/www/jabali/.env "$backup_dir/.env" 2>/dev/null || true
+                cp /root/.jabali_db_credentials "$backup_dir/db_credentials" 2>/dev/null || true
+                cp /root/.jabali_redis_credentials "$backup_dir/redis_credentials" 2>/dev/null || true
+                info "Backed up .env and credentials to $backup_dir"
+
                 info "Uninstalling existing installation before re-install..."
                 uninstall --force --keep-packages
                 info "Previous installation removed. Starting fresh install..."
