@@ -57,8 +57,8 @@ $this->getRtlScript()
                 fn () => request()->routeIs('filament.admin.auth.login') ? $this->getLoginWordCloud() : ''
             )
             ->renderHook(
-                PanelsRenderHook::CONTENT_END,
-                fn () => '<div wire:loading.delay class="fixed inset-0 z-40 bg-white/60 dark:bg-gray-900/60 flex items-center justify-center backdrop-blur-[1px] transition-opacity"><div class="flex flex-col gap-3 w-full max-w-2xl px-8"><div class="h-4 w-3/4 rounded bg-gray-200 dark:bg-white/10 animate-pulse"></div><div class="h-4 w-full rounded bg-gray-200 dark:bg-white/10 animate-pulse"></div><div class="h-4 w-2/3 rounded bg-gray-200 dark:bg-white/10 animate-pulse"></div></div></div>'
+                PanelsRenderHook::BODY_END,
+                fn () => view('components.loading-skeleton'),
             )
             ->renderHook(
                 PanelsRenderHook::FOOTER,
