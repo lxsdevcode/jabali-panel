@@ -59,10 +59,6 @@ $this->getRtlScript()
                 fn () => (request()->routeIs('filament.jabali.auth.login') ? $this->getLoginWordCloud() : '').$this->renderImpersonationNotice()
             )
             ->renderHook(
-                PanelsRenderHook::TOPBAR_BEFORE,
-                fn () => view('components.loading-skeleton'),
-            )
-            ->renderHook(
                 PanelsRenderHook::FOOTER,
                 fn () => view('vendor.filament-panels.components.footer')
             )
