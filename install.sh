@@ -4834,6 +4834,36 @@ main() {
     check_root
     check_os
 
+    # Detect existing installation
+    if [[ -d "/var/www/jabali" ]] && [[ -f "/var/www/jabali/.env" ]]; then
+        local installed_version=""
+        if [[ -f "/var/www/jabali/VERSION" ]]; then
+            installed_version=$(sed -n 's/^VERSION=//p' /var/www/jabali/VERSION)
+        fi
+
+        echo ""
+        echo -e "${YELLOW}${BOLD}Jabali Panel is already installed${installed_version:+ (v$installed_version)}.${NC}"
+        echo ""
+        echo "Options:"
+        echo "  1) Re-install (uninstall + fresh install)"
+        echo "  2) Cancel"
+        echo ""
+        read -p "Choose [1-2]: " reinstall_choice < /dev/tty
+
+        case "$reinstall_choice" in
+            1)
+                info "Uninstalling existing installation before re-install..."
+                uninstall --force --keep-packages
+                info "Previous installation removed. Starting fresh install..."
+                echo ""
+                ;;
+            *)
+                info "Installation cancelled"
+                exit 0
+                ;;
+        esac
+    fi
+
     local queue_was_active=false
     if systemctl is-active --quiet jabali-queue; then
         queue_was_active=true
