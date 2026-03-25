@@ -22,7 +22,7 @@
     <x-filament::section>
         <x-slot name="heading">{{ __('User to Restore') }}</x-slot>
         <div class="max-w-md">
-            <select wire:model.live="restoreUsername" aria-label="{{ __('User to Restore') }}" class="fi-select-input w-full rounded-lg border-gray-300 bg-white text-gray-950 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white">
+            <select wire:model.live="restoreUsername" aria-label="{{ __('User to Restore') }}" class="fi-select-input w-full">
                 <option value="">{{ __('Select a user...') }}</option>
                 @foreach($this->getUsers() as $value => $label)
                     <option value="{{ $value }}">{{ $label }}</option>
@@ -41,7 +41,7 @@
                 <div class="space-y-4">
                     {{-- Website Files --}}
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreFiles" class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <input type="checkbox" wire:model.live="restoreFiles" class="fi-checkbox-input rounded">
                         <span class="font-medium">{{ __('Website Files') }}</span>
                     </label>
 
@@ -49,11 +49,11 @@
                         <div class="ml-8 space-y-3">
                             <div class="flex gap-4">
                                 <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" wire:model.live="filesRestoreMode" value="domains" class="fi-radio-input text-primary-600 border-gray-300 dark:border-white/10 dark:bg-white/5">
+                                    <input type="radio" wire:model.live="filesRestoreMode" value="domains" class="fi-radio-input">
                                     {{ __('Full Domains') }}
                                 </label>
                                 <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="radio" wire:model.live="filesRestoreMode" value="files" class="fi-radio-input text-primary-600 border-gray-300 dark:border-white/10 dark:bg-white/5">
+                                    <input type="radio" wire:model.live="filesRestoreMode" value="files" class="fi-radio-input">
                                     {{ __('Specific Files / Folders') }}
                                 </label>
                             </div>
@@ -62,31 +62,31 @@
 
                     {{-- Databases --}}
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreDatabases" class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <input type="checkbox" wire:model.live="restoreDatabases" class="fi-checkbox-input rounded">
                         <span class="font-medium">{{ __('Databases') }}</span>
                     </label>
 
                     {{-- MySQL Users --}}
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreMysqlUsers" class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <input type="checkbox" wire:model.live="restoreMysqlUsers" class="fi-checkbox-input rounded">
                         <span class="font-medium">{{ __('MySQL Users') }}</span>
                     </label>
 
                     {{-- Mailboxes --}}
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreMailboxes" class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <input type="checkbox" wire:model.live="restoreMailboxes" class="fi-checkbox-input rounded">
                         <span class="font-medium">{{ __('Mailboxes') }}</span>
                     </label>
 
                     {{-- SSL --}}
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreSsl" class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <input type="checkbox" wire:model.live="restoreSsl" class="fi-checkbox-input rounded">
                         <span class="font-medium">{{ __('SSL Certificates') }}</span>
                     </label>
 
                     {{-- DNS --}}
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" wire:model.live="restoreDns" class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <input type="checkbox" wire:model.live="restoreDns" class="fi-checkbox-input rounded">
                         <span class="font-medium">{{ __('DNS Zones') }}</span>
                     </label>
                 </div>
