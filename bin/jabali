@@ -51,11 +51,16 @@ $options = parseOptions(array_slice($args, 2));
 $artisanCommand = $command && $subcommand ? "jabali:{$command}:{$subcommand}" : null;
 if ($artisanCommand && array_key_exists($artisanCommand, \Illuminate\Support\Facades\Artisan::all())) {
     $artisanArgs = [];
+    $cmdDefinition = \Illuminate\Support\Facades\Artisan::all()[$artisanCommand]->getDefinition();
+    $positionalNames = array_keys($cmdDefinition->getArguments());
+
     foreach (parseOptions(array_slice($args, 2)) as $key => $value) {
         if ($key === '_args') {
-            // Map first positional arg to 'name' argument if the command accepts it
-            if (! empty($value)) {
-                $artisanArgs['name'] = $value[0];
+            // Map positional args to the command's declared argument names
+            foreach ($value as $i => $posValue) {
+                if (isset($positionalNames[$i])) {
+                    $artisanArgs[$positionalNames[$i]] = $posValue;
+                }
             }
 
             continue;
