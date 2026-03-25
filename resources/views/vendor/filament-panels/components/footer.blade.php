@@ -15,21 +15,21 @@
             <img
                 src="{{ asset('images/jabali_logo.svg') }}"
                 alt="{{ __('Jabali') }}"
-                class="h-8 w-8 opacity-80 dark:invert dark:brightness-200"
+                class="h-8 w-8 dark:invert dark:brightness-200"
             >
 
             <div class="leading-tight">
-                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                <div class="text-sm font-semibold text-gray-900 dark:text-gray-200">
                     {{ __('Jabali Panel') }}
                 </div>
 
-                <div class="text-xs text-gray-500 dark:text-gray-400">
+                <div class="text-xs text-gray-600 dark:text-gray-400">
                     {{ __('Web Hosting Control Panel') }}
                 </div>
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600 dark:text-gray-400">
             <x-filament::link
                 tag="a"
                 href="https://github.com/shukiv/jabali-panel"
@@ -41,7 +41,7 @@
                 {{ __('GitHub') }}
             </x-filament::link>
 
-            <span class="text-gray-300 dark:text-white/20">•</span>
+            <span class="text-gray-400 dark:text-white/20">•</span>
 
             <span>© {{ date('Y') }} Jabali</span>
 
