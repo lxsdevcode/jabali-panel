@@ -57,7 +57,7 @@ $this->getRtlScript()
                 fn () => request()->routeIs('filament.admin.auth.login') ? $this->getLoginWordCloud() : ''
             )
             ->renderHook(
-                PanelsRenderHook::BODY_END,
+                PanelsRenderHook::TOPBAR_BEFORE,
                 fn () => view('components.loading-skeleton'),
             )
             ->renderHook(

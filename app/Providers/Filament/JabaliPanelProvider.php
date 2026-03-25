@@ -59,7 +59,7 @@ $this->getRtlScript()
                 fn () => (request()->routeIs('filament.jabali.auth.login') ? $this->getLoginWordCloud() : '').$this->renderImpersonationNotice()
             )
             ->renderHook(
-                PanelsRenderHook::BODY_END,
+                PanelsRenderHook::TOPBAR_BEFORE,
                 fn () => view('components.loading-skeleton'),
             )
             ->renderHook(
