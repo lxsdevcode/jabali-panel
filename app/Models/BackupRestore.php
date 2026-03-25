@@ -14,11 +14,15 @@ class BackupRestore extends Model
 
     protected $fillable = [
         'backup_id',
+        'snapshot_id',
         'user_id',
+        'performed_by',
         'restore_files',
         'restore_databases',
         'restore_mailboxes',
         'restore_dns',
+        'restore_ssl',
+        'restore_mysql_users',
         'selected_domains',
         'selected_databases',
         'selected_mailboxes',
@@ -38,6 +42,8 @@ class BackupRestore extends Model
             'restore_databases' => 'boolean',
             'restore_mailboxes' => 'boolean',
             'restore_dns' => 'boolean',
+            'restore_ssl' => 'boolean',
+            'restore_mysql_users' => 'boolean',
             'selected_domains' => 'array',
             'selected_databases' => 'array',
             'selected_mailboxes' => 'array',
@@ -51,6 +57,11 @@ class BackupRestore extends Model
     public function backup(): BelongsTo
     {
         return $this->belongsTo(Backup::class);
+    }
+
+    public function snapshot(): BelongsTo
+    {
+        return $this->belongsTo(UserRemoteBackup::class, 'snapshot_id');
     }
 
     public function user(): BelongsTo

@@ -524,6 +524,11 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('granularRestore')
+                ->label(__('Restore'))
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->url(RestoreBackup::getUrl()),
             Action::make('createBackup')
                 ->label(__('Create Backup'))
                 ->icon('heroicon-o-archive-box-arrow-down')
