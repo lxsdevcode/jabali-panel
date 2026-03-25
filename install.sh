@@ -1265,7 +1265,9 @@ configure_php() {
     fi
 
     # Start PHP-FPM first to ensure files are created
-    systemctl start php${PHP_VERSION}-fpm 2>/dev/null || true
+    if ! systemctl start php${PHP_VERSION}-fpm 2>/dev/null; then
+        error "Failed to start PHP-FPM ${PHP_VERSION}. Check: journalctl -u php${PHP_VERSION}-fpm"
+    fi
 
     # Find PHP ini file - check multiple locations
     local php_ini=""
@@ -4074,8 +4076,10 @@ setup_scheduler_cron() {
 
     # Ensure cron service is enabled and running
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl enable cron >/dev/null 2>&1 || true
-        systemctl start cron >/dev/null 2>&1 || true
+        systemctl enable cron >/dev/null 2>&1 || warn "Failed to enable cron service"
+        if ! systemctl start cron >/dev/null 2>&1; then
+            warn "Failed to start cron service — scheduled tasks will not run"
+        fi
     fi
 
     # Add cron job for Laravel scheduler as www-data (runs every minute)
@@ -4193,7 +4197,9 @@ server {
     root /var/www/html;
 }
 MAILNGINX
-            nginx -t > /dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
+            if nginx -t > /dev/null 2>&1; then
+                systemctl reload nginx 2>/dev/null || warn "Failed to reload nginx for mail cert validation"
+            fi
 
             if certbot certonly --webroot -w /var/www/html -d "$mail_hostname" --non-interactive --agree-tos --email "$ADMIN_EMAIL" 2>/dev/null; then
                 log "Let's Encrypt certificate issued for $mail_hostname"
@@ -4206,7 +4212,7 @@ MAILNGINX
                     # Update Postfix to use the certificate
                     postconf -e "smtpd_tls_cert_file=/etc/letsencrypt/live/$mail_hostname/fullchain.pem"
                     postconf -e "smtpd_tls_key_file=/etc/letsencrypt/live/$mail_hostname/privkey.pem"
-                    systemctl reload postfix 2>/dev/null || true
+                    systemctl reload postfix 2>/dev/null || warn "Failed to reload Postfix with new certificate"
 
                     # Update Dovecot to use the certificate
                     # Dovecot 2.4+ (Debian 13) uses ssl_server_cert_file / ssl_server_key_file
@@ -4219,7 +4225,7 @@ MAILNGINX
                             sed -i "s|^ssl_cert = .*|ssl_cert = </etc/letsencrypt/live/$mail_hostname/fullchain.pem|" /etc/dovecot/conf.d/10-ssl.conf
                             sed -i "s|^ssl_key = .*|ssl_key = </etc/letsencrypt/live/$mail_hostname/privkey.pem|" /etc/dovecot/conf.d/10-ssl.conf
                         fi
-                        systemctl reload dovecot 2>/dev/null || true
+                        systemctl reload dovecot 2>/dev/null || warn "Failed to reload Dovecot with new certificate"
                     fi
                 fi
                 log "Mail services updated to use Let's Encrypt certificate"
@@ -4229,7 +4235,9 @@ MAILNGINX
 
             # Remove temporary nginx config for mail hostname
             rm -f /etc/nginx/sites-enabled/mail-cert-temp.conf
-            nginx -t > /dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
+            if nginx -t > /dev/null 2>&1; then
+                systemctl reload nginx 2>/dev/null || warn "Failed to reload nginx after mail cert cleanup"
+            fi
         fi
     fi
 
@@ -4729,7 +4737,8 @@ uninstall() {
     log "Configuration files cleaned"
 
     header "Removing User Data"
-    read -p "Remove all user home directories? (y/N): " remove_homes < /dev/tty
+    # Always prompt — even in force mode, home directory deletion requires explicit consent
+    read -p "Remove all user home directories? (y/N): " remove_homes < /dev/tty 2>/dev/null || remove_homes="n"
     if [[ "$remove_homes" =~ ^[Yy]$ ]]; then
         # Get list of normal users (UID >= 1000, excluding nobody)
         for user_home in /home/*; do
@@ -4739,6 +4748,8 @@ uninstall() {
                 log "Removed user: $username"
             fi
         done
+    else
+        info "Keeping user home directories"
     fi
 
     # Remove vmail user

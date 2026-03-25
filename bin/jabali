@@ -106,6 +106,9 @@ switch ($command) {
     case 'report':
         handleReport($subcommand, $options);
         break;
+    case 'update':
+        handleUpdate($options);
+        break;
     case '--version':
     case '-v':
         echo "Jabali CLI v" . VERSION . "\n";
@@ -220,6 +223,10 @@ function showHelp(): void
     echo "  " . C_GREEN . "domain delete <domain>" . C_RESET . "        Delete a domain\n";
     echo "  " . C_GREEN . "domain enable <domain>" . C_RESET . "        Enable a domain\n";
     echo "  " . C_GREEN . "domain disable <domain>" . C_RESET . "       Disable a domain\n\n";
+
+    echo C_YELLOW . C_BOLD . "Panel:" . C_RESET . "\n";
+    echo "  " . C_GREEN . "update" . C_RESET . "                          Update Jabali Panel to latest version\n";
+    echo "  " . C_GREEN . "update --force" . C_RESET . "                  Force update even if already up to date\n\n";
 
     echo C_DIM . "More commands: service, wp, db, mail, backup, cpanel, system, agent, php, firewall, ssl, report\n" . C_RESET;
     echo C_DIM . "Run " . C_RESET . C_CYAN . "jabali --help-full" . C_RESET . C_DIM . " for the full command list.\n\n" . C_RESET;
@@ -500,6 +507,10 @@ function showHelpFull(): void
     echo C_YELLOW . C_BOLD . "Migration & Restore" . C_RESET . "\n";
     $printRow(C_GREEN . "cpanel analyze <file>" . C_RESET . " - Analyze backup", C_GREEN . "cpanel restore <file> <user>" . C_RESET . " - Restore backup");
     $printRow(C_GREEN . "cpanel fix-permissions <file>" . C_RESET . " - Fix backup perms", "");
+    echo "\n";
+
+    echo C_YELLOW . C_BOLD . "Panel Updates" . C_RESET . "\n";
+    $printRow(C_GREEN . "update" . C_RESET . " - Update panel to latest", C_GREEN . "update --force" . C_RESET . " - Force re-run all steps");
     echo "\n";
 
     echo C_YELLOW . C_BOLD . "Options" . C_RESET . "\n";
@@ -3729,4 +3740,128 @@ function showReportHelp(): void
     echo "  " . C_DIM . "jabali report" . C_RESET . "          Print encrypted report to paste in a GitHub issue\n";
     echo "  " . C_DIM . "jabali report --file" . C_RESET . "   Save to /tmp/jabali-report-XXXX.enc\n";
     echo "  " . C_DIM . "jabali report --json" . C_RESET . "   Print raw JSON for inspection\n\n";
+}
+
+// ============ UPDATE COMMAND ============
+
+function handleUpdate(array $options): void
+{
+    if (posix_geteuid() !== 0) {
+        error("jabali update must be run as root");
+        exit(1);
+    }
+
+    $jabaliDir = JABALI_ROOT;
+    $wwwUser = 'www-data';
+
+    echo "\n" . C_BOLD . "Updating Jabali Panel" . C_RESET . "\n";
+    echo str_repeat('─', 40) . "\n\n";
+
+    // Detect PHP version
+    $phpVersion = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+
+    // Step 1: Pull latest code
+    step("Pulling latest code...");
+    $pullOutput = runShell("cd " . escapeshellarg($jabaliDir) . " && git pull 2>&1");
+    if ($pullOutput === false) {
+        error("git pull failed");
+        exit(1);
+    }
+    if (str_contains($pullOutput, 'Already up to date')) {
+        info("Already up to date");
+        if (!isset($options['force'])) {
+            echo C_GREEN . "\nNo updates available.\n" . C_RESET;
+            return;
+        }
+        info("--force specified, continuing anyway");
+    } else {
+        success("Code updated");
+    }
+
+    // Read new version
+    $newVersion = VERSION;
+    $versionFile = $jabaliDir . '/VERSION';
+    if (file_exists($versionFile)) {
+        $content = file_get_contents($versionFile);
+        if (preg_match('/VERSION=(.+)/', $content, $m)) {
+            $newVersion = trim($m[1]);
+        }
+    }
+
+    // Step 2: Composer install
+    step("Installing dependencies...");
+    $composerResult = runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev 2>&1");
+    if ($composerResult === false) {
+        error("composer install failed");
+        exit(1);
+    }
+    success("Dependencies installed");
+
+    // Step 3: Build frontend assets
+    step("Building frontend assets...");
+    $npmResult = runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " npm ci 2>&1 && sudo -u " . escapeshellarg($wwwUser) . " npm run build 2>&1");
+    if ($npmResult === false) {
+        warn("npm build failed — frontend may be stale");
+    } else {
+        success("Assets built");
+    }
+
+    // Step 4: Maintenance mode
+    step("Entering maintenance mode...");
+    runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " php artisan down --retry=60 --refresh=15 2>&1");
+
+    // Step 5: Run migrations
+    step("Running database migrations...");
+    $migrateResult = runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " php artisan migrate --force 2>&1");
+    if ($migrateResult === false) {
+        warn("Migrations failed — check manually: php artisan migrate --force");
+    } else {
+        success("Migrations complete");
+    }
+
+    // Step 6: Clear and rebuild caches
+    step("Rebuilding caches...");
+    $artisan = "cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " php artisan";
+    runShell("$artisan optimize:clear 2>&1");
+    runShell("$artisan config:cache 2>&1");
+    runShell("$artisan route:cache 2>&1");
+    runShell("$artisan view:cache 2>&1");
+    runShell("$artisan queue:restart 2>&1");
+    success("Caches rebuilt");
+
+    // Step 7: Exit maintenance mode
+    step("Exiting maintenance mode...");
+    runShell("$artisan up 2>&1");
+    success("Panel is live");
+
+    // Step 8: Restart services
+    step("Restarting services...");
+    runShell("systemctl restart jabali-agent 2>/dev/null");
+    $fpmService = "php{$phpVersion}-fpm";
+    if (file_exists("/run/php/php{$phpVersion}-fpm-panel.sock")) {
+        $fpmService = "php{$phpVersion}-fpm-panel";
+    }
+    runShell("systemctl restart " . escapeshellarg($fpmService) . " 2>/dev/null");
+    runShell("systemctl reload nginx 2>/dev/null");
+    success("Services restarted");
+
+    echo "\n" . C_GREEN . C_BOLD . "Update complete!" . C_RESET . " Jabali Panel v$newVersion\n\n";
+}
+
+function step(string $msg): void
+{
+    echo C_CYAN . "  → " . C_RESET . $msg . "\n";
+}
+
+/**
+ * Run a shell command and return output, or false on failure.
+ * Only used for trusted, internally-constructed commands — no user input.
+ */
+function runShell(string $cmd): string|false
+{
+    $output = [];
+    $exitCode = 0;
+    exec($cmd, $output, $exitCode);
+    $result = implode("\n", $output);
+    return $exitCode === 0 ? $result : false;
 }
