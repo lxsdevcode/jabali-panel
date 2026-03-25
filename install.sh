@@ -1120,10 +1120,31 @@ install_composer() {
     fi
 
     info "Downloading and installing Composer..."
-    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+    local max_retries=3
+    local retry_delay=5
+    local attempt
+
+    for attempt in $(seq 1 $max_retries); do
+        if curl -sS --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 120 \
+            https://getcomposer.org/installer -o /tmp/composer-setup.php 2>/dev/null; then
+            if php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer 2>/dev/null; then
+                rm -f /tmp/composer-setup.php
+                break
+            fi
+        fi
+
+        if [ "$attempt" -lt "$max_retries" ]; then
+            warn "Composer download failed (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
+            sleep $retry_delay
+            retry_delay=$((retry_delay * 2))
+        fi
+    done
+
+    rm -f /tmp/composer-setup.php
 
     if ! command -v composer &>/dev/null; then
-        error "Composer installation failed"
+        error "Composer installation failed after $max_retries attempts. Check your network connection and try again."
     fi
 
     log "Composer installed"
