@@ -3801,7 +3801,7 @@ function handleUpdate(array $options): void
     step("Building frontend assets...");
     $npmResult = runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " npm ci 2>&1 && sudo -u " . escapeshellarg($wwwUser) . " npm run build 2>&1");
     if ($npmResult === false) {
-        warn("npm build failed — frontend may be stale");
+        warning("npm build failed — frontend may be stale");
     } else {
         success("Assets built");
     }
@@ -3814,7 +3814,7 @@ function handleUpdate(array $options): void
     step("Running database migrations...");
     $migrateResult = runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " php artisan migrate --force 2>&1");
     if ($migrateResult === false) {
-        warn("Migrations failed — check manually: php artisan migrate --force");
+        warning("Migrations failed — check manually: php artisan migrate --force");
     } else {
         success("Migrations complete");
     }
