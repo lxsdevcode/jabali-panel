@@ -3799,6 +3799,12 @@ function handleUpdate(array $options): void
 
     // Step 3: Build frontend assets
     step("Building frontend assets...");
+    // Ensure npm cache and build output dirs are writable by the web user
+    $homeDir = trim(runShell("eval echo ~" . escapeshellarg($wwwUser)) ?: '/var/www');
+    runShell("mkdir -p " . escapeshellarg($homeDir . "/.npm") . " && chown -R " . escapeshellarg($wwwUser) . ":" . escapeshellarg($wwwUser) . " " . escapeshellarg($homeDir . "/.npm") . " 2>/dev/null");
+    if (is_dir($jabaliDir . '/public/build')) {
+        runShell("chown -R " . escapeshellarg($wwwUser) . ":" . escapeshellarg($wwwUser) . " " . escapeshellarg($jabaliDir . '/public/build') . " 2>/dev/null");
+    }
     $npmResult = runShell("cd " . escapeshellarg($jabaliDir) . " && sudo -u " . escapeshellarg($wwwUser) . " npm ci 2>&1 && sudo -u " . escapeshellarg($wwwUser) . " npm run build 2>&1");
     if ($npmResult === false) {
         warning("npm build failed — frontend may be stale");
