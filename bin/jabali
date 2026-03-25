@@ -107,7 +107,7 @@ switch ($command) {
         handleReport($subcommand, $options);
         break;
     case 'update':
-        handleUpdate($options);
+        handleUpdate(parseOptions(array_slice($args, 1)));
         break;
     case '--version':
     case '-v':
