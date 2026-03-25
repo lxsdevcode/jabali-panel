@@ -20,6 +20,6 @@ class TabSkeletonTest extends TestCase
 
         Livewire::actingAs($admin, 'admin')
             ->test(Backups::class)
-            ->assertSeeHtml('wire:target="activeTab"');
+            ->assertSeeHtml('animate-pulse');
     }
 }

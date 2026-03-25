@@ -1,12 +1,9 @@
-<div>
-    <x-tab-loading-skeleton />
-    <div wire:loading.remove wire:target="activeTab" class="mt-4">
-        {{ $this->spamForm }}
+<x-tab-loading-skeleton>
+    {{ $this->spamForm }}
 
-        <div class="mt-6">
-            <x-filament::button wire:click="saveSpamSettings" icon="heroicon-o-check" color="primary">
-                {{ __('Save Spam Settings') }}
-            </x-filament::button>
-        </div>
+    <div class="mt-6">
+        <x-filament::button wire:click="saveSpamSettings" icon="heroicon-o-check" color="primary">
+            {{ __('Save Spam Settings') }}
+        </x-filament::button>
     </div>
-</div>
+</x-tab-loading-skeleton>

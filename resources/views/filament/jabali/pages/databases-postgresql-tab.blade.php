@@ -1,6 +1,5 @@
-<div>
-    <x-tab-loading-skeleton />
-    <div wire:loading.remove wire:target="activeTab" class="space-y-4">
+<x-tab-loading-skeleton>
+    <div class="space-y-4">
         {{-- Sub-tab buttons --}}
         <div class="flex gap-2">
             <x-filament::button
@@ -26,4 +25,4 @@
             {{ $this->table }}
         </div>
     </div>
-</div>
+</x-tab-loading-skeleton>

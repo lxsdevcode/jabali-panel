@@ -1,6 +1,5 @@
-<div>
-    <x-tab-loading-skeleton />
-    <div wire:loading.remove wire:target="activeTab" class="-mt-4">
+<x-tab-loading-skeleton>
+    <div class="-mt-4">
         {{ $this->table }}
     </div>
-</div>
+</x-tab-loading-skeleton>

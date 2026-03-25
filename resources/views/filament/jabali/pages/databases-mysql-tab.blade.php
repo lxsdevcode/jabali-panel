@@ -1,6 +1,5 @@
-<div>
-    <x-tab-loading-skeleton />
-    <div wire:loading.remove wire:target="activeTab" class="space-y-6">
+<x-tab-loading-skeleton>
+    <div class="space-y-6">
         {{-- Warning Banner --}}
         <x-filament::section
             icon="heroicon-o-exclamation-triangle"
@@ -41,4 +40,4 @@
             @livewire('database-users-table')
         </x-filament::section>
     </div>
-</div>
+</x-tab-loading-skeleton>
