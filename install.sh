@@ -4419,6 +4419,43 @@ print_completion() {
     echo ""
 }
 
+# Upgrade Jabali Panel infrastructure (called by: jabali update)
+# Re-runs safe config functions without wiping data.
+# Skips: mariadb (would drop user), redis (would regen password), firewall (would reset rules)
+upgrade_infra() {
+    check_root
+
+    header "Upgrading Jabali Panel Infrastructure"
+
+    # Detect PHP version
+    if [[ -z "${PHP_VERSION:-}" ]]; then
+        detect_php_version
+    fi
+
+    # Re-run safe configuration functions
+    header "Updating PHP Configuration"
+    configure_php
+
+    header "Updating Nginx Configuration"
+    configure_nginx
+
+    header "Updating Systemd Services"
+    setup_agent_service
+    setup_queue_service
+    setup_scheduler_cron
+    setup_logrotate
+    setup_self_healing
+
+    # Restart services to pick up changes
+    header "Restarting Services"
+    systemctl restart jabali-agent 2>/dev/null || true
+    systemctl restart jabali-queue 2>/dev/null || true
+    systemctl restart "php${PHP_VERSION}-fpm" 2>/dev/null || true
+    systemctl reload nginx 2>/dev/null || true
+
+    log "Infrastructure upgrade complete"
+}
+
 # Uninstall Jabali Panel
 uninstall() {
     local force_uninstall=false
@@ -4981,7 +5018,7 @@ COMMAND="install"
 UNINSTALL_FORCE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        install|uninstall|remove|purge|--help|-h|help)
+        install|upgrade|uninstall|remove|purge|--help|-h|help)
             COMMAND="$1"
             shift
             ;;
@@ -5017,6 +5054,9 @@ done
 case "$COMMAND" in
     install)
         main
+        ;;
+    upgrade)
+        upgrade_infra
         ;;
     uninstall|remove|purge)
         uninstall "$UNINSTALL_FORCE" ${UNINSTALL_KEEP_PACKAGES:+--keep-packages}

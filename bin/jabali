@@ -3894,16 +3894,27 @@ function handleUpdate(array $options): void
     runShell("$artisan up 2>&1");
     success('Panel is live');
 
-    // Step 8: Restart services
-    step('Restarting services...');
-    runShell('systemctl restart jabali-agent 2>/dev/null');
-    $fpmService = "php{$phpVersion}-fpm";
-    if (file_exists("/run/php/php{$phpVersion}-fpm-panel.sock")) {
-        $fpmService = "php{$phpVersion}-fpm-panel";
+    // Step 8: Upgrade infrastructure (PHP, nginx, systemd services)
+    step('Upgrading infrastructure...');
+    $installScript = $jabaliDir.'/install.sh';
+    if (file_exists($installScript)) {
+        $infraResult = runShell('bash '.escapeshellarg($installScript).' upgrade 2>&1');
+        if ($infraResult === false) {
+            warning('Infrastructure upgrade had issues — check output above');
+        } else {
+            success('Infrastructure updated');
+        }
+    } else {
+        // Fallback: just restart services
+        runShell('systemctl restart jabali-agent 2>/dev/null');
+        $fpmService = "php{$phpVersion}-fpm";
+        if (file_exists("/run/php/php{$phpVersion}-fpm-panel.sock")) {
+            $fpmService = "php{$phpVersion}-fpm-panel";
+        }
+        runShell('systemctl restart '.escapeshellarg($fpmService).' 2>/dev/null');
+        runShell('systemctl reload nginx 2>/dev/null');
+        success('Services restarted');
     }
-    runShell('systemctl restart '.escapeshellarg($fpmService).' 2>/dev/null');
-    runShell('systemctl reload nginx 2>/dev/null');
-    success('Services restarted');
 
     echo "\n".C_GREEN.C_BOLD.'Update complete!'.C_RESET." Jabali Panel v$newVersion\n\n";
 }
