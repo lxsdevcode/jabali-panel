@@ -1527,15 +1527,11 @@ configure_mariadb() {
 configure_nginx() {
     header "Configuring Nginx"
 
-    # Detect SERVER_HOSTNAME from existing nginx config if not set (upgrade path)
+    # Detect SERVER_HOSTNAME from .env or system hostname if not set (upgrade path)
     if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
-        local existing_conf
-        for existing_conf in /etc/nginx/sites-available/*; do
-            if [[ -f "$existing_conf" && "$(basename "$existing_conf")" != "default" ]]; then
-                SERVER_HOSTNAME="$(basename "$existing_conf")"
-                break
-            fi
-        done
+        if [[ -f "/var/www/jabali/.env" ]]; then
+            SERVER_HOSTNAME=$(grep -oP '^PANEL_HOSTNAME=\K.*' /var/www/jabali/.env 2>/dev/null | tr -d '[:space:]')
+        fi
         if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
             SERVER_HOSTNAME="$(hostname -f 2>/dev/null || hostname)"
         fi
