@@ -1195,6 +1195,19 @@ setup_frankenphp_config() {
     local panel_hostname="${SERVER_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
     local acme_email="${ADMIN_EMAIL:-admin@${panel_hostname}}"
 
+    # Generate self-signed cert for panel if it doesn't exist
+    local ssl_dir="/etc/ssl/jabali"
+    if [[ ! -f "$ssl_dir/panel.crt" ]] || [[ ! -f "$ssl_dir/panel.key" ]]; then
+        mkdir -p "$ssl_dir"
+        openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+            -keyout "$ssl_dir/panel.key" \
+            -out "$ssl_dir/panel.crt" \
+            -subj "/CN=${panel_hostname}" \
+            -addext "subjectAltName=DNS:${panel_hostname}" 2>/dev/null
+        chmod 600 "$ssl_dir/panel.key"
+        log "Generated self-signed SSL certificate for panel"
+    fi
+
     cat > /etc/jabali/Caddyfile <<CADDYEOF
 {
 	frankenphp
@@ -1202,20 +1215,15 @@ setup_frankenphp_config() {
 
 	admin off
 
-	storage file_system /var/lib/jabali/caddy
-
-	acme_ca https://acme-v02.api.letsencrypt.org/directory
-	email ${acme_email}
-
 	servers {
 		protocols h1 h2 h3
 	}
-
-	http_port 2280
 }
 
 ${panel_hostname}:2223 {
 	root * /var/www/jabali/public
+
+	tls /etc/ssl/jabali/panel.crt /etc/ssl/jabali/panel.key
 
 	encode zstd gzip
 
