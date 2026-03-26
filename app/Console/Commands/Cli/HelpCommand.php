@@ -25,7 +25,7 @@ class HelpCommand extends Command
         }
 
         $this->line('');
-        $this->line("<fg=bold>Jabali CLI</> v{$version}");
+        $this->line("<options=bold>Jabali CLI</> v{$version}");
         $this->line(str_repeat('─', 40));
         $this->line('');
         $this->line('<fg=yellow>Usage:</>  jabali <noun> <verb> [options]');
