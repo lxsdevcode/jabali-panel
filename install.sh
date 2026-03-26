@@ -1392,6 +1392,21 @@ configure_mariadb() {
 configure_nginx() {
     header "Configuring Nginx"
 
+    # Detect SERVER_HOSTNAME from existing nginx config if not set (upgrade path)
+    if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
+        local existing_conf
+        for existing_conf in /etc/nginx/sites-available/*; do
+            if [[ -f "$existing_conf" && "$(basename "$existing_conf")" != "default" ]]; then
+                SERVER_HOSTNAME="$(basename "$existing_conf")"
+                break
+            fi
+        done
+        if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
+            SERVER_HOSTNAME="$(hostname -f 2>/dev/null || hostname)"
+        fi
+        log "Detected hostname: ${SERVER_HOSTNAME}"
+    fi
+
     # Detect nginx version for http2 directive compatibility
     # nginx >= 1.25: use "http2 on;" directive
     # nginx < 1.25: use "listen ... http2" on the listen line
