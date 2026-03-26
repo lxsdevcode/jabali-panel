@@ -53,6 +53,17 @@
             >
                 {{ __('Upgrade now') }}
             </x-filament::button>
+
+            <x-filament::button
+                icon="heroicon-o-wrench-screwdriver"
+                color="warning"
+                wire:click="forceInfraUpgrade"
+                wire:loading.attr="disabled"
+                wire:target="forceInfraUpgrade"
+                wire:confirm="{{ __('This will re-apply nginx, PHP, systemd, and cron configurations. Continue?') }}"
+            >
+                {{ __('Force Infrastructure Upgrade') }}
+            </x-filament::button>
         </div>
 
         @if ($jabaliOutput !== null)

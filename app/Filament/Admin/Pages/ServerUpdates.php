@@ -214,6 +214,40 @@ class ServerUpdates extends Page implements HasActions, HasTable
         }
     }
 
+    public function forceInfraUpgrade(): void
+    {
+        $this->isUpgrading = true;
+
+        try {
+            $result = $this->agent()->call('server.upgrade_infra', []);
+
+            $output = $result->get('output', '');
+            $this->jabaliOutput = $output !== '' ? $output : __('No output captured.');
+            $this->jabaliOutputTitle = __('Infrastructure Upgrade Output');
+            $this->jabaliOutputAt = now()->format('Y-m-d H:i:s');
+
+            if ($result->success) {
+                Notification::make()
+                    ->title(__('Infrastructure upgrade completed'))
+                    ->success()
+                    ->send();
+            } else {
+                throw new \RuntimeException($result->get('error', __('Infrastructure upgrade failed.')));
+            }
+        } catch (\Throwable $e) {
+            $this->jabaliOutput = $e->getMessage();
+            $this->jabaliOutputTitle = __('Infrastructure Upgrade Output');
+            $this->jabaliOutputAt = now()->format('Y-m-d H:i:s');
+            Notification::make()
+                ->title(__('Infrastructure upgrade failed'))
+                ->body(SafeError::message($e))
+                ->danger()
+                ->send();
+        } finally {
+            $this->isUpgrading = false;
+        }
+    }
+
     public function runUpdates(): void
     {
         try {

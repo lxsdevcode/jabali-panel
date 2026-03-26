@@ -875,6 +875,7 @@ function handleAction(array $request): array
         'redis.user_exists' => redisUserExists($params),
         'redis.change_password' => redisChangePassword($params),
         'redis.migrate_users' => redisMigrateUsers($params),
+        'server.upgrade_infra' => serverUpgradeInfra($params),
         default => ['success' => false, 'error' => "Unknown action: $action"],
     };
 }
@@ -14903,6 +14904,24 @@ function serverVersions(array $params): array
     return [
         'success' => true,
         'versions' => $versions,
+    ];
+}
+
+function serverUpgradeInfra(array $params): array
+{
+    $installScript = '/var/www/jabali/install.sh';
+    if (! file_exists($installScript)) {
+        return ['success' => false, 'error' => 'install.sh not found'];
+    }
+
+    $output = [];
+    $exitCode = 0;
+    exec('bash ' . escapeshellarg($installScript) . ' upgrade 2>&1', $output, $exitCode);
+
+    return [
+        'success' => $exitCode === 0,
+        'output' => implode("\n", $output),
+        'exit_code' => $exitCode,
     ];
 }
 
