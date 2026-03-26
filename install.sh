@@ -1676,18 +1676,24 @@ REALIP
         info "Using PHP socket: $php_sock"
     fi
 
-    # Generate self-signed SSL certificate for nginx (phpMyAdmin/webmail)
-    # Panel SSL: self-signed initially, upgraded to Let's Encrypt if certbot succeeds
-    log "Generating self-signed SSL certificate..."
+    # SSL certificate for nginx and FrankenPHP panel
     local ssl_dir="/etc/ssl/jabali"
     mkdir -p "$ssl_dir"
 
-    # Generate private key and self-signed certificate (valid for 10 years)
-    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-        -keyout "$ssl_dir/panel.key" \
-        -out "$ssl_dir/panel.crt" \
-        -subj "/C=US/ST=State/L=City/O=Jabali Panel/CN=${SERVER_HOSTNAME:-localhost}" \
-        2>/dev/null
+    if [[ -f "/etc/letsencrypt/live/${SERVER_HOSTNAME}/fullchain.pem" ]]; then
+        # Reuse existing Let's Encrypt certificate
+        cp "/etc/letsencrypt/live/${SERVER_HOSTNAME}/fullchain.pem" "$ssl_dir/panel.crt"
+        cp "/etc/letsencrypt/live/${SERVER_HOSTNAME}/privkey.pem" "$ssl_dir/panel.key"
+        log "Using existing Let's Encrypt certificate for ${SERVER_HOSTNAME}"
+    elif [[ ! -f "$ssl_dir/panel.crt" ]] || [[ ! -f "$ssl_dir/panel.key" ]]; then
+        # Generate self-signed certificate (valid for 10 years)
+        log "Generating self-signed SSL certificate..."
+        openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+            -keyout "$ssl_dir/panel.key" \
+            -out "$ssl_dir/panel.crt" \
+            -subj "/C=US/ST=State/L=City/O=Jabali Panel/CN=${SERVER_HOSTNAME:-localhost}" \
+            2>/dev/null
+    fi
 
     chown root:www-data "$ssl_dir/panel.key"
     chmod 640 "$ssl_dir/panel.key"
