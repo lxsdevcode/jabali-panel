@@ -11,11 +11,11 @@ class PanelCertSyncCommand extends Command
 {
     protected $signature = 'jabali:panel-cert-sync';
 
-    protected $description = 'Sync panel SSL certificate info from FrankenPHP/Caddy storage';
+    protected $description = 'Sync panel SSL certificate info from the configured TLS cert file';
 
     public function handle(): int
     {
-        $certStorage = config('jabali.panel.cert_storage', '/var/lib/jabali/caddy');
+        $certPath = config('jabali.panel.tls_cert', '/etc/ssl/jabali/panel.crt');
         $hostname = config('jabali.panel.hostname') ?: config('app.url');
 
         // Extract hostname from APP_URL if needed
@@ -29,17 +29,14 @@ class PanelCertSyncCommand extends Command
 
         $this->info("Syncing panel certificate for: {$hostname}");
 
-        // Caddy stores certs in: {storage}/certificates/{issuer_key}/{hostname}/{hostname}.crt
-        $certPath = $this->findCertificate($certStorage, $hostname);
-
-        if (! $certPath) {
-            $this->warn("No certificate found for {$hostname} in {$certStorage}");
+        if (! file_exists($certPath)) {
+            $this->warn("Certificate file not found: {$certPath}");
 
             $this->updateRecord($hostname, [
                 'status' => 'pending',
                 'last_renewal_at' => now(),
                 'last_renewal_result' => 'not_found',
-                'last_error' => "No certificate file found in {$certStorage}",
+                'last_error' => "Certificate file not found: {$certPath}",
             ]);
 
             return self::SUCCESS;
@@ -60,8 +57,7 @@ class PanelCertSyncCommand extends Command
         }
 
         $issuer = $certInfo['issuer']['O'] ?? $certInfo['issuer']['CN'] ?? 'Unknown';
-        $isSelfSigned = str_contains($issuer, 'Caddy Local Authority')
-            || ($certInfo['issuer']['CN'] ?? '') === ($certInfo['subject']['CN'] ?? '');
+        $isSelfSigned = ($certInfo['issuer']['CN'] ?? '') === ($certInfo['subject']['CN'] ?? '');
 
         $this->updateRecord($hostname, [
             'status' => $isSelfSigned ? 'self_signed' : 'active',
@@ -81,28 +77,6 @@ class PanelCertSyncCommand extends Command
         $this->info("Certificate synced: issuer={$issuer}, status=".($isSelfSigned ? 'self_signed' : 'active'));
 
         return self::SUCCESS;
-    }
-
-    private function findCertificate(string $storage, string $hostname): ?string
-    {
-        // Check common Caddy certificate paths
-        $patterns = [
-            "{$storage}/certificates/acme-v02.api.letsencrypt.org-directory/{$hostname}/{$hostname}.crt",
-            "{$storage}/certificates/acme.zerossl.com-v2-DV90/{$hostname}/{$hostname}.crt",
-            "{$storage}/certificates/local/{$hostname}/{$hostname}.crt",
-        ];
-
-        foreach ($patterns as $path) {
-            if (file_exists($path)) {
-                return $path;
-            }
-        }
-
-        // Fallback: glob search
-        $globPattern = "{$storage}/certificates/*/{$hostname}/{$hostname}.crt";
-        $results = glob($globPattern);
-
-        return $results[0] ?? null;
     }
 
     private function updateRecord(string $hostname, array $data): void

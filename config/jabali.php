@@ -13,8 +13,8 @@ return [
     'panel' => [
         'port' => (int) env('PANEL_PORT', 2223),
         'hostname' => env('PANEL_HOSTNAME', env('SERVER_HOSTNAME', '')),
-        'cert_storage' => env('PANEL_CERT_STORAGE', '/var/lib/jabali/caddy'),
-        'acme_email' => env('PANEL_ACME_EMAIL', ''),
+        'tls_cert' => env('PANEL_TLS_CERT', '/etc/ssl/jabali/panel.crt'),
+        'tls_key' => env('PANEL_TLS_KEY', '/etc/ssl/jabali/panel.key'),
         'caddyfile' => env('PANEL_CADDYFILE', '/etc/jabali/Caddyfile'),
     ],
 ];

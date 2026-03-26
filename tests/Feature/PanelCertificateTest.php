@@ -67,7 +67,7 @@ class PanelCertificateTest extends TestCase
     public function test_panel_cert_sync_creates_pending_record_when_no_cert_file(): void
     {
         config(['jabali.panel.hostname' => 'panel.example.com']);
-        config(['jabali.panel.cert_storage' => '/tmp/nonexistent-jabali-test']);
+        config(['jabali.panel.tls_cert' => '/tmp/nonexistent-jabali-test/panel.crt']);
 
         $this->artisan('jabali:panel-cert-sync')
             ->assertSuccessful();

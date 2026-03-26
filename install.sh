@@ -1215,12 +1215,15 @@ setup_frankenphp_config() {
 
 	admin off
 
+	# Disable automatic HTTPS/ACME — panel uses self-signed or certbot-managed certs
+	auto_https off
+
 	servers {
 		protocols h1 h2 h3
 	}
 }
 
-${panel_hostname}:2223 {
+:2223 {
 	root * /var/www/jabali/public
 
 	tls /etc/ssl/jabali/panel.crt /etc/ssl/jabali/panel.key
@@ -1673,7 +1676,7 @@ REALIP
     fi
 
     # Generate self-signed SSL certificate for nginx (phpMyAdmin/webmail)
-    # Panel SSL is handled by FrankenPHP/Caddy ACME on port 2223
+    # Panel SSL: self-signed initially, upgraded to Let's Encrypt if certbot succeeds
     log "Generating self-signed SSL certificate..."
     local ssl_dir="/etc/ssl/jabali"
     mkdir -p "$ssl_dir"
@@ -3989,8 +3992,8 @@ OCTANE_SERVER=frankenphp
 OCTANE_HTTPS=true
 PANEL_PORT=2223
 PANEL_HOSTNAME=${SERVER_HOSTNAME:-}
-PANEL_ACME_EMAIL=${ADMIN_EMAIL:-}
-PANEL_CERT_STORAGE=/var/lib/jabali/caddy
+PANEL_TLS_CERT=/etc/ssl/jabali/panel.crt
+PANEL_TLS_KEY=/etc/ssl/jabali/panel.key
 ENV
 
     # Ensure mail settings are correct (in case .env.example was used)
@@ -4337,11 +4340,28 @@ LOGROTATE
 setup_panel_ssl() {
     header "Setting Up SSL Certificates for Services"
 
-    info "Panel SSL is managed by FrankenPHP/Caddy ACME on port 2223"
-
-    # Get public IP (try external service first, fall back to hostname -I)
+    # Get public IP
     local server_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
     server_ip=$(echo "$server_ip" | tr -d '[:space:]')
+
+    # Try to issue Let's Encrypt cert for the panel hostname
+    local panel_resolved=$(dig +short "$SERVER_HOSTNAME" 2>/dev/null | head -1)
+    if [[ "$panel_resolved" == "$server_ip" ]]; then
+        info "Attempting Let's Encrypt certificate for panel ($SERVER_HOSTNAME)..."
+        if certbot certonly --webroot -w /var/www/html -d "$SERVER_HOSTNAME" --non-interactive --agree-tos --email "${ADMIN_EMAIL:-admin@$SERVER_HOSTNAME}" 2>/dev/null; then
+            # Copy to panel cert path so FrankenPHP uses it
+            cp /etc/letsencrypt/live/$SERVER_HOSTNAME/fullchain.pem /etc/ssl/jabali/panel.crt
+            cp /etc/letsencrypt/live/$SERVER_HOSTNAME/privkey.pem /etc/ssl/jabali/panel.key
+            chmod 644 /etc/ssl/jabali/panel.crt
+            chmod 600 /etc/ssl/jabali/panel.key
+            systemctl reload jabali-panel 2>/dev/null || true
+            log "Panel SSL: Let's Encrypt certificate issued for $SERVER_HOSTNAME"
+        else
+            info "Could not issue Let's Encrypt cert for panel — using self-signed"
+        fi
+    else
+        info "Panel hostname does not resolve to this server — using self-signed certificate"
+    fi
 
     # Try to issue certificate for mail hostname if different
     local mail_hostname="mail.$(echo "$SERVER_HOSTNAME" | awk -F. '{if(NF>2){for(i=2;i<=NF;i++)printf "%s%s",$i,(i<NF?".":"")}else print $0}')"
@@ -4555,7 +4575,7 @@ print_completion() {
     echo -e "  CLI:        ${CYAN}jabali --help${NC}"
     echo -e "  Update:     ${CYAN}jabali update${NC}"
     echo -e "  Credentials:${CYAN} /root/.jabali_db_credentials${NC}"
-    echo -e "  SSL:        Managed by FrankenPHP/Caddy ACME (port 2223)"
+    echo -e "  SSL:        Self-signed (or Let's Encrypt if hostname resolves)"
 
     # Show previous .env backup location if this was a re-install
     local latest_backup=$(ls -td /root/.jabali_reinstall_backup_* 2>/dev/null | head -1)

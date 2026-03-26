@@ -137,8 +137,8 @@ if [ ! -f "${APP_DIR}/.env" ]; then
         printf '%s\n' "OCTANE_HTTPS=true"
         printf '%s\n' "PANEL_PORT=2223"
         printf '%s\n' "PANEL_HOSTNAME=${SERVER_HOSTNAME:-}"
-        printf '%s\n' "PANEL_ACME_EMAIL=${ADMIN_EMAIL:-}"
-        printf '%s\n' "PANEL_CERT_STORAGE=/var/lib/jabali/caddy"
+        printf '%s\n' "PANEL_TLS_CERT=/etc/ssl/jabali/panel.crt"
+        printf '%s\n' "PANEL_TLS_KEY=/etc/ssl/jabali/panel.key"
     } >> "${APP_DIR}/.env"
 fi
 
@@ -161,7 +161,7 @@ for var in APP_URL APP_KEY APP_ENV APP_DEBUG APP_NAME \
            MAIL_MAILER MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD MAIL_FROM_ADDRESS MAIL_BACKEND \
            TRUSTED_PROXIES SERVER_HOSTNAME \
            OCTANE_SERVER OCTANE_HTTPS \
-           PANEL_PORT PANEL_HOSTNAME PANEL_ACME_EMAIL PANEL_CERT_STORAGE \
+           PANEL_PORT PANEL_HOSTNAME PANEL_TLS_CERT PANEL_TLS_KEY \
            JABALI_AGENT_SOCKET JABALI_AGENT_TIMEOUT JABALI_INTERNAL_API_TOKEN; do
     apply_env_override "$var"
 done
