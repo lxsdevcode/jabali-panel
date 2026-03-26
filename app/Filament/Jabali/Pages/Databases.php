@@ -80,6 +80,8 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
     public array $pgUsers = [];
 
+    public bool $postgresAvailable = false;
+
     public function getTitle(): string|Htmlable
     {
         return __('Databases');
@@ -92,9 +94,25 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
     public function mount(): void
     {
+        $this->postgresAvailable = $this->checkPostgresAvailable();
         $this->activeTab = $this->normalizeTab($this->activeTab);
         $this->ensureAdminUserExists();
         $this->loadData();
+    }
+
+    protected function checkPostgresAvailable(): bool
+    {
+        if ((bool) config('jabali.demo')) {
+            return true;
+        }
+
+        try {
+            $result = $this->agent()->postgresListDatabases($this->getUsername());
+
+            return $result['success'] ?? false;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function updatedActiveTab(): void
@@ -106,6 +124,10 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
     protected function normalizeTab(string $tab): string
     {
+        if ($tab === 'postgresql' && ! $this->postgresAvailable) {
+            return 'mysql';
+        }
+
         return in_array($tab, ['mysql', 'postgresql'], true) ? $tab : 'mysql';
     }
 
@@ -116,22 +138,27 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
     public function databasesForm(Schema $schema): Schema
     {
+        $tabs = [
+            'mysql' => Tab::make(__('MySQL'))
+                ->icon('heroicon-o-circle-stack')
+                ->schema([
+                    View::make('filament.jabali.pages.databases-mysql-tab'),
+                ]),
+        ];
+
+        if ($this->postgresAvailable) {
+            $tabs['postgresql'] = Tab::make(__('PostgreSQL'))
+                ->icon('heroicon-o-server-stack')
+                ->schema([
+                    View::make('filament.jabali.pages.databases-postgresql-tab'),
+                ]);
+        }
+
         return $schema->schema([
             Tabs::make(__('Database Engines'))
                 ->contained()
                 ->livewireProperty('activeTab')
-                ->tabs([
-                    'mysql' => Tab::make(__('MySQL'))
-                        ->icon('heroicon-o-circle-stack')
-                        ->schema([
-                            View::make('filament.jabali.pages.databases-mysql-tab'),
-                        ]),
-                    'postgresql' => Tab::make(__('PostgreSQL'))
-                        ->icon('heroicon-o-server-stack')
-                        ->schema([
-                            View::make('filament.jabali.pages.databases-postgresql-tab'),
-                        ]),
-                ]),
+                ->tabs($tabs),
         ]);
     }
 
