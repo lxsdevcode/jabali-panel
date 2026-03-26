@@ -4942,7 +4942,8 @@ uninstall() {
 
     header "Removing User Data"
     # Always prompt — even in force mode, home directory deletion requires explicit consent
-    read -p "Remove all user home directories? (y/N): " remove_homes < /dev/tty 2>/dev/null || remove_homes="n"
+    echo -n "Remove all user home directories? (y/N): "
+    read remove_homes < /dev/tty 2>/dev/null || remove_homes="n"
     if [[ "$remove_homes" =~ ^[Yy]$ ]]; then
         # Get list of normal users (UID >= 1000, excluding nobody)
         for user_home in /home/*; do
