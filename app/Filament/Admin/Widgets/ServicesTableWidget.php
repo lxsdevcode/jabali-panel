@@ -37,6 +37,7 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
         $isStalwart = config('jabali.mail_backend') === 'stalwart';
 
         $preferredOrder = [
+            'jabali-panel',
             'nginx',
             'mariadb', // can fall back to mysql
             ...array_keys($this->detectPhpFpmServices()),
@@ -48,6 +49,7 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
         ];
 
         $labels = [
+            'jabali-panel' => 'FrankenPHP',
             'nginx' => 'Nginx',
             'mariadb' => 'MariaDB',
             'mysql' => 'MariaDB',

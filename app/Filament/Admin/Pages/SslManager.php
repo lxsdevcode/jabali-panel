@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
+use App\Filament\Admin\Widgets\PanelCertificateWidget;
 use App\Filament\Admin\Widgets\SslStatsOverview;
 use App\Models\Domain;
 use App\Models\SslCertificate;
@@ -54,6 +55,7 @@ class SslManager extends Page implements HasTable
     protected function getHeaderWidgets(): array
     {
         return [
+            PanelCertificateWidget::class,
             SslStatsOverview::class,
         ];
     }

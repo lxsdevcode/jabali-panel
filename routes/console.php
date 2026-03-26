@@ -9,6 +9,13 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+// Panel Certificate Sync - runs twice daily to sync FrankenPHP/Caddy ACME cert info
+Schedule::command('jabali:panel-cert-sync')
+    ->twiceDaily(4, 16)
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/panel-cert-sync.log'));
+
 // SSL Certificate Auto-Check - runs every 3 hours to issue/renew certificates
 Schedule::command('jabali:ssl-check')
     ->everyThreeHours()

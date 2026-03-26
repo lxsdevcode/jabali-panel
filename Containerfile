@@ -87,6 +87,12 @@ RUN RUST_ARCH=$(case "$(dpkg --print-architecture)" in amd64) echo x86_64;; arm6
     && chmod 755 /usr/local/bin/stalwart \
     && mkdir -p /etc/stalwart-mail /var/lib/stalwart-mail /var/log/stalwart-mail
 
+# Download FrankenPHP
+RUN ARCH=$(case "$(dpkg --print-architecture)" in amd64) echo x86_64;; arm64) echo aarch64;; *) echo unknown;; esac) \
+    && curl -fsSL "https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${ARCH}" \
+       -o /usr/local/bin/frankenphp \
+    && chmod 755 /usr/local/bin/frankenphp
+
 # Bind MariaDB to localhost only
 RUN printf '[mysqld]\nbind-address = 127.0.0.1\n' > /etc/mysql/mariadb.conf.d/99-container.cnf
 
@@ -97,10 +103,10 @@ RUN rm -rf /var/www/jabali/node_modules /var/www/jabali/.git
 
 # Copy container configs
 COPY docker/nginx-panel.conf /etc/nginx/sites-available/jabali-panel
-COPY docker/php-fpm-panel.conf /etc/php/${PHP_VERSION}/fpm/php-fpm-panel.conf
-COPY docker/php-fpm-panel-pool.conf /etc/php/${PHP_VERSION}/fpm/pool.d/panel.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/jabali.conf
 COPY docker/container-entrypoint.sh /usr/local/bin/container-entrypoint.sh
+RUN mkdir -p /etc/jabali /var/lib/jabali/caddy
+COPY docker/Caddyfile /etc/jabali/Caddyfile
 
 # Setup nginx
 RUN rm -f /etc/nginx/sites-enabled/default \
@@ -113,9 +119,9 @@ RUN chmod +x /usr/local/bin/container-entrypoint.sh
 RUN chown -R www-data:www-data /var/www/jabali/storage /var/www/jabali/bootstrap/cache \
     && chmod -R ug+rwX /var/www/jabali/storage /var/www/jabali/bootstrap/cache
 
-EXPOSE 80 443 25 587 993 110 53/tcp 53/udp 8080
+EXPOSE 80 443 2222 25 587 993 110 53/tcp 53/udp 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -sf http://localhost/up || exit 1
+    CMD curl -fsk https://127.0.0.1:2222/up || exit 1
 
 ENTRYPOINT ["/usr/local/bin/container-entrypoint.sh"]

@@ -33,3 +33,7 @@ SECURITY.md
 /storage/.cache/
 /storage/npm-cache/
 
+
+**/caddy
+frankenphp
+frankenphp-worker.php

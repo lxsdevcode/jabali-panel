@@ -898,6 +898,8 @@ install_packages() {
         fi
     fi
 
+    # Panel is now served by FrankenPHP — PHP-FPM panel pool is no longer needed
+    if false; then
     # Create dedicated PHP-FPM service for the panel to avoid interrupting user pools
     local panel_fpm_dir="/etc/php/${PHP_VERSION}/fpm-panel"
     mkdir -p "${panel_fpm_dir}/pool.d"
@@ -946,6 +948,7 @@ EOF
 
     systemctl daemon-reload
     systemctl enable --now php${PHP_VERSION}-fpm-panel
+    fi
 
     # Verify PHP CLI is working and has required extensions
     info "Verifying PHP CLI and extensions..."
@@ -1148,6 +1151,130 @@ install_composer() {
     fi
 
     log "Composer installed"
+}
+
+# Install FrankenPHP
+install_frankenphp() {
+    header "Installing FrankenPHP"
+
+    if [ -f /usr/local/bin/frankenphp ]; then
+        log "FrankenPHP already installed"
+        return
+    fi
+
+    local arch
+    case "$(uname -m)" in
+        x86_64)  arch="x86_64" ;;
+        aarch64) arch="aarch64" ;;
+        arm64)   arch="aarch64" ;;
+        *)       error "Unsupported architecture: $(uname -m)" ;;
+    esac
+
+    info "Downloading FrankenPHP for ${arch}..."
+    curl -fsSL --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 300 \
+        "https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${arch}" \
+        -o /usr/local/bin/frankenphp
+
+    chmod 755 /usr/local/bin/frankenphp
+
+    if ! /usr/local/bin/frankenphp version &>/dev/null; then
+        error "FrankenPHP binary verification failed"
+    fi
+
+    log "FrankenPHP installed"
+}
+
+# Configure FrankenPHP Caddyfile
+setup_frankenphp_config() {
+    header "Configuring FrankenPHP"
+
+    mkdir -p /etc/jabali
+    mkdir -p /var/lib/jabali/caddy
+    chown www-data:www-data /var/lib/jabali/caddy
+
+    local panel_hostname="${SERVER_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
+    local acme_email="${ADMIN_EMAIL:-admin@${panel_hostname}}"
+
+    cat > /etc/jabali/Caddyfile <<CADDYEOF
+{
+	frankenphp
+	order php_server before file_server
+
+	admin off
+
+	storage file_system /var/lib/jabali/caddy
+
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+	email ${acme_email}
+
+	servers {
+		protocols h1 h2 h3
+	}
+
+	http_port 2280
+}
+
+${panel_hostname}:2222 {
+	root * /var/www/jabali/public
+
+	encode zstd gzip
+
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	request_body {
+		max_size 512MB
+	}
+
+	@blocked path /vendor/* /node_modules/* /storage/* /.*
+	respond @blocked 404
+
+	php_server
+}
+CADDYEOF
+
+    log "FrankenPHP configured"
+}
+
+# Setup FrankenPHP panel systemd service
+setup_panel_service() {
+    header "Setting up Panel Service"
+
+    cat > /etc/systemd/system/jabali-panel.service <<'SVCEOF'
+[Unit]
+Description=Jabali Panel (FrankenPHP)
+After=network.target mariadb.service redis-server.service
+Wants=mariadb.service redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/jabali
+Environment=XDG_DATA_HOME=/var/lib/jabali
+ExecStart=/usr/local/bin/frankenphp run --config /etc/jabali/Caddyfile
+ExecReload=/usr/local/bin/frankenphp reload --config /etc/jabali/Caddyfile
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jabali-panel
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+    systemctl daemon-reload
+    systemctl enable jabali-panel
+    systemctl start jabali-panel
+
+    log "Panel service started"
 }
 
 # Install WP-CLI
@@ -1541,9 +1668,8 @@ REALIP
         info "Using PHP socket: $php_sock"
     fi
 
-    local panel_sock="/run/php/php${PHP_VERSION}-fpm-panel.sock"
-
-    # Generate self-signed SSL certificate for the panel
+    # Generate self-signed SSL certificate for nginx (phpMyAdmin/webmail)
+    # Panel SSL is handled by FrankenPHP/Caddy ACME on port 2222
     log "Generating self-signed SSL certificate..."
     local ssl_dir="/etc/ssl/jabali"
     mkdir -p "$ssl_dir"
@@ -1571,96 +1697,9 @@ EOF
         echo "# Managed by Jabali" > "$jabali_includes/geo.conf"
     fi
 
-    # Create Jabali site config with HTTPS and HTTP redirect
-    cat > /etc/nginx/sites-available/${SERVER_HOSTNAME} << NGINX
-# Redirect HTTP to HTTPS
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name ${SERVER_HOSTNAME} _;
-
-    # Mail autoconfig/autodiscover over HTTP (avoids SSL cert mismatch for subdomains)
-    location = /mail/config-v1.1.xml {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    location = /.well-known/autoconfig/mail/config-v1.1.xml {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    location /autodiscover/ {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    location /Autodiscover/ {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    return 301 https://\$host\$request_uri;
-}
-
-# HTTPS server
-server {
-    listen 443 ssl${NGINX_HTTP2_LISTEN} default_server;
-    listen [::]:443 ssl${NGINX_HTTP2_LISTEN} default_server;
-    ${NGINX_HTTP2_DIRECTIVE}server_name ${SERVER_HOSTNAME} _;
-    root /var/www/jabali/public;
-    index index.php index.html;
-
-    # SSL Configuration
-    ssl_certificate /etc/ssl/jabali/panel.crt;
-    ssl_certificate_key /etc/ssl/jabali/panel.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 1d;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    client_max_body_size 512M;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }
-
-    # Block access to sensitive directories and files
-    location ~ ^/(vendor|node_modules|storage)/ {
-        deny all;
-        return 404;
-    }
-
-    location ~ \.php\$ {
-        fastcgi_pass unix:${panel_sock};
-        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
-        include fastcgi_params;
-        fastcgi_read_timeout 600;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-
+    # Build phpMyAdmin location block
+    local phpmyadmin_block
+    phpmyadmin_block=$(cat <<PHPMYADMIN_EOF
     # phpMyAdmin
     location = /phpmyadmin {
         return 301 /phpmyadmin/;
@@ -1671,23 +1710,19 @@ server {
         index index.php;
 
         location ~ \.php\$ {
-            fastcgi_pass unix:${panel_sock};
+            fastcgi_pass unix:${php_sock};
             fastcgi_param SCRIPT_FILENAME \$request_filename;
             include fastcgi_params;
             fastcgi_read_timeout 600;
         }
     }
+PHPMYADMIN_EOF
+)
 
-    # Webmail
-    WEBMAIL_LOCATION_BLOCK
-}
-NGINX
-
-    # Replace webmail location block based on mail backend
-    local panel_conf="/etc/nginx/sites-available/${SERVER_HOSTNAME}"
-    local webmail_tmp="/tmp/jabali_webmail_block.conf"
+    # Build webmail location block based on mail backend
+    local webmail_block
     if [[ "$MAIL_BACKEND" == "stalwart" ]]; then
-        cat > "$webmail_tmp" <<WEBMAIL_BLOCK
+        webmail_block=$(cat <<WEBMAIL_EOF
     # DAV proxy (CalDAV, CardDAV, WebDAV) via Stalwart
     location = /.well-known/caldav {
         return 301 /dav/cal;
@@ -1752,9 +1787,10 @@ NGINX
         proxy_set_header Connection "upgrade";
         proxy_buffering off;
     }
-WEBMAIL_BLOCK
+WEBMAIL_EOF
+)
     else
-        cat > "$webmail_tmp" <<WEBMAIL_BLOCK
+        webmail_block=$(cat <<WEBMAIL_EOF
     location = /webmail {
         return 301 /webmail/;
     }
@@ -1764,17 +1800,100 @@ WEBMAIL_BLOCK
         index index.php;
 
         location ~ \\.php\$ {
-            fastcgi_pass unix:${panel_sock};
+            fastcgi_pass unix:${php_sock};
             fastcgi_param SCRIPT_FILENAME \$request_filename;
             include fastcgi_params;
             fastcgi_read_timeout 600;
         }
     }
-WEBMAIL_BLOCK
+WEBMAIL_EOF
+)
     fi
-    sed -i '/WEBMAIL_LOCATION_BLOCK/r '"$webmail_tmp" "$panel_conf"
-    sed -i '/WEBMAIL_LOCATION_BLOCK/d' "$panel_conf"
-    rm -f "$webmail_tmp"
+
+    # Create Jabali site config with HTTP redirect and HTTPS for phpMyAdmin/webmail
+    cat > /etc/nginx/sites-available/${SERVER_HOSTNAME} << NGINX
+# HTTP — redirect to HTTPS, ACME challenge proxy, health check
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name ${SERVER_HOSTNAME} _;
+
+    # Mail autoconfig/autodiscover over HTTP (avoids SSL cert mismatch for subdomains)
+    location = /mail/config-v1.1.xml {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location = /.well-known/autoconfig/mail/config-v1.1.xml {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /autodiscover/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /Autodiscover/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # ACME challenge proxy — FrankenPHP/Caddy handles certificate issuance
+    location /.well-known/acme-challenge/ {
+        proxy_pass http://127.0.0.1:2280;
+    }
+
+    # Health check — proxy to FrankenPHP panel
+    location = /up {
+        proxy_pass https://127.0.0.1:2222;
+        proxy_ssl_verify off;
+    }
+
+    return 301 https://\$host\$request_uri;
+}
+
+# HTTPS — phpMyAdmin and webmail only (panel served by FrankenPHP on port 2222)
+server {
+    listen 443 ssl${NGINX_HTTP2_LISTEN} default_server;
+    listen [::]:443 ssl${NGINX_HTTP2_LISTEN} default_server;
+
+    server_name _;
+
+    ssl_certificate /etc/ssl/jabali/panel.crt;
+    ssl_certificate_key /etc/ssl/jabali/panel.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Redirect panel paths to FrankenPHP
+    location ~ ^/(jabali-admin|jabali-panel|livewire|login|up) {
+        return 301 https://\$host:2222\$request_uri;
+    }
+    location = / {
+        return 301 https://\$host:2222/;
+    }
+
+${phpmyadmin_block}
+
+${webmail_block}
+
+    # Deny everything else
+    location / {
+        return 404;
+    }
+}
+NGINX
 
     ln -sf /etc/nginx/sites-available/${SERVER_HOSTNAME} /etc/nginx/sites-enabled/
 
@@ -3320,6 +3439,7 @@ configure_firewall() {
     ufw allow 22/tcp    # SSH
     ufw allow 80/tcp    # HTTP
     ufw allow 443/tcp   # HTTPS
+    ufw allow 2222/tcp comment 'Jabali Panel (FrankenPHP)' >/dev/null 2>&1
 
     # Mail ports (only if mail server is being installed)
     if [[ "$INSTALL_MAIL" == "true" ]]; then
@@ -3829,7 +3949,7 @@ APP_NAME=Jabali
 APP_ENV=production
 APP_KEY=
 APP_DEBUG=false
-APP_URL=https://$(hostname -I | awk '{print $1}')
+APP_URL=https://$(hostname -I | awk '{print $1}'):2222
 
 LOG_CHANNEL=stack
 LOG_LEVEL=error
@@ -3860,6 +3980,13 @@ MAIL_FROM_ADDRESS=webmaster@${SERVER_HOSTNAME}
 MAIL_FROM_NAME="Jabali Panel"
 
 MAIL_BACKEND=${MAIL_BACKEND}
+
+OCTANE_SERVER=frankenphp
+OCTANE_HTTPS=true
+PANEL_PORT=2222
+PANEL_HOSTNAME=${SERVER_HOSTNAME:-}
+PANEL_ACME_EMAIL=${ADMIN_EMAIL:-}
+PANEL_CERT_STORAGE=/var/lib/jabali/caddy
 ENV
 
     # Ensure mail settings are correct (in case .env.example was used)
@@ -4206,36 +4333,11 @@ LOGROTATE
 setup_panel_ssl() {
     header "Setting Up SSL Certificates for Services"
 
+    info "Panel SSL is managed by FrankenPHP/Caddy ACME on port 2222"
+
     # Get public IP (try external service first, fall back to hostname -I)
     local server_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
     server_ip=$(echo "$server_ip" | tr -d '[:space:]')
-
-    # Check if hostname resolves to this server (required for Let's Encrypt)
-    local resolved_ip=$(dig +short "$SERVER_HOSTNAME" 2>/dev/null | head -1)
-
-    if [[ -z "$resolved_ip" ]]; then
-        warn "Cannot resolve $SERVER_HOSTNAME - skipping Let's Encrypt"
-        warn "SSL can be issued later using: certbot --nginx -d $SERVER_HOSTNAME"
-        return
-    fi
-
-    if [[ "$resolved_ip" != "$server_ip" ]]; then
-        warn "Hostname $SERVER_HOSTNAME resolves to $resolved_ip, not this server ($server_ip)"
-        warn "SSL can be issued later using: certbot --nginx -d $SERVER_HOSTNAME"
-        return
-    fi
-
-    info "Attempting to issue Let's Encrypt certificate for $SERVER_HOSTNAME"
-
-    # Issue certificate and configure nginx automatically
-    if certbot --nginx -d "$SERVER_HOSTNAME" --non-interactive --agree-tos --email "$ADMIN_EMAIL" --redirect 2>&1; then
-        log "Let's Encrypt certificate issued and nginx configured for $SERVER_HOSTNAME"
-        export PANEL_SSL_INSTALLED=true
-    else
-        warn "Could not issue Let's Encrypt certificate for $SERVER_HOSTNAME"
-        warn "This may be because the domain is not publicly accessible"
-        warn "You can issue manually later: certbot --nginx -d $SERVER_HOSTNAME"
-    fi
 
     # Try to issue certificate for mail hostname if different
     local mail_hostname="mail.$(echo "$SERVER_HOSTNAME" | awk -F. '{if(NF>2){for(i=2;i<=NF;i++)printf "%s%s",$i,(i<NF?".":"")}else print $0}')"
@@ -4444,19 +4546,11 @@ print_completion() {
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${GREEN}║${NC}  ${BOLD}Panel URLs:${NC}                                               ${GREEN}║${NC}"
-    printf "${GREEN}║${NC}    Admin Panel: ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}/jabali-admin/"
-    printf "${GREEN}║${NC}    User Panel:  ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}/jabali-panel/"
+    printf "${GREEN}║${NC}    Admin Panel: ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}:2222/jabali-admin/"
+    printf "${GREEN}║${NC}    User Panel:  ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}:2222/jabali-panel/"
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
-    if [[ "$PANEL_SSL_INSTALLED" == "true" ]]; then
-        echo -e "${GREEN}║${NC}  ${GREEN}SSL: Let's Encrypt certificate installed${NC}                 ${GREEN}║${NC}"
-    else
-        echo -e "${GREEN}║${NC}  ${YELLOW}Note: Using self-signed SSL certificate.${NC}                 ${GREEN}║${NC}"
-        echo -e "${GREEN}║${NC}  ${YELLOW}Browser will show a security warning - this is normal.${NC}   ${GREEN}║${NC}"
-        echo -e "${GREEN}║                                                            ║${NC}"
-        echo -e "${GREEN}║${NC}  ${CYAN}Get a free SSL certificate:${NC}                               ${GREEN}║${NC}"
-        printf "${GREEN}║${NC}  ${CYAN}%-56s${NC} ${GREEN}║${NC}\n" "certbot --nginx -d ${SERVER_HOSTNAME}"
-    fi
+    echo -e "${GREEN}║${NC}  ${GREEN}Panel SSL: Managed by FrankenPHP/Caddy ACME (port 2222)${NC}  ${GREEN}║${NC}"
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}║${NC}  CLI Usage: ${CYAN}jabali --help${NC}                                   ${GREEN}║${NC}"
     echo -e "${GREEN}║${NC}  Update:    ${CYAN}jabali update${NC}                                    ${GREEN}║${NC}"
@@ -4497,6 +4591,8 @@ upgrade_infra() {
 
     header "Updating Systemd Services"
     setup_agent_service
+    setup_frankenphp_config
+    setup_panel_service
     setup_queue_service
     setup_scheduler_cron
     setup_logrotate
@@ -4510,6 +4606,7 @@ upgrade_infra() {
         log "Skipping agent restart (called from agent)"
     fi
     systemctl restart jabali-queue 2>/dev/null || true
+    systemctl restart jabali-panel 2>/dev/null || true
     systemctl restart "php${PHP_VERSION}-fpm" 2>/dev/null || true
     systemctl reload nginx 2>/dev/null || true
 
@@ -4992,6 +5089,7 @@ main() {
     install_packages
     install_geoipupdate_binary
     install_composer
+    install_frankenphp
     install_wp_cli
     clone_jabali
     configure_php
@@ -5057,6 +5155,8 @@ main() {
     configure_redis
     setup_jabali
     setup_agent_service
+    setup_frankenphp_config
+    setup_panel_service
     setup_queue_service
     setup_scheduler_cron
     setup_logrotate

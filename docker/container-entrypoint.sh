@@ -13,12 +13,14 @@ echo "==> Jabali Panel Container Starting..."
 mkdir -p /var/run/jabali /var/log/jabali /var/run/php \
          /var/mail /var/spool/postfix/opendkim \
          /var/log/supervisor /run/named \
+         /var/lib/jabali/caddy \
          "${APP_DIR}/storage/app/public" \
          "${APP_DIR}/storage/framework/cache/data" \
          "${APP_DIR}/storage/framework/sessions" \
          "${APP_DIR}/storage/framework/views" \
          "${APP_DIR}/storage/logs" \
          "${APP_DIR}/bootstrap/cache"
+chown www-data:www-data /var/lib/jabali/caddy
 
 # Create log files needed by fail2ban
 touch /var/log/auth.log /var/log/nginx/access.log /var/log/nginx/error.log 2>/dev/null || true
@@ -127,6 +129,17 @@ if [ ! -f "${APP_DIR}/.env" ]; then
     sed -i "s|^MAIL_MAILER=.*|MAIL_MAILER=smtp|" "${APP_DIR}/.env"
     sed -i "s|^MAIL_HOST=.*|MAIL_HOST=127.0.0.1|" "${APP_DIR}/.env"
     sed -i "s|^MAIL_PORT=.*|MAIL_PORT=587|" "${APP_DIR}/.env"
+
+    # FrankenPHP / Octane defaults
+    sed -i "s|^APP_URL=.*|APP_URL=https://${SERVER_HOSTNAME:-localhost}:2222|" "${APP_DIR}/.env"
+    {
+        printf '%s\n' "OCTANE_SERVER=frankenphp"
+        printf '%s\n' "OCTANE_HTTPS=true"
+        printf '%s\n' "PANEL_PORT=2222"
+        printf '%s\n' "PANEL_HOSTNAME=${SERVER_HOSTNAME:-}"
+        printf '%s\n' "PANEL_ACME_EMAIL=${ADMIN_EMAIL:-}"
+        printf '%s\n' "PANEL_CERT_STORAGE=/var/lib/jabali/caddy"
+    } >> "${APP_DIR}/.env"
 fi
 
 # ── 5. Override .env with runtime env vars ─────────────────────────
@@ -147,6 +160,8 @@ for var in APP_URL APP_KEY APP_ENV APP_DEBUG APP_NAME \
            REDIS_HOST REDIS_PASSWORD REDIS_PORT \
            MAIL_MAILER MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD MAIL_FROM_ADDRESS MAIL_BACKEND \
            TRUSTED_PROXIES SERVER_HOSTNAME \
+           OCTANE_SERVER OCTANE_HTTPS \
+           PANEL_PORT PANEL_HOSTNAME PANEL_ACME_EMAIL PANEL_CERT_STORAGE \
            JABALI_AGENT_SOCKET JABALI_AGENT_TIMEOUT JABALI_INTERNAL_API_TOKEN; do
     apply_env_override "$var"
 done

@@ -1,0 +1,48 @@
+{
+	frankenphp
+	order php_server before file_server
+
+	# Disable Caddy admin API
+	admin off
+
+	# Certificate storage
+	storage file_system {$PANEL_CERT_STORAGE:/var/lib/jabali/caddy}
+
+	# ACME configuration
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+	email {$PANEL_ACME_EMAIL:admin@localhost}
+
+	servers {
+		protocols h1 h2 h3
+	}
+
+	# Internal HTTP port for ACME HTTP-01 challenges (proxied from nginx)
+	http_port {$PANEL_HTTP_PORT:2280}
+}
+
+# Panel HTTPS server
+{$PANEL_HOSTNAME:localhost}:{$PANEL_PORT:2222} {
+	root * {$APP_ROOT:/var/www/jabali}/public
+
+	encode zstd gzip
+
+	# Security headers
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Request size limit (512MB for file uploads)
+	request_body {
+		max_size 512MB
+	}
+
+	# Block sensitive paths
+	@blocked path /vendor/* /node_modules/* /storage/* /.*
+	respond @blocked 404
+
+	php_server
+}

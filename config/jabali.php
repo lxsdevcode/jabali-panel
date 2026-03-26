@@ -9,4 +9,12 @@ return [
     ],
 
     'mail_backend' => env('MAIL_BACKEND', 'legacy'),
+
+    'panel' => [
+        'port' => (int) env('PANEL_PORT', 2222),
+        'hostname' => env('PANEL_HOSTNAME', env('SERVER_HOSTNAME', '')),
+        'cert_storage' => env('PANEL_CERT_STORAGE', '/var/lib/jabali/caddy'),
+        'acme_email' => env('PANEL_ACME_EMAIL', ''),
+        'caddyfile' => env('PANEL_CADDYFILE', '/etc/jabali/Caddyfile'),
+    ],
 ];
