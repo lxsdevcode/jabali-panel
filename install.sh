@@ -1862,7 +1862,7 @@ server {
 
     # ACME challenge proxy — FrankenPHP/Caddy handles certificate issuance
     location /.well-known/acme-challenge/ {
-        proxy_pass http://127.0.0.1:2280;
+        root /var/www/html;
     }
 
     # Health check — proxy to FrankenPHP panel
@@ -1871,7 +1871,9 @@ server {
         proxy_ssl_verify off;
     }
 
-    return 301 https://\$host\$request_uri;
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 
 # HTTPS — phpMyAdmin and webmail only (panel served by FrankenPHP on port 2223)
