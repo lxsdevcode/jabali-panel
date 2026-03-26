@@ -1214,7 +1214,7 @@ setup_frankenphp_config() {
 	http_port 2280
 }
 
-${panel_hostname}:2222 {
+${panel_hostname}:2223 {
 	root * /var/www/jabali/public
 
 	encode zstd gzip
@@ -1669,7 +1669,7 @@ REALIP
     fi
 
     # Generate self-signed SSL certificate for nginx (phpMyAdmin/webmail)
-    # Panel SSL is handled by FrankenPHP/Caddy ACME on port 2222
+    # Panel SSL is handled by FrankenPHP/Caddy ACME on port 2223
     log "Generating self-signed SSL certificate..."
     local ssl_dir="/etc/ssl/jabali"
     mkdir -p "$ssl_dir"
@@ -1858,14 +1858,14 @@ server {
 
     # Health check — proxy to FrankenPHP panel
     location = /up {
-        proxy_pass https://127.0.0.1:2222;
+        proxy_pass https://127.0.0.1:2223;
         proxy_ssl_verify off;
     }
 
     return 301 https://\$host\$request_uri;
 }
 
-# HTTPS — phpMyAdmin and webmail only (panel served by FrankenPHP on port 2222)
+# HTTPS — phpMyAdmin and webmail only (panel served by FrankenPHP on port 2223)
 server {
     listen 443 ssl${NGINX_HTTP2_LISTEN} default_server;
     listen [::]:443 ssl${NGINX_HTTP2_LISTEN} default_server;
@@ -1878,10 +1878,10 @@ server {
 
     # Redirect panel paths to FrankenPHP
     location ~ ^/(jabali-admin|jabali-panel|livewire|login|up) {
-        return 301 https://\$host:2222\$request_uri;
+        return 301 https://\$host:2223\$request_uri;
     }
     location = / {
-        return 301 https://\$host:2222/;
+        return 301 https://\$host:2223/;
     }
 
 ${phpmyadmin_block}
@@ -3439,7 +3439,7 @@ configure_firewall() {
     ufw allow 22/tcp    # SSH
     ufw allow 80/tcp    # HTTP
     ufw allow 443/tcp   # HTTPS
-    ufw allow 2222/tcp comment 'Jabali Panel (FrankenPHP)' >/dev/null 2>&1
+    ufw allow 2223/tcp comment 'Jabali Panel (FrankenPHP)' >/dev/null 2>&1
 
     # Mail ports (only if mail server is being installed)
     if [[ "$INSTALL_MAIL" == "true" ]]; then
@@ -3949,7 +3949,7 @@ APP_NAME=Jabali
 APP_ENV=production
 APP_KEY=
 APP_DEBUG=false
-APP_URL=https://$(hostname -I | awk '{print $1}'):2222
+APP_URL=https://$(hostname -I | awk '{print $1}'):2223
 
 LOG_CHANNEL=stack
 LOG_LEVEL=error
@@ -3983,7 +3983,7 @@ MAIL_BACKEND=${MAIL_BACKEND}
 
 OCTANE_SERVER=frankenphp
 OCTANE_HTTPS=true
-PANEL_PORT=2222
+PANEL_PORT=2223
 PANEL_HOSTNAME=${SERVER_HOSTNAME:-}
 PANEL_ACME_EMAIL=${ADMIN_EMAIL:-}
 PANEL_CERT_STORAGE=/var/lib/jabali/caddy
@@ -4333,7 +4333,7 @@ LOGROTATE
 setup_panel_ssl() {
     header "Setting Up SSL Certificates for Services"
 
-    info "Panel SSL is managed by FrankenPHP/Caddy ACME on port 2222"
+    info "Panel SSL is managed by FrankenPHP/Caddy ACME on port 2223"
 
     # Get public IP (try external service first, fall back to hostname -I)
     local server_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || curl -s --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
@@ -4546,11 +4546,11 @@ print_completion() {
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${GREEN}║${NC}  ${BOLD}Panel URLs:${NC}                                               ${GREEN}║${NC}"
-    printf "${GREEN}║${NC}    Admin Panel: ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}:2222/jabali-admin/"
-    printf "${GREEN}║${NC}    User Panel:  ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}:2222/jabali-panel/"
+    printf "${GREEN}║${NC}    Admin Panel: ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}:2223/jabali-admin/"
+    printf "${GREEN}║${NC}    User Panel:  ${BOLD}%-40s${NC} ${GREEN}║${NC}\n" "https://${SERVER_HOSTNAME}:2223/jabali-panel/"
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${GREEN}║${NC}  ${GREEN}Panel SSL: Managed by FrankenPHP/Caddy ACME (port 2222)${NC}  ${GREEN}║${NC}"
+    echo -e "${GREEN}║${NC}  ${GREEN}Panel SSL: Managed by FrankenPHP/Caddy ACME (port 2223)${NC}  ${GREEN}║${NC}"
     echo -e "${GREEN}║                                                            ║${NC}"
     echo -e "${GREEN}║${NC}  CLI Usage: ${CYAN}jabali --help${NC}                                   ${GREEN}║${NC}"
     echo -e "${GREEN}║${NC}  Update:    ${CYAN}jabali update${NC}                                    ${GREEN}║${NC}"

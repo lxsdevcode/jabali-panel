@@ -131,11 +131,11 @@ if [ ! -f "${APP_DIR}/.env" ]; then
     sed -i "s|^MAIL_PORT=.*|MAIL_PORT=587|" "${APP_DIR}/.env"
 
     # FrankenPHP / Octane defaults
-    sed -i "s|^APP_URL=.*|APP_URL=https://${SERVER_HOSTNAME:-localhost}:2222|" "${APP_DIR}/.env"
+    sed -i "s|^APP_URL=.*|APP_URL=https://${SERVER_HOSTNAME:-localhost}:2223|" "${APP_DIR}/.env"
     {
         printf '%s\n' "OCTANE_SERVER=frankenphp"
         printf '%s\n' "OCTANE_HTTPS=true"
-        printf '%s\n' "PANEL_PORT=2222"
+        printf '%s\n' "PANEL_PORT=2223"
         printf '%s\n' "PANEL_HOSTNAME=${SERVER_HOSTNAME:-}"
         printf '%s\n' "PANEL_ACME_EMAIL=${ADMIN_EMAIL:-}"
         printf '%s\n' "PANEL_CERT_STORAGE=/var/lib/jabali/caddy"

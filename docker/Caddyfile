@@ -21,7 +21,7 @@
 }
 
 # Panel HTTPS server
-{$PANEL_HOSTNAME:localhost}:{$PANEL_PORT:2222} {
+{$PANEL_HOSTNAME:localhost}:{$PANEL_PORT:2223} {
 	root * {$APP_ROOT:/var/www/jabali}/public
 
 	encode zstd gzip
