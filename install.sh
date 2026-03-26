@@ -1235,7 +1235,7 @@ setup_frankenphp_config() {
 		X-Frame-Options "SAMEORIGIN"
 		X-Content-Type-Options "nosniff"
 		X-XSS-Protection "1; mode=block"
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# HSTS omitted — self-signed certs would lock out browsers
 		Referrer-Policy "strict-origin-when-cross-origin"
 	}
 
