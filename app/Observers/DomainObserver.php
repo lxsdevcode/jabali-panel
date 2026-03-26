@@ -8,6 +8,7 @@ use App\Jobs\IssueSslCertificate;
 use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
+use App\Models\SslCertificate;
 use App\Services\Agent\AgentClient;
 use App\Support\ServerFacts;
 use Exception;
@@ -24,6 +25,16 @@ class DomainObserver
 
     protected function scheduleSSLIssuance(Domain $domain): void
     {
+        // Create pending SSL record so domain shows up on the SSL Certificates page immediately
+        SslCertificate::firstOrCreate(
+            ['domain_id' => $domain->id, 'service' => 'web'],
+            [
+                'type' => 'none',
+                'status' => 'pending',
+                'auto_renew' => true,
+            ]
+        );
+
         // Dispatch SSL issuance job with a 120 second delay
         // This gives time for DNS to propagate and web server to be configured
         IssueSslCertificate::dispatch($domain->id)->delay(now()->addSeconds(120));
