@@ -4097,10 +4097,6 @@ function geoApplyRules(array $params): array
 
     $httpConf = [
         '# Managed by Jabali',
-        'real_ip_header X-Forwarded-For;',
-        'real_ip_recursive on;',
-        'set_real_ip_from 127.0.0.1;',
-        'set_real_ip_from ::1;',
         '',
         "geoip2 {$mmdb} {",
         "    {$countryVar} country iso_code;",

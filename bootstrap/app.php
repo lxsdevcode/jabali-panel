@@ -23,6 +23,16 @@ return Application::configure(basePath: dirname(__DIR__))
             default => ['127.0.0.1', '::1'],
         };
 
+        if (is_array($resolvedProxies)) {
+            $cfConfig = require dirname(__DIR__).'/config/cloudflare.php';
+            $cfRanges = $cfConfig['ip_ranges'] ?? [];
+            $resolvedProxies = array_values(array_unique(array_merge(
+                $resolvedProxies,
+                $cfRanges['v4'] ?? [],
+                $cfRanges['v6'] ?? [],
+            )));
+        }
+
         $middleware->trustProxies(
             at: $resolvedProxies,
             headers: Request::HEADER_X_FORWARDED_FOR

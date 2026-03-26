@@ -12,29 +12,6 @@ use Symfony\Component\Process\Process;
 class DomainHealthService
 {
     /**
-     * Known Cloudflare IPv4 ranges.
-     *
-     * @var string[]
-     */
-    private const CLOUDFLARE_RANGES = [
-        '103.21.244.0/22',
-        '103.22.200.0/22',
-        '103.31.4.0/22',
-        '104.16.0.0/13',
-        '104.24.0.0/14',
-        '108.162.192.0/18',
-        '131.0.72.0/22',
-        '141.101.64.0/18',
-        '162.158.0.0/15',
-        '172.64.0.0/13',
-        '173.245.48.0/20',
-        '188.114.96.0/20',
-        '190.93.240.0/20',
-        '197.234.240.0/22',
-        '198.41.128.0/17',
-    ];
-
-    /**
      * @return array{status: string, resolved_ip: string|null, server_ip: string}
      */
     public function checkDns(Domain $domain): array
@@ -142,16 +119,52 @@ class DomainHealthService
 
     private function isCloudflareIp(string $ip): bool
     {
-        $ipLong = ip2long($ip);
-        if ($ipLong === false) {
-            return false;
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $this->ipInRanges($ip, config('cloudflare.ip_ranges.v4', []));
         }
 
-        foreach (self::CLOUDFLARE_RANGES as $range) {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return $this->ipv6InRanges($ip, config('cloudflare.ip_ranges.v6', []));
+        }
+
+        return false;
+    }
+
+    private function ipInRanges(string $ip, array $ranges): bool
+    {
+        $ipLong = ip2long($ip);
+
+        foreach ($ranges as $range) {
             [$subnet, $bits] = explode('/', $range);
             $subnetLong = ip2long($subnet);
             $mask = -1 << (32 - (int) $bits);
             if (($ipLong & $mask) === ($subnetLong & $mask)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function ipv6InRanges(string $ip, array $ranges): bool
+    {
+        $ipBin = inet_pton($ip);
+        if ($ipBin === false) {
+            return false;
+        }
+
+        foreach ($ranges as $range) {
+            [$subnet, $bits] = explode('/', $range);
+            $subnetBin = inet_pton($subnet);
+            if ($subnetBin === false) {
+                continue;
+            }
+            $mask = str_repeat("\xff", (int) ($bits / 8));
+            if ($bits % 8) {
+                $mask .= chr(0xFF << (8 - ($bits % 8)));
+            }
+            $mask = str_pad($mask, 16, "\x00");
+            if (($ipBin & $mask) === ($subnetBin & $mask)) {
                 return true;
             }
         }
