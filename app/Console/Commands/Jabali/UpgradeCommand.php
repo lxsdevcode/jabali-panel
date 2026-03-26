@@ -751,8 +751,15 @@ class UpgradeCommand extends Command
             }
         }
 
-        // Reload PHP-FPM (requires root or agent)
+        // Reload nginx and PHP-FPM (requires root or agent)
         if ($this->isRunningAsRoot()) {
+            $nginxResult = $this->executeCommand('systemctl reload nginx');
+            if ($nginxResult['exitCode'] === 0) {
+                $this->line('  - nginx reloaded');
+            } else {
+                $this->warn('  - nginx reload failed');
+            }
+
             $fpmResult = $this->executeCommand('systemctl reload php*-fpm');
             if ($fpmResult['exitCode'] === 0) {
                 $this->line('  - PHP-FPM reloaded (all versions)');
@@ -763,10 +770,12 @@ class UpgradeCommand extends Command
             // Try via agent
             try {
                 $agent = app(\App\Services\Agent\AgentClient::class);
+                $agent->send('nginx.reload');
+                $this->line('  - nginx reload requested via agent');
                 $agent->send('php.reload_all_fpm');
                 $this->line('  - PHP-FPM reload requested via agent');
             } catch (\Throwable) {
-                $this->warn('  - PHP-FPM reload skipped (not root)');
+                $this->warn('  - nginx/PHP-FPM reload skipped (not root)');
             }
         }
     }
