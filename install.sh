@@ -4613,6 +4613,93 @@ upgrade_infra() {
     log "Infrastructure upgrade complete"
 }
 
+reinstall() {
+    show_banner
+    check_root
+
+    header "Jabali Panel Reinstall"
+
+    if [[ ! -d "/var/www/jabali" ]]; then
+        error "Jabali Panel is not installed. Use 'install' instead."
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${YELLOW}This will regenerate ALL configurations and reset the database.${NC}"
+    echo -e "${YELLOW}Packages (nginx, php, mariadb, etc.) will NOT be reinstalled.${NC}"
+    echo ""
+
+    # Back up .env and credentials
+    local backup_dir="/root/.jabali_reinstall_backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
+    cp /var/www/jabali/.env "$backup_dir/.env" 2>/dev/null || true
+    cp /root/.jabali_db_credentials "$backup_dir/db_credentials" 2>/dev/null || true
+    cp /root/.jabali_redis_credentials "$backup_dir/redis_credentials" 2>/dev/null || true
+    info "Backed up .env and credentials to $backup_dir"
+
+    # Detect PHP version
+    detect_php_version
+
+    # Prompt for hostname
+    prompt_hostname
+    select_features
+
+    # Stop services during reinstall
+    systemctl stop jabali-agent 2>/dev/null || true
+    systemctl stop jabali-queue 2>/dev/null || true
+    systemctl stop jabali-panel 2>/dev/null || true
+
+    # Re-run all configuration functions (packages already installed)
+    configure_php
+    configure_mariadb
+    configure_nginx
+
+    if [[ "$INSTALL_MAIL" == "true" ]]; then
+        if [[ "${MAIL_BACKEND:-legacy}" == "stalwart" ]]; then
+            configure_stalwart
+        else
+            configure_mail
+        fi
+    fi
+
+    if [[ "$INSTALL_DNS" == "true" ]]; then
+        configure_dns
+    fi
+
+    if [[ "$INSTALL_FIREWALL" == "true" ]]; then
+        configure_firewall
+    fi
+
+    setup_quotas
+    configure_security
+    configure_redis
+
+    # Regenerate .env, run migrations, create admin
+    setup_jabali
+    setup_agent_service
+    setup_frankenphp_config
+    setup_panel_service
+    setup_queue_service
+    setup_scheduler_cron
+    setup_logrotate
+    setup_panel_ssl
+    setup_self_healing
+    create_admin
+    create_webmaster_mailbox
+    configure_ssh_notifications
+
+    # Restart all services
+    header "Restarting Services"
+    systemctl restart jabali-agent 2>/dev/null || true
+    systemctl restart jabali-queue 2>/dev/null || true
+    systemctl restart jabali-panel 2>/dev/null || true
+    systemctl restart "php${PHP_VERSION}-fpm" 2>/dev/null || true
+    systemctl reload nginx 2>/dev/null || true
+
+    print_completion
+    info "Previous config backed up at: $backup_dir"
+}
+
 # Uninstall Jabali Panel
 uninstall() {
     local force_uninstall=false
@@ -4993,6 +5080,8 @@ show_usage() {
     echo ""
     echo "Commands:"
     echo "  install              Install Jabali Panel (default, interactive)"
+    echo "  reinstall            Reset all configs and database (keeps packages)"
+    echo "  upgrade              Re-apply infrastructure configs (nginx, php, systemd)"
     echo "  uninstall [--force]  Remove Jabali Panel and all components"
     echo "  uninstall --keep     Remove Jabali only (keep packages like nginx, php, etc.)"
     echo "  --help               Show this help message"
@@ -5179,7 +5268,7 @@ COMMAND="install"
 UNINSTALL_FORCE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        install|upgrade|uninstall|remove|purge|--help|-h|help)
+        install|reinstall|upgrade|uninstall|remove|purge|--help|-h|help)
             COMMAND="$1"
             shift
             ;;
@@ -5215,6 +5304,9 @@ done
 case "$COMMAND" in
     install)
         main
+        ;;
+    reinstall)
+        reinstall
         ;;
     upgrade)
         upgrade_infra
