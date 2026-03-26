@@ -1204,7 +1204,8 @@ setup_frankenphp_config() {
             -out "$ssl_dir/panel.crt" \
             -subj "/CN=${panel_hostname}" \
             -addext "subjectAltName=DNS:${panel_hostname}" 2>/dev/null
-        chmod 600 "$ssl_dir/panel.key"
+        chown root:www-data "$ssl_dir/panel.key"
+        chmod 640 "$ssl_dir/panel.key"
         log "Generated self-signed SSL certificate for panel"
     fi
 
@@ -1688,7 +1689,8 @@ REALIP
         -subj "/C=US/ST=State/L=City/O=Jabali Panel/CN=${SERVER_HOSTNAME:-localhost}" \
         2>/dev/null
 
-    chmod 600 "$ssl_dir/panel.key"
+    chown root:www-data "$ssl_dir/panel.key"
+    chmod 640 "$ssl_dir/panel.key"
     chmod 644 "$ssl_dir/panel.crt"
 
     # Ensure Jabali Nginx include files exist for WAF/Geo includes
@@ -4353,7 +4355,8 @@ setup_panel_ssl() {
             cp /etc/letsencrypt/live/$SERVER_HOSTNAME/fullchain.pem /etc/ssl/jabali/panel.crt
             cp /etc/letsencrypt/live/$SERVER_HOSTNAME/privkey.pem /etc/ssl/jabali/panel.key
             chmod 644 /etc/ssl/jabali/panel.crt
-            chmod 600 /etc/ssl/jabali/panel.key
+            chown root:www-data /etc/ssl/jabali/panel.key
+            chmod 640 /etc/ssl/jabali/panel.key
             systemctl reload jabali-panel 2>/dev/null || true
             log "Panel SSL: Let's Encrypt certificate issued for $SERVER_HOSTNAME"
         else
