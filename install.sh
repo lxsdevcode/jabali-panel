@@ -4504,7 +4504,11 @@ upgrade_infra() {
 
     # Restart services to pick up changes
     header "Restarting Services"
-    systemctl restart jabali-agent 2>/dev/null || true
+    if [[ "${JABALI_SKIP_AGENT_RESTART:-}" != "1" ]]; then
+        systemctl restart jabali-agent 2>/dev/null || true
+    else
+        log "Skipping agent restart (called from agent)"
+    fi
     systemctl restart jabali-queue 2>/dev/null || true
     systemctl restart "php${PHP_VERSION}-fpm" 2>/dev/null || true
     systemctl reload nginx 2>/dev/null || true

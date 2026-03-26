@@ -14916,7 +14916,9 @@ function serverUpgradeInfra(array $params): array
 
     $output = [];
     $exitCode = 0;
-    exec('bash ' . escapeshellarg($installScript) . ' upgrade 2>&1', $output, $exitCode);
+    // JABALI_SKIP_AGENT_RESTART prevents install.sh from restarting the agent
+    // (since WE are the agent — restarting would kill this process mid-response)
+    exec('JABALI_SKIP_AGENT_RESTART=1 bash ' . escapeshellarg($installScript) . ' upgrade 2>&1', $output, $exitCode);
 
     return [
         'success' => $exitCode === 0,
