@@ -5171,6 +5171,9 @@ main() {
     prompt_hostname
     select_features
 
+    info "Starting installation, this may take several minutes..."
+    echo ""
+
     add_repositories
     install_packages
     install_geoipupdate_binary
