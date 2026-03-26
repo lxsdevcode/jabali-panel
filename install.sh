@@ -1188,9 +1188,21 @@ install_frankenphp() {
 setup_frankenphp_config() {
     header "Configuring FrankenPHP"
 
-    mkdir -p /etc/jabali
+    mkdir -p /etc/jabali /etc/frankenphp
     mkdir -p /var/lib/jabali/caddy
     chown www-data:www-data /var/lib/jabali/caddy
+
+    # FrankenPHP php.ini — match the system PHP settings
+    cat > /etc/frankenphp/php.ini <<'PHPINI'
+[PHP]
+max_execution_time = 600
+max_input_time = 600
+memory_limit = 512M
+post_max_size = 512M
+upload_max_filesize = 512M
+max_file_uploads = 50
+date.timezone = UTC
+PHPINI
 
     local panel_hostname="${SERVER_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
     local acme_email="${ADMIN_EMAIL:-admin@${panel_hostname}}"

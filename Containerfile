@@ -107,6 +107,7 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/jabali.conf
 COPY docker/container-entrypoint.sh /usr/local/bin/container-entrypoint.sh
 RUN mkdir -p /etc/jabali /var/lib/jabali/caddy
 COPY docker/Caddyfile /etc/jabali/Caddyfile
+COPY docker/frankenphp-php.ini /etc/frankenphp/php.ini
 
 # Setup nginx
 RUN rm -f /etc/nginx/sites-enabled/default \
