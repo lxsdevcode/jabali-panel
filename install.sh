@@ -5222,6 +5222,24 @@ show_usage() {
     echo ""
 }
 
+JABALI_SECURITY_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-security.git"
+
+install_jabali_security() {
+    header "Installing Jabali Security"
+
+    local tmp_installer="/tmp/jabali-security-install.sh"
+    local raw_url
+    raw_url="$(echo "$JABALI_SECURITY_REPO" | sed 's|\.git$||')/raw/branch/master/install.sh"
+
+    info "Downloading jabali-security installer..."
+    if curl -fsSL --retry 3 --connect-timeout 30 "$raw_url" -o "$tmp_installer" 2>/dev/null; then
+        JABALI_WEB=no bash "$tmp_installer" || warn "jabali-security installation failed (non-fatal)"
+        rm -f "$tmp_installer"
+    else
+        warn "Could not download jabali-security installer — skipping"
+    fi
+}
+
 # Main installation
 main() {
     show_banner
@@ -5362,6 +5380,9 @@ main() {
     if [[ "$queue_was_active" == "true" ]]; then
         systemctl start jabali-queue 2>/dev/null || true
     fi
+
+    # Install jabali-security daemon
+    install_jabali_security
 
     print_completion
 }
