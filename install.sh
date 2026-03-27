@@ -1847,6 +1847,23 @@ WEBMAIL_EOF
 )
     fi
 
+    # Remove old panel vhosts that aren't the current hostname (prevents default_server conflicts)
+    for old_vhost in /etc/nginx/sites-enabled/*; do
+        [[ -f "$old_vhost" ]] || continue
+        local vhost_name
+        vhost_name="$(basename "$old_vhost")"
+        # Skip user domain configs (they have .conf extension) and the current hostname
+        if [[ "$vhost_name" == "${SERVER_HOSTNAME}" ]] || [[ "$vhost_name" == "default" ]]; then
+            continue
+        fi
+        # Only remove if it has default_server (panel vhost marker)
+        if [[ ! "$vhost_name" == *.conf ]] && grep -q 'default_server' "$old_vhost" 2>/dev/null; then
+            rm -f "$old_vhost"
+            rm -f "/etc/nginx/sites-available/$vhost_name"
+            log "Removed stale panel vhost: $vhost_name"
+        fi
+    done
+
     # Create Jabali site config with HTTP redirect and HTTPS for phpMyAdmin/webmail
     cat > /etc/nginx/sites-available/${SERVER_HOSTNAME} << NGINX
 # HTTP — redirect to HTTPS, ACME challenge proxy, health check
