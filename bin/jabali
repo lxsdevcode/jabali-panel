@@ -270,6 +270,18 @@ function handleUpdate(array $options): void
         echo C_GREEN.'✓ Services restarted'.C_RESET."\n";
     }
 
+    // Step 9: Update jabali-security
+    if (is_dir('/usr/local/jabali-security/.git')) {
+        step('Updating jabali-security...');
+        $secResult = runShell('cd /usr/local/jabali-security && git pull 2>&1');
+        if ($secResult !== false && ! str_contains($secResult, 'Already up to date')) {
+            runShell('systemctl restart jabali-security 2>/dev/null');
+            echo C_GREEN.'✓ jabali-security updated'.C_RESET."\n";
+        } else {
+            echo C_GREEN.'✓ jabali-security already up to date'.C_RESET."\n";
+        }
+    }
+
     echo "\n".C_GREEN.C_BOLD.'Update complete!'.C_RESET." Jabali Panel v{$newVersion}\n\n";
 }
 
