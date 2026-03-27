@@ -65,11 +65,7 @@ class PanelCertificate extends Model
 
     public function getStatusColorAttribute(): string
     {
-        if ($this->isExpired()) {
-            return 'danger';
-        }
-
-        if ($this->isExpiringSoon(7)) {
+        if ($this->isExpired() || $this->isExpiringSoon(7)) {
             return 'danger';
         }
 

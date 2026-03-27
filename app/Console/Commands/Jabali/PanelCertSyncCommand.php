@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Jabali;
 
 use App\Models\PanelCertificate;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 
 class PanelCertSyncCommand extends Command
@@ -63,10 +64,10 @@ class PanelCertSyncCommand extends Command
             'status' => $isSelfSigned ? 'self_signed' : 'active',
             'issuer' => $issuer,
             'issued_at' => isset($certInfo['validFrom_time_t'])
-                ? date('Y-m-d H:i:s', $certInfo['validFrom_time_t'])
+                ? Carbon::createFromTimestamp($certInfo['validFrom_time_t'])
                 : null,
             'expires_at' => isset($certInfo['validTo_time_t'])
-                ? date('Y-m-d H:i:s', $certInfo['validTo_time_t'])
+                ? Carbon::createFromTimestamp($certInfo['validTo_time_t'])
                 : null,
             'last_renewal_at' => now(),
             'last_renewal_result' => 'success',
