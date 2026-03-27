@@ -45,13 +45,6 @@ Schedule::command('jabali:check-quotas')
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/quota-check.log'));
 
-// Fail2ban Alert Check - runs hourly to detect and report banned IPs
-Schedule::command('jabali:check-fail2ban')
-    ->hourly()
-    ->withoutOverlapping()
-    ->runInBackground()
-    ->appendOutputTo(storage_path('logs/fail2ban-check.log'));
-
 // File Integrity Check - runs every 6 hours to detect unauthorized modifications
 Schedule::command('jabali:check-integrity --notify')
     ->everySixHours()

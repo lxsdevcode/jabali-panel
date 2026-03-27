@@ -679,7 +679,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->helperText(__('When users reach 90% quota')),
                         Toggle::make('notificationsData.notify_login_failures')
                             ->label(__('Login Failure Alerts'))
-                            ->helperText(__('Brute force and Fail2ban alerts')),
+                            ->helperText(__('Brute force login attempt alerts')),
                         Toggle::make('notificationsData.notify_ssh_logins')
                             ->label(__('SSH Login Alerts'))
                             ->helperText(__('Successful SSH login notifications')),
