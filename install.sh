@@ -34,6 +34,7 @@ DEBUG=${DEBUG:-false}
 JABALI_DIR="/var/www/jabali"
 JABALI_USER="www-data"
 JABALI_REPO="https://github.com/shukiv/jabali-panel.git"
+JABALI_BRANCH="main"
 NODE_VERSION="20"
 
 # PHP version will be detected after installation
@@ -1386,7 +1387,7 @@ clone_jabali() {
         mv "$JABALI_DIR" "${JABALI_DIR}.bak.$(date +%s)"
     fi
 
-    run_quiet "Cloning Jabali Panel repository..." git clone "$JABALI_REPO" "$JABALI_DIR"
+    run_quiet "Cloning Jabali Panel repository..." git clone -b "$JABALI_BRANCH" "$JABALI_REPO" "$JABALI_DIR"
     chown -R $JABALI_USER:$JABALI_USER "$JABALI_DIR"
 
     # Prevent git safe.directory issues for upgrades run as root or www-data
@@ -5174,6 +5175,7 @@ show_usage() {
     echo ""
     echo "Options:"
     echo "  --git <url>          Use a custom git repository URL"
+    echo "  --branch <name>     Clone a specific branch (default: main)"
     echo "  --debug              Show verbose output (apt, npm, composer, etc.)"
     echo ""
     echo "Commands:"
@@ -5380,6 +5382,15 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             JABALI_REPO="$2"
+            shift 2
+            ;;
+        --branch)
+            if [[ -z "${2:-}" ]]; then
+                error "Missing value for --branch"
+                show_usage
+                exit 1
+            fi
+            JABALI_BRANCH="$2"
             shift 2
             ;;
         --force|-f)
