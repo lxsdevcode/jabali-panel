@@ -32,6 +32,11 @@ $criticalServices = [
         'check_command' => 'systemctl is-active mariadb',
         'restart_command' => 'systemctl restart mariadb',
     ],
+    'jabali-panel' => [
+        'description' => 'Panel Server (FrankenPHP)',
+        'check_command' => 'systemctl is-active jabali-panel',
+        'restart_command' => 'systemctl restart jabali-panel',
+    ],
     'jabali-agent' => [
         'description' => 'Jabali Agent',
         'check_command' => 'systemctl is-active jabali-agent',
