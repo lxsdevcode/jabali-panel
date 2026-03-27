@@ -89,7 +89,7 @@ RUN RUST_ARCH=$(case "$(dpkg --print-architecture)" in amd64) echo x86_64;; arm6
 
 # Download FrankenPHP
 RUN ARCH=$(case "$(dpkg --print-architecture)" in amd64) echo x86_64;; arm64) echo aarch64;; *) echo unknown;; esac) \
-    && curl -fsSL "https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${ARCH}" \
+    && curl -fsSL "https://github.com/dunglas/frankenphp/releases/download/v1.12.1/frankenphp-linux-${ARCH}" \
        -o /usr/local/bin/frankenphp \
     && chmod 755 /usr/local/bin/frankenphp
 
