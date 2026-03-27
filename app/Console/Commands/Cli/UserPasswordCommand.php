@@ -19,12 +19,12 @@ class UserPasswordCommand extends JabaliCommand
         $this->setupFormatter();
 
         $username = $this->argument('username');
+        $generated = false;
         $password = $this->option('password');
 
         if (! $password) {
-            $this->formatter()->error('The --password option is required');
-
-            return Command::FAILURE;
+            $password = substr(str_replace(['/', '+', '='], '', base64_encode(random_bytes(16))), 0, 16);
+            $generated = true;
         }
 
         if ($error = $this->validatePassword($password)) {
@@ -52,15 +52,19 @@ class UserPasswordCommand extends JabaliCommand
         ]);
 
         if ($this->option('json')) {
-            $this->formatter()->json([
-                'username' => $username,
-                'password_updated' => true,
-            ]);
+            $data = ['username' => $username, 'password_updated' => true];
+            if ($generated) {
+                $data['password'] = $password;
+            }
+            $this->formatter()->json($data);
 
             return Command::SUCCESS;
         }
 
         $this->formatter()->success("Password updated for '{$username}'");
+        if ($generated) {
+            $this->formatter()->info("Generated password: {$password}");
+        }
 
         return Command::SUCCESS;
     }
