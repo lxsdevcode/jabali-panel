@@ -200,6 +200,13 @@ function handleUpdate(array $options): void
 
     // Step 2: Composer install
     step('Installing dependencies...');
+    // Ensure public asset dirs are writable for Filament's post-install upgrade
+    foreach (['public/js', 'public/css', 'public/fonts'] as $assetDir) {
+        $assetPath = $jabaliDir.'/'.$assetDir;
+        if (is_dir($assetPath)) {
+            runShell('chown -R '.escapeshellarg($wwwUser).':'.escapeshellarg($wwwUser).' '.escapeshellarg($assetPath).' 2>/dev/null');
+        }
+    }
     $composerResult = runShell('cd '.escapeshellarg($jabaliDir).' && sudo -u '.escapeshellarg($wwwUser).' composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev 2>&1');
     if ($composerResult === false) {
         fwrite(STDERR, C_RED.'✗ composer install failed'.C_RESET."\n");
