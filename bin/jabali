@@ -271,14 +271,19 @@ function handleUpdate(array $options): void
     }
 
     // Step 9: Update jabali-security
-    if (is_dir('/usr/local/jabali-security/.git')) {
+    if (is_dir('/usr/local/jabali-security')) {
         step('Updating jabali-security...');
-        $secResult = runShell('cd /usr/local/jabali-security && git pull 2>&1');
-        if ($secResult !== false && ! str_contains($secResult, 'Already up to date')) {
-            runShell('systemctl restart jabali-security 2>/dev/null');
+        $secInstaller = '/usr/local/jabali-security/etc/jabali-security.update.sh';
+        if (file_exists($secInstaller)) {
+            $secResult = runShell('bash '.escapeshellarg($secInstaller).' 2>&1');
+        } else {
+            // Fallback: download and run installer with --update
+            $secResult = runShell('curl -fsSL https://git.linux-hosting.co.il/shukivaknin/jabali-security/raw/branch/master/install.sh | JABALI_WEB=no bash -s -- --update 2>&1');
+        }
+        if ($secResult !== false) {
             echo C_GREEN.'✓ jabali-security updated'.C_RESET."\n";
         } else {
-            echo C_GREEN.'✓ jabali-security already up to date'.C_RESET."\n";
+            echo C_YELLOW.'⚠ jabali-security update failed'.C_RESET."\n";
         }
     }
 
