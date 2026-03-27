@@ -9,7 +9,6 @@ use App\Filament\Jabali\Pages\Auth\Login;
 use App\Http\Middleware\RedirectAdminFromUserPanel;
 use App\Http\Middleware\SetLocale;
 use App\Models\DnsSetting;
-use App\Models\User;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -118,31 +117,7 @@ $this->getRtlScript()
             return '';
         }
 
-        $adminId = session()->get('impersonated_by');
-        $admin = User::find($adminId);
-        $currentUser = auth()->user();
-
-        if (! $admin || ! $currentUser) {
-            return '';
-        }
-
-        $stopUrl = url('/impersonate/stop');
-        $csrfToken = csrf_token();
-        $userName = e($currentUser->name);
-        $userUsername = e($currentUser->username);
-
-        return <<<HTML
-        <div class="bg-warning-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span>You are logged in as: <strong>{$userName}</strong> ({$userUsername})</span>
-            <form method="POST" action="{$stopUrl}" class="inline m-0">
-                <input type="hidden" name="_token" value="{$csrfToken}">
-                <button type="submit" class="bg-white/20 text-white px-3 py-1 rounded text-xs cursor-pointer border-0 ms-2 hover:bg-white/30">
-                    Return to Admin
-                </button>
-            </form>
-        </div>
-        HTML;
+        return view('components.impersonation-banner')->render();
     }
 
     protected function getOpenGraphTags(string $title, string $description): string
