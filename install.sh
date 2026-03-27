@@ -1161,12 +1161,15 @@ install_frankenphp() {
 
     if [ -f /usr/local/bin/frankenphp ]; then
         local current_ver
-        current_ver=$(/usr/local/bin/frankenphp version 2>/dev/null | grep -oP 'v\K[0-9.]+' || echo "unknown")
+        current_ver=$(/usr/local/bin/frankenphp version 2>/dev/null | grep -oP 'FrankenPHP v\K[0-9.]+' | head -1 || echo "unknown")
         if [[ "$current_ver" == "$FRANKENPHP_VERSION" ]]; then
             log "FrankenPHP v${FRANKENPHP_VERSION} already installed"
             return
         fi
         info "Upgrading FrankenPHP from v${current_ver} to v${FRANKENPHP_VERSION}..."
+
+        # Stop the panel service before replacing the binary (prevents "text file busy")
+        systemctl stop jabali-panel 2>/dev/null || true
     fi
 
     local arch
