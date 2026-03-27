@@ -4926,6 +4926,7 @@ uninstall() {
     rm -f /usr/local/bin/jabali
     rm -f /usr/local/bin/frankenphp
     rm -rf /etc/frankenphp
+    rm -f /etc/letsencrypt/renewal-hooks/deploy/jabali-panel.sh
     rm -rf /var/lib/jabali
     rm -rf /var/run/jabali
     rm -rf /var/log/jabali
