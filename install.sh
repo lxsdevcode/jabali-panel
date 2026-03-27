@@ -4586,10 +4586,10 @@ create_admin() {
 
     php artisan tinker --execute="
         \$user = App\Models\User::updateOrCreate(
-            ['email' => '${ADMIN_EMAIL}'],
+            ['username' => 'admin'],
             [
                 'name' => 'Administrator',
-                'username' => 'admin',
+                'email' => '${ADMIN_EMAIL}',
                 'password' => bcrypt('${ADMIN_PASSWORD}'),
                 'is_admin' => true,
             ]
@@ -5138,14 +5138,12 @@ uninstall() {
     fi
 
     echo ""
-    echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                                                            ║${NC}"
-    echo -e "${GREEN}║       ${BOLD}Jabali Panel Uninstallation Complete!${NC}${GREEN}             ║${NC}"
-    echo -e "${GREEN}║                                                            ║${NC}"
-    echo -e "${GREEN}║${NC}  All Jabali Panel components have been removed.            ${GREEN}║${NC}"
-    echo -e "${GREEN}║${NC}  Your server is now clean.                                 ${GREEN}║${NC}"
-    echo -e "${GREEN}║                                                            ║${NC}"
-    echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${GREEN}${BOLD}✓ Jabali Panel Uninstallation Complete!${NC}"
+    echo -e "  ${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  All Jabali Panel components have been removed."
+    echo -e "  Your server is now clean."
     echo ""
 }
 
