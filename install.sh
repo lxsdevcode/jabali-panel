@@ -43,8 +43,6 @@ PHP_VERSION=""
 # Feature flags (default: all enabled)
 INSTALL_MAIL=true
 INSTALL_DNS=true
-INSTALL_FIREWALL=true
-INSTALL_SECURITY=true  # Fail2ban + ClamAV
 
 # Mail backend: "stalwart" (all-in-one) or "legacy" (Postfix+Dovecot+OpenDKIM+Rspamd)
 # If MAIL_BACKEND is set externally, skip the interactive prompt
@@ -65,7 +63,6 @@ select_features() {
         info "Minimal installation mode: Only core components will be installed"
         INSTALL_MAIL=false
         INSTALL_DNS=false
-        INSTALL_SECURITY=false
         return
     fi
 
@@ -80,11 +77,9 @@ select_features() {
     echo "     - Web Server (Nginx, PHP, MariaDB, Redis)"
     echo "     - Mail Server"
     echo "     - DNS Server (BIND9)"
-    echo "     - Security (Firewall, Fail2ban, ClamAV)"
     echo ""
     echo "  2) Minimal Installation"
     echo "     - Web Server only (Nginx, PHP, MariaDB, Redis)"
-    echo "     - Firewall (UFW)"
     echo ""
     echo "  3) Custom Installation"
     echo "     - Choose individual components"
@@ -101,7 +96,6 @@ select_features() {
             info "Minimal installation selected"
             INSTALL_MAIL=false
             INSTALL_DNS=false
-            INSTALL_SECURITY=false
             ;;
         3)
             echo ""
@@ -118,18 +112,6 @@ select_features() {
             read -p "Install DNS Server (BIND9)? [Y/n]: " dns_choice < /dev/tty
             if [[ "$dns_choice" =~ ^[Nn]$ ]]; then
                 INSTALL_DNS=false
-            fi
-
-            # Firewall
-            read -p "Install Firewall (UFW)? [Y/n]: " fw_choice < /dev/tty
-            if [[ "$fw_choice" =~ ^[Nn]$ ]]; then
-                INSTALL_FIREWALL=false
-            fi
-
-            # Security tools
-            read -p "Install Security Tools (Fail2ban, ClamAV)? [Y/n]: " sec_choice < /dev/tty
-            if [[ "$sec_choice" =~ ^[Nn]$ ]]; then
-                INSTALL_SECURITY=false
             fi
 
             echo ""
@@ -180,8 +162,6 @@ select_features() {
         echo -e "  - Mail Server: ${YELLOW}No${NC}"
     fi
     [[ "$INSTALL_DNS" == "true" ]] && echo -e "  - DNS Server: ${GREEN}Yes${NC}" || echo -e "  - DNS Server: ${YELLOW}No${NC}"
-    [[ "$INSTALL_FIREWALL" == "true" ]] && echo -e "  - Firewall: ${GREEN}Yes${NC}" || echo -e "  - Firewall: ${YELLOW}No${NC}"
-    [[ "$INSTALL_SECURITY" == "true" ]] && echo -e "  - Security Tools: ${GREEN}Yes${NC}" || echo -e "  - Security Tools: ${YELLOW}No${NC}"
     echo ""
 }
 
@@ -564,8 +544,7 @@ install_packages() {
         pigz
         locales
 
-        # Security (always installed)
-        fail2ban
+        # GeoIP (always installed)
         geoipupdate
         libnginx-mod-http-geoip2
 
@@ -640,62 +619,6 @@ install_packages() {
         base_packages+=(
             bind9
             bind9-utils
-        )
-    fi
-
-    # Add Firewall packages if enabled
-    if [[ "$INSTALL_FIREWALL" == "true" ]]; then
-        info "Including Firewall packages..."
-        base_packages+=(
-            ufw
-        )
-    fi
-
-    # Add Security packages if enabled
-    if [[ "$INSTALL_SECURITY" == "true" ]]; then
-        info "Including Security packages..."
-        if apt-cache show libnginx-mod-http-modsecurity &>/dev/null; then
-            base_packages+=(
-                libnginx-mod-http-modsecurity
-            )
-        elif apt-cache show libnginx-mod-http-modsecurity2 &>/dev/null; then
-            base_packages+=(
-                libnginx-mod-http-modsecurity2
-            )
-        elif apt-cache show nginx-extras &>/dev/null; then
-            base_packages+=(
-                nginx-extras
-            )
-        else
-            warn "ModSecurity nginx module not available in apt repositories"
-        fi
-
-        if apt-cache show libmodsecurity3t64 &>/dev/null; then
-            base_packages+=(
-                libmodsecurity3t64
-            )
-        elif apt-cache show libmodsecurity3 &>/dev/null; then
-            base_packages+=(
-                libmodsecurity3
-            )
-        fi
-
-        if apt-cache show modsecurity-crs &>/dev/null; then
-            base_packages+=(
-                modsecurity-crs
-            )
-        fi
-
-        base_packages+=(
-            clamav
-            clamav-daemon
-            clamav-freshclam
-            # Vulnerability scanners
-            lynis
-            # nikto is installed from GitHub (not in apt repos)
-            # Ruby for WPScan
-            ruby
-            ruby-dev
         )
     fi
 
@@ -994,34 +917,6 @@ EOF
     fi
 
     log "PHP ${PHP_VERSION} CLI verified with all required extensions"
-
-    # Install WPScan if security is enabled
-    if [[ "$INSTALL_SECURITY" == "true" ]]; then
-        info "Installing WPScan..."
-        if command -v gem &> /dev/null; then
-            gem install wpscan --no-document 2>/dev/null && {
-                log "WPScan installed successfully"
-            } || {
-                warn "WPScan installation failed (may require more memory)"
-            }
-        else
-            warn "Ruby gem not available, skipping WPScan"
-        fi
-
-        # Install Nikto from GitHub if not available via apt
-        if ! command -v nikto &> /dev/null; then
-            info "Installing Nikto from GitHub..."
-            if [[ ! -d "/opt/nikto" ]]; then
-                git clone https://github.com/sullo/nikto.git /opt/nikto 2>/dev/null && {
-                    ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto
-                    chmod +x /opt/nikto/program/nikto.pl
-                    log "Nikto installed successfully"
-                } || {
-                    warn "Nikto installation failed"
-                }
-            fi
-        fi
-    fi
 
     # Final Apache2 cleanup - ensure it's stopped and masked before nginx starts
     if systemctl is-active --quiet apache2 2>/dev/null; then
@@ -3482,231 +3377,9 @@ setup_quotas() {
     fi
 }
 
-# Configure Firewall
-configure_firewall() {
-    header "Configuring Firewall"
-
-    if ! command -v ufw &> /dev/null; then
-        warn "UFW not found, skipping firewall configuration"
-        return
-    fi
-
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow 22/tcp    # SSH
-    ufw allow 80/tcp    # HTTP
-    ufw allow 443/tcp   # HTTPS
-    ufw allow 2223/tcp comment 'Jabali Panel (FrankenPHP)' >/dev/null 2>&1
-
-    # Mail ports (only if mail server is being installed)
-    if [[ "$INSTALL_MAIL" == "true" ]]; then
-        ufw allow 25/tcp    # SMTP
-        ufw allow 465/tcp   # SMTPS (SMTP over SSL)
-        ufw allow 587/tcp   # Submission (SMTP with STARTTLS)
-        ufw allow 110/tcp   # POP3
-        ufw allow 143/tcp   # IMAP
-        ufw allow 993/tcp   # IMAPS (IMAP over SSL)
-        ufw allow 995/tcp   # POP3S (POP3 over SSL)
-    fi
-
-    # DNS (only if DNS server is being installed)
-    if [[ "$INSTALL_DNS" == "true" ]]; then
-        ufw allow 53/tcp    # DNS
-        ufw allow 53/udp    # DNS
-    fi
-
-    ufw --force enable
-
-    log "Firewall configured"
-}
-
-# Configure Security Tools (Fail2ban and ClamAV)
+# Configure SSH/SFTP Jails (Fail2ban, ClamAV, UFW now handled by jabali-security)
 configure_security() {
-    header "Configuring Security Tools"
-
-    # Install ModSecurity + CRS (optional)
-    if [[ "$INSTALL_SECURITY" == "true" ]]; then
-        info "Installing ModSecurity (optional WAF)..."
-        local module_pkg=""
-        if apt-cache show libnginx-mod-http-modsecurity &>/dev/null; then
-            module_pkg="libnginx-mod-http-modsecurity"
-        elif apt-cache show libnginx-mod-http-modsecurity2 &>/dev/null; then
-            module_pkg="libnginx-mod-http-modsecurity2"
-        elif apt-cache show nginx-extras &>/dev/null; then
-            module_pkg="nginx-extras"
-        else
-            warn "ModSecurity nginx module not available in apt repositories"
-        fi
-
-        local modsec_lib=""
-        if apt-cache show libmodsecurity3t64 &>/dev/null; then
-            modsec_lib="libmodsecurity3t64"
-        elif apt-cache show libmodsecurity3 &>/dev/null; then
-            modsec_lib="libmodsecurity3"
-        fi
-
-        local crs_pkg=""
-        if apt-cache show modsecurity-crs &>/dev/null; then
-            crs_pkg="modsecurity-crs"
-        fi
-
-        if [[ -n "$module_pkg" ]]; then
-            run_quiet "Installing ModSecurity..." \
-                env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$module_pkg" $modsec_lib $crs_pkg || warn "ModSecurity install failed"
-
-            # Ensure ModSecurity base config
-            if [[ ! -f /etc/modsecurity/modsecurity.conf ]]; then
-                if [[ -f /etc/nginx/modsecurity.conf ]]; then
-                    cp /etc/nginx/modsecurity.conf /etc/modsecurity/modsecurity.conf
-                elif [[ -f /etc/modsecurity/modsecurity.conf-recommended ]]; then
-                    cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
-                elif [[ -f /usr/share/modsecurity-crs/modsecurity.conf-recommended ]]; then
-                    cp /usr/share/modsecurity-crs/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
-                else
-                    cat > /etc/modsecurity/modsecurity.conf <<'EOF'
-SecRuleEngine DetectionOnly
-SecRequestBodyAccess On
-SecResponseBodyAccess Off
-SecAuditEngine RelevantOnly
-SecAuditLog /var/log/nginx/modsec_audit.log
-EOF
-                fi
-            fi
-
-            # Ensure unicode mapping file (required by SecUnicodeMapFile)
-            if [[ ! -f /etc/modsecurity/unicode.mapping ]]; then
-                if [[ -f /usr/share/modsecurity-crs/util/unicode.mapping ]]; then
-                    cp /usr/share/modsecurity-crs/util/unicode.mapping /etc/modsecurity/unicode.mapping
-                elif [[ -f /usr/share/modsecurity-crs/unicode.mapping ]]; then
-                    cp /usr/share/modsecurity-crs/unicode.mapping /etc/modsecurity/unicode.mapping
-                elif [[ -f /usr/share/modsecurity/unicode.mapping ]]; then
-                    cp /usr/share/modsecurity/unicode.mapping /etc/modsecurity/unicode.mapping
-                elif [[ -f /etc/nginx/unicode.mapping ]]; then
-                    cp /etc/nginx/unicode.mapping /etc/modsecurity/unicode.mapping
-                elif [[ -f /usr/share/nginx/docs/modsecurity/unicode.mapping ]]; then
-                    cp /usr/share/nginx/docs/modsecurity/unicode.mapping /etc/modsecurity/unicode.mapping
-                fi
-            fi
-
-            # Create main include file for nginx if missing (avoid IncludeOptional)
-            mkdir -p /etc/nginx/modsec
-            if [[ ! -f /etc/nginx/modsec/main.conf ]]; then
-                {
-                    echo "Include /etc/modsecurity/modsecurity.conf"
-                    if [[ -f /etc/modsecurity/crs/crs-setup.conf ]]; then
-                        echo "Include /etc/modsecurity/crs/crs-setup.conf"
-                    elif [[ -f /usr/share/modsecurity-crs/crs-setup.conf ]]; then
-                        echo "Include /usr/share/modsecurity-crs/crs-setup.conf"
-                    fi
-                    if [[ -f /etc/modsecurity/crs/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf ]]; then
-                        echo "Include /etc/modsecurity/crs/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf"
-                    fi
-                    if [[ -d /usr/share/modsecurity-crs/rules ]]; then
-                        echo "Include /usr/share/modsecurity-crs/rules/*.conf"
-                    fi
-                    if [[ -f /etc/modsecurity/crs/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf ]]; then
-                        echo "Include /etc/modsecurity/crs/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf"
-                    fi
-                } > /etc/nginx/modsec/main.conf
-            fi
-        fi
-    fi
-
-    # Configure Fail2ban
-    info "Configuring Fail2ban..."
-    cat > /etc/fail2ban/jail.local << 'FAIL2BAN'
-[DEFAULT]
-bantime = 600
-findtime = 600
-maxretry = 5
-ignoreip = 127.0.0.1/8 ::1
-
-[sshd]
-enabled = true
-port = ssh
-filter = sshd
-logpath = /var/log/auth.log
-maxretry = 5
-
-[nginx-http-auth]
-enabled = true
-port = http,https
-filter = nginx-http-auth
-logpath = /var/log/nginx/error.log
-
-[nginx-botsearch]
-enabled = true
-port = http,https
-filter = nginx-botsearch
-logpath = /var/log/nginx/access.log
-maxretry = 2
-FAIL2BAN
-
-    # Create WordPress filter and jail
-    cat > /etc/fail2ban/filter.d/wordpress.conf << 'WPFILTER'
-[Definition]
-failregex = ^<HOST> -.*"POST.*/wp-login\.php.*" (200|403)
-            ^<HOST> -.*"POST.*/xmlrpc\.php.*" (200|403)
-ignoreregex = action=logout
-WPFILTER
-
-    cat > /etc/fail2ban/jail.d/wordpress.conf << 'WPJAIL'
-[wordpress]
-enabled = false
-filter = wordpress
-port = http,https
-logpath = /home/*/domains/*/logs/access.log
-          /var/log/nginx/access.log
-maxretry = 5
-findtime = 300
-bantime = 3600
-WPJAIL
-
-    # Create mail service jails (disabled by default, enabled when mail is configured)
-    cat > /etc/fail2ban/jail.d/dovecot.conf << 'DOVECOTJAIL'
-[dovecot]
-enabled = false
-filter = dovecot
-backend = systemd
-maxretry = 5
-findtime = 300
-bantime = 3600
-DOVECOTJAIL
-
-    cat > /etc/fail2ban/jail.d/postfix.conf << 'POSTFIXJAIL'
-[postfix]
-enabled = false
-filter = postfix
-mode = more
-backend = systemd
-maxretry = 5
-findtime = 300
-bantime = 3600
-
-[postfix-sasl]
-enabled = false
-filter = postfix[mode=auth]
-backend = systemd
-maxretry = 3
-findtime = 300
-bantime = 3600
-POSTFIXJAIL
-
-    cat > /etc/fail2ban/jail.d/roundcube.conf << 'RCJAIL'
-[roundcube-auth]
-enabled = false
-filter = roundcube-auth
-port = http,https
-logpath = /var/lib/roundcube/logs/errors.log
-maxretry = 5
-findtime = 300
-bantime = 3600
-RCJAIL
-
-    systemctl enable fail2ban > /dev/null 2>&1
-    systemctl restart fail2ban
-    log "Fail2ban configured and enabled"
+    header "Configuring SSH/SFTP Jails"
 
     # Configure SSH Jail for users
     info "Configuring SSH/SFTP jail..."
@@ -3849,70 +3522,6 @@ SSHJAIL
     chmod 755 /var/jail
 
     log "Jail environment configured with wp-cli support"
-
-    # Configure ClamAV only if INSTALL_SECURITY is enabled
-    if [[ "$INSTALL_SECURITY" != "true" ]]; then
-        log "Skipping ClamAV configuration (security tools not selected)"
-        return
-    fi
-
-    # Configure ClamAV (disabled by default to save memory)
-    info "Configuring ClamAV (disabled by default)..."
-
-    # Create quarantine directory
-    mkdir -p /var/lib/clamav/quarantine
-    chown clamav:clamav /var/lib/clamav/quarantine
-    chmod 750 /var/lib/clamav/quarantine
-
-    # Create optimized ClamAV configuration
-    cat > /etc/clamav/clamd.conf << 'CLAMAV_CONF'
-# Jabali ClamAV Configuration - Optimized for low resource usage
-LocalSocket /var/run/clamav/clamd.ctl
-FixStaleSocket true
-LocalSocketGroup clamav
-LocalSocketMode 666
-User clamav
-LogFile /var/log/clamav/clamav.log
-LogRotate true
-LogTime true
-DatabaseDirectory /var/lib/clamav
-MaxThreads 2
-MaxScanSize 25M
-MaxFileSize 5M
-MaxRecursion 10
-ScanArchive false
-ScanPE true
-ScanELF true
-ScanHTML true
-AlgorithmicDetection true
-PhishingSignatures true
-Foreground false
-ExitOnOOM true
-CLAMAV_CONF
-
-    # Configure freshclam
-    cat > /etc/clamav/freshclam.conf << 'FRESHCLAM_CONF'
-DatabaseDirectory /var/lib/clamav
-UpdateLogFile /var/log/clamav/freshclam.log
-LogRotate true
-LogTime true
-DatabaseMirror database.clamav.net
-NotifyClamd /etc/clamav/clamd.conf
-Checks 4
-FRESHCLAM_CONF
-
-    # Stop ClamAV services - keep them disabled by default
-    systemctl stop clamav-daemon 2>/dev/null || true
-    systemctl stop clamav-freshclam 2>/dev/null || true
-    systemctl disable clamav-daemon 2>/dev/null || true
-    systemctl disable clamav-freshclam 2>/dev/null || true
-
-    # Update signatures once during install
-    info "Downloading initial virus signatures..."
-    freshclam --quiet 2>/dev/null || warn "Could not download virus signatures"
-
-    log "ClamAV configured (disabled by default to save memory)"
-    info "Enable ClamAV via Security Center in Admin Panel when needed"
 }
 
 # Configure Redis with ACL
@@ -4534,9 +4143,6 @@ setup_self_healing() {
     if systemctl list-unit-files redis-server.service &>/dev/null | grep -q redis-server; then
         services+=("redis-server")
     fi
-    if systemctl list-unit-files fail2ban.service &>/dev/null | grep -q fail2ban; then
-        services+=("fail2ban")
-    fi
 
     # Create systemd override directory and restart policy for each service
     for service in "${services[@]}"; do
@@ -4759,10 +4365,6 @@ reinstall() {
         configure_dns
     fi
 
-    if [[ "$INSTALL_FIREWALL" == "true" ]]; then
-        configure_firewall
-    fi
-
     setup_quotas
     configure_security
     configure_redis
@@ -4896,9 +4498,6 @@ uninstall() {
         opendkim
         bind9
         named
-        fail2ban
-        clamav-daemon
-        clamav-freshclam
     )
 
     for service in "${services[@]}"; do
@@ -4917,7 +4516,6 @@ uninstall() {
     rm -rf /etc/systemd/system/named.service.d/restart.conf
     rm -rf /etc/systemd/system/bind9.service.d/restart.conf
     rm -rf /etc/systemd/system/redis-server.service.d/restart.conf
-    rm -rf /etc/systemd/system/fail2ban.service.d/restart.conf
 
     systemctl daemon-reload
 
@@ -5004,18 +4602,6 @@ uninstall() {
         # phpMyAdmin
         phpmyadmin
 
-        # Security
-        fail2ban
-        libnginx-mod-http-modsecurity
-        libnginx-mod-http-modsecurity2
-        libmodsecurity3t64
-        libmodsecurity3
-        modsecurity-crs
-        nginx-extras
-        clamav
-        clamav-daemon
-        clamav-freshclam
-
         # Additional components installed by Jabali
         nodejs
         geoipupdate
@@ -5024,11 +4610,7 @@ uninstall() {
         build-essential
         quota
         goaccess
-        lynis
-        ruby
-        ruby-dev
         sqlite3
-        ufw
     )
 
     if [[ "$DEBUG" == "true" ]]; then
@@ -5084,22 +4666,12 @@ uninstall() {
     rm -rf /etc/phpmyadmin
     rm -rf /usr/share/phpmyadmin
 
-    # Security
-    rm -rf /etc/fail2ban
-    rm -rf /var/lib/fail2ban
-    rm -rf /var/log/fail2ban.log*
-    rm -rf /var/lib/clamav
-    rm -rf /var/log/clamav
+    # GeoIP
     rm -rf /etc/geoipupdate
     rm -rf /etc/GeoIP.conf
     rm -rf /usr/share/GeoIP
     rm -rf /var/lib/GeoIP
     rm -f /usr/local/bin/geoipupdate
-    rm -rf /opt/nikto
-    rm -f /usr/local/bin/nikto
-    rm -f /usr/local/bin/wpscan
-    rm -rf /var/lib/gems
-    rm -rf /var/cache/gem
 
     # SSL certificates (Let's Encrypt)
     rm -rf /etc/letsencrypt
@@ -5150,14 +4722,6 @@ uninstall() {
     userdel vmail 2>/dev/null || true
     groupdel vmail 2>/dev/null || true
 
-    header "Resetting Firewall"
-    if command -v ufw &> /dev/null; then
-        ufw --force reset
-        ufw --force disable
-    else
-        info "UFW not installed, skipping firewall reset"
-    fi
-
     echo ""
     echo ""
     echo -e "  ${GREEN}${BOLD}✓ Jabali Panel Uninstallation Complete!${NC}"
@@ -5194,8 +4758,8 @@ show_usage() {
     echo "  MAIL_BACKEND         Mail backend: 'stalwart' (default) or 'legacy'"
     echo ""
     echo "Installation Modes:"
-    echo "  Full Installation    - Web, Mail, DNS, Firewall, Security tools"
-    echo "  Minimal Installation - Web server only (Nginx, PHP, MariaDB, Redis, UFW)"
+    echo "  Full Installation    - Web, Mail, DNS"
+    echo "  Minimal Installation - Web server only (Nginx, PHP, MariaDB, Redis)"
     echo "  Custom Installation  - Choose individual components interactively"
     echo ""
     echo "Examples:"
@@ -5326,43 +4890,11 @@ main() {
         info "Skipping DNS Server configuration"
     fi
 
-    if [[ "$INSTALL_FIREWALL" == "true" ]]; then
-        configure_firewall
-    else
-        info "Skipping Firewall configuration"
-    fi
-
     # Setup disk quotas for user space management
     setup_quotas
 
-    # Always configure fail2ban and SSH jails (ClamAV is conditional inside)
+    # Configure SSH/SFTP jails (firewall/fail2ban/ClamAV handled by jabali-security)
     configure_security
-
-    # Enable fail2ban mail jails if mail server was installed
-    if [[ "$INSTALL_MAIL" == "true" ]]; then
-        info "Enabling fail2ban mail protection jails..."
-        if [[ -f /etc/fail2ban/jail.d/dovecot.conf ]]; then
-            sed -i 's/^enabled = false/enabled = true/' /etc/fail2ban/jail.d/dovecot.conf
-        fi
-        if [[ -f /etc/fail2ban/jail.d/postfix.conf ]]; then
-            sed -i 's/^enabled = false/enabled = true/' /etc/fail2ban/jail.d/postfix.conf
-        fi
-        # Only enable roundcube jail if log file exists
-        if [[ -f /etc/fail2ban/jail.d/roundcube.conf ]]; then
-            # Create roundcube logs directory if roundcube is installed
-            if [[ -d /var/lib/roundcube ]]; then
-                mkdir -p /var/lib/roundcube/logs
-                touch /var/lib/roundcube/logs/errors.log
-                chown -R www-data:www-data /var/lib/roundcube/logs
-            fi
-            # Only enable if log file exists
-            if [[ -f /var/lib/roundcube/logs/errors.log ]]; then
-                sed -i 's/^enabled = false/enabled = true/' /etc/fail2ban/jail.d/roundcube.conf
-            fi
-        fi
-        systemctl reload fail2ban 2>/dev/null || systemctl restart fail2ban 2>/dev/null || true
-        log "Fail2ban mail jails enabled"
-    fi
 
     configure_redis
     setup_jabali
