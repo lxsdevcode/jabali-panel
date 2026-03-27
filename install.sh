@@ -4858,6 +4858,11 @@ uninstall() {
     rm -f /etc/systemd/system/jabali-queue.service
     rm -rf /etc/systemd/system/jabali-queue.service.d
 
+    systemctl stop jabali-panel 2>/dev/null || true
+    systemctl disable jabali-panel 2>/dev/null || true
+    rm -f /etc/systemd/system/jabali-panel.service
+    rm -rf /etc/systemd/system/jabali-panel.service.d
+
     local services=(
         nginx
         php-fpm
@@ -4901,6 +4906,9 @@ uninstall() {
     rm -rf /var/www/jabali.bk
     rm -rf /var/www/jabali.bak.*
     rm -f /usr/local/bin/jabali
+    rm -f /usr/local/bin/frankenphp
+    rm -rf /etc/frankenphp
+    rm -rf /var/lib/jabali
     rm -rf /var/run/jabali
     rm -rf /var/log/jabali
     rm -rf /var/backups/jabali
