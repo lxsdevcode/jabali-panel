@@ -715,10 +715,10 @@ install_packages() {
     fi
 
     run_quiet "Installing base packages (this may take a few minutes)..." \
-        env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${base_packages[@]}" || {
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${base_packages[@]}" || {
         warn "Some packages may not be available, retrying individually..."
         for pkg in "${base_packages[@]}"; do
-            run_quiet "  Installing $pkg..." apt-get install -y -qq "$pkg" || warn "Could not install: $pkg"
+            run_quiet "  Installing $pkg..." apt-get install -y -qq --no-install-recommends "$pkg" || warn "Could not install: $pkg"
         done
     }
 
@@ -774,8 +774,9 @@ install_packages() {
     info "Installing PHP..."
 
     # Install base PHP package first to determine available version
+    # Use --no-install-recommends to avoid pulling in apache2, postfix, exim4
     run_quiet "Installing base PHP package..." \
-        env DEBIAN_FRONTEND=noninteractive apt-get install -y php-fpm php-cli 2>/dev/null || true
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php-fpm php-cli 2>/dev/null || true
     if command -v php &>/dev/null; then
         PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)
     fi
