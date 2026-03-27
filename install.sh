@@ -1154,12 +1154,19 @@ install_composer() {
 }
 
 # Install FrankenPHP
+FRANKENPHP_VERSION="1.12.1"
+
 install_frankenphp() {
     header "Installing FrankenPHP"
 
     if [ -f /usr/local/bin/frankenphp ]; then
-        log "FrankenPHP already installed"
-        return
+        local current_ver
+        current_ver=$(/usr/local/bin/frankenphp version 2>/dev/null | grep -oP 'v\K[0-9.]+' || echo "unknown")
+        if [[ "$current_ver" == "$FRANKENPHP_VERSION" ]]; then
+            log "FrankenPHP v${FRANKENPHP_VERSION} already installed"
+            return
+        fi
+        info "Upgrading FrankenPHP from v${current_ver} to v${FRANKENPHP_VERSION}..."
     fi
 
     local arch
@@ -1170,9 +1177,9 @@ install_frankenphp() {
         *)       error "Unsupported architecture: $(uname -m)" ;;
     esac
 
-    info "Downloading FrankenPHP for ${arch}..."
+    info "Downloading FrankenPHP v${FRANKENPHP_VERSION} for ${arch}..."
     curl -fsSL --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 300 \
-        "https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${arch}" \
+        "https://github.com/dunglas/frankenphp/releases/download/v${FRANKENPHP_VERSION}/frankenphp-linux-${arch}" \
         -o /usr/local/bin/frankenphp
 
     chmod 755 /usr/local/bin/frankenphp
