@@ -4384,6 +4384,28 @@ setup_panel_ssl() {
         info "Panel hostname does not resolve to this server — using self-signed certificate"
     fi
 
+    # Certbot deploy hook: auto-copy renewed cert to FrankenPHP and reload
+    mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+    cat > /etc/letsencrypt/renewal-hooks/deploy/jabali-panel.sh <<'DEPLOYHOOK'
+#!/bin/bash
+# Copy renewed cert to FrankenPHP panel cert path and reload
+if [ -f /etc/ssl/jabali/panel.crt ]; then
+    for domain in $RENEWED_DOMAINS; do
+        if [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+            cp "/etc/letsencrypt/live/$domain/fullchain.pem" /etc/ssl/jabali/panel.crt
+            cp "/etc/letsencrypt/live/$domain/privkey.pem" /etc/ssl/jabali/panel.key
+            chmod 644 /etc/ssl/jabali/panel.crt
+            chown root:www-data /etc/ssl/jabali/panel.key
+            chmod 640 /etc/ssl/jabali/panel.key
+            systemctl reload jabali-panel 2>/dev/null || true
+            break
+        fi
+    done
+fi
+DEPLOYHOOK
+    chmod 755 /etc/letsencrypt/renewal-hooks/deploy/jabali-panel.sh
+    log "Certbot deploy hook installed for panel certificate renewal"
+
     # Try to issue certificate for mail hostname if different
     local mail_hostname="mail.$(echo "$SERVER_HOSTNAME" | awk -F. '{if(NF>2){for(i=2;i<=NF;i++)printf "%s%s",$i,(i<NF?".":"")}else print $0}')"
 
