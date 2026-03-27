@@ -133,8 +133,6 @@ if [ ! -f "${APP_DIR}/.env" ]; then
     # FrankenPHP / Octane defaults
     sed -i "s|^APP_URL=.*|APP_URL=https://${SERVER_HOSTNAME:-localhost}:2223|" "${APP_DIR}/.env"
     {
-        printf '%s\n' "OCTANE_SERVER=frankenphp"
-        printf '%s\n' "OCTANE_HTTPS=true"
         printf '%s\n' "PANEL_PORT=2223"
         printf '%s\n' "PANEL_HOSTNAME=${SERVER_HOSTNAME:-}"
         printf '%s\n' "PANEL_TLS_CERT=/etc/ssl/jabali/panel.crt"
@@ -160,7 +158,6 @@ for var in APP_URL APP_KEY APP_ENV APP_DEBUG APP_NAME \
            REDIS_HOST REDIS_PASSWORD REDIS_PORT \
            MAIL_MAILER MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD MAIL_FROM_ADDRESS MAIL_BACKEND \
            TRUSTED_PROXIES SERVER_HOSTNAME \
-           OCTANE_SERVER OCTANE_HTTPS \
            PANEL_PORT PANEL_HOSTNAME PANEL_TLS_CERT PANEL_TLS_KEY \
            JABALI_AGENT_SOCKET JABALI_AGENT_TIMEOUT JABALI_INTERNAL_API_TOKEN; do
     apply_env_override "$var"
