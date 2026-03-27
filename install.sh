@@ -4502,6 +4502,7 @@ setup_self_healing() {
 
     # List of critical services to harden with restart policies
     local services=(
+        "jabali-panel"
         "nginx"
         "mariadb"
         "jabali-agent"
