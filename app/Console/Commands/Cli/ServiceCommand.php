@@ -15,7 +15,7 @@ class ServiceCommand extends JabaliCommand
 
     private const SERVICES = [
         'nginx', 'mariadb', 'redis-server', 'postfix', 'dovecot',
-        'rspamd', 'clamav-daemon', 'named', 'opendkim', 'fail2ban',
+        'rspamd', 'named', 'opendkim', 'jabali-agent', 'jabali-queue',
         'ssh', 'cron',
     ];
 

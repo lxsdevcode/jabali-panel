@@ -88,8 +88,6 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     public ?array $phpFpmData = [];
 
-    public ?array $securityData = [];
-
     public ?array $timezoneData = [];
 
     // Version info (non-form)
@@ -183,10 +181,6 @@ class ServerSettings extends Page implements HasActions, HasForms
 
         $this->timezoneData = [
             'timezone' => $settings['server_timezone'] ?? @date_default_timezone_get(),
-        ];
-
-        $this->securityData = [
-            'passphrase_passwords' => (bool) ($settings['passphrase_passwords'] ?? false),
         ];
 
         $this->hostnameData = [
@@ -383,19 +377,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                         FormAction::make('saveTimezone')
                             ->label(__('Save Timezone'))
                             ->action('saveTimezone'),
-                    ]),
-                ]),
-            Section::make(__('Security'))
-                ->icon('heroicon-o-shield-check')
-                ->schema([
-                    Toggle::make('securityData.passphrase_passwords')
-                        ->label(__('Passphrase Passwords'))
-                        ->helperText(__('Generate easy-to-remember passwords using random words (e.g., sunset-harbor-meadow) instead of random characters'))
-                        ->inline(false),
-                    Actions::make([
-                        FormAction::make('saveSecurity')
-                            ->label(__('Save Security'))
-                            ->action('saveSecurity'),
                     ]),
                 ]),
         ];
@@ -933,14 +914,6 @@ class ServerSettings extends Page implements HasActions, HasForms
         }
 
         Notification::make()->title(__('Timezone updated to :tz', ['tz' => $timezone]))->success()->send();
-    }
-
-    public function saveSecurity(): void
-    {
-        DnsSetting::set('passphrase_passwords', $this->securityData['passphrase_passwords'] ? '1' : '0');
-        DnsSetting::clearCache();
-
-        Notification::make()->title(__('Security settings updated'))->success()->send();
     }
 
     public function uploadLogo(array $data, string $settingKey = 'custom_logo'): void

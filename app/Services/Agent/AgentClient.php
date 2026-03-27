@@ -1322,78 +1322,6 @@ class AgentClient implements AgentClientInterface
         return $this->send('ip.info', ['ip' => $ip]);
     }
 
-    /**
-     * Get light status for Fail2ban (installed/running/version).
-     */
-    public function fail2banStatusLight(): array
-    {
-        return $this->send('fail2ban.status_light');
-    }
-
-    /**
-     * Get light status for ClamAV (installed/running/version).
-     */
-    public function clamavStatusLight(): array
-    {
-        return $this->send('clamav.status_light');
-    }
-
-    /**
-     * Install a security scanner tool.
-     */
-    public function scannerInstall(string $tool): array
-    {
-        return $this->send('scanner.install', ['tool' => $tool], 120);
-    }
-
-    /**
-     * Uninstall a security scanner tool.
-     */
-    public function scannerUninstall(string $tool): array
-    {
-        return $this->send('scanner.uninstall', ['tool' => $tool], 60);
-    }
-
-    /**
-     * Get status of security scanner tools.
-     */
-    public function scannerStatus(?string $tool = null): array
-    {
-        return $this->send('scanner.status', ['tool' => $tool]);
-    }
-
-    /**
-     * Run Lynis security audit.
-     */
-    public function scannerRunLynis(): array
-    {
-        return $this->send('scanner.run_lynis', [], 300);
-    }
-
-    /**
-     * Run Nikto web server scan.
-     */
-    public function scannerRunNikto(string $target): array
-    {
-        return $this->send('scanner.run_nikto', ['target' => $target], 300);
-    }
-
-    /**
-     * Start Lynis scan in background.
-     */
-    public function scannerStartLynis(): array
-    {
-        return $this->send('scanner.start_lynis', []);
-    }
-
-    /**
-     * Get current scan status and output.
-     */
-    public function scannerGetScanStatus(string $scanner = 'lynis'): array
-    {
-        return $this->send('scanner.get_scan_status', ['scanner' => $scanner]);
-    }
-
     // Mail queue operations — agent dispatches to Postfix (legacy) or Stalwart (stalwart) queue
     public function mailQueueList(): array
     {
@@ -1421,24 +1349,7 @@ class AgentClient implements AgentClientInterface
         return $this->send('updates.run');
     }
 
-    // WAF / Geo
-    public function wafApplySettings(bool $enabled, string $paranoia, bool $auditLog, array $whitelistRules = []): array
-    {
-        return $this->send('waf.apply', [
-            'enabled' => $enabled,
-            'paranoia' => $paranoia,
-            'audit_log' => $auditLog,
-            'whitelist_rules' => $whitelistRules,
-        ]);
-    }
-
-    public function wafAuditLogList(int $limit = 200): array
-    {
-        return $this->send('waf.audit_log', [
-            'limit' => $limit,
-        ]);
-    }
-
+    // Geo
     public function geoApplyRules(array $rules): array
     {
         return $this->send('geo.apply_rules', [

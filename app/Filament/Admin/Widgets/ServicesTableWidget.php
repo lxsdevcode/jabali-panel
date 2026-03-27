@@ -45,7 +45,6 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
             ...($isStalwart ? ['stalwart-mail'] : ['postfix', 'dovecot']),
             'named', // can fall back to bind9
             'redis-server',
-            'fail2ban',
         ];
 
         $labels = [
@@ -60,7 +59,6 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
             'named' => 'BIND DNS',
             'bind9' => 'BIND DNS',
             'redis-server' => 'Redis',
-            'fail2ban' => 'Fail2Ban',
         ];
 
         $phpLabels = $this->detectPhpFpmServices();

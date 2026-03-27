@@ -72,9 +72,7 @@ class Services extends Page implements HasActions, HasForms, HasTable
         $baseServices += [
             'jabali-agent' => ['name' => 'Jabali Agent', 'description' => __('Panel Agent Daemon'), 'icon' => 'cpu-chip'],
             'jabali-queue' => ['name' => 'Jabali Queue', 'description' => __('Background Job Worker'), 'icon' => 'queue-list'],
-            'clamav-daemon' => ['name' => 'ClamAV', 'description' => __('Antivirus Scanner'), 'icon' => 'bug'],
             'named' => ['name' => 'BIND9', 'description' => __('DNS Server'), 'icon' => 'server'],
-            'fail2ban' => ['name' => 'Fail2Ban', 'description' => __('Intrusion Prevention'), 'icon' => 'lock'],
             'ssh' => ['name' => 'SSH', 'description' => __('Secure Shell'), 'icon' => 'terminal'],
             'cron' => ['name' => 'Cron', 'description' => __('Task Scheduler'), 'icon' => 'clock'],
         ];

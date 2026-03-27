@@ -38,11 +38,6 @@ class QuickActions extends Widget
                 'url' => route('filament.admin.pages.server-settings'),
             ],
             [
-                'label' => __('Security'),
-                'icon' => 'heroicon-o-shield-check',
-                'url' => route('filament.admin.pages.security'),
-            ],
-            [
                 'label' => __('SSL'),
                 'icon' => 'heroicon-o-lock-closed',
                 'url' => route('filament.admin.pages.ssl-manager'),

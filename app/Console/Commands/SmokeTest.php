@@ -157,12 +157,6 @@ class SmokeTest extends Command
             $this->section('Services');
             $this->test_service_status();
 
-            $this->section('Security Status');
-            $this->test_fail2ban_status();
-            $this->test_clamav_status();
-            $this->test_waf_audit_log();
-            $this->test_scanner_status();
-
             $this->section('Server Operations');
             $this->test_updates_list();
             $this->test_mail_queue_list();
@@ -1007,44 +1001,6 @@ class SmokeTest extends Command
         });
     }
 
-    // ── Security Status ──
-
-    private function test_fail2ban_status(): void
-    {
-        $this->check('Fail2ban status', function () {
-            $result = $this->agent->fail2banStatusLight();
-
-            return $result['success'] ?? false;
-        });
-    }
-
-    private function test_clamav_status(): void
-    {
-        $this->check('ClamAV status', function () {
-            $result = $this->agent->clamavStatusLight();
-
-            return $result['success'] ?? false;
-        });
-    }
-
-    private function test_waf_audit_log(): void
-    {
-        $this->check('WAF audit log', function () {
-            $result = $this->agent->wafAuditLogList(10);
-
-            return $result['success'] ?? false;
-        });
-    }
-
-    private function test_scanner_status(): void
-    {
-        $this->check('Scanner tool status', function () {
-            $result = $this->agent->scannerStatus();
-
-            return $result['success'] ?? false;
-        });
-    }
-
     // ── Server Operations ──
 
     private function test_updates_list(): void
@@ -1144,7 +1100,6 @@ class SmokeTest extends Command
         $pages = [
             '/jabali-admin' => 'Admin Dashboard',
             '/jabali-admin/server-settings' => 'Server Settings',
-            '/jabali-admin/security' => 'Security',
             '/jabali-admin/services' => 'Services',
             '/jabali-admin/backups' => 'Backups',
             '/jabali-admin/ssl-manager' => 'SSL Manager',
