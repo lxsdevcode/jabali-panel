@@ -142,7 +142,7 @@ class GranularRestoreServiceTest extends TestCase
 
         $mockAgent = Mockery::mock(AgentClientInterface::class);
         $mockAgent->shouldReceive('send')->once()
-            ->with('backup.list_snapshot_tree', Mockery::type('array'))
+            ->with('backup.list_contents', Mockery::type('array'))
             ->andReturn([
                 'success' => true,
                 'files' => [
@@ -294,9 +294,9 @@ class GranularRestoreServiceTest extends TestCase
 
         $mockAgent = Mockery::mock(AgentClientInterface::class);
         $mockAgent->shouldReceive('send')->once()
-            ->with('backup.list_snapshot_dir', Mockery::on(function (array $params) {
-                return str_contains($params['remote_path'], 'domains/example.com/public_html')
-                    && ! empty($params['destination']);
+            ->with('backup.list_domain_files', Mockery::on(function (array $params) {
+                return $params['path'] === 'domains/example.com/public_html'
+                    && ! empty($params['snapshot_id']);
             }))
             ->andReturn([
                 'success' => true,

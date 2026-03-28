@@ -16,6 +16,8 @@ All notable changes to Jabali Panel will be documented in this file.
   - `WhmMigrationOrchestrator` -- WHM migration workflow extracted from the job (609→58 lines)
   - `CpanelMigrationOrchestrator` -- cPanel migration workflow extracted from the page
   - 7 agent service facades (File, Database, Email, Domain, DNS, Backup, System) wrapping AgentClient's 162 methods into focused interfaces
+- **PowerDNS replaces BIND9** -- DNS zone management now uses PowerDNS with a REST API and MySQL backend. The panel calls the PowerDNS API directly (no agent involvement). Eliminates ~500 lines of zone file templating from the agent. DNSSEC managed natively via PowerDNS cryptokeys API.
+- **Restic replaces custom backup** -- Backups now use Restic for deduplication, encryption, and native remote backend support (SFTP, S3). Eliminates ~1,400 lines of tar/rsync agent code. Every backup is incremental by design. Auto-generated encryption password at `/etc/jabali/restic-password`.
 - **Auto-generate password for `jabali user password`** -- Running without `--password` now generates and displays a secure 16-character password instead of erroring.
 - **`jabali update` command** -- One-command panel update: pulls latest code, runs composer/npm, migrates database, rebuilds caches, and upgrades infrastructure (PHP, nginx, systemd configs). Use `--force` to re-run all steps even when already up to date.
 - **Granular backup restore** -- Selective restore from rsync incremental snapshots. Users can restore individual domains, databases, MySQL users, mailboxes, DNS zones, or SSL certificates instead of full account restores. Includes file browser, conflict resolution (overwrite/merge/skip/rename), and optional safety backup. New user-facing Restore page at Backups > Restore.

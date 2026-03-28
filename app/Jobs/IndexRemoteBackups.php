@@ -19,7 +19,7 @@ class IndexRemoteBackups implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 600; // 10 minutes max
+    public int $timeout = 600;
 
     public function __construct(
         public ?int $destinationId = null
@@ -29,14 +29,12 @@ class IndexRemoteBackups implements ShouldQueue
     {
         $agent = app(AgentClient::class);
 
-        // Get destinations to index
         $query = BackupDestination::where('is_server_backup', true)->where('is_active', true);
         if ($this->destinationId) {
             $query->where('id', $this->destinationId);
         }
         $destinations = $query->get();
 
-        // Get all users for lookup
         $users = User::pluck('id', 'username')->toArray();
 
         foreach ($destinations as $destination) {
@@ -52,111 +50,72 @@ class IndexRemoteBackups implements ShouldQueue
 
     protected function indexDestination(AgentClient $agent, BackupDestination $destination, array $users): void
     {
-        $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
+        $repo = $destination->getResticRepoUrl();
 
-        // List root directory to get all backup timestamps
-        $result = $agent->call('backup.list_remote', [
-            'destination' => $config,
-            'path' => '',
+        // Query Restic for all snapshots in this repo
+        $result = $agent->send('backup.list_snapshots', [
+            'repo' => $repo,
         ]);
 
-        if ($result->failed() || empty($result->get('files'))) {
+        if (! ($result['success'] ?? false) || empty($result['snapshots'])) {
             return;
         }
 
-        $indexedBackups = [];
+        $indexedCount = 0;
+        $knownSnapshotIds = [];
 
-        foreach ($result->get('files') as $file) {
-            if (! $file['is_directory']) {
+        foreach ($result['snapshots'] as $snapshot) {
+            $snapshotId = $snapshot['short_id'] ?? $snapshot['id'] ?? null;
+            if (! $snapshotId) {
                 continue;
             }
 
-            $backupName = basename($file['name']);
+            $knownSnapshotIds[] = $snapshotId;
 
-            // Check for timestamp directories (incremental backups: 2026-01-19_210219)
-            if (! preg_match('/^\d{4}-\d{2}-\d{2}_\d{6}$/', $backupName)) {
+            // Extract username from tags (tag format: "user:username")
+            $username = null;
+            foreach ($snapshot['tags'] ?? [] as $tag) {
+                if (str_starts_with($tag, 'user:')) {
+                    $username = substr($tag, 5);
+                    break;
+                }
+            }
+
+            if (! $username || ! isset($users[$username])) {
                 continue;
             }
 
-            // List the backup directory to find user subdirectories
-            $backupContents = $agent->call('backup.list_remote', [
-                'destination' => $config,
-                'path' => $backupName,
-            ]);
+            $backupDate = isset($snapshot['time'])
+                ? \Carbon\Carbon::parse($snapshot['time'])
+                : now();
 
-            if ($backupContents->failed() || empty($backupContents->get('files'))) {
-                continue;
-            }
+            UserRemoteBackup::updateOrCreate(
+                [
+                    'user_id' => $users[$username],
+                    'destination_id' => $destination->id,
+                    'backup_name' => $snapshotId,
+                ],
+                [
+                    'backup_path' => $snapshotId,
+                    'backup_type' => 'restic',
+                    'backup_date' => $backupDate,
+                    'indexed_at' => now(),
+                ]
+            );
 
-            // Check each subdirectory to see if it's a user
-            foreach ($backupContents->get('files') as $subFile) {
-                if (! $subFile['is_directory']) {
-                    continue;
-                }
-
-                $username = basename($subFile['name']);
-
-                // Skip . and ..
-                if ($username === '.' || $username === '..') {
-                    continue;
-                }
-
-                // Check if this is a valid user
-                if (! isset($users[$username])) {
-                    continue;
-                }
-
-                $userId = $users[$username];
-                $backupPath = $backupName.'/'.$username;
-                $backupDate = UserRemoteBackup::parseBackupDate($backupName);
-
-                // Upsert the backup record
-                UserRemoteBackup::updateOrCreate(
-                    [
-                        'user_id' => $userId,
-                        'destination_id' => $destination->id,
-                        'backup_name' => $backupName,
-                    ],
-                    [
-                        'backup_path' => $backupPath,
-                        'backup_type' => 'incremental',
-                        'backup_date' => $backupDate,
-                        'indexed_at' => now(),
-                    ]
-                );
-
-                $indexedBackups[] = "$username/$backupName";
-            }
+            $indexedCount++;
         }
 
-        Log::info('IndexRemoteBackups: Indexed '.count($indexedBackups)." backups from {$destination->name}");
+        Log::info("IndexRemoteBackups: Indexed {$indexedCount} Restic snapshots from {$destination->name}");
 
-        // Clean up old entries that no longer exist on the remote
-        // (backups that were deleted via retention policy)
-        $this->cleanupDeletedBackups($destination->id, $result->get('files', []));
-    }
-
-    protected function cleanupDeletedBackups(int $destinationId, array $remoteFiles): void
-    {
-        // Get all backup names that exist on remote
-        $remoteBackupNames = [];
-        foreach ($remoteFiles as $file) {
-            if ($file['is_directory']) {
-                $name = basename($file['name']);
-                if (preg_match('/^\d{4}-\d{2}-\d{2}_\d{6}$/', $name)) {
-                    $remoteBackupNames[] = $name;
-                }
-            }
-        }
-
-        // Delete index entries for backups that no longer exist
-        if (! empty($remoteBackupNames)) {
-            $deleted = UserRemoteBackup::where('destination_id', $destinationId)
-                ->whereNotIn('backup_name', $remoteBackupNames)
+        // Clean up entries for snapshots that no longer exist
+        if (! empty($knownSnapshotIds)) {
+            $deleted = UserRemoteBackup::where('destination_id', $destination->id)
+                ->whereNotIn('backup_name', $knownSnapshotIds)
                 ->delete();
 
             if ($deleted > 0) {
-                Log::info("IndexRemoteBackups: Cleaned up {$deleted} deleted backup entries");
+                Log::info("IndexRemoteBackups: Cleaned up {$deleted} deleted snapshot entries");
             }
         }
     }

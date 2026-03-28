@@ -115,15 +115,15 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 ## Highlights
 
 - Per-user Linux accounts and PHP-FPM isolation
-- Root agent for DNS, SSL, mail, backups, and migrations
+- Root agent for SSL, mail, backups, and migrations
 - Health monitor with auto-restarts and alerts
 - cPanel and WHM migrations with step-by-step logs
 - IMAP sync for migrating mail from external servers
 - Built-in mail stack with webmail SSO
 - Shared mailbox folders with Dovecot ACL permissions
 - `mail.domain.ext` auto-redirects to webmail
-- DNS templates with optional DNSSEC
-- User and server backups with schedules and retention
+- PowerDNS with REST API and native DNSSEC
+- Restic backups with deduplication, encryption, and SFTP/S3 support
 - WordPress management (install, updates, and SSO)
 - Integrated security suite (jabali-security) with real-time threat detection
 - Encrypted diagnostic reports with email and clipboard support
@@ -188,7 +188,8 @@ Service stack (single-node default):
 - PHP-FPM (user site pools)
 - MariaDB (user databases)
 - Postfix, Dovecot, Rspamd (or Stalwart all-in-one)
-- BIND9 (DNS)
+- PowerDNS (DNS with REST API, MySQL backend)
+- Restic (encrypted, deduplicated backups)
 - Redis
 - jabali-security (real-time threat detection, brute-force protection, WAF)
 

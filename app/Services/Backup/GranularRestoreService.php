@@ -54,9 +54,14 @@ class GranularRestoreService
 
         $restore->markAsRunning();
 
+        $repo = $snapshot->destination
+            ? $snapshot->destination->getResticRepoUrl()
+            : '/var/backups/jabali/restic';
+
         $result = $this->agent->send('backup.restore', [
             'username' => $user->username,
-            'backup_path' => $snapshot->backup_path,
+            'snapshot_id' => $snapshot->backup_path,
+            'repo' => $repo,
             'restore_files' => true,
             'restore_databases' => true,
             'restore_mailboxes' => true,
@@ -111,9 +116,14 @@ class GranularRestoreService
 
         $restore->markAsRunning();
 
+        $repo = $snapshot->destination
+            ? $snapshot->destination->getResticRepoUrl()
+            : '/var/backups/jabali/restic';
+
         $agentParams = [
             'username' => $user->username,
-            'backup_path' => $snapshot->backup_path,
+            'snapshot_id' => $snapshot->backup_path,
+            'repo' => $repo,
             'restore_files' => $hasDomains,
             'restore_databases' => $hasDatabases,
             'restore_mailboxes' => $hasMailboxes,
@@ -166,17 +176,14 @@ class GranularRestoreService
      */
     public function browseSnapshot(User $user, UserRemoteBackup $snapshot): array
     {
-        $this->validateSnapshotPath($snapshot->backup_path);
+        $repo = $snapshot->destination
+            ? $snapshot->destination->getResticRepoUrl()
+            : '/var/backups/jabali/restic';
 
-        $destination = $snapshot->destination;
-        $destConfig = $destination
-            ? array_merge($destination->config ?? [], ['type' => $destination->type])
-            : [];
-
-        $result = $this->agent->send('backup.list_snapshot_tree', [
-            'backup_path' => $snapshot->backup_path,
+        $result = $this->agent->send('backup.list_contents', [
+            'snapshot_id' => $snapshot->backup_path,
             'username' => $user->username,
-            'destination' => $destConfig,
+            'repo' => $repo,
         ]);
 
         $files = $result['files'] ?? [];
@@ -236,19 +243,17 @@ class GranularRestoreService
      */
     public function browseDomainFiles(User $user, UserRemoteBackup $snapshot, string $relativePath): array
     {
-        $this->validateSnapshotPath($snapshot->backup_path);
         $this->validateSnapshotPath($relativePath);
 
-        $destination = $snapshot->destination;
-        $destConfig = $destination
-            ? array_merge($destination->config ?? [], ['type' => $destination->type])
-            : [];
+        $repo = $snapshot->destination
+            ? $snapshot->destination->getResticRepoUrl()
+            : '/var/backups/jabali/restic';
 
-        $remotePath = rtrim($snapshot->backup_path, '/').'/'.$user->username.'/home/'.$user->username.'/'.$relativePath;
-
-        $result = $this->agent->send('backup.list_snapshot_dir', [
-            'remote_path' => $remotePath,
-            'destination' => $destConfig,
+        $result = $this->agent->send('backup.list_domain_files', [
+            'snapshot_id' => $snapshot->backup_path,
+            'username' => $user->username,
+            'path' => $relativePath,
+            'repo' => $repo,
         ]);
 
         return $result['items'] ?? [];
