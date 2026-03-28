@@ -17663,9 +17663,9 @@ function backupCreateServer(array $params): array
         'success' => true,
         'snapshot_id' => $snapshotId,
         'size' => $totalSize,
-        'users' => $results,
-        'user_count' => count($results),
-        'errors' => $errors,
+        'users' => $backedUpUsers,
+        'user_count' => count($backedUpUsers),
+        'errors' => $errors ?? [],
     ];
 }
 
