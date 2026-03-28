@@ -115,9 +115,19 @@ class PowerDnsService
                 $content = '"'.$content.'"';
             }
 
-            // SRV records need priority in content
-            if ($type === 'SRV' && ! empty($record['priority'])) {
-                // SRV content format: priority weight port target (already in content usually)
+            // SRV content must be: priority weight port target
+            // DB stores weight+port+target in content, priority separate
+            if ($type === 'SRV') {
+                $priority = $record['priority'] ?? 0;
+                $parts = preg_split('/\s+/', trim($content));
+                if (count($parts) === 3) {
+                    // Content is "weight port target" — prepend priority
+                    $content = "{$priority} {$content}";
+                }
+                // Ensure target has trailing dot
+                if (! str_ends_with($content, '.')) {
+                    $content .= '.';
+                }
             }
 
             // CNAME and NS targets need trailing dot
