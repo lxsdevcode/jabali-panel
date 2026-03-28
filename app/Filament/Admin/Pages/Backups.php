@@ -7,6 +7,7 @@ namespace App\Filament\Admin\Pages;
 use App\Jobs\RunServerBackup;
 use App\Models\Backup;
 use App\Models\BackupDestination;
+use App\Models\BackupSchedule;
 use App\Models\User;
 use App\Services\Backup\BackupOrchestrator;
 use App\Support\SafeError;
@@ -57,12 +58,33 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         return __('Server Backups');
     }
 
+    public function getSubheading(): ?string
+    {
+        $scheduleCount = BackupSchedule::where('is_active', true)->where('is_server_backup', true)->count();
+        $destCount = BackupDestination::where('is_server_backup', true)->where('is_active', true)->count();
+
+        if ($scheduleCount === 0 && $destCount === 0) {
+            return __('No schedules or destinations configured');
+        }
+
+        $parts = [];
+        if ($scheduleCount > 0) {
+            $parts[] = __(':count active schedule(s)', ['count' => $scheduleCount]);
+        }
+        if ($destCount > 0) {
+            $parts[] = __(':count destination(s)', ['count' => $destCount]);
+        }
+
+        return implode(' · ', $parts);
+    }
+
     // ── Header Actions ──────────────────────────────────────────────────
 
     protected function getHeaderActions(): array
     {
         return [
             $this->createServerBackupAction(),
+            $this->createScheduleAction(),
             $this->addDestinationAction(),
         ];
     }
@@ -255,6 +277,90 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 Notification::make()
                     ->title(__('Backup started'))
                     ->body(__('Server backup is running in the background.'))
+                    ->success()
+                    ->send();
+            });
+    }
+
+    // ── Schedule Actions ─────────────────────────────────────────────
+
+    private function createScheduleAction(): Action
+    {
+        $destinations = BackupDestination::where('is_server_backup', true)
+            ->where('is_active', true)
+            ->pluck('name', 'id')
+            ->toArray();
+
+        return Action::make('createSchedule')
+            ->label(__('Add Schedule'))
+            ->icon('heroicon-o-clock')
+            ->color('gray')
+            ->modalHeading(__('Create Backup Schedule'))
+            ->form([
+                TextInput::make('name')
+                    ->label(__('Name'))
+                    ->placeholder(__('Daily Backup'))
+                    ->required(),
+                Grid::make(2)->schema([
+                    Select::make('frequency')
+                        ->label(__('Frequency'))
+                        ->options([
+                            'daily' => __('Daily'),
+                            'weekly' => __('Weekly'),
+                            'monthly' => __('Monthly'),
+                        ])
+                        ->default('daily')
+                        ->required(),
+                    TextInput::make('time')
+                        ->label(__('Time (HH:MM)'))
+                        ->placeholder('03:00')
+                        ->default('03:00')
+                        ->required(),
+                ]),
+                Select::make('destination_id')
+                    ->label(__('Destination'))
+                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->placeholder(__('Select destination')),
+                TextInput::make('retention_count')
+                    ->label(__('Keep last N backups'))
+                    ->numeric()
+                    ->default(7)
+                    ->minValue(1)
+                    ->maxValue(365),
+                Grid::make(3)->schema([
+                    Toggle::make('include_files')->label(__('Files'))->default(true),
+                    Toggle::make('include_databases')->label(__('Databases'))->default(true),
+                    Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
+                ]),
+            ])
+            ->action(function (array $data): void {
+                $timeParts = explode(':', $data['time'] ?? '03:00');
+                $hour = (int) ($timeParts[0] ?? 3);
+                $minute = (int) ($timeParts[1] ?? 0);
+
+                $schedule = BackupSchedule::create([
+                    'name' => $data['name'],
+                    'is_active' => true,
+                    'is_server_backup' => true,
+                    'frequency' => $data['frequency'] ?? 'daily',
+                    'time' => sprintf('%02d:%02d', $hour, $minute),
+                    'destination_id' => ! empty($data['destination_id']) ? (int) $data['destination_id'] : null,
+                    'retention_count' => (int) ($data['retention_count'] ?? 7),
+                    'include_files' => $data['include_files'] ?? true,
+                    'include_databases' => $data['include_databases'] ?? true,
+                    'include_mailboxes' => $data['include_mailboxes'] ?? true,
+                    'include_dns' => true,
+                    'include_ssl' => true,
+                    'next_run_at' => now()->setTime($hour, $minute)->addDay(),
+                ]);
+
+                Notification::make()
+                    ->title(__('Schedule created'))
+                    ->body(__(':name — :freq at :time', [
+                        'name' => $schedule->name,
+                        'freq' => $schedule->frequency,
+                        'time' => $schedule->time,
+                    ]))
                     ->success()
                     ->send();
             });
