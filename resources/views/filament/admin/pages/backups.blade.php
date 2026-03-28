@@ -23,6 +23,14 @@
         >
             {{ __('Schedules') }}
         </x-filament::tabs.item>
+
+        <x-filament::tabs.item
+            :active="$activeTab === 'logs'"
+            icon="heroicon-o-document-text"
+            wire:click="$set('activeTab', 'logs')"
+        >
+            {{ __('Logs') }}
+        </x-filament::tabs.item>
     </x-filament::tabs>
 
     {{ $this->table }}

@@ -7,6 +7,7 @@ namespace App\Filament\Admin\Pages;
 use App\Jobs\RunServerBackup;
 use App\Models\Backup;
 use App\Models\BackupDestination;
+use App\Models\BackupRestore;
 use App\Models\BackupSchedule;
 use App\Models\User;
 use App\Services\Backup\BackupOrchestrator;
@@ -82,6 +83,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         return match ($this->activeTab) {
             'destinations' => $this->destinationsTable($table),
             'schedules' => $this->schedulesTable($table),
+            'logs' => $this->logsTable($table),
             default => $this->backupsTable($table),
         };
     }
@@ -683,6 +685,77 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         ]);
 
         Notification::make()->title(__('Destination updated'))->success()->send();
+    }
+
+    // ── Logs Table ──────────────────────────────────────────────────────
+
+    private function logsTable(Table $table): Table
+    {
+        return $table
+            ->query(
+                BackupRestore::query()
+                    ->with(['backup.destination', 'user'])
+                    ->latest()
+            )
+            ->columns([
+                TextColumn::make('created_at')
+                    ->label(__('Date'))
+                    ->dateTime('M j, Y H:i:s')
+                    ->sortable(),
+                TextColumn::make('status')
+                    ->label(__('Status'))
+                    ->badge()
+                    ->color(fn (string $state) => match ($state) {
+                        'completed' => 'success',
+                        'running', 'downloading' => 'warning',
+                        'failed' => 'danger',
+                        default => 'gray',
+                    }),
+                TextColumn::make('user.username')
+                    ->label(__('User'))
+                    ->placeholder('-'),
+                TextColumn::make('backup.name')
+                    ->label(__('Backup'))
+                    ->limit(30)
+                    ->placeholder('-'),
+                TextColumn::make('backup.destination.name')
+                    ->label(__('Destination'))
+                    ->placeholder(__('Local')),
+                TextColumn::make('started_at')
+                    ->label(__('Started'))
+                    ->dateTime('H:i:s')
+                    ->placeholder('-'),
+                TextColumn::make('completed_at')
+                    ->label(__('Finished'))
+                    ->dateTime('H:i:s')
+                    ->placeholder('-'),
+                TextColumn::make('error_message')
+                    ->label(__('Error'))
+                    ->limit(50)
+                    ->placeholder('-')
+                    ->color('danger')
+                    ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->actions([
+                Action::make('view_log')
+                    ->label(__('View Log'))
+                    ->icon('heroicon-o-document-text')
+                    ->color('gray')
+                    ->modalHeading(__('Restore Log'))
+                    ->modalContent(function (BackupRestore $record): \Illuminate\Contracts\View\View {
+                        return view('filament.admin.pages.backup-log-modal', [
+                            'log' => $record->log,
+                            'status' => $record->status,
+                            'error' => $record->error_message,
+                            'result' => $record->result,
+                        ]);
+                    })
+                    ->modalSubmitAction(false),
+            ])
+            ->emptyStateHeading(__('No backup activity yet'))
+            ->emptyStateDescription(__('Backup and restore operations will appear here.'))
+            ->emptyStateIcon('heroicon-o-document-text')
+            ->defaultSort('created_at', 'desc');
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
