@@ -321,6 +321,31 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 TextColumn::make('last_run_at')->label(__('Last Run'))->since()->placeholder(__('Never')),
             ])
             ->actions([
+                Action::make('run')->label(__('Run Now'))->icon('heroicon-o-play')->color('primary')
+                    ->action(function (BackupSchedule $record): void {
+                        $backup = Backup::create([
+                            'name' => $record->name.' - Manual '.now()->format('Y-m-d H:i'),
+                            'filename' => 'restic-snapshot',
+                            'type' => 'server',
+                            'schedule_id' => $record->id,
+                            'destination_id' => $record->destination_id,
+                            'users' => $record->users,
+                            'include_files' => $record->include_files,
+                            'include_databases' => $record->include_databases,
+                            'include_mailboxes' => $record->include_mailboxes,
+                            'include_dns' => $record->include_dns ?? true,
+                            'include_ssl' => $record->include_ssl ?? true,
+                            'status' => 'pending',
+                        ]);
+
+                        RunServerBackup::dispatch($backup->id);
+
+                        Notification::make()
+                            ->title(__('Backup started'))
+                            ->body(__('Running ":name" schedule now', ['name' => $record->name]))
+                            ->success()
+                            ->send();
+                    }),
                 Action::make('toggle')->label(fn (BackupSchedule $record) => $record->is_active ? __('Pause') : __('Enable'))
                     ->icon(fn (BackupSchedule $record) => $record->is_active ? 'heroicon-o-pause' : 'heroicon-o-play')
                     ->color('gray')
