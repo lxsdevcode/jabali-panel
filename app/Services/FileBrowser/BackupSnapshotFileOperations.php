@@ -59,7 +59,7 @@ class BackupSnapshotFileOperations implements FileOperations
         }
 
         // restic ls returns the directory entry itself alongside children — filter it out
-        $currentDirName = ! empty($path) ? basename($path) : $this->username;
+        $currentDirName = basename($absPath);
 
         foreach ($result['items'] ?? [] as $file) {
             $name = $file['name'] ?? '';
