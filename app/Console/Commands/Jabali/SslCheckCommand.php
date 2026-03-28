@@ -8,9 +8,7 @@ use App\Models\Domain;
 use App\Models\EmailDomain;
 use App\Models\SslCertificate;
 use App\Services\AdminNotificationService;
-use App\Services\Agent\AgentClient;
-use Carbon\Carbon;
-use Exception;
+use App\Services\SslManagementService;
 use Illuminate\Console\Command;
 
 class SslCheckCommand extends Command
@@ -22,7 +20,7 @@ class SslCheckCommand extends Command
 
     protected $description = 'Check SSL certificates and automatically issue/renew them';
 
-    private AgentClient $agent;
+    private SslManagementService $sslService;
 
     private int $issued = 0;
 
@@ -39,7 +37,7 @@ class SslCheckCommand extends Command
     public function __construct()
     {
         parent::__construct();
-        $this->agent = app(AgentClient::class);
+        $this->sslService = app(SslManagementService::class);
     }
 
     public function handle(): int
@@ -269,55 +267,23 @@ class SslCheckCommand extends Command
             $this->log("Issuing mail SSL for: {$mailHostname} (user: {$domain->user->username})");
             $this->line("  Issuing mail SSL for: {$mailHostname}");
 
-            try {
-                $result = $this->agent->sslMailIssue($mailHostname, $domain->user->email);
+            $cert = $this->sslService->issue($domain, 'mail');
 
-                if ($result['success'] ?? false) {
-                    $expiresAt = isset($result['valid_to']) ? Carbon::parse($result['valid_to']) : now()->addMonths(3);
-
-                    SslCertificate::updateOrCreate(
-                        ['domain_id' => $domain->id, 'service' => 'mail'],
-                        [
-                            'type' => 'lets_encrypt',
-                            'status' => 'active',
-                            'issuer' => "Let's Encrypt",
-                            'certificate' => $result['certificate'] ?? null,
-                            'issued_at' => now(),
-                            'expires_at' => $expiresAt,
-                            'last_check_at' => now(),
-                            'last_error' => null,
-                            'renewal_attempts' => 0,
-                            'auto_renew' => true,
-                        ]
-                    );
-
-                    $this->log("SUCCESS: Mail SSL issued for {$mailHostname}, expires: {$expiresAt->format('Y-m-d')}", 'SUCCESS');
-                    $this->info('    ✓ Mail certificate issued successfully');
-                    $this->issued++;
-                } else {
-                    $error = $result['error'] ?? 'Unknown error';
-
-                    $ssl = SslCertificate::firstOrNew(['domain_id' => $domain->id, 'service' => 'mail']);
-                    $ssl->type = 'lets_encrypt';
-                    $ssl->status = 'failed';
-                    $ssl->last_check_at = now();
-                    $ssl->last_error = $error;
-                    $ssl->increment('renewal_attempts');
-                    $ssl->save();
-
-                    $this->log("FAILED: Mail SSL for {$mailHostname}: {$error}", 'ERROR');
-                    $this->error("    ✗ Failed: {$error}");
-                    $this->failed++;
-
-                    AdminNotificationService::sslError($mailHostname, $error);
-                }
-            } catch (Exception $e) {
-                $this->log("EXCEPTION: Mail SSL for {$mailHostname}: {$e->getMessage()}", 'ERROR');
-                $this->error("    ✗ Exception: {$e->getMessage()}");
+            if ($cert->status === 'failed') {
+                $this->log("FAILED: Mail SSL for {$mailHostname}: {$cert->last_error}", 'ERROR');
+                $this->error("    ✗ Failed: {$cert->last_error}");
                 $this->failed++;
 
-                AdminNotificationService::sslError($mailHostname, $e->getMessage());
+                AdminNotificationService::sslError($mailHostname, $cert->last_error ?? 'Unknown error');
+
+                continue;
             }
+
+            $expiresAt = $cert->expires_at?->format('Y-m-d') ?? 'unknown';
+
+            $this->log("SUCCESS: Mail SSL issued for {$mailHostname}, expires: {$expiresAt}", 'SUCCESS');
+            $this->info('    ✓ Mail certificate issued successfully');
+            $this->issued++;
         }
     }
 
@@ -387,64 +353,24 @@ class SslCheckCommand extends Command
         $this->log("Issuing SSL for: {$domain->domain} (user: {$domain->user->username})");
         $this->line("  Issuing SSL for: {$domain->domain}");
 
-        try {
-            $result = $this->agent->sslIssue(
-                $domain->domain,
-                $domain->user->username,
-                $domain->user->email,
-                true
-            );
+        $cert = $this->sslService->issue($domain);
 
-            if ($result['success'] ?? false) {
-                $expiresAt = isset($result['valid_to']) ? Carbon::parse($result['valid_to']) : now()->addMonths(3);
-
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'web'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'active',
-                        'issuer' => "Let's Encrypt",
-                        'certificate' => $result['certificate'] ?? null,
-                        'issued_at' => now(),
-                        'expires_at' => $expiresAt,
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                        'auto_renew' => true,
-                    ]
-                );
-
-                $domain->update(['ssl_enabled' => true]);
-
-                $this->log("SUCCESS: Certificate issued for {$domain->domain}, expires: {$expiresAt->format('Y-m-d')}", 'SUCCESS');
-                $this->info('    ✓ Certificate issued successfully');
-                $this->issued++;
-            } else {
-                $error = $result['error'] ?? 'Unknown error';
-
-                $ssl = SslCertificate::firstOrNew(['domain_id' => $domain->id, 'service' => 'web']);
-                $ssl->type = 'lets_encrypt';
-                $ssl->status = 'failed';
-                $ssl->last_check_at = now();
-                $ssl->last_error = $error;
-                $ssl->increment('renewal_attempts');
-                $ssl->save();
-
-                $this->log("FAILED: Certificate issue for {$domain->domain}: {$error}", 'ERROR');
-                $this->error("    ✗ Failed: {$error}");
-                $this->failed++;
-
-                // Send admin notification
-                AdminNotificationService::sslError($domain->domain, $error);
-            }
-        } catch (Exception $e) {
-            $this->log("EXCEPTION: Certificate issue for {$domain->domain}: {$e->getMessage()}", 'ERROR');
-            $this->error("    ✗ Exception: {$e->getMessage()}");
+        if ($cert->status === 'failed') {
+            $this->log("FAILED: Certificate issue for {$domain->domain}: {$cert->last_error}", 'ERROR');
+            $this->error("    ✗ Failed: {$cert->last_error}");
             $this->failed++;
 
-            // Send admin notification
-            AdminNotificationService::sslError($domain->domain, $e->getMessage());
+            AdminNotificationService::sslError($domain->domain, $cert->last_error ?? 'Unknown error');
+
+            return;
         }
+
+        $domain->update(['ssl_enabled' => true]);
+        $expiresAt = $cert->expires_at?->format('Y-m-d') ?? 'unknown';
+
+        $this->log("SUCCESS: Certificate issued for {$domain->domain}, expires: {$expiresAt}", 'SUCCESS');
+        $this->info('    ✓ Certificate issued successfully');
+        $this->issued++;
     }
 
     private function renewCertificate(Domain $domain): void
@@ -469,51 +395,23 @@ class SslCheckCommand extends Command
         $this->log("Renewing SSL for: {$domain->domain} (user: {$domain->user->username})");
         $this->line("  Renewing SSL for: {$domain->domain}");
 
-        try {
-            $result = $this->agent->sslRenew($domain->domain, $domain->user->username);
+        $cert = $this->sslService->renew($domain);
 
-            if ($result['success'] ?? false) {
-                $ssl = $domain->sslCertificate;
-                $expiresAt = isset($result['valid_to']) ? Carbon::parse($result['valid_to']) : now()->addMonths(3);
-
-                if ($ssl) {
-                    $ssl->update([
-                        'status' => 'active',
-                        'issued_at' => now(),
-                        'expires_at' => $expiresAt,
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                    ]);
-                }
-
-                $this->log("SUCCESS: Certificate renewed for {$domain->domain}, expires: {$expiresAt->format('Y-m-d')}", 'SUCCESS');
-                $this->info('    ✓ Certificate renewed successfully');
-                $this->renewed++;
-            } else {
-                $error = $result['error'] ?? 'Unknown error';
-
-                $ssl = $domain->sslCertificate;
-                if ($ssl) {
-                    $ssl->incrementRenewalAttempts();
-                    $ssl->update(['last_error' => $error]);
-                }
-
-                $this->log("FAILED: Certificate renewal for {$domain->domain}: {$error}", 'ERROR');
-                $this->error("    ✗ Failed: {$error}");
-                $this->failed++;
-
-                // Send admin notification
-                AdminNotificationService::sslError($domain->domain, "Renewal failed: {$error}");
-            }
-        } catch (Exception $e) {
-            $this->log("EXCEPTION: Certificate renewal for {$domain->domain}: {$e->getMessage()}", 'ERROR');
-            $this->error("    ✗ Exception: {$e->getMessage()}");
+        if ($cert->status === 'failed') {
+            $this->log("FAILED: Certificate renewal for {$domain->domain}: {$cert->last_error}", 'ERROR');
+            $this->error("    ✗ Failed: {$cert->last_error}");
             $this->failed++;
 
-            // Send admin notification
-            AdminNotificationService::sslError($domain->domain, "Renewal exception: {$e->getMessage()}");
+            AdminNotificationService::sslError($domain->domain, "Renewal failed: {$cert->last_error}");
+
+            return;
         }
+
+        $expiresAt = $cert->expires_at?->format('Y-m-d') ?? 'unknown';
+
+        $this->log("SUCCESS: Certificate renewed for {$domain->domain}, expires: {$expiresAt}", 'SUCCESS');
+        $this->info('    ✓ Certificate renewed successfully');
+        $this->renewed++;
     }
 
     private function renewMailCertificate(SslCertificate $ssl): void
@@ -524,42 +422,23 @@ class SslCheckCommand extends Command
         $this->log("Renewing mail SSL for: {$mailHostname}");
         $this->line("  Renewing mail SSL for: {$mailHostname}");
 
-        try {
-            $result = $this->agent->sslMailIssue($mailHostname, $domain->user?->email);
+        $cert = $this->sslService->issue($domain, 'mail');
 
-            if ($result['success'] ?? false) {
-                $expiresAt = isset($result['expires_at']) ? Carbon::parse($result['expires_at']) : now()->addMonths(3);
-
-                $ssl->update([
-                    'status' => 'active',
-                    'issued_at' => now(),
-                    'expires_at' => $expiresAt,
-                    'last_check_at' => now(),
-                    'last_error' => null,
-                    'renewal_attempts' => 0,
-                ]);
-
-                $this->log("SUCCESS: Mail certificate renewed for {$mailHostname}, expires: {$expiresAt->format('Y-m-d')}", 'SUCCESS');
-                $this->info('    ✓ Mail certificate renewed successfully');
-                $this->renewed++;
-            } else {
-                $error = $result['error'] ?? 'Unknown error';
-                $ssl->incrementRenewalAttempts();
-                $ssl->update(['last_error' => $error]);
-
-                $this->log("FAILED: Mail certificate renewal for {$mailHostname}: {$error}", 'ERROR');
-                $this->error("    ✗ Failed: {$error}");
-                $this->failed++;
-
-                AdminNotificationService::sslError($mailHostname, "Mail renewal failed: {$error}");
-            }
-        } catch (Exception $e) {
-            $this->log("EXCEPTION: Mail certificate renewal for {$mailHostname}: {$e->getMessage()}", 'ERROR');
-            $this->error("    ✗ Exception: {$e->getMessage()}");
+        if ($cert->status === 'failed') {
+            $this->log("FAILED: Mail certificate renewal for {$mailHostname}: {$cert->last_error}", 'ERROR');
+            $this->error("    ✗ Failed: {$cert->last_error}");
             $this->failed++;
 
-            AdminNotificationService::sslError($mailHostname, "Mail renewal exception: {$e->getMessage()}");
+            AdminNotificationService::sslError($mailHostname, "Mail renewal failed: {$cert->last_error}");
+
+            return;
         }
+
+        $expiresAt = $cert->expires_at?->format('Y-m-d') ?? 'unknown';
+
+        $this->log("SUCCESS: Mail certificate renewed for {$mailHostname}, expires: {$expiresAt}", 'SUCCESS');
+        $this->info('    ✓ Mail certificate renewed successfully');
+        $this->renewed++;
     }
 
     private function domainPointsToServer(string $domain): bool
