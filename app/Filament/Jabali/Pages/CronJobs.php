@@ -184,7 +184,7 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
                             ->label(__('Command'))
                             ->required()
                             ->rows(3)
-                            ->helperText(__('The command will run as your user account')),
+                            ->helperText(__('Must start with an absolute path. Allowed: php, curl, wget, wp, mysql, mysqldump, psql, pg_dump, tar, gzip, gunzip, rsync, find, python3, node, ruby, perl.')),
                     ])
                     ->action(fn (CronJob $record, array $data) => $this->updateCronJob($record, $data)),
                 Action::make('delete')
@@ -233,8 +233,8 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Command'))
                     ->required()
                     ->rows(3)
-                    ->placeholder(__('php /home/user/script.php'))
-                    ->helperText(__('The command will run as your user account')),
+                    ->placeholder(__('/usr/bin/php /home/user/script.php'))
+                    ->helperText(__('Must start with an absolute path. Allowed: php, curl, wget, wp, mysql, mysqldump, psql, pg_dump, tar, gzip, gunzip, rsync, find, python3, node, ruby, perl.')),
                 Placeholder::make('warning')
                     ->content(new HtmlString('
                         <div class="rounded-lg bg-warning-500/10 p-4 text-sm text-warning-600 dark:text-warning-400">
@@ -251,7 +251,16 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $this->validateCronCommand($data['command']);
+                    $validation = $this->validateCronCommand($data['command']);
+                    if ($validation !== true) {
+                        Notification::make()
+                            ->title(__('Invalid command'))
+                            ->body($validation)
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
 
                     // Create in database - Laravel scheduler will handle execution
                     CronJob::create([
@@ -373,83 +382,63 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
             });
     }
 
-    private function validateCronCommand(string $command): void
+    /** @var list<string> */
+    private static array $allowedExecutables = [
+        '/usr/bin/php',
+        '/usr/bin/php8.2',
+        '/usr/bin/php8.3',
+        '/usr/bin/php8.4',
+        '/usr/local/bin/php',
+        '/usr/bin/curl',
+        '/usr/bin/wget',
+        '/usr/bin/wp',
+        '/usr/local/bin/wp',
+        '/usr/bin/mysql',
+        '/usr/bin/mysqldump',
+        '/usr/bin/psql',
+        '/usr/bin/pg_dump',
+        '/usr/bin/tar',
+        '/usr/bin/gzip',
+        '/usr/bin/gunzip',
+        '/usr/bin/rsync',
+        '/usr/bin/find',
+        '/usr/bin/python3',
+        '/usr/bin/node',
+        '/usr/bin/ruby',
+        '/usr/bin/perl',
+    ];
+
+    private function validateCronCommand(string $command): bool|string
     {
-        $normalizedCommand = strtolower(trim($command));
+        $command = trim($command);
 
-        // Block fork bombs
-        if (str_contains($normalizedCommand, ':(){ :|:& };:')) {
-            throw new Exception(__('This command contains a dangerous pattern and is not allowed.'));
+        if (empty($command)) {
+            return __('Command cannot be empty.');
         }
 
-        // Block dangerous commands at the start
-        $dangerousStartPatterns = [
-            'rm -rf /',
-            'mkfs',
-            'dd if=',
-            'chmod -r 777 /',
-            'chown -r',
-        ];
-
-        foreach ($dangerousStartPatterns as $pattern) {
-            if (str_starts_with($normalizedCommand, $pattern)) {
-                throw new Exception(__('This command contains a dangerous pattern and is not allowed.'));
+        // Block dangerous shell operators
+        $dangerousPatterns = [';', '|', '&&', '||', '`', '$(', '${', '>', '<', "\n", "\r"];
+        foreach ($dangerousPatterns as $pattern) {
+            if (str_contains($command, $pattern)) {
+                return __('Shell operators are not allowed. Create separate cron jobs for each command.');
             }
         }
 
-        // Block privilege escalation
-        $blockedSubstrings = [
-            'sudo ',
-            'su -',
-            'su root',
-        ];
+        // Extract the executable (first token)
+        $parts = preg_split('/\s+/', $command, 2);
+        $executable = $parts[0];
 
-        foreach ($blockedSubstrings as $pattern) {
-            if (str_contains($normalizedCommand, $pattern)) {
-                throw new Exception(__('This command contains a dangerous pattern and is not allowed.'));
-            }
+        // Must be an absolute path
+        if (! str_starts_with($executable, '/')) {
+            return __('Command must start with an absolute path (e.g., /usr/bin/php).');
         }
 
-        // Block network abuse
-        $networkPatterns = [
-            'nc -l',
-            'ncat -l',
-        ];
-
-        foreach ($networkPatterns as $pattern) {
-            if (str_contains($normalizedCommand, $pattern)) {
-                throw new Exception(__('This command contains a dangerous pattern and is not allowed.'));
-            }
+        // Check against allowlist
+        if (! in_array($executable, self::$allowedExecutables, true)) {
+            return __('This executable is not allowed. Permitted: php, curl, wget, wp, mysql, mysqldump, tar, rsync, python3, node, ruby, perl.');
         }
 
-        // Block shell downloads piped to execution
-        $pipedExecutionPatterns = [
-            '| bash',
-            '| sh',
-            '| zsh',
-            '| python',
-            '| perl',
-            '| ruby',
-        ];
-
-        foreach ($pipedExecutionPatterns as $pattern) {
-            if (str_contains($normalizedCommand, $pattern)) {
-                throw new Exception(__('This command contains a dangerous pattern and is not allowed.'));
-            }
-        }
-
-        // Block crypto mining binaries
-        $miningPatterns = [
-            'xmrig',
-            'minerd',
-            'cpuminer',
-        ];
-
-        foreach ($miningPatterns as $pattern) {
-            if (str_contains($normalizedCommand, $pattern)) {
-                throw new Exception(__('This command contains a dangerous pattern and is not allowed.'));
-            }
-        }
+        return true;
     }
 
     public function deleteCronJob(int $id): void
@@ -495,7 +484,16 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
                 return;
             }
 
-            $this->validateCronCommand($data['command']);
+            $validation = $this->validateCronCommand($data['command']);
+            if ($validation !== true) {
+                Notification::make()
+                    ->title(__('Invalid command'))
+                    ->body($validation)
+                    ->danger()
+                    ->send();
+
+                return;
+            }
 
             // Update database - Laravel scheduler uses these values
             $cronJob->update([
