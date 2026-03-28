@@ -16,11 +16,19 @@ use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\View;
+use Filament\Schemas\Components\Wizard;
+use Filament\Schemas\Components\Wizard\Step;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\HtmlString;
 
 class RestoreBackup extends Page implements HasActions, HasForms
 {
@@ -31,7 +39,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     protected static bool $shouldRegisterNavigation = false;
 
-    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-arrow-path';
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowPath;
 
     protected string $view = 'filament.admin.pages.restore-backup';
 
@@ -39,13 +47,13 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public ?int $backupId = null;
 
-    public int $step = 1;
-
     public ?string $selectedUser = null;
 
-    public ?int $selectedBackupId = null;
-
     public array $contents = [];
+
+    public array $selectedDatabases = [];
+
+    public array $selectedMailboxes = [];
 
     public string $activeSection = 'files';
 
@@ -53,13 +61,9 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public array $selectedPaths = [];
 
-    public array $selectedDatabases = [];
-
-    public array $selectedMailboxes = [];
+    public array $directoryItems = [];
 
     public string $conflictMode = 'overwrite';
-
-    public array $directoryItems = [];
 
     public bool $restoreInProgress = false;
 
@@ -68,41 +72,18 @@ class RestoreBackup extends Page implements HasActions, HasForms
     public function mount(?int $backupId = null): void
     {
         $this->backupId = $backupId ?? (int) request()->route('backupId');
-        $this->backup = Backup::find($this->backupId);
+        $backup = $this->getBackup();
 
-        if (! $this->backup || ! $this->backup->snapshot_id) {
+        if (! $backup || ! $backup->snapshot_id) {
             $this->redirect('/jabali-admin/backups');
 
             return;
         }
-
-        $this->selectedBackupId = $this->backupId;
     }
 
     public function getTitle(): string|Htmlable
     {
         return __('Restore Wizard');
-    }
-
-    public function getSubheading(): ?string
-    {
-        return match ($this->step) {
-            1 => __('Step 1: Select account and backup'),
-            2 => __('Step 2: Select what to restore'),
-            3 => __('Step 3: Browse and select items'),
-            4 => __('Step 4: Confirm and restore'),
-            default => '',
-        };
-    }
-
-    public function getActiveUsersProperty(): array
-    {
-        return User::where('is_active', true)->pluck('username', 'username')->toArray();
-    }
-
-    public function getBackupInfoProperty(): ?Backup
-    {
-        return $this->getBackup();
     }
 
     // ── Header Actions ──────────────────────────────────────────────────
@@ -118,42 +99,95 @@ class RestoreBackup extends Page implements HasActions, HasForms
         ];
     }
 
-    // ── Step Navigation ─────────────────────────────────────────────────
+    // ── Schema ─────────────────────────────────────────────────────────
 
-    public function nextStep(): void
+    protected function getForms(): array
     {
-        if ($this->step === 1 && empty($this->selectedUser)) {
-            Notification::make()->title(__('Please select a user'))->danger()->send();
-
-            return;
-        }
-
-        if ($this->step === 1) {
-            // Reset selections from previous user
-            $this->selectedPaths = [];
-            $this->selectedDatabases = [];
-            $this->selectedMailboxes = [];
-            $this->loadContents();
-        }
-
-        if ($this->step === 2) {
-            $this->currentPath = $this->selectedUser ?? '';
-            $this->refreshDirectory();
-        }
-
-        $this->step = min($this->step + 1, 4);
+        return ['restoreForm'];
     }
 
-    public function prevStep(): void
+    public function restoreForm(Schema $schema): Schema
     {
-        $this->step = max($this->step - 1, 1);
-    }
+        return $schema->schema([
+            Wizard::make([
+                Step::make(__('Account'))
+                    ->icon(Heroicon::OutlinedUser)
+                    ->schema([
+                        Select::make('selectedUser')
+                            ->label(__('Restore for user'))
+                            ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
+                            ->required()
+                            ->live()
+                            ->searchable(),
+                        Placeholder::make('backup_info')
+                            ->label(__('Backup'))
+                            ->content(function (): HtmlString {
+                                $backup = $this->getBackup();
+                                if (! $backup) {
+                                    return new HtmlString('-');
+                                }
 
-    public function goToStep(int $step): void
-    {
-        if ($step <= $this->step) {
-            $this->step = $step;
-        }
+                                return new HtmlString(
+                                    e($backup->name)
+                                    .' &middot; '
+                                    .e($backup->created_at?->format('M j, Y H:i'))
+                                    .($backup->size_bytes > 0 ? ' &middot; '.e(\App\Support\Formatter::bytes($backup->size_bytes)) : '')
+                                );
+                            }),
+                    ])
+                    ->afterValidation(function (): void {
+                        $this->selectedPaths = [];
+                        $this->selectedDatabases = [];
+                        $this->selectedMailboxes = [];
+                        $this->loadContents();
+                    }),
+
+                Step::make(__('Contents'))
+                    ->icon(Heroicon::OutlinedRectangleGroup)
+                    ->schema([
+                        View::make('filament.admin.pages.restore-backup-contents'),
+                    ]),
+
+                Step::make(__('Select Items'))
+                    ->icon(Heroicon::OutlinedListBullet)
+                    ->schema([
+                        View::make('filament.admin.pages.restore-backup-browser'),
+                    ])
+                    ->beforeValidation(function (): void {
+                        $this->currentPath = $this->selectedUser ?? '';
+                        $this->refreshDirectory();
+                    }),
+
+                Step::make(__('Confirm'))
+                    ->icon(Heroicon::OutlinedCheckCircle)
+                    ->schema([
+                        Placeholder::make('restore_user')
+                            ->label(__('User'))
+                            ->content(fn () => $this->selectedUser ?? '-'),
+                        Placeholder::make('restore_backup')
+                            ->label(__('Backup'))
+                            ->content(fn () => $this->getBackup()?->name ?? '-'),
+                        View::make('filament.admin.pages.restore-backup-confirm'),
+                        Select::make('conflictMode')
+                            ->label(__('Conflict resolution'))
+                            ->options([
+                                'overwrite' => __('Overwrite existing files'),
+                                'skip' => __('Skip existing files'),
+                            ])
+                            ->default('overwrite'),
+                    ]),
+            ])
+                ->submitAction(
+                    Action::make('restore')
+                        ->label(__('Restore Now'))
+                        ->color('danger')
+                        ->icon('heroicon-o-arrow-path')
+                        ->requiresConfirmation()
+                        ->modalDescription(__('Are you sure you want to restore these items?'))
+                        ->action(fn () => $this->executeRestore()),
+                )
+                ->skippableSteps(),
+        ]);
     }
 
     // ── Step 2: Load Contents ───────────────────────────────────────────
@@ -184,14 +218,11 @@ class RestoreBackup extends Page implements HasActions, HasForms
             $domains = [];
             $databases = [];
             $mailboxes = [];
-            $dnsZones = [];
-            $sslCerts = [];
             $hasDbUsers = false;
 
             foreach ($files as $file) {
                 $parts = explode('/', $file);
 
-                // Paths are: home/{user}/domains/{domain}/...
                 if (str_contains($file, "home/{$this->selectedUser}/domains/") && count($parts) >= 5) {
                     $domIdx = array_search('domains', $parts);
                     if ($domIdx !== false && isset($parts[$domIdx + 1])) {
@@ -203,10 +234,6 @@ class RestoreBackup extends Page implements HasActions, HasForms
                     $hasDbUsers = true;
                 } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
                     $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
-                } elseif (str_contains($file, '/.jabali-backup/dns/') && str_ends_with($file, '.zone')) {
-                    $dnsZones[] = basename($file, '.zone');
-                } elseif (str_contains($file, '/letsencrypt/live/') && count($parts) >= 5) {
-                    $sslCerts[$parts[4]] = true;
                 }
             }
 
@@ -214,13 +241,10 @@ class RestoreBackup extends Page implements HasActions, HasForms
                 'domains' => array_keys($domains),
                 'databases' => array_values(array_unique($databases)),
                 'mailboxes' => array_keys($mailboxes),
-                'dns_zones' => $dnsZones,
-                'ssl_certs' => array_keys($sslCerts),
                 'has_db_users' => $hasDbUsers,
                 'total_files' => count($files),
             ];
 
-            // Pre-select everything
             $this->selectedDatabases = $this->contents['databases'];
             $this->selectedMailboxes = $this->contents['mailboxes'];
         } catch (Exception $e) {
@@ -231,22 +255,17 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     // ── Step 3: File Browser ────────────────────────────────────────────
 
-    public function selectSectionAndAdvance(string $section): void
+    public function selectSectionAndRefresh(string $section): void
     {
         $this->activeSection = $section;
-        $this->nextStep();
-    }
-
-    public function setSection(string $section): void
-    {
-        $this->activeSection = $section;
-        $this->currentPath = $this->selectedUser ?? '';
-        $this->refreshDirectory();
+        if ($section === 'files') {
+            $this->currentPath = $this->selectedUser ?? '';
+            $this->refreshDirectory();
+        }
     }
 
     public function navigateTo(string $path): void
     {
-        // Prevent path traversal
         if (str_contains($path, '..')) {
             return;
         }
@@ -337,6 +356,8 @@ class RestoreBackup extends Page implements HasActions, HasForms
                 ->body(SafeError::message($e))
                 ->danger()
                 ->send();
+        } finally {
+            $this->restoreInProgress = false;
         }
     }
 
