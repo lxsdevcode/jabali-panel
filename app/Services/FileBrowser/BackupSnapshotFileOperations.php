@@ -57,9 +57,17 @@ class BackupSnapshotFileOperations implements FileOperations
             ];
         }
 
+        // restic ls returns the directory entry itself alongside children — filter it out
+        $currentDirName = ! empty($path) ? basename($path) : $this->username;
+
         foreach ($result['items'] ?? [] as $file) {
             $name = $file['name'] ?? '';
             if ($name === '.' || $name === '..' || empty($name)) {
+                continue;
+            }
+
+            // Skip the directory entry that matches the current path (restic ls includes it)
+            if ($name === $currentDirName && ($file['is_dir'] ?? false)) {
                 continue;
             }
 
