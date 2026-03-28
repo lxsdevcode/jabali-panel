@@ -3213,7 +3213,7 @@ webserver-address=127.0.0.1
 webserver-port=8081
 webserver-allow-from=127.0.0.1
 
-local-address=${server_ip}
+local-address=0.0.0.0
 local-port=53
 
 default-soa-content=ns1.@ hostmaster.@ 0 10800 3600 604800 3600
