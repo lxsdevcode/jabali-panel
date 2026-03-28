@@ -67,75 +67,68 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         ];
     }
 
-    // ── Destinations Table ──────────────────────────────────────────────
+    // ── Backups Table ─────────────────────────────────────────────────
 
     public function table(Table $table): Table
     {
         return $table
-            ->query(BackupDestination::where('is_server_backup', true))
+            ->query(Backup::query()->latest())
             ->columns([
                 TextColumn::make('name')
                     ->label(__('Name'))
-                    ->searchable(),
-                TextColumn::make('type')
-                    ->label(__('Type'))
-                    ->badge()
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'local' => __('Local'),
-                        'sftp' => __('SFTP'),
-                        's3' => __('S3'),
-                        default => $state,
-                    })
-                    ->color(fn (string $state) => match ($state) {
-                        'local' => 'gray',
-                        'sftp' => 'info',
-                        's3' => 'warning',
-                        default => 'gray',
-                    }),
-                TextColumn::make('test_status')
+                    ->searchable()
+                    ->limit(40),
+                TextColumn::make('status')
                     ->label(__('Status'))
                     ->badge()
-                    ->formatStateUsing(fn (?string $state) => match ($state) {
-                        'success' => __('Connected'),
-                        'failed' => __('Failed'),
-                        default => __('Not tested'),
-                    })
-                    ->color(fn (?string $state) => match ($state) {
-                        'success' => 'success',
+                    ->color(fn (string $state) => match ($state) {
+                        'completed' => 'success',
+                        'running' => 'warning',
+                        'pending' => 'gray',
                         'failed' => 'danger',
                         default => 'gray',
                     }),
-                TextColumn::make('last_tested_at')
-                    ->label(__('Last Tested'))
-                    ->since()
-                    ->placeholder(__('Never')),
+                TextColumn::make('size_bytes')
+                    ->label(__('Size'))
+                    ->formatStateUsing(fn ($state) => $state > 0 ? \App\Support\Formatter::bytes($state) : '-'),
+                TextColumn::make('destination.name')
+                    ->label(__('Destination'))
+                    ->placeholder(__('Local')),
+                TextColumn::make('created_at')
+                    ->label(__('Created'))
+                    ->dateTime('M j, Y H:i')
+                    ->sortable(),
+                TextColumn::make('snapshot_id')
+                    ->label(__('Snapshot'))
+                    ->limit(8)
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->actions([
-                Action::make('test')
-                    ->label(__('Test'))
-                    ->icon('heroicon-o-signal')
-                    ->color('gray')
-                    ->action(fn (BackupDestination $record) => $this->testDestination($record->id)),
-                Action::make('edit')
-                    ->label(__('Edit'))
-                    ->icon('heroicon-o-pencil')
-                    ->color('gray')
-                    ->form(fn (BackupDestination $record) => $this->destinationFormFields($record->type, $record->config ?? []))
-                    ->fillForm(fn (BackupDestination $record) => array_merge(
-                        ['name' => $record->name, 'type' => $record->type],
-                        $record->config ?? [],
-                    ))
-                    ->action(fn (BackupDestination $record, array $data) => $this->updateDestination($record, $data)),
                 Action::make('delete')
                     ->label(__('Delete'))
                     ->icon('heroicon-o-trash')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->action(fn (BackupDestination $record) => $record->delete()),
+                    ->modalDescription(__('This will permanently delete the backup snapshot. This cannot be undone.'))
+                    ->action(function (Backup $record): void {
+                        try {
+                            app(BackupOrchestrator::class)->deleteBackup($record);
+                            Notification::make()->title(__('Backup deleted'))->success()->send();
+                        } catch (Exception $e) {
+                            Notification::make()
+                                ->title(__('Delete failed'))
+                                ->body(SafeError::message($e))
+                                ->danger()
+                                ->send();
+                        }
+                    }),
             ])
-            ->emptyStateHeading(__('No remote destinations configured'))
-            ->emptyStateDescription(__('Click "Add Destination" to configure SFTP or S3 storage'))
-            ->emptyStateIcon('heroicon-o-server-stack');
+            ->poll('15s')
+            ->emptyStateHeading(__('No backups yet'))
+            ->emptyStateDescription(__('Click "Create Server Backup" to create your first backup'))
+            ->emptyStateIcon('heroicon-o-cloud-arrow-up')
+            ->defaultSort('created_at', 'desc');
     }
 
     // ── Backup Actions ────────────────────────────────────────────────
