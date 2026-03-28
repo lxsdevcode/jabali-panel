@@ -4766,7 +4766,7 @@ install_jabali_isolator() {
     # Create socket directory
     mkdir -p /run/jabali-fpm
 
-    success "Jabali Isolator installed"
+    info "Jabali Isolator installed"
 }
 
 # Main installation
