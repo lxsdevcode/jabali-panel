@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Debian-13-A81D33?logo=debian&logoColor=white" alt="Debian 13">
 </p>
 
-A modern web hosting control panel for WordPress and general PHP hosting. Jabali focuses on clean multi-tenant isolation, safe automation, and a consistent admin/user experience. It ships with a privileged agent for root-level tasks, built-in mail and DNS management, migrations from common panels, and a security center that keeps critical services in check. The UI is designed to be fast, predictable, and easy to operate on a single server.
+A modern web hosting control panel for WordPress and general PHP hosting. Jabali focuses on clean multi-tenant isolation, safe automation, and a consistent admin/user experience. It ships with a privileged agent for root-level tasks, built-in mail and DNS management, migrations from common panels, and an integrated security daemon (jabali-security) for real-time threat detection and automated response. The UI is designed to be fast, predictable, and easy to operate on a single server.
 
 Version: see `VERSION` (release candidate)
 
@@ -60,7 +60,7 @@ After install:
 
 ## Container Deployment
 
-Jabali can run as a single container with all 13 services managed by supervisord (MariaDB, Redis, Nginx, PHP-FPM, jabali-agent, queue-worker, cron, BIND9, OpenDKIM, Rspamd, Postfix, Dovecot, fail2ban). The `Containerfile` uses a multi-stage build based on `debian:bookworm-slim`.
+Jabali can run as a single container with all services managed by supervisord (MariaDB, Redis, Nginx, PHP-FPM, jabali-agent, queue-worker, cron, BIND9, OpenDKIM, Rspamd, Postfix, Dovecot). The `Containerfile` uses a multi-stage build based on `debian:bookworm-slim`.
 
 ### Quick Start (Docker Hub)
 
@@ -122,8 +122,8 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - `mail.domain.ext` auto-redirects to webmail
 - DNS templates with optional DNSSEC
 - User and server backups with schedules and retention
-- WordPress management (install, updates, scans, and SSO)
-- Security center with firewall, Fail2ban, ClamAV, and scanners
+- WordPress management (install, updates, and SSO)
+- Integrated security suite (jabali-security) with real-time threat detection
 - Encrypted diagnostic reports with email and clipboard support
 - Passphrase password generator (optional, 3 random words)
 - Audit logs and admin notifications
@@ -141,7 +141,7 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - IP address assignments
 - Backups and restores (local + remote)
 - Migrations (cPanel restore, WHM downloads, IMAP sync)
-- Security center (firewall, Fail2ban, ClamAV, scans)
+- Security (jabali-security daemon with real-time monitoring)
 - Diagnostic report (encrypted, for support)
 - Audit logs and notifications
 
@@ -152,7 +152,7 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - Mail domains, mailboxes, forwarders, shared folders, and per-domain disclaimers
 - IMAP sync (single and bulk mail migration)
 - Webmail SSO (Roundcube)
-- WordPress manager (install, scan, SSO)
+- WordPress manager (install, SSO)
 - File manager plus SFTP/SSH keys
 - Databases (MySQL and PostgreSQL in tabbed view)
 - PHP settings per account
@@ -186,7 +186,7 @@ Service stack (single-node default):
 - Postfix, Dovecot, Rspamd
 - BIND9 (DNS)
 - Redis
-- Fail2ban and ClamAV (optional)
+- jabali-security (real-time threat detection, brute-force protection, WAF)
 
 ## Requirements
 
@@ -229,7 +229,7 @@ Update the panel (code, dependencies, database migrations, and infrastructure):
 jabali update
 ```
 
-This pulls the latest code from GitHub, runs composer/npm, applies database migrations, rebuilds caches, and upgrades infrastructure (PHP config, nginx config, systemd services). Safe to run on a live server — the panel enters maintenance mode during the update.
+This pulls the latest code from GitHub, runs composer/npm, applies database migrations, rebuilds caches, upgrades infrastructure (PHP config, nginx config, systemd services), and updates jabali-security if installed. Safe to run on a live server — the panel enters maintenance mode during the update.
 
 Force a full update even if already on the latest version:
 

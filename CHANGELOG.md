@@ -9,7 +9,10 @@ All notable changes to Jabali Panel will be documented in this file.
 - **`jabali update` command** -- One-command panel update: pulls latest code, runs composer/npm, migrates database, rebuilds caches, and upgrades infrastructure (PHP, nginx, systemd configs). Use `--force` to re-run all steps even when already up to date.
 - **Granular backup restore** -- Selective restore from rsync incremental snapshots. Users can restore individual domains, databases, MySQL users, mailboxes, DNS zones, or SSL certificates instead of full account restores. Includes file browser, conflict resolution (overwrite/merge/skip/rename), and optional safety backup. New user-facing Restore page at Backups > Restore.
 - **Install script re-install detection** -- Running `install.sh` on an existing installation now detects it and offers to re-install. Backs up `.env` and credentials to `/root/.jabali_reinstall_backup_<timestamp>/` before wiping.
-- **Install script `upgrade` command** -- `install.sh upgrade` re-runs safe infrastructure config functions (PHP, nginx, systemd, cron, logrotate) without touching database, Redis, or firewall. Called automatically by `jabali update`.
+- **Install script `upgrade` command** -- `install.sh upgrade` re-runs safe infrastructure config functions (PHP, nginx, systemd, cron, logrotate) without touching database or Redis. Called automatically by `jabali update`.
+- **jabali-security integration** -- The installer now automatically installs jabali-security at the end of installation. `jabali update` also updates jabali-security if installed. jabali-security provides real-time file monitoring, multi-engine malware scanning, brute-force protection, WAF integration, automated quarantine, threat intelligence, and SSH/SFTP jail management.
+- **Cloudflare real IP support** -- Nginx and Laravel now automatically restore real visitor IPs when behind Cloudflare CDN. Configured via `CF-Connecting-IP` header with all Cloudflare IP ranges trusted.
+- **Force Infrastructure Upgrade button** -- System Updates page now has a button to re-apply nginx, PHP, systemd, and cron configs without needing SSH access.
 
 ### Fixed
 
@@ -18,6 +21,7 @@ All notable changes to Jabali Panel will be documented in this file.
 
 ### Removed
 
+- **Security page and tools** -- Removed the Security admin page (Fail2ban, ClamAV, UFW, ModSecurity/WAF, Lynis, WPScan, Nikto). All security is now handled by jabali-security, a standalone daemon installed automatically during panel installation. Removed ~10,000 lines of security-related code from the panel and agent.
 - **Debian package** -- Removed `packaging/` directory and deb build scripts. Installation is now exclusively via `curl | bash` with `install.sh`.
 
 ## [0.9-rc124] - 2026-03-17
