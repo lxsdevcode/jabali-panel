@@ -79,6 +79,7 @@ select_features() {
     echo ""
     echo "  2) Minimal Installation"
     echo "     - Web Server only (Nginx, PHP, MariaDB, Redis)"
+    echo "     - DNS Server (PowerDNS)"
     echo ""
     echo "  3) Custom Installation"
     echo "     - Choose individual components"
@@ -94,7 +95,6 @@ select_features() {
         2)
             info "Minimal installation selected"
             INSTALL_MAIL=false
-            INSTALL_DNS=false
             ;;
         3)
             echo ""
