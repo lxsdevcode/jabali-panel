@@ -126,62 +126,13 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->icon('heroicon-o-folder-open')
                     ->color('gray')
                     ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
-                    ->action(function (Backup $record): void {
-                        try {
-                            $repo = $record->destination
-                                ? $record->destination->getResticRepoUrl()
-                                : '/var/backups/jabali/restic';
-                            $destConfig = $record->destination
-                                ? array_merge($record->destination->config ?? [], ['type' => $record->destination->type])
-                                : [];
+                    ->modalHeading(fn (Backup $record) => __('Snapshot: :name', ['name' => $record->name]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel(__('Close'))
+                    ->modalContent(function (Backup $record): \Illuminate\Contracts\View\View {
+                        $contents = $this->getSnapshotContents($record);
 
-                            $agent = app(\App\Services\Agent\AgentClient::class);
-                            $result = $agent->send('backup.list_contents', [
-                                'snapshot_id' => $record->snapshot_id,
-                                'destination' => $destConfig,
-                                'repo' => $repo,
-                            ]);
-
-                            $files = $result['files'] ?? [];
-                            $domains = [];
-                            $databases = [];
-                            $mailboxes = [];
-
-                            foreach ($files as $file) {
-                                $parts = explode('/', $file);
-                                if (str_contains($file, '/domains/') && count($parts) >= 4) {
-                                    $domains[$parts[3]] = true;
-                                } elseif (str_contains($file, '/databases/') && str_ends_with($file, '.sql.gz')) {
-                                    $databases[] = basename($file, '.sql.gz');
-                                } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
-                                    $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
-                                }
-                            }
-
-                            $summary = [];
-                            if (! empty($domains)) {
-                                $summary[] = count($domains).' domain(s): '.implode(', ', array_keys($domains));
-                            }
-                            if (! empty($databases)) {
-                                $summary[] = count($databases).' database(s): '.implode(', ', $databases);
-                            }
-                            if (! empty($mailboxes)) {
-                                $summary[] = count($mailboxes).' mailbox(es)';
-                            }
-
-                            Notification::make()
-                                ->title(__('Snapshot Contents'))
-                                ->body(! empty($summary) ? implode("\n", $summary) : __('Empty snapshot'))
-                                ->info()
-                                ->persistent()
-                                ->send();
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title(__('Browse failed'))
-                                ->body(SafeError::message($e))
-                                ->danger()
-                                ->send();
-                        }
+                        return view('filament.admin.components.snapshot-contents', ['contents' => $contents]);
                     }),
                 Action::make('restore')
                     ->label(__('Restore'))
@@ -771,6 +722,67 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private function getSnapshotContents(Backup $record): array
+    {
+        try {
+            $repo = $record->destination
+                ? $record->destination->getResticRepoUrl()
+                : '/var/backups/jabali/restic';
+            $destConfig = $record->destination
+                ? array_merge($record->destination->config ?? [], ['type' => $record->destination->type])
+                : [];
+
+            $agent = app(\App\Services\Agent\AgentClient::class);
+            $result = $agent->send('backup.list_contents', [
+                'snapshot_id' => $record->snapshot_id,
+                'destination' => $destConfig,
+                'repo' => $repo,
+            ]);
+
+            $files = $result['files'] ?? [];
+            $domains = [];
+            $databases = [];
+            $mailboxes = [];
+            $dnsZones = [];
+            $sslCerts = [];
+
+            foreach ($files as $file) {
+                $parts = explode('/', $file);
+                if (str_contains($file, '/domains/') && count($parts) >= 4) {
+                    $domains[$parts[3]] = true;
+                } elseif (str_contains($file, '/databases/') && str_ends_with($file, '.sql.gz')) {
+                    $databases[] = basename($file, '.sql.gz');
+                } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
+                    $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
+                } elseif (str_contains($file, '/dns/') && str_ends_with($file, '.zone')) {
+                    $dnsZones[] = basename($file, '.zone');
+                } elseif (str_contains($file, '/letsencrypt/live/') && count($parts) >= 5) {
+                    $sslCerts[$parts[4]] = true;
+                }
+            }
+
+            return [
+                'domains' => array_keys($domains),
+                'databases' => $databases,
+                'mailboxes' => array_keys($mailboxes),
+                'dns_zones' => $dnsZones,
+                'ssl_certs' => array_keys($sslCerts),
+                'total_files' => count($files),
+                'error' => null,
+            ];
+        } catch (Exception $e) {
+            return [
+                'domains' => [],
+                'databases' => [],
+                'mailboxes' => [],
+                'dns_zones' => [],
+                'ssl_certs' => [],
+                'total_files' => 0,
+                'error' => SafeError::message($e),
+            ];
+        }
+    }
 
     private function buildConfig(string $type, array $data): array
     {
