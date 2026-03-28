@@ -392,7 +392,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             TextInput::make('time')->label(__('Time (HH:MM)'))->required(),
                         ]),
                         Select::make('destination_id')->label(__('Destination'))
-                            ->options(array_merge(['' => __('Local (default)')], BackupDestination::where('is_active', true)->pluck('name', 'id')->toArray())),
+                            ->options(BackupDestination::where('is_active', true)->pluck('name', 'id')->toArray())
+                            ->placeholder(__('Local (default)')),
                         TextInput::make('retention_count')->label(__('Keep last N backups'))
                             ->numeric()->minValue(1),
                     ])
@@ -447,7 +448,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             ->form([
                 Select::make('destination_id')
                     ->label(__('Destination'))
-                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->options($destinations)
+                    ->placeholder(__('Local (default)'))
                     ->placeholder(__('Select destination')),
                 CheckboxList::make('selected_users')
                     ->label(__('Users'))
@@ -513,7 +515,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             ->form([
                 Select::make('destination_id')
                     ->label(__('Repository'))
-                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->options($destinations)
+                    ->placeholder(__('Local (default)'))
                     ->placeholder(__('Select repository to verify')),
             ])
             ->action(function (array $data): void {
@@ -594,7 +597,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 ]),
                 Select::make('destination_id')
                     ->label(__('Destination'))
-                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->options($destinations)
+                    ->placeholder(__('Local (default)'))
                     ->placeholder(__('Select destination')),
                 TextInput::make('retention_count')
                     ->label(__('Keep last N backups'))
