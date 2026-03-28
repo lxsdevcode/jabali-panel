@@ -383,19 +383,25 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             ->send();
                     }),
                 Action::make('edit')->label(__('Edit'))->icon('heroicon-o-pencil')->color('gray')
-                    ->form(fn (BackupSchedule $record) => [
-                        TextInput::make('name')->label(__('Name'))->default($record->name)->required(),
+                    ->form([
+                        TextInput::make('name')->label(__('Name'))->required(),
                         Grid::make(2)->schema([
                             Select::make('frequency')->label(__('Frequency'))
                                 ->options(['daily' => __('Daily'), 'weekly' => __('Weekly'), 'monthly' => __('Monthly')])
-                                ->default($record->frequency)->required(),
-                            TextInput::make('time')->label(__('Time (HH:MM)'))->default($record->time)->required(),
+                                ->required(),
+                            TextInput::make('time')->label(__('Time (HH:MM)'))->required(),
                         ]),
                         Select::make('destination_id')->label(__('Destination'))
-                            ->options(array_merge(['' => __('Local (default)')], BackupDestination::where('is_active', true)->pluck('name', 'id')->toArray()))
-                            ->default($record->destination_id),
+                            ->options(array_merge(['' => __('Local (default)')], BackupDestination::where('is_active', true)->pluck('name', 'id')->toArray())),
                         TextInput::make('retention_count')->label(__('Keep last N backups'))
-                            ->numeric()->default($record->retention_count)->minValue(1),
+                            ->numeric()->minValue(1),
+                    ])
+                    ->fillForm(fn (BackupSchedule $record) => [
+                        'name' => $record->name,
+                        'frequency' => $record->frequency,
+                        'time' => $record->time,
+                        'destination_id' => $record->destination_id,
+                        'retention_count' => $record->retention_count,
                     ])
                     ->action(function (BackupSchedule $record, array $data): void {
                         $record->update([
