@@ -34,6 +34,7 @@ class Backup extends Model
         'status',
         'local_path',
         'remote_path',
+        'snapshot_id',
         'checksum',
         'started_at',
         'completed_at',

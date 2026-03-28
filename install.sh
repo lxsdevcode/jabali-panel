@@ -542,6 +542,7 @@ install_packages() {
         socat
         sshpass
         pigz
+        restic
         locales
 
         # GeoIP (always installed)
@@ -3807,6 +3808,38 @@ LOGROTATE
     log "Log rotation configured for Jabali logs (domains, ModSecurity, app logs)"
 }
 
+# Setup Restic backup repository
+setup_restic() {
+    header "Setting Up Restic Backup"
+
+    if ! command -v restic &>/dev/null; then
+        warn "Restic not found, skipping backup setup"
+        return
+    fi
+
+    # Generate password if not exists
+    local password_file="/etc/jabali/restic-password"
+    if [[ ! -f "$password_file" ]]; then
+        mkdir -p /etc/jabali
+        openssl rand -hex 32 > "$password_file"
+        chmod 600 "$password_file"
+        log "Restic password generated"
+    fi
+
+    # Initialize default local repository
+    local repo_path="/var/backups/jabali/restic"
+    mkdir -p "$repo_path"
+
+    if [[ ! -f "${repo_path}/config" ]]; then
+        RESTIC_PASSWORD_FILE="$password_file" restic init --repo "$repo_path" 2>/dev/null
+        log "Restic repository initialized at ${repo_path}"
+    else
+        info "Restic repository already initialized"
+    fi
+
+    log "Restic backup configured"
+}
+
 # Setup SSL certificates for panel and mail services
 setup_panel_ssl() {
     header "Setting Up SSL Certificates for Services"
@@ -4187,6 +4220,7 @@ reinstall() {
     setup_queue_service
     setup_scheduler_cron
     setup_logrotate
+    setup_restic
     setup_panel_ssl
     setup_self_healing
     create_admin

@@ -72,6 +72,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pdns-server pdns-backend-mysql \
     # Security
     fail2ban certbot python3-certbot-nginx \
+    # Backup
+    restic \
     # Tools
     supervisor cron openssl curl procps \
     && rm -rf /var/lib/apt/lists/* \

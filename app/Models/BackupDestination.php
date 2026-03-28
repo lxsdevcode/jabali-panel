@@ -105,4 +105,50 @@ class BackupDestination extends Model
     {
         return $query->where('is_server_backup', true);
     }
+
+    /**
+     * Get the Restic repository URL for this destination.
+     */
+    public function getResticRepoUrl(): string
+    {
+        $config = $this->config ?? [];
+
+        return match ($this->type) {
+            'local' => $config['path'] ?? '/var/backups/jabali/restic',
+            'sftp' => sprintf(
+                'sftp:%s@%s:%s',
+                $config['username'] ?? 'backup',
+                $config['host'] ?? 'localhost',
+                $config['path'] ?? '/backups',
+            ),
+            's3' => sprintf(
+                's3:%s/%s',
+                $config['endpoint'] ?? 'https://s3.amazonaws.com',
+                $config['bucket'] ?? 'jabali-backups',
+            ),
+            default => '/var/backups/jabali/restic',
+        };
+    }
+
+    /**
+     * Get environment variables needed for Restic auth.
+     *
+     * @return array<string, string>
+     */
+    public function getResticEnv(): array
+    {
+        $config = $this->config ?? [];
+        $env = ['RESTIC_PASSWORD_FILE' => '/etc/jabali/restic-password'];
+
+        if ($this->type === 'sftp' && ! empty($config['password'])) {
+            $env['SSHPASS'] = $config['password'];
+        }
+
+        if ($this->type === 's3') {
+            $env['AWS_ACCESS_KEY_ID'] = $config['access_key'] ?? '';
+            $env['AWS_SECRET_ACCESS_KEY'] = $config['secret_key'] ?? '';
+        }
+
+        return $env;
+    }
 }
