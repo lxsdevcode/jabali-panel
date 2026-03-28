@@ -95,7 +95,6 @@ class RestoreBackup extends Page implements HasActions, HasForms
     public function navigateTo(string $path): void
     {
         $this->currentPath = $path;
-        $this->resetTable();
     }
 
     public function loadDirectory(): array
