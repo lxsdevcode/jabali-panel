@@ -2,7 +2,7 @@
     {{-- Step indicators --}}
     <div class="flex gap-2 mb-6">
         @foreach([1 => 'Account', 2 => 'Contents', 3 => 'Select Items', 4 => 'Confirm'] as $num => $label)
-            <button
+            <button wire:key="step-{{ $num }}"
                 wire:click="goToStep({{ $num }})"
                 @class([
                     'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition',
@@ -140,14 +140,14 @@
                 </x-slot>
 
                 <div class="divide-y divide-gray-200 dark:divide-white/10">
-                    @forelse($this->directoryItems as $item)
+                    @forelse($this->directoryItems as $idx => $item)
                         @if(($item['is_parent'] ?? false))
-                            <button wire:click="navigateTo('{{ $item['path'] }}')" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                            <button wire:key="dir-parent" wire:click="navigateTo('{{ $item['path'] }}')" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 transition">
                                 <x-heroicon-o-arrow-up class="h-4 w-4 text-gray-400 shrink-0" />
                                 <span class="font-medium text-gray-950 dark:text-white">..</span>
                             </button>
                         @else
-                            <div class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-white/5">
+                            <div wire:key="dir-item-{{ $idx }}" class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-white/5">
                                 <input type="checkbox" value="{{ $item['path'] }}" wire:model="selectedPaths" class="rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700" />
                                 @if($item['is_dir'] ?? false)
                                     <button wire:click="navigateTo('{{ $item['path'] }}')" class="flex items-center gap-2 flex-1 text-left">

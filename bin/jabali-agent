@@ -17557,10 +17557,11 @@ function backupCreateServer(array $params): array
         }
 
         // Domain files
+        $userDomains = [];
         if ($includeFiles && is_dir("{$homeDir}/domains")) {
             $allPaths[] = "{$homeDir}/domains";
-            $domains = array_values(array_filter(scandir("{$homeDir}/domains"), fn($d) => $d !== '.' && $d !== '..' && is_dir("{$homeDir}/domains/{$d}")));
-            $allDomains = array_merge($allDomains, $domains);
+            $userDomains = array_values(array_filter(scandir("{$homeDir}/domains"), fn($d) => $d !== '.' && $d !== '..' && is_dir("{$homeDir}/domains/{$d}")));
+            $allDomains = array_merge($allDomains, $userDomains);
         }
 
         // Databases — stage under user home
@@ -17574,9 +17575,9 @@ function backupCreateServer(array $params): array
             }
         }
 
-        // Mailboxes
+        // Mailboxes — use this user's domains only
         if ($includeMail && is_dir('/var/mail/vhosts')) {
-            foreach ($allDomains as $domain) {
+            foreach ($userDomains as $domain) {
                 $mailPath = "/var/mail/vhosts/{$domain}";
                 if (is_dir($mailPath)) {
                     $allPaths[] = $mailPath;
@@ -17588,9 +17589,9 @@ function backupCreateServer(array $params): array
             }
         }
 
-        // SSL
+        // SSL — use this user's domains only
         if ($includeSsl) {
-            foreach ($allDomains as $domain) {
+            foreach ($userDomains as $domain) {
                 $certDir = "/etc/letsencrypt/live/{$domain}";
                 if (is_dir($certDir)) {
                     $allPaths[] = $certDir;
@@ -17598,11 +17599,11 @@ function backupCreateServer(array $params): array
             }
         }
 
-        // DNS
+        // DNS — use this user's domains only
         if ($includeDns) {
             $dnsDir = "{$homeDir}/.jabali-backup/dns";
             @mkdir($dnsDir, 0700, true);
-            foreach ($allDomains as $domain) {
+            foreach ($userDomains as $domain) {
                 $zo = [];
                 exec('pdnsutil list-zone ' . escapeshellarg($domain) . ' 2>/dev/null', $zo, $ret);
                 if ($ret === 0 && ! empty($zo)) {

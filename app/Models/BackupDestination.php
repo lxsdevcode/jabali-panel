@@ -65,7 +65,7 @@ class BackupDestination extends Model
      */
     public function isRemote(): bool
     {
-        return in_array($this->type, ['sftp', 'nfs', 's3']);
+        return in_array($this->type, ['sftp', 'nfs', 's3', 'b2', 'wasabi', 'minio', 'gcs', 'azure', 'rest']);
     }
 
     /**
@@ -145,9 +145,34 @@ class BackupDestination extends Model
             $env['SSHPASS'] = $config['password'];
         }
 
-        if ($this->type === 's3') {
-            $env['AWS_ACCESS_KEY_ID'] = $config['access_key'] ?? '';
-            $env['AWS_SECRET_ACCESS_KEY'] = $config['secret_key'] ?? '';
+        // S3-compatible (S3, B2, Wasabi, MinIO)
+        if (in_array($this->type, ['s3', 'b2', 'wasabi', 'minio'])) {
+            if (! empty($config['access_key'])) {
+                $env['AWS_ACCESS_KEY_ID'] = $config['access_key'];
+            }
+            if (! empty($config['secret_key'])) {
+                $env['AWS_SECRET_ACCESS_KEY'] = $config['secret_key'];
+            }
+        }
+
+        // Google Cloud Storage
+        if ($this->type === 'gcs') {
+            if (! empty($config['access_key'])) {
+                $env['GOOGLE_PROJECT_ID'] = $config['access_key'];
+            }
+            if (! empty($config['secret_key'])) {
+                $env['GOOGLE_APPLICATION_CREDENTIALS'] = $config['secret_key'];
+            }
+        }
+
+        // Azure Blob Storage
+        if ($this->type === 'azure') {
+            if (! empty($config['account'])) {
+                $env['AZURE_ACCOUNT_NAME'] = $config['account'];
+            }
+            if (! empty($config['key'])) {
+                $env['AZURE_ACCOUNT_KEY'] = $config['key'];
+            }
         }
 
         return $env;

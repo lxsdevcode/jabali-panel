@@ -460,6 +460,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             ->form([
                 TextInput::make('password')
                     ->label(__('Restic Password'))
+                    ->password()
+                    ->revealable()
                     ->default($currentPassword)
                     ->required()
                     ->helperText(__('Changing this will make existing remote repositories inaccessible unless they are re-initialized.')),
@@ -813,22 +815,42 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             TextInput::make('name')->label(__('Name'))->required(),
         ];
 
-        if ($type === 'sftp') {
-            $fields[] = Grid::make(2)->schema([
-                TextInput::make('host')->label(__('Host'))->default($config['host'] ?? '')->required(),
-                TextInput::make('port')->label(__('Port'))->numeric()->default($config['port'] ?? 22),
-            ]);
-            $fields[] = TextInput::make('username')->label(__('Username'))->default($config['username'] ?? '')->required();
-            $fields[] = TextInput::make('password')->label(__('Password'))->password()->default($config['password'] ?? '');
-            $fields[] = TextInput::make('path')->label(__('Remote Path'))->default($config['path'] ?? '/backups');
-        } elseif ($type === 's3') {
-            $fields[] = TextInput::make('endpoint')->label(__('Endpoint'))->default($config['endpoint'] ?? '')->required();
-            $fields[] = TextInput::make('bucket')->label(__('Bucket'))->default($config['bucket'] ?? '')->required();
-            $fields[] = TextInput::make('access_key')->label(__('Access Key'))->default($config['access_key'] ?? '')->required();
-            $fields[] = TextInput::make('secret_key')->label(__('Secret Key'))->password()->default($config['secret_key'] ?? '')->required();
-        } else {
-            $fields[] = TextInput::make('path')->label(__('Path'))->default($config['path'] ?? '/var/backups/jabali/restic');
-        }
+        match ($type) {
+            'sftp' => array_push($fields,
+                Grid::make(2)->schema([
+                    TextInput::make('host')->label(__('Host'))->default($config['host'] ?? '')->required(),
+                    TextInput::make('port')->label(__('Port'))->numeric()->default($config['port'] ?? 22),
+                ]),
+                TextInput::make('username')->label(__('Username'))->default($config['username'] ?? '')->required(),
+                TextInput::make('password')->label(__('Password'))->password()->revealable()->default($config['password'] ?? ''),
+                TextInput::make('path')->label(__('Remote Path'))->default($config['path'] ?? '/backups'),
+            ),
+            's3', 'b2', 'wasabi', 'minio' => array_push($fields,
+                TextInput::make('endpoint')->label(__('Endpoint'))->default($config['endpoint'] ?? '')->required(),
+                TextInput::make('bucket')->label(__('Bucket'))->default($config['bucket'] ?? '')->required(),
+                TextInput::make('access_key')->label(__('Access Key'))->default($config['access_key'] ?? '')->required(),
+                TextInput::make('secret_key')->label(__('Secret Key'))->password()->revealable()->default($config['secret_key'] ?? '')->required(),
+            ),
+            'gcs' => array_push($fields,
+                TextInput::make('bucket')->label(__('Bucket'))->default($config['bucket'] ?? '')->required(),
+                TextInput::make('access_key')->label(__('Project ID'))->default($config['access_key'] ?? '')->required(),
+                TextInput::make('secret_key')->label(__('Credentials Path'))->default($config['secret_key'] ?? '')->required(),
+            ),
+            'azure' => array_push($fields,
+                TextInput::make('container')->label(__('Container'))->default($config['container'] ?? '')->required(),
+                TextInput::make('account')->label(__('Account Name'))->default($config['account'] ?? '')->required(),
+                TextInput::make('key')->label(__('Account Key'))->password()->revealable()->default($config['key'] ?? '')->required(),
+            ),
+            'rest' => array_push($fields,
+                TextInput::make('url')->label(__('Server URL'))->default($config['url'] ?? '')->required()
+                    ->helperText(__('e.g. https://backup.example.com:8000/')),
+                TextInput::make('username')->label(__('Username'))->default($config['username'] ?? ''),
+                TextInput::make('password')->label(__('Password'))->password()->revealable()->default($config['password'] ?? ''),
+            ),
+            default => array_push($fields,
+                TextInput::make('path')->label(__('Path'))->default($config['path'] ?? '/var/backups/jabali/restic'),
+            ),
+        };
 
         return $fields;
     }
