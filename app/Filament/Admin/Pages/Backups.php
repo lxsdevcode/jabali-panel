@@ -381,6 +381,27 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             ->success()
                             ->send();
                     }),
+                Action::make('edit')->label(__('Edit'))->icon('heroicon-o-pencil')->color('gray')
+                    ->form(fn (BackupSchedule $record) => [
+                        TextInput::make('name')->label(__('Name'))->default($record->name)->required(),
+                        Grid::make(2)->schema([
+                            Select::make('frequency')->label(__('Frequency'))
+                                ->options(['daily' => __('Daily'), 'weekly' => __('Weekly'), 'monthly' => __('Monthly')])
+                                ->default($record->frequency)->required(),
+                            TextInput::make('time')->label(__('Time (HH:MM)'))->default($record->time)->required(),
+                        ]),
+                        TextInput::make('retention_count')->label(__('Keep last N backups'))
+                            ->numeric()->default($record->retention_count)->minValue(1),
+                    ])
+                    ->action(function (BackupSchedule $record, array $data): void {
+                        $record->update([
+                            'name' => $data['name'],
+                            'frequency' => $data['frequency'],
+                            'time' => $data['time'],
+                            'retention_count' => (int) ($data['retention_count'] ?? 7),
+                        ]);
+                        Notification::make()->title(__('Schedule updated'))->success()->send();
+                    }),
                 Action::make('toggle')->label(fn (BackupSchedule $record) => $record->is_active ? __('Pause') : __('Enable'))
                     ->icon(fn (BackupSchedule $record) => $record->is_active ? 'heroicon-o-pause' : 'heroicon-o-play')
                     ->color('gray')

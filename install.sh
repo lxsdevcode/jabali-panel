@@ -4740,16 +4740,21 @@ install_jabali_isolator() {
         fi
     fi
 
-    # Install into a venv with uv
-    if command -v uv &>/dev/null; then
-        (cd "$JABALI_ISOLATOR_DIR" && uv sync 2>/dev/null) || {
-            warn "uv sync failed for jabali-isolator"
+    # Ensure uv is installed
+    if ! command -v uv &>/dev/null; then
+        info "Installing uv package manager..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || {
+            warn "Could not install uv — jabali-isolator requires it"
             return
         }
-    else
-        warn "uv not found — cannot install jabali-isolator dependencies"
-        return
+        export PATH="$HOME/.local/bin:$PATH"
     fi
+
+    # Install into a venv with uv
+    (cd "$JABALI_ISOLATOR_DIR" && uv sync 2>/dev/null) || {
+        warn "uv sync failed for jabali-isolator"
+        return
+    }
 
     # Create CLI symlink
     local venv_bin="$JABALI_ISOLATOR_DIR/.venv/bin/jabali-isolate"
