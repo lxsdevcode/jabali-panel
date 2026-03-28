@@ -51,31 +51,16 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     protected string $view = 'filament.admin.pages.backups';
 
     #[Url(as: 'tab')]
-    public ?string $activeTab = 'destinations';
+    public ?string $activeTab = 'backups';
 
     public function getTitle(): string|Htmlable
     {
         return __('Server Backups');
     }
 
-    public function getSubheading(): ?string
+    public function updatedActiveTab(): void
     {
-        $scheduleCount = BackupSchedule::where('is_active', true)->where('is_server_backup', true)->count();
-        $destCount = BackupDestination::where('is_server_backup', true)->where('is_active', true)->count();
-
-        if ($scheduleCount === 0 && $destCount === 0) {
-            return __('No schedules or destinations configured');
-        }
-
-        $parts = [];
-        if ($scheduleCount > 0) {
-            $parts[] = __(':count active schedule(s)', ['count' => $scheduleCount]);
-        }
-        if ($destCount > 0) {
-            $parts[] = __(':count destination(s)', ['count' => $destCount]);
-        }
-
-        return implode(' · ', $parts);
+        $this->resetTable();
     }
 
     // ── Header Actions ──────────────────────────────────────────────────
@@ -90,9 +75,18 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         ];
     }
 
-    // ── Backups Table ─────────────────────────────────────────────────
+    // ── Table (switches by active tab) ─────────────────────────────────
 
     public function table(Table $table): Table
+    {
+        return match ($this->activeTab) {
+            'destinations' => $this->destinationsTable($table),
+            'schedules' => $this->schedulesTable($table),
+            default => $this->backupsTable($table),
+        };
+    }
+
+    private function backupsTable(Table $table): Table
     {
         return $table
             ->query(Backup::query()->latest())
@@ -273,6 +267,72 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             ->emptyStateDescription(__('Click "Create Server Backup" to create your first backup'))
             ->emptyStateIcon('heroicon-o-cloud-arrow-up')
             ->defaultSort('created_at', 'desc');
+    }
+
+    private function destinationsTable(Table $table): Table
+    {
+        return $table
+            ->query(BackupDestination::where('is_server_backup', true))
+            ->columns([
+                TextColumn::make('name')->label(__('Name'))->searchable(),
+                TextColumn::make('type')->label(__('Type'))->badge()
+                    ->formatStateUsing(fn (string $state) => strtoupper($state))
+                    ->color(fn (string $state) => match ($state) {
+                        'sftp' => 'info', 's3' => 'warning', default => 'gray',
+                    }),
+                TextColumn::make('test_status')->label(__('Status'))->badge()
+                    ->formatStateUsing(fn (?string $state) => match ($state) {
+                        'success' => __('Connected'), 'failed' => __('Failed'), default => __('Not tested'),
+                    })
+                    ->color(fn (?string $state) => match ($state) {
+                        'success' => 'success', 'failed' => 'danger', default => 'gray',
+                    }),
+                TextColumn::make('last_tested_at')->label(__('Last Tested'))->since()->placeholder(__('Never')),
+            ])
+            ->actions([
+                Action::make('test')->label(__('Test'))->icon('heroicon-o-signal')->color('gray')
+                    ->action(fn (BackupDestination $record) => $this->testDestination($record->id)),
+                Action::make('edit')->label(__('Edit'))->icon('heroicon-o-pencil')->color('gray')
+                    ->form(fn (BackupDestination $record) => $this->destinationFormFields($record->type, $record->config ?? []))
+                    ->fillForm(fn (BackupDestination $record) => array_merge(['name' => $record->name], $record->config ?? []))
+                    ->action(fn (BackupDestination $record, array $data) => $this->updateDestination($record, $data)),
+                Action::make('delete')->label(__('Delete'))->icon('heroicon-o-trash')->color('danger')
+                    ->requiresConfirmation()
+                    ->action(fn (BackupDestination $record) => $record->delete()),
+            ])
+            ->emptyStateHeading(__('No destinations configured'))
+            ->emptyStateDescription(__('Click "Add Destination" to add SFTP or S3 storage'))
+            ->emptyStateIcon('heroicon-o-server-stack');
+    }
+
+    private function schedulesTable(Table $table): Table
+    {
+        return $table
+            ->query(BackupSchedule::where('is_server_backup', true))
+            ->columns([
+                TextColumn::make('name')->label(__('Name'))->searchable(),
+                TextColumn::make('frequency')->label(__('Frequency'))->badge()
+                    ->formatStateUsing(fn (string $state) => ucfirst($state)),
+                TextColumn::make('time')->label(__('Time')),
+                TextColumn::make('retention_count')->label(__('Keep'))->suffix(' backups'),
+                TextColumn::make('destination.name')->label(__('Destination'))->placeholder(__('Local')),
+                TextColumn::make('is_active')->label(__('Active'))->badge()
+                    ->formatStateUsing(fn (bool $state) => $state ? __('Active') : __('Paused'))
+                    ->color(fn (bool $state) => $state ? 'success' : 'gray'),
+                TextColumn::make('last_run_at')->label(__('Last Run'))->since()->placeholder(__('Never')),
+            ])
+            ->actions([
+                Action::make('toggle')->label(fn (BackupSchedule $record) => $record->is_active ? __('Pause') : __('Enable'))
+                    ->icon(fn (BackupSchedule $record) => $record->is_active ? 'heroicon-o-pause' : 'heroicon-o-play')
+                    ->color('gray')
+                    ->action(fn (BackupSchedule $record) => $record->update(['is_active' => ! $record->is_active])),
+                Action::make('delete')->label(__('Delete'))->icon('heroicon-o-trash')->color('danger')
+                    ->requiresConfirmation()
+                    ->action(fn (BackupSchedule $record) => $record->delete()),
+            ])
+            ->emptyStateHeading(__('No schedules configured'))
+            ->emptyStateDescription(__('Click "Add Schedule" to set up automated backups'))
+            ->emptyStateIcon('heroicon-o-clock');
     }
 
     // ── Backup Actions ────────────────────────────────────────────────
