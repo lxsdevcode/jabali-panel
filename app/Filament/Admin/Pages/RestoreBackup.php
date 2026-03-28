@@ -173,11 +173,15 @@ class RestoreBackup extends Page implements HasActions, HasForms
             foreach ($files as $file) {
                 $parts = explode('/', $file);
 
-                if (str_contains($file, "/home/{$this->selectedUser}/domains/") && count($parts) >= 5) {
-                    $domains[$parts[4]] = true;
-                } elseif (str_contains($file, '/.jabali-backup/databases/') && str_ends_with($file, '.sql.gz')) {
+                // Paths are: home/{user}/domains/{domain}/...
+                if (str_contains($file, "home/{$this->selectedUser}/domains/") && count($parts) >= 5) {
+                    $domIdx = array_search('domains', $parts);
+                    if ($domIdx !== false && isset($parts[$domIdx + 1])) {
+                        $domains[$parts[$domIdx + 1]] = true;
+                    }
+                } elseif (str_contains($file, "home/{$this->selectedUser}/.jabali-backup/databases/") && str_ends_with($file, '.sql.gz')) {
                     $databases[] = basename($file, '.sql.gz');
-                } elseif (str_contains($file, '/.jabali-backup/databases/users.sql')) {
+                } elseif (str_contains($file, "home/{$this->selectedUser}/.jabali-backup/databases/users.sql")) {
                     $hasDbUsers = true;
                 } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
                     $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
