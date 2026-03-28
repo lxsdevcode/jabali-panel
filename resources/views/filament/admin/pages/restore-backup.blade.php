@@ -65,7 +65,7 @@
             @else
                 <div class="grid gap-4 md:grid-cols-3">
                     {{-- Files --}}
-                    <button wire:click="$set('activeSection', 'files'); nextStep()" class="p-4 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 text-left transition">
+                    <button wire:click="selectSectionAndAdvance('files')" class="p-4 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 text-left transition">
                         <div class="flex items-center gap-2 mb-2">
                             <x-heroicon-o-folder class="h-5 w-5 text-yellow-500" />
                             <span class="font-semibold text-gray-950 dark:text-white">{{ __('Files') }}</span>
@@ -77,7 +77,7 @@
                     </button>
 
                     {{-- Databases --}}
-                    <button wire:click="$set('activeSection', 'databases'); nextStep()" class="p-4 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 text-left transition">
+                    <button wire:click="selectSectionAndAdvance('databases')" class="p-4 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 text-left transition">
                         <div class="flex items-center gap-2 mb-2">
                             <x-heroicon-o-circle-stack class="h-5 w-5 text-blue-500" />
                             <span class="font-semibold text-gray-950 dark:text-white">{{ __('Databases') }}</span>
@@ -89,7 +89,7 @@
                     </button>
 
                     {{-- Email --}}
-                    <button wire:click="$set('activeSection', 'mailboxes'); nextStep()" class="p-4 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 text-left transition">
+                    <button wire:click="selectSectionAndAdvance('mailboxes')" class="p-4 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 text-left transition">
                         <div class="flex items-center gap-2 mb-2">
                             <x-heroicon-o-envelope class="h-5 w-5 text-green-500" />
                             <span class="font-semibold text-gray-950 dark:text-white">{{ __('Email') }}</span>
@@ -139,9 +139,8 @@
                     </div>
                 </x-slot>
 
-                @php $items = $this->loadDirectory(); @endphp
                 <div class="divide-y divide-gray-200 dark:divide-white/10">
-                    @forelse($items as $item)
+                    @forelse($this->directoryItems as $item)
                         @if(($item['is_parent'] ?? false))
                             <button wire:click="navigateTo('{{ $item['path'] }}')" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 transition">
                                 <x-heroicon-o-arrow-up class="h-4 w-4 text-gray-400 shrink-0" />
@@ -149,7 +148,7 @@
                             </button>
                         @else
                             <div class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-white/5">
-                                <input type="checkbox" value="{{ $item['path'] }}" wire:model.live="selectedPaths" class="rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700" />
+                                <input type="checkbox" value="{{ $item['path'] }}" wire:model="selectedPaths" class="rounded border-gray-300 text-primary-600 dark:border-gray-600 dark:bg-gray-700" />
                                 @if($item['is_dir'] ?? false)
                                     <button wire:click="navigateTo('{{ $item['path'] }}')" class="flex items-center gap-2 flex-1 text-left">
                                         <x-heroicon-o-folder class="h-4 w-4 text-yellow-500 shrink-0" />

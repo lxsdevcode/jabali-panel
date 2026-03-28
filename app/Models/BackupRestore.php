@@ -129,6 +129,7 @@ class BackupRestore extends Model
         $this->status = 'failed';
         $this->completed_at = now();
         $this->error_message = $error;
+        $this->save();
         $this->appendLog("ERROR: {$error}");
     }
 

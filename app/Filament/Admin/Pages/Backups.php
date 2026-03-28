@@ -90,7 +90,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     private function backupsTable(Table $table): Table
     {
         return $table
-            ->query(Backup::query()->latest())
+            ->query(Backup::query()->with('destination')->latest())
             ->columns([
                 TextColumn::make('name')
                     ->label(__('Name'))

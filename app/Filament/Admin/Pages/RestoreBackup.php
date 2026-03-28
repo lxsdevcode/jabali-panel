@@ -58,7 +58,9 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public string $conflictMode = 'overwrite';
 
-    private ?Backup $backup = null;
+    public array $directoryItems = [];
+
+    public bool $restoreInProgress = false;
 
     // ── Mount ───────────────────────────────────────────────────────────
 
@@ -116,11 +118,16 @@ class RestoreBackup extends Page implements HasActions, HasForms
         }
 
         if ($this->step === 1) {
+            // Reset selections from previous user
+            $this->selectedPaths = [];
+            $this->selectedDatabases = [];
+            $this->selectedMailboxes = [];
             $this->loadContents();
         }
 
         if ($this->step === 2) {
             $this->currentPath = $this->selectedUser ?? '';
+            $this->refreshDirectory();
         }
 
         $this->step = min($this->step + 1, 4);
@@ -213,31 +220,45 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     // ── Step 3: File Browser ────────────────────────────────────────────
 
+    public function selectSectionAndAdvance(string $section): void
+    {
+        $this->activeSection = $section;
+        $this->nextStep();
+    }
+
     public function setSection(string $section): void
     {
         $this->activeSection = $section;
         $this->currentPath = $this->selectedUser ?? '';
+        $this->refreshDirectory();
     }
 
     public function navigateTo(string $path): void
     {
+        // Prevent path traversal
+        if (str_contains($path, '..')) {
+            return;
+        }
+
         $this->currentPath = $path;
+        $this->refreshDirectory();
     }
 
-    public function loadDirectory(): array
+    public function refreshDirectory(): void
     {
         $backup = $this->getBackup();
         if (! $backup || ! $this->selectedUser) {
-            return [];
+            $this->directoryItems = [];
+
+            return;
         }
 
         try {
             $adapter = $this->buildAdapter();
             $result = $adapter->files()->list($this->currentPath);
-
-            return $result['items'] ?? [];
+            $this->directoryItems = $result['items'] ?? [];
         } catch (Exception $e) {
-            return [];
+            $this->directoryItems = [];
         }
     }
 
@@ -245,6 +266,10 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public function executeRestore(): void
     {
+        if ($this->restoreInProgress) {
+            return;
+        }
+
         $user = User::where('username', $this->selectedUser)->first();
         if (! $user) {
             Notification::make()->title(__('User not found'))->danger()->send();
@@ -254,8 +279,12 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
         $backup = $this->getBackup();
         if (! $backup) {
+            Notification::make()->title(__('Backup not found'))->danger()->send();
+
             return;
         }
+
+        $this->restoreInProgress = true;
 
         try {
             $orchestrator = app(BackupOrchestrator::class);
@@ -263,6 +292,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
                 'restore_files' => ! empty($this->selectedPaths) || ! empty($this->contents['domains']),
                 'restore_databases' => ! empty($this->selectedDatabases),
                 'restore_mailboxes' => ! empty($this->selectedMailboxes),
+                'conflict_mode' => $this->conflictMode,
                 'selected_domains' => ! empty($this->selectedPaths)
                     ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/'))
                     : ($this->contents['domains'] ?? null),
@@ -304,6 +334,10 @@ class RestoreBackup extends Page implements HasActions, HasForms
     private function buildAdapter(): BackupSnapshotAdapter
     {
         $backup = $this->getBackup();
+        if (! $backup) {
+            throw new Exception('Backup not found');
+        }
+
         $repo = $backup->destination
             ? $backup->destination->getResticRepoUrl()
             : '/var/backups/jabali/restic';
@@ -322,19 +356,6 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     private function getBackup(): ?Backup
     {
-        if ($this->backup === null) {
-            $this->backup = Backup::find($this->backupId);
-        }
-
-        return $this->backup;
-    }
-
-    public function getAvailableBackups(): array
-    {
-        return Backup::where('status', 'completed')
-            ->whereNotNull('snapshot_id')
-            ->latest()
-            ->pluck('name', 'id')
-            ->toArray();
+        return Backup::find($this->backupId);
     }
 }
