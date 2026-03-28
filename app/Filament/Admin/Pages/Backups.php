@@ -636,8 +636,12 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
     private function backupPasswordAction(): Action
     {
-        $passwordFile = '/etc/jabali/restic-password';
-        $currentPassword = file_exists($passwordFile) ? trim((string) @file_get_contents($passwordFile)) : '';
+        $currentPassword = '';
+        try {
+            $result = app(\App\Services\Agent\AgentClient::class)->send('backup.get_password', []);
+            $currentPassword = $result['password'] ?? '';
+        } catch (\Throwable) {
+        }
 
         return Action::make('backupPassword')
             ->label(__('Password'))

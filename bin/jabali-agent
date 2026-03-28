@@ -748,6 +748,7 @@ function handleAction(array $request): array
         'backup.list_remote' => backupListRemote($params),
         'backup.delete_remote' => backupDeleteRemote($params),
         'backup.test_destination' => backupTestDestination($params),
+        'backup.get_password' => backupGetPassword($params),
         'backup.set_password' => backupSetPassword($params),
         'backup.download_user_archive' => backupDownloadUserArchive($params),
         'backup.list_contents' => backupListContents($params),
@@ -17949,6 +17950,16 @@ function backupSetPassword(array $params): array
     chmod($passwordFile, 0600);
 
     return ['success' => true, 'message' => 'Password updated'];
+}
+
+function backupGetPassword(array $params): array
+{
+    $passwordFile = '/etc/jabali/restic-password';
+    if (! file_exists($passwordFile)) {
+        return ['success' => false, 'error' => 'Password file not found', 'password' => ''];
+    }
+
+    return ['success' => true, 'password' => trim(file_get_contents($passwordFile))];
 }
 
 // ── Test Destination ────────────────────────────────────────────────────────
