@@ -159,6 +159,56 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->sortable(),
             ])
             ->actions([
+                Action::make('restore')
+                    ->label(__('Restore'))
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
+                    ->modalHeading(__('Restore Backup'))
+                    ->modalDescription(__('This will restore your data from the selected backup. Existing files may be overwritten.'))
+                    ->form([
+                        \Filament\Schemas\Components\Grid::make(3)->schema([
+                            \Filament\Forms\Components\Toggle::make('restore_files')->label(__('Files'))->default(true),
+                            \Filament\Forms\Components\Toggle::make('restore_databases')->label(__('Databases'))->default(true),
+                            \Filament\Forms\Components\Toggle::make('restore_mailboxes')->label(__('Mailboxes'))->default(true),
+                        ]),
+                    ])
+                    ->action(function (Backup $record, array $data): void {
+                        $user = $this->getUser();
+
+                        try {
+                            $orchestrator = app(BackupOrchestrator::class);
+                            $result = $orchestrator->restoreBackup($user, $record, [
+                                'restore_files' => $data['restore_files'] ?? true,
+                                'restore_databases' => $data['restore_databases'] ?? true,
+                                'restore_mailboxes' => $data['restore_mailboxes'] ?? true,
+                            ]);
+
+                            if ($result['success'] ?? false) {
+                                Notification::make()
+                                    ->title(__('Restore completed'))
+                                    ->body(__(':files domain(s), :dbs database(s), :mail mailbox(es)', [
+                                        'files' => $result['result']['files_count'] ?? 0,
+                                        'dbs' => $result['result']['databases_count'] ?? 0,
+                                        'mail' => $result['result']['mailboxes_count'] ?? 0,
+                                    ]))
+                                    ->success()
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->title(__('Restore failed'))
+                                    ->body($result['error'] ?? __('Unknown error'))
+                                    ->danger()
+                                    ->send();
+                            }
+                        } catch (Exception $e) {
+                            Notification::make()
+                                ->title(__('Restore failed'))
+                                ->body(SafeError::message($e))
+                                ->danger()
+                                ->send();
+                        }
+                    }),
                 Action::make('delete')
                     ->label(__('Delete'))
                     ->icon('heroicon-o-trash')
