@@ -3377,153 +3377,6 @@ setup_quotas() {
     fi
 }
 
-# Configure SSH/SFTP Jails (Fail2ban, ClamAV, UFW now handled by jabali-security)
-configure_security() {
-    header "Configuring SSH/SFTP Jails"
-
-    # Configure SSH Jail for users
-    info "Configuring SSH/SFTP jail..."
-
-    # Create groups for SFTP and shell users
-    groupadd sftpusers 2>/dev/null || true
-    groupadd shellusers 2>/dev/null || true
-
-    # Backup original sshd_config
-    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d%H%M%S)
-
-    # Remove any existing Jabali SSH config
-    sed -i '/# Jabali SSH Jail Configuration/,/# End Jabali SSH Jail/d' /etc/ssh/sshd_config
-
-    # Add SSH jail configuration
-    cat >> /etc/ssh/sshd_config << 'SSHJAIL'
-
-# Jabali SSH Jail Configuration
-# SFTP-only users (default for all panel users)
-Match Group sftpusers
-    ChrootDirectory /home/%u
-    ForceCommand internal-sftp
-    AllowTcpForwarding no
-    AllowAgentForwarding no
-    PermitTTY no
-    X11Forwarding no
-
-# Shell users (jailed with limited commands)
-Match Group shellusers
-    ChrootDirectory /var/jail
-    AllowTcpForwarding no
-    AllowAgentForwarding no
-    X11Forwarding no
-# End Jabali SSH Jail
-SSHJAIL
-
-    # Restart SSH to apply changes (Ubuntu uses 'ssh', Debian uses 'sshd')
-    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
-    log "SSH jail configured"
-
-    # Set up jail environment for shell users
-    info "Setting up jail environment..."
-
-    # Create jail directory structure
-    mkdir -p /var/jail/{bin,lib,lib64,usr,etc,dev,home}
-    mkdir -p /var/jail/usr/{bin,lib,share}
-    mkdir -p /var/jail/usr/lib/x86_64-linux-gnu
-
-    # Copy essential binaries to jail
-    JAIL_BINS="bash sh ls cat cp mv rm mkdir rmdir pwd echo head tail grep sed awk wc sort uniq cut tr touch chmod find which"
-    for bin in $JAIL_BINS; do
-        if [ -f "/bin/$bin" ]; then
-            cp /bin/$bin /var/jail/bin/ 2>/dev/null || true
-        elif [ -f "/usr/bin/$bin" ]; then
-            cp /usr/bin/$bin /var/jail/usr/bin/ 2>/dev/null || true
-        fi
-    done
-
-    # Copy wp-cli if available
-    if [ -f "/usr/local/bin/wp" ]; then
-        cp /usr/local/bin/wp /var/jail/usr/bin/wp
-    fi
-
-    # Copy PHP for wp-cli support
-    if [ -f "/usr/bin/php" ]; then
-        cp /usr/bin/php /var/jail/usr/bin/
-    fi
-
-    # Copy env (needed by wp-cli shebang)
-    if [ -f "/usr/bin/env" ]; then
-        cp /usr/bin/env /var/jail/usr/bin/
-    fi
-
-    # Copy required libraries for binaries
-    copy_libs_for_binary() {
-        local binary="$1"
-        if [ -f "$binary" ]; then
-            ldd "$binary" 2>/dev/null | grep -o '/[^ ]*' | while read lib; do
-                if [ -f "$lib" ]; then
-                    local libdir=$(dirname "$lib")
-                    mkdir -p "/var/jail$libdir"
-                    cp -n "$lib" "/var/jail$libdir/" 2>/dev/null || true
-                fi
-            done
-        fi
-    }
-
-    for bin in /var/jail/bin/* /var/jail/usr/bin/*; do
-        [ -f "$bin" ] && copy_libs_for_binary "$bin"
-    done
-
-    # Copy PHP extensions for wp-cli
-    PHP_EXT_DIR=$(php -i 2>/dev/null | grep "^extension_dir" | awk '{print $3}')
-    if [ -d "$PHP_EXT_DIR" ]; then
-        mkdir -p "/var/jail$PHP_EXT_DIR"
-        cp "$PHP_EXT_DIR"/*.so "/var/jail$PHP_EXT_DIR/" 2>/dev/null || true
-
-        # Copy extension library dependencies
-        for ext in "$PHP_EXT_DIR"/*.so; do
-            [ -f "$ext" ] && copy_libs_for_binary "$ext"
-        done
-    fi
-
-    # Copy PHP CLI configuration (resolve symlinks to actual files)
-    mkdir -p /var/jail/etc/php/${PHP_VERSION}/cli/conf.d
-    cp /etc/php/${PHP_VERSION}/cli/php.ini /var/jail/etc/php/${PHP_VERSION}/cli/ 2>/dev/null || true
-
-    # Set timezone in jail's php.ini to avoid warnings
-    sed -i 's/;date.timezone =/date.timezone = UTC/' /var/jail/etc/php/${PHP_VERSION}/cli/php.ini 2>/dev/null || true
-
-    for f in /etc/php/${PHP_VERSION}/cli/conf.d/*.ini; do
-        if [ -L "$f" ]; then
-            # Resolve symlink and copy actual file
-            cp "$(readlink -f "$f")" "/var/jail/etc/php/${PHP_VERSION}/cli/conf.d/$(basename "$f")" 2>/dev/null || true
-        elif [ -f "$f" ]; then
-            cp "$f" "/var/jail/etc/php/${PHP_VERSION}/cli/conf.d/" 2>/dev/null || true
-        fi
-    done
-
-    # Create essential device nodes
-    mknod -m 666 /var/jail/dev/null c 1 3 2>/dev/null || true
-    mknod -m 666 /var/jail/dev/zero c 1 5 2>/dev/null || true
-    mknod -m 666 /var/jail/dev/random c 1 8 2>/dev/null || true
-    mknod -m 666 /var/jail/dev/urandom c 1 9 2>/dev/null || true
-    mknod -m 666 /var/jail/dev/tty c 5 0 2>/dev/null || true
-
-    # Create minimal /etc files
-    grep -E "^(root|nobody)" /etc/passwd > /var/jail/etc/passwd
-    grep -E "^(root|nogroup)" /etc/group > /var/jail/etc/group
-    cp /etc/nsswitch.conf /var/jail/etc/ 2>/dev/null || true
-    cp /etc/hosts /var/jail/etc/ 2>/dev/null || true
-
-    # Copy timezone data for PHP
-    mkdir -p /var/jail/usr/share/zoneinfo
-    cp -r /usr/share/zoneinfo/* /var/jail/usr/share/zoneinfo/ 2>/dev/null || true
-    ln -sf /usr/share/zoneinfo/UTC /var/jail/etc/localtime 2>/dev/null || true
-
-    # Set permissions
-    chown root:root /var/jail
-    chmod 755 /var/jail
-
-    log "Jail environment configured with wp-cli support"
-}
-
 # Configure Redis with ACL
 configure_redis() {
     header "Configuring Redis"
@@ -4366,7 +4219,6 @@ reinstall() {
     fi
 
     setup_quotas
-    configure_security
     configure_redis
 
     # Regenerate .env, run migrations, create admin
@@ -4892,10 +4744,6 @@ main() {
 
     # Setup disk quotas for user space management
     setup_quotas
-
-    # Configure SSH/SFTP jails (firewall/fail2ban/ClamAV handled by jabali-security)
-    configure_security
-
     configure_redis
     setup_jabali
     setup_agent_service
