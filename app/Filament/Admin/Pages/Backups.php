@@ -126,14 +126,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->icon('heroicon-o-folder-open')
                     ->color('gray')
                     ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
-                    ->modalHeading(fn (Backup $record) => __('Snapshot: :name', ['name' => $record->name]))
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel(__('Close'))
-                    ->modalContent(function (Backup $record): \Illuminate\Contracts\View\View {
-                        $contents = $this->getSnapshotContents($record);
-
-                        return view('filament.admin.components.snapshot-contents', ['contents' => $contents]);
-                    }),
+                    ->url(fn (Backup $record) => route('filament.admin.pages.backups.restore-backup', ['backupId' => $record->id])),
                 Action::make('restore')
                     ->label(__('Restore'))
                     ->icon('heroicon-o-arrow-path')

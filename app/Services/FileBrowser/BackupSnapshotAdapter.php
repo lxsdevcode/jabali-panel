@@ -11,23 +11,25 @@ use App\FileBrowser\Adapters\PermissionManager;
 use App\Services\Agent\AgentClient;
 
 /**
- * Read-only adapter for browsing backup snapshots on remote destinations.
- * Uses the agent's SSH capabilities to list files on SFTP backup servers.
+ * Read-only adapter for browsing Restic backup snapshots.
+ * Uses restic ls via the agent to list snapshot contents.
  */
 class BackupSnapshotAdapter implements FileBrowserAdapter
 {
     private BackupSnapshotFileOperations $fileOps;
 
     public function __construct(
-        private AgentClient $agent,
-        private string $backupPath,
-        private string $username,
-        private array $destinationConfig,
+        AgentClient $agent,
+        string $snapshotId,
+        string $username,
+        string $repo = '/var/backups/jabali/restic',
+        array $destinationConfig = [],
     ) {
         $this->fileOps = new BackupSnapshotFileOperations(
             $agent,
-            $backupPath,
+            $snapshotId,
             $username,
+            $repo,
             $destinationConfig,
         );
     }

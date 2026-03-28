@@ -9,34 +9,33 @@ use App\Services\Agent\AgentClient;
 use RuntimeException;
 
 /**
- * Read-only file operations for browsing backup snapshots via SSH.
+ * Read-only file operations for browsing Restic backup snapshots.
+ * Uses restic ls via the agent to list snapshot contents.
  * Write operations throw — snapshots are immutable.
- * All SSH args are escaped with escapeshellarg() per project conventions.
  */
 class BackupSnapshotFileOperations implements FileOperations
 {
     public function __construct(
         private AgentClient $agent,
-        private string $backupPath,
+        private string $snapshotId,
         private string $username,
-        private array $destinationConfig,
+        private string $repo,
+        private array $destinationConfig = [],
     ) {}
 
     public function list(string $path, bool $showHidden = false): array
     {
-        $remotePath = rtrim($this->backupPath, '/')
-            .'/'.$this->username
-            .'/home/'.$this->username;
-
+        $fullPath = "/home/{$this->username}";
         if (! empty($path)) {
-            $remotePath .= '/'.ltrim($path, '/');
+            $fullPath .= '/'.ltrim($path, '/');
         }
 
-        // Use the agent to list the remote directory via SSH
-        $result = $this->agent->call('backup.list_snapshot_dir', [
-            'remote_path' => $remotePath,
+        $result = $this->agent->send('backup.list_domain_files', [
+            'snapshot_id' => $this->snapshotId,
+            'username' => $this->username,
+            'path' => empty($path) ? "home/{$this->username}" : "home/{$this->username}/{$path}",
+            'repo' => $this->repo,
             'destination' => $this->destinationConfig,
-            'show_hidden' => $showHidden,
         ]);
 
         $items = [];
@@ -58,9 +57,13 @@ class BackupSnapshotFileOperations implements FileOperations
             ];
         }
 
-        foreach ($result->get('items', []) as $file) {
+        foreach ($result['items'] ?? [] as $file) {
             $name = $file['name'] ?? '';
             if ($name === '.' || $name === '..' || empty($name)) {
+                continue;
+            }
+
+            if (! $showHidden && str_starts_with($name, '.')) {
                 continue;
             }
 
@@ -71,7 +74,7 @@ class BackupSnapshotFileOperations implements FileOperations
                 'path' => $filePath,
                 'is_dir' => $file['is_dir'] ?? false,
                 'size' => ($file['is_dir'] ?? false) ? null : ($file['size'] ?? null),
-                'modified' => $file['mtime'] ?? $file['modified'] ?? time(),
+                'modified' => $file['modified'] ?? time(),
                 'permissions' => $file['permissions'] ?? '0644',
             ];
         }
