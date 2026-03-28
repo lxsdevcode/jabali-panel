@@ -1163,8 +1163,14 @@ PHPINI
 		max_size 512MB
 	}
 
-	@blocked path /vendor/* /node_modules/* /storage/* /.*
+	@blocked {
+		path /vendor/*
+		not path /vendor/livewire/*
+	}
 	respond @blocked 404
+
+	@blocked_other path /node_modules/* /storage/* /.*
+	respond @blocked_other 404
 
 	php_server
 }
