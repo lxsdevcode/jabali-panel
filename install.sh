@@ -4697,6 +4697,8 @@ show_usage() {
 }
 
 JABALI_SECURITY_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-security.git"
+JABALI_ISOLATOR_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-isolator.git"
+JABALI_ISOLATOR_DIR="/usr/local/jabali-isolator"
 
 install_jabali_security() {
     header "Installing Jabali Security"
@@ -4712,6 +4714,53 @@ install_jabali_security() {
     else
         warn "Could not download jabali-security installer — skipping"
     fi
+}
+
+install_jabali_isolator() {
+    header "Installing Jabali Isolator (PHP-FPM container isolation)"
+
+    # Require systemd-container for systemd-nspawn
+    if ! command -v systemd-nspawn &>/dev/null; then
+        info "Installing systemd-container package..."
+        apt-get install -y systemd-container >/dev/null 2>&1 || {
+            warn "Could not install systemd-container — jabali-isolator requires it"
+            return
+        }
+    fi
+
+    if [[ -d "$JABALI_ISOLATOR_DIR" ]]; then
+        info "Updating existing jabali-isolator installation..."
+        git -C "$JABALI_ISOLATOR_DIR" pull --ff-only 2>/dev/null || true
+    else
+        info "Cloning jabali-isolator..."
+        if ! git clone "$JABALI_ISOLATOR_REPO" "$JABALI_ISOLATOR_DIR" 2>/dev/null; then
+            warn "Could not clone jabali-isolator — skipping"
+            return
+        fi
+    fi
+
+    # Install into a venv with uv
+    if command -v uv &>/dev/null; then
+        (cd "$JABALI_ISOLATOR_DIR" && uv sync 2>/dev/null) || {
+            warn "uv sync failed for jabali-isolator"
+            return
+        }
+    else
+        warn "uv not found — cannot install jabali-isolator dependencies"
+        return
+    fi
+
+    # Create CLI symlink
+    local venv_bin="$JABALI_ISOLATOR_DIR/.venv/bin/jabali-isolate"
+    if [[ -f "$venv_bin" ]]; then
+        ln -sf "$venv_bin" /usr/local/bin/jabali-isolate
+        info "Installed jabali-isolate CLI to /usr/local/bin/jabali-isolate"
+    fi
+
+    # Create socket directory
+    mkdir -p /run/jabali-fpm
+
+    success "Jabali Isolator installed"
 }
 
 # Main installation
@@ -4821,6 +4870,9 @@ main() {
 
     # Install jabali-security daemon
     install_jabali_security
+
+    # Install jabali-isolator (PHP-FPM nspawn containers)
+    install_jabali_isolator
 
     print_completion
 }

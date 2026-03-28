@@ -39,6 +39,8 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public string $currentPath = '';
 
+    public array $selectedPaths = [];
+
     private ?Backup $backup = null;
 
     public function mount(?int $backupId = null): void
@@ -66,6 +68,23 @@ class RestoreBackup extends Page implements HasActions, HasForms
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('restoreSelected')
+                ->label(fn () => __('Restore Selected (:count)', ['count' => count($this->selectedPaths)]))
+                ->icon('heroicon-o-arrow-path')
+                ->color('danger')
+                ->visible(fn () => count($this->selectedPaths) > 0)
+                ->requiresConfirmation()
+                ->modalHeading(__('Restore Selected Items'))
+                ->modalDescription(fn () => __('Restore :count selected item(s)?', ['count' => count($this->selectedPaths)]))
+                ->form([
+                    Select::make('restore_user')
+                        ->label(__('Restore for user'))
+                        ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
+                        ->required(),
+                ])
+                ->action(function (array $data): void {
+                    $this->restoreSelectedPaths($data['restore_user']);
+                }),
             Action::make('restoreCurrentFolder')
                 ->label(__('Restore This Folder'))
                 ->icon('heroicon-o-arrow-path')
@@ -95,6 +114,66 @@ class RestoreBackup extends Page implements HasActions, HasForms
     public function navigateTo(string $path): void
     {
         $this->currentPath = $path;
+    }
+
+    private function restoreSelectedPaths(string $username): void
+    {
+        $user = User::where('username', $username)->first();
+        if (! $user) {
+            Notification::make()->title(__('User not found'))->danger()->send();
+
+            return;
+        }
+
+        $backup = $this->getBackup();
+
+        try {
+            $repo = $backup->destination
+                ? $backup->destination->getResticRepoUrl()
+                : '/var/backups/jabali/restic';
+            $destConfig = $backup->destination
+                ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
+                : [];
+
+            // Build --include args for each selected path
+            $includes = array_map(
+                fn ($p) => "/home/{$username}/{$p}",
+                $this->selectedPaths
+            );
+
+            $agent = app(AgentClient::class);
+            $includeArgs = implode(' ', array_map(fn ($p) => '--include '.escapeshellarg($p), $includes));
+
+            $result = $agent->send('backup.restore_paths', [
+                'snapshot_id' => $backup->snapshot_id,
+                'username' => $username,
+                'repo' => $repo,
+                'destination' => $destConfig,
+                'include_paths' => $includes,
+            ]);
+
+            if ($result['success'] ?? false) {
+                Notification::make()
+                    ->title(__('Restore completed'))
+                    ->body(__(':count item(s) restored', ['count' => count($this->selectedPaths)]))
+                    ->success()
+                    ->send();
+
+                $this->selectedPaths = [];
+            } else {
+                Notification::make()
+                    ->title(__('Restore failed'))
+                    ->body($result['error'] ?? __('Unknown error'))
+                    ->danger()
+                    ->send();
+            }
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('Restore failed'))
+                ->body(SafeError::message($e))
+                ->danger()
+                ->send();
+        }
     }
 
     public function loadDirectory(): array

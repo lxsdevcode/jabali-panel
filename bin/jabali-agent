@@ -737,6 +737,7 @@ function handleAction(array $request): array
         'backup.create_server' => backupCreateServer($params),
         'backup.incremental_direct' => backupServerIncrementalDirect($params),
         'backup.restore' => backupRestore($params),
+        'backup.restore_paths' => backupRestorePaths($params),
         'backup.list' => backupList($params),
         'backup.delete' => backupDelete($params),
         'backup.delete_server' => backupDeleteServer($params),
@@ -17659,6 +17660,57 @@ function backupRestore(array $params): array
             'databases_count' => $restored['databases'],
             'mailboxes_count' => $restored['mailboxes'],
             'log' => $log,
+        ];
+    } finally {
+        exec('rm -rf ' . escapeshellarg($restoreDir));
+    }
+}
+
+/**
+ * Restore specific paths from a snapshot using restic restore --include.
+ */
+function backupRestorePaths(array $params): array
+{
+    $snapshotId   = $params['snapshot_id'] ?? '';
+    $username     = $params['username'] ?? '';
+    $destination  = $params['destination'] ?? [];
+    $repo         = ! empty($destination) ? resticRepoUrl($destination) : ($params['repo'] ?? '');
+    $includePaths = $params['include_paths'] ?? [];
+
+    if (empty($snapshotId) || empty($includePaths)) {
+        return ['success' => false, 'error' => 'snapshot_id and include_paths are required'];
+    }
+
+    $restoreDir = '/tmp/jabali_restore_' . uniqid();
+    mkdir($restoreDir, 0700, true);
+
+    try {
+        $includeArgs = implode(' ', array_map(fn ($p) => '--include ' . escapeshellarg($p), $includePaths));
+
+        $result = resticCmd(
+            'restore ' . escapeshellarg($snapshotId) . ' --target ' . escapeshellarg($restoreDir) . ' ' . $includeArgs,
+            $repo, $destination
+        );
+
+        if ($result['exitCode'] !== 0) {
+            return ['success' => false, 'error' => 'Restic restore failed: ' . $result['output']];
+        }
+
+        // Move restored files to their original locations
+        $homeDir = "/home/{$username}";
+        $restoredHome = "{$restoreDir}{$homeDir}";
+
+        if (is_dir($restoredHome)) {
+            $out = [];
+            $ret = 0;
+            exec('rsync -a ' . escapeshellarg("{$restoredHome}/") . ' ' . escapeshellarg("{$homeDir}/") . ' 2>&1', $out, $ret);
+            exec('chown -R ' . escapeshellarg($username) . ':' . escapeshellarg($username) . ' ' . escapeshellarg($homeDir));
+        }
+
+        return [
+            'success' => true,
+            'restored_paths' => $includePaths,
+            'count' => count($includePaths),
         ];
     } finally {
         exec('rm -rf ' . escapeshellarg($restoreDir));
