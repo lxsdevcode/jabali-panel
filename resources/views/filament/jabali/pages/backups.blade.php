@@ -1,5 +1,5 @@
 <x-filament-panels::page>
-    {{ $this->backupsForm }}
+    {{ $this->table }}
 
     <x-filament-actions::modals />
 </x-filament-panels::page>

@@ -20,6 +20,5 @@ class TabSkeletonTest extends TestCase
             ->get('/jabali-admin/backups');
 
         $response->assertOk();
-        $response->assertSee('tab-skeleton-pulse', false);
     }
 }
