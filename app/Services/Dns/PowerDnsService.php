@@ -110,6 +110,11 @@ class PowerDnsService
                 $content = "{$priority} ".$this->ensureTrailingDot($content);
             }
 
+            // TXT records must be quoted for PowerDNS
+            if ($type === 'TXT' && ! str_starts_with($content, '"')) {
+                $content = '"'.$content.'"';
+            }
+
             // SRV records need priority in content
             if ($type === 'SRV' && ! empty($record['priority'])) {
                 // SRV content format: priority weight port target (already in content usually)
@@ -146,6 +151,10 @@ class PowerDnsService
 
         if ($type === 'MX') {
             $content = "{$priority} ".$this->ensureTrailingDot($content);
+        }
+
+        if ($type === 'TXT' && ! str_starts_with($content, '"')) {
+            $content = '"'.$content.'"';
         }
 
         if (in_array($type, ['CNAME', 'NS'])) {
