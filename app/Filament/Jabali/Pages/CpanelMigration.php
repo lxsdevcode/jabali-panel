@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Pages;
 
-use App\Jobs\RunCpanelRestore;
 use App\Models\User;
 use App\Services\Agent\InteractsWithAgent;
 use App\Services\Migration\CpanelApiService;
+use App\Services\Migration\CpanelMigrationOrchestrator;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
@@ -34,9 +34,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
 
 class CpanelMigration extends Page implements HasActions, HasForms
@@ -1258,34 +1256,29 @@ class CpanelMigration extends Page implements HasActions, HasForms
         }
 
         try {
-            $cpanel = $this->getCpanel();
-            $result = $cpanel->testConnection();
+            $orchestrator = app(CpanelMigrationOrchestrator::class);
+            $result = $orchestrator->testConnection(
+                $this->hostname,
+                $this->cpanelUsername,
+                $this->apiToken,
+                $this->port,
+                $this->useSSL,
+            );
 
-            if ($result['success']) {
-                $this->isConnected = true;
+            $this->isConnected = true;
+            $this->connectionInfo = $result['connectionInfo'];
 
-                $summary = $cpanel->getMigrationSummary();
-                $this->connectionInfo = [
-                    'domains' => $this->countDomains($summary['domains'] ?? []),
-                    'emails' => count($summary['email_accounts'] ?? []),
-                    'databases' => count($summary['databases'] ?? []),
-                    'ssl' => count($summary['ssl_certificates'] ?? []),
-                ];
+            Notification::make()
+                ->title(__('Connection successful'))
+                ->body(__('Found :domains domains, :emails email accounts, :dbs databases', [
+                    'domains' => $this->connectionInfo['domains'],
+                    'emails' => $this->connectionInfo['emails'],
+                    'dbs' => $this->connectionInfo['databases'],
+                ]))
+                ->success()
+                ->send();
 
-                Notification::make()
-                    ->title(__('Connection successful'))
-                    ->body(__('Found :domains domains, :emails email accounts, :dbs databases', [
-                        'domains' => $this->connectionInfo['domains'],
-                        'emails' => $this->connectionInfo['emails'],
-                        'dbs' => $this->connectionInfo['databases'],
-                    ]))
-                    ->success()
-                    ->send();
-
-                $this->storeCredentialsInSession();
-            } else {
-                throw new Exception($result['message'] ?? __('Connection failed'));
-            }
+            $this->storeCredentialsInSession();
         } catch (Exception $e) {
             $this->isConnected = false;
             Log::error('cPanel connection failed', ['error' => $e->getMessage()]);
@@ -1296,18 +1289,6 @@ class CpanelMigration extends Page implements HasActions, HasForms
                 ->danger()
                 ->send();
         }
-    }
-
-    protected function countDomains(array $domains): int
-    {
-        $count = 0;
-        if (! empty($domains['main'])) {
-            $count++;
-        }
-        $count += count($domains['addon'] ?? []);
-        $count += count($domains['sub'] ?? []);
-
-        return $count;
     }
 
     public function startBackup(): void
@@ -1332,25 +1313,22 @@ class CpanelMigration extends Page implements HasActions, HasForms
             ]);
 
             $cpanel = $this->getCpanel();
-            $result = $cpanel->createBackup();
+            $orchestrator = app(CpanelMigrationOrchestrator::class);
+            $result = $orchestrator->startBackup($cpanel);
 
-            if ($result['success']) {
-                $this->backupInitiated = true;
-                $this->backupInProgress = true;
-                $this->backupPid = $result['pid'] ?? null;
-                $this->pollCount = 0;
-                $this->addStatusLog(__('Backup initiated on cPanel'), 'success');
-                $this->addStatusLog(__('Waiting for backup to complete on cPanel...'), 'pending');
+            $this->backupInitiated = true;
+            $this->backupInProgress = true;
+            $this->backupPid = $result['pid'] ?? null;
+            $this->pollCount = 0;
+            $this->addStatusLog(__('Backup initiated on cPanel'), 'success');
+            $this->addStatusLog(__('Waiting for backup to complete on cPanel...'), 'pending');
 
-                Notification::make()
-                    ->title(__('Backup started'))
-                    ->body(__('cPanel is creating a full backup. This may take several minutes.'))
-                    ->success()
-                    ->send();
-                $this->storeCredentialsInSession();
-            } else {
-                throw new Exception($result['message'] ?? __('Failed to start backup'));
-            }
+            Notification::make()
+                ->title(__('Backup started'))
+                ->body(__('cPanel is creating a full backup. This may take several minutes.'))
+                ->success()
+                ->send();
+            $this->storeCredentialsInSession();
         } catch (Exception $e) {
             Log::error('cPanel backup initiation failed', ['error' => $e->getMessage()]);
             $this->addStatusLog(__('Backup failed: :message', ['message' => $e->getMessage()]), 'error');
@@ -1374,48 +1352,47 @@ class CpanelMigration extends Page implements HasActions, HasForms
 
         try {
             $cpanel = $this->getCpanel();
-            $result = $cpanel->getBackupStatus();
+            $orchestrator = app(CpanelMigrationOrchestrator::class);
+            $result = $orchestrator->checkBackupStatus($cpanel);
 
-            if ($result['success'] ?? false) {
-                $backups = $result['backups'] ?? [];
+            $backups = $result['backups'] ?? [];
 
-                if (! empty($backups)) {
-                    $latestBackup = $backups[0];
-                    $this->remoteBackupPath = $latestBackup['path'];
-                    $this->backupInProgress = false;
-                    $this->addStatusLog(__('Backup ready on cPanel: :name', ['name' => $latestBackup['name']]), 'success');
+            if (! empty($backups)) {
+                $latestBackup = $backups[0];
+                $this->remoteBackupPath = $latestBackup['path'];
+                $this->backupInProgress = false;
+                $this->addStatusLog(__('Backup ready on cPanel: :name', ['name' => $latestBackup['name']]), 'success');
 
-                    if (! $quiet) {
-                        Notification::make()
-                            ->title(__('Backup ready'))
-                            ->body(__('Backup file found: :name. Click "Download Backup" to continue.', [
-                                'name' => $latestBackup['name'],
-                            ]))
-                            ->success()
-                            ->send();
-                    }
-
-                    $this->storeCredentialsInSession();
-
-                    return;
+                if (! $quiet) {
+                    Notification::make()
+                        ->title(__('Backup ready'))
+                        ->body(__('Backup file found: :name. Click "Download Backup" to continue.', [
+                            'name' => $latestBackup['name'],
+                        ]))
+                        ->success()
+                        ->send();
                 }
 
-                if ($result['in_progress'] ?? false) {
-                    $this->backupInProgress = true;
-                    $this->addStatusLog(__('Backup still in progress on cPanel...'), 'pending');
+                $this->storeCredentialsInSession();
 
-                    if (! $quiet) {
-                        Notification::make()
-                            ->title(__('Backup in progress'))
-                            ->body(__('cPanel is still creating the backup. Please wait and check again.'))
-                            ->info()
-                            ->send();
-                    }
+                return;
+            }
 
-                    $this->storeCredentialsInSession();
+            if ($result['in_progress'] ?? false) {
+                $this->backupInProgress = true;
+                $this->addStatusLog(__('Backup still in progress on cPanel...'), 'pending');
 
-                    return;
+                if (! $quiet) {
+                    Notification::make()
+                        ->title(__('Backup in progress'))
+                        ->body(__('cPanel is still creating the backup. Please wait and check again.'))
+                        ->info()
+                        ->send();
                 }
+
+                $this->storeCredentialsInSession();
+
+                return;
             }
 
             $this->addStatusLog(__('Backup not ready yet'), 'pending');
@@ -1455,7 +1432,6 @@ class CpanelMigration extends Page implements HasActions, HasForms
         $user = $this->getUser();
         $destPath = $this->getBackupDestPath();
         $filename = basename($this->remoteBackupPath);
-        $localPath = $destPath.'/'.$filename;
 
         try {
             $this->addStatusLog(__('Downloading backup...'), 'pending');
@@ -1466,10 +1442,12 @@ class CpanelMigration extends Page implements HasActions, HasForms
                 ->send();
 
             $cpanel = $this->getCpanel();
+            $orchestrator = app(CpanelMigrationOrchestrator::class);
 
-            $result = $cpanel->downloadFileToPath(
+            $localPath = $orchestrator->downloadBackup(
+                $cpanel,
                 $this->remoteBackupPath,
-                $localPath,
+                $destPath,
                 function ($downloaded, $total) {
                     if ($total > 0) {
                         $this->downloadProgress = (int) (($downloaded / $total) * 100);
@@ -1477,35 +1455,31 @@ class CpanelMigration extends Page implements HasActions, HasForms
                 }
             );
 
-            if ($result['success'] ?? false) {
-                $this->backupFilename = $filename;
-                $this->backupPath = $localPath;
-                $this->backupSize = (int) ($result['size'] ?? 0);
-                $this->downloadProgress = 100;
-                $this->backupInProgress = false;
+            $this->backupFilename = $filename;
+            $this->backupPath = $localPath;
+            $this->backupSize = (int) filesize($localPath);
+            $this->downloadProgress = 100;
+            $this->backupInProgress = false;
 
-                $this->agent()->send('file.chown', [
-                    'path' => $localPath,
-                    'username' => $user->username,
-                ]);
+            $this->agent()->send('file.chown', [
+                'path' => $localPath,
+                'username' => $user->username,
+            ]);
 
-                $this->addStatusLog(__('Backup downloaded: :name (:size)', [
+            $this->addStatusLog(__('Backup downloaded: :name (:size)', [
+                'name' => $filename,
+                'size' => Formatter::bytes($this->backupSize),
+            ]), 'success');
+
+            Notification::make()
+                ->title(__('Download completed'))
+                ->body(__('Backup file :name (:size) is ready for analysis', [
                     'name' => $filename,
                     'size' => Formatter::bytes($this->backupSize),
-                ]), 'success');
-
-                Notification::make()
-                    ->title(__('Download completed'))
-                    ->body(__('Backup file :name (:size) is ready for analysis', [
-                        'name' => $filename,
-                        'size' => Formatter::bytes($this->backupSize),
-                    ]))
-                    ->success()
-                    ->send();
-                $this->storeCredentialsInSession();
-            } else {
-                throw new Exception($result['message'] ?? __('Failed to download backup'));
-            }
+                ]))
+                ->success()
+                ->send();
+            $this->storeCredentialsInSession();
         } catch (Exception $e) {
             Log::error('cPanel backup download failed', ['error' => $e->getMessage()]);
             $this->addStatusLog(__('Download failed: :message', ['message' => $e->getMessage()]), 'error');
@@ -1529,32 +1503,26 @@ class CpanelMigration extends Page implements HasActions, HasForms
             $this->analysisLog = [];
             $this->addAnalysisLog(__('Analyzing backup contents...'), 'pending');
 
-            $result = $this->agent()->send('cpanel.analyze_backup', [
-                'backup_path' => $this->backupPath,
-            ]);
+            $orchestrator = app(CpanelMigrationOrchestrator::class);
+            $this->discoveredData = $orchestrator->analyzeBackup($this->backupPath);
 
-            if ($result['success'] ?? false) {
-                $this->discoveredData = $result['data'] ?? [];
-                $this->addAnalysisLog(__('Backup analyzed successfully'), 'success');
-                $this->addAnalysisLog(__('Found :domains domains, :dbs databases, :mailboxes mailboxes', [
+            $this->addAnalysisLog(__('Backup analyzed successfully'), 'success');
+            $this->addAnalysisLog(__('Found :domains domains, :dbs databases, :mailboxes mailboxes', [
+                'domains' => count($this->discoveredData['domains'] ?? []),
+                'dbs' => count($this->discoveredData['databases'] ?? []),
+                'mailboxes' => count($this->discoveredData['mailboxes'] ?? []),
+            ]), 'info');
+
+            Notification::make()
+                ->title(__('Backup analyzed'))
+                ->body(__('Found :domains domains, :dbs databases, :mailboxes mailboxes', [
                     'domains' => count($this->discoveredData['domains'] ?? []),
                     'dbs' => count($this->discoveredData['databases'] ?? []),
                     'mailboxes' => count($this->discoveredData['mailboxes'] ?? []),
-                ]), 'info');
-
-                Notification::make()
-                    ->title(__('Backup analyzed'))
-                    ->body(__('Found :domains domains, :dbs databases, :mailboxes mailboxes', [
-                        'domains' => count($this->discoveredData['domains'] ?? []),
-                        'dbs' => count($this->discoveredData['databases'] ?? []),
-                        'mailboxes' => count($this->discoveredData['mailboxes'] ?? []),
-                    ]))
-                    ->success()
-                    ->send();
-                $this->storeCredentialsInSession();
-            } else {
-                throw new Exception($result['error'] ?? __('Failed to analyze backup'));
-            }
+                ]))
+                ->success()
+                ->send();
+            $this->storeCredentialsInSession();
         } catch (Exception $e) {
             Log::error('Backup analysis failed', ['error' => $e->getMessage()]);
             $this->addAnalysisLog(__('Analysis failed: :message', ['message' => $e->getMessage()]), 'error');
@@ -1586,32 +1554,24 @@ class CpanelMigration extends Page implements HasActions, HasForms
 
     protected function enqueueRestore(User $user): void
     {
-        $this->restoreJobId = (string) Str::uuid();
-        $logDir = storage_path('app/migrations/cpanel');
-        File::ensureDirectoryExists($logDir);
-        $this->restoreLogPath = $logDir.'/'.$this->restoreJobId.'.log';
-        File::put($this->restoreLogPath, '');
-        @chmod($this->restoreLogPath, 0644);
+        $orchestrator = app(CpanelMigrationOrchestrator::class);
+        $result = $orchestrator->enqueueRestore($user, $this->backupPath, [
+            'restoreFiles' => $this->restoreFiles,
+            'restoreDatabases' => $this->restoreDatabases,
+            'restoreEmails' => $this->restoreEmails,
+            'restoreSsl' => $this->restoreSsl,
+            'discoveredData' => $this->discoveredData,
+        ]);
+
+        $this->restoreJobId = $result['jobId'];
+        $this->restoreLogPath = $result['logPath'];
 
         $this->appendMigrationLog(__('Restore queued for user: :user', ['user' => $user->username]), 'pending');
 
-        Cache::put($this->getRestoreCacheKey(), ['status' => 'queued'], now()->addHours(2));
         session()->put('user_cpanel_restore_job_id', $this->restoreJobId);
         session()->put('user_cpanel_restore_log_path', $this->restoreLogPath);
         session()->put('user_cpanel_restore_processing', true);
         session()->save();
-
-        RunCpanelRestore::dispatch(
-            jobId: $this->restoreJobId,
-            logPath: $this->restoreLogPath,
-            backupPath: $this->backupPath,
-            username: $user->username,
-            restoreFiles: $this->restoreFiles,
-            restoreDatabases: $this->restoreDatabases,
-            restoreEmails: $this->restoreEmails,
-            restoreSsl: $this->restoreSsl,
-            discoveredData: ! empty($this->discoveredData) ? $this->discoveredData : null,
-        );
     }
 
     public function pollMigrationLog(): void
