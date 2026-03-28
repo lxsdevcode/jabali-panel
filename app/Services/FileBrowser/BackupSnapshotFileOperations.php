@@ -25,15 +25,16 @@ class BackupSnapshotFileOperations implements FileOperations
 
     public function list(string $path, bool $showHidden = false): array
     {
-        $fullPath = "/home/{$this->username}";
-        if (! empty($path)) {
-            $fullPath .= '/'.ltrim($path, '/');
+        // Send absolute path — agent uses it as-is when starting with /
+        $absPath = '/'.ltrim($path, '/');
+        if ($absPath === '/') {
+            $absPath = '/home';
         }
 
         $result = $this->agent->send('backup.list_domain_files', [
             'snapshot_id' => $this->snapshotId,
             'username' => $this->username,
-            'path' => $path,
+            'path' => $absPath,
             'repo' => $this->repo,
             'destination' => $this->destinationConfig,
         ]);

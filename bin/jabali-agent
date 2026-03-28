@@ -17821,7 +17821,8 @@ function backupListDomainFiles(array $params): array
         return ['success' => false, 'error' => 'snapshot_id is required'];
     }
 
-    $fullPath = "/home/{$username}/{$path}";
+    // If path starts with /, use as-is (admin absolute browse). Otherwise prepend user home.
+    $fullPath = str_starts_with($path, '/') ? $path : "/home/{$username}/{$path}";
     $result = resticCmd('ls ' . escapeshellarg($snapshotId) . ' ' . escapeshellarg($fullPath) . ' --json', $repo, $destination);
 
     $items = [];
