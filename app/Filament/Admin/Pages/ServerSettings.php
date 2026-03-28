@@ -12,6 +12,7 @@ use App\Models\HostingPackage;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
 use App\Services\Agent\InteractsWithAgent;
+use App\Services\ServerSettingsService;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -866,8 +867,13 @@ class ServerSettings extends Page implements HasActions, HasForms
     {
         $data = $this->logsData;
 
+        // NOTE: ServerSettingsService::saveLogSettings() saves different keys
+        // (log_retention_days, log_max_size) than what this page needs
+        // (backup_log_retention_days, audit_log_retention_days), so we keep
+        // direct DnsSetting calls here until the service is updated.
         DnsSetting::set('backup_log_retention_days', (int) ($data['backup_log_retention_days'] ?? 60));
         DnsSetting::set('audit_log_retention_days', (int) ($data['audit_log_retention_days'] ?? 90));
+        DnsSetting::clearCache();
 
         Notification::make()->title(__('Log settings saved'))->success()->send();
     }
@@ -889,7 +895,8 @@ class ServerSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        DnsSetting::set('panel_name', trim($data['panel_name']));
+        $service = app(ServerSettingsService::class);
+        $service->saveBranding($data['panel_name']);
 
         // Handle light logo upload
         if (! empty($this->brandingLogo)) {
@@ -900,8 +907,6 @@ class ServerSettings extends Page implements HasActions, HasForms
         if (! empty($this->brandingLogoDark)) {
             $this->uploadLogo(['logo' => $this->brandingLogoDark], 'custom_logo_dark');
         }
-
-        DnsSetting::clearCache();
 
         Notification::make()->title(__('Branding updated'))->body(__('Refresh to see changes.'))->success()->send();
     }
@@ -916,16 +921,13 @@ class ServerSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        // Save to panel settings
-        DnsSetting::set('server_timezone', $timezone);
+        $service = app(ServerSettingsService::class);
+        $success = $service->saveTimezone($timezone);
 
-        // Set system timezone via agent (timedatectl + php.ini update)
-        $result = $this->agent()->send('server.set_timezone', ['timezone' => $timezone]);
-
-        if (! ($result['success'] ?? false)) {
+        if (! $success) {
             Notification::make()
                 ->title(__('Panel timezone updated'))
-                ->body(__('System timezone could not be set: :error', ['error' => $result['error'] ?? '']))
+                ->body(__('System timezone could not be set'))
                 ->warning()
                 ->send();
 
@@ -937,8 +939,8 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     public function saveSecurity(): void
     {
-        DnsSetting::set('passphrase_passwords', $this->securityData['passphrase_passwords'] ? '1' : '0');
-        DnsSetting::clearCache();
+        $service = app(ServerSettingsService::class);
+        $service->saveSecurity((bool) $this->securityData['passphrase_passwords']);
 
         Notification::make()->title(__('Security settings updated'))->success()->send();
     }
@@ -1004,32 +1006,16 @@ class ServerSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $result = $this->agent()->send('server.set_hostname', ['hostname' => $hostname]);
+        $service = app(ServerSettingsService::class);
+        $result = $service->saveHostname($hostname);
 
-        if (! ($result['success'] ?? false)) {
+        if (! $result['success']) {
             Notification::make()->title(__('Failed to update hostname'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
 
             return;
         }
 
-        // Restart or reload affected services
-        $services = ['postfix', 'dovecot', 'nginx', 'named'];
-        $updatedServices = [];
-        $failedServices = [];
-
-        foreach ($services as $service) {
-            try {
-                $action = $service === 'nginx' ? 'reload' : 'restart';
-                $result = $this->agent()->send("service.{$action}", ['service' => $service]);
-                if ($result['success'] ?? false) {
-                    $updatedServices[] = $service;
-                } else {
-                    $failedServices[] = $service;
-                }
-            } catch (Exception $e) {
-                $failedServices[] = $service;
-            }
-        }
+        $failedServices = $result['failed_services'] ?? [];
 
         if (empty($failedServices)) {
             Notification::make()
@@ -1048,31 +1034,10 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     public function saveDns(): void
     {
-        $data = $this->dnsData;
+        $service = app(ServerSettingsService::class);
+        $result = $service->saveDns($this->dnsData, $this->hostnameData['hostname'] ?? '');
 
-        DnsSetting::set('ns1', $data['ns1']);
-        DnsSetting::set('ns1_ip', $data['ns1_ip']);
-        DnsSetting::set('ns2', $data['ns2']);
-        DnsSetting::set('ns2_ip', $data['ns2_ip']);
-        DnsSetting::set('default_ip', $data['default_ip']);
-        DnsSetting::set('default_ipv6', $data['default_ipv6'] ?: null);
-        DnsSetting::set('default_ttl', $data['default_ttl']);
-        DnsSetting::set('admin_email', $data['admin_email']);
-        DnsSetting::clearCache();
-
-        $result = $this->agent()->send('server.create_zone', [
-            'hostname' => $this->hostnameData['hostname'],
-            'ns1' => $data['ns1'],
-            'ns1_ip' => $data['ns1_ip'],
-            'ns2' => $data['ns2'],
-            'ns2_ip' => $data['ns2_ip'],
-            'admin_email' => $data['admin_email'],
-            'server_ip' => $data['default_ip'],
-            'server_ipv6' => $data['default_ipv6'],
-            'ttl' => $data['default_ttl'],
-        ]);
-
-        if ($result['success'] ?? false) {
+        if ($result['success']) {
             Notification::make()->title(__('DNS settings saved'))->success()->send();
         } else {
             Notification::make()->title(__('Settings saved but zone creation failed'))->body($result['error'] ?? __('Unknown error'))->warning()->send();
@@ -1095,15 +1060,14 @@ class ServerSettings extends Page implements HasActions, HasForms
             return;
         }
 
-        $this->agentCall(
-            action: 'server.set_resolvers',
-            params: [
-                'nameservers' => array_values($nameservers),
-                'search_domains' => ! empty($data['search_domain']) ? [$data['search_domain']] : [],
-            ],
-            successTitle: 'DNS resolvers updated',
-            errorTitle: 'Failed to update DNS resolvers',
-        );
+        $service = app(ServerSettingsService::class);
+        $result = $service->saveResolvers(array_values($nameservers));
+
+        if ($result['success']) {
+            Notification::make()->title(__('DNS resolvers updated'))->success()->send();
+        } else {
+            Notification::make()->title(__('Failed to update DNS resolvers'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
+        }
     }
 
     protected static function isZfsFilesystem(): bool
@@ -1123,9 +1087,11 @@ class ServerSettings extends Page implements HasActions, HasForms
         $data = $this->quotaData;
         $wasEnabled = (bool) DnsSetting::get('quotas_enabled', false);
 
-        DnsSetting::set('quotas_enabled', $data['quotas_enabled'] ? '1' : '0');
-        DnsSetting::set('default_quota_mb', (string) $data['default_quota_mb']);
-        DnsSetting::clearCache();
+        $service = app(ServerSettingsService::class);
+        $service->saveQuotaSettings([
+            'quotas_enabled' => $data['quotas_enabled'] ? '1' : '0',
+            'default_quota_mb' => (string) $data['default_quota_mb'],
+        ]);
 
         if ($data['quotas_enabled'] && ! $wasEnabled) {
             try {
@@ -1148,8 +1114,8 @@ class ServerSettings extends Page implements HasActions, HasForms
         $data = $this->fileManagerData;
         $size = max(1, min(500, (int) $data['max_upload_size_mb']));
 
-        DnsSetting::set('max_upload_size_mb', (string) $size);
-        DnsSetting::clearCache();
+        $service = app(ServerSettingsService::class);
+        $service->saveFileManagerSettings(['max_upload_size_mb' => $size]);
 
         try {
             $result = $this->agent()->send('server.set_upload_limits', ['size_mb' => $size]);
@@ -1167,12 +1133,8 @@ class ServerSettings extends Page implements HasActions, HasForms
     {
         $data = $this->emailData;
 
-        DnsSetting::set('mail_hostname', $data['mail_hostname']);
-        DnsSetting::set('mail_default_quota_mb', (string) $data['mail_default_quota_mb']);
-        DnsSetting::set('max_mailboxes_per_domain', (string) $data['max_mailboxes_per_domain']);
-        DnsSetting::set('webmail_url', $data['webmail_url']);
-        DnsSetting::set('webmail_product_name', $data['webmail_product_name']);
-        DnsSetting::clearCache();
+        $service = app(ServerSettingsService::class);
+        $service->saveEmailSettings($data);
 
         // Update Roundcube config (legacy backend only)
         if (config('jabali.mail_backend') !== 'stalwart') {
@@ -1360,15 +1322,8 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     public function saveFpmSettings(): void
     {
-        $data = $this->phpFpmData;
-
-        DnsSetting::set('fpm_pm_max_children', (string) $data['pm_max_children']);
-        DnsSetting::set('fpm_pm_max_requests', (string) $data['pm_max_requests']);
-        DnsSetting::set('fpm_rlimit_files', (string) $data['rlimit_files']);
-        DnsSetting::set('fpm_process_priority', (string) $data['process_priority']);
-        DnsSetting::set('fpm_request_terminate_timeout', (string) $data['request_terminate_timeout']);
-        DnsSetting::set('fpm_memory_limit', $data['memory_limit']);
-        DnsSetting::clearCache();
+        $service = app(ServerSettingsService::class);
+        $service->saveFpmSettings($this->phpFpmData);
 
         Notification::make()
             ->title(__('PHP-FPM settings saved'))
@@ -1382,7 +1337,8 @@ class ServerSettings extends Page implements HasActions, HasForms
         $data = $this->phpFpmData;
 
         try {
-            $result = $this->agent()->send('php.update_all_pool_limits', [
+            $service = app(ServerSettingsService::class);
+            $result = $service->applyFpmToAllUsers([
                 'pm_max_children' => (int) $data['pm_max_children'],
                 'pm_max_requests' => (int) $data['pm_max_requests'],
                 'rlimit_files' => (int) $data['rlimit_files'],
@@ -1391,22 +1347,23 @@ class ServerSettings extends Page implements HasActions, HasForms
                 'memory_limit' => $data['memory_limit'],
             ]);
 
-            if ($result['success'] ?? false) {
-                $updated = $result['updated'] ?? [];
-                $errors = $result['errors'] ?? [];
+            if ($result['success']) {
+                $results = $result['results'] ?? [];
+                $updated = $results['updated'] ?? [];
+                $errors = $results['errors'] ?? [];
 
                 if (empty($errors)) {
                     Notification::make()
                         ->title(__('FPM pools updated'))
-                        ->body(__(':count user pools updated. PHP-FPM will reload.', ['count' => count($updated)]))
+                        ->body(__(':count user pools updated. PHP-FPM will reload.', ['count' => is_countable($updated) ? count($updated) : 0]))
                         ->success()
                         ->send();
                 } else {
                     Notification::make()
                         ->title(__('Partial update'))
                         ->body(__(':success pools updated, :errors failed', [
-                            'success' => count($updated),
-                            'errors' => count($errors),
+                            'success' => is_countable($updated) ? count($updated) : 0,
+                            'errors' => is_countable($errors) ? count($errors) : 0,
                         ]))
                         ->warning()
                         ->send();
