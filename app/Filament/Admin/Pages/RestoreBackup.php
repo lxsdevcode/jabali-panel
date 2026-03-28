@@ -157,18 +157,20 @@ class RestoreBackup extends Page implements HasActions, HasForms
                             ->required()
                             ->live(),
                         View::make('filament.admin.pages.restore-backup-contents'),
-                    ]),
+                    ])
+                    ->afterValidation(function (): void {
+                        if ($this->restoreMode === 'selective') {
+                            $this->currentPath = $this->selectedUser ?? '';
+                            $this->refreshDirectory();
+                        }
+                    }),
 
                 Step::make(__('Select Items'))
                     ->icon(Heroicon::OutlinedListBullet)
                     ->visible(fn () => $this->restoreMode === 'selective')
                     ->schema([
                         View::make('filament.admin.pages.restore-backup-browser'),
-                    ])
-                    ->beforeValidation(function (): void {
-                        $this->currentPath = $this->selectedUser ?? '';
-                        $this->refreshDirectory();
-                    }),
+                    ]),
 
                 Step::make(__('Confirm'))
                     ->icon(Heroicon::OutlinedCheckCircle)
