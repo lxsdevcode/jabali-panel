@@ -115,7 +115,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
             return;
         }
 
-        if ($this->step === 2) {
+        if ($this->step === 1) {
             $this->loadContents();
         }
 
