@@ -17167,11 +17167,15 @@ function resticCmd(string $subcommand, string $repo = '', array $destination = [
         'RESTIC_PASSWORD_FILE' => $passwordFile,
     ];
 
-    // SFTP with password: use sshpass for non-interactive auth
+    // SFTP with password: use sshpass via -o sftp.command
+    $sftpOption = '';
     if (str_starts_with($repo, 'sftp:') && ! empty($destination['password'])) {
         $envVars['SSHPASS'] = $destination['password'];
         $port = (int) ($destination['port'] ?? 22);
-        $envVars['RESTIC_SFTP_COMMAND'] = "sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p {$port}";
+        $host = $destination['host'] ?? '';
+        $user = $destination['username'] ?? '';
+        $sftpCmd = "sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o RequestTTY=no -p {$port} {$user}@{$host} -s sftp";
+        $sftpOption = '-o sftp.command=' . escapeshellarg($sftpCmd);
     }
 
     // S3 credentials
@@ -17190,9 +17194,7 @@ function resticCmd(string $subcommand, string $repo = '', array $destination = [
         $envStr .= $k . '=' . escapeshellarg($v) . ' ';
     }
 
-    // Note: $subcommand is built internally with escapeshellarg() on all
-    // user-provided values (snapshot IDs, paths, tags) by the calling functions.
-    $cmd = "{$envStr}restic {$subcommand} 2>&1";
+    $cmd = "{$envStr}restic {$sftpOption} {$subcommand} 2>&1";
     $output = [];
     $exitCode = 0;
     exec($cmd, $output, $exitCode);
