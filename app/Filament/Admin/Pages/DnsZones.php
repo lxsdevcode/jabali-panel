@@ -381,14 +381,14 @@ class DnsZones extends Page implements HasActions, HasForms, HasTable
             return null;
         }
 
-        $zoneFile = "/etc/bind/zones/db.{$domain->domain}";
         $recordsCount = DnsRecord::where('domain_id', $this->selectedDomainId)->count();
+        $zoneExists = app(\App\Services\Dns\PowerDnsService::class)->zoneExists($domain->domain);
 
         return [
             'domain' => $domain->domain,
             'user' => $domain->user->username ?? 'N/A',
             'records_count' => $recordsCount,
-            'zone_file_exists' => file_exists($zoneFile),
+            'zone_file_exists' => $zoneExists,
         ];
     }
 
