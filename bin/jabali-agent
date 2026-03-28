@@ -800,7 +800,6 @@ function handleAction(array $request): array
         // Log analysis
         'logs.tail' => logsTail($params),
         'logs.goaccess' => logsGoaccess($params),
-        'system.read_log' => systemReadLog($params),
         // Redis ACL management
         'redis.create_user' => redisCreateUser($params),
         'redis.delete_user' => redisDeleteUser($params),
@@ -20300,86 +20299,6 @@ function logsTail(array $params): array
         'domain' => $domain,
         'type' => $logType,
         'lines' => $lines,
-        'content' => $output ?? '',
-        'file_size' => $stat['size'] ?? 0,
-        'last_modified' => date('Y-m-d H:i:s', $stat['mtime'] ?? time()),
-    ];
-}
-
-function systemReadLog(array $params): array
-{
-    $logName = $params['log_name'] ?? '';
-    $lines   = min(max(intval($params['lines'] ?? 200), 1), 1000);
-
-    // Whitelist: log_name => file path
-    $allowed = [
-        // Panel
-        'jabali-panel'     => '/var/log/supervisor/jabali-panel.log',
-        'jabali-panel-err' => '/var/log/supervisor/jabali-panel-err.log',
-        'jabali-agent'     => '/var/log/supervisor/jabali-agent.log',
-        'jabali-agent-err' => '/var/log/supervisor/jabali-agent-err.log',
-        'jabali-agent-app' => '/var/log/jabali/agent.log',
-        'queue-worker'     => '/var/log/supervisor/queue-worker.log',
-        'queue-worker-err' => '/var/log/supervisor/queue-worker-err.log',
-        // Web
-        'nginx'            => '/var/log/supervisor/nginx.log',
-        'nginx-err'        => '/var/log/supervisor/nginx-err.log',
-        'nginx-access'     => '/var/log/nginx/access.log',
-        'nginx-error'      => '/var/log/nginx/error.log',
-        // Mail
-        'postfix'          => '/var/log/supervisor/postfix.log',
-        'postfix-err'      => '/var/log/supervisor/postfix-err.log',
-        'dovecot'          => '/var/log/supervisor/dovecot.log',
-        'dovecot-err'      => '/var/log/supervisor/dovecot-err.log',
-        'rspamd'           => '/var/log/supervisor/rspamd.log',
-        'rspamd-err'       => '/var/log/supervisor/rspamd-err.log',
-        'opendkim'         => '/var/log/supervisor/opendkim.log',
-        'opendkim-err'     => '/var/log/supervisor/opendkim-err.log',
-        'stalwart'         => '/var/log/stalwart-mail/stdout.log',
-        'stalwart-err'     => '/var/log/stalwart-mail/stderr.log',
-        // Database
-        'mariadb'          => '/var/log/supervisor/mariadb.log',
-        'mariadb-err'      => '/var/log/supervisor/mariadb-err.log',
-        'redis'            => '/var/log/supervisor/redis.log',
-        'redis-err'        => '/var/log/supervisor/redis-err.log',
-        // DNS
-        'pdns'             => '/var/log/supervisor/pdns.log',
-        'pdns-err'         => '/var/log/supervisor/pdns-err.log',
-        // Security
-        'fail2ban'         => '/var/log/supervisor/fail2ban.log',
-        'fail2ban-err'     => '/var/log/supervisor/fail2ban-err.log',
-        // Cron
-        'cron'             => '/var/log/supervisor/cron.log',
-        'cron-err'         => '/var/log/supervisor/cron-err.log',
-        // Laravel
-        'laravel'          => '/var/www/jabali/storage/logs/laravel.log',
-    ];
-
-    if (empty($logName) || ! isset($allowed[$logName])) {
-        return ['success' => false, 'error' => 'Invalid log name: ' . $logName];
-    }
-
-    $logFile = $allowed[$logName];
-
-    if (! file_exists($logFile)) {
-        return [
-            'success' => true,
-            'log_name' => $logName,
-            'content' => '',
-            'file_size' => 0,
-            'last_modified' => null,
-            'error_message' => 'Log file not found: ' . $logFile,
-        ];
-    }
-
-    $cmd = sprintf('tail -n %d %s 2>&1 | tac', $lines, escapeshellarg($logFile));
-    $output = shell_exec($cmd);
-
-    $stat = stat($logFile);
-
-    return [
-        'success' => true,
-        'log_name' => $logName,
         'content' => $output ?? '',
         'file_size' => $stat['size'] ?? 0,
         'last_modified' => date('Y-m-d H:i:s', $stat['mtime'] ?? time()),
