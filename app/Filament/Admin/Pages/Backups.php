@@ -552,8 +552,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
     private function createScheduleAction(): Action
     {
-        $destinations = BackupDestination::where('is_server_backup', true)
-            ->where('is_active', true)
+        $destinations = BackupDestination::where('is_active', true)
             ->pluck('name', 'id')
             ->toArray();
 
