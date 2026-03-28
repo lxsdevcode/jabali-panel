@@ -70,7 +70,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         return [
             $this->createServerBackupAction(),
             $this->createScheduleAction(),
-            $this->verifyRepoAction(),
             $this->addDestinationAction(),
         ];
     }
