@@ -691,7 +691,7 @@ install_packages() {
     fi
 
     # Unhold packages in case user wants to install them manually later
-    apt-mark unhold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.4} 2>/dev/null || true
+    apt-mark unhold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.4} >/dev/null 2>&1 || true
 
     # Install PHP and detect the version from the Sury repository
     info "Installing PHP..."
