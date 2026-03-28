@@ -140,7 +140,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->color('warning')
                     ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
                     ->modalHeading(__('Restore Backup'))
-                    ->modalDescription(__('Select what to restore. Uncheck items you want to skip.'))
+                    ->modalDescription(__('Select what to restore. Expand categories to pick specific items.'))
+                    ->modalWidth('3xl')
                     ->form(function (Backup $record): array {
                         $contents = $this->getSnapshotContents($record);
                         $fields = [
@@ -150,28 +151,69 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 ->required(),
                         ];
 
+                        // Domains with file-level selection
                         if (! empty($contents['domains'])) {
+                            $domainOptions = [];
+                            foreach ($contents['domains'] as $domain) {
+                                $domainOptions[$domain] = $domain;
+                                // Add subdirectories if available
+                                foreach ($contents['domain_files'][$domain] ?? [] as $subpath) {
+                                    $domainOptions["{$domain}/{$subpath}"] = "  └ {$subpath}";
+                                }
+                            }
                             $fields[] = CheckboxList::make('selected_domains')
-                                ->label(__('Domains'))
-                                ->options(array_combine($contents['domains'], $contents['domains']))
+                                ->label(__('Domains & Files'))
+                                ->options($domainOptions)
                                 ->default($contents['domains'])
-                                ->columns(2);
+                                ->columns(1)
+                                ->bulkToggleable();
                         }
 
+                        // Databases
                         if (! empty($contents['databases'])) {
                             $fields[] = CheckboxList::make('selected_databases')
                                 ->label(__('Databases'))
                                 ->options(array_combine($contents['databases'], $contents['databases']))
                                 ->default($contents['databases'])
-                                ->columns(2);
+                                ->columns(2)
+                                ->bulkToggleable();
                         }
 
+                        // Database users
+                        if ($contents['has_db_users'] ?? false) {
+                            $fields[] = Toggle::make('restore_db_users')
+                                ->label(__('Restore MySQL users & permissions'))
+                                ->default(true);
+                        }
+
+                        // Mailboxes
                         if (! empty($contents['mailboxes'])) {
                             $fields[] = CheckboxList::make('selected_mailboxes')
                                 ->label(__('Mailboxes'))
                                 ->options(array_combine($contents['mailboxes'], $contents['mailboxes']))
                                 ->default($contents['mailboxes'])
-                                ->columns(2);
+                                ->columns(2)
+                                ->bulkToggleable();
+                        }
+
+                        // DNS zones
+                        if (! empty($contents['dns_zones'])) {
+                            $fields[] = CheckboxList::make('selected_dns')
+                                ->label(__('DNS Zones'))
+                                ->options(array_combine($contents['dns_zones'], $contents['dns_zones']))
+                                ->default($contents['dns_zones'])
+                                ->columns(2)
+                                ->bulkToggleable();
+                        }
+
+                        // SSL certificates
+                        if (! empty($contents['ssl_certs'])) {
+                            $fields[] = CheckboxList::make('selected_ssl')
+                                ->label(__('SSL Certificates'))
+                                ->options(array_combine($contents['ssl_certs'], $contents['ssl_certs']))
+                                ->default($contents['ssl_certs'])
+                                ->columns(2)
+                                ->bulkToggleable();
                         }
 
                         if (empty($contents['domains']) && empty($contents['databases']) && empty($contents['mailboxes'])) {
@@ -192,21 +234,26 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             return;
                         }
 
+                        // Parse selected domains — separate full domains from subpaths
+                        $selectedDomains = [];
+                        $selectedFiles = [];
+                        foreach ($data['selected_domains'] ?? [] as $item) {
+                            if (str_contains($item, '/')) {
+                                $selectedFiles[] = $item;
+                            } else {
+                                $selectedDomains[] = $item;
+                            }
+                        }
+
                         $options = [
-                            'restore_files' => ! empty($data['selected_domains']) || ($data['restore_files'] ?? false),
+                            'restore_files' => ! empty($selectedDomains) || ! empty($selectedFiles) || ($data['restore_files'] ?? false),
                             'restore_databases' => ! empty($data['selected_databases']) || ($data['restore_databases'] ?? false),
                             'restore_mailboxes' => ! empty($data['selected_mailboxes']) || ($data['restore_mailboxes'] ?? false),
+                            'selected_domains' => $selectedDomains ?: null,
+                            'selected_databases' => $data['selected_databases'] ?? null,
+                            'selected_mailboxes' => $data['selected_mailboxes'] ?? null,
+                            'selected_files' => $selectedFiles ?: null,
                         ];
-
-                        if (! empty($data['selected_domains'])) {
-                            $options['selected_domains'] = $data['selected_domains'];
-                        }
-                        if (! empty($data['selected_databases'])) {
-                            $options['selected_databases'] = $data['selected_databases'];
-                        }
-                        if (! empty($data['selected_mailboxes'])) {
-                            $options['selected_mailboxes'] = $data['selected_mailboxes'];
-                        }
 
                         try {
                             $orchestrator = app(BackupOrchestrator::class);
@@ -786,29 +833,63 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
             $files = $result['files'] ?? [];
             $domains = [];
+            $domainFiles = []; // domain => [subpath1, subpath2, ...]
             $databases = [];
+            $hasDbUsers = false;
             $mailboxes = [];
             $dnsZones = [];
             $sslCerts = [];
 
             foreach ($files as $file) {
                 $parts = explode('/', $file);
+
+                // Domain files: home/{user}/domains/{domain}/{subpath}
                 if (str_contains($file, '/domains/') && count($parts) >= 4) {
-                    $domains[$parts[3]] = true;
-                } elseif (str_contains($file, '/databases/') && str_ends_with($file, '.sql.gz')) {
-                    $databases[] = basename($file, '.sql.gz');
-                } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
+                    $domIdx = array_search('domains', $parts);
+                    if ($domIdx !== false && isset($parts[$domIdx + 1])) {
+                        $domain = $parts[$domIdx + 1];
+                        $domains[$domain] = true;
+
+                        // Collect top-level subdirectories within domain (public_html, etc.)
+                        if (isset($parts[$domIdx + 2]) && ! isset($domainFiles[$domain][$parts[$domIdx + 2]])) {
+                            $domainFiles[$domain][$parts[$domIdx + 2]] = true;
+                        }
+                    }
+                }
+                // Databases
+                elseif (str_contains($file, '/databases/')) {
+                    if (str_ends_with($file, '.sql.gz')) {
+                        $databases[] = basename($file, '.sql.gz');
+                    } elseif (str_ends_with($file, 'users.sql')) {
+                        $hasDbUsers = true;
+                    }
+                }
+                // Mailboxes
+                elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
                     $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
-                } elseif (str_contains($file, '/dns/') && str_ends_with($file, '.zone')) {
+                }
+                // DNS zones
+                elseif (str_contains($file, '/dns/') && str_ends_with($file, '.zone')) {
                     $dnsZones[] = basename($file, '.zone');
-                } elseif (str_contains($file, '/letsencrypt/live/') && count($parts) >= 5) {
+                }
+                // SSL certificates
+                elseif (str_contains($file, '/letsencrypt/live/') && count($parts) >= 5) {
                     $sslCerts[$parts[4]] = true;
                 }
             }
 
+            // Convert domainFiles to sorted arrays
+            $domainFilesResult = [];
+            foreach ($domainFiles as $domain => $subdirs) {
+                $domainFilesResult[$domain] = array_keys($subdirs);
+                sort($domainFilesResult[$domain]);
+            }
+
             return [
                 'domains' => array_keys($domains),
+                'domain_files' => $domainFilesResult,
                 'databases' => $databases,
+                'has_db_users' => $hasDbUsers,
                 'mailboxes' => array_keys($mailboxes),
                 'dns_zones' => $dnsZones,
                 'ssl_certs' => array_keys($sslCerts),
@@ -818,7 +899,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         } catch (Exception $e) {
             return [
                 'domains' => [],
+                'domain_files' => [],
                 'databases' => [],
+                'has_db_users' => false,
                 'mailboxes' => [],
                 'dns_zones' => [],
                 'ssl_certs' => [],
