@@ -423,7 +423,7 @@ class BackupOrchestrator
      */
     public function restoreBackup(User $user, Backup $backup, array $options): array
     {
-        if ($backup->user_id !== $user->id) {
+        if ($backup->user_id !== null && $backup->user_id !== $user->id) {
             return ['success' => false, 'result' => [], 'error' => 'Backup not found'];
         }
 
