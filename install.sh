@@ -3231,8 +3231,59 @@ PDNSCONF
 
     log "PowerDNS configured"
 
-    # Extract domain from hostname
+    # Extract domain from hostname (e.g., panel.example.com -> example.com)
     local domain=$(echo "$SERVER_HOSTNAME" | awk -F. '{if (NF>2) {print $(NF-1)"."$NF} else {print $0}}')
+    local hostname_part=$(echo "$SERVER_HOSTNAME" | sed "s/\.${domain}$//")
+    if [[ "$hostname_part" == "$domain" ]]; then
+        hostname_part=""
+    fi
+
+    # Create initial zone for the server's domain via PowerDNS API
+    info "Creating DNS zone for $domain..."
+    sleep 2  # Give PowerDNS time to fully start
+
+    # Create zone
+    curl -s -X POST \
+        -H "X-API-Key: ${pdns_api_key}" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"${domain}.\",\"kind\":\"Native\",\"nameservers\":[\"ns1.${domain}.\",\"ns2.${domain}.\"]}" \
+        http://127.0.0.1:8081/api/v1/servers/localhost/zones >/dev/null 2>&1
+
+    # Build records payload
+    local records="["
+    # NS records
+    records+="{\"name\":\"${domain}.\",\"type\":\"NS\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"ns1.${domain}.\",\"disabled\":false},{\"content\":\"ns2.${domain}.\",\"disabled\":false}]},"
+    # A records: @, ns1, ns2, mail, autoconfig, autodiscover, www
+    records+="{\"name\":\"${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    records+="{\"name\":\"ns1.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    records+="{\"name\":\"ns2.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    records+="{\"name\":\"mail.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    records+="{\"name\":\"autoconfig.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    records+="{\"name\":\"autodiscover.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    records+="{\"name\":\"www.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    # Hostname A record if it's a subdomain
+    if [[ -n "$hostname_part" ]]; then
+        records+="{\"name\":\"${hostname_part}.${domain}.\",\"type\":\"A\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"${server_ip}\",\"disabled\":false}]},"
+    fi
+    # MX record
+    records+="{\"name\":\"${domain}.\",\"type\":\"MX\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"10 mail.${domain}.\",\"disabled\":false}]},"
+    # TXT records (SPF, DMARC)
+    records+="{\"name\":\"${domain}.\",\"type\":\"TXT\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"\\\"v=spf1 mx a ip4:${server_ip} ~all\\\"\",\"disabled\":false}]},"
+    records+="{\"name\":\"_dmarc.${domain}.\",\"type\":\"TXT\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"\\\"v=DMARC1; p=none; rua=mailto:admin@${domain}\\\"\",\"disabled\":false}]},"
+    # SRV records for mail client auto-discovery
+    records+="{\"name\":\"_imaps._tcp.${domain}.\",\"type\":\"SRV\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"0 1 993 mail.${domain}.\",\"disabled\":false}]},"
+    records+="{\"name\":\"_pop3s._tcp.${domain}.\",\"type\":\"SRV\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"0 1 995 mail.${domain}.\",\"disabled\":false}]},"
+    records+="{\"name\":\"_submission._tcp.${domain}.\",\"type\":\"SRV\",\"ttl\":3600,\"changetype\":\"REPLACE\",\"records\":[{\"content\":\"0 1 587 mail.${domain}.\",\"disabled\":false}]}"
+    records+="]"
+
+    # Apply records
+    curl -s -X PATCH \
+        -H "X-API-Key: ${pdns_api_key}" \
+        -H "Content-Type: application/json" \
+        -d "{\"rrsets\":${records}}" \
+        "http://127.0.0.1:8081/api/v1/servers/localhost/zones/${domain}." >/dev/null 2>&1
+
+    log "DNS zone created for $domain"
 
     echo ""
     echo -e "${YELLOW}Important DNS Setup:${NC}"
