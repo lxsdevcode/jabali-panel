@@ -195,15 +195,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
                             ->default('overwrite'),
                     ]),
             ])
-                ->submitAction(
-                    Action::make('restore')
-                        ->label(__('Restore Now'))
-                        ->color('danger')
-                        ->icon('heroicon-o-arrow-path')
-                        ->requiresConfirmation()
-                        ->modalDescription(__('Are you sure you want to restore these items?'))
-                        ->action(fn () => $this->executeRestore()),
-                ),
+                ->submitAction(view('filament.admin.pages.restore-backup-submit')),
         ]);
     }
 
