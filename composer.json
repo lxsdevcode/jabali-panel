@@ -94,9 +94,15 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "repositories": [{
-        "name": "filament",
-        "type": "composer",
-        "url": "https://packages.filamentphp.com/composer"
-    }]
+    "repositories": {
+        "filament": {
+            "type": "composer",
+            "url": "https://packages.filamentphp.com/composer"
+        },
+        "0": {
+            "name": "filament",
+            "type": "composer",
+            "url": "https://packages.filamentphp.com/composer"
+        }
+    }
 }
