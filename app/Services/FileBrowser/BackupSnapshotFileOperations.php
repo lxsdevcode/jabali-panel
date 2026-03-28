@@ -25,10 +25,12 @@ class BackupSnapshotFileOperations implements FileOperations
 
     public function list(string $path, bool $showHidden = false): array
     {
-        // Send absolute path — agent uses it as-is when starting with /
-        $absPath = '/'.ltrim($path, '/');
-        if ($absPath === '/') {
+        // Build absolute path for restic ls
+        if (empty($path)) {
             $absPath = '/home';
+        } else {
+            // Path from navigateTo is already relative to /home (e.g. "shuki", "shuki/domains")
+            $absPath = '/home/'.ltrim($path, '/');
         }
 
         $result = $this->agent->send('backup.list_domain_files', [
