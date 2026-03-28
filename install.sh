@@ -3239,10 +3239,20 @@ PDNSCONF
     fi
 
     # Create initial zone for the server's domain via PowerDNS API
-    info "Creating DNS zone for $domain..."
     sleep 2  # Give PowerDNS time to fully start
 
-    # Create zone
+    # Skip if zone already exists (DomainObserver may have created it)
+    local zone_check=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "X-API-Key: ${pdns_api_key}" \
+        "http://127.0.0.1:8081/api/v1/servers/localhost/zones/${domain}." 2>/dev/null)
+
+    if [[ "$zone_check" == "200" ]]; then
+        info "DNS zone for $domain already exists"
+    else
+        info "Creating DNS zone for $domain..."
+    fi
+
+    # Create zone (idempotent — ignored if exists)
     curl -s -X POST \
         -H "X-API-Key: ${pdns_api_key}" \
         -H "Content-Type: application/json" \
