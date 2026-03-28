@@ -126,7 +126,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->icon('heroicon-o-folder-open')
                     ->color('gray')
                     ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
-                    ->url(fn (Backup $record) => route('filament.admin.pages.backups.restore-backup', ['backupId' => $record->id])),
+                    ->url(fn (Backup $record) => url("/jabali-admin/backups/restore/{$record->id}")),
                 Action::make('restore')
                     ->label(__('Restore'))
                     ->icon('heroicon-o-arrow-path')

@@ -4,28 +4,40 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\FileBrowser\Adapters\FileBrowserAdapter;
-use App\FileBrowser\Pages\FileBrowser;
 use App\Models\Backup;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
+use App\Services\Backup\BackupOrchestrator;
 use App\Services\FileBrowser\BackupSnapshotAdapter;
 use App\Support\SafeError;
+use BackedEnum;
 use Exception;
 use Filament\Actions\Action;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
+use Filament\Pages\Page;
 use Illuminate\Contracts\Support\Htmlable;
 
-class RestoreBackup extends FileBrowser
+class RestoreBackup extends Page implements HasActions, HasForms
 {
+    use InteractsWithActions;
+    use InteractsWithForms;
+
     protected static ?string $slug = 'backups/restore/{backupId}';
 
     protected static bool $shouldRegisterNavigation = false;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-path';
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-arrow-path';
+
+    protected string $view = 'filament.admin.pages.restore-backup';
 
     public ?int $backupId = null;
+
+    public string $currentPath = '';
 
     private ?Backup $backup = null;
 
@@ -35,12 +47,8 @@ class RestoreBackup extends FileBrowser
         $this->backup = Backup::find($this->backupId);
 
         if (! $this->backup || ! $this->backup->snapshot_id) {
-            $this->redirect(route('filament.admin.pages.backups'));
-
-            return;
+            $this->redirect('/jabali-admin/backups');
         }
-
-        $this->currentPath = '';
     }
 
     public function getTitle(): string|Htmlable
@@ -50,10 +58,64 @@ class RestoreBackup extends FileBrowser
 
     public function getSubheading(): ?string
     {
-        return __('Browse the snapshot and navigate folders. Click "Restore This Folder" to restore the current directory.');
+        $path = $this->currentPath ?: '/';
+
+        return __('Browsing: :path — Click folders to navigate, click "Restore This Folder" to restore.', ['path' => $path]);
     }
 
-    public function getAdapter(): FileBrowserAdapter
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('restoreCurrentFolder')
+                ->label(__('Restore This Folder'))
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading(__('Restore Folder'))
+                ->modalDescription(fn () => empty($this->currentPath)
+                    ? __('Restore the entire user home directory?')
+                    : __('Restore ":path"?', ['path' => $this->currentPath]))
+                ->form([
+                    Select::make('restore_user')
+                        ->label(__('Restore for user'))
+                        ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
+                        ->required(),
+                ])
+                ->action(function (array $data): void {
+                    $this->restorePath($data['restore_user']);
+                }),
+            Action::make('back')
+                ->label(__('Back to Backups'))
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                ->url('/jabali-admin/backups'),
+        ];
+    }
+
+    public function navigateTo(string $path): void
+    {
+        $this->currentPath = $path;
+        $this->resetTable();
+    }
+
+    public function loadDirectory(): array
+    {
+        $backup = $this->getBackup();
+        if (! $backup) {
+            return [];
+        }
+
+        try {
+            $adapter = $this->buildAdapter();
+            $result = $adapter->files()->list($this->currentPath);
+
+            return $result['items'] ?? [];
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    private function buildAdapter(): BackupSnapshotAdapter
     {
         $backup = $this->getBackup();
         $repo = $backup->destination
@@ -74,35 +136,6 @@ class RestoreBackup extends FileBrowser
         );
     }
 
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('restoreCurrentFolder')
-                ->label(__('Restore This Folder'))
-                ->icon('heroicon-o-arrow-path')
-                ->color('warning')
-                ->requiresConfirmation()
-                ->modalHeading(__('Restore Folder'))
-                ->modalDescription(fn () => empty($this->currentPath)
-                    ? __('Restore the entire user directory from this snapshot?')
-                    : __('Restore ":path" from this snapshot?', ['path' => $this->currentPath]))
-                ->form([
-                    Select::make('restore_user')
-                        ->label(__('Restore for user'))
-                        ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
-                        ->required(),
-                ])
-                ->action(function (array $data): void {
-                    $this->restorePath($data['restore_user']);
-                }),
-            Action::make('backToBackups')
-                ->label(__('Back to Backups'))
-                ->icon('heroicon-o-arrow-left')
-                ->color('gray')
-                ->url(route('filament.admin.pages.backups')),
-        ];
-    }
-
     private function restorePath(string $username): void
     {
         $user = User::where('username', $username)->first();
@@ -115,19 +148,8 @@ class RestoreBackup extends FileBrowser
         $backup = $this->getBackup();
 
         try {
-            $repo = $backup->destination
-                ? $backup->destination->getResticRepoUrl()
-                : '/var/backups/jabali/restic';
-            $destConfig = $backup->destination
-                ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
-                : [];
-
-            $agent = app(AgentClient::class);
-            $result = $agent->send('backup.restore', [
-                'snapshot_id' => $backup->snapshot_id,
-                'username' => $username,
-                'repo' => $repo,
-                'destination' => $destConfig,
+            $orchestrator = app(BackupOrchestrator::class);
+            $result = $orchestrator->restoreBackup($user, $backup, [
                 'restore_files' => true,
                 'restore_databases' => false,
                 'restore_mailboxes' => false,
@@ -136,7 +158,6 @@ class RestoreBackup extends FileBrowser
             if ($result['success'] ?? false) {
                 Notification::make()
                     ->title(__('Restore completed'))
-                    ->body(empty($this->currentPath) ? __('Full directory restored') : __('Restored: :path', ['path' => $this->currentPath]))
                     ->success()
                     ->send();
             } else {

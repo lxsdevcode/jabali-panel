@@ -1,96 +1,46 @@
 <x-filament-panels::page>
-    {{-- Backup info --}}
+    @php
+        $items = $this->loadDirectory();
+    @endphp
+
     <x-filament::section>
-        <x-slot name="heading">{{ __('Backup Information') }}</x-slot>
-        @php $backup = $this->getBackup(); @endphp
-        @if($backup)
-            <div class="flex flex-wrap gap-4 text-sm">
-                <div><span class="font-medium">{{ __('Name') }}:</span> {{ $backup->name }}</div>
-                <div><span class="font-medium">{{ __('Date') }}:</span> {{ $backup->created_at?->format('M j, Y H:i') }}</div>
-                <div><span class="font-medium">{{ __('Type') }}:</span> {{ ucfirst($backup->metadata['backup_type'] ?? $backup->type) }}</div>
-                @if($backup->destination)
-                    <div><span class="font-medium">{{ __('Destination') }}:</span> {{ $backup->destination->name }}</div>
-                @endif
-                @if(!$backup->local_path || !file_exists($backup->local_path))
-                    <x-filament::badge color="info" icon="heroicon-o-cloud-arrow-down">{{ __('Remote — will download before restoring') }}</x-filament::badge>
-                @endif
+        <x-slot name="heading">
+            <div class="flex items-center gap-2">
+                <x-heroicon-o-folder-open class="h-5 w-5" />
+                <span>{{ $this->currentPath ?: '/' }}</span>
             </div>
-        @endif
-    </x-filament::section>
+        </x-slot>
 
-    {{-- Restore options form --}}
-    <x-filament::section>
-        <x-slot name="heading">{{ $this->isIncremental() ? __('Restore Options') : __('User to Restore') }}</x-slot>
-        @if($this->isIncremental())
-            <x-slot name="description">{{ __('Select what to restore from this incremental backup.') }}</x-slot>
-        @endif
-
-        {{ $this->restoreOptionsForm }}
-    </x-filament::section>
-
-    @if($restoreUsername)
-        @if(!$this->isIncremental())
-            {{-- Full (tar.gz) backup: restore everything --}}
-            <x-filament::section>
-                <x-slot name="heading">{{ __('Full Backup Restore') }}</x-slot>
-                <x-slot name="description">{{ __('This is a full archive backup. All data for the selected user will be restored.') }}</x-slot>
-
-                <x-filament::badge color="info" icon="heroicon-o-archive-box">
-                    {{ __('Website files, databases, mailboxes, SSL, and DNS will all be restored.') }}
-                </x-filament::badge>
-            </x-filament::section>
-        @endif
-
-        {{-- File Browser (only in specific files mode) --}}
-        @if($restoreFiles && $filesRestoreMode === 'files' && $restoreUsername !== '__all__')
-            <x-filament::section>
-                <x-slot name="heading">{{ __('Browse Snapshot') }}</x-slot>
-
-                {{-- Breadcrumbs --}}
-                <nav class="flex items-center gap-1 text-sm mb-3" aria-label="{{ __('Snapshot path') }}">
-                    @foreach($this->getBreadcrumbs() as $path => $label)
-                        @if(!$loop->last)
-                            <button wire:click="navigateTo('{{ $path }}')" class="fi-link fi-link-size-sm text-primary-600 dark:text-primary-400 hover:underline">
-                                @if($loop->first)
-                                    <x-filament::icon icon="heroicon-o-home" class="inline h-4 w-4" />
-                                @endif
-                                {{ $label }}
-                            </button>
-                            <x-filament::icon icon="heroicon-o-chevron-right" class="h-3 w-3 text-gray-400" />
+        <div class="divide-y divide-gray-200 dark:divide-white/10">
+            @forelse($items as $item)
+                @if($item['is_dir'] ?? false)
+                    <button
+                        wire:click="navigateTo('{{ $item['path'] }}')"
+                        class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 transition"
+                    >
+                        @if(($item['is_parent'] ?? false))
+                            <x-heroicon-o-arrow-up class="h-4 w-4 text-gray-400 shrink-0" />
                         @else
-                            <span class="text-gray-500 dark:text-gray-400" aria-current="location">{{ $label }}</span>
+                            <x-heroicon-o-folder class="h-4 w-4 text-yellow-500 shrink-0" />
                         @endif
-                    @endforeach
-                </nav>
-
-                {{-- Selected files indicator --}}
-                @if(count($selectedFiles) > 0)
-                    <div class="flex items-center gap-3 mb-3">
-                        <x-filament::badge color="success">
-                            {{ __(':count file(s)/folder(s) selected', ['count' => count($selectedFiles)]) }}
-                        </x-filament::badge>
-                        <x-filament::button wire:click="clearSelectedFiles" color="gray" size="sm">
-                            {{ __('Clear Selection') }}
-                        </x-filament::button>
+                        <span class="font-medium text-gray-950 dark:text-white">{{ $item['name'] }}</span>
+                    </button>
+                @else
+                    <div class="flex items-center gap-3 px-3 py-2 text-sm">
+                        <x-heroicon-o-document class="h-4 w-4 text-gray-400 shrink-0" />
+                        <span class="text-gray-700 dark:text-gray-300 flex-1">{{ $item['name'] }}</span>
+                        @if($item['size'] ?? null)
+                            <span class="text-xs text-gray-500">{{ \App\Support\Formatter::bytes($item['size']) }}</span>
+                        @endif
                     </div>
                 @endif
-
-                {{-- Table --}}
-                {{ $this->table }}
-            </x-filament::section>
-        @endif
-
-        {{-- Restore button --}}
-        <div class="flex gap-3">
-            <x-filament::button wire:click="startRestore" color="warning" icon="heroicon-o-arrow-path" size="lg"
-                wire:confirm="{{ __('Are you sure? Existing data may be overwritten.') }}">
-                {{ __('Start Restore') }}
-            </x-filament::button>
-            <x-filament::button tag="a" href="{{ route('filament.admin.pages.backups', ['tab' => 'backups']) }}" color="gray" size="lg">
-                {{ __('Cancel') }}
-            </x-filament::button>
+            @empty
+                <div class="px-3 py-8 text-center text-sm text-gray-500">
+                    {{ __('Empty directory') }}
+                </div>
+            @endforelse
         </div>
-    @endif
+    </x-filament::section>
 
     <x-filament-actions::modals />
 </x-filament-panels::page>
