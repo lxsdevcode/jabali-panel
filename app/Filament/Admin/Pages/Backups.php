@@ -7,7 +7,6 @@ namespace App\Filament\Admin\Pages;
 use App\Jobs\RunServerBackup;
 use App\Models\Backup;
 use App\Models\BackupDestination;
-use App\Models\BackupRestore;
 use App\Models\BackupSchedule;
 use App\Models\User;
 use App\Services\Backup\BackupOrchestrator;
@@ -693,8 +692,8 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     {
         return $table
             ->query(
-                BackupRestore::query()
-                    ->with(['backup.destination', 'user'])
+                Backup::query()
+                    ->with(['destination', 'user', 'schedule'])
                     ->latest()
             )
             ->columns([
@@ -702,25 +701,33 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Date'))
                     ->dateTime('M j, Y H:i:s')
                     ->sortable(),
+                TextColumn::make('type')
+                    ->label(__('Type'))
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state) => match ($state) {
+                        'server' => __('Server'), 'user' => __('User'), 'scheduled' => __('Scheduled'), default => ucfirst($state ?? 'manual'),
+                    })
+                    ->color(fn (?string $state) => match ($state) {
+                        'server' => 'info', 'scheduled' => 'purple', default => 'gray',
+                    }),
                 TextColumn::make('status')
                     ->label(__('Status'))
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
                         'completed' => 'success',
-                        'running', 'downloading' => 'warning',
+                        'running', 'uploading' => 'warning',
                         'failed' => 'danger',
                         default => 'gray',
                     }),
-                TextColumn::make('user.username')
-                    ->label(__('User'))
-                    ->placeholder('-'),
-                TextColumn::make('backup.name')
-                    ->label(__('Backup'))
-                    ->limit(30)
-                    ->placeholder('-'),
-                TextColumn::make('backup.destination.name')
+                TextColumn::make('name')
+                    ->label(__('Name'))
+                    ->limit(35),
+                TextColumn::make('destination.name')
                     ->label(__('Destination'))
                     ->placeholder(__('Local')),
+                TextColumn::make('size_bytes')
+                    ->label(__('Size'))
+                    ->formatStateUsing(fn ($state) => $state > 0 ? \App\Support\Formatter::bytes($state) : '-'),
                 TextColumn::make('started_at')
                     ->label(__('Started'))
                     ->dateTime('H:i:s')
@@ -733,21 +740,18 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Error'))
                     ->limit(50)
                     ->placeholder('-')
-                    ->color('danger')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->color('danger'),
             ])
             ->actions([
-                Action::make('view_log')
-                    ->label(__('View Log'))
+                Action::make('view_details')
+                    ->label(__('Details'))
                     ->icon('heroicon-o-document-text')
                     ->color('gray')
-                    ->modalHeading(__('Restore Log'))
-                    ->modalContent(function (BackupRestore $record): \Illuminate\Contracts\View\View {
+                    ->modalHeading(fn (Backup $record) => $record->name)
+                    ->modalContent(function (Backup $record): \Illuminate\Contracts\View\View {
                         return view('filament.admin.pages.backup-log-modal', [
-                            'log' => $record->log,
-                            'status' => $record->status,
-                            'error' => $record->error_message,
-                            'result' => $record->result,
+                            'backup' => $record,
+                            'restores' => $record->restores()->latest()->get(),
                         ]);
                     })
                     ->modalSubmitAction(false),
