@@ -15,7 +15,6 @@ use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
@@ -35,13 +34,33 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     protected string $view = 'filament.admin.pages.restore-backup';
 
+    // ── Wizard State ────────────────────────────────────────────────────
+
     public ?int $backupId = null;
+
+    public int $step = 1;
+
+    public ?string $selectedUser = null;
+
+    public ?int $selectedBackupId = null;
+
+    public array $contents = [];
+
+    public string $activeSection = 'files';
 
     public string $currentPath = '';
 
     public array $selectedPaths = [];
 
+    public array $selectedDatabases = [];
+
+    public array $selectedMailboxes = [];
+
+    public string $conflictMode = 'overwrite';
+
     private ?Backup $backup = null;
+
+    // ── Mount ───────────────────────────────────────────────────────────
 
     public function mount(?int $backupId = null): void
     {
@@ -50,59 +69,34 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
         if (! $this->backup || ! $this->backup->snapshot_id) {
             $this->redirect('/jabali-admin/backups');
+
+            return;
         }
+
+        $this->selectedBackupId = $this->backupId;
     }
 
     public function getTitle(): string|Htmlable
     {
-        return __('Restore: :name', ['name' => $this->getBackup()?->name ?? '']);
+        return __('Restore Wizard');
     }
 
     public function getSubheading(): ?string
     {
-        $path = $this->currentPath ?: '/';
-
-        return __('Browsing: :path — Click folders to navigate, click "Restore This Folder" to restore.', ['path' => $path]);
+        return match ($this->step) {
+            1 => __('Step 1: Select account and backup'),
+            2 => __('Step 2: Select what to restore'),
+            3 => __('Step 3: Browse and select items'),
+            4 => __('Step 4: Confirm and restore'),
+            default => '',
+        };
     }
+
+    // ── Header Actions ──────────────────────────────────────────────────
 
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('restoreSelected')
-                ->label(fn () => __('Restore Selected (:count)', ['count' => count($this->selectedPaths)]))
-                ->icon('heroicon-o-arrow-path')
-                ->color('danger')
-                ->visible(fn () => count($this->selectedPaths) > 0)
-                ->requiresConfirmation()
-                ->modalHeading(__('Restore Selected Items'))
-                ->modalDescription(fn () => __('Restore :count selected item(s)?', ['count' => count($this->selectedPaths)]))
-                ->form([
-                    Select::make('restore_user')
-                        ->label(__('Restore for user'))
-                        ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
-                        ->required(),
-                ])
-                ->action(function (array $data): void {
-                    $this->restoreSelectedPaths($data['restore_user']);
-                }),
-            Action::make('restoreCurrentFolder')
-                ->label(__('Restore This Folder'))
-                ->icon('heroicon-o-arrow-path')
-                ->color('warning')
-                ->requiresConfirmation()
-                ->modalHeading(__('Restore Folder'))
-                ->modalDescription(fn () => empty($this->currentPath)
-                    ? __('Restore the entire user home directory?')
-                    : __('Restore ":path"?', ['path' => $this->currentPath]))
-                ->form([
-                    Select::make('restore_user')
-                        ->label(__('Restore for user'))
-                        ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
-                        ->required(),
-                ])
-                ->action(function (array $data): void {
-                    $this->restorePath($data['restore_user']);
-                }),
             Action::make('back')
                 ->label(__('Back to Backups'))
                 ->icon('heroicon-o-arrow-left')
@@ -111,21 +105,43 @@ class RestoreBackup extends Page implements HasActions, HasForms
         ];
     }
 
-    public function navigateTo(string $path): void
-    {
-        $this->currentPath = $path;
-    }
+    // ── Step Navigation ─────────────────────────────────────────────────
 
-    private function restoreSelectedPaths(string $username): void
+    public function nextStep(): void
     {
-        $user = User::where('username', $username)->first();
-        if (! $user) {
-            Notification::make()->title(__('User not found'))->danger()->send();
+        if ($this->step === 1 && empty($this->selectedUser)) {
+            Notification::make()->title(__('Please select a user'))->danger()->send();
 
             return;
         }
 
+        if ($this->step === 2) {
+            $this->loadContents();
+        }
+
+        $this->step = min($this->step + 1, 4);
+    }
+
+    public function prevStep(): void
+    {
+        $this->step = max($this->step - 1, 1);
+    }
+
+    public function goToStep(int $step): void
+    {
+        if ($step <= $this->step) {
+            $this->step = $step;
+        }
+    }
+
+    // ── Step 2: Load Contents ───────────────────────────────────────────
+
+    public function loadContents(): void
+    {
         $backup = $this->getBackup();
+        if (! $backup) {
+            return;
+        }
 
         try {
             $repo = $backup->destination
@@ -135,51 +151,75 @@ class RestoreBackup extends Page implements HasActions, HasForms
                 ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
                 : [];
 
-            // Build --include args for each selected path
-            $includes = array_map(
-                fn ($p) => "/home/{$username}/{$p}",
-                $this->selectedPaths
-            );
-
             $agent = app(AgentClient::class);
-            $includeArgs = implode(' ', array_map(fn ($p) => '--include '.escapeshellarg($p), $includes));
-
-            $result = $agent->send('backup.restore_paths', [
+            $result = $agent->send('backup.list_contents', [
                 'snapshot_id' => $backup->snapshot_id,
-                'username' => $username,
-                'repo' => $repo,
                 'destination' => $destConfig,
-                'include_paths' => $includes,
+                'repo' => $repo,
             ]);
 
-            if ($result['success'] ?? false) {
-                Notification::make()
-                    ->title(__('Restore completed'))
-                    ->body(__(':count item(s) restored', ['count' => count($this->selectedPaths)]))
-                    ->success()
-                    ->send();
+            $files = $result['files'] ?? [];
+            $domains = [];
+            $databases = [];
+            $mailboxes = [];
+            $dnsZones = [];
+            $sslCerts = [];
+            $hasDbUsers = false;
 
-                $this->selectedPaths = [];
-            } else {
-                Notification::make()
-                    ->title(__('Restore failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
-                    ->danger()
-                    ->send();
+            foreach ($files as $file) {
+                $parts = explode('/', $file);
+
+                if (str_contains($file, "/home/{$this->selectedUser}/domains/") && count($parts) >= 5) {
+                    $domains[$parts[4]] = true;
+                } elseif (str_contains($file, '/.jabali-backup/databases/') && str_ends_with($file, '.sql.gz')) {
+                    $databases[] = basename($file, '.sql.gz');
+                } elseif (str_contains($file, '/.jabali-backup/databases/users.sql')) {
+                    $hasDbUsers = true;
+                } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
+                    $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
+                } elseif (str_contains($file, '/.jabali-backup/dns/') && str_ends_with($file, '.zone')) {
+                    $dnsZones[] = basename($file, '.zone');
+                } elseif (str_contains($file, '/letsencrypt/live/') && count($parts) >= 5) {
+                    $sslCerts[$parts[4]] = true;
+                }
             }
+
+            $this->contents = [
+                'domains' => array_keys($domains),
+                'databases' => array_values(array_unique($databases)),
+                'mailboxes' => array_keys($mailboxes),
+                'dns_zones' => $dnsZones,
+                'ssl_certs' => array_keys($sslCerts),
+                'has_db_users' => $hasDbUsers,
+                'total_files' => count($files),
+            ];
+
+            // Pre-select everything
+            $this->selectedDatabases = $this->contents['databases'];
+            $this->selectedMailboxes = $this->contents['mailboxes'];
         } catch (Exception $e) {
-            Notification::make()
-                ->title(__('Restore failed'))
-                ->body(SafeError::message($e))
-                ->danger()
-                ->send();
+            $this->contents = [];
+            Notification::make()->title(__('Failed to load contents'))->body(SafeError::message($e))->danger()->send();
         }
+    }
+
+    // ── Step 3: File Browser ────────────────────────────────────────────
+
+    public function setSection(string $section): void
+    {
+        $this->activeSection = $section;
+        $this->currentPath = '';
+    }
+
+    public function navigateTo(string $path): void
+    {
+        $this->currentPath = $path;
     }
 
     public function loadDirectory(): array
     {
         $backup = $this->getBackup();
-        if (! $backup) {
+        if (! $backup || ! $this->selectedUser) {
             return [];
         }
 
@@ -193,30 +233,11 @@ class RestoreBackup extends Page implements HasActions, HasForms
         }
     }
 
-    private function buildAdapter(): BackupSnapshotAdapter
+    // ── Step 4: Execute Restore ─────────────────────────────────────────
+
+    public function executeRestore(): void
     {
-        $backup = $this->getBackup();
-        $repo = $backup->destination
-            ? $backup->destination->getResticRepoUrl()
-            : '/var/backups/jabali/restic';
-        $destConfig = $backup->destination
-            ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
-            : [];
-
-        $username = $backup->users[0] ?? 'admin';
-
-        return new BackupSnapshotAdapter(
-            app(AgentClient::class),
-            $backup->snapshot_id,
-            $username,
-            $repo,
-            $destConfig,
-        );
-    }
-
-    private function restorePath(string $username): void
-    {
-        $user = User::where('username', $username)->first();
+        $user = User::where('username', $this->selectedUser)->first();
         if (! $user) {
             Notification::make()->title(__('User not found'))->danger()->send();
 
@@ -224,20 +245,36 @@ class RestoreBackup extends Page implements HasActions, HasForms
         }
 
         $backup = $this->getBackup();
+        if (! $backup) {
+            return;
+        }
 
         try {
             $orchestrator = app(BackupOrchestrator::class);
             $result = $orchestrator->restoreBackup($user, $backup, [
-                'restore_files' => true,
-                'restore_databases' => false,
-                'restore_mailboxes' => false,
+                'restore_files' => ! empty($this->selectedPaths) || ! empty($this->contents['domains']),
+                'restore_databases' => ! empty($this->selectedDatabases),
+                'restore_mailboxes' => ! empty($this->selectedMailboxes),
+                'selected_domains' => ! empty($this->selectedPaths)
+                    ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/'))
+                    : ($this->contents['domains'] ?? null),
+                'selected_databases' => $this->selectedDatabases ?: null,
+                'selected_mailboxes' => $this->selectedMailboxes ?: null,
+                'selected_files' => array_filter($this->selectedPaths, fn ($p) => str_contains($p, '/')),
             ]);
 
             if ($result['success'] ?? false) {
                 Notification::make()
                     ->title(__('Restore completed'))
+                    ->body(__(':files domain(s), :dbs database(s), :mail mailbox(es)', [
+                        'files' => $result['result']['files_count'] ?? 0,
+                        'dbs' => $result['result']['databases_count'] ?? 0,
+                        'mail' => $result['result']['mailboxes_count'] ?? 0,
+                    ]))
                     ->success()
                     ->send();
+
+                $this->redirect('/jabali-admin/backups');
             } else {
                 Notification::make()
                     ->title(__('Restore failed'))
@@ -254,6 +291,27 @@ class RestoreBackup extends Page implements HasActions, HasForms
         }
     }
 
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    private function buildAdapter(): BackupSnapshotAdapter
+    {
+        $backup = $this->getBackup();
+        $repo = $backup->destination
+            ? $backup->destination->getResticRepoUrl()
+            : '/var/backups/jabali/restic';
+        $destConfig = $backup->destination
+            ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
+            : [];
+
+        return new BackupSnapshotAdapter(
+            app(AgentClient::class),
+            $backup->snapshot_id,
+            $this->selectedUser ?? 'admin',
+            $repo,
+            $destConfig,
+        );
+    }
+
     private function getBackup(): ?Backup
     {
         if ($this->backup === null) {
@@ -261,5 +319,14 @@ class RestoreBackup extends Page implements HasActions, HasForms
         }
 
         return $this->backup;
+    }
+
+    public function getAvailableBackups(): array
+    {
+        return Backup::where('status', 'completed')
+            ->whereNotNull('snapshot_id')
+            ->latest()
+            ->pluck('name', 'id')
+            ->toArray();
     }
 }
