@@ -17943,9 +17943,13 @@ function backupTestDestination(array $params): array
         return ['success' => true, 'message' => 'Connection successful, repository initialized'];
     }
 
+    // "config file already exists" means the repo exists but password doesn't match
+    if (str_contains($init['output'], 'config file already exists')) {
+        return ['success' => false, 'error' => 'Repository exists but restic password does not match. The remote repo was created with a different password. Delete the remote repo or restore the original password file.'];
+    }
+
     // Return actual error from restic
     $error = $init['output'] ?: $check['output'];
-    // Extract the useful part from JSON error
     $jsonError = @json_decode($error, true);
     if ($jsonError && isset($jsonError['message'])) {
         $error = $jsonError['message'];
