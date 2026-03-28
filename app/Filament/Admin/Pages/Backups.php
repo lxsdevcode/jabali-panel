@@ -70,6 +70,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         return [
             $this->createServerBackupAction(),
             $this->createScheduleAction(),
+            $this->backupPasswordAction(),
             $this->addDestinationAction(),
         ];
     }
@@ -628,6 +629,54 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ]))
                     ->success()
                     ->send();
+            });
+    }
+
+    // ── Password Action ─────────────────────────────────────────────────
+
+    private function backupPasswordAction(): Action
+    {
+        $passwordFile = '/etc/jabali/restic-password';
+        $currentPassword = file_exists($passwordFile) ? trim((string) @file_get_contents($passwordFile)) : '';
+
+        return Action::make('backupPassword')
+            ->label(__('Password'))
+            ->icon('heroicon-o-key')
+            ->color('gray')
+            ->modalHeading(__('Backup Encryption Password'))
+            ->modalDescription(__('This password encrypts all Restic backups. If you reinstall the panel, you must restore this password to access existing backup repositories.'))
+            ->modalSubmitActionLabel(__('Save Password'))
+            ->form([
+                TextInput::make('password')
+                    ->label(__('Restic Password'))
+                    ->default($currentPassword)
+                    ->required()
+                    ->helperText(__('Changing this will make existing remote repositories inaccessible unless they are re-initialized.')),
+            ])
+            ->action(function (array $data): void {
+                $password = trim($data['password'] ?? '');
+                if (empty($password)) {
+                    Notification::make()->title(__('Password cannot be empty'))->danger()->send();
+
+                    return;
+                }
+
+                try {
+                    $agent = app(\App\Services\Agent\AgentClient::class);
+                    $agent->send('backup.set_password', ['password' => $password]);
+
+                    Notification::make()
+                        ->title(__('Password updated'))
+                        ->body(__('Backup encryption password has been saved.'))
+                        ->success()
+                        ->send();
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title(__('Failed to update password'))
+                        ->body(SafeError::message($e))
+                        ->danger()
+                        ->send();
+                }
             });
     }
 

@@ -748,6 +748,7 @@ function handleAction(array $request): array
         'backup.list_remote' => backupListRemote($params),
         'backup.delete_remote' => backupDeleteRemote($params),
         'backup.test_destination' => backupTestDestination($params),
+        'backup.set_password' => backupSetPassword($params),
         'backup.download_user_archive' => backupDownloadUserArchive($params),
         'backup.list_contents' => backupListContents($params),
         'backup.list_domain_files' => backupListDomainFiles($params),
@@ -881,6 +882,25 @@ function createUser(array $params): array
     $fpmPoolCreated = (bool) ($fpmResult['pool_created'] ?? false);
     $fpmReloadRequired = false;
 
+    // Create and start nspawn container for PHP-FPM isolation
+    $containerCreated = false;
+    if (trim((string) shell_exec('which jabali-isolate 2>/dev/null'))) {
+        $isoOut = [];
+        $isoExit = 0;
+        exec('jabali-isolate create ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
+        if ($isoExit === 0) {
+            exec('jabali-isolate start ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
+            $containerCreated = ($isoExit === 0);
+            if ($containerCreated) {
+                logger("Created and started nspawn container for $username");
+            } else {
+                logger("Warning: nspawn container created but failed to start for $username");
+            }
+        } else {
+            logger("Warning: Failed to create nspawn container for $username");
+        }
+    }
+
     // Create Redis ACL user for isolated caching
     $redisPassword = bin2hex(random_bytes(16)); // 32 char password
     $redisResult = redisCreateUser(['username' => $username, 'password' => $redisPassword]);
@@ -909,6 +929,7 @@ function createUser(array $params): array
         'redis_user' => $redisResult['success'] ? "jabali_{$username}" : null,
         'fpm_pool_created' => $fpmPoolCreated,
         'fpm_reload_required' => $fpmReloadRequired,
+        'container_created' => $containerCreated,
     ];
 }
 
@@ -1110,6 +1131,17 @@ function deleteUser(array $params): array
         }
         if ($dbUserDeletedCount > 0) {
             $steps[] = "MySQL users removed ({$dbUserDeletedCount})";
+        }
+    }
+
+    // Destroy nspawn container (stops if running, removes rootfs + unit files)
+    if (trim((string) shell_exec('which jabali-isolate 2>/dev/null'))) {
+        $isoOut = [];
+        $isoExit = 0;
+        exec('jabali-isolate destroy ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
+        if ($isoExit === 0) {
+            logger("Destroyed nspawn container for $username");
+            $steps[] = 'nspawn container removed';
         }
     }
 
@@ -17900,6 +17932,23 @@ function backupVerify(array $params): array
         'output' => $result['output'],
         'error' => $result['exitCode'] !== 0 ? $result['output'] : null,
     ];
+}
+
+// ── Password Management ─────────────────────────────────────────────────────
+
+function backupSetPassword(array $params): array
+{
+    $password = $params['password'] ?? '';
+    if (empty($password)) {
+        return ['success' => false, 'error' => 'Password cannot be empty'];
+    }
+
+    $passwordFile = '/etc/jabali/restic-password';
+    @mkdir('/etc/jabali', 0750, true);
+    file_put_contents($passwordFile, $password);
+    chmod($passwordFile, 0600);
+
+    return ['success' => true, 'message' => 'Password updated'];
 }
 
 // ── Test Destination ────────────────────────────────────────────────────────
