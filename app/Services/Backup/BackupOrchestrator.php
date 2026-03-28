@@ -8,6 +8,7 @@ use App\Jobs\IndexRemoteBackups;
 use App\Models\Backup;
 use App\Models\BackupDestination;
 use App\Models\BackupSchedule;
+use App\Services\AdminNotificationService;
 use App\Services\Agent\AgentClient;
 use Exception;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +16,135 @@ use Illuminate\Support\Facades\Log;
 class BackupOrchestrator
 {
     public function __construct(private AgentClient $agent) {}
+
+    /**
+     * Build the destination config array for agent calls.
+     *
+     * @return array<string, mixed>
+     */
+    public function execute(Backup $backup): void
+    {
+        if (in_array($backup->status, ['completed', 'failed'])) {
+            return;
+        }
+
+        $backup->update(['status' => 'running', 'started_at' => now()]);
+
+        $backupType = $backup->metadata['backup_type'] ?? 'full';
+        $isIncrementalRemote = $backupType === 'incremental' && $backup->destination_id;
+
+        try {
+            $result = $isIncrementalRemote
+                ? $this->executeIncremental($backup)
+                : $this->executeFull($backup, $backupType);
+
+            $this->handleSuccess($backup, $result, $isIncrementalRemote);
+        } catch (Exception $e) {
+            $backup->update([
+                'status' => 'failed',
+                'completed_at' => now(),
+                'error_message' => $e->getMessage(),
+            ]);
+
+            Log::error("BackupOrchestrator: Backup {$backup->id} failed: ".$e->getMessage());
+            AdminNotificationService::backupFailure($backup->name, $e->getMessage());
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function executeIncremental(Backup $backup): array
+    {
+        $destination = $backup->destination;
+        if (! $destination) {
+            throw new Exception('Backup destination not found');
+        }
+
+        $config = $this->buildDestinationConfig($destination);
+
+        $result = $this->agent->backupIncrementalDirect($config, [
+            'users' => $backup->users,
+            'include_files' => $backup->include_files,
+            'include_databases' => $backup->include_databases,
+            'include_mailboxes' => $backup->include_mailboxes,
+            'include_dns' => $backup->include_dns,
+            'include_ssl' => $backup->include_ssl ?? true,
+        ]);
+
+        if (! ($result['success'] ?? false)) {
+            throw new Exception($result['error'] ?? 'Incremental backup failed');
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function executeFull(Backup $backup, string $backupType): array
+    {
+        $result = $this->agent->backupCreateServer($backup->local_path, [
+            'backup_type' => $backupType,
+            'users' => $backup->users,
+            'include_files' => $backup->include_files,
+            'include_databases' => $backup->include_databases,
+            'include_mailboxes' => $backup->include_mailboxes,
+            'include_dns' => $backup->include_dns,
+            'include_ssl' => $backup->include_ssl ?? true,
+        ]);
+
+        if (! ($result['success'] ?? false)) {
+            throw new Exception($result['error'] ?? 'Backup failed');
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function handleSuccess(Backup $backup, array $result, bool $isIncremental): void
+    {
+        $metadata = array_merge($backup->metadata ?? [], [
+            'user_count' => $result['user_count'] ?? 0,
+        ]);
+
+        if ($isIncremental) {
+            $metadata['previous_backup'] = $result['previous_backup'] ?? null;
+            $metadata['is_initialization'] = $result['is_initialization'] ?? false;
+        }
+
+        $backup->update([
+            'status' => 'completed',
+            'completed_at' => now(),
+            'size_bytes' => $result['size'] ?? 0,
+            'users' => $result['users'] ?? $backup->users,
+            'remote_path' => $result['remote_path'] ?? $backup->remote_path,
+            'metadata' => $metadata,
+        ]);
+
+        Log::info("BackupOrchestrator: Backup {$backup->id} completed successfully (".($isIncremental ? 'incremental' : 'full').')');
+
+        if ($isIncremental && $backup->destination_id) {
+            IndexRemoteBackups::dispatch($backup->destination_id);
+        } elseif ($backup->destination_id) {
+            $this->uploadToRemote($backup);
+        }
+
+        if ($backup->schedule_id) {
+            $schedule = BackupSchedule::find($backup->schedule_id);
+            if ($schedule) {
+                $this->applyRetention($schedule);
+            }
+        }
+
+        AdminNotificationService::backupSuccess(
+            $backup->name,
+            $result['size'] ?? 0,
+            $backup->destination?->name
+        );
+    }
 
     /**
      * Build the destination config array for agent calls.
