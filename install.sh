@@ -60,9 +60,8 @@ select_features() {
 
     # Check if non-interactive mode
     if [[ -n "$JABALI_MINIMAL" ]]; then
-        info "Minimal installation mode: Only core components will be installed"
+        info "Minimal installation mode: Core components + DNS will be installed"
         INSTALL_MAIL=false
-        INSTALL_DNS=false
         return
     fi
 
@@ -80,6 +79,7 @@ select_features() {
     echo ""
     echo "  2) Minimal Installation"
     echo "     - Web Server only (Nginx, PHP, MariaDB, Redis)"
+    echo "     - DNS Server (PowerDNS)"
     echo ""
     echo "  3) Custom Installation"
     echo "     - Choose individual components"
