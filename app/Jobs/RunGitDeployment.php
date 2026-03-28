@@ -9,20 +9,29 @@ use App\Services\Agent\AgentClient;
 use App\Services\Agent\AgentException;
 use Exception;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
-class RunGitDeployment implements ShouldQueue
+class RunGitDeployment implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable;
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
 
+    public int $uniqueFor = 600;
+
     public function __construct(public int $deploymentId) {}
+
+    public function uniqueId(): string
+    {
+        return "git-deploy-{$this->deploymentId}";
+    }
 
     public function handle(): void
     {
@@ -63,5 +72,22 @@ class RunGitDeployment implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        $deployment = GitDeployment::find($this->deploymentId);
+
+        if ($deployment) {
+            $deployment->update([
+                'last_status' => 'failed',
+                'last_error' => $exception->getMessage(),
+            ]);
+        }
+
+        Log::error('RunGitDeployment job failed', [
+            'deployment_id' => $this->deploymentId,
+            'error' => $exception->getMessage(),
+        ]);
     }
 }

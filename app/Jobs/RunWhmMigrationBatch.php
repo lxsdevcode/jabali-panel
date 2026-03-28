@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Services\Migration\WhmMigrationOrchestrator;
+use App\Services\Migration\WhmMigrationStatusStore;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
 {
@@ -54,5 +57,17 @@ class RunWhmMigrationBatch implements ShouldBeEncrypted, ShouldQueue
             $this->restoreSsl,
             $this->createLinuxUsers,
         );
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        $store = new WhmMigrationStatusStore($this->cacheKey);
+        $store->setMigrating(false);
+
+        Log::error('RunWhmMigrationBatch job failed', [
+            'cache_key' => $this->cacheKey,
+            'hostname' => $this->hostname,
+            'error' => $exception->getMessage(),
+        ]);
     }
 }

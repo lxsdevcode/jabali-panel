@@ -5,16 +5,38 @@ use App\Http\Controllers\AutoDiscoverController;
 use App\Http\Controllers\BackupDownloadController;
 use App\Http\Controllers\ImpersonationController;
 use App\Http\Controllers\LanguageController;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect('/jabali-panel');
 });
 
-// Override health check to avoid CDN-hosted Tailwind (Cross-Domain JS inclusion)
 Route::get('/up', function () {
-    return response('<html><body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0"><div><div style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:50%;background:#22c55e;display:inline-block"></span><strong>Application up</strong></div></div></body></html>', 200)
-        ->header('Content-Type', 'text/html');
+    $checks = [];
+    $healthy = true;
+
+    try {
+        DB::select('SELECT 1');
+        $checks['database'] = 'ok';
+    } catch (\Throwable) {
+        $checks['database'] = 'fail';
+        $healthy = false;
+    }
+
+    try {
+        Cache::store('redis')->get('health-check');
+        $checks['redis'] = 'ok';
+    } catch (\Throwable) {
+        $checks['redis'] = 'fail';
+        $healthy = false;
+    }
+
+    return response()->json([
+        'status' => $healthy ? 'healthy' : 'degraded',
+        'checks' => $checks,
+    ], $healthy ? 200 : 503);
 });
 
 Route::get('/login', function () {

@@ -685,8 +685,6 @@ class UpgradeCommand extends Command
             'package.json',
             'package-lock.json',
             'vite.config.js',
-            'postcss.config.js',
-            'tailwind.config.js',
         ])) {
             return true;
         }

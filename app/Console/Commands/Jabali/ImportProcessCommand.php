@@ -295,72 +295,84 @@ class ImportProcessCommand extends Command
                     }
                 }
             } elseif ($import->source_type === 'hestiacp') {
-                // Extract from HestiaCP/VestaCP backup
-                $cmd = "{$tarExtract} ".escapeshellarg($backupPath).' -C '.escapeshellarg($extractDir).
-                    " --wildcards 'domains/*' 'backup/domains/*' 2>/dev/null";
-                exec($cmd, $output, $code);
-                if ($code !== 0) {
-                    $account->addLog('Warning: Failed to extract HestiaCP backup archive');
-                }
-
-                // Find domain directories (HestiaCP stores files at domains/{domain}/public_html/)
-                $domainDirs = glob("$extractDir/**/domains/*", GLOB_ONLYDIR) ?:
-                    glob("$extractDir/domains/*", GLOB_ONLYDIR) ?:
-                    glob("$extractDir/backup/domains/*", GLOB_ONLYDIR) ?: [];
-
-                foreach ($domainDirs as $domainDir) {
-                    $domain = basename($domainDir);
-                    if (! $this->isValidDomainName($domain)) {
-                        $account->addLog("Warning: Skipped invalid domain name from backup: {$domain}");
-
-                        continue;
-                    }
-                    $publicHtml = "$domainDir/public_html";
-
-                    if (is_dir($publicHtml)) {
-                        $destDir = "/home/{$user->username}/domains/{$domain}/public_html";
-                        if (is_dir($destDir)) {
-                            exec('cp -r '.escapeshellarg($publicHtml).'/* '.escapeshellarg($destDir).'/ 2>&1');
-                            exec('chown -R '.escapeshellarg($user->username).':'.escapeshellarg($user->username).' '.escapeshellarg($destDir).' 2>&1');
-                            $account->addLog("Copied files for domain: {$domain}");
-                        }
-                    }
-                }
+                $this->extractAndCopyDomainFiles(
+                    backupPath: $backupPath,
+                    extractDir: $extractDir,
+                    tarExtract: $tarExtract,
+                    wildcards: "'domains/*' 'backup/domains/*'",
+                    globPatterns: [
+                        "$extractDir/**/domains/*",
+                        "$extractDir/domains/*",
+                        "$extractDir/backup/domains/*",
+                    ],
+                    user: $user,
+                    account: $account,
+                );
             } else {
-                // Extract from DirectAdmin backup
-                $cmd = "{$tarExtract} ".escapeshellarg($backupPath).' -C '.escapeshellarg($extractDir).
-                    " --wildcards 'domains/*' 'backup/domains/*' 2>/dev/null";
-                exec($cmd, $output, $code);
-                if ($code !== 0) {
-                    $account->addLog('Warning: Failed to extract DirectAdmin backup archive');
-                }
-
-                // Find domain directories
-                $domainDirs = glob("$extractDir/**/domains/*", GLOB_ONLYDIR) ?:
-                    glob("$extractDir/domains/*", GLOB_ONLYDIR) ?: [];
-
-                foreach ($domainDirs as $domainDir) {
-                    $domain = basename($domainDir);
-                    if (! $this->isValidDomainName($domain)) {
-                        $account->addLog("Warning: Skipped invalid domain name from backup: {$domain}");
-
-                        continue;
-                    }
-                    $publicHtml = "$domainDir/public_html";
-
-                    if (is_dir($publicHtml)) {
-                        $destDir = "/home/{$user->username}/domains/{$domain}/public_html";
-                        if (is_dir($destDir)) {
-                            exec('cp -r '.escapeshellarg($publicHtml).'/* '.escapeshellarg($destDir).'/ 2>&1');
-                            exec('chown -R '.escapeshellarg($user->username).':'.escapeshellarg($user->username).' '.escapeshellarg($destDir).' 2>&1');
-                            $account->addLog("Copied files for domain: {$domain}");
-                        }
-                    }
-                }
+                $this->extractAndCopyDomainFiles(
+                    backupPath: $backupPath,
+                    extractDir: $extractDir,
+                    tarExtract: $tarExtract,
+                    wildcards: "'domains/*' 'backup/domains/*'",
+                    globPatterns: [
+                        "$extractDir/**/domains/*",
+                        "$extractDir/domains/*",
+                    ],
+                    user: $user,
+                    account: $account,
+                );
             }
         } finally {
             // Cleanup
             exec('rm -rf '.escapeshellarg($extractDir));
+        }
+    }
+
+    /**
+     * @param  list<string>  $globPatterns
+     */
+    private function extractAndCopyDomainFiles(
+        string $backupPath,
+        string $extractDir,
+        string $tarExtract,
+        string $wildcards,
+        array $globPatterns,
+        User $user,
+        ServerImportAccount $account,
+    ): void {
+        $cmd = "{$tarExtract} ".escapeshellarg($backupPath).' -C '.escapeshellarg($extractDir).
+            " --wildcards {$wildcards} 2>/dev/null";
+        exec($cmd, $output, $code);
+        if ($code !== 0) {
+            $account->addLog('Warning: Failed to extract backup archive');
+        }
+
+        // Find domain directories by trying each glob pattern in order
+        $domainDirs = [];
+        foreach ($globPatterns as $pattern) {
+            $domainDirs = glob($pattern, GLOB_ONLYDIR) ?: [];
+            if ($domainDirs !== []) {
+                break;
+            }
+        }
+
+        foreach ($domainDirs as $domainDir) {
+            $domain = basename($domainDir);
+            if (! $this->isValidDomainName($domain)) {
+                $account->addLog("Warning: Skipped invalid domain name from backup: {$domain}");
+
+                continue;
+            }
+            $publicHtml = "$domainDir/public_html";
+
+            if (is_dir($publicHtml)) {
+                $destDir = "/home/{$user->username}/domains/{$domain}/public_html";
+                if (is_dir($destDir)) {
+                    exec('cp -r '.escapeshellarg($publicHtml).'/* '.escapeshellarg($destDir).'/ 2>&1');
+                    exec('chown -R '.escapeshellarg($user->username).':'.escapeshellarg($user->username).' '.escapeshellarg($destDir).' 2>&1');
+                    $account->addLog("Copied files for domain: {$domain}");
+                }
+            }
         }
     }
 

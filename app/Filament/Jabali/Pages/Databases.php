@@ -7,6 +7,7 @@ namespace App\Filament\Jabali\Pages;
 use App\Models\MysqlCredential;
 use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
+use App\Support\PasswordGenerator;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -396,6 +397,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
                         FileUpload::make('sql_file')
                             ->label(__('Backup File'))
                             ->required()
+                            ->acceptedFileTypes(['text/plain', 'text/sql', 'application/sql', 'application/x-sql', 'application/gzip', 'application/x-gzip', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream'])
                             ->maxSize(512000) // 500MB (compressed files can be larger)
                             ->disk('local')
                             ->directory('temp/sql-uploads')
@@ -509,25 +511,7 @@ class Databases extends Page implements HasActions, HasForms, HasTable
 
     public function generateSecurePassword(int $length = 16): string
     {
-        $lowercase = 'abcdefghijklmnopqrstuvwxyz';
-        $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        $numbers = '0123456789';
-        $special = '!@#$%^&*';
-
-        // Ensure at least one of each required type
-        $password = $lowercase[random_int(0, strlen($lowercase) - 1)]
-            .$uppercase[random_int(0, strlen($uppercase) - 1)]
-            .$numbers[random_int(0, strlen($numbers) - 1)]
-            .$special[random_int(0, strlen($special) - 1)];
-
-        // Fill the rest with random characters from all types
-        $allChars = $lowercase.$uppercase.$numbers.$special;
-        for ($i = strlen($password); $i < $length; $i++) {
-            $password .= $allChars[random_int(0, strlen($allChars) - 1)];
-        }
-
-        // Shuffle the password to randomize position of required characters
-        return str_shuffle($password);
+        return PasswordGenerator::generate($length);
     }
 
     /**

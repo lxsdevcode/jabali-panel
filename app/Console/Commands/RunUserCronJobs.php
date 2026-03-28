@@ -79,6 +79,11 @@ class RunUserCronJobs extends Command
 
     protected function runJob(CronJob $job): void
     {
+        // Guard against double-runs within the same minute
+        if ($job->last_run_at && $job->last_run_at->isCurrentMinute()) {
+            return;
+        }
+
         $username = $job->user->username ?? null;
 
         if (! $username) {

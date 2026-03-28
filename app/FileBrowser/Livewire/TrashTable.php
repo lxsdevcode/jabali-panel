@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\FileBrowser\Livewire;
 
 use App\FileBrowser\Services\TrashManager;
-use App\FileBrowser\Support\SafeError;
+use App\Support\SafeError;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;

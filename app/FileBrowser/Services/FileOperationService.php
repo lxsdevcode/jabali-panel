@@ -6,8 +6,8 @@ namespace App\FileBrowser\Services;
 
 use App\FileBrowser\Adapters\FileBrowserAdapter;
 use App\FileBrowser\Support\PathSanitizer;
-use App\FileBrowser\Support\SafeError;
 use App\FileBrowser\ValueObjects\FilePermission;
+use App\Support\SafeError;
 use Closure;
 use Exception;
 use Filament\Notifications\Notification;

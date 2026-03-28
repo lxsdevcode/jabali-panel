@@ -44,7 +44,7 @@ class MailboxSharingService
             throw new \InvalidArgumentException('Invalid folder name');
         }
 
-        return DB::transaction(function () use ($owner, $recipient, $folder, $aclRights) {
+        $share = DB::transaction(function () use ($owner, $recipient, $folder, $aclRights) {
             $share = MailboxShare::updateOrCreate(
                 [
                     'mailbox_id' => $owner->id,
@@ -60,7 +60,11 @@ class MailboxSharingService
                 ['dummy' => '1']
             );
 
-            // Call agent to write dovecot-acl file
+            return $share;
+        });
+
+        // Call agent outside transaction to avoid holding locks during network I/O
+        try {
             $username = $owner->emailDomain->domain->user->username;
             $this->agent->emailAclShareFolder(
                 $username,
@@ -69,9 +73,28 @@ class MailboxSharingService
                 $folder,
                 $aclRights
             );
+        } catch (\Throwable $e) {
+            // Roll back DB records if agent call fails
+            DB::transaction(function () use ($share, $owner, $recipient) {
+                $remainingShares = MailboxShare::where('mailbox_id', $owner->id)
+                    ->where('shared_with_mailbox_id', $recipient->id)
+                    ->where('id', '!=', $share->id)
+                    ->exists();
 
-            return $share;
-        });
+                if (! $remainingShares) {
+                    DB::table('user_shares')
+                        ->where('from_user', $owner->email)
+                        ->where('to_user', $recipient->email)
+                        ->delete();
+                }
+
+                $share->delete();
+            });
+
+            throw $e;
+        }
+
+        return $share;
     }
 
     public function revokeShare(MailboxShare $share): void
@@ -80,15 +103,15 @@ class MailboxSharingService
         $recipient = $share->sharedWith;
         $username = $owner->emailDomain->domain->user->username;
 
-        DB::transaction(function () use ($share, $owner, $recipient, $username) {
-            // Call agent to remove from dovecot-acl file
-            $this->agent->emailAclRevokeFolder(
-                $username,
-                $owner->email,
-                $recipient->email,
-                $share->folder
-            );
+        // Call agent first, outside transaction — if it fails, DB stays untouched
+        $this->agent->emailAclRevokeFolder(
+            $username,
+            $owner->email,
+            $recipient->email,
+            $share->folder
+        );
 
+        DB::transaction(function () use ($share, $owner, $recipient) {
             // Remove from user_shares if no more shares exist between these users
             $remainingShares = MailboxShare::where('mailbox_id', $owner->id)
                 ->where('shared_with_mailbox_id', $recipient->id)
@@ -117,18 +140,17 @@ class MailboxSharingService
         $recipient = $share->sharedWith;
         $username = $owner->emailDomain->domain->user->username;
 
-        return DB::transaction(function () use ($share, $owner, $recipient, $username, $aclRights) {
-            $this->agent->emailAclUpdateFolder(
-                $username,
-                $owner->email,
-                $recipient->email,
-                $share->folder,
-                $aclRights
-            );
+        // Call agent first, outside transaction — if it fails, DB stays untouched
+        $this->agent->emailAclUpdateFolder(
+            $username,
+            $owner->email,
+            $recipient->email,
+            $share->folder,
+            $aclRights
+        );
 
-            $share->update(['acl_rights' => $aclRights]);
+        $share->update(['acl_rights' => $aclRights]);
 
-            return $share;
-        });
+        return $share;
     }
 }

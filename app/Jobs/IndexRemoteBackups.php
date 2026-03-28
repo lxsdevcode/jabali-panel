@@ -12,6 +12,7 @@ use Exception;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class IndexRemoteBackups implements ShouldQueue
 {
@@ -46,6 +47,14 @@ class IndexRemoteBackups implements ShouldQueue
         }
 
         Log::info('IndexRemoteBackups: Indexing completed');
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        Log::warning('IndexRemoteBackups job failed', [
+            'destination_id' => $this->destinationId,
+            'error' => $exception->getMessage(),
+        ]);
     }
 
     protected function indexDestination(AgentClient $agent, BackupDestination $destination, array $users): void

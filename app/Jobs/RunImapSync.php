@@ -12,6 +12,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class RunImapSync implements ShouldQueue
 {
@@ -107,6 +108,26 @@ class RunImapSync implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        $task = ImapSyncTask::find($this->syncTaskId);
+
+        if ($task && $task->status !== 'cancelled') {
+            $task->update([
+                'status' => 'failed',
+                'error_message' => $exception->getMessage(),
+                'completed_at' => now(),
+            ]);
+        }
+
+        Cache::put($this->getCacheKey(), ['status' => 'failed'], now()->addHours(3));
+
+        Log::error('RunImapSync job failed', [
+            'task_id' => $this->syncTaskId,
+            'error' => $exception->getMessage(),
+        ]);
     }
 
     protected function ensureLogPath(ImapSyncTask $task): void

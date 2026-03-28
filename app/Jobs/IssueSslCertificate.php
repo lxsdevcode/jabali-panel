@@ -6,12 +6,15 @@ namespace App\Jobs;
 
 use App\Models\Domain;
 use App\Models\SslCertificate;
+use App\Services\AdminNotificationService;
 use App\Services\SslManagementService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
-class IssueSslCertificate implements ShouldQueue
+class IssueSslCertificate implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -19,10 +22,17 @@ class IssueSslCertificate implements ShouldQueue
 
     public int $backoff = 60; // Wait 60 seconds between retries
 
+    public int $uniqueFor = 300;
+
     public function __construct(
         public int $domainId,
         public string $service = 'web',
     ) {}
+
+    public function uniqueId(): string
+    {
+        return "ssl-{$this->domainId}-{$this->service}";
+    }
 
     public function handle(SslManagementService $service): void
     {
@@ -75,5 +85,19 @@ class IssueSslCertificate implements ShouldQueue
         }
 
         Log::info("IssueSslCertificate: {$this->service} SSL issued successfully for {$domain->domain}");
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        $domain = Domain::find($this->domainId);
+        $domainName = $domain->domain ?? "Domain #{$this->domainId}";
+
+        AdminNotificationService::sslError($domainName, $exception->getMessage());
+
+        Log::error('IssueSslCertificate job failed', [
+            'domain_id' => $this->domainId,
+            'service' => $this->service,
+            'error' => $exception->getMessage(),
+        ]);
     }
 }

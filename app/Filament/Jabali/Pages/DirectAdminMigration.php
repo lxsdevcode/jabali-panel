@@ -233,6 +233,7 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
                                             ->label(__('DirectAdmin Backup Archive'))
                                             ->storeFiles(false)
                                             ->required()
+                                            ->acceptedFileTypes(['application/x-tar', 'application/gzip', 'application/x-gzip', 'application/x-compressed-tar', 'application/zstd', 'application/octet-stream'])
                                             ->maxSize(512000) // 500MB in KB
                                             ->helperText(__('Supported formats: .tar.zst, .tar.gz, .tgz (max 500MB via upload)')),
                                     ])

@@ -386,7 +386,7 @@ class RestoreBackup extends Page implements HasActions, HasForms, HasTable
                     ->html(),
                 TextColumn::make('size')
                     ->label(__('Size'))
-                    ->formatStateUsing(fn ($state): string => $state ? \App\FileBrowser\Support\Formatter::bytes((int) $state) : '-')
+                    ->formatStateUsing(fn ($state): string => $state ? \App\Support\Formatter::bytes((int) $state) : '-')
                     ->color('gray'),
                 TextColumn::make('modified')
                     ->label(__('Modified'))

@@ -86,7 +86,7 @@ trait ManagesEmailSharing
                         }
 
                         try {
-                            $service = new MailboxSharingService($this->agent());
+                            $service = app(MailboxSharingService::class);
                             $service->updatePermissions($record, $data['acl_rights']);
                             Notification::make()->title(__('Permissions updated'))->success()->send();
                         } catch (Exception $e) {
@@ -115,7 +115,7 @@ trait ManagesEmailSharing
                         }
 
                         try {
-                            $service = new MailboxSharingService($this->agent());
+                            $service = app(MailboxSharingService::class);
                             $service->revokeShare($record);
                             Notification::make()->title(__('Share revoked'))->success()->send();
                         } catch (Exception $e) {
@@ -209,7 +209,7 @@ trait ManagesEmailSharing
                 }
 
                 try {
-                    $service = new MailboxSharingService($this->agent());
+                    $service = app(MailboxSharingService::class);
                     $service->shareFolder($owner, $recipient, $data['folder'], $data['acl_rights']);
                     Notification::make()->title(__('Folder shared successfully'))->success()->send();
                     $this->setTab('sharing');

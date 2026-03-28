@@ -192,6 +192,8 @@ class DirectAdminMigration extends Page implements HasActions, HasForms
                             ->disk('backups')
                             ->directory('directadmin-migrations')
                             ->preserveFilenames()
+                            ->acceptedFileTypes(['application/x-tar', 'application/gzip', 'application/x-gzip', 'application/x-compressed-tar', 'application/zstd', 'application/octet-stream'])
+                            ->maxSize(5242880)
                             ->visible(fn (Get $get): bool => $get('importMethod') === 'backup_file'),
                         TextInput::make('backupFilePath')
                             ->label(__('Backup File Path'))

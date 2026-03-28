@@ -354,69 +354,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             });
     }
 
-    // ── Verify Action ────────────────────────────────────────────────
-
-    private function verifyRepoAction(): Action
-    {
-        $destinations = BackupDestination::where('is_server_backup', true)
-            ->where('is_active', true)
-            ->pluck('name', 'id')
-            ->toArray();
-
-        return Action::make('verifyRepo')
-            ->label(__('Verify'))
-            ->icon('heroicon-o-shield-check')
-            ->color('gray')
-            ->modalHeading(__('Verify Backup Repository'))
-            ->form([
-                Select::make('destination_id')
-                    ->label(__('Repository'))
-                    ->options($destinations)
-                    ->placeholder(__('Local (default)'))
-                    ->placeholder(__('Select repository to verify')),
-            ])
-            ->action(function (array $data): void {
-                try {
-                    $destConfig = [];
-                    $repo = '/var/backups/jabali/restic';
-
-                    if (! empty($data['destination_id'])) {
-                        $dest = BackupDestination::find($data['destination_id']);
-                        if ($dest) {
-                            $repo = $dest->getResticRepoUrl();
-                            $destConfig = array_merge($dest->config ?? [], ['type' => $dest->type]);
-                        }
-                    }
-
-                    $agent = app(\App\Services\Agent\AgentClient::class);
-                    $result = $agent->send('backup.verify', [
-                        'destination' => $destConfig,
-                        'repo' => $repo,
-                    ]);
-
-                    if ($result['success'] ?? false) {
-                        Notification::make()
-                            ->title(__('Repository OK'))
-                            ->body(__('Integrity check passed'))
-                            ->success()
-                            ->send();
-                    } else {
-                        Notification::make()
-                            ->title(__('Repository check failed'))
-                            ->body($result['error'] ?? __('Unknown error'))
-                            ->danger()
-                            ->send();
-                    }
-                } catch (Exception $e) {
-                    Notification::make()
-                        ->title(__('Verify failed'))
-                        ->body(SafeError::message($e))
-                        ->danger()
-                        ->send();
-                }
-            });
-    }
-
     // ── Schedule Actions ─────────────────────────────────────────────
 
     private function createScheduleAction(): Action

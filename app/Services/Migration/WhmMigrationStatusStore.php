@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Migration;
 
+use Closure;
 use Illuminate\Support\Facades\Cache;
 
 class WhmMigrationStatusStore
@@ -70,16 +71,18 @@ class WhmMigrationStatusStore
      */
     public function setMigrating(bool $isMigrating): array
     {
-        $state = $this->get();
-        $state['isMigrating'] = $isMigrating;
+        return $this->withLock(function () use ($isMigrating) {
+            $state = $this->get();
+            $state['isMigrating'] = $isMigrating;
 
-        if (! $isMigrating) {
-            $state['completedAt'] = now()->toDateTimeString();
-        }
+            if (! $isMigrating) {
+                $state['completedAt'] = now()->toDateTimeString();
+            }
 
-        $this->put($state);
+            $this->put($state);
 
-        return $state;
+            return $state;
+        });
     }
 
     /**
@@ -87,14 +90,16 @@ class WhmMigrationStatusStore
      */
     public function updateAccountStatus(string $user, string $status, string $message, string $logStatus = 'info'): array
     {
-        $state = $this->get();
-        $state = $this->ensureAccount($state, $user);
-        $state['migrationStatus'][$user]['status'] = $status;
+        return $this->withLock(function () use ($user, $status, $message, $logStatus) {
+            $state = $this->get();
+            $state = $this->ensureAccount($state, $user);
+            $state['migrationStatus'][$user]['status'] = $status;
 
-        $this->appendLog($state, $user, $message, $logStatus);
-        $this->put($state);
+            $this->appendLog($state, $user, $message, $logStatus);
+            $this->put($state);
 
-        return $state;
+            return $state;
+        });
     }
 
     /**
@@ -102,13 +107,20 @@ class WhmMigrationStatusStore
      */
     public function addAccountLog(string $user, string $message, string $status = 'info'): array
     {
-        $state = $this->get();
-        $state = $this->ensureAccount($state, $user);
+        return $this->withLock(function () use ($user, $message, $status) {
+            $state = $this->get();
+            $state = $this->ensureAccount($state, $user);
 
-        $this->appendLog($state, $user, $message, $status);
-        $this->put($state);
+            $this->appendLog($state, $user, $message, $status);
+            $this->put($state);
 
-        return $state;
+            return $state;
+        });
+    }
+
+    private function withLock(Closure $callback): mixed
+    {
+        return Cache::lock("whm_migration_lock:{$this->cacheKey}", 10)->block(5, $callback);
     }
 
     /**

@@ -54,6 +54,12 @@ class RunBackupSchedules extends Command
     {
         $this->info("Running schedule: {$schedule->name}");
 
+        if (\App\Models\Backup::where('schedule_id', $schedule->id)->whereIn('status', ['pending', 'running'])->exists()) {
+            $this->info("Schedule {$schedule->name} already has a running backup, skipping.");
+
+            return;
+        }
+
         $backupType = $schedule->metadata['backup_type'] ?? 'full';
         $timestamp = now()->format('Y-m-d_His');
 

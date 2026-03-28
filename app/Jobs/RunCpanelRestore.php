@@ -14,6 +14,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class RunCpanelRestore implements ShouldQueue
 {
@@ -77,6 +78,18 @@ class RunCpanelRestore implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        Cache::put($this->getCacheKey(), ['status' => 'failed'], now()->addHours(2));
+        $this->appendLog(__('Restore job failed: :error', ['error' => $exception->getMessage()]), 'error');
+
+        Log::error('RunCpanelRestore job failed', [
+            'job_id' => $this->jobId,
+            'user' => $this->username,
+            'error' => $exception->getMessage(),
+        ]);
     }
 
     protected function ensureLogPath(): void

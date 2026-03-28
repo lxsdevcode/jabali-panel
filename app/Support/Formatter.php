@@ -6,8 +6,12 @@ namespace App\Support;
 
 class Formatter
 {
-    public static function bytes(int|float $bytes, int $precision = 1): string
+    public static function bytes(int|float|null $bytes, int $precision = 1): string
     {
+        if ($bytes === null) {
+            return '0 B';
+        }
+
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $size = max(0, (float) $bytes);
         $unit = 0;

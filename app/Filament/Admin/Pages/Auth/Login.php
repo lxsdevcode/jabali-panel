@@ -56,8 +56,8 @@ class Login extends BaseLogin
 
         if (! $credentialsValid) {
             // Track failed attempts and lock after 10
-            $attempts = (int) Cache::get($attemptsKey, 0) + 1;
-            Cache::put($attemptsKey, $attempts, now()->addMinutes(15));
+            Cache::add($attemptsKey, 0, now()->addMinutes(15));
+            $attempts = Cache::increment($attemptsKey);
 
             if ($attempts >= 10) {
                 Cache::put($lockoutKey, true, now()->addMinutes(15));

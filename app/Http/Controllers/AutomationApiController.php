@@ -85,7 +85,7 @@ class AutomationApiController extends Controller
         $validator = Validator::make($request->all(), [
             'username' => ['nullable', 'string'],
             'user_id' => ['nullable', 'integer', 'exists:users,id'],
-            'domain' => ['required', 'string'],
+            'domain' => ['required', 'string', 'max:253', 'regex:/^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/'],
         ]);
 
         if ($validator->fails()) {

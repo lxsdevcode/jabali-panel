@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Resources\Users\Schemas;
 
 use App\Models\DnsSetting;
 use App\Models\HostingPackage;
+use App\Support\PasswordGenerator;
 use App\Support\WordList;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
@@ -24,25 +25,7 @@ class UserForm
      */
     public static function generateSecurePassword(int $length = 16): string
     {
-        $uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-        $lowercase = 'abcdefghjkmnpqrstuvwxyz';
-        $numbers = '23456789';
-        $special = '!@#$%^&*';
-
-        // Ensure at least one of each type
-        $password = $uppercase[random_int(0, strlen($uppercase) - 1)]
-            .$lowercase[random_int(0, strlen($lowercase) - 1)]
-            .$numbers[random_int(0, strlen($numbers) - 1)]
-            .$special[random_int(0, strlen($special) - 1)];
-
-        // Fill rest with random characters from all pools
-        $allChars = $uppercase.$lowercase.$numbers.$special;
-        for ($i = 4; $i < $length; $i++) {
-            $password .= $allChars[random_int(0, strlen($allChars) - 1)];
-        }
-
-        // Shuffle the password
-        return str_shuffle($password);
+        return PasswordGenerator::generate($length);
     }
 
     public static function configure(Schema $schema): Schema

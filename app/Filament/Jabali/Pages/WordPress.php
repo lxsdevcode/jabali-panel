@@ -10,6 +10,7 @@ use App\Models\Domain;
 use App\Models\MysqlCredential;
 use App\Services\Agent\AgentResult;
 use App\Services\Agent\InteractsWithAgent;
+use App\Support\PasswordGenerator;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -315,25 +316,7 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
     public function generateSecurePassword(int $length = 16): string
     {
-        $lowercase = 'abcdefghijklmnopqrstuvwxyz';
-        $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        $numbers = '0123456789';
-        $special = '!@#$%^&*';
-
-        // Ensure at least one of each required type
-        $password = $lowercase[random_int(0, strlen($lowercase) - 1)]
-            .$uppercase[random_int(0, strlen($uppercase) - 1)]
-            .$numbers[random_int(0, strlen($numbers) - 1)]
-            .$special[random_int(0, strlen($special) - 1)];
-
-        // Fill the rest with random characters from all types
-        $allChars = $lowercase.$uppercase.$numbers.$special;
-        for ($i = strlen($password); $i < $length; $i++) {
-            $password .= $allChars[random_int(0, strlen($allChars) - 1)];
-        }
-
-        // Shuffle the password to randomize position of required characters
-        return str_shuffle($password);
+        return PasswordGenerator::generate($length);
     }
 
     public function closeCredentials(): void

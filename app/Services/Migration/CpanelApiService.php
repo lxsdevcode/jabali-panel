@@ -955,28 +955,6 @@ class CpanelApiService
     }
 
     /**
-     * Legacy method - kept for backward compatibility
-     *
-     * @deprecated Use createBackupToScpWithKey instead
-     */
-    public function createBackupToScp(
-        string $remoteHost,
-        string $remoteUser,
-        string $remotePath,
-        string $privateKey,
-        string $passphrase = '',
-        int $remotePort = 22
-    ): array {
-        // This method is deprecated - the key should be imported first
-        Log::warning('createBackupToScp is deprecated, use createBackupToScpWithKey instead');
-
-        return [
-            'success' => false,
-            'message' => 'This method is deprecated. Import the SSH key first using importSshKey(), then use createBackupToScpWithKey()',
-        ];
-    }
-
-    /**
      * Create a full backup and upload to remote server via SCP with password authentication
      */
     public function createBackupToScpWithPassword(
