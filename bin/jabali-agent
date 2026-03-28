@@ -17184,10 +17184,10 @@ function resticCmd(string $subcommand, string $repo = '', array $destination = [
         }
     }
 
-    // Build env string with proper escaping
+    // Build env string — keys are hardcoded constants (safe), values are escaped
     $envStr = '';
     foreach ($envVars as $k => $v) {
-        $envStr .= escapeshellarg($k) . '=' . escapeshellarg($v) . ' ';
+        $envStr .= $k . '=' . escapeshellarg($v) . ' ';
     }
 
     // Note: $subcommand is built internally with escapeshellarg() on all
