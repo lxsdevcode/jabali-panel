@@ -185,8 +185,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
                         ->requiresConfirmation()
                         ->modalDescription(__('Are you sure you want to restore these items?'))
                         ->action(fn () => $this->executeRestore()),
-                )
-                ->skippableSteps(),
+                ),
         ]);
     }
 
