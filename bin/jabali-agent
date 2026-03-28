@@ -17518,6 +17518,11 @@ function backupCreateServer(array $params): array
     $users       = $params['users'] ?? null;
     $destination = $params['destination'] ?? [];
     $repo        = ! empty($destination) ? resticRepoUrl($destination) : ($params['repo'] ?? '');
+    $includeFiles = $params['include_files'] ?? true;
+    $includeDbs   = $params['include_databases'] ?? true;
+    $includeMail  = $params['include_mailboxes'] ?? true;
+    $includeDns   = $params['include_dns'] ?? true;
+    $includeSsl   = $params['include_ssl'] ?? true;
 
     // Get user list
     if ($users === null || empty($users)) {
@@ -17529,34 +17534,134 @@ function backupCreateServer(array $params): array
         return ['success' => false, 'error' => 'No users to backup'];
     }
 
-    $results = [];
-    $errors = [];
-    $totalSize = 0;
-    $lastSnapshotId = null;
-
-    foreach ($users as $username) {
-        $result = backupCreate(array_merge($params, [
-            'username' => $username,
-            'destination' => $destination,
-            'repo' => $repo,
-        ]));
-
-        if ($result['success'] ?? false) {
-            $results[] = $username;
-            $totalSize += $result['size'] ?? 0;
-            $lastSnapshotId = $result['snapshot_id'] ?? $lastSnapshotId;
-        } else {
-            $errors[] = "{$username}: " . ($result['error'] ?? 'Unknown error');
-        }
+    // Ensure repo exists
+    if (! resticEnsureRepo($repo, $destination)) {
+        return ['success' => false, 'error' => 'Failed to initialize restic repository'];
     }
 
-    if (empty($results) && ! empty($errors)) {
-        return ['success' => false, 'error' => 'No users backed up. Errors: ' . implode('; ', $errors)];
+    // Collect ALL paths and stage ALL users' data, then create ONE snapshot
+    $allPaths = [];
+    $allDomains = [];
+    $allDatabases = [];
+    $allMailboxes = [];
+    $errors = [];
+    $backedUpUsers = [];
+
+    foreach ($users as $username) {
+        if (! validateUsername($username)) {
+            continue;
+        }
+        $homeDir = "/home/{$username}";
+        if (! is_dir($homeDir)) {
+            continue;
+        }
+
+        // Domain files
+        if ($includeFiles && is_dir("{$homeDir}/domains")) {
+            $allPaths[] = "{$homeDir}/domains";
+            $domains = array_values(array_filter(scandir("{$homeDir}/domains"), fn($d) => $d !== '.' && $d !== '..' && is_dir("{$homeDir}/domains/{$d}")));
+            $allDomains = array_merge($allDomains, $domains);
+        }
+
+        // Databases — stage under user home
+        if ($includeDbs) {
+            $dbDir = "{$homeDir}/.jabali-backup/databases";
+            @mkdir($dbDir, 0700, true);
+            $dbs = dumpUserDatabases($username, $dbDir);
+            if (! empty($dbs)) {
+                $allPaths[] = $dbDir;
+                $allDatabases = array_merge($allDatabases, $dbs);
+            }
+        }
+
+        // Mailboxes
+        if ($includeMail && is_dir('/var/mail/vhosts')) {
+            foreach ($allDomains as $domain) {
+                $mailPath = "/var/mail/vhosts/{$domain}";
+                if (is_dir($mailPath)) {
+                    $allPaths[] = $mailPath;
+                    $mboxUsers = array_filter(scandir($mailPath), fn($d) => $d !== '.' && $d !== '..');
+                    foreach ($mboxUsers as $m) {
+                        $allMailboxes[] = "{$m}@{$domain}";
+                    }
+                }
+            }
+        }
+
+        // SSL
+        if ($includeSsl) {
+            foreach ($allDomains as $domain) {
+                $certDir = "/etc/letsencrypt/live/{$domain}";
+                if (is_dir($certDir)) {
+                    $allPaths[] = $certDir;
+                }
+            }
+        }
+
+        // DNS
+        if ($includeDns) {
+            $dnsDir = "{$homeDir}/.jabali-backup/dns";
+            @mkdir($dnsDir, 0700, true);
+            foreach ($allDomains as $domain) {
+                $zo = [];
+                exec('pdnsutil list-zone ' . escapeshellarg($domain) . ' 2>/dev/null', $zo, $ret);
+                if ($ret === 0 && ! empty($zo)) {
+                    file_put_contents("{$dnsDir}/{$domain}.zone", implode("\n", $zo));
+                    $allPaths[] = "{$dnsDir}/{$domain}.zone";
+                }
+            }
+        }
+
+        // Manifest
+        $manifestDir = "{$homeDir}/.jabali-backup";
+        @mkdir($manifestDir, 0700, true);
+        file_put_contents("{$manifestDir}/manifest.json", json_encode([
+            'version' => '3.0', 'username' => $username, 'created_at' => date('c'),
+        ], JSON_PRETTY_PRINT));
+        $allPaths[] = "{$manifestDir}/manifest.json";
+
+        $backedUpUsers[] = $username;
+    }
+
+    if (empty($allPaths)) {
+        return ['success' => false, 'error' => 'Nothing to backup'];
+    }
+
+    // ONE restic backup for all users
+    $pathArgs = implode(' ', array_map('escapeshellarg', array_unique($allPaths)));
+    $excludes = '--exclude-caches --exclude=' . escapeshellarg('*.log')
+        . ' --exclude=' . escapeshellarg('node_modules')
+        . ' --exclude=' . escapeshellarg('vendor')
+        . ' --exclude=' . escapeshellarg('.cache');
+    $tags = '--tag ' . escapeshellarg('type:server');
+    foreach ($backedUpUsers as $u) {
+        $tags .= ' --tag ' . escapeshellarg("user:{$u}");
+    }
+
+    $result = resticCmd("backup {$pathArgs} {$excludes} {$tags} --json", $repo, $destination);
+
+    // Cleanup staging dirs
+    foreach ($backedUpUsers as $u) {
+        exec('rm -rf ' . escapeshellarg("/home/{$u}/.jabali-backup"));
+    }
+
+    if ($result['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Restic backup failed: ' . $result['output']];
+    }
+
+    $snapshotId = null;
+    $totalSize = 0;
+    foreach ($result['lines'] as $line) {
+        $json = @json_decode($line, true);
+        if ($json && ($json['message_type'] ?? '') === 'summary') {
+            $snapshotId = $json['snapshot_id'] ?? null;
+            $totalSize = $json['total_bytes_processed'] ?? 0;
+        }
     }
 
     return [
         'success' => true,
-        'snapshot_id' => $lastSnapshotId,
+        'snapshot_id' => $snapshotId,
         'size' => $totalSize,
         'users' => $results,
         'user_count' => count($results),
