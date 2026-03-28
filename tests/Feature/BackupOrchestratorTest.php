@@ -26,10 +26,12 @@ class BackupOrchestratorTest extends TestCase
         ]);
 
         $agent = Mockery::mock(AgentClient::class);
-        $agent->shouldReceive('backupCreateServer')
+        $agent->shouldReceive('send')
+            ->with('backup.create_server', Mockery::type('array'))
             ->once()
             ->andReturn([
                 'success' => true,
+                'snapshot_id' => 'abc12345',
                 'size' => 1024000,
                 'users' => ['admin'],
                 'user_count' => 1,
@@ -55,7 +57,8 @@ class BackupOrchestratorTest extends TestCase
         ]);
 
         $agent = Mockery::mock(AgentClient::class);
-        $agent->shouldReceive('backupCreateServer')
+        $agent->shouldReceive('send')
+            ->with('backup.create_server', Mockery::type('array'))
             ->once()
             ->andThrow(new \Exception('Disk full'));
 

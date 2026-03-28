@@ -38,14 +38,19 @@ class BackupOrchestrator
                 ? $backup->destination->getResticRepoUrl()
                 : '/var/backups/jabali/restic';
 
-            // Restic handles incrementals natively — every backup is incremental
-            $result = $this->agent->backupCreateServer($repo, [
+            // Pass full destination config so agent can handle SFTP/S3 auth
+            $destConfig = $backup->destination
+                ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
+                : [];
+
+            $result = $this->agent->send('backup.create_server', [
                 'users' => $backup->users,
                 'include_files' => $backup->include_files,
                 'include_databases' => $backup->include_databases,
                 'include_mailboxes' => $backup->include_mailboxes,
                 'include_dns' => $backup->include_dns,
                 'include_ssl' => $backup->include_ssl ?? true,
+                'destination' => $destConfig,
                 'repo' => $repo,
             ]);
 
@@ -114,7 +119,7 @@ class BackupOrchestrator
     public function testDestination(BackupDestination $destination): array
     {
         $config = $this->buildDestinationConfig($destination);
-        $result = $this->agent->backupTestDestination($config);
+        $result = $this->agent->send('backup.test_destination', ['destination' => $config]);
 
         $destination->update([
             'last_tested_at' => now(),
@@ -193,8 +198,13 @@ class BackupOrchestrator
                     ? $backup->destination->getResticRepoUrl()
                     : '/var/backups/jabali/restic';
 
+                $destConfig = $backup->destination
+                    ? $this->buildDestinationConfig($backup->destination)
+                    : [];
+
                 $this->agent->send('backup.delete', [
                     'snapshot_id' => $backup->snapshot_id,
+                    'destination' => $destConfig,
                     'repo' => $repo,
                 ]);
             } catch (Exception $e) {
