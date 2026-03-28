@@ -119,6 +119,10 @@ class RestoreBackup extends Page implements HasActions, HasForms
             $this->loadContents();
         }
 
+        if ($this->step === 2) {
+            $this->currentPath = $this->selectedUser ?? '';
+        }
+
         $this->step = min($this->step + 1, 4);
     }
 
@@ -208,7 +212,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
     public function setSection(string $section): void
     {
         $this->activeSection = $section;
-        $this->currentPath = '';
+        $this->currentPath = $this->selectedUser ?? '';
     }
 
     public function navigateTo(string $path): void
