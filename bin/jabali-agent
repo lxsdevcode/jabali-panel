@@ -17314,10 +17314,9 @@ function backupCreate(array $params): array
         return ['success' => false, 'error' => 'Failed to initialize restic repository'];
     }
 
-    // Staging directory for databases, metadata, DNS, SSL
-    $stageId = uniqid('backup_');
-    $stageDir = "/tmp/{$stageId}";
-    mkdir($stageDir, 0700, true);
+    // Stage under user's home so snapshot paths are organized per user
+    $stageDir = "{$homeDir}/.jabali-backup";
+    @mkdir($stageDir, 0700, true);
 
     $manifest = [
         'version' => '3.0',
@@ -17625,7 +17624,11 @@ function backupRestore(array $params): array
 
         // Restore databases
         if ($restoreDbs) {
-            $dbDirs = glob("{$restoreDir}/tmp/backup_*/databases");
+            // Check new path (under user home) and legacy path (under /tmp)
+            $dbDirs = glob("{$restoreDir}/home/{$username}/.jabali-backup/databases");
+            if (empty($dbDirs)) {
+                $dbDirs = glob("{$restoreDir}/tmp/backup_*/databases");
+            }
             $mysqlHost = $_ENV['MYSQL_HOST'] ?? 'localhost';
             $mysqlUser = $_ENV['MYSQL_USER'] ?? 'root';
             $mysqlPass = $_ENV['MYSQL_PASSWORD'] ?? '';
