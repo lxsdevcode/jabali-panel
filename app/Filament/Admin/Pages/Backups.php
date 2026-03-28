@@ -391,6 +391,9 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                                 ->default($record->frequency)->required(),
                             TextInput::make('time')->label(__('Time (HH:MM)'))->default($record->time)->required(),
                         ]),
+                        Select::make('destination_id')->label(__('Destination'))
+                            ->options(array_merge(['' => __('Local (default)')], BackupDestination::where('is_active', true)->pluck('name', 'id')->toArray()))
+                            ->default($record->destination_id),
                         TextInput::make('retention_count')->label(__('Keep last N backups'))
                             ->numeric()->default($record->retention_count)->minValue(1),
                     ])
@@ -399,6 +402,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             'name' => $data['name'],
                             'frequency' => $data['frequency'],
                             'time' => $data['time'],
+                            'destination_id' => ! empty($data['destination_id']) ? (int) $data['destination_id'] : null,
                             'retention_count' => (int) ($data['retention_count'] ?? 7),
                         ]);
                         Notification::make()->title(__('Schedule updated'))->success()->send();
