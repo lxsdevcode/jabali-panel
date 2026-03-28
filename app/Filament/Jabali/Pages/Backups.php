@@ -9,6 +9,7 @@ use App\Models\BackupDestination;
 use App\Models\BackupRestore;
 use App\Models\UserRemoteBackup;
 use App\Services\Agent\InteractsWithAgent;
+use App\Services\Backup\BackupOrchestrator;
 use App\Services\Migration\MigrationEmailProvisionService;
 use App\Support\Formatter;
 use App\Support\SafeError;
@@ -254,15 +255,14 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->modalDescription(__('Are you sure you want to delete this backup? This action cannot be undone.'))
                     ->action(function (Backup $record): void {
                         $user = $this->getUser();
-                        if ($record->local_path) {
-                            try {
-                                $this->agent()->backupDelete($user->username, $record->local_path);
-                            } catch (Exception) {
-                                // Continue anyway
-                            }
+
+                        try {
+                            $orchestrator = app(BackupOrchestrator::class);
+                            $orchestrator->deleteUserBackup($user, $record);
+                            Notification::make()->title(__('Backup deleted'))->success()->send();
+                        } catch (Exception $e) {
+                            Notification::make()->title(__('Delete failed'))->body(SafeError::message($e))->danger()->send();
                         }
-                        $record->delete();
-                        Notification::make()->title(__('Backup deleted'))->success()->send();
                     }),
             ])
             ->emptyStateHeading(__('No backups yet'))
@@ -584,60 +584,18 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     public function createBackup(array $data): void
     {
         $user = $this->getUser();
-        $timestamp = now()->format('Y-m-d_His');
-        $filename = "backup_{$timestamp}.tar.gz";
-        $outputPath = "/home/{$user->username}/backups/{$filename}";
+        $orchestrator = app(BackupOrchestrator::class);
         $destinationId = ! empty($data['destination_id']) ? (int) $data['destination_id'] : null;
 
-        $backup = Backup::create([
-            'user_id' => $user->id,
-            'name' => $data['name'],
-            'filename' => $filename,
-            'type' => 'full',
-            'include_files' => $data['include_files'] ?? true,
-            'include_databases' => $data['include_databases'] ?? true,
-            'include_mailboxes' => $data['include_mailboxes'] ?? true,
-            'destination_id' => $destinationId,
-            'status' => 'pending',
-            'local_path' => $outputPath,
-        ]);
-
         try {
-            $backup->update(['status' => 'running', 'started_at' => now()]);
+            $backup = $orchestrator->createUserBackup($user, $data);
 
-            $result = $this->agent()->backupCreate($user->username, $outputPath, [
-                'include_files' => $data['include_files'] ?? true,
-                'include_databases' => $data['include_databases'] ?? true,
-                'include_mailboxes' => $data['include_mailboxes'] ?? true,
-                'include_ssl' => $data['include_ssl'] ?? true,
-            ]);
-
-            if ($result['success']) {
-                $backup->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                    'size_bytes' => $result['size'] ?? 0,
-                    'checksum' => $result['checksum'] ?? null,
-                    'domains' => $result['domains'] ?? null,
-                    'databases' => $result['databases'] ?? null,
-                    'mailboxes' => $result['mailboxes'] ?? null,
-                ]);
-
-                // Upload to SFTP if destination selected
-                if ($destinationId) {
-                    $this->uploadBackupToDestination($backup, $destinationId);
-                } else {
-                    Notification::make()->title(__('Backup created successfully'))->success()->send();
-                }
+            if ($destinationId) {
+                $this->uploadBackupToDestination($backup, $destinationId);
             } else {
-                throw new Exception($result['error'] ?? 'Backup failed');
+                Notification::make()->title(__('Backup created successfully'))->success()->send();
             }
         } catch (Exception $e) {
-            $backup->update([
-                'status' => 'failed',
-                'completed_at' => now(),
-                'error_message' => $e->getMessage(),
-            ]);
             Notification::make()->title(__('Backup failed'))->body(SafeError::message($e))->danger()->send();
         }
 
@@ -664,7 +622,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         $backup->update(['destination_id' => $destination->id]);
         $backup->load('destination');
 
-        $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
+        $orchestrator = app(BackupOrchestrator::class);
         $success = $orchestrator->uploadToRemote($backup, true);
 
         if ($success) {
@@ -712,17 +670,14 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     return;
                 }
 
-                // Delete the file
-                if ($backup->local_path) {
-                    try {
-                        $this->agent()->backupDelete($user->username, $backup->local_path);
-                    } catch (Exception $e) {
-                        // Continue anyway
-                    }
+                try {
+                    $orchestrator = app(BackupOrchestrator::class);
+                    $orchestrator->deleteUserBackup($user, $backup);
+                    Notification::make()->title(__('Backup deleted'))->success()->send();
+                } catch (Exception $e) {
+                    Notification::make()->title(__('Delete failed'))->body(SafeError::message($e))->danger()->send();
                 }
 
-                $backup->delete();
-                Notification::make()->title(__('Backup deleted'))->success()->send();
                 $this->resetTable();
             });
     }
@@ -764,23 +719,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     public function downloadFromRemote(int $destinationId, string $remotePath): void
     {
         $user = $this->getUser();
-        $destination = BackupDestination::where('id', $destinationId)
-            ->where('user_id', $user->id)
-            ->first();
-
-        if (! $destination) {
-            Notification::make()->title(__('Destination not found'))->danger()->send();
-
-            return;
-        }
-
-        // Create a timestamped tar.gz filename
-        // remotePath is like "2026-01-20_143000/user", extract the date part
-        $pathParts = explode('/', trim($remotePath, '/'));
-        $backupDate = $pathParts[0] ?? now()->format('Y-m-d_His');
-        $timestamp = now()->format('Y-m-d_His');
-        $filename = "backup_{$timestamp}.tar.gz";
-        $localPath = "/home/{$user->username}/backups/{$filename}";
+        $orchestrator = app(BackupOrchestrator::class);
 
         try {
             Notification::make()
@@ -789,58 +728,31 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 ->info()
                 ->send();
 
-            $config = array_merge($destination->config ?? [], ['type' => $destination->type]);
+            $backup = $orchestrator->downloadFromRemote($user, $destinationId, $remotePath);
 
-            // Use the new agent action that creates a tar.gz archive
-            $result = $this->agent()->send('backup.download_user_archive', [
-                'username' => $user->username,
-                'remote_path' => $remotePath,
-                'destination' => $config,
-                'output_path' => $localPath,
-            ]);
+            $sizeFormatted = Formatter::bytes($backup->size_bytes ?? 0);
+            $downloadUrl = url('/jabali-panel/backup-download?path='.base64_encode($backup->local_path));
 
-            if ($result['success'] ?? false) {
-                // Create backup record
-                $backup = Backup::create([
-                    'user_id' => $user->id,
-                    'name' => "Server Backup ({$backupDate})",
-                    'filename' => $filename,
-                    'type' => 'full',
-                    'status' => 'completed',
-                    'local_path' => $localPath,
-                    'size_bytes' => $result['size'] ?? 0,
-                    'completed_at' => now(),
-                ]);
+            Notification::make()
+                ->title(__('Backup Ready'))
+                ->body(__('Your backup (:size) can be downloaded from My Backups or from your backups folder.', ['size' => $sizeFormatted]))
+                ->success()
+                ->persistent()
+                ->actions([
+                    Action::make('download')
+                        ->label(__('Download'))
+                        ->url($downloadUrl)
+                        ->openUrlInNewTab()
+                        ->button(),
+                    Action::make('close')
+                        ->label(__('Close'))
+                        ->close()
+                        ->color('gray'),
+                ])
+                ->send();
 
-                // Format size for display
-                $sizeFormatted = Formatter::bytes($result['size'] ?? 0);
-
-                // Create download URL
-                $downloadUrl = url('/jabali-panel/backup-download?path='.base64_encode($localPath));
-
-                Notification::make()
-                    ->title(__('Backup Ready'))
-                    ->body(__('Your backup (:size) can be downloaded from My Backups or from your backups folder.', ['size' => $sizeFormatted]))
-                    ->success()
-                    ->persistent()
-                    ->actions([
-                        \Filament\Actions\Action::make('download')
-                            ->label(__('Download'))
-                            ->url($downloadUrl)
-                            ->openUrlInNewTab()
-                            ->button(),
-                        \Filament\Actions\Action::make('close')
-                            ->label(__('Close'))
-                            ->close()
-                            ->color('gray'),
-                    ])
-                    ->send();
-
-                $this->setTab('local');
-                $this->resetTable();
-            } else {
-                throw new Exception($result['error'] ?? 'Download failed');
-            }
+            $this->setTab('local');
+            $this->resetTable();
         } catch (Exception $e) {
             Notification::make()->title(__('Download failed'))->body(SafeError::message($e))->danger()->send();
         }
@@ -930,47 +842,21 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        $restore = BackupRestore::create([
-            'backup_id' => $backup->id,
-            'user_id' => $user->id,
-            'restore_files' => $data['restore_files'] ?? true,
-            'restore_databases' => $data['restore_databases'] ?? true,
-            'restore_mailboxes' => $data['restore_mailboxes'] ?? true,
-            'selected_domains' => ! empty($data['selected_domains']) ? $data['selected_domains'] : null,
-            'selected_databases' => ! empty($data['selected_databases']) ? $data['selected_databases'] : null,
-            'selected_mailboxes' => ! empty($data['selected_mailboxes']) ? $data['selected_mailboxes'] : null,
-            'status' => 'pending',
-        ]);
+        $orchestrator = app(BackupOrchestrator::class);
+        $result = $orchestrator->restoreBackup($user, $backup, $data);
 
-        try {
-            $restore->markAsRunning();
-
-            $result = $this->agent()->backupRestore($user->username, $backup->local_path, [
-                'restore_files' => $data['restore_files'] ?? true,
-                'restore_databases' => $data['restore_databases'] ?? true,
-                'restore_mailboxes' => $data['restore_mailboxes'] ?? true,
-                'selected_domains' => ! empty($data['selected_domains']) ? $data['selected_domains'] : null,
-                'selected_databases' => ! empty($data['selected_databases']) ? $data['selected_databases'] : null,
-                'selected_mailboxes' => ! empty($data['selected_mailboxes']) ? $data['selected_mailboxes'] : null,
-            ]);
-
-            if ($result['success']) {
-                $restore->markAsCompleted($result['restored'] ?? []);
-                Notification::make()
-                    ->title(__('Restore completed'))
-                    ->body(__('Restored: :domains domains, :databases databases, :mailboxes mailboxes', [
-                        'domains' => $result['files_count'],
-                        'databases' => $result['databases_count'],
-                        'mailboxes' => $result['mailboxes_count'],
-                    ]))
-                    ->success()
-                    ->send();
-            } else {
-                throw new Exception($result['error'] ?? 'Restore failed');
-            }
-        } catch (Exception $e) {
-            $restore->markAsFailed($e->getMessage());
-            Notification::make()->title(__('Restore failed'))->body(SafeError::message($e))->danger()->send();
+        if ($result['success']) {
+            Notification::make()
+                ->title(__('Restore completed'))
+                ->body(__('Restored: :domains domains, :databases databases, :mailboxes mailboxes', [
+                    'domains' => $result['result']['files_count'] ?? 0,
+                    'databases' => $result['result']['databases_count'] ?? 0,
+                    'mailboxes' => $result['result']['mailboxes_count'] ?? 0,
+                ]))
+                ->success()
+                ->send();
+        } else {
+            Notification::make()->title(__('Restore failed'))->body($result['error'])->danger()->send();
         }
 
         $this->resetTable();
@@ -1108,17 +994,10 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     public function testUserDestination(int $id): void
     {
         $user = $this->getUser();
-        $destination = BackupDestination::where('id', $id)->where('user_id', $user->id)->first();
-
-        if (! $destination) {
-            Notification::make()->title(__('Destination not found'))->danger()->send();
-
-            return;
-        }
+        $orchestrator = app(BackupOrchestrator::class);
 
         try {
-            $orchestrator = app(\App\Services\Backup\BackupOrchestrator::class);
-            $result = $orchestrator->testDestination($destination);
+            $result = $orchestrator->testUserDestination($user, $id);
 
             if ($result['success'] ?? false) {
                 Notification::make()->title(__('Connection successful'))->success()->send();

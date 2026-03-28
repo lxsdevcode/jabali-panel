@@ -7,7 +7,9 @@ namespace App\Services\Backup;
 use App\Jobs\IndexRemoteBackups;
 use App\Models\Backup;
 use App\Models\BackupDestination;
+use App\Models\BackupRestore;
 use App\Models\BackupSchedule;
+use App\Models\User;
 use App\Services\AdminNotificationService;
 use App\Services\Agent\AgentClient;
 use Exception;
@@ -386,6 +388,203 @@ class BackupOrchestrator
         }
 
         return array_unique($result);
+    }
+
+    /**
+     * Create a user-scoped backup via the agent.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function createUserBackup(User $user, array $data): Backup
+    {
+        $timestamp = now()->format('Y-m-d_His');
+        $filename = "backup_{$timestamp}.tar.gz";
+        $outputPath = "/home/{$user->username}/backups/{$filename}";
+        $destinationId = ! empty($data['destination_id']) ? (int) $data['destination_id'] : null;
+
+        $backup = Backup::create([
+            'user_id' => $user->id,
+            'name' => $data['name'],
+            'filename' => $filename,
+            'type' => 'full',
+            'include_files' => $data['include_files'] ?? true,
+            'include_databases' => $data['include_databases'] ?? true,
+            'include_mailboxes' => $data['include_mailboxes'] ?? true,
+            'destination_id' => $destinationId,
+            'status' => 'pending',
+            'local_path' => $outputPath,
+        ]);
+
+        $backup->update(['status' => 'running', 'started_at' => now()]);
+
+        $result = $this->agent->backupCreate($user->username, $outputPath, [
+            'include_files' => $data['include_files'] ?? true,
+            'include_databases' => $data['include_databases'] ?? true,
+            'include_mailboxes' => $data['include_mailboxes'] ?? true,
+            'include_ssl' => $data['include_ssl'] ?? true,
+        ]);
+
+        if (! ($result['success'] ?? false)) {
+            $backup->update([
+                'status' => 'failed',
+                'completed_at' => now(),
+                'error_message' => $result['error'] ?? 'Backup failed',
+            ]);
+
+            throw new Exception($result['error'] ?? 'Backup failed');
+        }
+
+        $backup->update([
+            'status' => 'completed',
+            'completed_at' => now(),
+            'size_bytes' => $result['size'] ?? 0,
+            'checksum' => $result['checksum'] ?? null,
+            'domains' => $result['domains'] ?? null,
+            'databases' => $result['databases'] ?? null,
+            'mailboxes' => $result['mailboxes'] ?? null,
+        ]);
+
+        return $backup;
+    }
+
+    /**
+     * Restore a user-scoped backup via the agent.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, result: array<string, mixed>, error: string}
+     */
+    public function restoreBackup(User $user, Backup $backup, array $options): array
+    {
+        if ($backup->user_id !== $user->id) {
+            return ['success' => false, 'result' => [], 'error' => 'Backup not found'];
+        }
+
+        $restore = BackupRestore::create([
+            'backup_id' => $backup->id,
+            'user_id' => $user->id,
+            'restore_files' => $options['restore_files'] ?? true,
+            'restore_databases' => $options['restore_databases'] ?? true,
+            'restore_mailboxes' => $options['restore_mailboxes'] ?? true,
+            'selected_domains' => ! empty($options['selected_domains']) ? $options['selected_domains'] : null,
+            'selected_databases' => ! empty($options['selected_databases']) ? $options['selected_databases'] : null,
+            'selected_mailboxes' => ! empty($options['selected_mailboxes']) ? $options['selected_mailboxes'] : null,
+            'status' => 'pending',
+        ]);
+
+        try {
+            $restore->markAsRunning();
+
+            $result = $this->agent->backupRestore($user->username, $backup->local_path, [
+                'restore_files' => $options['restore_files'] ?? true,
+                'restore_databases' => $options['restore_databases'] ?? true,
+                'restore_mailboxes' => $options['restore_mailboxes'] ?? true,
+                'selected_domains' => ! empty($options['selected_domains']) ? $options['selected_domains'] : null,
+                'selected_databases' => ! empty($options['selected_databases']) ? $options['selected_databases'] : null,
+                'selected_mailboxes' => ! empty($options['selected_mailboxes']) ? $options['selected_mailboxes'] : null,
+            ]);
+
+            if ($result['success'] ?? false) {
+                $restore->markAsCompleted($result['restored'] ?? []);
+
+                return [
+                    'success' => true,
+                    'result' => $result,
+                    'error' => '',
+                ];
+            }
+
+            throw new Exception($result['error'] ?? 'Restore failed');
+        } catch (Exception $e) {
+            $restore->markAsFailed($e->getMessage());
+
+            return [
+                'success' => false,
+                'result' => [],
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Download a user backup from a remote destination.
+     */
+    public function downloadFromRemote(User $user, int $destinationId, string $remotePath): Backup
+    {
+        $destination = BackupDestination::where('id', $destinationId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (! $destination) {
+            throw new Exception('Destination not found');
+        }
+
+        $pathParts = explode('/', trim($remotePath, '/'));
+        $backupDate = $pathParts[0] ?? now()->format('Y-m-d_His');
+        $timestamp = now()->format('Y-m-d_His');
+        $filename = "backup_{$timestamp}.tar.gz";
+        $localPath = "/home/{$user->username}/backups/{$filename}";
+
+        $config = $this->buildDestinationConfig($destination);
+
+        $result = $this->agent->send('backup.download_user_archive', [
+            'username' => $user->username,
+            'remote_path' => $remotePath,
+            'destination' => $config,
+            'output_path' => $localPath,
+        ]);
+
+        if (! ($result['success'] ?? false)) {
+            throw new Exception($result['error'] ?? 'Download failed');
+        }
+
+        return Backup::create([
+            'user_id' => $user->id,
+            'name' => "Server Backup ({$backupDate})",
+            'filename' => $filename,
+            'type' => 'full',
+            'status' => 'completed',
+            'local_path' => $localPath,
+            'size_bytes' => $result['size'] ?? 0,
+            'completed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Test a user-scoped backup destination.
+     *
+     * @return array<string, mixed>
+     */
+    public function testUserDestination(User $user, int $destinationId): array
+    {
+        $destination = BackupDestination::where('id', $destinationId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (! $destination) {
+            throw new Exception('Destination not found');
+        }
+
+        return $this->testDestination($destination);
+    }
+
+    /**
+     * Delete a user-scoped backup (local file and DB record).
+     */
+    public function deleteUserBackup(User $user, Backup $backup): void
+    {
+        if ($backup->user_id !== $user->id) {
+            throw new Exception('Backup not found');
+        }
+
+        if ($backup->local_path) {
+            try {
+                $this->agent->backupDelete($user->username, $backup->local_path);
+            } catch (Exception $e) {
+                Log::warning("BackupOrchestrator: Failed to delete local file for backup {$backup->id}: ".$e->getMessage());
+            }
+        }
+
+        $backup->delete();
     }
 
     /**
