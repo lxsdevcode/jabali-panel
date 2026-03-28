@@ -4206,6 +4206,7 @@ upgrade_infra() {
     setup_queue_service
     setup_scheduler_cron
     setup_logrotate
+    setup_restic
     setup_self_healing
 
     # Restart services to pick up changes

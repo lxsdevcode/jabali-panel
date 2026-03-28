@@ -17909,20 +17909,49 @@ function backupTestDestination(array $params): array
     $destination = $params['destination'] ?? $params;
     $type = $destination['type'] ?? 'local';
 
+    // Check prerequisites
+    $passwordFile = '/etc/jabali/restic-password';
+    if (! file_exists($passwordFile)) {
+        // Auto-create if missing
+        @mkdir('/etc/jabali', 0750, true);
+        file_put_contents($passwordFile, bin2hex(random_bytes(32)));
+        chmod($passwordFile, 0600);
+    }
+
     if ($type === 'local') {
         $path = $destination['path'] ?? '/var/backups/jabali/restic';
-        return [
-            'success' => is_dir($path) || mkdir($path, 0755, true),
-            'message' => is_dir($path) ? 'Local path accessible' : 'Cannot create directory',
-        ];
+        if (! is_dir($path)) {
+            mkdir($path, 0755, true);
+        }
+        if (resticEnsureRepo($path, [])) {
+            return ['success' => true, 'message' => 'Local repository ready'];
+        }
+        return ['success' => false, 'error' => 'Failed to initialize local repository'];
     }
 
     $repo = resticRepoUrl($destination);
-    if (resticEnsureRepo($repo, $destination)) {
-        return ['success' => true, 'message' => 'Connection successful'];
+
+    // Try to connect — capture error for better reporting
+    $check = resticCmd('snapshots --json --latest 1', $repo, $destination);
+    if ($check['exitCode'] === 0) {
+        return ['success' => true, 'message' => 'Connection successful, repository exists'];
     }
 
-    return ['success' => false, 'error' => 'Connection failed'];
+    // Try to init new repo
+    $init = resticCmd('init', $repo, $destination);
+    if ($init['exitCode'] === 0) {
+        return ['success' => true, 'message' => 'Connection successful, repository initialized'];
+    }
+
+    // Return actual error from restic
+    $error = $init['output'] ?: $check['output'];
+    // Extract the useful part from JSON error
+    $jsonError = @json_decode($error, true);
+    if ($jsonError && isset($jsonError['message'])) {
+        $error = $jsonError['message'];
+    }
+
+    return ['success' => false, 'error' => $error ?: 'Connection failed'];
 }
 
 // ── Aliases for panel compatibility ─────────────────────────────────────────
