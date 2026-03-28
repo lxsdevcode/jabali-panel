@@ -562,8 +562,14 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 Select::make('type')
                     ->label(__('Type'))
                     ->options([
-                        'sftp' => __('SFTP Server'),
-                        's3' => __('S3-Compatible Storage'),
+                        'sftp' => __('SFTP / SSH'),
+                        's3' => __('Amazon S3'),
+                        'b2' => __('Backblaze B2'),
+                        'wasabi' => __('Wasabi'),
+                        'minio' => __('MinIO / S3-Compatible'),
+                        'gcs' => __('Google Cloud Storage'),
+                        'azure' => __('Azure Blob Storage'),
+                        'rest' => __('Restic REST Server'),
                         'local' => __('Local Path'),
                     ])
                     ->required()
@@ -601,25 +607,65 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->label(__('Remote Path'))
                     ->default('/backups')
                     ->visible(fn ($get) => in_array($get('type'), ['sftp', 'local'])),
-                // S3 fields
+                // S3-compatible fields (S3, Wasabi, MinIO, B2)
                 TextInput::make('endpoint')
-                    ->label(__('S3 Endpoint'))
-                    ->placeholder('https://s3.amazonaws.com')
-                    ->visible(fn ($get) => $get('type') === 's3')
-                    ->required(fn ($get) => $get('type') === 's3'),
+                    ->label(__('Endpoint'))
+                    ->placeholder(fn ($get) => match ($get('type')) {
+                        's3' => 'https://s3.amazonaws.com',
+                        'b2' => 'https://s3.us-west-000.backblazeb2.com',
+                        'wasabi' => 'https://s3.wasabisys.com',
+                        'minio' => 'https://minio.example.com:9000',
+                        default => 'https://s3.amazonaws.com',
+                    })
+                    ->visible(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio']))
+                    ->required(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio'])),
                 TextInput::make('bucket')
                     ->label(__('Bucket'))
-                    ->visible(fn ($get) => $get('type') === 's3')
-                    ->required(fn ($get) => $get('type') === 's3'),
+                    ->visible(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio', 'gcs']))
+                    ->required(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio', 'gcs'])),
                 TextInput::make('access_key')
-                    ->label(__('Access Key'))
-                    ->visible(fn ($get) => $get('type') === 's3')
+                    ->label(fn ($get) => match ($get('type')) {
+                        'b2' => __('Application Key ID'),
+                        'gcs' => __('Project ID'),
+                        default => __('Access Key'),
+                    })
+                    ->visible(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio', 'gcs']))
                     ->required(fn ($get) => $get('type') === 's3'),
                 TextInput::make('secret_key')
-                    ->label(__('Secret Key'))
+                    ->label(fn ($get) => match ($get('type')) {
+                        'b2' => __('Application Key'),
+                        default => __('Secret Key'),
+                    })
                     ->password()
-                    ->visible(fn ($get) => $get('type') === 's3')
-                    ->required(fn ($get) => $get('type') === 's3'),
+                    ->visible(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio', 'gcs']))
+                    ->required(fn ($get) => in_array($get('type'), ['s3', 'b2', 'wasabi', 'minio', 'gcs'])),
+                // Azure fields
+                TextInput::make('azure_account')
+                    ->label(__('Storage Account'))
+                    ->visible(fn ($get) => $get('type') === 'azure')
+                    ->required(fn ($get) => $get('type') === 'azure'),
+                TextInput::make('azure_key')
+                    ->label(__('Account Key'))
+                    ->password()
+                    ->visible(fn ($get) => $get('type') === 'azure')
+                    ->required(fn ($get) => $get('type') === 'azure'),
+                TextInput::make('azure_container')
+                    ->label(__('Container'))
+                    ->visible(fn ($get) => $get('type') === 'azure')
+                    ->required(fn ($get) => $get('type') === 'azure'),
+                // REST server
+                TextInput::make('rest_url')
+                    ->label(__('REST Server URL'))
+                    ->placeholder('https://backup.example.com:8000')
+                    ->visible(fn ($get) => $get('type') === 'rest')
+                    ->required(fn ($get) => $get('type') === 'rest'),
+                TextInput::make('rest_username')
+                    ->label(__('Username'))
+                    ->visible(fn ($get) => $get('type') === 'rest'),
+                TextInput::make('rest_password')
+                    ->label(__('Password'))
+                    ->password()
+                    ->visible(fn ($get) => $get('type') === 'rest'),
             ])
             ->action(function (array $data): void {
                 $type = $data['type'];
@@ -704,27 +750,41 @@ class Backups extends Page implements HasActions, HasForms, HasTable
 
     private function buildConfig(string $type, array $data): array
     {
+        $base = ['type' => $type];
+
         return match ($type) {
-            'sftp' => [
-                'type' => 'sftp',
+            'sftp' => array_merge($base, [
                 'host' => $data['host'] ?? '',
                 'port' => (int) ($data['port'] ?? 22),
                 'username' => $data['username'] ?? '',
                 'password' => $data['password'] ?? '',
                 'private_key' => $data['private_key'] ?? '',
                 'path' => $data['path'] ?? '/backups',
-            ],
-            's3' => [
-                'type' => 's3',
+            ]),
+            's3', 'b2', 'wasabi', 'minio' => array_merge($base, [
                 'endpoint' => $data['endpoint'] ?? '',
                 'bucket' => $data['bucket'] ?? '',
                 'access_key' => $data['access_key'] ?? '',
                 'secret_key' => $data['secret_key'] ?? '',
-            ],
-            default => [
-                'type' => 'local',
+            ]),
+            'gcs' => array_merge($base, [
+                'bucket' => $data['bucket'] ?? '',
+                'access_key' => $data['access_key'] ?? '',
+                'secret_key' => $data['secret_key'] ?? '',
+            ]),
+            'azure' => array_merge($base, [
+                'account' => $data['azure_account'] ?? '',
+                'key' => $data['azure_key'] ?? '',
+                'container' => $data['azure_container'] ?? '',
+            ]),
+            'rest' => array_merge($base, [
+                'url' => $data['rest_url'] ?? '',
+                'username' => $data['rest_username'] ?? '',
+                'password' => $data['rest_password'] ?? '',
+            ]),
+            default => array_merge($base, [
                 'path' => $data['path'] ?? '/var/backups/jabali/restic',
-            ],
+            ]),
         };
     }
 

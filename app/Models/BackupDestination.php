@@ -115,17 +115,18 @@ class BackupDestination extends Model
 
         return match ($this->type) {
             'local' => $config['path'] ?? '/var/backups/jabali/restic',
-            'sftp' => sprintf(
-                'sftp:%s@%s:%s',
+            'sftp' => sprintf('sftp:%s@%s:%s',
                 $config['username'] ?? 'backup',
                 $config['host'] ?? 'localhost',
                 $config['path'] ?? '/backups',
             ),
-            's3' => sprintf(
-                's3:%s/%s',
+            's3', 'b2', 'wasabi', 'minio' => sprintf('s3:%s/%s',
                 $config['endpoint'] ?? 'https://s3.amazonaws.com',
                 $config['bucket'] ?? 'jabali-backups',
             ),
+            'gcs' => sprintf('gs:%s/', $config['bucket'] ?? 'jabali-backups'),
+            'azure' => sprintf('azure:%s:/', $config['container'] ?? 'jabali-backups'),
+            'rest' => sprintf('rest:%s', rtrim($config['url'] ?? 'http://localhost:8000', '/')),
             default => '/var/backups/jabali/restic',
         };
     }
