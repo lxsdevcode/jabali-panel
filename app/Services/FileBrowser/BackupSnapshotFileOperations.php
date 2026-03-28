@@ -89,11 +89,16 @@ class BackupSnapshotFileOperations implements FileOperations
 
         // Sort: parent (..) first, then directories, then files — alphabetical within each group
         usort($items, function ($a, $b) {
-            if (! empty($a['is_parent'])) return -1;
-            if (! empty($b['is_parent'])) return 1;
+            if (! empty($a['is_parent'])) {
+                return -1;
+            }
+            if (! empty($b['is_parent'])) {
+                return 1;
+            }
             if (($a['is_dir'] ?? false) !== ($b['is_dir'] ?? false)) {
                 return ($a['is_dir'] ?? false) ? -1 : 1;
             }
+
             return strcasecmp($a['name'], $b['name']);
         });
 
