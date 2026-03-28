@@ -65,6 +65,8 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public string $conflictMode = 'overwrite';
 
+    public string $restoreMode = 'full';
+
     public bool $restoreInProgress = false;
 
     // ── Mount ───────────────────────────────────────────────────────────
@@ -142,14 +144,24 @@ class RestoreBackup extends Page implements HasActions, HasForms
                         $this->loadContents();
                     }),
 
-                Step::make(__('Contents'))
-                    ->icon(Heroicon::OutlinedRectangleGroup)
+                Step::make(__('Restore Mode'))
+                    ->icon(Heroicon::OutlinedArrowsPointingOut)
                     ->schema([
+                        Select::make('restoreMode')
+                            ->label(__('How would you like to restore?'))
+                            ->options([
+                                'full' => __('Full account restore — restore everything'),
+                                'selective' => __('Selective restore — choose specific items'),
+                            ])
+                            ->default('full')
+                            ->required()
+                            ->live(),
                         View::make('filament.admin.pages.restore-backup-contents'),
                     ]),
 
                 Step::make(__('Select Items'))
                     ->icon(Heroicon::OutlinedListBullet)
+                    ->visible(fn () => $this->restoreMode === 'selective')
                     ->schema([
                         View::make('filament.admin.pages.restore-backup-browser'),
                     ])
@@ -167,7 +179,11 @@ class RestoreBackup extends Page implements HasActions, HasForms
                         Placeholder::make('restore_backup')
                             ->label(__('Backup'))
                             ->content(fn () => $this->getBackup()?->name ?? '-'),
-                        View::make('filament.admin.pages.restore-backup-confirm'),
+                        Placeholder::make('restore_mode_info')
+                            ->label(__('Mode'))
+                            ->content(fn () => $this->restoreMode === 'full' ? __('Full account restore') : __('Selective restore')),
+                        View::make('filament.admin.pages.restore-backup-confirm')
+                            ->visible(fn () => $this->restoreMode === 'selective'),
                         Select::make('conflictMode')
                             ->label(__('Conflict resolution'))
                             ->options([
@@ -317,18 +333,30 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
         try {
             $orchestrator = app(BackupOrchestrator::class);
-            $result = $orchestrator->restoreBackup($user, $backup, [
-                'restore_files' => ! empty($this->selectedPaths) || ! empty($this->contents['domains']),
-                'restore_databases' => ! empty($this->selectedDatabases),
-                'restore_mailboxes' => ! empty($this->selectedMailboxes),
-                'conflict_mode' => $this->conflictMode,
-                'selected_domains' => ! empty($this->selectedPaths)
-                    ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/'))
-                    : ($this->contents['domains'] ?? null),
-                'selected_databases' => $this->selectedDatabases ?: null,
-                'selected_mailboxes' => $this->selectedMailboxes ?: null,
-                'selected_files' => array_filter($this->selectedPaths, fn ($p) => str_contains($p, '/')),
-            ]);
+
+            if ($this->restoreMode === 'full') {
+                $options = [
+                    'restore_files' => true,
+                    'restore_databases' => true,
+                    'restore_mailboxes' => true,
+                    'conflict_mode' => $this->conflictMode,
+                ];
+            } else {
+                $options = [
+                    'restore_files' => ! empty($this->selectedPaths) || ! empty($this->contents['domains']),
+                    'restore_databases' => ! empty($this->selectedDatabases),
+                    'restore_mailboxes' => ! empty($this->selectedMailboxes),
+                    'conflict_mode' => $this->conflictMode,
+                    'selected_domains' => ! empty($this->selectedPaths)
+                        ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/'))
+                        : ($this->contents['domains'] ?? null),
+                    'selected_databases' => $this->selectedDatabases ?: null,
+                    'selected_mailboxes' => $this->selectedMailboxes ?: null,
+                    'selected_files' => array_filter($this->selectedPaths, fn ($p) => str_contains($p, '/')),
+                ];
+            }
+
+            $result = $orchestrator->restoreBackup($user, $backup, $options);
 
             if ($result['success'] ?? false) {
                 Notification::make()
