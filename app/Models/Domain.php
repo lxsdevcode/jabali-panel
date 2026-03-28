@@ -16,50 +16,8 @@ class Domain extends Model
 
     protected static function booted(): void
     {
-        // Clean up related records when a domain is deleted
         static::deleting(function (Domain $domain) {
-            // Clean up email forwarders from system maps before DB cascade deletes them
-            try {
-                $agent = app(\App\Services\Agent\AgentClient::class);
-                $domain->loadMissing('user', 'emailDomain.forwarders');
-                $username = $domain->user?->username;
-
-                if ($username && $domain->emailDomain) {
-                    foreach ($domain->emailDomain->forwarders as $forwarder) {
-                        $agent->send('email.forwarder_delete', [
-                            'username' => $username,
-                            'email' => $forwarder->email,
-                        ]);
-                    }
-                }
-            } catch (\Exception $e) {
-                \Log::warning("Failed to delete email forwarders for domain {$domain->domain}: ".$e->getMessage());
-            }
-
-            // Delete SSL certificates (web and mail)
-            $domain->sslCertificates()->delete();
-
-            // Delete DNS records
-            $domain->dnsRecords()->delete();
-
-            // Delete redirects
-            $domain->redirects()->delete();
-
-            // Delete hotlink settings
-            $domain->hotlinkSetting?->delete();
-
-            // Delete aliases
-            $domain->aliases()->delete();
-
-            // Delete email domain and related records
-            if ($domain->emailDomain) {
-                // Delete mailboxes (which will cascade to autoresponders)
-                $domain->emailDomain->mailboxes()->delete();
-                // Delete forwarders
-                $domain->emailDomain->forwarders()->delete();
-                // Delete email domain
-                $domain->emailDomain->delete();
-            }
+            app(\App\Services\DomainDeletionService::class)->beforeDelete($domain);
         });
     }
 

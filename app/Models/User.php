@@ -56,63 +56,7 @@ class User extends Authenticatable implements FilamentUser
     protected static function booted()
     {
         static::deleting(function ($user) {
-            if ($user->is_admin && (int) $user->getKey() === 1) {
-                throw new \RuntimeException(__('Primary admin account cannot be deleted.'));
-            }
-
-            // Clean up email forwarders from system maps before DB cascade deletes them
-            try {
-                $agent = app(\App\Services\Agent\AgentClient::class);
-                $domains = $user->domains()->with('emailDomain.forwarders', 'emailDomain.domain')->get();
-
-                foreach ($domains as $domain) {
-                    $forwarders = $domain->emailDomain?->forwarders ?? collect();
-                    foreach ($forwarders as $forwarder) {
-                        $agent->send('email.forwarder_delete', [
-                            'username' => $user->username,
-                            'email' => $forwarder->email,
-                        ]);
-                    }
-                }
-            } catch (\Throwable $e) {
-                \Log::warning("Failed to delete email forwarders for user {$user->username}: ".$e->getMessage());
-            }
-
-            // Delete master MySQL user when Jabali user is deleted
-            $masterUser = $user->username.'_admin';
-
-            try {
-                if (class_exists(\mysqli::class)) {
-                    // Use credentials from environment variables
-                    $mysqli = new \mysqli(
-                        config('database.connections.mysql.host', 'localhost'),
-                        config('database.connections.mysql.username'),
-                        config('database.connections.mysql.password')
-                    );
-
-                    if (! $mysqli->connect_error) {
-                        // Use prepared statement to prevent SQL injection
-                        // MySQL doesn't support prepared statements for DROP USER,
-                        // so we validate the username format strictly
-                        if (! preg_match('/^[a-zA-Z0-9_]+$/', $masterUser)) {
-                            throw new \Exception('Invalid MySQL username format');
-                        }
-
-                        // Escape the username as an additional safety measure
-                        $escapedUser = $mysqli->real_escape_string($masterUser);
-                        $mysqli->query("DROP USER IF EXISTS '{$escapedUser}'@'localhost'");
-                        $mysqli->close();
-                    }
-                }
-            } catch (\Throwable $e) {
-                \Log::error('Failed to delete master MySQL user: '.$e->getMessage());
-            }
-
-            try {
-                \App\Models\MysqlCredential::where('user_id', $user->id)->delete();
-            } catch (\Throwable $e) {
-                \Log::error('Failed to delete stored MySQL credentials: '.$e->getMessage());
-            }
+            app(\App\Services\UserDeletionService::class)->beforeDelete($user);
         });
     }
 

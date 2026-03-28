@@ -6,7 +6,7 @@ namespace App\Filament\Jabali\Pages;
 
 use App\Models\Domain;
 use App\Models\SslCertificate;
-use App\Services\Agent\InteractsWithAgent;
+use App\Services\SslManagementService;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -30,7 +30,6 @@ use Illuminate\Support\Facades\Auth;
 class Ssl extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
-    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -181,58 +180,26 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->agent()->sslIssue(
-                $domainName,
-                $this->getUsername(),
-                Auth::user()->email,
-                true
-            );
+            $service = app(SslManagementService::class);
+            $cert = $service->issue($domain);
 
-            if ($result['success'] ?? false) {
-                // Update or create certificate record
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'web'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'active',
-                        'issuer' => "Let's Encrypt",
-                        'certificate' => $result['certificate'] ?? null,
-                        'issued_at' => now(),
-                        'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                        'auto_renew' => true,
-                    ]
-                );
-
-                $domain->update(['ssl_enabled' => true]);
-
-                Notification::make()
-                    ->title(__('SSL Certificate Issued'))
-                    ->body(__("Let's Encrypt certificate has been issued for :domain", ['domain' => $domainName]))
-                    ->success()
-                    ->send();
-            } else {
-                $error = $result['error'] ?? __('Unknown error');
-
-                // Record the failure
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'web'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'failed',
-                        'last_check_at' => now(),
-                        'last_error' => $error,
-                    ]
-                );
-
+            if ($cert->status === 'failed') {
                 Notification::make()
                     ->title(__('SSL Certificate Failed'))
-                    ->body($error)
+                    ->body($cert->last_error ?? __('Unknown error'))
                     ->danger()
                     ->send();
+
+                return;
             }
+
+            $domain->update(['ssl_enabled' => true]);
+
+            Notification::make()
+                ->title(__('SSL Certificate Issued'))
+                ->body(__("Let's Encrypt certificate has been issued for :domain", ['domain' => $domainName]))
+                ->success()
+                ->send();
         } catch (Exception $e) {
             Notification::make()
                 ->title(__('Error'))
@@ -249,41 +216,26 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->agent()->sslGenerateSelfSigned(
-                $domainName,
-                $this->getUsername(),
-                365
-            );
+            $service = app(SslManagementService::class);
+            $cert = $service->generateSelfSigned($domain);
 
-            if ($result['success'] ?? false) {
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'web'],
-                    [
-                        'type' => 'self_signed',
-                        'status' => 'active',
-                        'issuer' => 'Self-Signed',
-                        'issued_at' => now(),
-                        'expires_at' => now()->addDays($result['valid_days'] ?? 365),
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'auto_renew' => false,
-                    ]
-                );
-
-                $domain->update(['ssl_enabled' => true]);
-
-                Notification::make()
-                    ->title(__('Self-Signed Certificate Generated'))
-                    ->body(__('Self-signed certificate created for :domain', ['domain' => $domainName]))
-                    ->success()
-                    ->send();
-            } else {
+            if ($cert->status === 'failed') {
                 Notification::make()
                     ->title(__('Certificate Generation Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
+                    ->body($cert->last_error ?? __('Unknown error'))
                     ->danger()
                     ->send();
+
+                return;
             }
+
+            $domain->update(['ssl_enabled' => true]);
+
+            Notification::make()
+                ->title(__('Self-Signed Certificate Generated'))
+                ->body(__('Self-signed certificate created for :domain', ['domain' => $domainName]))
+                ->success()
+                ->send();
         } catch (Exception $e) {
             Notification::make()
                 ->title(__('Error'))
@@ -300,33 +252,24 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->agent()->sslRenew($domainName, $this->getUsername());
+            $service = app(SslManagementService::class);
+            $cert = $service->renew($domain);
 
-            if ($result['success'] ?? false) {
-                $ssl = $domain->sslCertificate;
-                if ($ssl) {
-                    $ssl->update([
-                        'status' => 'active',
-                        'issued_at' => now(),
-                        'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                    ]);
-                }
-
-                Notification::make()
-                    ->title(__('Certificate Renewed'))
-                    ->body(__('SSL certificate has been renewed for :domain', ['domain' => $domainName]))
-                    ->success()
-                    ->send();
-            } else {
+            if ($cert->status === 'failed') {
                 Notification::make()
                     ->title(__('Renewal Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
+                    ->body($cert->last_error ?? __('Unknown error'))
                     ->danger()
                     ->send();
+
+                return;
             }
+
+            Notification::make()
+                ->title(__('Certificate Renewed'))
+                ->body(__('SSL certificate has been renewed for :domain', ['domain' => $domainName]))
+                ->success()
+                ->send();
         } catch (Exception $e) {
             Notification::make()
                 ->title(__('Error'))
@@ -343,38 +286,22 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $result = $this->agent()->sslCheck($domainName, $this->getUsername());
+            $service = app(SslManagementService::class);
+            $cert = $service->check($domain);
 
-            if ($result['success'] ?? false) {
-                $sslData = $result['ssl'] ?? [];
-
-                if ($sslData['has_ssl'] ?? false) {
-                    SslCertificate::updateOrCreate(
-                        ['domain_id' => $domain->id, 'service' => 'web'],
-                        [
-                            'type' => $sslData['type'] ?? 'custom',
-                            'status' => ($sslData['is_expired'] ?? false) ? 'expired' : 'active',
-                            'issuer' => $sslData['issuer'],
-                            'certificate' => $sslData['certificate'] ?? null,
-                            'issued_at' => isset($sslData['valid_from']) ? \Carbon\Carbon::parse($sslData['valid_from']) : null,
-                            'expires_at' => isset($sslData['valid_to']) ? \Carbon\Carbon::parse($sslData['valid_to']) : null,
-                            'last_check_at' => now(),
-                        ]
-                    );
-
-                    $domain->update(['ssl_enabled' => true]);
-                }
+            if ($cert->status === 'active') {
+                $domain->update(['ssl_enabled' => true]);
 
                 Notification::make()
                     ->title(__('Certificate Checked'))
-                    ->body($sslData['has_ssl'] ? __('Certificate found: :issuer', ['issuer' => $sslData['issuer']]) : __('No certificate found'))
+                    ->body(__('Certificate found: :issuer', ['issuer' => $cert->issuer ?? __('Unknown')]))
                     ->success()
                     ->send();
             } else {
                 Notification::make()
-                    ->title(__('Check Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
-                    ->danger()
+                    ->title(__('Certificate Checked'))
+                    ->body(__('No certificate found'))
+                    ->success()
                     ->send();
             }
         } catch (Exception $e) {
@@ -458,46 +385,31 @@ class Ssl extends Page implements HasActions, HasForms, HasTable
                         ->where('user_id', Auth::id())
                         ->firstOrFail();
 
-                    $result = $this->agent()->sslInstall(
-                        $data['domain'],
-                        $this->getUsername(),
+                    $service = app(SslManagementService::class);
+                    $cert = $service->installCustom(
+                        $domain,
                         $data['certificate'],
                         $data['private_key'],
-                        $data['ca_bundle'] ?? null
+                        $data['ca_bundle'] ?? null,
                     );
 
-                    if ($result['success'] ?? false) {
-                        SslCertificate::updateOrCreate(
-                            ['domain_id' => $domain->id, 'service' => 'web'],
-                            [
-                                'type' => 'custom',
-                                'status' => 'active',
-                                'issuer' => $result['issuer'] ?? 'Custom',
-                                'certificate' => $data['certificate'],
-                                'private_key' => $data['private_key'],
-                                'ca_bundle' => $data['ca_bundle'] ?? null,
-                                'issued_at' => isset($result['valid_from']) ? \Carbon\Carbon::parse($result['valid_from']) : now(),
-                                'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : null,
-                                'last_check_at' => now(),
-                                'last_error' => null,
-                                'auto_renew' => false,
-                            ]
-                        );
-
-                        $domain->update(['ssl_enabled' => true]);
-
-                        Notification::make()
-                            ->title(__('Certificate Installed'))
-                            ->body(__('Custom SSL certificate installed for :domain', ['domain' => $data['domain']]))
-                            ->success()
-                            ->send();
-                    } else {
+                    if ($cert->status === 'failed') {
                         Notification::make()
                             ->title(__('Installation Failed'))
-                            ->body($result['error'] ?? __('Unknown error'))
+                            ->body($cert->last_error ?? __('Unknown error'))
                             ->danger()
                             ->send();
+
+                        return;
                     }
+
+                    $domain->update(['ssl_enabled' => true]);
+
+                    Notification::make()
+                        ->title(__('Certificate Installed'))
+                        ->body(__('Custom SSL certificate installed for :domain', ['domain' => $data['domain']]))
+                        ->success()
+                        ->send();
                 } catch (Exception $e) {
                     Notification::make()
                         ->title(__('Error'))

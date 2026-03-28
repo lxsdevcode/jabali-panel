@@ -9,7 +9,7 @@ use App\Filament\Admin\Widgets\SslStatsOverview;
 use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Models\User;
-use App\Services\Agent\InteractsWithAgent;
+use App\Services\SslManagementService;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\Artisan;
 
 class SslManager extends Page implements HasTable
 {
-    use InteractsWithAgent;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
@@ -184,52 +183,22 @@ class SslManager extends Page implements HasTable
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $result = $this->agent()->sslIssue(
-                $domain->domain,
-                $domain->user->username,
-                $domain->user->email,
-                true
-            );
+            $service = app(SslManagementService::class);
+            $cert = $service->issue($domain);
 
-            if ($result['success'] ?? false) {
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'web'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'active',
-                        'issuer' => "Let's Encrypt",
-                        'certificate' => $result['certificate'] ?? null,
-                        'issued_at' => now(),
-                        'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                        'auto_renew' => true,
-                    ]
-                );
-
+            if ($cert->status === 'failed') {
+                Notification::make()
+                    ->title(__('SSL Certificate Failed'))
+                    ->body($cert->last_error ?? __('Unknown error'))
+                    ->danger()
+                    ->send();
+            } else {
                 $domain->update(['ssl_enabled' => true]);
 
                 Notification::make()
                     ->title(__('SSL Certificate Issued'))
                     ->body(__('Certificate issued for :domain', ['domain' => $domain->domain]))
                     ->success()
-                    ->send();
-            } else {
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'web'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'failed',
-                        'last_check_at' => now(),
-                        'last_error' => $result['error'] ?? __('Unknown error'),
-                    ]
-                );
-
-                Notification::make()
-                    ->title(__('SSL Certificate Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
-                    ->danger()
                     ->send();
             }
         } catch (Exception $e) {
@@ -248,31 +217,20 @@ class SslManager extends Page implements HasTable
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $result = $this->agent()->sslRenew($domain->domain, $domain->user->username);
+            $service = app(SslManagementService::class);
+            $cert = $service->renew($domain);
 
-            if ($result['success'] ?? false) {
-                $ssl = $domain->sslCertificate;
-                if ($ssl) {
-                    $ssl->update([
-                        'status' => 'active',
-                        'issued_at' => now(),
-                        'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                    ]);
-                }
-
+            if ($cert->status === 'failed') {
+                Notification::make()
+                    ->title(__('Renewal Failed'))
+                    ->body($cert->last_error ?? __('Unknown error'))
+                    ->danger()
+                    ->send();
+            } else {
                 Notification::make()
                     ->title(__('Certificate Renewed'))
                     ->body(__('SSL certificate renewed for :domain', ['domain' => $domain->domain]))
                     ->success()
-                    ->send();
-            } else {
-                Notification::make()
-                    ->title(__('Renewal Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
-                    ->danger()
                     ->send();
             }
         } catch (Exception $e) {
@@ -291,37 +249,22 @@ class SslManager extends Page implements HasTable
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $result = $this->agent()->sslCheck($domain->domain, $domain->user->username);
+            $service = app(SslManagementService::class);
+            $cert = $service->check($domain);
 
-            if ($result['success'] ?? false) {
-                $sslData = $result['ssl'] ?? [];
-
-                if ($sslData['has_ssl'] ?? false) {
-                    SslCertificate::updateOrCreate(
-                        ['domain_id' => $domain->id, 'service' => 'web'],
-                        [
-                            'type' => $sslData['type'] ?? 'custom',
-                            'status' => ($sslData['is_expired'] ?? false) ? 'expired' : 'active',
-                            'issuer' => $sslData['issuer'],
-                            'certificate' => $sslData['certificate'] ?? null,
-                            'issued_at' => isset($sslData['valid_from']) ? \Carbon\Carbon::parse($sslData['valid_from']) : null,
-                            'expires_at' => isset($sslData['valid_to']) ? \Carbon\Carbon::parse($sslData['valid_to']) : null,
-                            'last_check_at' => now(),
-                        ]
-                    );
-                    $domain->update(['ssl_enabled' => true]);
-                }
+            if ($cert->status === 'active') {
+                $domain->update(['ssl_enabled' => true]);
 
                 Notification::make()
                     ->title(__('Certificate Checked'))
-                    ->body($sslData['has_ssl'] ? __('Found: :issuer', ['issuer' => $sslData['issuer']]) : __('No certificate found'))
+                    ->body(__('Found: :issuer', ['issuer' => $cert->issuer ?? __('Unknown')]))
                     ->success()
                     ->send();
             } else {
                 Notification::make()
-                    ->title(__('Check Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
-                    ->danger()
+                    ->title(__('Certificate Checked'))
+                    ->body(__('No certificate found'))
+                    ->success()
                     ->send();
             }
         } catch (Exception $e) {
@@ -341,44 +284,20 @@ class SslManager extends Page implements HasTable
             $domain = Domain::with('user')->findOrFail($domainId);
             $mailHostname = 'mail.'.$domain->domain;
 
-            $result = $this->agent()->sslMailIssue($mailHostname, $domain->user->email);
+            $service = app(SslManagementService::class);
+            $cert = $service->issue($domain, 'mail');
 
-            if ($result['success'] ?? false) {
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'mail'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'active',
-                        'issuer' => "Let's Encrypt",
-                        'issued_at' => now(),
-                        'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                        'last_check_at' => now(),
-                        'last_error' => null,
-                        'renewal_attempts' => 0,
-                        'auto_renew' => true,
-                    ]
-                );
-
+            if ($cert->status === 'failed') {
+                Notification::make()
+                    ->title(__('Mail SSL Certificate Failed'))
+                    ->body($cert->last_error ?? __('Unknown error'))
+                    ->danger()
+                    ->send();
+            } else {
                 Notification::make()
                     ->title(__('Mail SSL Certificate Issued'))
                     ->body(__('Certificate issued for :hostname', ['hostname' => $mailHostname]))
                     ->success()
-                    ->send();
-            } else {
-                SslCertificate::updateOrCreate(
-                    ['domain_id' => $domain->id, 'service' => 'mail'],
-                    [
-                        'type' => 'lets_encrypt',
-                        'status' => 'failed',
-                        'last_check_at' => now(),
-                        'last_error' => $result['error'] ?? __('Unknown error'),
-                    ]
-                );
-
-                Notification::make()
-                    ->title(__('Mail SSL Certificate Failed'))
-                    ->body($result['error'] ?? __('Unknown error'))
-                    ->danger()
                     ->send();
             }
         } catch (Exception $e) {
@@ -497,45 +416,17 @@ class SslManager extends Page implements HasTable
 
         $issued = 0;
         $failed = 0;
+        $service = app(SslManagementService::class);
 
         foreach ($domainsWithoutSsl as $domain) {
             try {
-                $result = $this->agent()->sslIssue(
-                    $domain->domain,
-                    $domain->user->username,
-                    $domain->user->email,
-                    true
-                );
+                $cert = $service->issue($domain);
 
-                if ($result['success'] ?? false) {
-                    SslCertificate::updateOrCreate(
-                        ['domain_id' => $domain->id, 'service' => 'web'],
-                        [
-                            'type' => 'lets_encrypt',
-                            'status' => 'active',
-                            'issuer' => "Let's Encrypt",
-                            'certificate' => $result['certificate'] ?? null,
-                            'issued_at' => now(),
-                            'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                            'last_check_at' => now(),
-                            'last_error' => null,
-                            'renewal_attempts' => 0,
-                            'auto_renew' => true,
-                        ]
-                    );
+                if ($cert->status === 'failed') {
+                    $failed++;
+                } else {
                     $domain->update(['ssl_enabled' => true]);
                     $issued++;
-                } else {
-                    SslCertificate::updateOrCreate(
-                        ['domain_id' => $domain->id, 'service' => 'web'],
-                        [
-                            'type' => 'lets_encrypt',
-                            'status' => 'failed',
-                            'last_check_at' => now(),
-                            'last_error' => $result['error'] ?? __('Unknown error'),
-                        ]
-                    );
-                    $failed++;
                 }
             } catch (Exception $e) {
                 $failed++;
@@ -549,27 +440,12 @@ class SslManager extends Page implements HasTable
 
         foreach ($domainsWithoutMailSsl as $domain) {
             try {
-                $mailHostname = 'mail.'.$domain->domain;
-                $result = $this->agent()->sslMailIssue($mailHostname, $domain->user->email);
+                $cert = $service->issue($domain, 'mail');
 
-                if ($result['success'] ?? false) {
-                    SslCertificate::updateOrCreate(
-                        ['domain_id' => $domain->id, 'service' => 'mail'],
-                        [
-                            'type' => 'lets_encrypt',
-                            'status' => 'active',
-                            'issuer' => "Let's Encrypt",
-                            'issued_at' => now(),
-                            'expires_at' => isset($result['valid_to']) ? \Carbon\Carbon::parse($result['valid_to']) : now()->addMonths(3),
-                            'last_check_at' => now(),
-                            'last_error' => null,
-                            'renewal_attempts' => 0,
-                            'auto_renew' => true,
-                        ]
-                    );
-                    $issued++;
-                } else {
+                if ($cert->status === 'failed') {
                     $failed++;
+                } else {
+                    $issued++;
                 }
             } catch (Exception $e) {
                 $failed++;
