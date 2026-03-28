@@ -32,18 +32,14 @@ Route::post('/phpmyadmin/verify-token', function (Request $request) {
 })->middleware('throttle:internal-api');
 
 $allowInternalRequest = static function (Request $request): bool {
-    $remoteAddr = (string) $request->server('REMOTE_ADDR', $request->ip());
-    $isLocalRequest = in_array($remoteAddr, ['127.0.0.1', '::1'], true);
-
     $configuredToken = trim((string) config('app.internal_api_token', ''));
     $providedToken = trim((string) (
         $request->header('X-Jabali-Internal-Token')
         ?? $request->input('internal_token')
         ?? ''
     ));
-    $hasValidToken = $configuredToken !== '' && $providedToken !== '' && hash_equals($configuredToken, $providedToken);
 
-    return $isLocalRequest || $hasValidToken;
+    return $configuredToken !== '' && $providedToken !== '' && hash_equals($configuredToken, $providedToken);
 };
 
 // Internal API for jabali-cache WordPress plugin

@@ -325,7 +325,7 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
             ])
             ->action(function (array $data): void {
                 try {
-                    $domain = Domain::findOrFail($data['domain_id']);
+                    $domain = Domain::where('user_id', Auth::id())->findOrFail($data['domain_id']);
                     $username = $this->getUsername();
 
                     // Add DISABLE_WP_CRON to wp-config.php

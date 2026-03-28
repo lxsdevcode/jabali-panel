@@ -99,7 +99,7 @@ Route::get('/mail/profile/{domain}', [AutoconfigController::class, 'mobileProfil
 |
 */
 
-Route::get('/impersonate/start/{user}', [ImpersonationController::class, 'start'])
+Route::post('/impersonate/start/{user}', [ImpersonationController::class, 'start'])
     ->middleware('auth:admin')
     ->name('impersonate.start');
 

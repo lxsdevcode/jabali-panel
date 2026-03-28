@@ -85,7 +85,13 @@ class EditUser extends EditRecord
                 ->icon('heroicon-o-arrow-right-on-rectangle')
                 ->color('info')
                 ->visible(fn () => ! $this->record->is_admin && $this->record->is_active)
-                ->url(fn () => route('impersonate.start', ['user' => $this->record->id]), shouldOpenInNewTab: true),
+                ->action(function () {
+                    $admin = auth()->guard('admin')->user();
+                    $token = \App\Models\ImpersonationToken::createForUser($admin, $this->record, request()->ip());
+                    $url = route('impersonate', ['token' => $token->raw_token]);
+
+                    $this->js("window.open('{$url}', '_blank')");
+                }),
             Actions\DeleteAction::make()
                 ->visible(fn () => (int) $this->record->id !== 1)
                 ->form([

@@ -39,8 +39,8 @@ class ImpersonationController extends Controller
         // Create the impersonation token
         $token = ImpersonationToken::createForUser($admin, $user, $request->ip());
 
-        // Redirect to the impersonation route
-        return redirect()->route('impersonate', ['token' => $token->token]);
+        // Redirect to the impersonation route using the raw (unhashed) token
+        return redirect()->route('impersonate', ['token' => $token->raw_token]);
     }
 
     public function impersonate(Request $request, string $token): RedirectResponse
@@ -86,6 +86,9 @@ class ImpersonationController extends Controller
         session()->put('impersonated_by', $adminId);
         session()->put('impersonation_token_id', $impersonationToken->id);
 
+        // Regenerate session ID to prevent session fixation
+        session()->regenerate();
+
         // Save the session to persist changes
         session()->save();
 
@@ -111,6 +114,9 @@ class ImpersonationController extends Controller
         // This preserves the admin session
         session()->forget(Auth::guard('web')->getName());
         session()->forget('password_hash_web');
+
+        // Regenerate session ID to prevent session fixation
+        session()->regenerate();
 
         // Save session changes
         session()->save();

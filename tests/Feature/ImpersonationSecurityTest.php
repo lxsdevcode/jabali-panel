@@ -25,7 +25,7 @@ class ImpersonationSecurityTest extends TestCase
         request()->setTrustedProxies(['127.0.0.1'], \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR);
 
         // Try to use token from different IP — should STILL fail
-        $result = ImpersonationToken::findValidToken($token->token, '5.6.7.8');
+        $result = ImpersonationToken::findValidToken($token->raw_token, '5.6.7.8');
 
         $this->assertNull($result, 'Token should be rejected when IP does not match, even behind proxy');
 
@@ -40,7 +40,7 @@ class ImpersonationSecurityTest extends TestCase
 
         $token = ImpersonationToken::createForUser($admin, $target, '1.2.3.4');
 
-        $result = ImpersonationToken::findValidToken($token->token, '1.2.3.4');
+        $result = ImpersonationToken::findValidToken($token->raw_token, '1.2.3.4');
 
         $this->assertNotNull($result, 'Token should be accepted when IP matches');
     }
@@ -54,7 +54,7 @@ class ImpersonationSecurityTest extends TestCase
 
         $this->travel(6)->minutes();
 
-        $result = ImpersonationToken::findValidToken($token->token, '1.2.3.4');
+        $result = ImpersonationToken::findValidToken($token->raw_token, '1.2.3.4');
 
         $this->assertNull($result, 'Expired token should be rejected');
     }
@@ -67,7 +67,7 @@ class ImpersonationSecurityTest extends TestCase
         $token = ImpersonationToken::createForUser($admin, $target, '1.2.3.4');
         $token->markAsUsed();
 
-        $result = ImpersonationToken::findValidToken($token->token, '1.2.3.4');
+        $result = ImpersonationToken::findValidToken($token->raw_token, '1.2.3.4');
 
         $this->assertNull($result, 'Used token should be rejected');
     }

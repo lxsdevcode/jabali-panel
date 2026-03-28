@@ -10,6 +10,12 @@ use Illuminate\Support\Str;
 
 class ImpersonationToken extends Model
 {
+    /**
+     * The unhashed token, only available immediately after createForUser().
+     * Not persisted to the database.
+     */
+    public ?string $raw_token = null;
+
     protected $fillable = [
         'admin_id',
         'target_user_id',
@@ -39,6 +45,11 @@ class ImpersonationToken extends Model
         return $this->belongsTo(User::class, 'target_user_id');
     }
 
+    /**
+     * Create a token for impersonation. Returns the model with a `raw_token`
+     * attribute containing the unhashed token for use in URLs. The database
+     * stores only the SHA-256 hash.
+     */
     public static function createForUser(User $admin, User $targetUser, ?string $ipAddress = null): self
     {
         // Clean up old tokens for this admin/user combination
@@ -46,13 +57,20 @@ class ImpersonationToken extends Model
             ->where('target_user_id', $targetUser->id)
             ->delete();
 
-        return static::create([
+        $rawToken = Str::random(64);
+
+        $record = static::create([
             'admin_id' => $admin->id,
             'target_user_id' => $targetUser->id,
-            'token' => Str::random(64),
+            'token' => hash('sha256', $rawToken),
             'expires_at' => now()->addMinutes(5),
             'ip_address' => $ipAddress,
         ]);
+
+        // Attach raw token so the caller can build the URL
+        $record->raw_token = $rawToken;
+
+        return $record;
     }
 
     public function markAsUsed(): void
@@ -62,7 +80,9 @@ class ImpersonationToken extends Model
 
     public static function findValidToken(string $token, ?string $ipAddress = null): ?self
     {
-        $record = static::where('token', $token)
+        $hashedToken = hash('sha256', $token);
+
+        $record = static::where('token', $hashedToken)
             ->where('expires_at', '>', now())
             ->whereNull('used_at')
             ->first();

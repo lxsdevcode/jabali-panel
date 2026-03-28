@@ -114,7 +114,13 @@ class UsersTable
                     ->icon('heroicon-o-arrow-right-on-rectangle')
                     ->color('info')
                     ->visible(fn ($record) => ! $record->is_admin && $record->is_active)
-                    ->url(fn ($record) => route('impersonate.start', ['user' => $record->id]), shouldOpenInNewTab: true),
+                    ->action(function ($record, $livewire) {
+                        $admin = auth()->guard('admin')->user();
+                        $token = \App\Models\ImpersonationToken::createForUser($admin, $record, request()->ip());
+                        $url = route('impersonate', ['token' => $token->raw_token]);
+
+                        $livewire->js("window.open('{$url}', '_blank')");
+                    }),
                 EditAction::make(),
                 DeleteAction::make()
                     ->visible(fn ($record) => (int) $record->id !== 1)
