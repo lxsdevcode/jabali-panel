@@ -17147,14 +17147,56 @@ function importUserPanelData(string $username, array $data): array
 }
 
 /**
- * Create a backup for a user account.
- * Supports both incremental (rsync-based) and full (tar.gz) backup types.
+ * Execute a restic command and return structured output.
+ */
+function resticExec(string $command, string $repo = '', array $extraEnv = []): array
+{
+    $repo = $repo ?: '/var/backups/jabali/restic';
+    $passwordFile = '/etc/jabali/restic-password';
+
+    $env = array_merge([
+        'RESTIC_REPOSITORY' => $repo,
+        'RESTIC_PASSWORD_FILE' => $passwordFile,
+    ], $extraEnv);
+
+    $envStr = '';
+    foreach ($env as $key => $val) {
+        $envStr .= escapeshellarg($key).'='.escapeshellarg($val).' ';
+    }
+
+    $fullCmd = "{$envStr}restic {$command} 2>&1";
+    exec($fullCmd, $output, $retval);
+
+    return [
+        'output' => implode("\n", $output),
+        'lines' => $output,
+        'exitCode' => $retval,
+    ];
+}
+
+/**
+ * Ensure a restic repository is initialized (idempotent).
+ */
+function resticEnsureRepo(string $repo = ''): bool
+{
+    $result = resticExec('snapshots --json --latest 1', $repo);
+    if ($result['exitCode'] === 0) {
+        return true;
+    }
+
+    // Repository does not exist or is not initialized — try to init
+    $init = resticExec('init', $repo);
+
+    return $init['exitCode'] === 0;
+}
+
+/**
+ * Create a backup for a user account using Restic.
  */
 function backupCreate(array $params): array
 {
     $username = $params['username'] ?? '';
     $outputPath = $params['output_path'] ?? '';
-    $backupType = $params['backup_type'] ?? 'full'; // 'full' or 'incremental'
     $includeFiles = $params['include_files'] ?? true;
     $includeDatabases = $params['include_databases'] ?? true;
     $includeMailboxes = $params['include_mailboxes'] ?? true;
@@ -17163,14 +17205,10 @@ function backupCreate(array $params): array
     $domains = $params['domains'] ?? null; // null = all domains
     $databases = $params['databases'] ?? null; // null = all databases
     $mailboxes = $params['mailboxes'] ?? null; // null = all mailboxes
-    $incrementalBase = $params['incremental_base'] ?? ''; // For incremental: path to previous backup
+    $repo = $params['repo'] ?? '';
 
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
-    }
-
-    if (empty($outputPath)) {
-        return ['success' => false, 'error' => 'Output path is required'];
     }
 
     $homeDir = "/home/$username";
@@ -17178,17 +17216,18 @@ function backupCreate(array $params): array
         return ['success' => false, 'error' => "User home directory not found: $homeDir"];
     }
 
-    // Create temp directory for backup assembly
-    $tempDir = sys_get_temp_dir().'/jabali_backup_'.uniqid();
-    if (! mkdir($tempDir, 0755, true)) {
-        return ['success' => false, 'error' => 'Failed to create temp directory'];
+    // Create staging directory
+    $backupId = uniqid();
+    $stagingDir = sys_get_temp_dir()."/jabali_backup_{$backupId}";
+    if (! mkdir($stagingDir, 0755, true)) {
+        return ['success' => false, 'error' => 'Failed to create staging directory'];
     }
 
     $manifest = [
-        'version' => '2.0',
+        'version' => '3.0',
         'created_at' => date('c'),
         'username' => $username,
-        'backup_type' => $backupType,
+        'backup_type' => 'restic',
         'includes' => [
             'files' => $includeFiles,
             'databases' => $includeDatabases,
@@ -17207,84 +17246,48 @@ function backupCreate(array $params): array
     ];
 
     try {
-        // Backup files (domain directories)
+        // Collect files (domain directories) into staging
         if ($includeFiles) {
-            $filesDir = "$tempDir/files";
+            $filesDir = "$stagingDir/files";
             mkdir($filesDir, 0755, true);
 
-            // Get list of domains for this user
             $domainsDir = "$homeDir/domains";
             if (is_dir($domainsDir)) {
                 $domainDirs = array_filter(scandir($domainsDir), fn ($d) => $d !== '.' && $d !== '..' && is_dir("$domainsDir/$d"));
 
                 foreach ($domainDirs as $domain) {
-                    // Skip if specific domains requested and this isn't one
                     if ($domains !== null && ! in_array($domain, $domains)) {
                         continue;
                     }
 
                     $domainPath = "$domainsDir/$domain";
-                    $tarFile = "$filesDir/{$domain}.tar.gz";
 
-                    // Exclusions for cache/temp files
-                    $excludes = [
-                        '*.log',
-                        'cache/*',
-                        '.cache/*',
-                        'tmp/*',
-                        '.tmp/*',
-                        'node_modules/*',
-                        'vendor/*',
-                    ];
-
-                    if ($backupType === 'incremental' && ! empty($incrementalBase)) {
-                        // Incremental backup using rsync with --link-dest
-                        $baseDir = "$incrementalBase/files/$domain";
-                        $excludeArgs = implode(' ', array_map(fn ($e) => '--exclude='.escapeshellarg($e), $excludes));
-                        if (is_dir($baseDir)) {
-                            exec("rsync -a $excludeArgs --link-dest=".escapeshellarg($baseDir).' '.escapeshellarg("$domainPath/").' '.escapeshellarg("$filesDir/$domain/").' 2>&1', $output, $retval);
-                        } else {
-                            // No base exists, do full copy with exclusions
-                            exec("rsync -a $excludeArgs ".escapeshellarg("$domainPath/").' '.escapeshellarg("$filesDir/$domain/").' 2>&1', $output, $retval);
-                        }
-                    } else {
-                        // Full backup - create tar.gz with exclusions
-                        $excludeArgs = implode(' ', array_map(fn ($e) => '--exclude='.escapeshellarg($e), $excludes));
-                        exec('tar -I pigz -cf '.escapeshellarg($tarFile)." $excludeArgs -C ".escapeshellarg($domainsDir).' '.escapeshellarg($domain).' 2>&1', $output, $retval);
-                    }
-
-                    if ($retval === 0) {
-                        $manifest['domains'][] = $domain;
-                        if (file_exists($tarFile)) {
-                            $manifest['total_size'] += filesize($tarFile);
-                        }
-                    }
+                    // Symlink domain dir into staging for efficient Restic backup
+                    symlink($domainPath, "$filesDir/$domain");
+                    $manifest['domains'][] = $domain;
                 }
             }
         }
 
-        // Backup databases
+        // Collect databases via mysqldump into staging
         if ($includeDatabases) {
-            $dbDir = "$tempDir/mysql";
+            $dbDir = "$stagingDir/mysql";
             mkdir($dbDir, 0755, true);
 
             $mysqli = getMysqlConnection();
             if ($mysqli) {
-                // Get user's databases (prefixed with username_)
                 $prefix = $username.'_';
                 $result = $mysqli->query("SHOW DATABASES LIKE '{$mysqli->real_escape_string($prefix)}%'");
 
                 while ($row = $result->fetch_row()) {
                     $dbName = $row[0];
 
-                    // Skip if specific databases requested and this isn't one
                     if ($databases !== null && ! in_array($dbName, $databases)) {
                         continue;
                     }
 
                     $sqlFile = "$dbDir/{$dbName}.sql.gz";
 
-                    // Export database using mysqldump
                     $mysqlHost = $_ENV['MYSQL_HOST'] ?? 'localhost';
                     $mysqlUser = $_ENV['MYSQL_USER'] ?? 'root';
                     $mysqlPass = $_ENV['MYSQL_PASSWORD'] ?? '';
@@ -17308,8 +17311,6 @@ function backupCreate(array $params): array
                 $usersSql = "-- MySQL Users and Permissions Backup\n";
                 $usersSql .= '-- Generated: '.date('Y-m-d H:i:s')."\n\n";
 
-                // Get all MySQL users matching the username_ pattern
-                // Escape underscore in LIKE pattern (underscore is a single-char wildcard in MySQL)
                 $safePrefix = $mysqli->real_escape_string($username).'\\_';
                 $userQuery = $mysqli->query("SELECT User, Host FROM mysql.user WHERE User LIKE '{$safePrefix}%'");
 
@@ -17320,14 +17321,11 @@ function backupCreate(array $params): array
                         $mysqlHost = $userRow['Host'];
                         $userIdentifier = "'{$mysqli->real_escape_string($mysqlUser)}'@'{$mysqli->real_escape_string($mysqlHost)}'";
 
-                        // Get CREATE USER statement
                         $createResult = $mysqli->query("SHOW CREATE USER $userIdentifier");
                         if ($createResult && $createRow = $createResult->fetch_row()) {
-                            // Add DROP USER IF EXISTS for clean restore
                             $usersSql .= "DROP USER IF EXISTS $userIdentifier;\n";
                             $usersSql .= $createRow[0].";\n";
 
-                            // Get GRANT statements
                             $grantsResult = $mysqli->query("SHOW GRANTS FOR $userIdentifier");
                             if ($grantsResult) {
                                 while ($grantRow = $grantsResult->fetch_row()) {
@@ -17340,7 +17338,6 @@ function backupCreate(array $params): array
                     }
                 }
 
-                // Save users.sql if we have any users
                 if (! empty($exportedUsers)) {
                     $usersSql .= "FLUSH PRIVILEGES;\n";
                     file_put_contents($usersFile, $usersSql);
@@ -17352,12 +17349,11 @@ function backupCreate(array $params): array
             }
         }
 
-        // Backup mailboxes
+        // Collect mailboxes into staging
         if ($includeMailboxes) {
-            $mailDir = "$tempDir/mailboxes";
+            $mailDir = "$stagingDir/mailboxes";
             mkdir($mailDir, 0755, true);
 
-            // Get user's domains
             $userDomains = [];
             $domainsFile = "$homeDir/.domains";
             if (file_exists($domainsFile)) {
@@ -17367,7 +17363,6 @@ function backupCreate(array $params): array
                 $userDomains = array_filter(scandir("$homeDir/domains"), fn ($d) => $d !== '.' && $d !== '..' && is_dir("$homeDir/domains/$d"));
             }
 
-            // Backup from /var/mail/vhosts (Dovecot virtual mailboxes)
             foreach ($userDomains as $domain) {
                 $vhostMailPath = "/var/mail/vhosts/$domain";
                 if (is_dir($vhostMailPath)) {
@@ -17376,39 +17371,33 @@ function backupCreate(array $params): array
                     foreach ($mailUsers as $mailUser) {
                         $mailboxName = "{$mailUser}@{$domain}";
 
-                        // Skip if specific mailboxes requested
                         if ($mailboxes !== null && ! in_array($mailboxName, $mailboxes)) {
                             continue;
                         }
 
-                        $tarFile = "$mailDir/{$domain}_{$mailUser}.tar.gz";
-                        exec('tar -I pigz -cf '.escapeshellarg($tarFile).' -C '.escapeshellarg($vhostMailPath).' '.escapeshellarg($mailUser).' 2>&1', $output, $retval);
-
-                        if ($retval === 0 && file_exists($tarFile)) {
-                            $manifest['mailboxes'][] = $mailboxName;
-                            $manifest['total_size'] += filesize($tarFile);
+                        // Symlink mailbox dir into staging
+                        $domainMailDir = "$mailDir/$domain";
+                        if (! is_dir($domainMailDir)) {
+                            mkdir($domainMailDir, 0755, true);
                         }
+                        symlink("$vhostMailPath/$mailUser", "$domainMailDir/$mailUser");
+                        $manifest['mailboxes'][] = $mailboxName;
                     }
                 }
             }
 
-            // Also backup user's local mail directory if exists
+            // Also reference user's local mail directory if exists
             $userMailDir = "$homeDir/mail";
             if (is_dir($userMailDir) && count(scandir($userMailDir)) > 2) {
-                $tarFile = "$mailDir/local_mail.tar.gz";
-                exec('tar -I pigz -cf '.escapeshellarg($tarFile).' -C '.escapeshellarg($homeDir).' mail 2>&1', $output, $retval);
-                if ($retval === 0 && file_exists($tarFile)) {
-                    $manifest['total_size'] += filesize($tarFile);
-                }
+                symlink($userMailDir, "$mailDir/local_mail");
             }
         }
 
-        // Backup SSL certificates
+        // Collect SSL certificates into staging
         if ($includeSsl) {
-            $sslDir = "$tempDir/ssl";
+            $sslDir = "$stagingDir/ssl";
             mkdir($sslDir, 0755, true);
 
-            // Backup user's SSL directory (custom certificates)
             $userSslDir = "$homeDir/ssl";
             if (is_dir($userSslDir) && count(scandir($userSslDir)) > 2) {
                 exec('cp -a '.escapeshellarg($userSslDir).' '.escapeshellarg("$sslDir/user_ssl").' 2>&1');
@@ -17416,14 +17405,12 @@ function backupCreate(array $params): array
 
             $letsencryptDir = '/etc/letsencrypt/live';
             if (is_dir($letsencryptDir)) {
-                // Get user's domains to know which SSL certs belong to them
                 $userDomains = $manifest['domains'];
                 if (empty($userDomains) && is_dir("$homeDir/domains")) {
                     $userDomains = array_filter(scandir("$homeDir/domains"), fn ($d) => $d !== '.' && $d !== '..' && is_dir("$homeDir/domains/$d"));
                 }
 
                 foreach ($userDomains as $domain) {
-                    // Skip if specific domains requested and this isn't one
                     if ($domains !== null && ! in_array($domain, $domains)) {
                         continue;
                     }
@@ -17433,12 +17420,10 @@ function backupCreate(array $params): array
                         $domainSslDir = "$sslDir/$domain";
                         mkdir($domainSslDir, 0755, true);
 
-                        // Copy certificate files (following symlinks to get actual content)
                         $certFiles = ['fullchain.pem', 'privkey.pem', 'cert.pem', 'chain.pem'];
                         foreach ($certFiles as $certFile) {
                             $srcFile = "$certPath/$certFile";
                             if (file_exists($srcFile)) {
-                                // Read through symlink and copy actual content
                                 $realPath = realpath($srcFile);
                                 if ($realPath && file_exists($realPath)) {
                                     copy($realPath, "$domainSslDir/$certFile");
@@ -17452,9 +17437,9 @@ function backupCreate(array $params): array
             }
         }
 
-        // Backup DNS zone files
+        // Collect DNS zone files into staging
         if ($includeDns) {
-            $dnsDir = "$tempDir/zones";
+            $dnsDir = "$stagingDir/zones";
             mkdir($dnsDir, 0755, true);
 
             $zonesDir = '/etc/bind/zones';
@@ -17474,124 +17459,100 @@ function backupCreate(array $params): array
             }
         }
 
-        // Export panel metadata (domains config, email accounts, WordPress sites, etc.)
-        $metadataDir = "$tempDir/metadata";
+        // Export panel metadata
+        $metadataDir = "$stagingDir/metadata";
         mkdir($metadataDir, 0755, true);
 
-        // Export user's .domains file
         $domainsFile = "$homeDir/.domains";
         if (file_exists($domainsFile)) {
             copy($domainsFile, "$metadataDir/domains.json");
         }
 
-        // Export user's .wordpress_sites file
         $wpSitesFile = "$homeDir/.wordpress_sites";
         if (file_exists($wpSitesFile)) {
             copy($wpSitesFile, "$metadataDir/wordpress_sites.json");
         }
 
-        // Export email configuration from database via PHP
         $panelMetadata = exportUserPanelData($username);
         if (! empty($panelMetadata)) {
             file_put_contents("$metadataDir/panel_data.json", json_encode($panelMetadata, JSON_PRETTY_PRINT));
             $manifest['panel_data'] = true;
         }
 
-        // Save manifest
-        file_put_contents("$tempDir/manifest.json", json_encode($manifest, JSON_PRETTY_PRINT));
+        // Save manifest into staging
+        file_put_contents("$stagingDir/manifest.json", json_encode($manifest, JSON_PRETTY_PRINT));
 
-        // Create final archive
-        $outputDir = dirname($outputPath);
-        if (! is_dir($outputDir)) {
-            mkdir($outputDir, 0755, true);
+        // Ensure restic repository is initialized
+        if (! resticEnsureRepo($repo)) {
+            throw new Exception('Failed to initialize restic repository');
         }
 
-        if ($backupType === 'incremental') {
-            // For incremental, just copy the temp dir as the backup
-            exec('cp -a '.escapeshellarg($tempDir).' '.escapeshellarg($outputPath).' 2>&1', $output, $retval);
-        } else {
-            // For full backup, create a tar.gz archive
-            exec('tar -I pigz -cf '.escapeshellarg($outputPath).' -C '.escapeshellarg(dirname($tempDir)).' '.escapeshellarg(basename($tempDir)).' 2>&1', $output, $retval);
+        // Build restic exclude args
+        $excludeArgs = '';
+        $excludes = ['*.log', 'cache', '.cache', 'tmp', '.tmp', 'node_modules', 'vendor'];
+        foreach ($excludes as $exc) {
+            $excludeArgs .= ' --exclude '.escapeshellarg($exc);
         }
 
-        if ($retval !== 0) {
-            throw new Exception('Failed to create backup archive');
+        // Run restic backup
+        $tagArgs = '--tag '.escapeshellarg("user:{$username}").' --tag '.escapeshellarg('type:user');
+        $resticCmd = "backup ".escapeshellarg($stagingDir)." {$tagArgs}{$excludeArgs} --json";
+        $result = resticExec($resticCmd, $repo);
+
+        if ($result['exitCode'] !== 0) {
+            throw new Exception('Restic backup failed: '.$result['output']);
         }
 
-        // Calculate checksum
-        $checksum = '';
-        if (file_exists($outputPath)) {
-            if (is_file($outputPath)) {
-                $checksum = hash_file('sha256', $outputPath);
-                $finalSize = filesize($outputPath);
-            } else {
-                // For incremental (directory), calculate size recursively
-                $finalSize = 0;
-                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($outputPath));
-                foreach ($iterator as $file) {
-                    if ($file->isFile()) {
-                        $finalSize += $file->getSize();
-                    }
-                }
+        // Parse JSON output to get snapshot ID and stats
+        $snapshotId = '';
+        $snapshotSize = 0;
+        foreach ($result['lines'] as $line) {
+            $json = json_decode($line, true);
+            if ($json === null) {
+                continue;
+            }
+            if (($json['message_type'] ?? '') === 'summary') {
+                $snapshotId = $json['snapshot_id'] ?? '';
+                $snapshotSize = $json['total_bytes_processed'] ?? 0;
             }
         }
 
-        // Cleanup temp directory
-        exec('rm -rf '.escapeshellarg($tempDir));
+        // Cleanup staging directory
+        exec('rm -rf '.escapeshellarg($stagingDir));
 
         return [
             'success' => true,
             'path' => $outputPath,
-            'size' => $finalSize ?? $manifest['total_size'],
-            'checksum' => $checksum,
+            'snapshot_id' => $snapshotId,
+            'size' => $snapshotSize ?: $manifest['total_size'],
+            'checksum' => $snapshotId,
             'domains' => $manifest['domains'],
             'databases' => $manifest['databases'],
             'mysql_users' => $manifest['mysql_users'] ?? [],
             'mailboxes' => $manifest['mailboxes'],
             'ssl_certificates' => $manifest['ssl_certificates'],
-            'backup_type' => $backupType,
+            'backup_type' => 'restic',
         ];
 
     } catch (Exception $e) {
-        // Cleanup on error
-        exec('rm -rf '.escapeshellarg($tempDir));
+        exec('rm -rf '.escapeshellarg($stagingDir));
 
         return ['success' => false, 'error' => $e->getMessage()];
     }
 }
 
 /**
- * Create a server-wide backup (all users or selected users).
+ * Create a server-wide backup (all users or selected users) using Restic.
  */
 function backupCreateServer(array $params): array
 {
     $outputPath = $params['output_path'] ?? '';
-    $backupType = $params['backup_type'] ?? 'full';
     $users = $params['users'] ?? null; // null = all users
     $includeFiles = $params['include_files'] ?? true;
     $includeDatabases = $params['include_databases'] ?? true;
     $includeMailboxes = $params['include_mailboxes'] ?? true;
     $includeDns = $params['include_dns'] ?? true;
-
-    if (empty($outputPath)) {
-        return ['success' => false, 'error' => 'Output path is required'];
-    }
-
-    // Output path is now a folder (e.g., /var/backups/jabali/2026-01-12_013000/)
-    if (! is_dir($outputPath)) {
-        if (! mkdir($outputPath, 0755, true)) {
-            return ['success' => false, 'error' => 'Failed to create backup directory'];
-        }
-    }
-
-    $manifest = [
-        'version' => '1.0',
-        'created_at' => date('c'),
-        'type' => 'server',
-        'backup_type' => $backupType,
-        'users' => [],
-        'total_size' => 0,
-    ];
+    $repo = $params['repo'] ?? '';
 
     try {
         // Get all system users with home directories in /home
@@ -17603,48 +17564,45 @@ function backupCreateServer(array $params): array
             $systemUsers = $homeDirs;
         }
 
+        $backedUpUsers = [];
+        $totalSize = 0;
+        $errors = [];
+
         foreach ($systemUsers as $username) {
             if (! validateUsername($username) || isProtectedUser($username)) {
                 continue;
             }
 
-            // Create individual tar.gz per user
-            $userBackupPath = "$outputPath/{$username}.tar.gz";
-
             $userResult = backupCreate([
                 'username' => $username,
-                'output_path' => $userBackupPath,
-                'backup_type' => 'full', // Always full for individual user archives
+                'output_path' => $outputPath,
                 'include_files' => $includeFiles,
                 'include_databases' => $includeDatabases,
                 'include_mailboxes' => $includeMailboxes,
                 'include_dns' => $includeDns,
+                'repo' => $repo,
             ]);
 
             if ($userResult['success']) {
-                $userSize = file_exists($userBackupPath) ? filesize($userBackupPath) : 0;
-                $manifest['users'][$username] = [
-                    'file' => "{$username}.tar.gz",
-                    'domains' => $userResult['domains'] ?? [],
-                    'databases' => $userResult['databases'] ?? [],
-                    'mailboxes' => $userResult['mailboxes'] ?? [],
-                    'size' => $userSize,
-                    'checksum' => file_exists($userBackupPath) ? hash_file('sha256', $userBackupPath) : '',
-                ];
-                $manifest['total_size'] += $userSize;
+                $backedUpUsers[] = $username;
+                $totalSize += $userResult['size'] ?? 0;
+            } else {
+                $errors[] = "$username: ".($userResult['error'] ?? 'Unknown error');
             }
         }
 
-        // Save manifest in the backup folder
-        file_put_contents("$outputPath/manifest.json", json_encode($manifest, JSON_PRETTY_PRINT));
+        if (empty($backedUpUsers)) {
+            return ['success' => false, 'error' => 'No users backed up. Errors: '.implode('; ', $errors)];
+        }
 
         return [
             'success' => true,
             'path' => $outputPath,
-            'size' => $manifest['total_size'],
-            'users' => array_keys($manifest['users']),
-            'backup_type' => $backupType,
-            'user_count' => count($manifest['users']),
+            'size' => $totalSize,
+            'users' => $backedUpUsers,
+            'backup_type' => 'restic',
+            'user_count' => count($backedUpUsers),
+            'errors' => $errors,
         ];
 
     } catch (Exception $e) {
@@ -17653,12 +17611,13 @@ function backupCreateServer(array $params): array
 }
 
 /**
- * Restore a backup for a user.
+ * Restore a backup for a user from a Restic snapshot.
  */
 function backupRestore(array $params): array
 {
     $username = $params['username'] ?? '';
     $backupPath = $params['backup_path'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? '';
     $restoreFiles = $params['restore_files'] ?? true;
     $restoreDatabases = $params['restore_databases'] ?? true;
     $restoreMailboxes = $params['restore_mailboxes'] ?? true;
@@ -17667,24 +17626,25 @@ function backupRestore(array $params): array
     $selectedDomains = $params['selected_domains'] ?? null;
     $selectedDatabases = $params['selected_databases'] ?? null;
     $selectedMailboxes = $params['selected_mailboxes'] ?? null;
+    $repo = $params['repo'] ?? '';
 
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
     }
 
-    if (! file_exists($backupPath)) {
-        return ['success' => false, 'error' => 'Backup file not found'];
+    if (empty($snapshotId) && empty($backupPath)) {
+        return ['success' => false, 'error' => 'Snapshot ID or backup path is required'];
     }
 
     $homeDir = "/home/$username";
-    $tempDir = sys_get_temp_dir().'/jabali_restore_'.uniqid();
+    $restoreId = uniqid();
+    $tempDir = sys_get_temp_dir()."/jabali_restore_{$restoreId}";
 
     // Check if system user exists, create if not
     $systemUser = posix_getpwnam($username);
     if (! $systemUser) {
         logger("System user $username not found, creating...");
 
-        // Create system user with proper home directory
         $cmd = 'useradd -m -s /usr/sbin/nologin -d '.escapeshellarg($homeDir).' '.escapeshellarg($username).' 2>&1';
         exec($cmd, $useraddOutput, $useraddRetval);
 
@@ -17692,15 +17652,12 @@ function backupRestore(array $params): array
             return ['success' => false, 'error' => 'Failed to create system user: '.implode("\n", $useraddOutput)];
         }
 
-        // Add to sftpusers group for SFTP access
         exec('usermod -aG sftpusers '.escapeshellarg($username).' 2>/dev/null');
 
-        // Set up home directory ownership for SFTP chroot
         chown($homeDir, 'root');
         chgrp($homeDir, $username);
         chmod($homeDir, 0750);
 
-        // Create standard directories
         $dirs = ['domains', 'mail', 'logs', 'backups', 'tmp'];
         foreach ($dirs as $dir) {
             $dirPath = "$homeDir/$dir";
@@ -17711,7 +17668,6 @@ function backupRestore(array $params): array
             }
         }
 
-        // Create PHP-FPM pool for the user (don't reload during migration - we'll do it at the end)
         createFpmPool($username, reload: false);
 
         logger("Created system user $username with home directory $homeDir");
@@ -17720,140 +17676,93 @@ function backupRestore(array $params): array
     try {
         mkdir($tempDir, 0755, true);
 
-        // Extract or copy backup
-        if (is_file($backupPath) && preg_match('/\.(tar\.gz|tgz)$/i', $backupPath)) {
-            exec('tar -I pigz -xf '.escapeshellarg($backupPath).' -C '.escapeshellarg($tempDir).' 2>&1', $output, $retval);
-            if ($retval !== 0) {
-                throw new Exception('Failed to extract backup archive');
-            }
-            // Find the extracted directory
-            $extracted = array_filter(scandir($tempDir), fn ($d) => $d !== '.' && $d !== '..');
-            if (count($extracted) === 1) {
-                $tempDir = "$tempDir/".reset($extracted);
-            }
-        } elseif (is_dir($backupPath)) {
-            // Check if this is a server backup (directory with per-user tar.gz files)
-            $userTarGz = "$backupPath/$username.tar.gz";
-            if (file_exists($userTarGz)) {
-                // Server backup - extract the specific user's tar.gz
-                exec('tar -I pigz -xf '.escapeshellarg($userTarGz).' -C '.escapeshellarg($tempDir).' 2>&1', $output, $retval);
-                if ($retval !== 0) {
-                    throw new Exception("Failed to extract user backup from server backup: $username.tar.gz");
+        if (! empty($snapshotId)) {
+            // Restic restore from snapshot
+            $includeArgs = '';
+            if ($selectedDomains !== null || $selectedDatabases !== null || $selectedMailboxes !== null) {
+                // Build --include paths for granular restore
+                if ($restoreFiles && $selectedDomains !== null) {
+                    foreach ($selectedDomains as $domain) {
+                        $includeArgs .= ' --include '.escapeshellarg("*/files/$domain");
+                    }
+                } elseif ($restoreFiles) {
+                    $includeArgs .= ' --include '.escapeshellarg('*/files');
                 }
-                // Find the extracted directory (usually named after the username)
+
+                if ($restoreDatabases && $selectedDatabases !== null) {
+                    foreach ($selectedDatabases as $db) {
+                        $includeArgs .= ' --include '.escapeshellarg("*/mysql/$db.*");
+                    }
+                    $includeArgs .= ' --include '.escapeshellarg('*/mysql/users.sql');
+                } elseif ($restoreDatabases) {
+                    $includeArgs .= ' --include '.escapeshellarg('*/mysql');
+                }
+
+                if ($restoreMailboxes && $selectedMailboxes !== null) {
+                    foreach ($selectedMailboxes as $mbx) {
+                        $parts = explode('@', $mbx);
+                        if (count($parts) === 2) {
+                            $includeArgs .= ' --include '.escapeshellarg("*/mailboxes/{$parts[1]}/{$parts[0]}");
+                        }
+                    }
+                } elseif ($restoreMailboxes) {
+                    $includeArgs .= ' --include '.escapeshellarg('*/mailboxes');
+                }
+
+                if ($restoreSsl) {
+                    $includeArgs .= ' --include '.escapeshellarg('*/ssl');
+                }
+                if ($restoreDns) {
+                    $includeArgs .= ' --include '.escapeshellarg('*/zones');
+                }
+
+                $includeArgs .= ' --include '.escapeshellarg('*/metadata');
+                $includeArgs .= ' --include '.escapeshellarg('*/manifest.json');
+            }
+
+            $restoreCmd = 'restore '.escapeshellarg($snapshotId).' --target '.escapeshellarg($tempDir).$includeArgs;
+            $result = resticExec($restoreCmd, $repo);
+
+            if ($result['exitCode'] !== 0) {
+                throw new Exception('Restic restore failed: '.$result['output']);
+            }
+
+            // Restic restores to {target}/{original_path}/ — find the staging dir
+            // The staging dir was something like /tmp/jabali_backup_{id}/
+            $restoredDirs = glob("$tempDir/tmp/jabali_backup_*");
+            if (! empty($restoredDirs)) {
+                $tempDir = $restoredDirs[0];
+            }
+        } elseif (! empty($backupPath)) {
+            // Legacy restore from file/directory path (backward compatibility)
+            if (is_file($backupPath) && preg_match('/\.(tar\.gz|tgz)$/i', $backupPath)) {
+                exec('tar -I pigz -xf '.escapeshellarg($backupPath).' -C '.escapeshellarg($tempDir).' 2>&1', $output, $retval);
+                if ($retval !== 0) {
+                    throw new Exception('Failed to extract backup archive');
+                }
                 $extracted = array_filter(scandir($tempDir), fn ($d) => $d !== '.' && $d !== '..');
                 if (count($extracted) === 1) {
                     $tempDir = "$tempDir/".reset($extracted);
                 }
-            } else {
-                // Incremental/direct backup - copy to temp (use /. to include hidden files)
+            } elseif (is_dir($backupPath)) {
                 exec('cp -a '.escapeshellarg(rtrim($backupPath, '/')).'/. '.escapeshellarg($tempDir).'/ 2>&1');
+            } else {
+                throw new Exception('Invalid backup format');
             }
-        } else {
-            throw new Exception('Invalid backup format');
         }
 
-        // Detect incremental backup format (uses --relative paths like home/user/domains/)
-        // Convert incremental format to standard format expected by restore
-        $incrementalUserDir = "$tempDir/home/$username";
-        if (is_dir($incrementalUserDir)) {
-            logger('Detected incremental backup format, converting to standard structure');
-
-            // Move domains to files/
-            if (is_dir("$incrementalUserDir/domains")) {
-                mkdir("$tempDir/files", 0755, true);
-                exec('mv '.escapeshellarg("$incrementalUserDir/domains").'/* '.escapeshellarg("$tempDir/files/").' 2>&1');
-            }
-
-            // Move mysql to standard location
-            if (is_dir("$incrementalUserDir/mysql")) {
-                exec('mv '.escapeshellarg("$incrementalUserDir/mysql").' '.escapeshellarg("$tempDir/").' 2>&1');
-            }
-
-            // Move zones (DNS) to standard location
-            if (is_dir("$incrementalUserDir/zones")) {
-                mkdir("$tempDir/dns", 0755, true);
-                exec('mv '.escapeshellarg("$incrementalUserDir/zones").'/* '.escapeshellarg("$tempDir/dns/").' 2>&1');
-            }
-
-            // Move mail to mailboxes/
-            if (is_dir("$incrementalUserDir/mail")) {
-                mkdir("$tempDir/mailboxes", 0755, true);
-                exec('mv '.escapeshellarg("$incrementalUserDir/mail").'/* '.escapeshellarg("$tempDir/mailboxes/").' 2>&1');
-            }
-
-            // Check for var/mail/vhosts (additional mailbox storage)
-            if (is_dir("$tempDir/var/mail/vhosts")) {
-                if (! is_dir("$tempDir/mailboxes")) {
-                    mkdir("$tempDir/mailboxes", 0755, true);
-                }
-                exec('cp -a '.escapeshellarg("$tempDir/var/mail/vhosts").'/* '.escapeshellarg("$tempDir/mailboxes/").' 2>&1');
-            }
-
-            // Restore .wordpress_sites registry file
-            if (file_exists("$incrementalUserDir/.wordpress_sites")) {
-                $srcFile = "$incrementalUserDir/.wordpress_sites";
-                $dstFile = "$homeDir/.wordpress_sites";
-                logger("Copying $srcFile to $dstFile (homeDir exists: ".(is_dir($homeDir) ? 'yes' : 'no').')');
-                if (copy($srcFile, $dstFile)) {
-                    chown($dstFile, $username);
-                    chgrp($dstFile, $username);
-                    logger("Restored .wordpress_sites registry for $username");
-                } else {
-                    logger("ERROR: Failed to copy .wordpress_sites from $srcFile to $dstFile");
-                }
-            }
-
-            // Restore .domains registry file
-            if (file_exists("$incrementalUserDir/.domains")) {
-                $srcFile = "$incrementalUserDir/.domains";
-                $dstFile = "$homeDir/.domains";
-                if (copy($srcFile, $dstFile)) {
-                    chown($dstFile, $username);
-                    chgrp($dstFile, $username);
-                    logger("Restored .domains registry for $username");
-                } else {
-                    logger("ERROR: Failed to copy .domains from $srcFile to $dstFile");
-                }
-            }
-
-            // Move SSL certificates to temp location
-            if (is_dir("$incrementalUserDir/ssl")) {
-                exec('mv '.escapeshellarg("$incrementalUserDir/ssl").' '.escapeshellarg("$tempDir/").' 2>&1');
-            }
-
-            // Move metadata directory (panel_data.json) to temp location
-            if (is_dir("$incrementalUserDir/metadata")) {
-                exec('mv '.escapeshellarg("$incrementalUserDir/metadata").' '.escapeshellarg("$tempDir/").' 2>&1');
-                logger("Moved metadata directory for $username");
-            }
-
-            // Cleanup incremental structure
-            exec('rm -rf '.escapeshellarg("$tempDir/home").' '.escapeshellarg("$tempDir/var").' 2>&1');
-        }
-
-        // Read manifest - check both temp dir and original backup path
+        // Read manifest
         $manifestPath = "$tempDir/manifest.json";
-        if (! file_exists($manifestPath) && is_dir($backupPath)) {
-            // For server backups, manifest might be in the original directory
-            $serverManifestPath = "$backupPath/manifest.json";
-            if (file_exists($serverManifestPath)) {
-                $manifestPath = $serverManifestPath;
-            }
-        }
-
-        // For incremental backups without manifest, create a minimal one
         if (! file_exists($manifestPath)) {
-            logger('No manifest found, creating minimal manifest for incremental backup');
+            logger('No manifest found, creating minimal manifest from restored data');
             $manifest = [
                 'username' => $username,
-                'type' => 'incremental',
+                'type' => 'restic',
                 'domains' => is_dir("$tempDir/files") ? array_filter(scandir("$tempDir/files"), fn ($d) => $d !== '.' && $d !== '..') : [],
                 'databases' => [],
                 'mailboxes' => [],
             ];
 
-            // Detect databases
             $dbDir = is_dir("$tempDir/mysql") ? "$tempDir/mysql" : "$tempDir/databases";
             if (is_dir($dbDir)) {
                 foreach (scandir($dbDir) as $item) {
@@ -17863,7 +17772,6 @@ function backupRestore(array $params): array
                 }
             }
 
-            // Detect mailboxes
             if (is_dir("$tempDir/mailboxes")) {
                 foreach (scandir("$tempDir/mailboxes") as $domain) {
                     if ($domain === '.' || $domain === '..') {
@@ -17899,7 +17807,6 @@ function backupRestore(array $params): array
                     continue;
                 }
 
-                // Extract domain name
                 $domain = preg_replace('/\.tar\.gz$/i', '', $item);
 
                 // SECURITY: Validate domain name (no path traversal)
@@ -17914,18 +17821,15 @@ function backupRestore(array $params): array
                 }
 
                 $itemPath = "$filesDir/$item";
-                $retval = 1; // Default to failure
+                $retval = 1;
 
                 if (is_file($itemPath) && preg_match('/\.tar\.gz$/i', $item)) {
-                    // Extract tar.gz
                     exec('tar -I pigz -xf '.escapeshellarg($itemPath).' -C '.escapeshellarg($domainsTarget).' 2>&1', $output, $retval);
                 } elseif (is_dir($itemPath)) {
-                    // Copy directory contents (incremental) - use rsync to avoid nesting
                     $targetDomainDir = "$domainsTarget/$domain";
                     if (! is_dir($targetDomainDir)) {
                         mkdir($targetDomainDir, 0755, true);
                     }
-                    // Use trailing slash on source to copy contents, not the directory itself
                     exec('rsync -a '.escapeshellarg("$itemPath/").' '.escapeshellarg("$targetDomainDir/").' 2>&1', $output, $retval);
                 }
 
@@ -17937,7 +17841,6 @@ function backupRestore(array $params): array
                         logger("Removed $removedSymlinks dangerous symlinks from $domainPath");
                     }
 
-                    // Fix ownership
                     exec("chown -R $username:$username ".escapeshellarg($domainPath));
                     $restored['files'][] = $domain;
                 }
@@ -17958,7 +17861,7 @@ function backupRestore(array $params): array
                     }
                     if ($item === 'users.sql') {
                         continue;
-                    } // Handle separately
+                    }
                     if (! preg_match('/\.sql(\.gz)?$/i', $item)) {
                         continue;
                     }
@@ -17985,7 +17888,6 @@ function backupRestore(array $params): array
                         continue;
                     }
 
-                    // Ensure database exists
                     $mysqli->query("CREATE DATABASE IF NOT EXISTS `{$mysqli->real_escape_string($dbName)}`");
 
                     $mysqlHost = $_ENV['MYSQL_HOST'] ?? 'localhost';
@@ -18016,11 +17918,9 @@ function backupRestore(array $params): array
                 // Restore MySQL users and permissions
                 $usersFile = "$dbDir/users.sql";
                 if (file_exists($usersFile)) {
-                    // SECURITY: Validate and sanitize users.sql
                     $sanitizedUsersSql = validateMysqlUsersFile($username, $usersFile);
 
                     if ($sanitizedUsersSql !== null && ! empty(trim($sanitizedUsersSql))) {
-                        // Write sanitized SQL to temp file
                         $sanitizedUsersFile = "$dbDir/users_sanitized.sql";
                         file_put_contents($sanitizedUsersFile, $sanitizedUsersSql);
 
@@ -18039,7 +17939,6 @@ function backupRestore(array $params): array
                             $restored['mysql_users'] = true;
                         }
 
-                        // Cleanup
                         unlink($sanitizedUsersFile);
                     } else {
                         logger('MySQL users.sql validation failed or empty after sanitization');
@@ -18052,7 +17951,6 @@ function backupRestore(array $params): array
                     $filesDir = "$tempDir/files";
 
                     foreach ($restored['databases'] as $dbName) {
-                        // Find wp-config.php files that reference this database
                         if (is_dir($filesDir)) {
                             foreach (scandir($filesDir) as $domain) {
                                 if ($domain === '.' || $domain === '..') {
@@ -18066,12 +17964,10 @@ function backupRestore(array $params): array
 
                                 $configContent = file_get_contents($wpConfig);
 
-                                // Check if this wp-config uses this database
                                 if (strpos($configContent, "'$dbName'") === false && strpos($configContent, "\"$dbName\"") === false) {
                                     continue;
                                 }
 
-                                // Extract DB credentials
                                 $dbUser = null;
                                 $dbPass = null;
 
@@ -18082,12 +17978,9 @@ function backupRestore(array $params): array
                                     $dbPass = $matches[1];
                                 }
 
-                                // Security: Only create user if it starts with username_
                                 if ($dbUser && strpos($dbUser, $username.'_') === 0) {
-                                    // Check if user already exists
                                     $checkUser = $mysqli->query("SELECT User FROM mysql.user WHERE User = '".$mysqli->real_escape_string($dbUser)."' AND Host = 'localhost'");
                                     if ($checkUser && $checkUser->num_rows === 0) {
-                                        // Create user and grant permissions
                                         $safeUser = $mysqli->real_escape_string($dbUser);
                                         $safePass = $mysqli->real_escape_string($dbPass);
                                         $safeDb = $mysqli->real_escape_string($dbName);
@@ -18123,7 +18016,6 @@ function backupRestore(array $params): array
 
                 // Handle tar.gz files (traditional backup format)
                 if (is_file($itemPath) && preg_match('/\.tar\.gz$/i', $item)) {
-                    // Parse domain_user.tar.gz format
                     $parts = explode('_', preg_replace('/\.tar\.gz$/i', '', $item));
                     if (count($parts) >= 2) {
                         $mailUser = array_pop($parts);
@@ -18137,7 +18029,6 @@ function backupRestore(array $params): array
                             continue;
                         }
 
-                        // SECURITY: Check if domain belongs to this user
                         if (! in_array($domain, $userDomains)) {
                             logger("Blocked mailbox restore for unowned domain: $domain (user: $username)");
 
@@ -18156,7 +18047,6 @@ function backupRestore(array $params): array
                         exec('tar -I pigz -xf '.escapeshellarg($itemPath).' -C '.escapeshellarg($targetPath).' 2>&1', $output, $retval);
 
                         if ($retval === 0) {
-                            // SECURITY: Remove dangerous symlinks
                             $mailboxPath = "$targetPath/$mailUser";
                             if (is_dir($mailboxPath)) {
                                 removeDangerousSymlinks($mailboxPath, $homeDir);
@@ -18167,25 +18057,22 @@ function backupRestore(array $params): array
                         }
                     }
                 }
-                // Handle directories (incremental backup format: mailboxes/domain/mailuser/)
+                // Handle directories (Restic restore format: mailboxes/domain/mailuser/)
                 elseif (is_dir($itemPath)) {
                     $domain = $item;
 
-                    // SECURITY: Validate domain format
                     if (! validateDomain($domain) || strpos($domain, '..') !== false) {
                         logger("Blocked invalid domain in mailbox restore: $domain");
 
                         continue;
                     }
 
-                    // SECURITY: Check if domain belongs to this user
                     if (! in_array($domain, $userDomains)) {
                         logger("Blocked mailbox restore for unowned domain: $domain (user: $username)");
 
                         continue;
                     }
 
-                    // Restore all mailboxes for this domain
                     foreach (scandir($itemPath) as $mailUser) {
                         if ($mailUser === '.' || $mailUser === '..') {
                             continue;
@@ -18202,13 +18089,11 @@ function backupRestore(array $params): array
                             continue;
                         }
 
-                        // Copy mailbox to user's home mail directory
                         $mailTarget = "$homeDir/mail/$domain/$mailUser";
                         if (! is_dir(dirname($mailTarget))) {
                             mkdir(dirname($mailTarget), 0755, true);
                         }
 
-                        // Remove existing mailbox directory if present
                         if (is_dir($mailTarget)) {
                             exec('rm -rf '.escapeshellarg($mailTarget));
                         }
@@ -18216,13 +18101,9 @@ function backupRestore(array $params): array
                         exec('cp -a '.escapeshellarg($mailboxSrc).' '.escapeshellarg($mailTarget).' 2>&1', $output, $retval);
 
                         if ($retval === 0) {
-                            // SECURITY: Remove dangerous symlinks
                             removeDangerousSymlinks($mailTarget, $homeDir);
-
-                            // Fix ownership for system user
                             exec("chown -R $username:$username ".escapeshellarg($mailTarget));
 
-                            // Add to Postfix virtual_mailbox_maps if not already there
                             $mailboxesFile = POSTFIX_VIRTUAL_MAILBOXES;
                             $mailboxesContent = file_exists($mailboxesFile) ? file_get_contents($mailboxesFile) : '';
                             if (strpos($mailboxesContent, $mailboxName) === false) {
@@ -18236,7 +18117,6 @@ function backupRestore(array $params): array
                 }
             }
 
-            // Rebuild Postfix hash file if mailboxes were restored
             if (! empty($restored['mailboxes'])) {
                 exec('postmap '.escapeshellarg(POSTFIX_VIRTUAL_MAILBOXES));
             }
@@ -18248,7 +18128,6 @@ function backupRestore(array $params): array
             $letsencryptDir = '/etc/letsencrypt/live';
             $userDomains = getUserDomains($username);
 
-            // Create letsencrypt directory if needed
             if (! is_dir($letsencryptDir)) {
                 mkdir($letsencryptDir, 0755, true);
             }
@@ -18261,14 +18140,12 @@ function backupRestore(array $params): array
                     continue;
                 }
 
-                // SECURITY: Validate domain format and no path traversal
                 if (! validateDomain($domain) || strpos($domain, '..') !== false || strpos($domain, '/') !== false) {
                     logger("Blocked invalid domain in SSL restore: $domain");
 
                     continue;
                 }
 
-                // SECURITY: Verify domain belongs to this user
                 if (! in_array($domain, $userDomains)) {
                     logger("Blocked SSL restore for unowned domain: $domain (user: $username)");
 
@@ -18280,19 +18157,15 @@ function backupRestore(array $params): array
                 }
 
                 $targetDir = "$letsencryptDir/$domain";
-
-                // Create target directory
                 if (! is_dir($targetDir)) {
                     mkdir($targetDir, 0755, true);
                 }
 
-                // Copy certificate files (only allow specific filenames)
                 $certFiles = ['fullchain.pem', 'privkey.pem', 'cert.pem', 'chain.pem'];
                 $copied = false;
                 foreach ($certFiles as $certFile) {
                     $srcFile = "$sslBackupDir/$domain/$certFile";
                     if (file_exists($srcFile) && is_file($srcFile)) {
-                        // SECURITY: Verify source is a regular file, not a symlink
                         if (is_link($srcFile)) {
                             logger("Blocked symlink in SSL backup: $srcFile");
 
@@ -18310,10 +18183,9 @@ function backupRestore(array $params): array
             }
         }
 
-        // Restore metadata files (for full backups that store them in metadata/)
+        // Restore metadata files
         $metadataDir = "$tempDir/metadata";
         if (is_dir($metadataDir)) {
-            // Restore .wordpress_sites from metadata/wordpress_sites.json
             if (file_exists("$metadataDir/wordpress_sites.json")) {
                 copy("$metadataDir/wordpress_sites.json", "$homeDir/.wordpress_sites");
                 chown("$homeDir/.wordpress_sites", $username);
@@ -18321,7 +18193,6 @@ function backupRestore(array $params): array
                 logger("Restored .wordpress_sites from metadata for $username");
             }
 
-            // Restore .domains from metadata/domains.json
             if (file_exists("$metadataDir/domains.json")) {
                 copy("$metadataDir/domains.json", "$homeDir/.domains");
                 chown("$homeDir/.domains", $username);
@@ -18330,7 +18201,7 @@ function backupRestore(array $params): array
             }
         }
 
-        // Restore DNS zones (check both zones/ and dns/ for backward compatibility)
+        // Restore DNS zones
         $dnsDir = is_dir("$tempDir/zones") ? "$tempDir/zones" : "$tempDir/dns";
         if ($restoreDns && is_dir($dnsDir)) {
             $zonesTargetDir = '/etc/bind/zones';
@@ -18347,14 +18218,12 @@ function backupRestore(array $params): array
 
                 $domain = $matches[1];
 
-                // SECURITY: Validate domain format and no path traversal
                 if (! validateDomain($domain) || strpos($domain, '..') !== false || strpos($domain, '/') !== false) {
                     logger("Blocked invalid domain in DNS restore: $domain");
 
                     continue;
                 }
 
-                // SECURITY: Verify domain belongs to this user
                 if (! in_array($domain, $userDomains)) {
                     logger("Blocked DNS zone restore for unowned domain: $domain (user: $username)");
 
@@ -18368,14 +18237,12 @@ function backupRestore(array $params): array
                 $srcFile = "$dnsDir/$item";
                 $targetFile = "$zonesTargetDir/$item";
 
-                // SECURITY: Verify source is a regular file, not a symlink
                 if (is_link($srcFile)) {
                     logger("Blocked symlink in DNS backup: $srcFile");
 
                     continue;
                 }
 
-                // SECURITY: Validate zone file using named-checkzone before copying
                 exec('named-checkzone '.escapeshellarg($domain).' '.escapeshellarg($srcFile).' 2>&1', $checkOutput, $checkRetval);
                 if ($checkRetval !== 0) {
                     logger("Invalid DNS zone file rejected: $srcFile - ".implode(' ', $checkOutput));
@@ -18391,13 +18258,12 @@ function backupRestore(array $params): array
                 }
             }
 
-            // Reload BIND if we restored any zones
             if (! empty($restored['dns_zones'])) {
                 exec('rndc reload 2>&1');
             }
         }
 
-        // Import panel data (database records) from metadata/panel_data.json
+        // Import panel data
         $panelDataFile = "$tempDir/metadata/panel_data.json";
         if (file_exists($panelDataFile)) {
             $panelData = json_decode(file_get_contents($panelDataFile), true);
@@ -18411,10 +18277,8 @@ function backupRestore(array $params): array
                 }
             }
         } else {
-            // No panel_data.json - create minimal panel user record from restored data
             logger("No panel_data.json found, creating minimal panel user record for $username");
 
-            // Build minimal panel data from restored files and registry
             $minimalPanelData = [
                 'username' => $username,
                 'user' => [
@@ -18431,7 +18295,6 @@ function backupRestore(array $params): array
                 'mailboxes' => [],
             ];
 
-            // Read domains from .domains registry file
             $domainsFile = "$homeDir/.domains";
             if (file_exists($domainsFile)) {
                 $domainsData = json_decode(file_get_contents($domainsFile), true) ?: [];
@@ -18444,7 +18307,6 @@ function backupRestore(array $params): array
                 }
             }
 
-            // Read email domains from restored mailboxes
             if (! empty($restored['mailboxes'])) {
                 $seenDomains = [];
                 foreach ($restored['mailboxes'] as $mailboxEmail) {
@@ -18477,18 +18339,12 @@ function backupRestore(array $params): array
         }
 
         // Fix ownership for all restored files and directories
-        // Home directory should be root:username with 750 for SFTP chroot security
         $userInfo = posix_getpwnam($username);
         if ($userInfo) {
-            $uid = $userInfo['uid'];
-            $gid = $userInfo['gid'];
-
-            // Home dir: root:user 750 (required for SFTP chroot)
             chown($homeDir, 'root');
             chgrp($homeDir, $username);
             chmod($homeDir, 0750);
 
-            // Create and fix ownership of directories inside home
             $dirsToFix = ['domains', 'mail', 'logs', 'backups', 'tmp', 'metadata', '.ssh', 'mysql', 'zones', 'ssl'];
             foreach ($dirsToFix as $subdir) {
                 $subdirPath = "$homeDir/$subdir";
@@ -18502,7 +18358,6 @@ function backupRestore(array $params): array
                 }
             }
 
-            // Fix ownership of registry files
             $filesToFix = ['.wordpress_sites', '.domains', '.redis_credentials'];
             foreach ($filesToFix as $file) {
                 $filePath = "$homeDir/$file";
@@ -18512,7 +18367,6 @@ function backupRestore(array $params): array
                 }
             }
 
-            // Set proper ACLs for nginx access
             exec('setfacl -m u:www-data:x '.escapeshellarg($homeDir).' 2>/dev/null');
             if (is_dir("$homeDir/domains")) {
                 exec('setfacl -m u:www-data:x '.escapeshellarg("$homeDir/domains").' 2>/dev/null');
@@ -18526,7 +18380,6 @@ function backupRestore(array $params): array
         // Cleanup temp directory
         exec('rm -rf '.escapeshellarg($tempDir));
 
-        // Log successful restore summary
         $summary = [];
         if (! empty($restored['files'])) {
             $summary[] = count($restored['files']).' domain(s)';
@@ -18571,75 +18424,41 @@ function backupRestore(array $params): array
 }
 
 /**
- * List backups for a user.
+ * List backups for a user using Restic snapshots.
  */
 function backupList(array $params): array
 {
     $username = $params['username'] ?? '';
-    $path = $params['path'] ?? '';
+    $repo = $params['repo'] ?? '';
 
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
     }
 
-    $backupDir = ! empty($path) ? $path : "/home/$username/backups";
+    $result = resticExec('snapshots --json --tag '.escapeshellarg("user:{$username}"), $repo);
 
-    if (! is_dir($backupDir)) {
+    if ($result['exitCode'] !== 0) {
+        return ['success' => true, 'backups' => []];
+    }
+
+    $snapshots = json_decode($result['output'], true);
+    if (! is_array($snapshots)) {
         return ['success' => true, 'backups' => []];
     }
 
     $backups = [];
-    foreach (scandir($backupDir) as $item) {
-        if ($item === '.' || $item === '..') {
-            continue;
-        }
-
-        $itemPath = "$backupDir/$item";
-
-        // Check for backup files or directories
-        if (is_file($itemPath) && preg_match('/\.(tar\.gz|tgz)$/i', $item)) {
-            $manifest = null;
-
-            // Try to read manifest from archive
-            $output = [];
-            exec('tar -I pigz -tf '.escapeshellarg($itemPath).' 2>/dev/null | grep manifest.json | head -1', $output);
-            if (! empty($output)) {
-                $manifestContent = [];
-                exec('tar -I pigz -xf '.escapeshellarg($itemPath).' -O '.escapeshellarg(trim($output[0])).' 2>/dev/null', $manifestContent);
-                if (! empty($manifestContent)) {
-                    $manifest = json_decode(implode("\n", $manifestContent), true);
-                }
-            }
-
-            $backups[] = [
-                'name' => $item,
-                'path' => $itemPath,
-                'type' => 'full',
-                'size' => filesize($itemPath),
-                'created_at' => date('c', filemtime($itemPath)),
-                'manifest' => $manifest,
-            ];
-        } elseif (is_dir($itemPath) && file_exists("$itemPath/manifest.json")) {
-            $manifest = json_decode(file_get_contents("$itemPath/manifest.json"), true);
-
-            // Calculate directory size
-            $size = 0;
-            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($itemPath));
-            foreach ($iterator as $file) {
-                if ($file->isFile()) {
-                    $size += $file->getSize();
-                }
-            }
-
-            $backups[] = [
-                'name' => $item,
-                'path' => $itemPath,
-                'type' => 'incremental',
-                'size' => $size,
-                'created_at' => $manifest['created_at'] ?? date('c', filemtime($itemPath)),
-                'manifest' => $manifest,
-            ];
-        }
+    foreach ($snapshots as $snap) {
+        $backups[] = [
+            'name' => $snap['short_id'] ?? substr($snap['id'] ?? '', 0, 8),
+            'path' => $snap['id'] ?? '',
+            'snapshot_id' => $snap['id'] ?? '',
+            'type' => 'restic',
+            'size' => 0,
+            'created_at' => $snap['time'] ?? '',
+            'tags' => $snap['tags'] ?? [],
+            'hostname' => $snap['hostname'] ?? '',
+            'manifest' => null,
+        ];
     }
 
     // Sort by creation date, newest first
@@ -18649,185 +18468,159 @@ function backupList(array $params): array
 }
 
 /**
- * Delete a backup file or directory.
+ * Delete a backup snapshot using Restic forget.
  */
 function backupDelete(array $params): array
 {
     $username = $params['username'] ?? '';
-    $backupPath = $params['backup_path'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? $params['backup_path'] ?? '';
+    $repo = $params['repo'] ?? '';
 
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
     }
 
-    if (empty($backupPath)) {
-        return ['success' => false, 'error' => 'Backup path is required'];
+    if (empty($snapshotId)) {
+        return ['success' => false, 'error' => 'Snapshot ID is required'];
     }
 
-    // Security: Ensure path is within user's backup directory
-    $homeDir = "/home/$username";
-    $realPath = realpath($backupPath);
-
-    if ($realPath === false || strpos($realPath, $homeDir) !== 0) {
-        return ['success' => false, 'error' => 'Invalid backup path'];
+    // SECURITY: Verify the snapshot belongs to this user by checking tags
+    $checkResult = resticExec('snapshots '.escapeshellarg($snapshotId).' --json', $repo);
+    if ($checkResult['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Snapshot not found'];
     }
 
-    if (! file_exists($backupPath)) {
-        return ['success' => false, 'error' => 'Backup not found'];
+    $snapshots = json_decode($checkResult['output'], true);
+    if (empty($snapshots)) {
+        return ['success' => false, 'error' => 'Snapshot not found'];
     }
 
-    if (is_file($backupPath)) {
-        unlink($backupPath);
-    } else {
-        exec('rm -rf '.escapeshellarg($backupPath));
+    $tags = $snapshots[0]['tags'] ?? [];
+    if (! in_array("user:{$username}", $tags)) {
+        return ['success' => false, 'error' => 'Snapshot does not belong to this user'];
     }
 
-    return ['success' => true, 'message' => 'Backup deleted'];
+    $result = resticExec('forget '.escapeshellarg($snapshotId).' --prune', $repo);
+
+    if ($result['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Failed to delete snapshot: '.$result['output']];
+    }
+
+    return ['success' => true, 'message' => 'Backup snapshot deleted'];
 }
 
 /**
- * Delete a server backup file.
+ * Delete a server backup snapshot using Restic forget.
  */
 function backupDeleteServer(array $params): array
 {
-    $backupPath = $params['backup_path'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? $params['backup_path'] ?? '';
+    $repo = $params['repo'] ?? '';
 
-    if (empty($backupPath)) {
-        return ['success' => false, 'error' => 'Backup path is required'];
+    if (empty($snapshotId)) {
+        return ['success' => false, 'error' => 'Snapshot ID is required'];
     }
 
-    // Security: Ensure path is within server backup directory
-    $allowedDirs = ['/var/backups/jabali'];
-    $realPath = realpath($backupPath);
+    $result = resticExec('forget '.escapeshellarg($snapshotId).' --prune', $repo);
 
-    if ($realPath === false) {
-        return ['success' => false, 'error' => 'Backup not found'];
+    if ($result['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Failed to delete server snapshot: '.$result['output']];
     }
 
-    $allowed = false;
-    foreach ($allowedDirs as $dir) {
-        if (strpos($realPath, $dir) === 0) {
-            $allowed = true;
-            break;
-        }
-    }
-
-    if (! $allowed) {
-        return ['success' => false, 'error' => 'Invalid backup path - must be in /var/backups/jabali/'];
-    }
-
-    if (! file_exists($backupPath)) {
-        return ['success' => false, 'error' => 'Backup not found'];
-    }
-
-    if (is_file($backupPath)) {
-        unlink($backupPath);
-    } else {
-        exec('rm -rf '.escapeshellarg($backupPath));
-    }
-
-    return ['success' => true, 'message' => 'Server backup deleted'];
+    return ['success' => true, 'message' => 'Server backup snapshot deleted'];
 }
 
 /**
- * Verify backup integrity.
+ * Verify backup repository integrity using Restic check.
  */
 function backupVerify(array $params): array
 {
-    $backupPath = $params['backup_path'] ?? '';
+    $repo = $params['repo'] ?? '';
 
-    if (empty($backupPath) || ! file_exists($backupPath)) {
-        return ['success' => false, 'error' => 'Backup not found'];
-    }
+    $result = resticExec('check', $repo);
 
     $issues = [];
-
-    if (is_file($backupPath)) {
-        // Verify tar.gz archive
-        exec('tar -I pigz -tf '.escapeshellarg($backupPath).' > /dev/null 2>&1', $output, $retval);
-        if ($retval !== 0) {
-            $issues[] = 'Archive is corrupted or invalid';
-        }
-
-        // Check for manifest
-        $output = [];
-        exec('tar -I pigz -tf '.escapeshellarg($backupPath).' 2>/dev/null | grep manifest.json', $output);
-        if (empty($output)) {
-            $issues[] = 'Manifest file not found in archive';
-        }
-    } elseif (is_dir($backupPath)) {
-        if (! file_exists("$backupPath/manifest.json")) {
-            $issues[] = 'Manifest file not found';
-        }
+    if ($result['exitCode'] !== 0) {
+        $issues[] = 'Repository check failed: '.$result['output'];
     }
 
     return [
         'success' => empty($issues),
         'valid' => empty($issues),
         'issues' => $issues,
-        'checksum' => is_file($backupPath) ? hash_file('sha256', $backupPath) : null,
+        'checksum' => null,
     ];
 }
 
 /**
- * Get backup info/manifest.
+ * Get backup info from a Restic snapshot.
  */
 function backupGetInfo(array $params): array
 {
-    $backupPath = $params['backup_path'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? $params['backup_path'] ?? '';
+    $repo = $params['repo'] ?? '';
 
-    if (empty($backupPath) || ! file_exists($backupPath)) {
-        return ['success' => false, 'error' => 'Backup not found'];
+    if (empty($snapshotId)) {
+        return ['success' => false, 'error' => 'Snapshot ID is required'];
     }
 
-    $manifest = null;
-    $size = 0;
+    $result = resticExec('snapshots '.escapeshellarg($snapshotId).' --json', $repo);
 
-    if (is_file($backupPath)) {
-        $size = filesize($backupPath);
+    if ($result['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Snapshot not found'];
+    }
 
-        // Extract manifest from archive
-        $output = [];
-        exec('tar -I pigz -tf '.escapeshellarg($backupPath).' 2>/dev/null | grep manifest.json | head -1', $output);
-        if (! empty($output)) {
-            $manifestContent = [];
-            exec('tar -I pigz -xf '.escapeshellarg($backupPath).' -O '.escapeshellarg(trim($output[0])).' 2>/dev/null', $manifestContent);
-            if (! empty($manifestContent)) {
-                $manifest = json_decode(implode("\n", $manifestContent), true);
-            }
+    $snapshots = json_decode($result['output'], true);
+    if (empty($snapshots)) {
+        return ['success' => false, 'error' => 'Snapshot not found'];
+    }
+
+    $snap = $snapshots[0];
+
+    // Extract username and type from tags
+    $tags = $snap['tags'] ?? [];
+    $username = '';
+    $type = 'user';
+    foreach ($tags as $tag) {
+        if (str_starts_with($tag, 'user:')) {
+            $username = substr($tag, 5);
         }
-    } elseif (is_dir($backupPath)) {
-        if (file_exists("$backupPath/manifest.json")) {
-            $manifest = json_decode(file_get_contents("$backupPath/manifest.json"), true);
-        }
-
-        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($backupPath));
-        foreach ($iterator as $file) {
-            if ($file->isFile()) {
-                $size += $file->getSize();
-            }
+        if (str_starts_with($tag, 'type:')) {
+            $type = substr($tag, 5);
         }
     }
+
+    // Build manifest-like data from snapshot metadata
+    $manifest = [
+        'version' => '3.0',
+        'created_at' => $snap['time'] ?? '',
+        'username' => $username,
+        'backup_type' => 'restic',
+        'snapshot_id' => $snap['id'] ?? '',
+        'hostname' => $snap['hostname'] ?? '',
+        'tags' => $tags,
+        'paths' => $snap['paths'] ?? [],
+    ];
 
     return [
         'success' => true,
-        'path' => $backupPath,
-        'size' => $size,
+        'path' => $snap['id'] ?? '',
+        'snapshot_id' => $snap['id'] ?? '',
+        'size' => 0,
         'manifest' => $manifest,
-        'type' => is_file($backupPath) ? 'full' : 'incremental',
-        'modified_at' => date('c', filemtime($backupPath)),
+        'type' => 'restic',
+        'modified_at' => $snap['time'] ?? '',
     ];
 }
 
 /**
- * List the contents of a backup categorized by type.
- * Supports tar.gz archives (user and server backups) and incremental directories.
+ * List the contents of a backup categorized by type using Restic ls.
  */
 function backupListContents(array $params): array
 {
-    $backupPath = $params['backup_path'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? $params['backup_path'] ?? '';
     $username = $params['username'] ?? '';
-    $destination = $params['destination'] ?? null;
+    $repo = $params['repo'] ?? '';
 
     $result = [
         'success' => true,
@@ -18841,17 +18634,38 @@ function backupListContents(array $params): array
         'manifest' => null,
     ];
 
-    // Remote listing via SSH
-    if (! empty($destination) && ($destination['type'] ?? '') === 'sftp') {
-        $result = backupListContentsRemote($backupPath, $username, $destination, $result);
-    } elseif (empty($backupPath) || ! file_exists($backupPath)) {
-        return ['success' => false, 'error' => 'Backup path not found'];
-    } elseif (is_file($backupPath) && preg_match('/\.(tar\.gz|tgz)$/i', $backupPath)) {
-        $result = backupListContentsTarGz($backupPath, $username, $result);
-    } elseif (is_dir($backupPath)) {
-        $result = backupListContentsDirectory($backupPath, $username, $result);
-    } else {
-        return ['success' => false, 'error' => 'Unsupported backup format'];
+    if (empty($snapshotId)) {
+        return ['success' => false, 'error' => 'Snapshot ID is required'];
+    }
+
+    $lsResult = resticExec('ls '.escapeshellarg($snapshotId).' --json', $repo);
+
+    if ($lsResult['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Failed to list snapshot contents: '.$lsResult['output']];
+    }
+
+    foreach ($lsResult['lines'] as $line) {
+        $entry = json_decode($line, true);
+        if ($entry === null) {
+            continue;
+        }
+
+        // Skip the snapshot metadata line
+        if (($entry['struct_type'] ?? '') === 'snapshot') {
+            continue;
+        }
+
+        $path = $entry['path'] ?? '';
+        if (empty($path)) {
+            continue;
+        }
+
+        // Find the staging dir part and extract the relative path after it
+        // Paths look like: /tmp/jabali_backup_{id}/files/domain.com/...
+        if (preg_match('#/jabali_backup_[^/]+/(.+)$#', $path, $m)) {
+            $relative = $m[1];
+            backupCategorizePath($relative, $result);
+        }
     }
 
     // Deduplicate and sort all arrays
@@ -18871,243 +18685,56 @@ function backupListContents(array $params): array
 }
 
 /**
- * List contents of a remote incremental backup via SSH.
- */
-function backupListContentsRemote(string $remotePath, string $username, array $destination, array $result): array
-{
-    $host = $destination['host'] ?? '';
-    $port = (string) ($destination['port'] ?? 22);
-    $sshUser = $destination['username'] ?? '';
-    $password = $destination['password'] ?? '';
-    $privateKey = $destination['private_key'] ?? '';
-
-    if (empty($host) || empty($sshUser)) {
-        return array_merge($result, ['success' => false, 'error' => 'Invalid destination']);
-    }
-
-    // Build the path to scan — if username provided, look in user subdirectory
-    $scanPath = rtrim($remotePath, '/');
-    if (! empty($username)) {
-        $scanPath .= '/'.$username;
-    }
-
-    $sshOpts = '-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port='.escapeshellarg($port);
-    $keyFile = null;
-
-    // Build find command — depth 5 to handle nested home/{username}/ prefix
-    $findCmd = 'find '.escapeshellarg($scanPath).' -maxdepth 5 -type f -o -type d 2>/dev/null | head -500';
-
-    if (! empty($privateKey)) {
-        $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
-        file_put_contents($keyFile, $privateKey);
-        chmod($keyFile, 0600);
-        $cmd = "ssh $sshOpts -i ".escapeshellarg($keyFile).' '.escapeshellarg("$sshUser@$host").' '.escapeshellarg($findCmd).' 2>&1';
-    } else {
-        $cmd = 'sshpass -p '.escapeshellarg($password)." ssh $sshOpts ".escapeshellarg("$sshUser@$host").' '.escapeshellarg($findCmd).' 2>&1';
-    }
-
-    exec($cmd, $output, $retval);
-    if ($keyFile) {
-        @unlink($keyFile);
-    }
-
-    if ($retval !== 0 || empty($output)) {
-        return array_merge($result, ['success' => true]); // Return empty but successful
-    }
-
-    $basePath = $scanPath.'/';
-    foreach ($output as $line) {
-        $line = trim($line);
-        if (empty($line) || $line === $scanPath) {
-            continue;
-        }
-
-        // Make path relative to scanPath
-        if (str_starts_with($line, $basePath)) {
-            $relative = substr($line, strlen($basePath));
-        } else {
-            continue;
-        }
-
-        // Strip home/{username}/ prefix from incremental backups
-        if (preg_match('#^home/[^/]+/(.+)$#', $relative, $homeMatch)) {
-            $relative = $homeMatch[1];
-        }
-
-        $parts = explode('/', $relative);
-        $category = $parts[0] ?? '';
-        $entry = $parts[1] ?? '';
-
-        if (empty($entry)) {
-            continue;
-        }
-
-        switch ($category) {
-            case 'domains':
-            case 'files':
-                // Only top-level entries are domain names
-                if (count($parts) === 2 && ! str_contains($entry, '.tar.gz')) {
-                    $result['domains'][] = $entry;
-                } elseif (count($parts) === 2 && str_ends_with($entry, '.tar.gz')) {
-                    $result['domains'][] = str_replace('.tar.gz', '', $entry);
-                }
-                break;
-
-            case 'mysql':
-            case 'databases':
-                if (count($parts) === 2) {
-                    if ($entry === 'users.sql' || $entry === 'users.sql.gz') {
-                        $result['has_mysql_users'] = true;
-                    } elseif (preg_match('/^(.+)\.(sql|sql\.gz)$/', $entry, $m)) {
-                        $result['databases'][] = $m[1];
-                    }
-                }
-                break;
-
-            case 'mail':
-            case 'mailboxes':
-                if ($category === 'mail' && count($parts) === 3) {
-                    // mail/domain/user → user@domain
-                    $domain = $parts[1];
-                    $user = $parts[2];
-                    $result['mailboxes'][] = "$user@$domain";
-                } elseif ($category === 'mailboxes' && count($parts) === 2 && str_ends_with($entry, '.tar.gz')) {
-                    $name = str_replace('.tar.gz', '', $entry);
-                    $nameparts = explode('_', $name);
-                    if (count($nameparts) >= 2) {
-                        $mailUser = array_pop($nameparts);
-                        $domain = implode('_', $nameparts);
-                        $result['mailboxes'][] = "$mailUser@$domain";
-                    }
-                }
-                break;
-
-            case 'dns':
-            case 'zones':
-                if (count($parts) === 2) {
-                    $zone = preg_replace('/^db\./', '', $entry);
-                    $zone = preg_replace('/\.zone$/', '', $zone);
-                    $result['dns_zones'][] = $zone;
-                }
-                break;
-
-            case 'ssl':
-                if (count($parts) === 2) {
-                    $result['ssl_certificates'][] = $entry;
-                }
-                break;
-
-            case 'cron':
-                $result['has_cron'] = true;
-                break;
-        }
-    }
-
-    // If has_mysql_users, read users.sql to extract usernames
-    if ($result['has_mysql_users']) {
-        $usersPath = $scanPath.'/home/'.$username.'/mysql/users.sql';
-        if (empty($username)) {
-            $usersPath = $scanPath.'/mysql/users.sql';
-        }
-        $catCmd = 'cat '.escapeshellarg($usersPath)." 2>/dev/null | grep 'CREATE USER'";
-
-        if (! empty($privateKey)) {
-            $keyFile2 = tempnam(sys_get_temp_dir(), 'ssh_key_');
-            file_put_contents($keyFile2, $privateKey);
-            chmod($keyFile2, 0600);
-            $cmd2 = "ssh $sshOpts -i ".escapeshellarg($keyFile2).' '.escapeshellarg("$sshUser@$host").' '.escapeshellarg($catCmd).' 2>&1';
-        } else {
-            $cmd2 = 'sshpass -p '.escapeshellarg($password)." ssh $sshOpts ".escapeshellarg("$sshUser@$host").' '.escapeshellarg($catCmd).' 2>&1';
-        }
-
-        $mysqlUsers = [];
-        exec($cmd2, $userLines, $ret2);
-        if (isset($keyFile2)) {
-            @unlink($keyFile2);
-        }
-        foreach ($userLines as $uLine) {
-            if (preg_match("/CREATE USER [`']([^`']+)[`']/", $uLine, $um)) {
-                $mysqlUsers[] = $um[1];
-            }
-        }
-        $result['mysql_users'] = $mysqlUsers;
-    }
-
-    return $result;
-}
-
-/**
- * List entire user snapshot tree (domains, mail, mysql, etc.) for file browser.
+ * List entire user snapshot tree using Restic ls for file browser.
  */
 function backupListSnapshotTree(array $params): array
 {
-    $backupPath = $params['backup_path'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? $params['backup_path'] ?? '';
     $username = $params['username'] ?? '';
-    $destination = $params['destination'] ?? null;
+    $repo = $params['repo'] ?? '';
 
     if (empty($username)) {
         return ['success' => false, 'error' => 'Username is required'];
     }
 
+    if (empty($snapshotId)) {
+        // Try to find latest snapshot for this user
+        $result = resticExec('snapshots --json --latest 1 --tag '.escapeshellarg("user:{$username}"), $repo);
+        if ($result['exitCode'] !== 0) {
+            return ['success' => true, 'files' => []];
+        }
+        $snapshots = json_decode($result['output'], true);
+        if (empty($snapshots)) {
+            return ['success' => true, 'files' => []];
+        }
+        $snapshotId = $snapshots[0]['id'] ?? '';
+    }
+
+    if (empty($snapshotId)) {
+        return ['success' => true, 'files' => []];
+    }
+
+    $lsResult = resticExec('ls '.escapeshellarg($snapshotId).' --json', $repo);
+
+    if ($lsResult['exitCode'] !== 0) {
+        return ['success' => true, 'files' => []];
+    }
+
     $files = [];
-
-    if (! empty($destination) && ($destination['type'] ?? '') === 'sftp') {
-        $host = $destination['host'] ?? '';
-        $port = (string) ($destination['port'] ?? 22);
-        $sshUser = $destination['username'] ?? '';
-        $password = $destination['password'] ?? '';
-        $privateKey = $destination['private_key'] ?? '';
-
-        // The user's data root — handles home/{username}/ prefix
-        $userPath = rtrim($backupPath, '/').'/'.$username.'/home/'.$username;
-
-        $sshOpts = '-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port='.escapeshellarg($port);
-        $findCmd = 'find '.escapeshellarg($userPath).' -maxdepth 4 \\( -type f -o -type d \\) 2>/dev/null | head -500';
-
-        $keyFile = null;
-        if (! empty($privateKey)) {
-            $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
-            file_put_contents($keyFile, $privateKey);
-            chmod($keyFile, 0600);
-            $cmd = "ssh $sshOpts -i ".escapeshellarg($keyFile).' '.escapeshellarg("$sshUser@$host").' '.escapeshellarg($findCmd).' 2>&1';
-        } else {
-            $cmd = 'sshpass -p '.escapeshellarg($password)." ssh $sshOpts ".escapeshellarg("$sshUser@$host").' '.escapeshellarg($findCmd).' 2>&1';
+    foreach ($lsResult['lines'] as $line) {
+        $entry = json_decode($line, true);
+        if ($entry === null || ($entry['struct_type'] ?? '') === 'snapshot') {
+            continue;
         }
 
-        exec($cmd, $output, $retval);
-        if ($keyFile) {
-            @unlink($keyFile);
+        $path = $entry['path'] ?? '';
+        if (empty($path)) {
+            continue;
         }
 
-        $basePath = $userPath.'/';
-        foreach ($output as $line) {
-            $line = trim($line);
-            if (empty($line) || $line === $userPath) {
-                continue;
-            }
-            if (str_starts_with($line, $basePath)) {
-                $relative = substr($line, strlen($basePath));
-                if (! empty($relative)) {
-                    $files[] = $relative;
-                }
-            }
-        }
-    } elseif (! empty($backupPath) && is_dir($backupPath)) {
-        $userDir = $backupPath.'/'.$username;
-        if (! is_dir($userDir)) {
-            $userDir = $backupPath;
-        }
-
-        exec('find '.escapeshellarg($userDir).' -maxdepth 4 \\( -type f -o -type d \\) 2>/dev/null | head -500', $output);
-        $basePath = $userDir.'/';
-        foreach ($output as $line) {
-            $line = trim($line);
-            if (str_starts_with($line, $basePath)) {
-                $relative = substr($line, strlen($basePath));
-                if (! empty($relative)) {
-                    $files[] = $relative;
-                }
-            }
+        // Extract relative path after the staging dir prefix
+        if (preg_match('#/jabali_backup_[^/]+/(.+)$#', $path, $m)) {
+            $files[] = $m[1];
         }
     }
 
@@ -19117,527 +18744,149 @@ function backupListSnapshotTree(array $params): array
 }
 
 /**
- * List a single directory on a remote backup snapshot (for file browser navigation).
- * Returns items with name, is_dir, size, mtime, permissions — same format as file.list.
+ * List a single directory within a Restic snapshot for file browser navigation.
  */
 function backupListSnapshotDir(array $params): array
 {
-    $remotePath = $params['remote_path'] ?? '';
-    $destination = $params['destination'] ?? [];
+    $snapshotId = $params['snapshot_id'] ?? '';
+    $subPath = $params['remote_path'] ?? $params['sub_path'] ?? '';
     $showHidden = $params['show_hidden'] ?? false;
+    $repo = $params['repo'] ?? '';
 
-    if (empty($remotePath) || empty($destination)) {
-        return ['success' => false, 'error' => 'remote_path and destination required'];
+    if (empty($snapshotId)) {
+        return ['success' => false, 'error' => 'Snapshot ID is required'];
     }
 
-    $host = $destination['host'] ?? '';
-    $port = (string) ($destination['port'] ?? 22);
-    $sshUser = $destination['username'] ?? '';
-    $password = $destination['password'] ?? '';
-    $privateKey = $destination['private_key'] ?? '';
-    $sshOpts = '-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port='.escapeshellarg($port);
+    $lsResult = resticExec('ls '.escapeshellarg($snapshotId).' --json', $repo);
 
-    // Use ls -la with epoch timestamps for easy parsing
-    $lsCmd = 'ls -la --time-style=+%s '.escapeshellarg($remotePath).' 2>/dev/null';
-
-    $keyFile = null;
-    if (! empty($privateKey)) {
-        $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
-        file_put_contents($keyFile, $privateKey);
-        chmod($keyFile, 0600);
-        $cmd = "ssh $sshOpts -i ".escapeshellarg($keyFile).' '.escapeshellarg("$sshUser@$host").' '.escapeshellarg($lsCmd).' 2>&1';
-    } else {
-        $cmd = 'sshpass -p '.escapeshellarg($password)." ssh $sshOpts ".escapeshellarg("$sshUser@$host").' '.escapeshellarg($lsCmd).' 2>&1';
-    }
-
-    exec($cmd, $output, $retval);
-    if ($keyFile) {
-        @unlink($keyFile);
+    if ($lsResult['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Failed to list snapshot: '.$lsResult['output']];
     }
 
     $items = [];
-    foreach ($output as $line) {
-        $line = trim($line);
-        if (empty($line) || str_starts_with($line, 'total ')) {
+    $seenNames = [];
+
+    foreach ($lsResult['lines'] as $line) {
+        $entry = json_decode($line, true);
+        if ($entry === null || ($entry['struct_type'] ?? '') === 'snapshot') {
             continue;
         }
 
-        // Parse: drwxr-xr-x 2 user group 4096 1711234567 filename
-        if (! preg_match('/^([d\-l])([rwxsStT\-]{9})\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/', $line, $m)) {
+        $path = $entry['path'] ?? '';
+        if (empty($path)) {
             continue;
         }
 
-        $name = $m[5];
-        if ($name === '.' || $name === '..') {
+        // Extract relative path
+        $relative = '';
+        if (preg_match('#/jabali_backup_[^/]+/(.+)$#', $path, $m)) {
+            $relative = $m[1];
+        }
+        if (empty($relative)) {
             continue;
         }
-        if (! $showHidden && str_starts_with($name, '.')) {
-            continue;
+
+        // If subPath is set, filter to only entries within that directory
+        if (! empty($subPath)) {
+            $subPathNorm = rtrim($subPath, '/').'/';
+            if (! str_starts_with($relative, $subPathNorm)) {
+                continue;
+            }
+            $relative = substr($relative, strlen($subPathNorm));
         }
 
-        $isDir = $m[1] === 'd';
-
-        // Convert permission string to octal
-        $p = $m[2];
-        $owner = (($p[0] === 'r') ? 4 : 0) + (($p[1] === 'w') ? 2 : 0) + (in_array($p[2], ['x', 's']) ? 1 : 0);
-        $group = (($p[3] === 'r') ? 4 : 0) + (($p[4] === 'w') ? 2 : 0) + (in_array($p[5], ['x', 's']) ? 1 : 0);
-        $other = (($p[6] === 'r') ? 4 : 0) + (($p[7] === 'w') ? 2 : 0) + (in_array($p[8], ['x', 't']) ? 1 : 0);
-
-        $items[] = [
-            'name' => $name,
-            'is_dir' => $isDir,
-            'size' => $isDir ? null : (int) $m[3],
-            'mtime' => (int) $m[4],
-            'permissions' => sprintf('0%d%d%d', $owner, $group, $other),
-        ];
+        // Only include direct children (no further slashes)
+        $slashPos = strpos($relative, '/');
+        if ($slashPos !== false) {
+            // This is a nested entry — use the directory name
+            $name = substr($relative, 0, $slashPos);
+            if (isset($seenNames[$name])) {
+                continue;
+            }
+            $seenNames[$name] = true;
+            if (! $showHidden && str_starts_with($name, '.')) {
+                continue;
+            }
+            $items[] = [
+                'name' => $name,
+                'is_dir' => true,
+                'size' => null,
+                'mtime' => 0,
+                'permissions' => '0755',
+            ];
+        } else {
+            $name = $relative;
+            if (empty($name) || isset($seenNames[$name])) {
+                continue;
+            }
+            $seenNames[$name] = true;
+            if (! $showHidden && str_starts_with($name, '.')) {
+                continue;
+            }
+            $isDir = ($entry['type'] ?? '') === 'dir';
+            $items[] = [
+                'name' => $name,
+                'is_dir' => $isDir,
+                'size' => $isDir ? null : (int) ($entry['size'] ?? 0),
+                'mtime' => strtotime($entry['mtime'] ?? '') ?: 0,
+                'permissions' => sprintf('0%o', ($entry['mode'] ?? 0) & 0777),
+            ];
+        }
     }
 
     return ['success' => true, 'items' => $items];
 }
 
 /**
- * List files/folders within a specific domain's backup directory.
+ * List files/folders within a specific domain's backup using Restic ls.
  */
 function backupListDomainFiles(array $params): array
 {
-    $backupPath = $params['backup_path'] ?? '';
-    $username = $params['username'] ?? '';
+    $snapshotId = $params['snapshot_id'] ?? $params['backup_path'] ?? '';
     $domain = $params['domain'] ?? '';
-    $destination = $params['destination'] ?? null;
+    $repo = $params['repo'] ?? '';
 
     if (empty($domain)) {
         return ['success' => false, 'error' => 'Domain is required'];
     }
 
-    // Validate domain name (no path traversal)
     if (! preg_match('/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $domain)) {
         return ['success' => false, 'error' => 'Invalid domain name'];
     }
 
+    if (empty($snapshotId)) {
+        return ['success' => false, 'error' => 'Snapshot ID is required'];
+    }
+
+    $lsResult = resticExec('ls '.escapeshellarg($snapshotId).' --json', $repo);
+
+    if ($lsResult['exitCode'] !== 0) {
+        return ['success' => false, 'error' => 'Failed to list snapshot: '.$lsResult['output']];
+    }
+
     $files = [];
+    $domainPattern = "/files/{$domain}/";
 
-    if (! empty($destination) && ($destination['type'] ?? '') === 'sftp') {
-        // Remote: list via SSH
-        $host = $destination['host'] ?? '';
-        $port = (string) ($destination['port'] ?? 22);
-        $sshUser = $destination['username'] ?? '';
-        $password = $destination['password'] ?? '';
-        $privateKey = $destination['private_key'] ?? '';
-
-        // Build domain path — handle home/{username}/domains/ prefix
-        $domainPath = rtrim($backupPath, '/').'/'.$username.'/home/'.$username.'/domains/'.$domain;
-
-        $sshOpts = '-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o Port='.escapeshellarg($port);
-        $findCmd = 'find '.escapeshellarg($domainPath).' -maxdepth 3 \\( -type f -o -type d \\) 2>/dev/null | head -200';
-
-        $keyFile = null;
-        if (! empty($privateKey)) {
-            $keyFile = tempnam(sys_get_temp_dir(), 'ssh_key_');
-            file_put_contents($keyFile, $privateKey);
-            chmod($keyFile, 0600);
-            $cmd = "ssh $sshOpts -i ".escapeshellarg($keyFile).' '.escapeshellarg("$sshUser@$host").' '.escapeshellarg($findCmd).' 2>&1';
-        } else {
-            $cmd = 'sshpass -p '.escapeshellarg($password)." ssh $sshOpts ".escapeshellarg("$sshUser@$host").' '.escapeshellarg($findCmd).' 2>&1';
+    foreach ($lsResult['lines'] as $line) {
+        $entry = json_decode($line, true);
+        if ($entry === null || ($entry['struct_type'] ?? '') === 'snapshot') {
+            continue;
         }
 
-        exec($cmd, $output, $retval);
-        if ($keyFile) {
-            @unlink($keyFile);
+        $path = $entry['path'] ?? '';
+        if (empty($path)) {
+            continue;
         }
 
-        $basePath = $domainPath.'/';
-        foreach ($output as $line) {
-            $line = trim($line);
-            if (empty($line) || $line === $domainPath) {
-                continue;
-            }
-            if (str_starts_with($line, $basePath)) {
-                $relative = substr($line, strlen($basePath));
-                if (! empty($relative)) {
-                    $files[] = $relative;
-                }
-            }
-        }
-    } elseif (! empty($backupPath) && is_dir($backupPath)) {
-        // Local directory backup
-        $domainDir = $backupPath.'/'.$username.'/domains/'.$domain;
-        if (! is_dir($domainDir)) {
-            $domainDir = $backupPath.'/domains/'.$domain;
-        }
-        if (! is_dir($domainDir)) {
-            $domainDir = $backupPath.'/files/'.$domain;
-        }
-
-        if (is_dir($domainDir)) {
-            exec('find '.escapeshellarg($domainDir).' -maxdepth 3 \\( -type f -o -type d \\) 2>/dev/null | head -200', $output);
-            $basePath = $domainDir.'/';
-            foreach ($output as $line) {
-                $line = trim($line);
-                if (str_starts_with($line, $basePath)) {
-                    $relative = substr($line, strlen($basePath));
-                    if (! empty($relative)) {
-                        $files[] = $relative;
-                    }
-                }
-            }
+        // Look for paths under files/{domain}/
+        if (preg_match('#/jabali_backup_[^/]+/files/'.preg_quote($domain, '#').'/(.+)$#', $path, $m)) {
+            $files[] = $m[1];
         }
     }
 
     sort($files);
 
     return ['success' => true, 'files' => $files];
-}
-
-/**
- * List contents of a tar.gz backup by parsing tar listing output.
- */
-function backupListContentsTarGz(string $backupPath, string $username, array $result): array
-{
-    // Check if this is a server backup containing per-user tar.gz files
-    $isServerBackup = false;
-    $listing = [];
-    exec('tar -I pigz -tf '.escapeshellarg($backupPath).' 2>/dev/null', $listing);
-
-    if (empty($listing)) {
-        return ['success' => false, 'error' => 'Failed to read backup archive'];
-    }
-
-    // Detect server backup: contains user .tar.gz files at the top level
-    foreach ($listing as $entry) {
-        if (preg_match('/^[^\/]+\.tar\.gz$/', $entry) || preg_match('/^[^\/]+\/[^\/]+\.tar\.gz$/', $entry)) {
-            $isServerBackup = true;
-            break;
-        }
-    }
-
-    if ($isServerBackup && ! empty($username)) {
-        // Server backup: extract the user's tar.gz to a temp dir, then list its contents
-        return backupListContentsServerTarGz($backupPath, $username, $listing, $result);
-    }
-
-    // User backup: parse the listing directly
-    // Read manifest from archive
-    $result['manifest'] = backupReadManifestFromTarGz($backupPath, $listing);
-
-    // Detect if the listing has a top-level directory prefix
-    $prefix = '';
-    if (! empty($listing)) {
-        $first = $listing[0];
-        // Check for common top-level directory (e.g., "username/" or "backup_2026-01-19/")
-        if (preg_match('/^([^\/]+)\/$/', $first, $m)) {
-            // Verify most entries share this prefix
-            $matchCount = 0;
-            foreach (array_slice($listing, 0, 20) as $entry) {
-                if (str_starts_with($entry, $m[1].'/')) {
-                    $matchCount++;
-                }
-            }
-            if ($matchCount >= count(array_slice($listing, 0, 20)) * 0.8) {
-                $prefix = $m[1].'/';
-            }
-        }
-    }
-
-    foreach ($listing as $entry) {
-        $relative = $prefix !== '' && str_starts_with($entry, $prefix)
-            ? substr($entry, strlen($prefix))
-            : $entry;
-
-        if ($relative === '' || $relative === '/') {
-            continue;
-        }
-
-        backupCategorizePath($relative, $result);
-    }
-
-    return $result;
-}
-
-/**
- * Extract a user's tar.gz from a server backup archive and list its contents.
- */
-function backupListContentsServerTarGz(string $backupPath, string $username, array $serverListing, array $result): array
-{
-    if (! validateUsername($username)) {
-        return ['success' => false, 'error' => 'Invalid username'];
-    }
-
-    // Find the user's tar.gz in the server listing
-    $userTarGz = null;
-    foreach ($serverListing as $entry) {
-        $basename = basename($entry);
-        if ($basename === "$username.tar.gz") {
-            $userTarGz = $entry;
-            break;
-        }
-    }
-
-    if ($userTarGz === null) {
-        return ['success' => false, 'error' => "User archive not found in server backup: $username.tar.gz"];
-    }
-
-    // Read server-level manifest
-    $serverManifest = backupReadManifestFromTarGz($backupPath, $serverListing);
-
-    // Extract the user's tar.gz to a temp file
-    $tempDir = sys_get_temp_dir().'/jabali_list_'.uniqid();
-    mkdir($tempDir, 0755, true);
-
-    try {
-        exec(
-            'tar -I pigz -xf '.escapeshellarg($backupPath).
-            ' -C '.escapeshellarg($tempDir).
-            ' '.escapeshellarg($userTarGz).' 2>&1',
-            $output,
-            $retval
-        );
-
-        if ($retval !== 0) {
-            return ['success' => false, 'error' => 'Failed to extract user archive from server backup'];
-        }
-
-        $extractedFile = "$tempDir/$userTarGz";
-        if (! file_exists($extractedFile)) {
-            return ['success' => false, 'error' => 'Extracted user archive not found'];
-        }
-
-        // Now list the contents of the user's tar.gz
-        $userListing = [];
-        exec('tar -I pigz -tf '.escapeshellarg($extractedFile).' 2>/dev/null', $userListing);
-
-        $result['manifest'] = backupReadManifestFromTarGz($extractedFile, $userListing);
-        if ($result['manifest'] === null && $serverManifest !== null) {
-            $result['manifest'] = $serverManifest;
-        }
-
-        // Detect top-level prefix
-        $prefix = '';
-        if (! empty($userListing)) {
-            $first = $userListing[0];
-            if (preg_match('/^([^\/]+)\/$/', $first, $m)) {
-                $matchCount = 0;
-                foreach (array_slice($userListing, 0, 20) as $entry) {
-                    if (str_starts_with($entry, $m[1].'/')) {
-                        $matchCount++;
-                    }
-                }
-                if ($matchCount >= count(array_slice($userListing, 0, 20)) * 0.8) {
-                    $prefix = $m[1].'/';
-                }
-            }
-        }
-
-        foreach ($userListing as $entry) {
-            $relative = $prefix !== '' && str_starts_with($entry, $prefix)
-                ? substr($entry, strlen($prefix))
-                : $entry;
-
-            if ($relative === '' || $relative === '/') {
-                continue;
-            }
-
-            backupCategorizePath($relative, $result);
-        }
-    } finally {
-        exec('rm -rf '.escapeshellarg($tempDir));
-    }
-
-    return $result;
-}
-
-/**
- * List contents of a directory-based backup (incremental or extracted).
- */
-function backupListContentsDirectory(string $backupPath, string $username, array $result): array
-{
-    // Determine the scan root
-    $scanRoot = $backupPath;
-
-    // Check if this is a server backup directory (contains per-user tar.gz files or user subdirs)
-    if (! empty($username)) {
-        if (! validateUsername($username)) {
-            return ['success' => false, 'error' => 'Invalid username'];
-        }
-
-        // Server backup with per-user tar.gz files
-        $userTarGz = "$backupPath/$username.tar.gz";
-        if (file_exists($userTarGz)) {
-            return backupListContentsTarGz($userTarGz, '', $result);
-        }
-
-        // Incremental server backup with user subdirectories
-        $userDir = "$backupPath/$username";
-        if (is_dir($userDir)) {
-            $scanRoot = $userDir;
-        }
-    }
-
-    // Read manifest
-    if (file_exists("$scanRoot/manifest.json")) {
-        $result['manifest'] = json_decode(file_get_contents("$scanRoot/manifest.json"), true);
-    } elseif (file_exists("$backupPath/manifest.json")) {
-        $result['manifest'] = json_decode(file_get_contents("$backupPath/manifest.json"), true);
-    }
-
-    // Scan for files/domains
-    $filesDir = null;
-    if (is_dir("$scanRoot/files")) {
-        $filesDir = "$scanRoot/files";
-    } elseif (is_dir("$scanRoot/domains")) {
-        $filesDir = "$scanRoot/domains";
-    }
-
-    if ($filesDir !== null) {
-        foreach (scandir($filesDir) as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-            if (is_dir("$filesDir/$item")) {
-                $result['domains'][] = $item;
-            } elseif (preg_match('/^(.+)\.tar\.gz$/i', $item, $m)) {
-                $result['domains'][] = $m[1];
-            }
-        }
-    }
-
-    // Scan for databases
-    $dbDir = null;
-    if (is_dir("$scanRoot/mysql")) {
-        $dbDir = "$scanRoot/mysql";
-    } elseif (is_dir("$scanRoot/databases")) {
-        $dbDir = "$scanRoot/databases";
-    }
-
-    if ($dbDir !== null) {
-        foreach (scandir($dbDir) as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-            if ($item === 'users.sql') {
-                $result['has_mysql_users'] = true;
-
-                continue;
-            }
-            if (preg_match('/\.sql(\.gz)?$/i', $item)) {
-                $result['databases'][] = preg_replace('/\.sql(\.gz)?$/i', '', $item);
-            }
-        }
-    }
-
-    // Scan for mailboxes
-    $mailDir = null;
-    if (is_dir("$scanRoot/mailboxes")) {
-        $mailDir = "$scanRoot/mailboxes";
-    } elseif (is_dir("$scanRoot/mail")) {
-        $mailDir = "$scanRoot/mail";
-    }
-
-    if ($mailDir !== null) {
-        foreach (scandir($mailDir) as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-            $itemPath = "$mailDir/$item";
-
-            // tar.gz format: domain_user.tar.gz
-            if (is_file($itemPath) && preg_match('/\.tar\.gz$/i', $item)) {
-                $parts = explode('_', preg_replace('/\.tar\.gz$/i', '', $item));
-                if (count($parts) >= 2) {
-                    $mailUser = array_pop($parts);
-                    $domain = implode('_', $parts);
-                    $result['mailboxes'][] = "$mailUser@$domain";
-                }
-            }
-            // Directory format: mail/domain/user/ or mailboxes/domain/user/
-            elseif (is_dir($itemPath)) {
-                $domain = $item;
-                foreach (scandir($itemPath) as $mailUser) {
-                    if ($mailUser === '.' || $mailUser === '..') {
-                        continue;
-                    }
-                    if (is_dir("$itemPath/$mailUser")) {
-                        $result['mailboxes'][] = "$mailUser@$domain";
-                    }
-                }
-            }
-        }
-    }
-
-    // Scan for DNS zones
-    $dnsDir = null;
-    if (is_dir("$scanRoot/dns")) {
-        $dnsDir = "$scanRoot/dns";
-    } elseif (is_dir("$scanRoot/zones")) {
-        $dnsDir = "$scanRoot/zones";
-    }
-
-    if ($dnsDir !== null) {
-        foreach (scandir($dnsDir) as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-            // Zone files are typically named db.domain.com or domain.com.zone
-            $zone = $item;
-            $zone = preg_replace('/^db\./', '', $zone);
-            $zone = preg_replace('/\.zone$/', '', $zone);
-            $result['dns_zones'][] = $zone;
-        }
-    }
-
-    // Scan for SSL certificates
-    if (is_dir("$scanRoot/ssl")) {
-        foreach (scandir("$scanRoot/ssl") as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-            if (is_dir("$scanRoot/ssl/$item")) {
-                $result['ssl_certificates'][] = $item;
-            }
-        }
-    }
-
-    // Check for cron
-    if (is_dir("$scanRoot/cron")) {
-        $result['has_cron'] = file_exists("$scanRoot/cron/crontab");
-    }
-
-    // Check for metadata
-    if (is_dir("$scanRoot/metadata") && file_exists("$scanRoot/metadata/panel_data.json")) {
-        // Metadata exists but we don't parse it into the result by default
-    }
-
-    return $result;
-}
-
-/**
- * Read manifest.json from a tar.gz archive without full extraction.
- */
-function backupReadManifestFromTarGz(string $archivePath, array $listing): ?array
-{
-    $manifestEntry = null;
-    foreach ($listing as $entry) {
-        if (str_ends_with($entry, 'manifest.json')) {
-            $manifestEntry = $entry;
-            break;
-        }
-    }
-
-    if ($manifestEntry === null) {
-        return null;
-    }
-
-    $manifestContent = [];
-    exec(
-        'tar -I pigz -xf '.escapeshellarg($archivePath).
-        ' -O '.escapeshellarg(trim($manifestEntry)).' 2>/dev/null',
-        $manifestContent
-    );
-
-    if (empty($manifestContent)) {
-        return null;
-    }
-
-    return json_decode(implode("\n", $manifestContent), true);
 }
 
 /**
@@ -19731,756 +18980,29 @@ function backupCategorizePath(string $path, array &$result): void
 }
 
 /**
- * Upload backup to remote destination (SFTP, NFS, S3).
- * For incremental backups with SFTP/NFS, uses rsync with --link-dest for dirvish-style snapshots.
+ * @deprecated Use Restic native remote backup. Restic handles remote upload natively during backup.
  */
 function backupUploadRemote(array $params): array
 {
-    $localPath = $params['local_path'] ?? '';
-    $destination = $params['destination'] ?? [];
-    $backupType = $params['backup_type'] ?? 'full';
-
-    if (empty($localPath) || ! file_exists($localPath)) {
-        return ['success' => false, 'error' => 'Local backup file not found'];
-    }
-
-    $type = $destination['type'] ?? '';
-    $remotePath = $destination['path'] ?? '';
-    $filename = basename($localPath);
-
-    // For incremental backups with SFTP or NFS, use rsync with --link-dest
-    if ($backupType === 'incremental' && in_array($type, ['sftp', 'nfs'])) {
-        return syncViaRsyncIncremental($localPath, $destination);
-    }
-
-    switch ($type) {
-        case 'sftp':
-            return uploadViaSftp($localPath, $destination);
-
-        case 'nfs':
-            return uploadViaNfs($localPath, $destination);
-
-        case 's3':
-            return uploadViaS3($localPath, $destination);
-
-        default:
-            return ['success' => false, 'error' => 'Unsupported destination type: '.$type];
-    }
+    return ['success' => false, 'error' => 'Deprecated: use Restic native backup with remote repository URL'];
 }
 
 /**
- * Upload via SFTP.
- */
-function uploadViaSftp(string $localPath, array $destination): array
-{
-    $host = $destination['host'] ?? '';
-    $port = (string) ($destination['port'] ?? 22);
-    $username = $destination['username'] ?? '';
-    $password = $destination['password'] ?? '';
-    $privateKey = $destination['private_key'] ?? '';
-    $remotePath = rtrim($destination['path'] ?? '/backups', '/');
-    $localName = basename($localPath);
-
-    if (empty($host) || empty($username)) {
-        return ['success' => false, 'error' => 'SFTP host and username required'];
-    }
-
-    $isDir = is_dir($localPath);
-    $remoteFullPath = "$remotePath/$localName";
-
-    // Build sftp commands
-    $sftpCommands = "mkdir $remotePath\n";
-
-    if ($isDir) {
-        // Upload folder: create remote folder and upload all files
-        $sftpCommands .= "mkdir $remoteFullPath\n";
-        $files = scandir($localPath);
-        foreach ($files as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-            $filePath = "$localPath/$file";
-            if (is_file($filePath)) {
-                $sftpCommands .= 'put '.escapeshellarg($filePath).' '.escapeshellarg("$remoteFullPath/$file")."\n";
-            }
-        }
-    } else {
-        // Upload single file
-        $sftpCommands .= 'put '.escapeshellarg($localPath).' '.escapeshellarg($remoteFullPath)."\n";
-    }
-
-    if (! empty($privateKey)) {
-        $keyFile = tempnam(sys_get_temp_dir(), 'sftp_key_');
-        file_put_contents($keyFile, $privateKey);
-        chmod($keyFile, 0600);
-
-        $cmd = 'sftp -o StrictHostKeyChecking=no -o Port='.escapeshellarg($port).' -i '.escapeshellarg($keyFile).
-               ' '.escapeshellarg("$username@$host")." 2>&1 <<EOF\n{$sftpCommands}EOF";
-
-        exec($cmd, $output, $retval);
-        unlink($keyFile);
-    } else {
-        $cmd = 'sshpass -p '.escapeshellarg($password).
-               ' sftp -o StrictHostKeyChecking=no -o Port='.escapeshellarg($port).' '.
-               escapeshellarg("$username@$host")." 2>&1 <<EOF\n{$sftpCommands}EOF";
-
-        exec($cmd, $output, $retval);
-    }
-
-    if ($retval !== 0) {
-        return ['success' => false, 'error' => 'SFTP upload failed: '.implode("\n", $output)];
-    }
-
-    return [
-        'success' => true,
-        'remote_path' => $remoteFullPath,
-        'message' => $isDir ? 'Backup folder uploaded via SFTP' : 'Backup uploaded via SFTP',
-    ];
-}
-
-/**
- * Dirvish-style incremental backup using rsync with --link-dest.
- *
- * Structure: /remote_path/YYYY-MM-DD_HHMMSS/
- * Uses hard links from previous backup to save space for unchanged files.
- *
- * For SFTP: Uses rsync over SSH
- * For NFS: Uses rsync locally to mounted share
+ * @deprecated Use Restic native remote backup. Rsync incrementals replaced by Restic deduplication.
  */
 function syncViaRsyncIncremental(string $localPath, array $destination): array
 {
-    $type = $destination['type'] ?? 'sftp';
-    $host = $destination['host'] ?? '';
-    $port = (string) ($destination['port'] ?? 22);
-    $username = $destination['username'] ?? '';
-    $password = $destination['password'] ?? '';
-    $privateKey = $destination['private_key'] ?? '';
-    $remotePath = rtrim($destination['path'] ?? '/backups', '/');
-
-    // Create dated backup folder name
-    $timestamp = date('Y-m-d_His');
-    $backupFolder = "$remotePath/$timestamp";
-
-    if ($type === 'sftp') {
-        if (empty($host) || empty($username)) {
-            return ['success' => false, 'error' => 'SFTP host and username required for rsync'];
-        }
-
-        // SSH options
-        $sshOpts = '-o StrictHostKeyChecking=no -o Port='.escapeshellarg($port);
-        $keyFile = null;
-
-        if (! empty($privateKey)) {
-            $keyFile = tempnam(sys_get_temp_dir(), 'rsync_key_');
-            file_put_contents($keyFile, $privateKey);
-            chmod($keyFile, 0600);
-            $sshOpts .= ' -i '.escapeshellarg($keyFile);
-        }
-
-        // Find previous backup folder for --link-dest via SSH
-        $findPrevCmd = "ssh $sshOpts ";
-        if (! empty($password)) {
-            $findPrevCmd = 'sshpass -p '.escapeshellarg($password)." $findPrevCmd";
-        }
-        $findPrevCmd .= escapeshellarg("$username@$host")." 'ls -1d ".escapeshellarg($remotePath)."/????-??-??_?????? 2>/dev/null | sort -r | head -1'";
-
-        $previousBackup = trim(shell_exec($findPrevCmd) ?? '');
-
-        // rsync options
-        $rsyncOpts = '-avz --delete';
-
-        // Add --link-dest if previous backup exists
-        if (! empty($previousBackup) && $previousBackup !== $backupFolder) {
-            $rsyncOpts .= ' --link-dest='.escapeshellarg($previousBackup);
-        }
-
-        // Source path (trailing slash to copy contents)
-        $source = is_dir($localPath) ? rtrim($localPath, '/').'/' : $localPath;
-
-        // Build rsync command
-        if (! empty($password)) {
-            $cmd = 'sshpass -p '.escapeshellarg($password).
-                   " rsync $rsyncOpts -e 'ssh $sshOpts' ".
-                   escapeshellarg($source).' '.
-                   escapeshellarg("$username@$host:$backupFolder/").' 2>&1';
-        } else {
-            $cmd = "rsync $rsyncOpts -e 'ssh $sshOpts' ".
-                   escapeshellarg($source).' '.
-                   escapeshellarg("$username@$host:$backupFolder/").' 2>&1';
-        }
-
-        exec($cmd, $output, $retval);
-
-        // Cleanup key file
-        if ($keyFile && file_exists($keyFile)) {
-            unlink($keyFile);
-        }
-
-    } elseif ($type === 'nfs') {
-        // NFS: Mount first, then rsync locally
-        $server = $destination['server'] ?? '';
-        $share = $destination['share'] ?? '';
-        $mountPoint = $destination['mount_point'] ?? '/mnt/backup_nfs';
-
-        if (empty($server) || empty($share)) {
-            return ['success' => false, 'error' => 'NFS server and share required'];
-        }
-
-        // Ensure mount point exists and is mounted
-        if (! is_dir($mountPoint)) {
-            mkdir($mountPoint, 0755, true);
-        }
-
-        exec('mount | grep '.escapeshellarg($mountPoint), $mountOutput, $mountCheck);
-        if ($mountCheck !== 0) {
-            exec('mount -t nfs '.escapeshellarg("$server:$share").' '.escapeshellarg($mountPoint).' 2>&1', $mountOutput, $mountRet);
-            if ($mountRet !== 0) {
-                return ['success' => false, 'error' => 'Failed to mount NFS share: '.implode("\n", $mountOutput)];
-            }
-        }
-
-        $nfsBackupPath = rtrim($mountPoint, '/').'/'.ltrim($remotePath, '/');
-        $localBackupFolder = "$nfsBackupPath/$timestamp";
-
-        // Ensure remote path exists
-        if (! is_dir($nfsBackupPath)) {
-            mkdir($nfsBackupPath, 0755, true);
-        }
-
-        // Find previous backup
-        $prevBackups = glob("$nfsBackupPath/????-??-??_??????");
-        rsort($prevBackups);
-        $previousBackup = ! empty($prevBackups) ? $prevBackups[0] : '';
-
-        // rsync options
-        $rsyncOpts = '-av --delete';
-
-        if (! empty($previousBackup) && $previousBackup !== $localBackupFolder) {
-            $rsyncOpts .= ' --link-dest='.escapeshellarg($previousBackup);
-        }
-
-        $source = is_dir($localPath) ? rtrim($localPath, '/').'/' : $localPath;
-        $cmd = "rsync $rsyncOpts ".escapeshellarg($source).' '.escapeshellarg("$localBackupFolder/").' 2>&1';
-
-        exec($cmd, $output, $retval);
-        $backupFolder = "$remotePath/$timestamp";
-    } else {
-        return ['success' => false, 'error' => 'Rsync incremental only supported for SFTP and NFS'];
-    }
-
-    if ($retval !== 0) {
-        return ['success' => false, 'error' => 'Rsync incremental backup failed: '.implode("\n", $output)];
-    }
-
-    return [
-        'success' => true,
-        'remote_path' => $backupFolder,
-        'message' => 'Incremental backup completed using rsync with hard links',
-        'type' => 'incremental',
-        'previous_backup' => $previousBackup ?? null,
-    ];
+    return ['success' => false, 'error' => 'Deprecated: use Restic native backup'];
 }
 
 /**
- * Dirvish-style server backup - rsync directly from user files to remote.
- * Creates timestamped folders with hard links to previous backup.
- *
- * Structure on remote:
- *   /backups/2024-01-12_103000/
- *     user1/
- *       domains/
- *       databases/
- *       mailboxes/
- *     user2/
- *       ...
- *   /backups/2024-01-13_103000/
- *     user1/  <- unchanged files are hard-linked to previous
- *     ...
+ * @deprecated Restic handles incrementals natively. Every backup is incremental by design.
  */
 function backupServerIncrementalDirect(array $params): array
 {
-    $destination = $params['destination'] ?? [];
-    $users = $params['users'] ?? null; // null = all users
-    $includeFiles = $params['include_files'] ?? true;
-    $includeDatabases = $params['include_databases'] ?? true;
-    $includeMailboxes = $params['include_mailboxes'] ?? true;
-    $includeDns = $params['include_dns'] ?? true;
-
-    logger('backupServerIncrementalDirect started');
-    logger('Destination config: '.json_encode($destination));
-    logger('Users param: '.json_encode($users));
-    logger('Include files: '.($includeFiles ? 'yes' : 'no'));
-
-    $type = $destination['type'] ?? '';
-    if (! in_array($type, ['sftp', 'nfs'])) {
-        return ['success' => false, 'error' => 'Incremental backups only supported for SFTP and NFS destinations'];
-    }
-
-    $host = $destination['host'] ?? '';
-    $port = (string) ($destination['port'] ?? 22);
-    $username = $destination['username'] ?? '';
-    $password = $destination['password'] ?? '';
-    $privateKey = $destination['private_key'] ?? '';
-    $remotePath = rtrim($destination['path'] ?? '/backups', '/');
-
-    // Create timestamped backup folder
-    $timestamp = date('Y-m-d_His');
-    $backupFolder = "$remotePath/$timestamp";
-
-    // Get list of users to backup
-    if ($users === null) {
-        // Get all non-system users (UID >= 1000)
-        $users = [];
-        foreach (scandir('/home') as $dir) {
-            if ($dir === '.' || $dir === '..') {
-                continue;
-            }
-            $userInfo = posix_getpwnam($dir);
-            if ($userInfo && $userInfo['uid'] >= 1000) {
-                $users[] = $dir;
-            }
-        }
-    }
-
-    if (empty($users)) {
-        return ['success' => false, 'error' => 'No users to backup'];
-    }
-
-    $keyFile = null;
-    $sshOpts = '-o StrictHostKeyChecking=no';
-
-    if ($type === 'sftp') {
-        if (empty($host) || empty($username)) {
-            return ['success' => false, 'error' => 'SFTP host and username required'];
-        }
-
-        $sshOpts .= ' -o Port='.escapeshellarg($port);
-
-        if (! empty($privateKey)) {
-            $keyFile = tempnam(sys_get_temp_dir(), 'rsync_key_');
-            file_put_contents($keyFile, $privateKey);
-            chmod($keyFile, 0600);
-            $sshOpts .= ' -i '.escapeshellarg($keyFile);
-            $sshOpts .= ' -o BatchMode=yes'; // Only use BatchMode with key auth
-        } elseif (! empty($password)) {
-            // For password auth, disable pubkey and enable password explicitly
-            $sshOpts .= ' -o PreferredAuthentications=password -o PubkeyAuthentication=no';
-        }
-
-        // Find previous backup folder via SSH for --link-dest
-        $findPrevCmd = "ssh $sshOpts ";
-        if (! empty($password) && empty($privateKey)) {
-            $findPrevCmd = 'sshpass -p '.escapeshellarg($password)." $findPrevCmd";
-        }
-        $findPrevCmd .= escapeshellarg("$username@$host")." 'ls -1d ".escapeshellarg($remotePath)."/????-??-??_?????? 2>/dev/null | sort -r | head -1'";
-        $previousBackup = trim(shell_exec($findPrevCmd) ?? '');
-
-        // Log whether this is initialization or incremental
-        if (empty($previousBackup)) {
-            logger("INITIALIZATION: Creating first full backup image at $backupFolder");
-            $isInitialization = true;
-        } else {
-            logger("INCREMENTAL: Using hard links from previous backup $previousBackup");
-            $isInitialization = false;
-        }
-
-        // Create remote backup directory
-        $mkdirCmd = "ssh $sshOpts ";
-        if (! empty($password) && empty($privateKey)) {
-            $mkdirCmd = 'sshpass -p '.escapeshellarg($password)." $mkdirCmd";
-        }
-        $mkdirCmd .= escapeshellarg("$username@$host")." 'mkdir -p ".escapeshellarg($backupFolder)."'";
-        exec($mkdirCmd);
-    }
-
-    $backedUpUsers = [];
-    $errors = [];
-    $totalSize = 0;
-
-    foreach ($users as $user) {
-        $userHome = "/home/$user";
-        if (! is_dir($userHome)) {
-            continue;
-        }
-
-        // Build list of paths to rsync for this user
-        $sourcePaths = [];
-
-        if ($includeFiles && is_dir("$userHome/domains")) {
-            $sourcePaths[] = "$userHome/domains";
-        }
-
-        // Include WordPress registry file
-        if ($includeFiles && file_exists("$userHome/.wordpress_sites")) {
-            $sourcePaths[] = "$userHome/.wordpress_sites";
-            logger("Including .wordpress_sites registry for $user");
-        }
-
-        // Include domains registry file
-        if ($includeFiles && file_exists("$userHome/.domains")) {
-            $sourcePaths[] = "$userHome/.domains";
-            logger("Including .domains registry for $user");
-        }
-
-        // Export databases to mysql/ directory
-        $tempDbDir = null;
-        if ($includeDatabases) {
-            $tempDbDir = "$userHome/mysql";
-            @mkdir($tempDbDir, 0755, true);
-            // Clean any old dumps
-            array_map('unlink', glob("$tempDbDir/*.sql.gz"));
-
-            // Get user's databases from MySQL
-            $escapedUser = str_replace(['\\', "'", '%', '_'], ['\\\\', "\\'", '\\%', '\\_'], $user);
-            $dbResult = shell_exec('mysql -N -e '.escapeshellarg("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE '{$escapedUser}\\_%'").' 2>/dev/null');
-            if ($dbResult) {
-                $databases = array_filter(explode("\n", trim($dbResult)));
-                foreach ($databases as $db) {
-                    $dumpFile = "$tempDbDir/$db.sql.gz";
-                    exec('mysqldump --single-transaction '.escapeshellarg($db).' 2>/dev/null | pigz > '.escapeshellarg($dumpFile));
-                    logger("Exported database $db to $dumpFile");
-                }
-                if (! empty($databases)) {
-                    $sourcePaths[] = $tempDbDir;
-                    logger('Including '.count($databases)." database(s) for $user");
-                }
-            }
-
-            // Export MySQL users and their permissions
-            $mysqli = @new mysqli('localhost', 'root', '');
-            if (! $mysqli->connect_error) {
-                $usersFile = "$tempDbDir/users.sql";
-                $usersSql = "-- MySQL Users and Permissions Backup\n";
-                $usersSql .= '-- Generated: '.date('Y-m-d H:i:s')."\n\n";
-
-                // Get all MySQL users matching the username_ pattern
-                $safePrefix = $mysqli->real_escape_string($user).'\\_';
-                $userQuery = $mysqli->query("SELECT User, Host FROM mysql.user WHERE User LIKE '{$safePrefix}%'");
-
-                $exportedUsers = [];
-                if ($userQuery) {
-                    while ($userRow = $userQuery->fetch_assoc()) {
-                        $mysqlUser = $userRow['User'];
-                        $mysqlHost = $userRow['Host'];
-                        $userIdentifier = "'{$mysqli->real_escape_string($mysqlUser)}'@'{$mysqli->real_escape_string($mysqlHost)}'";
-
-                        // Get CREATE USER statement
-                        $createResult = $mysqli->query("SHOW CREATE USER $userIdentifier");
-                        if ($createResult && $createRow = $createResult->fetch_row()) {
-                            // Add DROP USER IF EXISTS for clean restore
-                            $usersSql .= "DROP USER IF EXISTS $userIdentifier;\n";
-                            $usersSql .= $createRow[0].";\n";
-
-                            // Get GRANT statements
-                            $grantsResult = $mysqli->query("SHOW GRANTS FOR $userIdentifier");
-                            if ($grantsResult) {
-                                while ($grantRow = $grantsResult->fetch_row()) {
-                                    $usersSql .= $grantRow[0].";\n";
-                                }
-                            }
-                            $usersSql .= "\n";
-                            $exportedUsers[] = $mysqlUser;
-                        }
-                    }
-                }
-
-                // Save users.sql if we have any users
-                if (! empty($exportedUsers)) {
-                    $usersSql .= "FLUSH PRIVILEGES;\n";
-                    file_put_contents($usersFile, $usersSql);
-                    logger('Exported '.count($exportedUsers)." MySQL user(s) for $user");
-                }
-
-                $mysqli->close();
-            }
-        }
-
-        // Export DNS zones to zones/ directory
-        $tempZonesDir = null;
-        if ($includeDns && is_dir('/etc/bind/zones')) {
-            $domainsFile = "$userHome/.domains";
-            if (file_exists($domainsFile)) {
-                $domains = json_decode(file_get_contents($domainsFile), true) ?: [];
-                $userDomains = array_keys($domains);
-
-                if (! empty($userDomains)) {
-                    $tempZonesDir = "$userHome/zones";
-                    @mkdir($tempZonesDir, 0755, true);
-                    // Clean any old zone files
-                    array_map('unlink', glob("$tempZonesDir/db.*"));
-
-                    foreach ($userDomains as $domain) {
-                        $zoneFile = "/etc/bind/zones/db.$domain";
-                        if (file_exists($zoneFile)) {
-                            copy($zoneFile, "$tempZonesDir/db.$domain");
-                            logger("Copied DNS zone for $domain");
-                        }
-                    }
-
-                    if (count(glob("$tempZonesDir/db.*")) > 0) {
-                        $sourcePaths[] = $tempZonesDir;
-                        logger("Including DNS zones for $user");
-                    }
-                }
-            }
-        }
-
-        if ($includeMailboxes && is_dir("$userHome/mail")) {
-            // Include user's mail directory (contains all mailboxes)
-            $sourcePaths[] = "$userHome/mail";
-            logger("Including mail directory for $user");
-        }
-
-        // Include SSL certificates (both custom and Let's Encrypt)
-        $tempSslDir = "$userHome/ssl";
-        $sslIncluded = false;
-
-        // Create ssl directory if needed
-        if (! is_dir($tempSslDir)) {
-            @mkdir($tempSslDir, 0755, true);
-        }
-
-        // Copy Let's Encrypt certificates for user's domains
-        if (is_dir('/etc/letsencrypt/live')) {
-            $domainsFile = "$userHome/.domains";
-            if (file_exists($domainsFile)) {
-                $domains = json_decode(file_get_contents($domainsFile), true) ?: [];
-                foreach (array_keys($domains) as $domain) {
-                    $certPath = "/etc/letsencrypt/live/$domain";
-                    if (is_dir($certPath)) {
-                        $domainSslDir = "$tempSslDir/$domain";
-                        @mkdir($domainSslDir, 0755, true);
-
-                        $certFiles = ['fullchain.pem', 'privkey.pem', 'cert.pem', 'chain.pem'];
-                        foreach ($certFiles as $certFile) {
-                            $srcFile = "$certPath/$certFile";
-                            if (file_exists($srcFile)) {
-                                $realPath = realpath($srcFile);
-                                if ($realPath && file_exists($realPath)) {
-                                    copy($realPath, "$domainSslDir/$certFile");
-                                }
-                            }
-                        }
-                        logger("Copied SSL certificate for $domain");
-                        $sslIncluded = true;
-                    }
-                }
-            }
-        }
-
-        // Include ssl directory if it has content
-        if (is_dir($tempSslDir) && count(scandir($tempSslDir)) > 2) {
-            $sourcePaths[] = $tempSslDir;
-            logger("Including SSL certificates for $user");
-        }
-
-        // Include user mail directory if exists
-        if ($includeMailboxes && is_dir("$userHome/mail")) {
-            $sourcePaths[] = "$userHome/mail";
-            logger("Including local mail for $user");
-        }
-
-        // Export panel data (database records) to metadata/panel_data.json
-        $metadataDir = "$userHome/metadata";
-        @mkdir($metadataDir, 0755, true);
-        $panelData = exportUserPanelData($user);
-        if (! empty($panelData['domains']) || ! empty($panelData['email_domains'])) {
-            file_put_contents("$metadataDir/panel_data.json", json_encode($panelData, JSON_PRETTY_PRINT));
-            $sourcePaths[] = $metadataDir;
-            logger("Including panel metadata for $user");
-        }
-
-        if (empty($sourcePaths)) {
-            logger("User $user has no source paths to backup, skipping");
-
-            continue;
-        }
-
-        logger("User $user source paths: ".json_encode($sourcePaths));
-
-        // Build rsync command with exclusions
-        $excludes = [
-            'backups',
-            '*.log',
-            'cache',
-            '.cache',
-            'tmp',
-            '.tmp',
-            'node_modules',
-        ];
-        $excludeArgs = implode(' ', array_map(fn ($e) => '--exclude='.escapeshellarg($e), $excludes));
-        $rsyncOpts = "-avz --relative --delete $excludeArgs";
-
-        // Add --link-dest for incremental
-        if (! empty($previousBackup)) {
-            $rsyncOpts .= ' --link-dest='.escapeshellarg("$previousBackup/$user");
-        }
-
-        // Remote destination for this user
-        $userRemotePath = "$backupFolder/$user/";
-
-        if ($type === 'sftp') {
-            $sshCmd = "ssh $sshOpts";
-            if (! empty($password) && empty($privateKey)) {
-                $rsyncPrefix = 'sshpass -p '.escapeshellarg($password);
-            } else {
-                $rsyncPrefix = '';
-            }
-
-            // Rsync all source paths
-            $userSyncSuccess = false;
-            foreach ($sourcePaths as $srcPath) {
-                $cmd = trim("$rsyncPrefix rsync $rsyncOpts -e '$sshCmd' ".
-                       escapeshellarg($srcPath).' '.
-                       escapeshellarg("$username@$host:$userRemotePath").' 2>&1');
-
-                logger("Executing rsync: $cmd");
-                $output = [];
-                exec($cmd, $output, $retval);
-                logger("Rsync result for $srcPath: retval=$retval, output=".implode("\n", $output));
-
-                if ($retval === 0 || $retval === 24) { // 24 = some files vanished (ok)
-                    $userSyncSuccess = true;
-                } else {
-                    $errors[] = "Failed to rsync $srcPath for $user: ".implode("\n", $output);
-                }
-            }
-
-            if (! $userSyncSuccess) {
-                // Cleanup database exports before continuing
-                if ($tempDbDir && is_dir($tempDbDir)) {
-                    array_map('unlink', glob("$tempDbDir/*.sql.gz"));
-                }
-
-                continue; // Don't count this user as backed up
-            }
-        } elseif ($type === 'nfs') {
-            $server = $destination['server'] ?? '';
-            $share = $destination['share'] ?? '';
-            $mountPoint = $destination['mount_point'] ?? '/mnt/backup_nfs';
-
-            // Mount NFS if needed
-            if (! is_dir($mountPoint)) {
-                mkdir($mountPoint, 0755, true);
-            }
-            exec('mount | grep '.escapeshellarg($mountPoint), $mountOutput, $mountCheck);
-            if ($mountCheck !== 0) {
-                exec('mount -t nfs '.escapeshellarg("$server:$share").' '.escapeshellarg($mountPoint).' 2>&1', $mountOutput, $mountRet);
-                if ($mountRet !== 0) {
-                    return ['success' => false, 'error' => 'Failed to mount NFS share'];
-                }
-            }
-
-            $localBackupPath = "$mountPoint/".ltrim($backupFolder, '/')."/$user/";
-            mkdir($localBackupPath, 0755, true);
-
-            // Find previous backup for link-dest
-            $prevBackups = glob("$mountPoint/".ltrim($remotePath, '/').'/????-??-??_??????');
-            rsort($prevBackups);
-            $previousBackup = ! empty($prevBackups) ? $prevBackups[0] : '';
-
-            // Track initialization status for the overall backup
-            if (! isset($isInitialization)) {
-                $isInitialization = empty($previousBackup);
-                if ($isInitialization) {
-                    logger("INITIALIZATION (NFS): Creating first full backup image at $backupFolder");
-                } else {
-                    logger("INCREMENTAL (NFS): Using hard links from previous backup $previousBackup");
-                }
-            }
-
-            $rsyncOpts = '-av --relative --delete';
-            if (! empty($previousBackup)) {
-                $rsyncOpts .= ' --link-dest='.escapeshellarg("$previousBackup/$user");
-            }
-
-            $userSyncSuccess = false;
-            foreach ($sourcePaths as $srcPath) {
-                $cmd = "rsync $rsyncOpts ".escapeshellarg($srcPath).' '.escapeshellarg($localBackupPath).' 2>&1';
-                $output = [];
-                exec($cmd, $output, $retval);
-
-                if ($retval === 0 || $retval === 24) {
-                    $userSyncSuccess = true;
-                } else {
-                    $errors[] = "Failed to rsync $srcPath for $user: ".implode("\n", $output);
-                }
-            }
-
-            if (! $userSyncSuccess) {
-                if ($tempDbDir && is_dir($tempDbDir)) {
-                    exec('rm -rf '.escapeshellarg($tempDbDir));
-                }
-
-                continue;
-            }
-        }
-
-        // Cleanup database exports after successful backup
-        if ($tempDbDir && is_dir($tempDbDir)) {
-            array_map('unlink', glob("$tempDbDir/*.sql.gz"));
-        }
-
-        $backedUpUsers[] = $user;
-    }
-
-    // Cleanup key file
-    if ($keyFile && file_exists($keyFile)) {
-        unlink($keyFile);
-    }
-
-    // Export DNS zones if requested
-    if ($includeDns && is_dir('/etc/bind/zones')) {
-        // TODO: rsync DNS zones to remote
-    }
-
-    if (empty($backedUpUsers)) {
-        return ['success' => false, 'error' => 'No users backed up. Errors: '.implode('; ', $errors)];
-    }
-
-    // Calculate total backup size
-    // Note: $backupFolder already contains the full path: "$remotePath/$timestamp"
-    $totalSize = 0;
-    if ($type === 'sftp') {
-        // For SFTP, run du on the remote server
-        $sshCmd = "ssh $sshOpts ".escapeshellarg("$username@$host").' '.
-                  escapeshellarg('du -sb '.$backupFolder.' 2>/dev/null | cut -f1');
-        if (! empty($password) && empty($privateKey)) {
-            $sshCmd = 'sshpass -p '.escapeshellarg($password)." $sshCmd";
-        }
-        logger("Calculating size with: $sshCmd");
-        exec($sshCmd, $sizeOutput, $sizeRet);
-        logger("Size result: ret=$sizeRet, output=".json_encode($sizeOutput));
-        if ($sizeRet === 0 && ! empty($sizeOutput[0])) {
-            $totalSize = (int) $sizeOutput[0];
-        }
-    } elseif ($type === 'nfs') {
-        // For NFS, the backup is on the mounted filesystem
-        $mountPoint = $destination['mount_point'] ?? '/mnt/backup_nfs';
-        // $backupFolder is like "/backups/2026-01-20_123456", strip leading slash for mount path
-        $backupPath = "$mountPoint/".ltrim($backupFolder, '/');
-        logger("Calculating NFS size at: $backupPath");
-        if (is_dir($backupPath)) {
-            exec('du -sb '.escapeshellarg($backupPath).' 2>/dev/null | cut -f1', $sizeOutput);
-            $totalSize = (int) ($sizeOutput[0] ?? 0);
-        }
-    }
-
-    return [
-        'success' => true,
-        'remote_path' => $backupFolder,
-        'users' => $backedUpUsers,
-        'user_count' => count($backedUpUsers),
-        'size' => $totalSize,
-        'type' => 'incremental',
-        'is_initialization' => $isInitialization ?? empty($previousBackup),
-        'previous_backup' => $previousBackup ?? null,
-        'errors' => $errors,
-        'message' => ($isInitialization ?? empty($previousBackup))
-            ? 'Initial full backup image created'
-            : 'Incremental backup completed with hard links to previous backup',
-    ];
+    return ['success' => false, 'error' => 'Deprecated: use Restic native backup. Every Restic backup is incremental by design.'];
 }
+
 
 /**
  * Upload via NFS mount.
@@ -21296,8 +19818,14 @@ function downloadUserFolderNfs(string $remotePath, string $localPath, array $des
 function backupTestDestination(array $params): array
 {
     $destination = $params['destination'] ?? [];
+    $repo = $params['repo'] ?? '';
 
     $type = $destination['type'] ?? '';
+
+    // If a restic repo URL is provided, test that instead
+    if (! empty($repo) || $type === 'restic') {
+        return testResticRepo($repo ?: ($destination['repo'] ?? ''));
+    }
 
     switch ($type) {
         case 'sftp':
@@ -21312,6 +19840,26 @@ function backupTestDestination(array $params): array
         default:
             return ['success' => false, 'error' => 'Unsupported destination type'];
     }
+}
+
+/**
+ * Test connectivity to a Restic repository by trying init or snapshots.
+ */
+function testResticRepo(string $repo = ''): array
+{
+    // Try listing snapshots first (repo already initialized)
+    $result = resticExec('snapshots --json --latest 1', $repo);
+    if ($result['exitCode'] === 0) {
+        return ['success' => true, 'message' => 'Restic repository is accessible and initialized'];
+    }
+
+    // Try to init the repository
+    $initResult = resticExec('init', $repo);
+    if ($initResult['exitCode'] === 0) {
+        return ['success' => true, 'message' => 'Restic repository initialized successfully'];
+    }
+
+    return ['success' => false, 'error' => 'Cannot access or initialize Restic repository: '.$initResult['output']];
 }
 
 /**
