@@ -159,6 +159,62 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->sortable(),
             ])
             ->actions([
+                Action::make('browse')
+                    ->label(__('Browse'))
+                    ->icon('heroicon-o-folder-open')
+                    ->color('gray')
+                    ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
+                    ->action(function (Backup $record): void {
+                        try {
+                            $repo = $record->destination
+                                ? $record->destination->getResticRepoUrl()
+                                : '/var/backups/jabali/restic';
+                            $destConfig = $record->destination
+                                ? array_merge($record->destination->config ?? [], ['type' => $record->destination->type])
+                                : [];
+
+                            $agent = app(\App\Services\Agent\AgentClient::class);
+                            $result = $agent->send('backup.list_contents', [
+                                'snapshot_id' => $record->snapshot_id,
+                                'destination' => $destConfig,
+                                'repo' => $repo,
+                            ]);
+
+                            $files = $result['files'] ?? [];
+                            $domains = [];
+                            $databases = [];
+
+                            foreach ($files as $file) {
+                                $parts = explode('/', $file);
+                                if (str_contains($file, '/domains/') && count($parts) >= 4) {
+                                    $domains[$parts[3]] = true;
+                                } elseif (str_contains($file, '/databases/') && str_ends_with($file, '.sql.gz')) {
+                                    $databases[] = basename($file, '.sql.gz');
+                                }
+                            }
+
+                            $summary = [];
+                            if (! empty($domains)) {
+                                $summary[] = count($domains).' domain(s): '.implode(', ', array_keys($domains));
+                            }
+                            if (! empty($databases)) {
+                                $summary[] = count($databases).' database(s): '.implode(', ', $databases);
+                            }
+
+                            Notification::make()
+                                ->title(__('Snapshot Contents'))
+                                ->body(! empty($summary) ? implode("\n", $summary) : __('Empty snapshot'))
+                                ->info()
+                                ->persistent()
+                                ->send();
+                        } catch (Exception $e) {
+                            Notification::make()
+                                ->title(__('Browse failed'))
+                                ->body(SafeError::message($e))
+                                ->danger()
+                                ->send();
+                        }
+                    }),
                 Action::make('restore')
                     ->label(__('Restore'))
                     ->icon('heroicon-o-arrow-path')

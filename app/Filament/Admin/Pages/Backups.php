@@ -85,6 +85,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         return [
             $this->createServerBackupAction(),
             $this->createScheduleAction(),
+            $this->verifyRepoAction(),
             $this->addDestinationAction(),
         ];
     }
@@ -127,6 +128,68 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->actions([
+                Action::make('browse')
+                    ->label(__('Browse'))
+                    ->icon('heroicon-o-folder-open')
+                    ->color('gray')
+                    ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
+                    ->action(function (Backup $record): void {
+                        try {
+                            $repo = $record->destination
+                                ? $record->destination->getResticRepoUrl()
+                                : '/var/backups/jabali/restic';
+                            $destConfig = $record->destination
+                                ? array_merge($record->destination->config ?? [], ['type' => $record->destination->type])
+                                : [];
+
+                            $agent = app(\App\Services\Agent\AgentClient::class);
+                            $result = $agent->send('backup.list_contents', [
+                                'snapshot_id' => $record->snapshot_id,
+                                'destination' => $destConfig,
+                                'repo' => $repo,
+                            ]);
+
+                            $files = $result['files'] ?? [];
+                            $domains = [];
+                            $databases = [];
+                            $mailboxes = [];
+
+                            foreach ($files as $file) {
+                                $parts = explode('/', $file);
+                                if (str_contains($file, '/domains/') && count($parts) >= 4) {
+                                    $domains[$parts[3]] = true;
+                                } elseif (str_contains($file, '/databases/') && str_ends_with($file, '.sql.gz')) {
+                                    $databases[] = basename($file, '.sql.gz');
+                                } elseif (str_starts_with($file, 'var/mail/vhosts/') && count($parts) >= 5) {
+                                    $mailboxes["{$parts[4]}@{$parts[3]}"] = true;
+                                }
+                            }
+
+                            $summary = [];
+                            if (! empty($domains)) {
+                                $summary[] = count($domains).' domain(s): '.implode(', ', array_keys($domains));
+                            }
+                            if (! empty($databases)) {
+                                $summary[] = count($databases).' database(s): '.implode(', ', $databases);
+                            }
+                            if (! empty($mailboxes)) {
+                                $summary[] = count($mailboxes).' mailbox(es)';
+                            }
+
+                            Notification::make()
+                                ->title(__('Snapshot Contents'))
+                                ->body(! empty($summary) ? implode("\n", $summary) : __('Empty snapshot'))
+                                ->info()
+                                ->persistent()
+                                ->send();
+                        } catch (Exception $e) {
+                            Notification::make()
+                                ->title(__('Browse failed'))
+                                ->body(SafeError::message($e))
+                                ->danger()
+                                ->send();
+                        }
+                    }),
                 Action::make('restore')
                     ->label(__('Restore'))
                     ->icon('heroicon-o-arrow-path')
@@ -279,6 +342,68 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->body(__('Server backup is running in the background.'))
                     ->success()
                     ->send();
+            });
+    }
+
+    // ── Verify Action ────────────────────────────────────────────────
+
+    private function verifyRepoAction(): Action
+    {
+        $destinations = BackupDestination::where('is_server_backup', true)
+            ->where('is_active', true)
+            ->pluck('name', 'id')
+            ->toArray();
+
+        return Action::make('verifyRepo')
+            ->label(__('Verify'))
+            ->icon('heroicon-o-shield-check')
+            ->color('gray')
+            ->modalHeading(__('Verify Backup Repository'))
+            ->form([
+                Select::make('destination_id')
+                    ->label(__('Repository'))
+                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->placeholder(__('Select repository to verify')),
+            ])
+            ->action(function (array $data): void {
+                try {
+                    $destConfig = [];
+                    $repo = '/var/backups/jabali/restic';
+
+                    if (! empty($data['destination_id'])) {
+                        $dest = BackupDestination::find($data['destination_id']);
+                        if ($dest) {
+                            $repo = $dest->getResticRepoUrl();
+                            $destConfig = array_merge($dest->config ?? [], ['type' => $dest->type]);
+                        }
+                    }
+
+                    $agent = app(\App\Services\Agent\AgentClient::class);
+                    $result = $agent->send('backup.verify', [
+                        'destination' => $destConfig,
+                        'repo' => $repo,
+                    ]);
+
+                    if ($result['success'] ?? false) {
+                        Notification::make()
+                            ->title(__('Repository OK'))
+                            ->body(__('Integrity check passed'))
+                            ->success()
+                            ->send();
+                    } else {
+                        Notification::make()
+                            ->title(__('Repository check failed'))
+                            ->body($result['error'] ?? __('Unknown error'))
+                            ->danger()
+                            ->send();
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title(__('Verify failed'))
+                        ->body(SafeError::message($e))
+                        ->danger()
+                        ->send();
+                }
             });
     }
 
