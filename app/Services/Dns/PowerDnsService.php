@@ -342,7 +342,8 @@ class PowerDnsService
             return $domain;
         }
 
-        if (str_contains($name, '.')) {
+        // Already a FQDN (ends with domain or trailing dot)
+        if (str_ends_with($name, ".{$domain}") || str_ends_with($name, ".{$domain}.") || str_ends_with($name, '.')) {
             return $name;
         }
 
