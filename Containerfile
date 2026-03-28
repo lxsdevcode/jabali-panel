@@ -69,7 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postfix dovecot-imapd dovecot-pop3d dovecot-lmtpd dovecot-mysql \
     opendkim opendkim-tools rspamd \
     # DNS
-    bind9 bind9utils \
+    pdns-server pdns-backend-mysql \
     # Security
     fail2ban certbot python3-certbot-nginx \
     # Tools

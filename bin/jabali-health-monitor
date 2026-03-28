@@ -67,11 +67,10 @@ $optionalServices = [
         'check_command' => 'systemctl is-active dovecot',
         'restart_command' => 'systemctl restart dovecot',
     ],
-    'named' => [
-        'description' => 'DNS Server',
-        'check_command' => 'systemctl is-active named',
-        'restart_command' => 'systemctl restart named',
-        'fallback' => ['bind9'],
+    'pdns' => [
+        'description' => 'PowerDNS',
+        'check_command' => 'systemctl is-active pdns',
+        'restart_command' => 'systemctl restart pdns',
     ],
     'redis-server' => [
         'description' => 'Redis Cache',

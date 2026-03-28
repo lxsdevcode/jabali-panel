@@ -43,7 +43,7 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
             ...array_keys($this->detectPhpFpmServices()),
             'php-fpm',
             ...($isStalwart ? ['stalwart-mail'] : ['postfix', 'dovecot']),
-            'named', // can fall back to bind9
+            'pdns',
             'redis-server',
         ];
 
@@ -56,8 +56,7 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
             'stalwart-mail' => 'Stalwart',
             'postfix' => 'Postfix',
             'dovecot' => 'Dovecot',
-            'named' => 'BIND DNS',
-            'bind9' => 'BIND DNS',
+            'pdns' => 'PowerDNS',
             'redis-server' => 'Redis',
         ];
 
@@ -145,7 +144,6 @@ class ServicesTableWidget extends Component implements HasActions, HasSchemas, H
     {
         return [
             'mariadb' => 'mysql',
-            'named' => 'bind9',
         ];
     }
 

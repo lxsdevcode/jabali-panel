@@ -76,7 +76,7 @@ select_features() {
     echo "  1) Full Installation (Recommended)"
     echo "     - Web Server (Nginx, PHP, MariaDB, Redis)"
     echo "     - Mail Server"
-    echo "     - DNS Server (BIND9)"
+    echo "     - DNS Server (PowerDNS)"
     echo ""
     echo "  2) Minimal Installation"
     echo "     - Web Server only (Nginx, PHP, MariaDB, Redis)"
@@ -109,7 +109,7 @@ select_features() {
             fi
 
             # DNS Server
-            read -p "Install DNS Server (BIND9)? [Y/n]: " dns_choice < /dev/tty
+            read -p "Install DNS Server (PowerDNS)? [Y/n]: " dns_choice < /dev/tty
             if [[ "$dns_choice" =~ ^[Nn]$ ]]; then
                 INSTALL_DNS=false
             fi
@@ -617,8 +617,8 @@ install_packages() {
     if [[ "$INSTALL_DNS" == "true" ]]; then
         info "Including DNS Server packages..."
         base_packages+=(
-            bind9
-            bind9-utils
+            pdns-server
+            pdns-backend-mysql
         )
     fi
 
@@ -3161,133 +3161,83 @@ PAMSCRIPT
 
 # Configure DNS Zone for server hostname
 configure_dns() {
-    header "Configuring DNS Server"
+    header "Configuring PowerDNS"
 
     local server_ip=$(hostname -I | awk '{print $1}')
+    local db_pass=""
+    local db_user="jabali"
 
-    # Extract domain from hostname (e.g., panel.example.com -> example.com)
+    if [[ -f /root/.jabali_db_credentials ]]; then
+        db_pass=$(grep '^DB_PASSWORD=' /root/.jabali_db_credentials | cut -d= -f2-)
+    fi
+
+    # Create PowerDNS database
+    info "Creating PowerDNS database..."
+    mysql -u root <<SQL
+CREATE DATABASE IF NOT EXISTS powerdns;
+GRANT ALL ON powerdns.* TO '${db_user}'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+    # Import schema
+    local schema_file=$(find /usr/share -name "*.mysql.sql" -path "*pdns*" 2>/dev/null | head -1)
+    if [[ -n "$schema_file" ]]; then
+        mysql -u root powerdns < "$schema_file" 2>/dev/null || true
+    fi
+
+    # Generate API key
+    local pdns_api_key=$(openssl rand -hex 32)
+    mkdir -p /etc/jabali
+    echo "POWERDNS_API_KEY=${pdns_api_key}" > /etc/jabali/powerdns-api.conf
+    chmod 640 /etc/jabali/powerdns-api.conf
+
+    # Remove default bind backend config
+    rm -f /etc/powerdns/pdns.d/bind.conf 2>/dev/null
+    # Comment out default launch= in main config
+    sed -i "s/^launch=$/# launch=/" /etc/powerdns/pdns.conf 2>/dev/null
+
+    # Write Jabali PowerDNS config
+    cat > /etc/powerdns/pdns.d/jabali.conf <<PDNSCONF
+# Jabali Panel — PowerDNS configuration
+launch=gmysql
+gmysql-host=127.0.0.1
+gmysql-user=${db_user}
+gmysql-password=${db_pass}
+gmysql-dbname=powerdns
+
+api=yes
+api-key=${pdns_api_key}
+webserver=yes
+webserver-address=127.0.0.1
+webserver-port=8081
+webserver-allow-from=127.0.0.1
+
+local-address=${server_ip}
+local-port=53
+
+default-soa-content=ns1.@ hostmaster.@ 0 10800 3600 604800 3600
+log-dns-queries=no
+security-poll-suffix=
+PDNSCONF
+
+    # Stop and disable BIND9 if running
+    systemctl stop named 2>/dev/null || systemctl stop bind9 2>/dev/null || true
+    systemctl disable named 2>/dev/null || systemctl disable bind9 2>/dev/null || true
+
+    # Enable and start PowerDNS
+    systemctl enable pdns 2>/dev/null || true
+    systemctl restart pdns
+
+    log "PowerDNS configured"
+
+    # Extract domain from hostname
     local domain=$(echo "$SERVER_HOSTNAME" | awk -F. '{if (NF>2) {print $(NF-1)"."$NF} else {print $0}}')
-    local escaped_domain=$(echo "$domain" | sed 's/\./\\./g')
-    local hostname_part=$(echo "$SERVER_HOSTNAME" | sed "s/\\.${escaped_domain}$//")
 
-    # If hostname is same as domain (e.g., example.com), use @ for the host part
-    if [[ "$hostname_part" == "$domain" ]]; then
-        hostname_part="@"
-    fi
-
-    info "Setting up DNS zone for: $domain"
-    info "Server hostname: $SERVER_HOSTNAME"
-
-    # Create zones directory
-    mkdir -p /etc/bind/zones
-
-    # Generate serial (YYYYMMDD01 format)
-    local serial=$(date +%Y%m%d)01
-
-    # Create zone file
-    cat > /etc/bind/zones/db.$domain << ZONEFILE
-\$TTL    3600
-@       IN      SOA     ns1.$domain. admin.$domain. (
-                        $serial         ; Serial
-                        3600            ; Refresh
-                        1800            ; Retry
-                        604800          ; Expire
-                        86400 )         ; Negative Cache TTL
-
-; Name servers
-@       IN      NS      ns1.$domain.
-@       IN      NS      ns2.$domain.
-
-; A records
-@       IN      A       $server_ip
-ns1     IN      A       $server_ip
-ns2     IN      A       $server_ip
-ZONEFILE
-
-    # Add hostname A record if it's a subdomain
-    if [[ "$hostname_part" != "@" ]]; then
-        echo "$hostname_part     IN      A       $server_ip" >> /etc/bind/zones/db.$domain
-    fi
-
-    # Add mail records
-    cat >> /etc/bind/zones/db.$domain << MAILRECORDS
-
-; Mail records
-@       IN      MX      10 mail.$domain.
-mail    IN      A       $server_ip
-
-; SPF record
-@       IN      TXT     "v=spf1 mx a ip4:$server_ip ~all"
-
-; DMARC record
-_dmarc  IN      TXT     "v=DMARC1; p=none; rua=mailto:admin@$domain"
-
-; Autodiscover for mail clients
-autoconfig      IN      A       $server_ip
-autodiscover    IN      A       $server_ip
-
-; SRV records for mail client auto-discovery
-_imaps._tcp     IN      SRV     0 1 993 mail.${domain}.
-_pop3s._tcp     IN      SRV     0 1 995 mail.${domain}.
-_submission._tcp IN     SRV     0 1 587 mail.${domain}.
-MAILRECORDS
-
-    # Set permissions
-    chown bind:bind /etc/bind/zones/db.$domain
-    chmod 644 /etc/bind/zones/db.$domain
-
-    # Add zone to named.conf.local if not already present
-    if ! grep -q "zone \"$domain\"" /etc/bind/named.conf.local 2>/dev/null; then
-        cat >> /etc/bind/named.conf.local << NAMEDCONF
-
-zone "$domain" {
-    type master;
-    file "/etc/bind/zones/db.$domain";
-    allow-transfer { none; };
-};
-NAMEDCONF
-    fi
-
-    # Configure BIND9 options for better security
-    if [[ ! -f /etc/bind/named.conf.options.bak ]]; then
-        cp /etc/bind/named.conf.options /etc/bind/named.conf.options.bak
-        cat > /etc/bind/named.conf.options << 'BINDOPTIONS'
-options {
-    directory "/var/cache/bind";
-
-    // Forward queries to public DNS if not authoritative
-    forwarders {
-        8.8.8.8;
-        8.8.4.4;
-    };
-
-    // Security settings
-    dnssec-validation auto;
-    auth-nxdomain no;
-    listen-on-v6 { any; };
-
-    // Allow queries from anywhere (for authoritative zones)
-    allow-query { any; };
-
-    // Disable recursion for security (authoritative only)
-    recursion no;
-};
-BINDOPTIONS
-    fi
-
-    # Enable and restart BIND9
-    systemctl enable named 2>/dev/null || systemctl enable bind9 2>/dev/null || true
-    systemctl restart named 2>/dev/null || systemctl restart bind9 2>/dev/null || true
-
-    log "DNS zone created for $domain"
-    info "Zone file: /etc/bind/zones/db.$domain"
     echo ""
     echo -e "${YELLOW}Important DNS Setup:${NC}"
     echo "Point your domain's nameservers to this server:"
     echo "  ns1.$domain -> $server_ip"
     echo "  ns2.$domain -> $server_ip"
-    echo ""
-    echo "Or add a glue record at your registrar for ns1.$domain"
     echo ""
 }
 
@@ -3506,6 +3456,16 @@ PANEL_HOSTNAME=${SERVER_HOSTNAME:-}
 PANEL_TLS_CERT=/etc/ssl/jabali/panel.crt
 PANEL_TLS_KEY=/etc/ssl/jabali/panel.key
 ENV
+
+    # Add PowerDNS API credentials if installed
+    if [[ -f /etc/jabali/powerdns-api.conf ]]; then
+        local pdns_key=$(grep POWERDNS_API_KEY /etc/jabali/powerdns-api.conf | cut -d= -f2-)
+        cat >> .env <<PDNSENV
+POWERDNS_API_URL=http://127.0.0.1:8081
+POWERDNS_API_KEY=${pdns_key}
+POWERDNS_SERVER_ID=localhost
+PDNSENV
+    fi
 
     # Ensure mail settings are correct (in case .env.example was used)
     sed -i "s/^MAIL_MAILER=.*/MAIL_MAILER=smtp/" .env
@@ -3988,10 +3948,8 @@ setup_self_healing() {
     if systemctl list-unit-files dovecot.service &>/dev/null | grep -q dovecot; then
         services+=("dovecot")
     fi
-    if systemctl list-unit-files named.service &>/dev/null | grep -q named; then
-        services+=("named")
-    elif systemctl list-unit-files bind9.service &>/dev/null | grep -q bind9; then
-        services+=("bind9")
+    if systemctl list-unit-files pdns.service &>/dev/null | grep -q pdns; then
+        services+=("pdns")
     fi
     if systemctl list-unit-files redis-server.service &>/dev/null | grep -q redis-server; then
         services+=("redis-server")
@@ -4285,7 +4243,7 @@ uninstall() {
         echo "  - Jabali database and user"
         echo "  - Nginx, PHP-FPM, MariaDB, Redis"
         echo "  - Mail server (Postfix, Dovecot, Rspamd)"
-        echo "  - DNS server (BIND9)"
+        echo "  - DNS server (PowerDNS)"
         echo "  - All user home directories (/home/*)"
         echo "  - All virtual mail (/var/mail)"
         echo "  - All domains and configurations"
@@ -4348,8 +4306,7 @@ uninstall() {
         dovecot
         rspamd
         opendkim
-        bind9
-        named
+        pdns
     )
 
     for service in "${services[@]}"; do
@@ -4365,8 +4322,7 @@ uninstall() {
     rm -rf /etc/systemd/system/php*.service.d/restart.conf
     rm -rf /etc/systemd/system/postfix.service.d/restart.conf
     rm -rf /etc/systemd/system/dovecot.service.d/restart.conf
-    rm -rf /etc/systemd/system/named.service.d/restart.conf
-    rm -rf /etc/systemd/system/bind9.service.d/restart.conf
+    rm -rf /etc/systemd/system/pdns.service.d/restart.conf
     rm -rf /etc/systemd/system/redis-server.service.d/restart.conf
 
     systemctl daemon-reload
@@ -4441,8 +4397,8 @@ uninstall() {
         rspamd
 
         # DNS
-        bind9
-        bind9-utils
+        pdns-server
+        pdns-backend-mysql
 
         # Webmail
         roundcube

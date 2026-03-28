@@ -24,7 +24,7 @@ class ServerSettingsService
         }
 
         $failedServices = [];
-        foreach (['postfix', 'dovecot', 'nginx', 'named'] as $service) {
+        foreach (['postfix', 'dovecot', 'nginx', 'pdns'] as $service) {
             try {
                 $action = $service === 'nginx' ? 'reload' : 'restart';
                 $r = $this->agent->send("service.{$action}", ['service' => $service]);

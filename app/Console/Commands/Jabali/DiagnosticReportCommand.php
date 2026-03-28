@@ -117,7 +117,7 @@ class DiagnosticReportCommand extends Command
                     'mariadb' => 'mariadb --version 2>&1',
                     'postfix' => 'postconf mail_version 2>&1',
                     'dovecot' => 'dovecot --version 2>&1',
-                    'named' => 'named -v 2>&1',
+                    'pdns' => 'pdns_server --version 2>&1',
                     'redis' => 'redis-server --version 2>&1',
                     'openssl' => 'openssl version 2>&1',
                 ];
@@ -206,7 +206,7 @@ class DiagnosticReportCommand extends Command
             $agent = app(AgentClient::class);
             $result = $agent->call('service.list', ['services' => [
                 'nginx', 'mariadb', 'mysql', 'postfix', 'dovecot',
-                'named', 'bind9', 'redis-server', 'jabali-agent', 'jabali-queue',
+                'pdns', 'redis-server', 'jabali-agent', 'jabali-queue',
             ]]);
             $data['services'] = $result->toArray();
         } catch (Exception) {
