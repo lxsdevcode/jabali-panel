@@ -32,15 +32,58 @@ class BackupOrchestrator
 
         $backup->update(['status' => 'running', 'started_at' => now()]);
 
-        $backupType = $backup->metadata['backup_type'] ?? 'full';
-        $isIncrementalRemote = $backupType === 'incremental' && $backup->destination_id;
-
         try {
-            $result = $isIncrementalRemote
-                ? $this->executeIncremental($backup)
-                : $this->executeFull($backup, $backupType);
+            // Determine Restic repo URL from destination or use local default
+            $repo = $backup->destination
+                ? $backup->destination->getResticRepoUrl()
+                : '/var/backups/jabali/restic';
 
-            $this->handleSuccess($backup, $result, $isIncrementalRemote);
+            // Restic handles incrementals natively — every backup is incremental
+            $result = $this->agent->backupCreateServer($repo, [
+                'users' => $backup->users,
+                'include_files' => $backup->include_files,
+                'include_databases' => $backup->include_databases,
+                'include_mailboxes' => $backup->include_mailboxes,
+                'include_dns' => $backup->include_dns,
+                'include_ssl' => $backup->include_ssl ?? true,
+                'repo' => $repo,
+            ]);
+
+            if (! ($result['success'] ?? false)) {
+                throw new Exception($result['error'] ?? 'Backup failed');
+            }
+
+            $backup->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'snapshot_id' => $result['snapshot_id'] ?? null,
+                'size_bytes' => $result['size'] ?? 0,
+                'users' => $result['users'] ?? $backup->users,
+                'metadata' => array_merge($backup->metadata ?? [], [
+                    'user_count' => $result['user_count'] ?? 0,
+                ]),
+            ]);
+
+            Log::info("BackupOrchestrator: Backup {$backup->id} completed (snapshot: ".($result['snapshot_id'] ?? 'unknown').')');
+
+            // Index snapshots for discovery
+            if ($backup->destination_id) {
+                IndexRemoteBackups::dispatch($backup->destination_id);
+            }
+
+            // Apply retention policy
+            if ($backup->schedule_id) {
+                $schedule = BackupSchedule::find($backup->schedule_id);
+                if ($schedule) {
+                    $this->applyRetention($schedule, $repo);
+                }
+            }
+
+            AdminNotificationService::backupSuccess(
+                $backup->name,
+                $result['size'] ?? 0,
+                $backup->destination?->name
+            );
         } catch (Exception $e) {
             $backup->update([
                 'status' => 'failed',
@@ -51,101 +94,6 @@ class BackupOrchestrator
             Log::error("BackupOrchestrator: Backup {$backup->id} failed: ".$e->getMessage());
             AdminNotificationService::backupFailure($backup->name, $e->getMessage());
         }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function executeIncremental(Backup $backup): array
-    {
-        $destination = $backup->destination;
-        if (! $destination) {
-            throw new Exception('Backup destination not found');
-        }
-
-        $config = $this->buildDestinationConfig($destination);
-
-        $result = $this->agent->backupIncrementalDirect($config, [
-            'users' => $backup->users,
-            'include_files' => $backup->include_files,
-            'include_databases' => $backup->include_databases,
-            'include_mailboxes' => $backup->include_mailboxes,
-            'include_dns' => $backup->include_dns,
-            'include_ssl' => $backup->include_ssl ?? true,
-        ]);
-
-        if (! ($result['success'] ?? false)) {
-            throw new Exception($result['error'] ?? 'Incremental backup failed');
-        }
-
-        return $result;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function executeFull(Backup $backup, string $backupType): array
-    {
-        $result = $this->agent->backupCreateServer($backup->local_path, [
-            'backup_type' => $backupType,
-            'users' => $backup->users,
-            'include_files' => $backup->include_files,
-            'include_databases' => $backup->include_databases,
-            'include_mailboxes' => $backup->include_mailboxes,
-            'include_dns' => $backup->include_dns,
-            'include_ssl' => $backup->include_ssl ?? true,
-        ]);
-
-        if (! ($result['success'] ?? false)) {
-            throw new Exception($result['error'] ?? 'Backup failed');
-        }
-
-        return $result;
-    }
-
-    /**
-     * @param  array<string, mixed>  $result
-     */
-    private function handleSuccess(Backup $backup, array $result, bool $isIncremental): void
-    {
-        $metadata = array_merge($backup->metadata ?? [], [
-            'user_count' => $result['user_count'] ?? 0,
-        ]);
-
-        if ($isIncremental) {
-            $metadata['previous_backup'] = $result['previous_backup'] ?? null;
-            $metadata['is_initialization'] = $result['is_initialization'] ?? false;
-        }
-
-        $backup->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-            'size_bytes' => $result['size'] ?? 0,
-            'users' => $result['users'] ?? $backup->users,
-            'remote_path' => $result['remote_path'] ?? $backup->remote_path,
-            'metadata' => $metadata,
-        ]);
-
-        Log::info("BackupOrchestrator: Backup {$backup->id} completed successfully (".($isIncremental ? 'incremental' : 'full').')');
-
-        if ($isIncremental && $backup->destination_id) {
-            IndexRemoteBackups::dispatch($backup->destination_id);
-        } elseif ($backup->destination_id) {
-            $this->uploadToRemote($backup);
-        }
-
-        if ($backup->schedule_id) {
-            $schedule = BackupSchedule::find($backup->schedule_id);
-            if ($schedule) {
-                $this->applyRetention($schedule);
-            }
-        }
-
-        AdminNotificationService::backupSuccess(
-            $backup->name,
-            $result['size'] ?? 0,
-            $backup->destination?->name
-        );
     }
 
     /**
@@ -238,32 +186,48 @@ class BackupOrchestrator
      */
     public function deleteBackup(Backup $backup): void
     {
-        // Delete local file via agent if exists
-        if ($backup->local_path) {
+        // Delete Restic snapshot if available
+        if ($backup->snapshot_id) {
+            try {
+                $repo = $backup->destination
+                    ? $backup->destination->getResticRepoUrl()
+                    : '/var/backups/jabali/restic';
+
+                $this->agent->send('backup.delete', [
+                    'snapshot_id' => $backup->snapshot_id,
+                    'repo' => $repo,
+                ]);
+            } catch (Exception $e) {
+                Log::warning('BackupOrchestrator: Failed to delete Restic snapshot: '.$e->getMessage());
+            }
+        } elseif ($backup->local_path) {
+            // Legacy tar.gz deletion
             $this->validatePath($backup->local_path);
             $this->agent->backupDeleteServer($backup->local_path);
-        }
-
-        // Delete from remote destination if exists
-        if ($backup->remote_path && $backup->destination) {
-            try {
-                $config = $this->buildDestinationConfig($backup->destination);
-                $this->agent->backupDeleteRemote($backup->remote_path, $config);
-            } catch (Exception $e) {
-                Log::warning('BackupOrchestrator: Failed to delete remote backup: '.$e->getMessage());
-            }
         }
 
         $backup->delete();
     }
 
     /**
-     * Apply retention policy for a schedule, deleting old backups.
+     * Apply retention policy using Restic forget.
      */
-    public function applyRetention(BackupSchedule $schedule): int
+    public function applyRetention(BackupSchedule $schedule, ?string $repo = null): int
     {
         $retentionCount = $schedule->retention_count ?? 7;
+        $repo = $repo ?: ($schedule->destination ? $schedule->destination->getResticRepoUrl() : '/var/backups/jabali/restic');
 
+        // Let Restic handle retention natively
+        try {
+            $this->agent->send('backup.forget', [
+                'repo' => $repo,
+                'keep_last' => $retentionCount,
+            ]);
+        } catch (Exception $e) {
+            Log::warning('BackupOrchestrator: Restic forget failed: '.$e->getMessage());
+        }
+
+        // Also clean up old DB records beyond retention
         $backups = Backup::where('schedule_id', $schedule->id)
             ->where('status', 'completed')
             ->orderByDesc('created_at')
@@ -277,17 +241,11 @@ class BackupOrchestrator
         $deletedCount = 0;
 
         foreach ($toDelete as $oldBackup) {
-            Log::info("BackupOrchestrator: Deleting old backup per retention: {$oldBackup->name}");
-
-            try {
-                $this->deleteBackup($oldBackup);
-                $deletedCount++;
-            } catch (Exception $e) {
-                Log::warning("BackupOrchestrator: Failed to delete backup {$oldBackup->id} during retention: ".$e->getMessage());
-            }
+            $oldBackup->delete();
+            $deletedCount++;
         }
 
-        Log::info("BackupOrchestrator: Deleted {$deletedCount} old backup(s) per retention policy");
+        Log::info("BackupOrchestrator: Pruned {$deletedCount} old backup record(s)");
 
         return $deletedCount;
     }
