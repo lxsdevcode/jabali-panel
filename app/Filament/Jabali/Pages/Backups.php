@@ -168,7 +168,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                         try {
                             $repo = $record->destination
                                 ? $record->destination->getResticRepoUrl()
-                                : '/var/backups/jabali/restic';
+                                : BackupDestination::defaultRepo();
                             $destConfig = $record->destination
                                 ? array_merge($record->destination->config ?? [], ['type' => $record->destination->type])
                                 : [];

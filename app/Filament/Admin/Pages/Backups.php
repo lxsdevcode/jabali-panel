@@ -801,7 +801,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 'password' => $data['rest_password'] ?? '',
             ]),
             default => array_merge($base, [
-                'path' => $data['path'] ?? '/var/backups/jabali/restic',
+                'path' => $data['path'] ?? BackupDestination::defaultRepo(),
             ]),
         };
     }
@@ -848,7 +848,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                 TextInput::make('password')->label(__('Password'))->password()->revealable()->default($config['password'] ?? ''),
             ),
             default => array_push($fields,
-                TextInput::make('path')->label(__('Path'))->default($config['path'] ?? '/var/backups/jabali/restic'),
+                TextInput::make('path')->label(__('Path'))->default($config['path'] ?? BackupDestination::defaultRepo()),
             ),
         };
 

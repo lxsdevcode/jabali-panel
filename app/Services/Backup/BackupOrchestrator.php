@@ -36,7 +36,7 @@ class BackupOrchestrator
             // Determine Restic repo URL from destination or use local default
             $repo = $backup->destination
                 ? $backup->destination->getResticRepoUrl()
-                : '/var/backups/jabali/restic';
+                : BackupDestination::defaultRepo();
 
             // Pass full destination config so agent can handle SFTP/S3 auth
             $destConfig = $backup->destination
@@ -196,7 +196,7 @@ class BackupOrchestrator
             try {
                 $repo = $backup->destination
                     ? $backup->destination->getResticRepoUrl()
-                    : '/var/backups/jabali/restic';
+                    : BackupDestination::defaultRepo();
 
                 $destConfig = $backup->destination
                     ? $this->buildDestinationConfig($backup->destination)
@@ -225,7 +225,7 @@ class BackupOrchestrator
     public function applyRetention(BackupSchedule $schedule, ?string $repo = null): int
     {
         $retentionCount = $schedule->retention_count ?? 7;
-        $repo = $repo ?: ($schedule->destination ? $schedule->destination->getResticRepoUrl() : '/var/backups/jabali/restic');
+        $repo = $repo ?: ($schedule->destination ? $schedule->destination->getResticRepoUrl() : BackupDestination::defaultRepo());
 
         // Let Restic handle retention natively
         try {
@@ -444,7 +444,7 @@ class BackupOrchestrator
 
             $repo = $backup->destination
                 ? $backup->destination->getResticRepoUrl()
-                : '/var/backups/jabali/restic';
+                : BackupDestination::defaultRepo();
             $destConfig = $backup->destination
                 ? $this->buildDestinationConfig($backup->destination)
                 : [];

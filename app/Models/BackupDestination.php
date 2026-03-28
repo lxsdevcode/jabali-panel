@@ -53,6 +53,14 @@ class BackupDestination extends Model
     }
 
     /**
+     * Get the default local Restic repository path.
+     */
+    public static function defaultRepo(): string
+    {
+        return config('jabali.backup.default_repo', '/var/backups/jabali/restic');
+    }
+
+    /**
      * Check if destination is local storage.
      */
     public function isLocal(): bool
@@ -114,7 +122,7 @@ class BackupDestination extends Model
         $config = $this->config ?? [];
 
         return match ($this->type) {
-            'local' => $config['path'] ?? '/var/backups/jabali/restic',
+            'local' => $config['path'] ?? self::defaultRepo(),
             'sftp' => sprintf('sftp:%s@%s:%s',
                 $config['username'] ?? 'backup',
                 $config['host'] ?? 'localhost',
@@ -127,7 +135,7 @@ class BackupDestination extends Model
             'gcs' => sprintf('gs:%s/', $config['bucket'] ?? 'jabali-backups'),
             'azure' => sprintf('azure:%s:/', $config['container'] ?? 'jabali-backups'),
             'rest' => sprintf('rest:%s', rtrim($config['url'] ?? 'http://localhost:8000', '/')),
-            default => '/var/backups/jabali/restic',
+            default => self::defaultRepo(),
         };
     }
 

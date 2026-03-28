@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backup;
 
+use App\Models\BackupDestination;
 use App\Models\BackupRestore;
 use App\Models\User;
 use App\Models\UserRemoteBackup;
@@ -56,7 +57,7 @@ class GranularRestoreService
 
         $repo = $snapshot->destination
             ? $snapshot->destination->getResticRepoUrl()
-            : '/var/backups/jabali/restic';
+            : BackupDestination::defaultRepo();
 
         $result = $this->agent->send('backup.restore', [
             'username' => $user->username,
@@ -118,7 +119,7 @@ class GranularRestoreService
 
         $repo = $snapshot->destination
             ? $snapshot->destination->getResticRepoUrl()
-            : '/var/backups/jabali/restic';
+            : BackupDestination::defaultRepo();
 
         $agentParams = [
             'username' => $user->username,
@@ -178,7 +179,7 @@ class GranularRestoreService
     {
         $repo = $snapshot->destination
             ? $snapshot->destination->getResticRepoUrl()
-            : '/var/backups/jabali/restic';
+            : BackupDestination::defaultRepo();
 
         $result = $this->agent->send('backup.list_contents', [
             'snapshot_id' => $snapshot->backup_path,
@@ -247,7 +248,7 @@ class GranularRestoreService
 
         $repo = $snapshot->destination
             ? $snapshot->destination->getResticRepoUrl()
-            : '/var/backups/jabali/restic';
+            : BackupDestination::defaultRepo();
 
         $result = $this->agent->send('backup.list_domain_files', [
             'snapshot_id' => $snapshot->backup_path,

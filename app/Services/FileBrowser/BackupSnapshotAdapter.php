@@ -8,6 +8,7 @@ use App\FileBrowser\Adapters\Archiver;
 use App\FileBrowser\Adapters\FileBrowserAdapter;
 use App\FileBrowser\Adapters\FileOperations;
 use App\FileBrowser\Adapters\PermissionManager;
+use App\Models\BackupDestination;
 use App\Services\Agent\AgentClient;
 
 /**
@@ -22,14 +23,14 @@ class BackupSnapshotAdapter implements FileBrowserAdapter
         AgentClient $agent,
         string $snapshotId,
         string $username,
-        string $repo = '/var/backups/jabali/restic',
+        string $repo = '',
         array $destinationConfig = [],
     ) {
         $this->fileOps = new BackupSnapshotFileOperations(
             $agent,
             $snapshotId,
             $username,
-            $repo,
+            $repo ?: BackupDestination::defaultRepo(),
             $destinationConfig,
         );
     }

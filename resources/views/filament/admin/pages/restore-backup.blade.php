@@ -28,7 +28,7 @@
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ __('Restore for user') }}</label>
                     <select wire:model.live="selectedUser" class="w-full rounded-lg border-gray-300 dark:border-white/10 dark:bg-white/5 dark:text-white">
                         <option value="">{{ __('Select a user...') }}</option>
-                        @foreach(\App\Models\User::where('is_active', true)->pluck('username', 'username') as $username)
+                        @foreach($this->activeUsers as $username)
                             <option value="{{ $username }}">{{ $username }}</option>
                         @endforeach
                     </select>
@@ -37,11 +37,10 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ __('Backup') }}</label>
                     <div class="p-3 rounded-lg bg-gray-50 dark:bg-white/5 text-sm">
-                        @php $backup = \App\Models\Backup::find($this->backupId); @endphp
-                        @if($backup)
-                            <span class="font-medium text-gray-950 dark:text-white">{{ $backup->name }}</span>
-                            <span class="text-gray-500 ml-2">{{ $backup->created_at?->format('M j, Y H:i') }}</span>
-                            <span class="text-gray-500 ml-2">{{ $backup->size_bytes > 0 ? \App\Support\Formatter::bytes($backup->size_bytes) : '' }}</span>
+                        @if($this->backupInfo)
+                            <span class="font-medium text-gray-950 dark:text-white">{{ $this->backupInfo->name }}</span>
+                            <span class="text-gray-500 ml-2">{{ $this->backupInfo->created_at?->format('M j, Y H:i') }}</span>
+                            <span class="text-gray-500 ml-2">{{ $this->backupInfo->size_bytes > 0 ? \App\Support\Formatter::bytes($this->backupInfo->size_bytes) : '' }}</span>
                         @endif
                     </div>
                 </div>
@@ -221,7 +220,7 @@
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('Backup') }}</p>
-                        <p class="font-semibold text-gray-950 dark:text-white">{{ \App\Models\Backup::find($this->backupId)?->name }}</p>
+                        <p class="font-semibold text-gray-950 dark:text-white">{{ $this->backupInfo?->name }}</p>
                     </div>
                 </div>
 

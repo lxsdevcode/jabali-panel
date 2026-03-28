@@ -10,6 +10,10 @@ return [
 
     'mail_backend' => env('MAIL_BACKEND', 'legacy'),
 
+    'backup' => [
+        'default_repo' => env('JABALI_BACKUP_REPO', '/var/backups/jabali/restic'),
+    ],
+
     'panel' => [
         'port' => (int) env('PANEL_PORT', 2223),
         'hostname' => env('PANEL_HOSTNAME', env('SERVER_HOSTNAME', '')),

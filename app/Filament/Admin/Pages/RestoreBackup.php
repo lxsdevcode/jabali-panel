@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Pages;
 
 use App\Models\Backup;
+use App\Models\BackupDestination;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
 use App\Services\Backup\BackupOrchestrator;
@@ -94,6 +95,16 @@ class RestoreBackup extends Page implements HasActions, HasForms
         };
     }
 
+    public function getActiveUsersProperty(): array
+    {
+        return User::where('is_active', true)->pluck('username', 'username')->toArray();
+    }
+
+    public function getBackupInfoProperty(): ?Backup
+    {
+        return $this->getBackup();
+    }
+
     // ── Header Actions ──────────────────────────────────────────────────
 
     protected function getHeaderActions(): array
@@ -157,7 +168,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
         try {
             $repo = $backup->destination
                 ? $backup->destination->getResticRepoUrl()
-                : '/var/backups/jabali/restic';
+                : BackupDestination::defaultRepo();
             $destConfig = $backup->destination
                 ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
                 : [];
@@ -340,7 +351,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
         $repo = $backup->destination
             ? $backup->destination->getResticRepoUrl()
-            : '/var/backups/jabali/restic';
+            : BackupDestination::defaultRepo();
         $destConfig = $backup->destination
             ? array_merge($backup->destination->config ?? [], ['type' => $backup->destination->type])
             : [];
