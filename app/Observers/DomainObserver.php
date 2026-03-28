@@ -9,7 +9,7 @@ use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
 use App\Models\SslCertificate;
-use App\Services\Agent\AgentClient;
+use App\Services\Dns\PowerDnsService;
 use App\Support\ServerFacts;
 use Exception;
 use Illuminate\Support\Facades\Log;
@@ -44,9 +44,8 @@ class DomainObserver
     public function deleted(Domain $domain): void
     {
         try {
-            $agent = app(AgentClient::class);
-            $agent->send('dns.delete_zone', ['domain' => $domain->domain]);
-        } catch (Exception $e) {
+            app(PowerDnsService::class)->deleteZone($domain->domain);
+        } catch (\Throwable $e) {
             Log::warning("Failed to delete DNS zone for {$domain->domain}: ".$e->getMessage());
         }
     }
@@ -120,22 +119,30 @@ class DomainObserver
     {
         try {
             $settings = DnsSetting::getAll();
-            $records = DnsRecord::where('domain_id', $domain->id)->get()->toArray();
             $hostname = $this->getServerHostname();
-            $serverIp = $this->getServerIp();
+            $serverIp = $settings['default_ip'] ?? $this->getServerIp();
             $serverIpv6 = $settings['default_ipv6'] ?? null;
 
-            $agent = app(AgentClient::class);
-            $agent->send('dns.sync_zone', [
-                'domain' => $domain->domain,
-                'records' => $records,
-                'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",
-                'ns2' => $settings['ns2'] ?? "ns2.{$hostname}",
-                'admin_email' => $settings['admin_email'] ?? "admin.{$hostname}",
-                'default_ip' => $settings['default_ip'] ?? $serverIp,
-                'default_ipv6' => $serverIpv6,
-                'default_ttl' => $settings['default_ttl'] ?? 3600,
-            ]);
+            $powerDns = app(PowerDnsService::class);
+            $powerDns->createZone(
+                $domain->domain,
+                [
+                    $settings['ns1'] ?? "ns1.{$hostname}",
+                    $settings['ns2'] ?? "ns2.{$hostname}",
+                ],
+                $serverIp,
+                $serverIpv6
+            );
+
+            $records = $domain->dnsRecords->map(fn (DnsRecord $r) => [
+                'name' => $r->name,
+                'type' => $r->type,
+                'content' => $r->content,
+                'ttl' => $r->ttl,
+                'priority' => $r->priority ?? 0,
+            ])->toArray();
+
+            $powerDns->setRecords($domain->domain, $records);
         } catch (Exception $e) {
             Log::warning("Failed to create DNS zone for {$domain->domain}: ".$e->getMessage());
         }

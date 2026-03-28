@@ -8,7 +8,7 @@ use App\Filament\Jabali\Widgets\DnsPendingAddsTable;
 use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
-use App\Services\Agent\InteractsWithAgent;
+use App\Services\Dns\PowerDnsService;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -43,7 +43,6 @@ use Livewire\Attributes\On;
 class DnsRecords extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
-    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -776,19 +775,18 @@ class DnsRecords extends Page implements HasActions, HasForms, HasTable
     protected function syncZoneFile(string $domain): void
     {
         try {
-            $records = DnsRecord::whereHas('domain', fn ($q) => $q->where('domain', $domain))->get();
-            $settings = DnsSetting::getAll();
-            $defaultIp = $settings['default_ip'] ?? ServerFacts::serverIp('127.0.0.1');
-            $this->agent()->call('dns.sync_zone', [
-                'domain' => $domain,
-                'records' => $records->toArray(),
-                'ns1' => $settings['ns1'] ?? 'ns1.example.com',
-                'ns2' => $settings['ns2'] ?? 'ns2.example.com',
-                'admin_email' => $settings['admin_email'] ?? 'admin.example.com',
-                'default_ip' => $defaultIp,
-                'default_ipv6' => $settings['default_ipv6'] ?? null,
-                'default_ttl' => $settings['default_ttl'] ?? 3600,
-            ]);
+            $records = DnsRecord::whereHas('domain', fn ($q) => $q->where('domain', $domain))
+                ->get()
+                ->map(fn (DnsRecord $r) => [
+                    'name' => $r->name,
+                    'type' => $r->type,
+                    'content' => $r->content,
+                    'ttl' => $r->ttl,
+                    'priority' => $r->priority ?? 0,
+                ])
+                ->toArray();
+
+            app(PowerDnsService::class)->setRecords($domain, $records);
         } catch (Exception $e) {
             Notification::make()->title(__('Warning: Zone file sync failed'))->body(SafeError::message($e))->warning()->send();
         }

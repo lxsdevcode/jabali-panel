@@ -576,48 +576,6 @@ class AgentClient implements AgentClientInterface
         return $this->send('wp.page_cache_status', ['username' => $username, 'domain' => $domain, 'site_id' => $siteId]);
     }
 
-    // DNS Management Methods
-    public function dnsCreateZone(string $domain, array $settings = []): array
-    {
-        return $this->send('dns.create_zone', array_merge(['domain' => $domain], $settings));
-    }
-
-    public function dnsSyncZone(string $domain, array $records, array $settings = []): array
-    {
-        return $this->send('dns.sync_zone', array_merge(['domain' => $domain, 'records' => $records], $settings));
-    }
-
-    public function dnsDeleteZone(string $domain): array
-    {
-        return $this->send('dns.delete_zone', ['domain' => $domain]);
-    }
-
-    public function dnsReload(): array
-    {
-        return $this->send('dns.reload');
-    }
-
-    // DNSSEC operations
-    public function dnsEnableDnssec(string $domain): array
-    {
-        return $this->send('dns.enable_dnssec', ['domain' => $domain]);
-    }
-
-    public function dnsDisableDnssec(string $domain): array
-    {
-        return $this->send('dns.disable_dnssec', ['domain' => $domain]);
-    }
-
-    public function dnsGetDnssecStatus(string $domain): array
-    {
-        return $this->send('dns.get_dnssec_status', ['domain' => $domain]);
-    }
-
-    public function dnsGetDsRecords(string $domain): array
-    {
-        return $this->send('dns.get_ds_records', ['domain' => $domain]);
-    }
-
     // User operations
     public function userExists(string $username): bool
     {

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Domain;
 use App\Services\Agent\AgentClient;
+use App\Services\Dns\PowerDnsService;
 use Illuminate\Support\Facades\Log;
 
 class DomainDeletionService
@@ -45,6 +46,12 @@ class DomainDeletionService
 
     private function cleanupRelatedRecords(Domain $domain): void
     {
+        try {
+            app(PowerDnsService::class)->deleteZone($domain->domain);
+        } catch (\Throwable $e) {
+            Log::warning("Failed to delete PowerDNS zone for {$domain->domain}: ".$e->getMessage());
+        }
+
         $domain->sslCertificates()->delete();
         $domain->dnsRecords()->delete();
         $domain->redirects()->delete();

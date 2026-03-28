@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\DnsSetting;
 use App\Services\Agent\AgentClient;
+use App\Services\Dns\PowerDnsService;
 
 class ServerSettingsService
 {
@@ -63,22 +64,18 @@ class ServerSettingsService
         DnsSetting::set('admin_email', $data['admin_email']);
         DnsSetting::clearCache();
 
-        $result = $this->agent->send('server.create_zone', [
-            'hostname' => $hostname,
-            'ns1' => $data['ns1'],
-            'ns1_ip' => $data['ns1_ip'],
-            'ns2' => $data['ns2'],
-            'ns2_ip' => $data['ns2_ip'],
-            'admin_email' => $data['admin_email'],
-            'server_ip' => $data['default_ip'],
-            'server_ipv6' => $data['default_ipv6'],
-            'ttl' => $data['default_ttl'],
-        ]);
+        try {
+            app(PowerDnsService::class)->createZone(
+                $hostname,
+                [$data['ns1'], $data['ns2']],
+                $data['default_ip'],
+                $data['default_ipv6'] ?: null
+            );
 
-        return [
-            'success' => $result['success'] ?? false,
-            'error' => $result['error'] ?? null,
-        ];
+            return ['success' => true];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
 
     /**

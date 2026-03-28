@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Widgets\Settings;
 
 use App\Models\Domain;
-use App\Services\Agent\InteractsWithAgent;
+use App\Services\Dns\PowerDnsService;
 use App\Support\SafeError;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -23,7 +23,6 @@ use Livewire\Component;
 class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
-    use InteractsWithAgent;
     use InteractsWithSchemas;
     use InteractsWithTable;
 
@@ -35,28 +34,20 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
     protected function getDnssecStatus(string $domain): array
     {
         try {
-            $result = $this->agent()->dnsGetDnssecStatus($domain);
-            if ($result['success'] ?? false) {
-                return [
-                    'enabled' => $result['enabled'] ?? false,
-                    'keys' => $result['keys'] ?? [],
-                    'message' => $result['message'] ?? '',
-                ];
-            }
+            return app(PowerDnsService::class)->getDnssecStatus($domain);
         } catch (\Exception $e) {
             // Silently fail
         }
 
-        return ['enabled' => false, 'keys' => [], 'message' => ''];
+        return ['enabled' => false, 'keys' => []];
     }
 
     protected function getDsRecords(string $domain): ?array
     {
         try {
-            $result = $this->agent()->dnsGetDsRecords($domain);
-            if ($result['success'] ?? false) {
-                return $result;
-            }
+            $records = app(PowerDnsService::class)->getDsRecords($domain);
+
+            return $records !== [] ? ['success' => true, 'ds_records' => $records] : null;
         } catch (\Exception $e) {
             // Silently fail
         }
@@ -133,17 +124,13 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
                     })
                     ->action(function (Domain $record): void {
                         try {
-                            $result = $this->agent()->dnsEnableDnssec($record->domain);
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title(__('DNSSEC Enabled'))
-                                    ->body(__('DNSSEC has been enabled for :domain. Add the DS record to your registrar to complete setup.', ['domain' => $record->domain]))
-                                    ->success()
-                                    ->send();
-                                $this->resetTable();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Unknown error'));
-                            }
+                            app(PowerDnsService::class)->enableDnssec($record->domain);
+                            Notification::make()
+                                ->title(__('DNSSEC Enabled'))
+                                ->body(__('DNSSEC has been enabled for :domain. Add the DS record to your registrar to complete setup.', ['domain' => $record->domain]))
+                                ->success()
+                                ->send();
+                            $this->resetTable();
                         } catch (\Exception $e) {
                             Notification::make()
                                 ->title(__('Failed to enable DNSSEC'))
@@ -186,17 +173,13 @@ class DnssecTable extends Component implements HasActions, HasSchemas, HasTable
                     })
                     ->action(function (Domain $record): void {
                         try {
-                            $result = $this->agent()->dnsDisableDnssec($record->domain);
-                            if ($result['success'] ?? false) {
-                                Notification::make()
-                                    ->title(__('DNSSEC Disabled'))
-                                    ->body(__('DNSSEC has been disabled for :domain.', ['domain' => $record->domain]))
-                                    ->success()
-                                    ->send();
-                                $this->resetTable();
-                            } else {
-                                throw new \Exception($result['error'] ?? __('Unknown error'));
-                            }
+                            app(PowerDnsService::class)->disableDnssec($record->domain);
+                            Notification::make()
+                                ->title(__('DNSSEC Disabled'))
+                                ->body(__('DNSSEC has been disabled for :domain.', ['domain' => $record->domain]))
+                                ->success()
+                                ->send();
+                            $this->resetTable();
                         } catch (\Exception $e) {
                             Notification::make()
                                 ->title(__('Failed to disable DNSSEC'))

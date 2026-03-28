@@ -8,7 +8,7 @@ use App\Filament\Admin\Widgets\DnsPendingAddsTable;
 use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
-use App\Services\Agent\InteractsWithAgent;
+use App\Services\Dns\PowerDnsService;
 use App\Support\SafeError;
 use App\Support\ServerFacts;
 use BackedEnum;
@@ -41,7 +41,6 @@ use Livewire\Attributes\On;
 class DnsZones extends Page implements HasActions, HasForms, HasTable
 {
     use InteractsWithActions;
-    use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
 
@@ -587,20 +586,20 @@ class DnsZones extends Page implements HasActions, HasForms, HasTable
                 ->modalDescription(__('This will regenerate all zone files from the database.'))
                 ->action(function () {
                     $count = 0;
+                    $powerDns = app(PowerDnsService::class);
                     $domains = Domain::all();
-                    $settings = DnsSetting::getAll();
 
                     foreach ($domains as $domain) {
                         try {
-                            $records = DnsRecord::where('domain_id', $domain->id)->get()->toArray();
-                            $this->agent()->call('dns.sync_zone', [
-                                'domain' => $domain->domain,
-                                'records' => $records,
-                                'ns1' => $settings['ns1'] ?? 'ns1.example.com',
-                                'ns2' => $settings['ns2'] ?? 'ns2.example.com',
-                                'admin_email' => $settings['admin_email'] ?? 'admin.example.com',
-                                'default_ttl' => $settings['default_ttl'] ?? 3600,
-                            ]);
+                            $records = $domain->dnsRecords->map(fn (DnsRecord $r) => [
+                                'name' => $r->name,
+                                'type' => $r->type,
+                                'content' => $r->content,
+                                'ttl' => $r->ttl,
+                                'priority' => $r->priority ?? 0,
+                            ])->toArray();
+
+                            $powerDns->setRecords($domain->domain, $records);
                             $count++;
                         } catch (Exception $e) {
                             // Continue with other zones
@@ -863,37 +862,42 @@ class DnsZones extends Page implements HasActions, HasForms, HasTable
             return;
         }
 
-        $this->agentCall(
-            action: 'dns.delete_zone',
-            params: ['domain' => $domain->domain],
-            successTitle: __('Zone deleted for :domain', ['domain' => $domain->domain]),
-            errorTitle: 'Failed',
-            onSuccess: function () {
-                DnsRecord::where('domain_id', $this->selectedDomainId)->delete();
-                $this->selectedDomainId = null;
-                $this->pendingEdits = [];
-                $this->pendingDeletes = [];
-                $this->pendingAdds = [];
-            },
-        );
+        try {
+            app(PowerDnsService::class)->deleteZone($domain->domain);
+
+            DnsRecord::where('domain_id', $this->selectedDomainId)->delete();
+            $this->selectedDomainId = null;
+            $this->pendingEdits = [];
+            $this->pendingDeletes = [];
+            $this->pendingAdds = [];
+
+            Notification::make()
+                ->title(__('Zone deleted for :domain', ['domain' => $domain->domain]))
+                ->success()
+                ->send();
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('Failed'))
+                ->body(SafeError::message($e))
+                ->danger()
+                ->send();
+        }
     }
 
     protected function syncZoneFile(string $domain): void
     {
-        $records = DnsRecord::whereHas('domain', fn ($q) => $q->where('domain', $domain))->get()->toArray();
-        $settings = DnsSetting::getAll();
-        $defaultIp = $settings['default_ip'] ?? ServerFacts::serverIp('127.0.0.1');
+        $records = DnsRecord::whereHas('domain', fn ($q) => $q->where('domain', $domain))
+            ->get()
+            ->map(fn (DnsRecord $r) => [
+                'name' => $r->name,
+                'type' => $r->type,
+                'content' => $r->content,
+                'ttl' => $r->ttl,
+                'priority' => $r->priority ?? 0,
+            ])
+            ->toArray();
 
-        $this->agent()->call('dns.sync_zone', [
-            'domain' => $domain,
-            'records' => $records,
-            'ns1' => $settings['ns1'] ?? 'ns1.example.com',
-            'ns2' => $settings['ns2'] ?? 'ns2.example.com',
-            'admin_email' => $settings['admin_email'] ?? 'admin.example.com',
-            'default_ip' => $defaultIp,
-            'default_ipv6' => $settings['default_ipv6'] ?? null,
-            'default_ttl' => $settings['default_ttl'] ?? 3600,
-        ]);
+        app(PowerDnsService::class)->setRecords($domain, $records);
     }
 
     /**

@@ -1300,19 +1300,15 @@ class WordPress extends Page implements HasActions, HasForms, HasTable
 
     protected function syncDnsZone(Domain $domain, ?array $settings = null): void
     {
-        $settings ??= DnsSetting::getAll();
-        $records = DnsRecord::query()->where('domain_id', $domain->id)->get()->toArray();
-        $hostname = gethostname() ?: 'localhost';
-        $serverIp = ServerFacts::serverIp('');
+        $records = DnsRecord::query()->where('domain_id', $domain->id)->get()->map(fn ($r) => [
+            'name' => $r->name,
+            'type' => $r->type,
+            'content' => $r->content,
+            'ttl' => $r->ttl,
+            'priority' => $r->priority ?? 0,
+        ])->toArray();
 
-        $this->agent()->dnsSyncZone($domain->domain, $records, [
-            'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",
-            'ns2' => $settings['ns2'] ?? "ns2.{$hostname}",
-            'admin_email' => $settings['admin_email'] ?? "admin.{$hostname}",
-            'default_ip' => $settings['default_ip'] ?? ($serverIp !== '' ? $serverIp : '127.0.0.1'),
-            'default_ipv6' => $settings['default_ipv6'] ?? null,
-            'default_ttl' => $settings['default_ttl'] ?? 3600,
-        ]);
+        app(\App\Services\Dns\PowerDnsService::class)->setRecords($domain->domain, $records);
     }
 
     protected function extractSubdomainLabel(string $fullDomain, string $baseDomain): ?string

@@ -8,7 +8,7 @@ use App\Models\DnsRecord;
 use App\Models\DnsSetting;
 use App\Models\Domain;
 use App\Models\User;
-use App\Services\Agent\AgentClient;
+use App\Services\Dns\PowerDnsService;
 use App\Support\ServerFacts;
 use Exception;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 class MigrationDnsSyncService
 {
-    public function __construct(private AgentClient $agent) {}
+    public function __construct(private PowerDnsService $powerDns) {}
 
     /**
      * @param  array<int, string|array<string, mixed>>|null  $domainNames
@@ -53,19 +53,22 @@ class MigrationDnsSyncService
 
             $settings = DnsSetting::getAll();
             $hostname = $this->getServerHostname();
-            $serverIp = $this->getServerIp();
+            $serverIp = $settings['default_ip'] ?? $this->getServerIp();
             $serverIpv6 = $settings['default_ipv6'] ?? null;
 
-            $this->agent->call('dns.sync_zone', [
-                'domain' => $domain->domain,
-                'records' => $this->formatRecords($records),
-                'ns1' => $settings['ns1'] ?? "ns1.{$hostname}",
-                'ns2' => $settings['ns2'] ?? "ns2.{$hostname}",
-                'admin_email' => $settings['admin_email'] ?? "admin.{$hostname}",
-                'default_ip' => $settings['default_ip'] ?? $serverIp,
-                'default_ipv6' => $serverIpv6,
-                'default_ttl' => (int) ($settings['default_ttl'] ?? 3600),
-            ]);
+            if (! $this->powerDns->zoneExists($domain->domain)) {
+                $this->powerDns->createZone(
+                    $domain->domain,
+                    [
+                        $settings['ns1'] ?? "ns1.{$hostname}",
+                        $settings['ns2'] ?? "ns2.{$hostname}",
+                    ],
+                    $serverIp,
+                    $serverIpv6
+                );
+            }
+
+            $this->powerDns->setRecords($domain->domain, $this->formatRecords($records));
         } catch (Exception $e) {
             Log::warning("Failed to sync DNS zone for {$domain->domain}: {$e->getMessage()}");
         }

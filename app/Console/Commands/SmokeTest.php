@@ -306,13 +306,10 @@ class SmokeTest extends Command
     private function test_create_dns_zone(): void
     {
         $this->check('Create DNS zone', function () {
-            $result = $this->agent->dnsCreateZone($this->testDomain, [
-                'ns1' => 'ns1.jabali-panel.com',
-                'ns2' => 'ns2.jabali-panel.com',
-                'ip' => '127.0.0.1',
-            ]);
+            $powerDns = app(\App\Services\Dns\PowerDnsService::class);
+            $powerDns->createZone($this->testDomain, ['ns1.jabali-panel.com', 'ns2.jabali-panel.com'], '127.0.0.1');
 
-            return $result['success'] ?? false;
+            return $powerDns->zoneExists($this->testDomain);
         });
     }
 
