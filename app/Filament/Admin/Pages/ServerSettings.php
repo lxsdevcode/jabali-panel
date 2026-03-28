@@ -229,8 +229,6 @@ class ServerSettings extends Page implements HasActions, HasForms
             'notify_backup_failures' => (bool) ($settings['notify_backup_failures'] ?? true),
             'notify_backup_success' => (bool) ($settings['notify_backup_success'] ?? false),
             'notify_disk_quota' => (bool) ($settings['notify_disk_quota'] ?? true),
-            'notify_login_failures' => (bool) ($settings['notify_login_failures'] ?? true),
-            'notify_ssh_logins' => (bool) ($settings['notify_ssh_logins'] ?? false),
             'notify_system_updates' => (bool) ($settings['notify_system_updates'] ?? false),
             'notify_service_health' => (bool) ($settings['notify_service_health'] ?? true),
             'notify_high_load' => (bool) ($settings['notify_high_load'] ?? true),
@@ -678,12 +676,9 @@ class ServerSettings extends Page implements HasActions, HasForms
                         Toggle::make('notificationsData.notify_disk_quota')
                             ->label(__('Disk Quota Warnings'))
                             ->helperText(__('When users reach 90% quota')),
-                        Toggle::make('notificationsData.notify_login_failures')
-                            ->label(__('Login Failure Alerts'))
-                            ->helperText(__('Brute force login attempt alerts')),
-                        Toggle::make('notificationsData.notify_ssh_logins')
-                            ->label(__('SSH Login Alerts'))
-                            ->helperText(__('Successful SSH login notifications')),
+                        Placeholder::make('security_alerts_note')
+                            ->label(__('Login & SSH Alerts'))
+                            ->content(__('Managed by Jabali Security (brute-force module)')),
                         Toggle::make('notificationsData.notify_system_updates')
                             ->label(__('System Updates Available'))
                             ->helperText(__('When panel updates are available')),
@@ -1187,14 +1182,20 @@ class ServerSettings extends Page implements HasActions, HasForms
         DnsSetting::set('notify_backup_failures', $data['notify_backup_failures'] ? '1' : '0');
         DnsSetting::set('notify_backup_success', $data['notify_backup_success'] ? '1' : '0');
         DnsSetting::set('notify_disk_quota', $data['notify_disk_quota'] ? '1' : '0');
-        DnsSetting::set('notify_login_failures', $data['notify_login_failures'] ? '1' : '0');
-        DnsSetting::set('notify_ssh_logins', $data['notify_ssh_logins'] ? '1' : '0');
         DnsSetting::set('notify_system_updates', $data['notify_system_updates'] ? '1' : '0');
         DnsSetting::set('notify_service_health', $data['notify_service_health'] ? '1' : '0');
         DnsSetting::set('notify_high_load', $data['notify_high_load'] ? '1' : '0');
         DnsSetting::set('load_threshold', (string) max(1, min(100, (float) ($data['load_threshold'] ?? 5))));
         DnsSetting::set('load_alert_minutes', (string) max(1, min(60, (int) ($data['load_alert_minutes'] ?? 5))));
         DnsSetting::clearCache();
+
+        // Sync email recipients to Jabali Security daemon
+        try {
+            $securityClient = new \App\JabaliSecurity\JabaliSecurityClient;
+            $securityClient->patch('/config', ['NOTIFY_EMAIL' => $emailsValue]);
+        } catch (\Throwable $e) {
+            // Security daemon may not be installed
+        }
 
         Notification::make()->title(__('Notification settings saved'))->success()->send();
     }
@@ -1462,7 +1463,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                 'quotas_enabled', 'default_quota_mb', 'max_upload_size_mb',
                 'mail_hostname', 'mail_default_quota_mb', 'max_mailboxes_per_domain', 'webmail_url', 'webmail_product_name',
                 'admin_email_recipients', 'notify_ssl_errors', 'notify_backup_failures', 'notify_backup_success',
-                'notify_disk_quota', 'notify_login_failures', 'notify_ssh_logins', 'notify_system_updates',
+                'notify_disk_quota', 'notify_system_updates',
                 'notify_service_health', 'notify_high_load', 'load_threshold', 'load_alert_minutes',
                 'fpm_pm_max_children', 'fpm_pm_max_requests', 'fpm_rlimit_files',
                 'fpm_process_priority', 'fpm_request_terminate_timeout', 'fpm_memory_limit',
