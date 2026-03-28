@@ -33,7 +33,7 @@ class BackupSnapshotFileOperations implements FileOperations
         $result = $this->agent->send('backup.list_domain_files', [
             'snapshot_id' => $this->snapshotId,
             'username' => $this->username,
-            'path' => empty($path) ? "home/{$this->username}" : "home/{$this->username}/{$path}",
+            'path' => $path,
             'repo' => $this->repo,
             'destination' => $this->destinationConfig,
         ]);

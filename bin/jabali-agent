@@ -1510,13 +1510,6 @@ php_admin_value[max_execution_time] = {$maxExecutionTime}
 php_admin_value[max_input_time] = {$maxInputTime}
 php_admin_value[max_input_vars] = {$maxInputVars}
 
-; Security
-php_admin_value[open_basedir] = {$userHome}/:/tmp/:/usr/share/php/
-php_admin_value[upload_tmp_dir] = {$userHome}/tmp
-php_admin_value[session.save_path] = {$userHome}/tmp
-php_admin_value[sys_temp_dir] = {$userHome}/tmp
-php_admin_value[disable_functions] = symlink,link,exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec
-
 ; Logging
 php_admin_flag[log_errors] = on
 php_admin_value[error_log] = {$userHome}/logs/php-error.log
@@ -1641,13 +1634,6 @@ php_admin_value[post_max_size] = {$postMaxSize}
 php_admin_value[max_execution_time] = {$maxExecutionTime}
 php_admin_value[max_input_time] = {$maxInputTime}
 php_admin_value[max_input_vars] = {$maxInputVars}
-
-; Security
-php_admin_value[open_basedir] = {$userHome}/:/tmp/:/usr/share/php/
-php_admin_value[upload_tmp_dir] = {$userHome}/tmp
-php_admin_value[session.save_path] = {$userHome}/tmp
-php_admin_value[sys_temp_dir] = {$userHome}/tmp
-php_admin_value[disable_functions] = symlink,link,exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec
 
 ; Logging
 php_admin_flag[log_errors] = on
@@ -9066,13 +9052,6 @@ php_admin_value[post_max_size] = {$postMaxSize}
 php_admin_value[max_execution_time] = {$maxExecutionTime}
 php_admin_value[max_input_time] = {$maxInputTime}
 php_admin_value[max_input_vars] = {$maxInputVars}
-
-; Security
-php_admin_value[open_basedir] = {$userHome}/:/tmp/:/usr/share/php/
-php_admin_value[upload_tmp_dir] = {$userHome}/tmp
-php_admin_value[session.save_path] = {$userHome}/tmp
-php_admin_value[sys_temp_dir] = {$userHome}/tmp
-php_admin_value[disable_functions] = symlink,link,exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec
 
 ; Logging
 php_admin_flag[log_errors] = on
