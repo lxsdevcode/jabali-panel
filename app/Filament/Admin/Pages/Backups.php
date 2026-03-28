@@ -140,18 +140,50 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->color('warning')
                     ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
                     ->modalHeading(__('Restore Backup'))
-                    ->form([
-                        Select::make('restore_user')
-                            ->label(__('Restore for user'))
-                            ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
-                            ->required()
-                            ->helperText(__('Select which user to restore data for')),
-                        Grid::make(3)->schema([
-                            Toggle::make('restore_files')->label(__('Files'))->default(true),
-                            Toggle::make('restore_databases')->label(__('Databases'))->default(true),
-                            Toggle::make('restore_mailboxes')->label(__('Mailboxes'))->default(true),
-                        ]),
-                    ])
+                    ->modalDescription(__('Select what to restore. Uncheck items you want to skip.'))
+                    ->form(function (Backup $record): array {
+                        $contents = $this->getSnapshotContents($record);
+                        $fields = [
+                            Select::make('restore_user')
+                                ->label(__('Restore for user'))
+                                ->options(fn () => User::where('is_active', true)->pluck('username', 'username')->toArray())
+                                ->required(),
+                        ];
+
+                        if (! empty($contents['domains'])) {
+                            $fields[] = CheckboxList::make('selected_domains')
+                                ->label(__('Domains'))
+                                ->options(array_combine($contents['domains'], $contents['domains']))
+                                ->default($contents['domains'])
+                                ->columns(2);
+                        }
+
+                        if (! empty($contents['databases'])) {
+                            $fields[] = CheckboxList::make('selected_databases')
+                                ->label(__('Databases'))
+                                ->options(array_combine($contents['databases'], $contents['databases']))
+                                ->default($contents['databases'])
+                                ->columns(2);
+                        }
+
+                        if (! empty($contents['mailboxes'])) {
+                            $fields[] = CheckboxList::make('selected_mailboxes')
+                                ->label(__('Mailboxes'))
+                                ->options(array_combine($contents['mailboxes'], $contents['mailboxes']))
+                                ->default($contents['mailboxes'])
+                                ->columns(2);
+                        }
+
+                        if (empty($contents['domains']) && empty($contents['databases']) && empty($contents['mailboxes'])) {
+                            $fields[] = Grid::make(3)->schema([
+                                Toggle::make('restore_files')->label(__('Files'))->default(true),
+                                Toggle::make('restore_databases')->label(__('Databases'))->default(true),
+                                Toggle::make('restore_mailboxes')->label(__('Mailboxes'))->default(true),
+                            ]);
+                        }
+
+                        return $fields;
+                    })
                     ->action(function (Backup $record, array $data): void {
                         $user = User::where('username', $data['restore_user'])->first();
                         if (! $user) {
@@ -160,13 +192,25 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                             return;
                         }
 
+                        $options = [
+                            'restore_files' => ! empty($data['selected_domains']) || ($data['restore_files'] ?? false),
+                            'restore_databases' => ! empty($data['selected_databases']) || ($data['restore_databases'] ?? false),
+                            'restore_mailboxes' => ! empty($data['selected_mailboxes']) || ($data['restore_mailboxes'] ?? false),
+                        ];
+
+                        if (! empty($data['selected_domains'])) {
+                            $options['selected_domains'] = $data['selected_domains'];
+                        }
+                        if (! empty($data['selected_databases'])) {
+                            $options['selected_databases'] = $data['selected_databases'];
+                        }
+                        if (! empty($data['selected_mailboxes'])) {
+                            $options['selected_mailboxes'] = $data['selected_mailboxes'];
+                        }
+
                         try {
                             $orchestrator = app(BackupOrchestrator::class);
-                            $result = $orchestrator->restoreBackup($user, $record, [
-                                'restore_files' => $data['restore_files'] ?? true,
-                                'restore_databases' => $data['restore_databases'] ?? true,
-                                'restore_mailboxes' => $data['restore_mailboxes'] ?? true,
-                            ]);
+                            $result = $orchestrator->restoreBackup($user, $record, $options);
 
                             if ($result['success'] ?? false) {
                                 Notification::make()

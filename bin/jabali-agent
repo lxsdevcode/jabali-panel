@@ -17563,6 +17563,9 @@ function backupRestore(array $params): array
     $restoreFiles = $params['restore_files'] ?? true;
     $restoreDbs   = $params['restore_databases'] ?? true;
     $restoreMail  = $params['restore_mailboxes'] ?? true;
+    $selectedDomains   = $params['selected_domains'] ?? null;   // null = all
+    $selectedDatabases = $params['selected_databases'] ?? null;  // null = all
+    $selectedMailboxes = $params['selected_mailboxes'] ?? null;  // null = all
 
     if (empty($snapshotId)) {
         return ['success' => false, 'error' => 'snapshot_id is required'];
@@ -17586,15 +17589,24 @@ function backupRestore(array $params): array
         $homeDir = "/home/{$username}";
         $restoredHome = "{$restoreDir}{$homeDir}";
 
-        // Restore domain files
+        // Restore domain files (optionally filtered by selected_domains)
         if ($restoreFiles && is_dir("{$restoredHome}/domains")) {
-            $rsyncCmd = 'rsync -a ' . escapeshellarg("{$restoredHome}/domains/") . ' ' . escapeshellarg("{$homeDir}/domains/") . ' 2>&1';
-            $out = [];
-            $ret = 0;
-            exec($rsyncCmd, $out, $ret);
-            if ($ret === 0) {
-                $restored['files'] = count(array_filter(scandir("{$homeDir}/domains"), fn($d) => $d !== '.' && $d !== '..'));
-                $log[] = ['message' => "Restored {$restored['files']} domain(s)", 'status' => 'success'];
+            $domainDirs = array_filter(scandir("{$restoredHome}/domains"), fn($d) => $d !== '.' && $d !== '..' && is_dir("{$restoredHome}/domains/{$d}"));
+
+            foreach ($domainDirs as $domain) {
+                if ($selectedDomains !== null && ! in_array($domain, $selectedDomains)) {
+                    continue;
+                }
+                $src = "{$restoredHome}/domains/{$domain}/";
+                $dst = "{$homeDir}/domains/{$domain}/";
+                mkdir($dst, 0755, true);
+                $out = [];
+                $ret = 0;
+                exec('rsync -a ' . escapeshellarg($src) . ' ' . escapeshellarg($dst) . ' 2>&1', $out, $ret);
+                if ($ret === 0) {
+                    $restored['files']++;
+                    $log[] = ['message' => "Restored domain: {$domain}", 'status' => 'success'];
+                }
             }
         }
 
@@ -17608,6 +17620,9 @@ function backupRestore(array $params): array
             foreach ($dbDirs as $dbDir) {
                 foreach (glob("{$dbDir}/*.sql.gz") as $dumpFile) {
                     $dbName = basename($dumpFile, '.sql.gz');
+                    if ($selectedDatabases !== null && ! in_array($dbName, $selectedDatabases)) {
+                        continue;
+                    }
                     exec('mysql --host=' . escapeshellarg($mysqlHost)
                         . ' --user=' . escapeshellarg($mysqlUser)
                         . ' --password=' . escapeshellarg($mysqlPass)
@@ -17630,11 +17645,18 @@ function backupRestore(array $params): array
             }
         }
 
-        // Restore mailboxes
+        // Restore mailboxes (optionally filtered by selected_mailboxes)
         if ($restoreMail) {
             $mailDirs = glob("{$restoreDir}/var/mail/vhosts/*");
             foreach ($mailDirs as $domainMailDir) {
                 $domain = basename($domainMailDir);
+                if ($selectedMailboxes !== null) {
+                    // selected_mailboxes contains "user@domain" — check if any match this domain
+                    $domainMatch = array_filter($selectedMailboxes, fn($m) => str_ends_with($m, "@{$domain}"));
+                    if (empty($domainMatch)) {
+                        continue;
+                    }
+                }
                 $targetDir = "/var/mail/vhosts/{$domain}";
                 if (is_dir($domainMailDir)) {
                     mkdir($targetDir, 0755, true);

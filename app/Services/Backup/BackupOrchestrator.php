@@ -442,13 +442,24 @@ class BackupOrchestrator
         try {
             $restore->markAsRunning();
 
-            $result = $this->agent->backupRestore($user->username, $backup->local_path, [
+            $repo = $backup->destination
+                ? $backup->destination->getResticRepoUrl()
+                : '/var/backups/jabali/restic';
+            $destConfig = $backup->destination
+                ? $this->buildDestinationConfig($backup->destination)
+                : [];
+
+            $result = $this->agent->send('backup.restore', [
+                'snapshot_id' => $backup->snapshot_id,
+                'username' => $user->username,
+                'repo' => $repo,
+                'destination' => $destConfig,
                 'restore_files' => $options['restore_files'] ?? true,
                 'restore_databases' => $options['restore_databases'] ?? true,
                 'restore_mailboxes' => $options['restore_mailboxes'] ?? true,
-                'selected_domains' => ! empty($options['selected_domains']) ? $options['selected_domains'] : null,
-                'selected_databases' => ! empty($options['selected_databases']) ? $options['selected_databases'] : null,
-                'selected_mailboxes' => ! empty($options['selected_mailboxes']) ? $options['selected_mailboxes'] : null,
+                'selected_domains' => $options['selected_domains'] ?? null,
+                'selected_databases' => $options['selected_databases'] ?? null,
+                'selected_mailboxes' => $options['selected_mailboxes'] ?? null,
             ]);
 
             if ($result['success'] ?? false) {
