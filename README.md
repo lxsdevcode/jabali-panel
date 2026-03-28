@@ -54,9 +54,11 @@ curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh
 
 After install:
 
-- Admin panel: `https://your-host/jabali-admin`
-- User panel: `https://your-host/jabali-panel`
+- Admin panel: `https://your-host:2223/jabali-admin`
+- User panel: `https://your-host:2223/jabali-panel`
 - Webmail: `https://your-host/webmail`
+
+The panel runs on port 2223 via FrankenPHP, independent of nginx. If nginx goes down, the panel stays accessible so users can log in and diagnose problems.
 
 ## Container Deployment
 
@@ -69,7 +71,7 @@ docker pull shukivaknin/jabali-panel:latest
 
 docker run -d --name jabali \
   --hostname panel.example.com \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 2223:2223 \
   -p 25:25 -p 587:587 -p 993:993 -p 110:110 \
   -p 53:53/tcp -p 53:53/udp \
   -v jabali-mysql:/var/lib/mysql \
@@ -100,7 +102,7 @@ docker exec -it jabali php /var/www/jabali/artisan tinker --execute="
 "
 ```
 
-Then open `https://panel.example.com/jabali-admin` to log in.
+Then open `https://panel.example.com:2223/jabali-admin` to log in.
 
 ### Build from Source
 
@@ -173,17 +175,19 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 ## Architecture
 
 - Control plane: Laravel 12 app with Filament v5 and Livewire v4
-- Data plane: root agent handling privileged operations
+- Panel web server: FrankenPHP on port 2223 (independent of nginx)
+- Data plane: root agent handling privileged operations via Unix socket
 - Job queue: async tasks and migration steps
 - Logging: panel and agent logs for troubleshooting
 - Server metrics: live /proc filesystem reads
 
 Service stack (single-node default):
 
-- Nginx + PHP-FPM
+- FrankenPHP (panel on port 2223, self-signed or Let's Encrypt SSL)
+- Nginx (user domain sites, phpMyAdmin, webmail proxy)
+- PHP-FPM (user site pools)
 - MariaDB (user databases)
-- SQLite (panel metadata by default)
-- Postfix, Dovecot, Rspamd
+- Postfix, Dovecot, Rspamd (or Stalwart all-in-one)
 - BIND9 (DNS)
 - Redis
 - jabali-security (real-time threat detection, brute-force protection, WAF)
@@ -193,7 +197,7 @@ Service stack (single-node default):
 - Fresh Debian 13 install (no pre-existing web or mail stack)
 - A domain for panel and mail (with glue records if hosting DNS)
 - PTR (reverse DNS) for mail hostname
-- Open ports: 22, 80, 443, 25, 465, 587, 993, 995, 53
+- Open ports: 22, 80, 443, 2223, 25, 465, 587, 993, 995, 53
 
 ## Security Hardening
 
@@ -208,6 +212,10 @@ See [SECURITY.md](SECURITY.md) for the full security policy, architecture, and a
 | `JABALI_IMPORT_INSECURE_TLS` | Disable TLS certificate verification for WHM/cPanel migration API calls | `false` |
 | `SESSION_ENCRYPT` | Encrypt session data at rest | `false` |
 | `SESSION_SECURE_COOKIE` | Send session cookies only over HTTPS | `false` |
+| `PANEL_PORT` | HTTPS port for the FrankenPHP panel server | `2223` |
+| `PANEL_HOSTNAME` | Hostname for the panel (used in APP_URL) | (auto-detected) |
+| `PANEL_TLS_CERT` | Path to the panel TLS certificate | `/etc/ssl/jabali/panel.crt` |
+| `PANEL_TLS_KEY` | Path to the panel TLS private key | `/etc/ssl/jabali/panel.key` |
 
 ### Key Security Features
 

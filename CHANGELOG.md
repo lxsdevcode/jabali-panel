@@ -6,6 +6,17 @@ All notable changes to Jabali Panel will be documented in this file.
 
 ### Added
 
+- **FrankenPHP panel independence** -- The panel now runs on its own FrankenPHP web server on port 2223, independent of nginx. If nginx goes down, users can still log in to diagnose problems. Uses self-signed SSL by default, upgraded to Let's Encrypt automatically if the hostname resolves. Certbot deploy hook ensures renewed certs are picked up. FrankenPHP is pinned to v1.12.1 with auto-upgrade on version bump.
+- **Panel certificate tracking** -- New `PanelCertificate` model and `jabali:panel-cert-sync` command to track FrankenPHP's TLS certificate status. Panel Certificate widget on the SSL Manager page shows hostname, issuer, expiry, and renewal status.
+- **Service architecture refactoring** -- Extracted business logic from god objects into focused, testable services:
+  - `SslManagementService` -- consolidates SSL issue/renew/check logic from 4 places into one service
+  - `UserDeletionService` / `DomainDeletionService` -- model cleanup logic extracted from boot hooks
+  - `ServerSettingsService` -- settings persistence extracted from the admin page
+  - `BackupOrchestrator::execute()` -- backup workflow extracted from the job (173→35 lines)
+  - `WhmMigrationOrchestrator` -- WHM migration workflow extracted from the job (609→58 lines)
+  - `CpanelMigrationOrchestrator` -- cPanel migration workflow extracted from the page
+  - 7 agent service facades (File, Database, Email, Domain, DNS, Backup, System) wrapping AgentClient's 162 methods into focused interfaces
+- **Auto-generate password for `jabali user password`** -- Running without `--password` now generates and displays a secure 16-character password instead of erroring.
 - **`jabali update` command** -- One-command panel update: pulls latest code, runs composer/npm, migrates database, rebuilds caches, and upgrades infrastructure (PHP, nginx, systemd configs). Use `--force` to re-run all steps even when already up to date.
 - **Granular backup restore** -- Selective restore from rsync incremental snapshots. Users can restore individual domains, databases, MySQL users, mailboxes, DNS zones, or SSL certificates instead of full account restores. Includes file browser, conflict resolution (overwrite/merge/skip/rename), and optional safety backup. New user-facing Restore page at Backups > Restore.
 - **Install script re-install detection** -- Running `install.sh` on an existing installation now detects it and offers to re-install. Backs up `.env` and credentials to `/root/.jabali_reinstall_backup_<timestamp>/` before wiping.
