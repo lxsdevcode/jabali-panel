@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
+use App\Jobs\RunServerBackup;
+use App\Models\Backup;
 use App\Models\BackupDestination;
+use App\Models\User;
 use App\Services\Backup\BackupOrchestrator;
 use App\Support\SafeError;
 use BackedEnum;
@@ -12,9 +15,11 @@ use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
@@ -57,6 +62,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->createServerBackupAction(),
             $this->addDestinationAction(),
         ];
     }
@@ -130,6 +136,76 @@ class Backups extends Page implements HasActions, HasForms, HasTable
             ->emptyStateHeading(__('No remote destinations configured'))
             ->emptyStateDescription(__('Click "Add Destination" to configure SFTP or S3 storage'))
             ->emptyStateIcon('heroicon-o-server-stack');
+    }
+
+    // ── Backup Actions ────────────────────────────────────────────────
+
+    private function createServerBackupAction(): Action
+    {
+        $destinations = BackupDestination::where('is_server_backup', true)
+            ->where('is_active', true)
+            ->pluck('name', 'id')
+            ->toArray();
+
+        $users = User::where('is_active', true)
+            ->pluck('username', 'id')
+            ->toArray();
+
+        return Action::make('createServerBackup')
+            ->label(__('Create Server Backup'))
+            ->icon('heroicon-o-cloud-arrow-up')
+            ->color('danger')
+            ->modalHeading(__('Create Server Backup'))
+            ->form([
+                Select::make('destination_id')
+                    ->label(__('Destination'))
+                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->placeholder(__('Select destination')),
+                CheckboxList::make('selected_users')
+                    ->label(__('Users'))
+                    ->options($users)
+                    ->columns(3)
+                    ->helperText(__('Leave empty to backup all users')),
+                Grid::make(3)->schema([
+                    Toggle::make('include_files')->label(__('Files'))->default(true),
+                    Toggle::make('include_databases')->label(__('Databases'))->default(true),
+                    Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
+                ]),
+                Grid::make(2)->schema([
+                    Toggle::make('include_dns')->label(__('DNS Zones'))->default(true),
+                    Toggle::make('include_ssl')->label(__('SSL Certificates'))->default(true),
+                ]),
+            ])
+            ->action(function (array $data): void {
+                $destinationId = ! empty($data['destination_id']) ? (int) $data['destination_id'] : null;
+                $selectedUsers = ! empty($data['selected_users'])
+                    ? User::whereIn('id', $data['selected_users'])->pluck('username')->toArray()
+                    : null;
+
+                $name = 'Server Backup '.now()->format('Y-m-d H:i');
+
+                $backup = Backup::create([
+                    'name' => $name,
+                    'filename' => 'restic-snapshot',
+                    'type' => 'server',
+                    'destination_id' => $destinationId,
+                    'users' => $selectedUsers,
+                    'include_files' => $data['include_files'] ?? true,
+                    'include_databases' => $data['include_databases'] ?? true,
+                    'include_mailboxes' => $data['include_mailboxes'] ?? true,
+                    'include_dns' => $data['include_dns'] ?? true,
+                    'include_ssl' => $data['include_ssl'] ?? true,
+                    'status' => 'pending',
+                ]);
+
+                RunServerBackup::dispatch($backup->id);
+
+                Notification::make()
+                    ->title(__('Backup started'))
+                    ->body(__('Server backup is running in the background.'))
+                    ->success()
+                    ->send();
+            });
     }
 
     // ── Destination Actions ─────────────────────────────────────────────

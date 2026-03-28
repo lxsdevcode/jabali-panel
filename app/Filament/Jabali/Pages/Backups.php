@@ -12,6 +12,7 @@ use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -62,8 +63,69 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->createBackupAction(),
             $this->addDestinationAction(),
         ];
+    }
+
+    // ── Backup Action ───────────────────────────────────────────────────
+
+    private function createBackupAction(): Action
+    {
+        $destinations = BackupDestination::where('user_id', $this->getUser()->id)
+            ->where('is_active', true)
+            ->pluck('name', 'id')
+            ->toArray();
+
+        return Action::make('createBackup')
+            ->label(__('Create Backup'))
+            ->icon('heroicon-o-cloud-arrow-up')
+            ->color('primary')
+            ->modalHeading(__('Create Backup'))
+            ->form([
+                TextInput::make('name')
+                    ->label(__('Name'))
+                    ->default('Backup '.now()->format('Y-m-d H:i'))
+                    ->required(),
+                Select::make('destination_id')
+                    ->label(__('Destination'))
+                    ->options(array_merge(['' => __('Local (default)')], $destinations))
+                    ->placeholder(__('Select destination'))
+                    ->visible(fn () => ! empty($destinations)),
+                \Filament\Schemas\Components\Grid::make(3)->schema([
+                    \Filament\Forms\Components\Toggle::make('include_files')->label(__('Files'))->default(true),
+                    \Filament\Forms\Components\Toggle::make('include_databases')->label(__('Databases'))->default(true),
+                    \Filament\Forms\Components\Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
+                ]),
+            ])
+            ->action(function (array $data): void {
+                $user = $this->getUser();
+
+                try {
+                    $orchestrator = app(BackupOrchestrator::class);
+                    $backup = $orchestrator->createUserBackup($user, $data);
+
+                    if ($backup->status === 'failed') {
+                        Notification::make()
+                            ->title(__('Backup failed'))
+                            ->body($backup->error_message ?? __('Unknown error'))
+                            ->danger()
+                            ->send();
+                    } else {
+                        Notification::make()
+                            ->title(__('Backup created'))
+                            ->body(__('Size: :size', ['size' => $backup->size_human]))
+                            ->success()
+                            ->send();
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title(__('Backup failed'))
+                        ->body(SafeError::message($e))
+                        ->danger()
+                        ->send();
+                }
+            });
     }
 
     // ── Destinations Table ──────────────────────────────────────────────
