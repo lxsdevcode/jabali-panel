@@ -56,7 +56,7 @@
                 @if($this->getWarningFolders())
                     {{ __('Avoid editing files in the') }}
                     @foreach($this->getWarningFolders() as $folder)
-                        <code class="px-1.5 py-0.5 rounded bg-warning-100 dark:bg-warning-900/50 fi-color-warning fi-text-color-700 dark:fi-text-color-300 font-mono fi-section-header-description">{{ $folder }}</code>
+                        <code wire:key="warn-folder-{{ $loop->index }}" class="px-1.5 py-0.5 rounded bg-warning-100 dark:bg-warning-900/50 fi-color-warning fi-text-color-700 dark:fi-text-color-300 font-mono fi-section-header-description">{{ $folder }}</code>
                         @if(!$loop->last){{ __('and') }}@endif
                     @endforeach
                     {{ __('folders unless you know what you are doing.') }}
@@ -69,7 +69,7 @@
     <nav class="fi-breadcrumbs mb-4">
         <ol class="flex flex-wrap items-center gap-x-2">
             @foreach($this->getPathBreadcrumbs() as $crumb)
-                <li class="flex items-center gap-x-2">
+                <li wire:key="crumb-{{ $loop->index }}" class="flex items-center gap-x-2">
                     @if(!$loop->first)
                         <x-filament::icon
                             icon="heroicon-m-chevron-right"

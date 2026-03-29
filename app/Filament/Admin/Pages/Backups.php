@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
+use App\Filament\Admin\Pages\Concerns\HasBackupWizard;
 use App\Jobs\RunServerBackup;
 use App\Models\Backup;
 use App\Models\BackupDestination;
@@ -35,6 +36,7 @@ use Livewire\Attributes\Url;
 
 class Backups extends Page implements HasActions, HasForms, HasTable
 {
+    use HasBackupWizard;
     use InteractsWithActions;
     use InteractsWithForms;
     use InteractsWithTable;
@@ -58,6 +60,11 @@ class Backups extends Page implements HasActions, HasForms, HasTable
         return __('Server Backups');
     }
 
+    public function mount(): void
+    {
+        $this->mountBackupWizard();
+    }
+
     public function updatedActiveTab(): void
     {
         $this->resetTable();
@@ -68,6 +75,7 @@ class Backups extends Page implements HasActions, HasForms, HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->backupWizardAction(),
             $this->createServerBackupAction(),
             $this->createScheduleAction(),
             $this->backupPasswordAction(),

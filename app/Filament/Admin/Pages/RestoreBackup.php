@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
+use App\FileBrowser\Support\PathSanitizer;
 use App\Models\Backup;
 use App\Models\BackupDestination;
 use App\Models\User;
@@ -275,11 +276,12 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public function navigateTo(string $path): void
     {
-        if (str_contains($path, '..')) {
+        try {
+            $this->currentPath = PathSanitizer::clean($path);
+        } catch (\RuntimeException) {
             return;
         }
 
-        $this->currentPath = $path;
         $this->refreshDirectory();
     }
 
@@ -295,7 +297,23 @@ class RestoreBackup extends Page implements HasActions, HasForms
         try {
             $adapter = $this->buildAdapter();
             $result = $adapter->files()->list($this->currentPath);
-            $this->directoryItems = $result['items'] ?? [];
+            $items = $result['items'] ?? [];
+
+            // Add parent navigation if not at user root
+            if (! empty($this->currentPath) && $this->currentPath !== $this->selectedUser) {
+                $parentPath = dirname($this->currentPath);
+                if ($parentPath === '.') {
+                    $parentPath = '';
+                }
+                array_unshift($items, [
+                    'name' => '..',
+                    'path' => $parentPath,
+                    'is_dir' => true,
+                    'is_parent' => true,
+                ]);
+            }
+
+            $this->directoryItems = $items;
         } catch (Exception $e) {
             $this->directoryItems = [];
         }

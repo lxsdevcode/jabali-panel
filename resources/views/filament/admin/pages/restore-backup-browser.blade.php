@@ -25,7 +25,7 @@
         <div class="divide-y divide-gray-200 dark:divide-white/10">
             @forelse($this->directoryItems as $idx => $item)
                 @if(($item['is_parent'] ?? false))
-                    <button wire:key="dir-parent" wire:click="navigateTo('{{ $item['path'] }}')" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                    <button wire:key="dir-parent" x-on:click="$wire.navigateTo({{ \Illuminate\Support\Js::from($item['path']) }})" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 transition">
                         <x-heroicon-o-arrow-up class="h-4 w-4 text-gray-400 shrink-0" />
                         <span class="text-sm font-medium text-gray-950 dark:text-white">..</span>
                     </button>
@@ -33,7 +33,7 @@
                     <div wire:key="dir-item-{{ $idx }}" class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-white/5">
                         <x-filament::input.checkbox value="{{ $item['path'] }}" wire:model="selectedPaths" />
                         @if($item['is_dir'] ?? false)
-                            <button wire:click="navigateTo('{{ $item['path'] }}')" class="flex items-center gap-2 flex-1 text-left">
+                            <button x-on:click="$wire.navigateTo({{ \Illuminate\Support\Js::from($item['path']) }})" class="flex items-center gap-2 flex-1 text-left">
                                 <x-heroicon-o-folder class="h-4 w-4 text-yellow-500 shrink-0" />
                                 <span class="text-sm font-medium text-gray-950 dark:text-white">{{ $item['name'] }}</span>
                             </button>

@@ -16,7 +16,16 @@ class AgentFileOperations implements FileOperations
 
     public function list(string $path, bool $showHidden = false): array
     {
-        $result = $this->agent->fileList($this->username, $path, $showHidden);
+        // Reject path traversal attempts at the adapter level
+        if ($path !== '' && preg_match('/(?:^|[\\/])\.\.([\\/]|$)/', $path)) {
+            return ['items' => []];
+        }
+
+        try {
+            $result = $this->agent->fileList($this->username, $path, $showHidden);
+        } catch (\Exception $e) {
+            return ['items' => []];
+        }
 
         if (! ($result['success'] ?? false)) {
             return ['items' => []];
@@ -24,16 +33,29 @@ class AgentFileOperations implements FileOperations
 
         $items = [];
         foreach ($result['items'] ?? $result['files'] ?? [] as $file) {
+            $name = $file['name'] ?? '';
+            if ($name === '' || $name === '.' || $name === '..') {
+                continue;
+            }
+
             $items[] = [
-                'name' => $file['name'],
-                'path' => $file['path'] ?? $path.'/'.$file['name'],
+                'name' => $name,
+                'path' => $file['path'] ?? (empty($path) ? $name : $path.'/'.$name),
                 'is_dir' => ($file['type'] ?? '') === 'directory' || ($file['is_dir'] ?? false),
                 'size' => $file['size'] ?? null,
                 'modified' => $file['mtime'] ?? $file['modified'] ?? time(),
                 'permissions' => $file['permissions'] ?? '0644',
-                'is_parent' => $file['is_parent'] ?? false,
             ];
         }
+
+        // Sort: directories first, then files — alphabetical within each group
+        usort($items, function (array $a, array $b): int {
+            if (($a['is_dir'] ?? false) !== ($b['is_dir'] ?? false)) {
+                return ($a['is_dir'] ?? false) ? -1 : 1;
+            }
+
+            return strcasecmp($a['name'], $b['name']);
+        });
 
         return ['items' => $items];
     }

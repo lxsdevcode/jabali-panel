@@ -25,6 +25,11 @@ class BackupSnapshotFileOperations implements FileOperations
 
     public function list(string $path, bool $showHidden = false): array
     {
+        // Reject path traversal attempts at the adapter level
+        if ($path !== '' && preg_match('/(?:^|[\\/])\.\.([\\/]|$)/', $path)) {
+            return ['items' => []];
+        }
+
         // Build absolute path for restic ls
         if (empty($path)) {
             $absPath = '/home';
@@ -33,32 +38,19 @@ class BackupSnapshotFileOperations implements FileOperations
             $absPath = '/home/'.ltrim($path, '/');
         }
 
-        $result = $this->agent->send('backup.list_domain_files', [
-            'snapshot_id' => $this->snapshotId,
-            'username' => $this->username,
-            'path' => $absPath,
-            'repo' => $this->repo,
-            'destination' => $this->destinationConfig,
-        ]);
+        try {
+            $result = $this->agent->send('backup.list_domain_files', [
+                'snapshot_id' => $this->snapshotId,
+                'username' => $this->username,
+                'path' => $absPath,
+                'repo' => $this->repo,
+                'destination' => $this->destinationConfig,
+            ]);
+        } catch (\Exception $e) {
+            return ['items' => []];
+        }
 
         $items = [];
-
-        // Add parent navigation if not at root
-        if (! empty($path)) {
-            $parentPath = dirname($path);
-            if ($parentPath === '.') {
-                $parentPath = '';
-            }
-            $items[] = [
-                'name' => '..',
-                'path' => $parentPath,
-                'is_dir' => true,
-                'size' => null,
-                'modified' => time(),
-                'permissions' => '0755',
-                'is_parent' => true,
-            ];
-        }
 
         // restic ls returns the directory entry itself alongside children — filter it out
         $currentDirName = basename($absPath);
@@ -90,14 +82,8 @@ class BackupSnapshotFileOperations implements FileOperations
             ];
         }
 
-        // Sort: parent (..) first, then directories, then files — alphabetical within each group
-        usort($items, function ($a, $b) {
-            if (! empty($a['is_parent'])) {
-                return -1;
-            }
-            if (! empty($b['is_parent'])) {
-                return 1;
-            }
+        // Sort: directories first, then files — alphabetical within each group
+        usort($items, function (array $a, array $b): int {
             if (($a['is_dir'] ?? false) !== ($b['is_dir'] ?? false)) {
                 return ($a['is_dir'] ?? false) ? -1 : 1;
             }
