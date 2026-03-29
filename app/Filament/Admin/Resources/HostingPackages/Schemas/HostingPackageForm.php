@@ -31,6 +31,10 @@ class HostingPackageForm
                         Toggle::make('is_active')
                             ->label(__('Active'))
                             ->default(true),
+                        Toggle::make('ssh_shell_enabled')
+                            ->label(__('SSH Shell Access'))
+                            ->helperText(__('New accounts with this package get SSH shell access instead of SFTP-only'))
+                            ->default(false),
                     ])
                     ->columns(2),
 

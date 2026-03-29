@@ -58,6 +58,16 @@ class CreateUser extends CreateRecord
 
                 // Apply disk quota if enabled
                 $this->applyDiskQuota();
+
+                // Enable SSH shell if hosting package has it enabled
+                if ($this->selectedPackage?->ssh_shell_enabled) {
+                    try {
+                        $agent = app(AgentClient::class);
+                        $agent->send('ssh.enable_shell', ['username' => $this->record->username]);
+                    } catch (\Throwable) {
+                        // Best-effort — don't fail user creation
+                    }
+                }
             } catch (Exception $e) {
                 Notification::make()
                     ->title(__('Linux user creation failed'))

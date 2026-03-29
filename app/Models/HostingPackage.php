@@ -21,15 +21,15 @@ class HostingPackage extends Model
         'databases_limit',
         'mailboxes_limit',
         'is_active',
+        'ssh_shell_enabled',
     ];
 
     protected function casts(): array
     {
-
         return [
             'is_active' => 'boolean',
+            'ssh_shell_enabled' => 'boolean',
         ];
-
     }
 
     public function users(): HasMany
