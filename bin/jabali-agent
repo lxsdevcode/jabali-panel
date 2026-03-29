@@ -12957,9 +12957,17 @@ function serviceList(array $params): array
         exec('systemctl is-active '.escapeshellarg($service).' 2>/dev/null', $activeOutput, $activeCode);
         $isActive = ($activeCode === 0 && isset($activeOutput[0]) && $activeOutput[0] === 'active');
 
-        // Check if service is enabled
+        // Check if service is enabled (also check .socket for socket-activated services like SSH)
         exec('systemctl is-enabled '.escapeshellarg($service).' 2>/dev/null', $enabledOutput, $enabledCode);
-        $isEnabled = ($enabledCode === 0 && isset($enabledOutput[0]) && in_array($enabledOutput[0], ['enabled', 'enabled-runtime']));
+        $isEnabled = ($enabledCode === 0 && isset($enabledOutput[0]) && in_array($enabledOutput[0], ['enabled', 'enabled-runtime', 'static', 'alias']));
+        if (! $isEnabled && $isActive) {
+            // Check socket activation (e.g. ssh.socket on Ubuntu 24.04)
+            $socketOutput = [];
+            exec('systemctl is-enabled '.escapeshellarg($service.'.socket').' 2>/dev/null', $socketOutput, $socketCode);
+            if ($socketCode === 0 && isset($socketOutput[0]) && in_array($socketOutput[0], ['enabled', 'enabled-runtime'])) {
+                $isEnabled = true;
+            }
+        }
 
         // Get status text
         exec('systemctl status '.escapeshellarg($service).' 2>&1 | head -5', $statusOutput, $statusCode);
