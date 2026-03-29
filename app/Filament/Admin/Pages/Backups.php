@@ -131,12 +131,6 @@ class Backups extends Page implements HasActions, HasForms, HasTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->actions([
-                Action::make('browse')
-                    ->label(__('Browse'))
-                    ->icon('heroicon-o-folder-open')
-                    ->color('gray')
-                    ->visible(fn (Backup $record) => $record->status === 'completed' && $record->snapshot_id)
-                    ->url(fn (Backup $record) => url("/jabali-admin/backups/restore/{$record->id}")),
                 Action::make('restore')
                     ->label(__('Restore'))
                     ->icon('heroicon-o-arrow-path')
