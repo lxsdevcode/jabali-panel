@@ -16,12 +16,7 @@ class SyncMailboxLogins extends Command
 
     public function handle(): int
     {
-        $backend = config('jabali.mail_backend');
-
-        $logins = match ($backend) {
-            'stalwart' => $this->parseStalwartLogins(),
-            default => $this->parseDovecotLogins(),
-        };
+        $logins = $this->parseStalwartLogins();
 
         if (empty($logins)) {
             return self::SUCCESS;
@@ -102,58 +97,6 @@ class SyncMailboxLogins extends Command
 
             fclose($handle);
         }
-
-        return $logins;
-    }
-
-    /**
-     * @return array<string, Carbon>
-     */
-    protected function parseDovecotLogins(): array
-    {
-        $logins = [];
-        $logFile = '/var/log/mail.log';
-
-        if (! file_exists($logFile)) {
-            return $logins;
-        }
-
-        $handle = @fopen($logFile, 'r');
-        if (! $handle) {
-            return $logins;
-        }
-
-        while (($line = fgets($handle)) !== false) {
-            if (! str_contains($line, 'imap-login') && ! str_contains($line, 'pop3-login')) {
-                continue;
-            }
-
-            if (! str_contains($line, 'Login')) {
-                continue;
-            }
-
-            if (! preg_match('/^(\w+\s+\d+\s+\d+:\d+:\d+)/', $line, $timeMatch)) {
-                continue;
-            }
-
-            if (! preg_match('/user=<([^>]+)>/', $line, $userMatch)) {
-                continue;
-            }
-
-            $email = strtolower($userMatch[1]);
-
-            try {
-                $timestamp = Carbon::parse($timeMatch[1]);
-            } catch (\Exception) {
-                continue;
-            }
-
-            if (! isset($logins[$email]) || $timestamp->isAfter($logins[$email])) {
-                $logins[$email] = $timestamp;
-            }
-        }
-
-        fclose($handle);
 
         return $logins;
     }

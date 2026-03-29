@@ -44,10 +44,8 @@ PHP_VERSION=""
 INSTALL_MAIL=true
 INSTALL_DNS=true
 
-# Mail backend: "stalwart" (all-in-one) or "legacy" (Postfix+Dovecot+OpenDKIM+Rspamd)
-# If MAIL_BACKEND is set externally, skip the interactive prompt
-MAIL_BACKEND_PRESET="${MAIL_BACKEND:-}"
-MAIL_BACKEND="${MAIL_BACKEND:-stalwart}"
+# Mail backend: Stalwart is the only supported backend
+MAIL_BACKEND="stalwart"
 
 # Feature selection menu
 select_features() {
@@ -121,42 +119,11 @@ select_features() {
             ;;
     esac
 
-    # If mail is enabled and backend not pre-set via env, ask which backend
-    if [[ "$INSTALL_MAIL" == "true" && -z "${MAIL_BACKEND_PRESET:-}" ]]; then
-        echo ""
-        echo -e "${BOLD}Mail Server Backend${NC}"
-        echo ""
-        echo "  1) Stalwart Mail Server (Recommended)"
-        echo "     All-in-one: SMTP, IMAP, JMAP, DKIM, spam filter"
-        echo "     Single binary, modern, low resource usage"
-        echo ""
-        echo "  2) Legacy Stack"
-        echo "     Postfix + Dovecot + OpenDKIM + Rspamd"
-        echo ""
-
-        local mail_choice
-        read -p "Enter choice [1-2]: " mail_choice < /dev/tty
-        case $mail_choice in
-            2)
-                MAIL_BACKEND="legacy"
-                info "Legacy mail stack selected (Postfix + Dovecot)"
-                ;;
-            *)
-                MAIL_BACKEND="stalwart"
-                info "Stalwart Mail Server selected"
-                ;;
-        esac
-    fi
-
     echo ""
     echo -e "${BOLD}Components to install:${NC}"
     echo -e "  - Web Server: ${GREEN}Yes${NC}"
     if [[ "$INSTALL_MAIL" == "true" ]]; then
-        if [[ "$MAIL_BACKEND" == "stalwart" ]]; then
-            echo -e "  - Mail Server: ${GREEN}Yes${NC} (Stalwart)"
-        else
-            echo -e "  - Mail Server: ${GREEN}Yes${NC} (Postfix + Dovecot)"
-        fi
+        echo -e "  - Mail Server: ${GREEN}Yes${NC} (Stalwart)"
     else
         echo -e "  - Mail Server: ${YELLOW}No${NC}"
     fi
@@ -564,31 +531,9 @@ install_packages() {
 
     # Add Mail Server packages if enabled
     if [[ "$INSTALL_MAIL" == "true" ]]; then
-        if [[ "$MAIL_BACKEND" == "stalwart" ]]; then
-            info "Including Stalwart Mail Server dependencies..."
-            # Stalwart is a single binary downloaded separately — only need imapsync deps here
-        else
-            info "Including Legacy Mail Server packages..."
-            base_packages+=(
-                postfix
-                postfix-mysql
-                dovecot-core
-                dovecot-imapd
-                dovecot-pop3d
-                dovecot-lmtpd
-                dovecot-mysql
-                dovecot-sqlite
-                opendkim
-                opendkim-tools
-                rspamd
-                # Webmail
-                roundcube
-                roundcube-core
-                roundcube-sqlite3
-                roundcube-plugins
-            )
-        fi
-        # IMAP sync dependencies (needed for both backends)
+        info "Including Stalwart Mail Server dependencies..."
+        # Stalwart is a single binary downloaded separately — only need imapsync deps here
+        # IMAP sync dependencies
         base_packages+=(
             libmail-imapclient-perl
             libio-tee-perl
@@ -623,19 +568,9 @@ install_packages() {
     fi
 
     # Prevent Apache2 and libapache2-mod-php from being installed
-    # (roundcube recommends apache2, php metapackage recommends libapache2-mod-php, but we use nginx+php-fpm)
+    # (php metapackage recommends libapache2-mod-php, but we use nginx+php-fpm)
     info "Blocking Apache2 and mod-php installation (we use nginx + php-fpm)..."
     apt-mark hold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.4} 2>/dev/null || true
-
-    # Pre-configure postfix and roundcube to avoid interactive prompts (legacy backend only)
-    # Note: debconf templates may not exist yet on fresh install, so suppress errors
-    if [[ "$INSTALL_MAIL" == "true" && "$MAIL_BACKEND" != "stalwart" ]]; then
-        echo "postfix postfix/mailname string $SERVER_HOSTNAME" | debconf-set-selections 2>/dev/null || true
-        echo "postfix postfix/main_mailer_type string 'Internet Site'" | debconf-set-selections 2>/dev/null || true
-        # Skip roundcube dbconfig - we configure it manually
-        echo "roundcube-core roundcube/dbconfig-install boolean false" | debconf-set-selections 2>/dev/null || true
-        echo "roundcube-core roundcube/database-type select sqlite3" | debconf-set-selections 2>/dev/null || true
-    fi
 
     run_quiet "Installing base packages (this may take a few minutes)..." \
         env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${base_packages[@]}" || {
@@ -645,18 +580,16 @@ install_packages() {
         done
     }
 
-    # Remove conflicting MTAs when using Stalwart — they grab port 25 first
+    # Remove conflicting MTAs — they grab port 25 before Stalwart can bind
     # Proxmox LXC templates ship Postfix; Debian base installs exim4
-    if [[ "$MAIL_BACKEND" == "stalwart" ]]; then
-        for mta_pkg in postfix exim4-base; do
-            if dpkg -l "$mta_pkg" >/dev/null 2>&1; then
-                local mta_name="${mta_pkg%%-*}"
-                run_quiet "Removing ${mta_name} (conflicts with Stalwart on port 25)..." \
-                    env DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq "${mta_name}*"
-            fi
-        done
-        apt-get autoremove -y -qq >/dev/null 2>&1
-    fi
+    for mta_pkg in postfix exim4-base; do
+        if dpkg -l "$mta_pkg" >/dev/null 2>&1; then
+            local mta_name="${mta_pkg%%-*}"
+            run_quiet "Removing ${mta_name} (conflicts with Stalwart on port 25)..." \
+                env DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq "${mta_name}*"
+        fi
+    done
+    apt-get autoremove -y -qq >/dev/null 2>&1
 
     # Install imapsync binary (not in Debian repos)
     if [[ "$INSTALL_MAIL" == "true" ]] && ! command -v imapsync >/dev/null 2>&1; then
@@ -1659,10 +1592,9 @@ EOF
 PHPMYADMIN_EOF
 )
 
-    # Build webmail location block based on mail backend
+    # Build webmail location block (Bulwark webmail via Stalwart)
     local webmail_block
-    if [[ "$MAIL_BACKEND" == "stalwart" ]]; then
-        webmail_block=$(cat <<WEBMAIL_EOF
+    webmail_block=$(cat <<WEBMAIL_EOF
     # DAV proxy (CalDAV, CardDAV, WebDAV) via Stalwart
     location = /.well-known/caldav {
         return 301 /dav/cal;
@@ -1729,26 +1661,6 @@ PHPMYADMIN_EOF
     }
 WEBMAIL_EOF
 )
-    else
-        webmail_block=$(cat <<WEBMAIL_EOF
-    location = /webmail {
-        return 301 /webmail/;
-    }
-
-    location ^~ /webmail/ {
-        alias /var/lib/roundcube/public_html/;
-        index index.php;
-
-        location ~ \\.php\$ {
-            fastcgi_pass unix:${php_sock};
-            fastcgi_param SCRIPT_FILENAME \$request_filename;
-            include fastcgi_params;
-            fastcgi_read_timeout 600;
-        }
-    }
-WEBMAIL_EOF
-)
-    fi
 
     # Remove old panel vhosts that aren't the current hostname (prevents default_server conflicts)
     for old_vhost in /etc/nginx/sites-enabled/*; do
@@ -1903,547 +1815,7 @@ OVERRIDE
     log "Nginx configured with HTTPS (self-signed certificate)"
 }
 
-# Configure Mail Server
-configure_mail() {
-    header "Configuring Mail Server"
-
-    # Basic Postfix config
-    postconf -e "myhostname=$SERVER_HOSTNAME"
-    postconf -e "inet_interfaces=all"
-    postconf -e "smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem"
-    postconf -e "smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key"
-    postconf -e "smtpd_tls_security_level=may"
-    postconf -e "smtpd_tls_auth_only=yes"
-    postconf -e "virtual_transport=lmtp:unix:private/dovecot-lmtp"
-    postconf -e "virtual_mailbox_domains=hash:/etc/postfix/virtual_mailbox_domains"
-    postconf -e "virtual_mailbox_maps=hash:/etc/postfix/virtual_mailbox_maps"
-    postconf -e "virtual_alias_maps=hash:/etc/postfix/virtual_aliases"
-    postconf -e "tls_server_sni_maps=hash:/etc/postfix/sni_maps"
-
-    # Create empty virtual map files and generate hash databases
-    touch /etc/postfix/virtual_mailbox_domains
-    touch /etc/postfix/virtual_mailbox_maps
-    touch /etc/postfix/virtual_aliases
-    touch /etc/postfix/sni_maps
-    postmap /etc/postfix/virtual_mailbox_domains
-    postmap /etc/postfix/virtual_mailbox_maps
-    postmap /etc/postfix/virtual_aliases
-    postmap /etc/postfix/sni_maps
-
-    # Configure submission port (587) for authenticated mail clients
-    if ! grep -q "^submission" /etc/postfix/master.cf; then
-        cat >> /etc/postfix/master.cf << 'SUBMISSION'
-
-# Submission port for authenticated mail clients
-submission inet n       -       y       -       -       smtpd
-  -o syslog_name=postfix/submission
-  -o smtpd_tls_security_level=encrypt
-  -o smtpd_sasl_auth_enable=yes
-  -o smtpd_sasl_type=dovecot
-  -o smtpd_sasl_path=private/auth
-  -o smtpd_client_restrictions=permit_sasl_authenticated,reject
-  -o milter_macro_daemon_name=ORIGINATING
-SUBMISSION
-    fi
-
-    # Configure SMTPS port (465) for legacy mail clients
-    if ! grep -q "^smtps" /etc/postfix/master.cf; then
-        cat >> /etc/postfix/master.cf << 'SMTPS'
-
-# SMTPS port for legacy mail clients (implicit TLS)
-smtps     inet  n       -       y       -       -       smtpd
-  -o syslog_name=postfix/smtps
-  -o smtpd_tls_wrappermode=yes
-  -o smtpd_sasl_auth_enable=yes
-  -o smtpd_sasl_type=dovecot
-  -o smtpd_sasl_path=private/auth
-  -o smtpd_client_restrictions=permit_sasl_authenticated,reject
-  -o milter_macro_daemon_name=ORIGINATING
-SMTPS
-    fi
-
-    # Basic Dovecot config
-    mkdir -p /var/mail/vhosts
-    groupadd -g 5000 vmail 2>/dev/null || true
-    useradd -g vmail -u 5000 vmail -d /var/mail 2>/dev/null || true
-    chown -R vmail:vmail /var/mail
-
-    # Add dovecot to www-data group for SQLite access
-    usermod -a -G www-data dovecot 2>/dev/null || true
-
-    # Configure Dovecot SQL authentication using MySQL
-    info "Configuring Dovecot SQL authentication..."
-
-    # Read DB credentials (from credentials file saved by configure_mariadb,
-    # since .env is not yet created at this point in the install)
-    local _db_pass=""
-    if [[ -f /root/.jabali_db_credentials ]]; then
-        _db_pass=$(grep '^DB_PASSWORD=' /root/.jabali_db_credentials | cut -d= -f2-)
-    elif [[ -f "$JABALI_DIR/.env" ]]; then
-        _db_pass=$(grep '^DB_PASSWORD=' "$JABALI_DIR/.env" | cut -d= -f2-)
-    fi
-
-    cat > /etc/dovecot/conf.d/auth-sql.conf.ext << DOVECOT_SQL
-# Authentication for SQL users - Jabali Panel
-# Dovecot 2.4 configuration format (MySQL)
-
-sql_driver = mysql
-mysql ${_db_host:-127.0.0.1} {
-  user = ${_db_user:-jabali}
-  password = ${_db_pass}
-  dbname = ${_db_name:-jabali}
-}
-
-passdb sql {
-  query = SELECT CONCAT(m.local_part, '@', d.domain) AS user, m.password_hash AS password FROM mailboxes m JOIN email_domains e ON m.email_domain_id = e.id JOIN domains d ON e.domain_id = d.id WHERE CONCAT(m.local_part, '@', d.domain) = '%{user}' AND m.is_active = 1 AND e.is_active = 1
-}
-
-userdb sql {
-  query = SELECT m.maildir_path AS home, m.system_uid AS uid, m.system_gid AS gid FROM mailboxes m JOIN email_domains e ON m.email_domain_id = e.id JOIN domains d ON e.domain_id = d.id WHERE CONCAT(m.local_part, '@', d.domain) = '%{user}' AND m.is_active = 1
-
-  iterate_query = SELECT CONCAT(m.local_part, '@', d.domain) AS user FROM mailboxes m JOIN email_domains e ON m.email_domain_id = e.id JOIN domains d ON e.domain_id = d.id WHERE m.is_active = 1
-}
-DOVECOT_SQL
-
-    # Configure Dovecot master user for Jabali SSO
-    if [[ ! -d /etc/jabali ]]; then
-        mkdir -p /etc/jabali
-        chown root:www-data /etc/jabali
-        chmod 750 /etc/jabali
-    fi
-
-    # Create SSO token directory for webmail auto-login
-    mkdir -p /var/lib/jabali/sso-tokens
-    chown www-data:www-data /var/lib/jabali/sso-tokens
-    chmod 700 /var/lib/jabali/sso-tokens
-
-    master_user="jabali-master"
-    master_pass=""
-
-    if [[ -f /etc/jabali/roundcube-sso.conf ]]; then
-        master_user=$(grep -m1 '^JABALI_SSO_MASTER_USER=' /etc/jabali/roundcube-sso.conf | cut -d= -f2-)
-        master_pass=$(grep -m1 '^JABALI_SSO_MASTER_PASS=' /etc/jabali/roundcube-sso.conf | cut -d= -f2-)
-    fi
-
-    if [[ -z "$master_user" ]]; then
-        master_user="jabali-master"
-    fi
-
-    if [[ -z "$master_pass" ]]; then
-        master_pass=$(openssl rand -hex 24)
-        cat > /etc/jabali/roundcube-sso.conf <<EOF
-JABALI_SSO_MASTER_USER=${master_user}
-JABALI_SSO_MASTER_PASS=${master_pass}
-EOF
-        chown root:www-data /etc/jabali/roundcube-sso.conf
-        chmod 640 /etc/jabali/roundcube-sso.conf
-    fi
-
-    if command -v doveadm >/dev/null 2>&1; then
-        master_hash=$(doveadm pw -s SHA512-CRYPT -p "$master_pass")
-    else
-        master_hash="{SHA512-CRYPT}$(openssl passwd -6 "$master_pass")"
-    fi
-
-    cat > /etc/dovecot/master-users <<EOF
-${master_user}:${master_hash}
-EOF
-    chown root:dovecot /etc/dovecot/master-users
-    chmod 640 /etc/dovecot/master-users
-
-    cat > /etc/dovecot/conf.d/auth-master.conf.ext << 'DOVECOT_MASTER_24'
-passdb passwd-file {
-  passwd_file_path = /etc/dovecot/master-users
-  master = yes
-}
-DOVECOT_MASTER_24
-
-    # Enable SQL auth in Dovecot (disable system auth, enable SQL auth)
-    if [[ -f /etc/dovecot/conf.d/10-auth.conf ]]; then
-        # Comment out system auth if not already
-        sed -i 's/^!include auth-system.conf.ext/#!include auth-system.conf.ext/' /etc/dovecot/conf.d/10-auth.conf
-        # Enable SQL auth if not already
-        if ! grep -q "^!include auth-sql.conf.ext" /etc/dovecot/conf.d/10-auth.conf; then
-            sed -i 's/#!include auth-sql.conf.ext/!include auth-sql.conf.ext/' /etc/dovecot/conf.d/10-auth.conf
-            # If the line doesn't exist at all, add it
-            if ! grep -q "auth-sql.conf.ext" /etc/dovecot/conf.d/10-auth.conf; then
-                echo "!include auth-sql.conf.ext" >> /etc/dovecot/conf.d/10-auth.conf
-            fi
-        fi
-        if ! grep -q "^auth_master_user_separator" /etc/dovecot/conf.d/10-auth.conf; then
-            echo "auth_master_user_separator = *" >> /etc/dovecot/conf.d/10-auth.conf
-        fi
-        if ! grep -q "auth-master.conf.ext" /etc/dovecot/conf.d/10-auth.conf; then
-            echo "!include auth-master.conf.ext" >> /etc/dovecot/conf.d/10-auth.conf
-        fi
-    fi
-
-    # Configure Dovecot sockets for Postfix
-    if [[ -f /etc/dovecot/conf.d/10-master.conf ]]; then
-        # Add Postfix auth socket for SASL authentication
-        # Note: Check for our specific comment, not just the socket path (default config has commented example)
-        if ! grep -q "Postfix SMTP authentication socket" /etc/dovecot/conf.d/10-master.conf; then
-            cat >> /etc/dovecot/conf.d/10-master.conf << 'DOVECOT_AUTH'
-
-# Postfix SMTP authentication socket
-service auth {
-  unix_listener /var/spool/postfix/private/auth {
-    mode = 0660
-    user = postfix
-    group = postfix
-  }
-}
-DOVECOT_AUTH
-        fi
-
-        # Add LMTP socket for Postfix mail delivery
-        # Note: Check for our specific comment
-        if ! grep -q "LMTP socket for Postfix mail delivery" /etc/dovecot/conf.d/10-master.conf; then
-            cat >> /etc/dovecot/conf.d/10-master.conf << 'DOVECOT_LMTP'
-
-# LMTP socket for Postfix mail delivery
-service lmtp {
-  unix_listener /var/spool/postfix/private/dovecot-lmtp {
-    mode = 0600
-    user = postfix
-    group = postfix
-  }
-}
-DOVECOT_LMTP
-        fi
-
-        # Add dict service for ACL sharing
-        if ! grep -q "Dict service for ACL sharing" /etc/dovecot/conf.d/10-master.conf; then
-            cat >> /etc/dovecot/conf.d/10-master.conf << 'DOVECOT_DICT_SVC'
-
-# Dict service for ACL sharing
-service dict {
-  unix_listener dict {
-    mode = 0660
-    user = dovecot
-    group = dovecot
-  }
-}
-DOVECOT_DICT_SVC
-        fi
-    fi
-
-    # Fix LMTP auth_username_format to keep full email address
-    if [[ -f /etc/dovecot/conf.d/20-lmtp.conf ]]; then
-        sed -i 's/auth_username_format = %{user | username | lower}/#auth_username_format = %{user | username | lower}/' /etc/dovecot/conf.d/20-lmtp.conf
-    fi
-
-    # Configure Dovecot mail storage (Maildir format)
-    cat > /etc/dovecot/conf.d/10-mail.conf << 'DOVECOT_MAIL_24'
-##
-## Mailbox locations and namespaces - Jabali Panel
-##
-
-# Mail storage format and location
-# Using Maildir format - home is returned by userdb
-mail_driver = maildir
-mail_home = %{userdb:home}
-mail_path = %{userdb:home}
-
-namespace inbox {
-  type = private
-  inbox = yes
-  separator = /
-}
-
-namespace shared {
-  type = shared
-  separator = /
-  prefix = shared/$user/
-  mail_path = %{owner_home}
-  mail_index_private_path = ~/shared/%{owner_user}
-  subscriptions = no
-  list = children
-}
-
-mail_plugins {
-  acl = yes
-}
-
-protocol imap {
-  mail_plugins {
-    imap_acl = yes
-  }
-}
-
-acl_driver = vfile
-
-acl_sharing_map {
-  dict proxy {
-    name = acl
-  }
-}
-DOVECOT_MAIL_24
-
-    # Write dict config with ACL dict definition
-    cat > /etc/dovecot/conf.d/30-dict-server.conf << DOVECOT_DICT_24
-dict_server {
-  dict acl {
-    driver = sql
-    sql_driver = mysql
-
-    mysql localhost {
-      dbname = ${_db_name:-jabali}
-      user = ${_db_user:-jabali}
-      password = ${_db_pass}
-    }
-
-    dict_map shared/shared-boxes/user/\$to/\$from {
-      sql_table = user_shares
-      value_field dummy {
-      }
-
-      key_field from_user {
-        value = \$from
-      }
-      key_field to_user {
-        value = \$to
-      }
-    }
-  }
-}
-DOVECOT_DICT_24
-
-    systemctl enable postfix dovecot > /dev/null 2>&1
-
-    # Create Roundcube SSO script for Jabali Panel
-    if [[ -d /var/lib/roundcube/public_html ]]; then
-        cat > /var/lib/roundcube/public_html/jabali-sso.php << 'RCUBE_SSO'
-<?php
-/**
- * Jabali Panel SSO login for Roundcube
- * Uses direct login API instead of form submission
- */
-
-$token = $_GET["token"] ?? "";
-
-if (empty($token) || !preg_match("/^[a-f0-9]{64}$/", $token)) {
-    die("Invalid token");
-}
-
-$cacheFile = "/var/lib/jabali/sso-tokens/roundcube_sso_" . $token;
-if (!file_exists($cacheFile)) {
-    die("Token expired or invalid");
-}
-
-$data = json_decode(file_get_contents($cacheFile), true);
-if (!$data) {
-    @unlink($cacheFile);
-    die("Invalid token data");
-}
-
-@unlink($cacheFile);
-
-if (isset($data["expires"]) && time() > $data["expires"]) {
-    die("Token expired");
-}
-
-$masterUser = "";
-$masterPass = "";
-$masterConfig = "/etc/jabali/roundcube-sso.conf";
-if (is_readable($masterConfig)) {
-    $lines = file($masterConfig, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (!str_contains($line, "=")) {
-            continue;
-        }
-        [$key, $value] = explode("=", $line, 2);
-        $key = trim($key);
-        $value = trim($value);
-        if ($key === "JABALI_SSO_MASTER_USER") {
-            $masterUser = $value;
-        } elseif ($key === "JABALI_SSO_MASTER_PASS") {
-            $masterPass = $value;
-        }
-    }
-}
-
-$useMaster = !empty($data["use_master"]);
-if ($useMaster) {
-    $loginAs = trim($data["login_as"] ?? "");
-    if ($loginAs === "" || $masterUser === "" || $masterPass === "") {
-        die("SSO master login is not configured");
-    }
-    $authUser = $loginAs . "*" . $masterUser;
-    $authPass = $masterPass;
-} else {
-    if (!isset($data["email"]) || !isset($data["password"])) {
-        die("Invalid token data");
-    }
-    $authUser = trim($data["email"]);
-    $authPass = $data["password"];
-}
-
-// Initialize Roundcube
-define("INSTALL_PATH", "/var/lib/roundcube/");
-require_once "/usr/share/roundcube/program/include/iniset.php";
-
-$rcmail = rcmail::get_instance(0, "web");
-
-// Perform direct login instead of form submission
-$auth = $rcmail->plugins->exec_hook("authenticate", [
-    "host" => $rcmail->autoselect_host(),
-    "user" => $authUser,
-    "pass" => $authPass,
-    "valid" => true,
-    "cookiecheck" => false,
-]);
-
-if ($auth["valid"] && !$auth["abort"]) {
-    $login = $rcmail->login($auth["user"], $auth["pass"], $auth["host"], $auth["cookiecheck"]);
-
-    if ($login) {
-        // Login successful - redirect to inbox
-        $rcmail->session->regenerate_id(false);
-        $rcmail->session->set_auth_cookie();
-        header("Location: /webmail/?_task=mail");
-        exit;
-    }
-}
-
-// Login failed - show error
-?>
-<!DOCTYPE html>
-<html>
-<head><title>Login Failed</title></head>
-<body>
-<p>Login failed. Please try again or contact support.</p>
-<p><a href="/webmail/">Go to webmail login</a></p>
-</body>
-</html>
-RCUBE_SSO
-        chmod 755 /var/lib/roundcube/public_html/jabali-sso.php
-        log "Roundcube SSO script installed"
-    fi
-
-    # Configure Roundcube SMTP with TLS (use 127.0.0.1 instead of localhost for reliable TLS)
-    if [[ -f /etc/roundcube/config.inc.php ]]; then
-        sed -i "s|\$config\['smtp_host'\] = 'localhost:587';|\$config['smtp_host'] = 'tls://127.0.0.1:587';|g" /etc/roundcube/config.inc.php
-        sed -i "s|\$config\['smtp_host'\] = 'tls://localhost:587';|\$config['smtp_host'] = 'tls://127.0.0.1:587';|g" /etc/roundcube/config.inc.php
-        # Add SMTP SSL options if not present (disable cert verification for localhost)
-        if ! grep -q "smtp_conn_options" /etc/roundcube/config.inc.php; then
-            cat >> /etc/roundcube/config.inc.php << 'SMTP_SSL'
-
-// Disable TLS certificate verification for localhost SMTP
-$config['smtp_conn_options'] = [
-    'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false,
-        'allow_self_signed' => true,
-    ],
-];
-SMTP_SSL
-        fi
-    fi
-    if [[ -f /var/lib/roundcube/config/config.inc.php ]]; then
-        sed -i "s|\$config\['smtp_host'\] = 'localhost:587';|\$config['smtp_host'] = 'tls://127.0.0.1:587';|g" /var/lib/roundcube/config/config.inc.php
-        sed -i "s|\$config\['smtp_host'\] = 'tls://localhost:587';|\$config['smtp_host'] = 'tls://127.0.0.1:587';|g" /var/lib/roundcube/config/config.inc.php
-    fi
-
-    # Fix Roundcube config file permissions so www-data can read them
-    # This is required for the SSO script to work
-    chown root:www-data /etc/roundcube/config.inc.php /etc/roundcube/debian-db.php 2>/dev/null
-    chmod 640 /etc/roundcube/config.inc.php /etc/roundcube/debian-db.php 2>/dev/null
-    chown root:www-data /var/lib/roundcube/config/config.inc.php /var/lib/roundcube/config/debian-db.php 2>/dev/null
-    chmod 640 /var/lib/roundcube/config/config.inc.php /var/lib/roundcube/config/debian-db.php 2>/dev/null
-
-    # Fix Roundcube SQLite database configuration
-    # The default debian-db.php has empty $basepath which causes DB errors
-    if [[ -f /etc/roundcube/debian-db.php ]]; then
-        cat > /etc/roundcube/debian-db.php << 'RCUBE_DB'
-<?php
-// Roundcube SQLite database configuration
-// Configured by Jabali installer
-$dbuser='roundcube';
-$dbpass='';
-$basepath='/var/lib/roundcube';
-$dbname='roundcube.db';
-$dbserver='';
-$dbport='';
-$dbtype='sqlite3';
-RCUBE_DB
-        chown root:www-data /etc/roundcube/debian-db.php
-        chmod 640 /etc/roundcube/debian-db.php
-
-        # Initialize SQLite database if it doesn't exist
-        if [[ ! -f /var/lib/roundcube/roundcube.db ]]; then
-            mkdir -p /var/lib/roundcube
-            if [[ -f /usr/share/roundcube/SQL/sqlite.initial.sql ]]; then
-                sqlite3 /var/lib/roundcube/roundcube.db < /usr/share/roundcube/SQL/sqlite.initial.sql
-                log "Roundcube SQLite database initialized"
-            fi
-        fi
-        chown -R www-data:www-data /var/lib/roundcube
-        chmod 750 /var/lib/roundcube
-        chmod 640 /var/lib/roundcube/roundcube.db 2>/dev/null
-    fi
-
-    # Configure OpenDKIM for DKIM signing
-    info "Configuring OpenDKIM..."
-    mkdir -p /etc/opendkim/keys
-    chown -R opendkim:opendkim /etc/opendkim
-    chmod 750 /etc/opendkim
-
-    # Create OpenDKIM configuration files
-    touch /etc/opendkim/KeyTable
-    touch /etc/opendkim/SigningTable
-    cat > /etc/opendkim/TrustedHosts << 'TRUSTED'
-127.0.0.1
-localhost
-::1
-TRUSTED
-    chown opendkim:opendkim /etc/opendkim/KeyTable /etc/opendkim/SigningTable /etc/opendkim/TrustedHosts
-    chmod 644 /etc/opendkim/KeyTable /etc/opendkim/SigningTable /etc/opendkim/TrustedHosts
-
-    # Configure OpenDKIM socket in Postfix chroot
-    mkdir -p /var/spool/postfix/opendkim
-    chown opendkim:postfix /var/spool/postfix/opendkim
-    chmod 750 /var/spool/postfix/opendkim
-
-    # Update OpenDKIM configuration
-    if [[ -f /etc/opendkim.conf ]]; then
-        # Comment out the default Socket line (we'll add our own)
-        sed -i 's|^Socket.*local:/run/opendkim/opendkim.sock|#Socket local:/run/opendkim/opendkim.sock|' /etc/opendkim.conf
-
-        # Add Jabali configuration if not present
-        if ! grep -q "^KeyTable" /etc/opendkim.conf; then
-            cat >> /etc/opendkim.conf << 'OPENDKIM_CONF'
-
-# Jabali Panel configuration
-KeyTable          /etc/opendkim/KeyTable
-SigningTable      refile:/etc/opendkim/SigningTable
-InternalHosts     /etc/opendkim/TrustedHosts
-ExternalIgnoreList /etc/opendkim/TrustedHosts
-Socket            local:/var/spool/postfix/opendkim/opendkim.sock
-OPENDKIM_CONF
-        fi
-    fi
-
-    # Configure Postfix to use OpenDKIM milter
-    postconf -e "smtpd_milters = unix:opendkim/opendkim.sock"
-    postconf -e "non_smtpd_milters = unix:opendkim/opendkim.sock"
-    postconf -e "milter_default_action = accept"
-
-    # Add postfix to opendkim group for socket access
-    usermod -aG opendkim postfix 2>/dev/null || true
-
-    systemctl enable opendkim > /dev/null 2>&1
-
-    # Restart mail services to apply configuration
-    systemctl restart opendkim
-    systemctl restart dovecot
-    systemctl restart postfix
-    log "OpenDKIM configured"
-
-    log "Mail server configured with MySQL authentication"
-}
-
-# Configure Stalwart Mail Server (all-in-one replacement for Postfix+Dovecot+OpenDKIM+Rspamd)
+# Configure Stalwart Mail Server (SMTP, IMAP, JMAP, DKIM, spam filter — single binary)
 configure_stalwart() {
     header "Configuring Stalwart Mail Server"
 
@@ -3688,7 +3060,7 @@ PDNSENV
     chmod -R 775 "$JABALI_DIR/storage"
     chmod -R 775 "$JABALI_DIR/bootstrap/cache"
 
-    # Set SQLite database permissions for Dovecot access (if mail server is installed)
+    # Set SQLite database permissions for mail server access (if mail server is installed)
     if [[ "$INSTALL_MAIL" == "true" ]] && [[ -f "$JABALI_DIR/database/database.sqlite" ]]; then
         info "Setting SQLite database permissions for mail server..."
         chmod 664 "$JABALI_DIR/database/database.sqlite"
@@ -3979,30 +3351,9 @@ MAILNGINX
             if certbot certonly --webroot -w /var/www/html -d "$mail_hostname" --non-interactive --agree-tos --email "$ADMIN_EMAIL" 2>/dev/null; then
                 log "Let's Encrypt certificate issued for $mail_hostname"
 
-                if [[ "$MAIL_BACKEND" == "stalwart" ]]; then
-                    # Stalwart manages its own TLS via built-in ACME (tls-alpn-01)
-                    # No need to configure certs manually — ACME handles it
-                    log "Stalwart ACME will handle TLS for mail domains automatically"
-                else
-                    # Update Postfix to use the certificate
-                    postconf -e "smtpd_tls_cert_file=/etc/letsencrypt/live/$mail_hostname/fullchain.pem"
-                    postconf -e "smtpd_tls_key_file=/etc/letsencrypt/live/$mail_hostname/privkey.pem"
-                    systemctl reload postfix 2>/dev/null || warn "Failed to reload Postfix with new certificate"
-
-                    # Update Dovecot to use the certificate
-                    # Dovecot 2.4+ (Debian 13) uses ssl_server_cert_file / ssl_server_key_file
-                    # Dovecot 2.3  (Debian 12) uses ssl_cert / ssl_key
-                    if [[ -f /etc/dovecot/conf.d/10-ssl.conf ]]; then
-                        if grep -q '^ssl_server_cert_file' /etc/dovecot/conf.d/10-ssl.conf; then
-                            sed -i "s|^ssl_server_cert_file = .*|ssl_server_cert_file = /etc/letsencrypt/live/$mail_hostname/fullchain.pem|" /etc/dovecot/conf.d/10-ssl.conf
-                            sed -i "s|^ssl_server_key_file = .*|ssl_server_key_file = /etc/letsencrypt/live/$mail_hostname/privkey.pem|" /etc/dovecot/conf.d/10-ssl.conf
-                        else
-                            sed -i "s|^ssl_cert = .*|ssl_cert = </etc/letsencrypt/live/$mail_hostname/fullchain.pem|" /etc/dovecot/conf.d/10-ssl.conf
-                            sed -i "s|^ssl_key = .*|ssl_key = </etc/letsencrypt/live/$mail_hostname/privkey.pem|" /etc/dovecot/conf.d/10-ssl.conf
-                        fi
-                        systemctl reload dovecot 2>/dev/null || warn "Failed to reload Dovecot with new certificate"
-                    fi
-                fi
+                # Stalwart manages its own TLS via built-in ACME (tls-alpn-01)
+                # No need to configure certs manually — ACME handles it
+                log "Stalwart ACME will handle TLS for mail domains automatically"
                 log "Mail services updated to use Let's Encrypt certificate"
             else
                 warn "Could not issue certificate for $mail_hostname"
@@ -4041,11 +3392,11 @@ setup_self_healing() {
     done
 
     # Add optional services if installed
-    if systemctl list-unit-files postfix.service &>/dev/null | grep -q postfix; then
-        services+=("postfix")
+    if systemctl list-unit-files stalwart-mail.service &>/dev/null | grep -q stalwart-mail; then
+        services+=("stalwart-mail")
     fi
-    if systemctl list-unit-files dovecot.service &>/dev/null | grep -q dovecot; then
-        services+=("dovecot")
+    if systemctl list-unit-files bulwark.service &>/dev/null | grep -q bulwark; then
+        services+=("bulwark")
     fi
     if systemctl list-unit-files pdns.service &>/dev/null | grep -q pdns; then
         services+=("pdns")
@@ -4273,11 +3624,7 @@ reinstall() {
     configure_nginx
 
     if [[ "$INSTALL_MAIL" == "true" ]]; then
-        if [[ "${MAIL_BACKEND:-legacy}" == "stalwart" ]]; then
-            configure_stalwart
-        else
-            configure_mail
-        fi
+        configure_stalwart
     fi
 
     if [[ "$INSTALL_DNS" == "true" ]]; then
@@ -4351,7 +3698,7 @@ uninstall() {
         echo "  - Jabali Panel files (/var/www/jabali)"
         echo "  - Jabali database and user"
         echo "  - Nginx, PHP-FPM, MariaDB, Redis"
-        echo "  - Mail server (Postfix, Dovecot, Rspamd)"
+        echo "  - Mail server (Stalwart)"
         echo "  - DNS server (PowerDNS)"
         echo "  - All user home directories (/home/*)"
         echo "  - All virtual mail (/var/mail)"
@@ -4672,7 +4019,7 @@ show_usage() {
     echo "  SERVER_HOSTNAME      Set the server hostname"
     echo "  JABALI_FULL          Install all components (set to any value)"
     echo "  JABALI_MINIMAL       Install only core components (set to any value)"
-    echo "  MAIL_BACKEND         Mail backend: 'stalwart' (default) or 'legacy'"
+    echo "  MAIL_BACKEND         Mail backend: 'stalwart' (only supported backend)"
     echo ""
     echo "Installation Modes:"
     echo "  Full Installation    - Web, Mail, DNS"
@@ -4846,11 +4193,7 @@ main() {
 
     # Optional components based on feature selection
     if [[ "$INSTALL_MAIL" == "true" ]]; then
-        if [[ "${MAIL_BACKEND:-legacy}" == "stalwart" ]]; then
-            configure_stalwart
-        else
-            configure_mail
-        fi
+        configure_stalwart
     else
         info "Skipping Mail Server configuration"
     fi

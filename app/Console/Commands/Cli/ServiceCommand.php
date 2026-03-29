@@ -14,8 +14,8 @@ class ServiceCommand extends JabaliCommand
     protected $description = 'List managed services and their status';
 
     private const SERVICES = [
-        'nginx', 'mariadb', 'redis-server', 'postfix', 'dovecot',
-        'rspamd', 'pdns', 'opendkim', 'jabali-agent', 'jabali-queue',
+        'nginx', 'mariadb', 'redis-server', 'stalwart-mail',
+        'pdns', 'jabali-agent', 'jabali-queue',
         'ssh', 'cron',
     ];
 

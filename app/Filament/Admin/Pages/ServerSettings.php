@@ -627,9 +627,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                         TextInput::make('emailData.webmail_url')
                             ->label(__('Webmail URL'))
                             ->placeholder(__('/webmail'))
-                            ->helperText(config('jabali.mail_backend') === 'stalwart'
-                                ? __('URL path for Bulwark webmail')
-                                : __('URL path for Roundcube webmail')),
+                            ->helperText(__('URL path for Bulwark webmail')),
                         TextInput::make('emailData.webmail_product_name')
                             ->label(__('Webmail Product Name'))
                             ->placeholder(__('Jabali Webmail'))
@@ -1103,24 +1101,6 @@ class ServerSettings extends Page implements HasActions, HasForms
 
         $service = app(ServerSettingsService::class);
         $service->saveEmailSettings($data);
-
-        // Update Roundcube config (legacy backend only)
-        if (config('jabali.mail_backend') !== 'stalwart') {
-            $configFile = '/etc/roundcube/config.inc.php';
-            if (file_exists($configFile)) {
-                try {
-                    $content = file_get_contents($configFile);
-                    $content = preg_replace(
-                        "/\\\$config\['product_name'\]\s*=\s*'[^']*';/",
-                        "\$config['product_name'] = '".addslashes($data['webmail_product_name'])."';",
-                        $content
-                    );
-                    file_put_contents($configFile, $content);
-                } catch (Exception $e) {
-                    // Silently fail
-                }
-            }
-        }
 
         Notification::make()->title(__('Email settings saved'))->success()->send();
     }

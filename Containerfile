@@ -65,9 +65,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     # Database
     mariadb-server redis-server sqlite3 \
-    # Mail
-    postfix dovecot-imapd dovecot-pop3d dovecot-lmtpd dovecot-mysql \
-    opendkim opendkim-tools rspamd \
     # DNS
     pdns-server pdns-backend-mysql \
     # Security
@@ -81,7 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && groupadd -g 5000 vmail || true \
     && useradd -u 5000 -g vmail -d /var/mail -s /usr/sbin/nologin vmail || true
 
-# Stalwart Mail Server (downloaded at build time, activated by MAIL_BACKEND=stalwart)
+# Stalwart Mail Server
 ARG TARGETARCH
 RUN RUST_ARCH=$(case "$(dpkg --print-architecture)" in amd64) echo x86_64;; arm64) echo aarch64;; armhf) echo armv7;; *) echo unknown;; esac) \
     && curl -fsSL "https://github.com/stalwartlabs/mail-server/releases/latest/download/stalwart-${RUST_ARCH}-unknown-linux-gnu.tar.gz" \

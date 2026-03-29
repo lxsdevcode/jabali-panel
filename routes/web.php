@@ -161,73 +161,35 @@ Route::get('/webmail-sso/{mailbox}', function (\App\Models\Mailbox $mailbox) {
         abort(500, 'SSO token directory could not be created. Run: mkdir -p /var/lib/jabali/sso-tokens && chown www-data:www-data /var/lib/jabali/sso-tokens && chmod 700 /var/lib/jabali/sso-tokens');
     }
 
-    if (config('jabali.mail_backend') === 'stalwart') {
-        // Bulwark webmail — SSO via token file
-        $webmailUrl = \App\Models\DnsSetting::get('webmail_url', '/webmail/');
-        $token = bin2hex(random_bytes(32));
-        $tokenData = [
-            'email' => $mailbox->email,
-            'expires' => time() + 60,
-        ];
-
-        if ($mailbox->plain_password) {
-            $tokenData['password'] = $mailbox->plain_password;
-            $tokenData['use_direct'] = true;
-        }
-
-        $ssoFile = $ssoDir.'/bulwark_sso_'.$token;
-        file_put_contents($ssoFile, json_encode($tokenData), LOCK_EX);
-        chmod($ssoFile, 0600);
-
-        // Redirect to webmail on the mailbox's own domain
-        $domain = $mailbox->emailDomain?->domain?->domain ?? '';
-        $ssoUrl = $domain
-            ? "https://{$domain}/webmail/api/auth/sso?token={$token}"
-            : "/webmail/api/auth/sso?token={$token}";
-
-        return redirect($ssoUrl);
-    }
-
-    // Legacy Roundcube SSO
-    $password = $mailbox->plain_password;
-    if ($password) {
-        // Create SSO token for auto-login
-        $token = bin2hex(random_bytes(32));
-        $tokenData = [
-            'email' => $mailbox->email,
-            'password' => $password,
-            'expires' => time() + 300,
-        ];
-
-        $ssoFile = $ssoDir.'/roundcube_sso_'.$token;
-        file_put_contents($ssoFile, json_encode($tokenData), LOCK_EX);
-        chmod($ssoFile, 0600);
-
-        return redirect('/webmail/jabali-sso.php?token='.$token);
-    }
-
-    $hasPasswordHash = ! empty($mailbox->password_hash);
-    $masterConfigPath = '/etc/jabali/roundcube-sso.conf';
-    if ($hasPasswordHash && file_exists($masterConfigPath)) {
-        $token = bin2hex(random_bytes(32));
-        $tokenData = [
-            'login_as' => $mailbox->email,
-            'use_master' => true,
-            'expires' => time() + 300,
-        ];
-
-        $ssoFile = $ssoDir.'/roundcube_sso_'.$token;
-        file_put_contents($ssoFile, json_encode($tokenData), LOCK_EX);
-        chmod($ssoFile, 0600);
-
-        return redirect('/webmail/jabali-sso.php?token='.$token);
-    }
-
-    // No stored password - show message about needing to reset password first
-    // This happens after restore when password_encrypted isn't set
-    return response()->view('webmail-password-required', [
+    // Bulwark webmail — SSO via token file
+    $token = bin2hex(random_bytes(32));
+    $tokenData = [
         'email' => $mailbox->email,
-        'mailbox_id' => $mailbox->id,
-        'has_password_hash' => $hasPasswordHash,
-    ]);
+        'expires' => time() + 60,
+    ];
+
+    if ($mailbox->plain_password) {
+        $tokenData['password'] = $mailbox->plain_password;
+        $tokenData['use_direct'] = true;
+    }
+
+    $ssoFile = $ssoDir.'/bulwark_sso_'.$token;
+    file_put_contents($ssoFile, json_encode($tokenData), LOCK_EX);
+    chmod($ssoFile, 0600);
+
+    // Redirect to webmail on the mailbox's own domain
+    $domain = $mailbox->emailDomain?->domain?->domain ?? '';
+    $ssoUrl = $domain
+        ? "https://{$domain}/webmail/api/auth/sso?token={$token}"
+        : "/webmail/api/auth/sso?token={$token}";
+
+    if (! $mailbox->plain_password) {
+        // No stored password - show message about needing to reset password first
+        return response()->view('webmail-password-required', [
+            'email' => $mailbox->email,
+            'mailbox_id' => $mailbox->id,
+        ]);
+    }
+
+    return redirect($ssoUrl);
 })->middleware(['web', 'auth'])->name('webmail.sso');

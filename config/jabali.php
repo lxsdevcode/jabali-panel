@@ -8,8 +8,6 @@ return [
         'timeout' => env('JABALI_AGENT_TIMEOUT', 30),
     ],
 
-    'mail_backend' => env('MAIL_BACKEND', 'legacy'),
-
     'backup' => [
         'default_repo' => env('JABALI_BACKUP_REPO', '/var/backups/jabali/restic'),
     ],

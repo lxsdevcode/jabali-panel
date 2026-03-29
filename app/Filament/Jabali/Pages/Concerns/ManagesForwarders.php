@@ -7,7 +7,6 @@ namespace App\Filament\Jabali\Pages\Concerns;
 use App\Models\Domain;
 use App\Models\EmailForwarder;
 use App\Models\Mailbox;
-use App\Services\RoundcubeIdentityService;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -176,11 +175,7 @@ trait ManagesForwarders
                         ]);
 
                         // Sync identities for local mailboxes in destinations
-                        if (config('jabali.mail_backend') === 'stalwart') {
-                            $this->syncStalwartIdentitiesForForwarder($email, $destinations);
-                        } else {
-                            $this->syncRoundcubeIdentitiesForForwarder($email, $destinations);
-                        }
+                        $this->syncStalwartIdentitiesForForwarder($email, $destinations);
 
                         $this->syncMailRouting();
                     },
@@ -214,13 +209,8 @@ trait ManagesForwarders
                 $forwarder->update(['destinations' => $destinations]);
 
                 // Update identities: remove old, add new
-                if (config('jabali.mail_backend') === 'stalwart') {
-                    $this->removeStalwartIdentitiesForForwarder($forwarder->email, $oldDestinations);
-                    $this->syncStalwartIdentitiesForForwarder($forwarder->email, $destinations);
-                } else {
-                    $this->removeRoundcubeIdentitiesForForwarder($forwarder->email, $oldDestinations);
-                    $this->syncRoundcubeIdentitiesForForwarder($forwarder->email, $destinations);
-                }
+                $this->removeStalwartIdentitiesForForwarder($forwarder->email, $oldDestinations);
+                $this->syncStalwartIdentitiesForForwarder($forwarder->email, $destinations);
 
                 $this->syncMailRouting();
             },
@@ -271,55 +261,11 @@ trait ManagesForwarders
                 $forwarder->delete();
 
                 // Remove identities for this forwarder
-                if (config('jabali.mail_backend') === 'stalwart') {
-                    $this->removeStalwartIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
-                } else {
-                    $this->removeRoundcubeIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
-                }
+                $this->removeStalwartIdentitiesForForwarder($forwarderEmail, $forwarderDestinations);
 
                 $this->syncMailRouting();
             },
         );
-    }
-
-    /**
-     * Sync Roundcube identities when a forwarder is created.
-     * For each destination that is a local mailbox, add the forwarder address as an identity.
-     */
-    protected function syncRoundcubeIdentitiesForForwarder(string $forwarderEmail, array $destinations): void
-    {
-        try {
-            $service = new RoundcubeIdentityService;
-
-            foreach ($destinations as $destination) {
-                // Check if destination is a local mailbox
-                $mailbox = $this->findLocalMailbox($destination);
-                if ($mailbox) {
-                    $service->addIdentity($destination, $forwarderEmail, $mailbox->name ?? '');
-                }
-            }
-        } catch (Exception $e) {
-            Log::warning("Failed to sync Roundcube identities: {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * Remove Roundcube identities when a forwarder is deleted.
-     */
-    protected function removeRoundcubeIdentitiesForForwarder(string $forwarderEmail, array $destinations): void
-    {
-        try {
-            $service = new RoundcubeIdentityService;
-
-            foreach ($destinations as $destination) {
-                $mailbox = $this->findLocalMailbox($destination);
-                if ($mailbox) {
-                    $service->removeIdentity($destination, $forwarderEmail);
-                }
-            }
-        } catch (Exception $e) {
-            Log::warning("Failed to remove Roundcube identities: {$e->getMessage()}");
-        }
     }
 
     /**

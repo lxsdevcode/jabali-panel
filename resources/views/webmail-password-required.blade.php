@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ ($has_password_hash ?? false) ? __('Webmail Login Required') : __('Password Reset Required') }}</title>
+    <title>{{ __('Password Reset Required') }}</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -82,23 +82,13 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
             </svg>
         </div>
-        <h1>{{ ($has_password_hash ?? false) ? __('Webmail Login Required') : __('Password Reset Required') }}</h1>
+        <h1>{{ __('Password Reset Required') }}</h1>
         <div class="email">{{ $email }}</div>
-        @if (($has_password_hash ?? false))
-            <p>{{ __('This mailbox was migrated, so one-click webmail login is unavailable. You can sign in directly using your existing mailbox password.') }}</p>
-            <a href="{{ url('/webmail') }}" class="btn">
-                {{ config('jabali.mail_backend') === 'stalwart' ? __('Open Bulwark Webmail') : __('Open Webmail Login') }}
-            </a>
-            <div class="hint">
-                {{ __('If you want one-click webmail access, reset the mailbox password in Email settings.') }}
-            </div>
-        @else
-            <p>{{ __('To access webmail, you need to set a new password for this mailbox. Click the button below to go to Email settings and reset your password.') }}</p>
-            <a href="{{ url('/jabali-panel/email') }}" class="btn">{{ __('Go to Email Settings') }}</a>
-            <div class="hint">
-                {{ __('After setting your password, you can use the Webmail button to access your inbox.') }}
-            </div>
-        @endif
+        <p>{{ __('To access webmail, you need to set a new password for this mailbox. Click the button below to go to Email settings and reset your password.') }}</p>
+        <a href="{{ url('/jabali-panel/email') }}" class="btn">{{ __('Go to Email Settings') }}</a>
+        <div class="hint">
+            {{ __('After setting your password, you can use the Webmail button to access your inbox.') }}
+        </div>
     </div>
 </body>
 </html>

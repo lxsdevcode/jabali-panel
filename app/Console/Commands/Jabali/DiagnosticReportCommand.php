@@ -115,8 +115,7 @@ class DiagnosticReportCommand extends Command
                 $cmds = [
                     'nginx' => 'nginx -v 2>&1',
                     'mariadb' => 'mariadb --version 2>&1',
-                    'postfix' => 'postconf mail_version 2>&1',
-                    'dovecot' => 'dovecot --version 2>&1',
+                    'stalwart' => 'stalwart-mail --version 2>&1',
                     'pdns' => 'pdns_server --version 2>&1',
                     'redis' => 'redis-server --version 2>&1',
                     'openssl' => 'openssl version 2>&1',
@@ -177,14 +176,6 @@ class DiagnosticReportCommand extends Command
             // skip
         }
 
-        // Postfix mail queue
-        try {
-            $result = $this->executeCommand('postqueue -p 2>&1 | tail -1');
-            $data['mail_queue'] = $result['exitCode'] === 0 ? trim($result['output']) : null;
-        } catch (Exception) {
-            // skip
-        }
-
         // PHP-FPM pools
         try {
             $result = $this->executeCommand('ls /etc/php/*/fpm/pool.d/*.conf 2>/dev/null | wc -l');
@@ -205,13 +196,13 @@ class DiagnosticReportCommand extends Command
         try {
             $agent = app(AgentClient::class);
             $result = $agent->call('service.list', ['services' => [
-                'nginx', 'mariadb', 'mysql', 'postfix', 'dovecot',
+                'nginx', 'mariadb', 'mysql', 'stalwart-mail',
                 'pdns', 'redis-server', 'jabali-agent', 'jabali-queue',
             ]]);
             $data['services'] = $result->toArray();
         } catch (Exception) {
             try {
-                $result = $this->executeCommand('systemctl is-active nginx mariadb postfix dovecot named redis-server jabali-agent');
+                $result = $this->executeCommand('systemctl is-active nginx mariadb stalwart-mail named redis-server jabali-agent');
                 $data['services'] = $result['output'];
             } catch (Exception) {
                 // skip
