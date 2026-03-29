@@ -134,22 +134,6 @@ class BackupRestore extends Model
     }
 
     /**
-     * Scope for running restores.
-     */
-    public function scopeRunning($query)
-    {
-        return $query->whereIn('status', ['pending', 'downloading', 'running']);
-    }
-
-    /**
-     * Scope for user restores.
-     */
-    public function scopeForUser($query, int $userId)
-    {
-        return $query->where('user_id', $userId);
-    }
-
-    /**
      * Get status color for UI.
      */
     public function getStatusColorAttribute(): string

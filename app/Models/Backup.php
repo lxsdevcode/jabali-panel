@@ -155,66 +155,6 @@ class Backup extends Model
     }
 
     /**
-     * Scope for completed backups.
-     */
-    public function scopeCompleted($query)
-    {
-        return $query->where('status', 'completed');
-    }
-
-    /**
-     * Scope for failed backups.
-     */
-    public function scopeFailed($query)
-    {
-        return $query->where('status', 'failed');
-    }
-
-    /**
-     * Scope for running backups.
-     */
-    public function scopeRunning($query)
-    {
-        return $query->whereIn('status', ['pending', 'running', 'uploading']);
-    }
-
-    /**
-     * Scope for user backups.
-     */
-    public function scopeForUser($query, int $userId)
-    {
-        return $query->where('user_id', $userId);
-    }
-
-    /**
-     * Scope for server backups.
-     */
-    public function scopeServerBackups($query)
-    {
-        return $query->where('type', 'server');
-    }
-
-    /**
-     * Scope for non-expired backups.
-     */
-    public function scopeNotExpired($query)
-    {
-        return $query->where(function ($q) {
-            $q->whereNull('expires_at')
-                ->orWhere('expires_at', '>', now());
-        });
-    }
-
-    /**
-     * Scope for expired backups.
-     */
-    public function scopeExpired($query)
-    {
-        return $query->whereNotNull('expires_at')
-            ->where('expires_at', '<=', now());
-    }
-
-    /**
      * Get status badge color for UI.
      */
     public function getStatusColorAttribute(): string

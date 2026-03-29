@@ -65,12 +65,4 @@ class UserRemoteBackup extends Model
     {
         return $query->where('user_id', $userId);
     }
-
-    /**
-     * Scope for a specific destination.
-     */
-    public function scopeForDestination($query, int $destinationId)
-    {
-        return $query->where('destination_id', $destinationId);
-    }
 }

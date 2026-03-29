@@ -187,22 +187,6 @@ class BackupSchedule extends Model
     }
 
     /**
-     * Scope for user schedules.
-     */
-    public function scopeForUser($query, int $userId)
-    {
-        return $query->where('user_id', $userId);
-    }
-
-    /**
-     * Scope for server backup schedules.
-     */
-    public function scopeServerBackups($query)
-    {
-        return $query->where('is_server_backup', true);
-    }
-
-    /**
      * Get last status color for UI.
      */
     public function getLastStatusColorAttribute(): string

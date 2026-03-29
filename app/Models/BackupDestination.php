@@ -91,30 +91,6 @@ class BackupDestination extends Model
     }
 
     /**
-     * Scope for active destinations.
-     */
-    public function scopeActive($query)
-    {
-        return $query->where('is_active', true);
-    }
-
-    /**
-     * Scope for user destinations.
-     */
-    public function scopeForUser($query, int $userId)
-    {
-        return $query->where('user_id', $userId);
-    }
-
-    /**
-     * Scope for server backup destinations (admin-level).
-     */
-    public function scopeServerBackups($query)
-    {
-        return $query->where('is_server_backup', true);
-    }
-
-    /**
      * Get the Restic repository URL for this destination.
      */
     public function getResticRepoUrl(): string

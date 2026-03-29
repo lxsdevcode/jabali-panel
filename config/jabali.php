@@ -15,10 +15,7 @@ return [
     ],
 
     'panel' => [
-        'port' => (int) env('PANEL_PORT', 2223),
         'hostname' => env('PANEL_HOSTNAME', env('SERVER_HOSTNAME', '')),
         'tls_cert' => env('PANEL_TLS_CERT', '/etc/ssl/jabali/panel.crt'),
-        'tls_key' => env('PANEL_TLS_KEY', '/etc/ssl/jabali/panel.key'),
-        'caddyfile' => env('PANEL_CADDYFILE', '/etc/jabali/Caddyfile'),
     ],
 ];
