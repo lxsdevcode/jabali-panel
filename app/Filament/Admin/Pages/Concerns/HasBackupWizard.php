@@ -45,6 +45,7 @@ trait HasBackupWizard
                 ->action(function (): void {
                     DnsSetting::set('backup_wizard_completed', '1');
                     DnsSetting::clearCache();
+                    $this->redirect(static::getUrl());
                 })
             )
             ->modalCloseButton()
