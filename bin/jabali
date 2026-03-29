@@ -255,12 +255,13 @@ function handleUpdate(array $options): void
     runShell("{$artisan} up 2>&1");
     echo C_GREEN.'✓ Panel is live'.C_RESET."\n";
 
-    // Step 8: Upgrade infrastructure
+    // Step 8: Upgrade infrastructure (output shown directly)
     step('Upgrading infrastructure...');
     $installScript = $jabaliDir.'/install.sh';
     if (file_exists($installScript)) {
-        $infraResult = runShell('bash '.escapeshellarg($installScript).' upgrade 2>&1');
-        if ($infraResult === false) {
+        $infraExitCode = 0;
+        passthru('bash '.escapeshellarg($installScript).' upgrade', $infraExitCode);
+        if ($infraExitCode !== 0) {
             echo C_YELLOW.'⚠ Infrastructure upgrade had issues — check output above'.C_RESET."\n";
         } else {
             echo C_GREEN.'✓ Infrastructure updated'.C_RESET."\n";
