@@ -872,11 +872,18 @@ function createUser(array $params): array
     }
 
     if ($password) {
-        $cmd = sprintf('echo %s:%s | chpasswd 2>&1',
-            escapeshellarg($username),
-            escapeshellarg($password)
-        );
-        exec($cmd);
+        $proc = proc_open('chpasswd', [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes);
+        if (is_resource($proc)) {
+            fwrite($pipes[0], "{$username}:{$password}\n");
+            fclose($pipes[0]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_close($proc);
+        }
     }
 
     // Remove symlinks that cause issues
@@ -1223,12 +1230,24 @@ function setUserPassword(array $params): array
         return ['success' => false, 'error' => 'User does not exist'];
     }
 
-    $cmd = sprintf('echo %s:%s | chpasswd 2>&1', escapeshellarg($username), escapeshellarg($password));
-    exec($cmd, $output, $exitCode);
+    $proc = proc_open('chpasswd', [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ], $pipes);
+    if (! is_resource($proc)) {
+        return ['success' => false, 'error' => 'Failed to run chpasswd'];
+    }
+    fwrite($pipes[0], "{$username}:{$password}\n");
+    fclose($pipes[0]);
+    fclose($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($proc);
 
     return $exitCode === 0
         ? ['success' => true, 'message' => 'Password updated']
-        : ['success' => false, 'error' => 'Failed to set password'];
+        : ['success' => false, 'error' => 'Failed to set password: ' . trim($stderr)];
 }
 
 function userExists(array $params): array
