@@ -21,9 +21,13 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Wizard\Step;
 use Illuminate\Support\HtmlString;
+use Livewire\Attributes\Locked;
 
 trait HasBackupWizard
 {
+    #[Locked]
+    public ?int $wizardDestinationId = null;
+
     protected function mountBackupWizard(): void
     {
         if (! DnsSetting::get('backup_wizard_completed', false)) {
@@ -181,7 +185,79 @@ trait HasBackupWizard
                             ->label(__('Password'))
                             ->password()
                             ->visible(fn ($get) => $get('dest_type') === 'rest'),
-                    ]),
+                    ])
+                    ->afterValidation(function ($get) {
+                        $type = $get('dest_type');
+                        $data = [
+                            'host' => $get('host'),
+                            'port' => $get('port'),
+                            'username' => $get('username'),
+                            'password' => $get('password'),
+                            'private_key' => $get('private_key'),
+                            'path' => $get('path'),
+                            'endpoint' => $get('endpoint'),
+                            'bucket' => $get('bucket'),
+                            'access_key' => $get('access_key'),
+                            'secret_key' => $get('secret_key'),
+                            'rest_url' => $get('rest_url'),
+                            'rest_username' => $get('rest_username'),
+                            'rest_password' => $get('rest_password'),
+                        ];
+
+                        $config = $this->buildConfig($type, $data);
+
+                        // Delete previous test destination if retrying
+                        if ($this->wizardDestinationId) {
+                            BackupDestination::find($this->wizardDestinationId)?->delete();
+                            $this->wizardDestinationId = null;
+                        }
+
+                        $dest = BackupDestination::create([
+                            'name' => $get('dest_name'),
+                            'type' => $type,
+                            'config' => $config,
+                            'is_server_backup' => true,
+                            'is_active' => true,
+                        ]);
+
+                        try {
+                            app(BackupOrchestrator::class)->testDestination($dest);
+                        } catch (Exception $e) {
+                            $dest->delete();
+
+                            Notification::make()
+                                ->title(__('Connection failed'))
+                                ->body(SafeError::message($e))
+                                ->danger()
+                                ->send();
+
+                            $this->halt();
+
+                            return;
+                        }
+
+                        if ($dest->fresh()->test_status !== 'success') {
+                            $errorMessage = $dest->fresh()->test_message ?? __('Could not connect to the remote destination.');
+                            $dest->delete();
+
+                            Notification::make()
+                                ->title(__('Connection test failed'))
+                                ->body($errorMessage)
+                                ->danger()
+                                ->send();
+
+                            $this->halt();
+
+                            return;
+                        }
+
+                        $this->wizardDestinationId = $dest->id;
+
+                        Notification::make()
+                            ->title(__('Connection successful'))
+                            ->success()
+                            ->send();
+                    }),
 
                 Step::make(__('Schedule'))
                     ->icon('heroicon-o-clock')
@@ -233,37 +309,8 @@ trait HasBackupWizard
                     return;
                 }
 
-                // 2. Create remote destination
-                $destinationId = null;
-                try {
-                    $config = $this->buildConfig($data['dest_type'], $data);
-                    $dest = BackupDestination::create([
-                        'name' => $data['dest_name'],
-                        'type' => $data['dest_type'],
-                        'config' => $config,
-                        'is_server_backup' => true,
-                        'is_active' => true,
-                    ]);
-
-                    app(BackupOrchestrator::class)->testDestination($dest);
-                    $destinationId = $dest->id;
-
-                    if ($dest->fresh()->test_status === 'failed') {
-                        Notification::make()
-                            ->title(__('Destination added but connection test failed'))
-                            ->body($dest->test_message ?? __('Check credentials'))
-                            ->warning()
-                            ->send();
-                    }
-                } catch (Exception $e) {
-                    Notification::make()
-                        ->title(__('Failed to add destination'))
-                        ->body(SafeError::message($e))
-                        ->danger()
-                        ->send();
-
-                    return;
-                }
+                // 2. Use destination created and tested in the Destination step
+                $destinationId = $this->wizardDestinationId;
 
                 // 3. Create backup schedule
                 $timeParts = explode(':', $data['time'] ?? '03:00');
