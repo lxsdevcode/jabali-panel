@@ -31,6 +31,13 @@ trait HasBackupWizard
         }
     }
 
+    public function dismissBackupWizard(): void
+    {
+        DnsSetting::set('backup_wizard_completed', '1');
+        DnsSetting::clearCache();
+        $this->redirect(static::getUrl());
+    }
+
     protected function backupWizardAction(): Action
     {
         return Action::make('backupWizard')
@@ -39,16 +46,7 @@ trait HasBackupWizard
             ->modalHeading(__('Backup Setup'))
             ->modalDescription(__('Set up encrypted backups for your server.'))
             ->modalWidth('2xl')
-            ->modalCancelAction(fn (Action $action) => $action
-                ->label(__('Don\'t show again'))
-                ->color('gray')
-                ->action(function (): void {
-                    DnsSetting::set('backup_wizard_completed', '1');
-                    DnsSetting::clearCache();
-                    $this->redirect(static::getUrl());
-                })
-            )
-            ->modalCloseButton()
+            ->modalCancelActionLabel(__('Skip for now'))
             ->fillForm(function (): array {
                 $currentPassword = '';
                 try {
@@ -94,6 +92,10 @@ trait HasBackupWizard
                             ->required()
                             ->minLength(12)
                             ->helperText(__('Auto-generated. You may change it, but save it somewhere safe.')),
+                        Placeholder::make('dismiss_wizard')
+                            ->content(new HtmlString(
+                                '<button type="button" wire:click="dismissBackupWizard" class="text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">'.__('Don\'t show this wizard again').'</button>'
+                            )),
                     ]),
 
                 Step::make(__('Destination'))
