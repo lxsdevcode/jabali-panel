@@ -56,6 +56,28 @@ class UsersTable
                     ->boolean()
                     ->label(__('Active')),
 
+                TextColumn::make('domains_count')
+                    ->label(__('Domains'))
+                    ->counts('domains')
+                    ->sortable(),
+
+                TextColumn::make('mailboxes_count')
+                    ->label(__('Mailboxes'))
+                    ->getStateUsing(fn ($record) => \App\Models\Mailbox::whereHas('emailDomain.domain', fn ($q) => $q->where('user_id', $record->id))->count())
+                    ->toggleable(),
+
+                TextColumn::make('bandwidth')
+                    ->label(__('Bandwidth'))
+                    ->getStateUsing(function ($record) {
+                        $total = \App\Models\DomainBandwidthUsage::whereHas('domain', fn ($q) => $q->where('user_id', $record->id))
+                            ->whereYear('date', now()->year)
+                            ->whereMonth('date', now()->month)
+                            ->sum('bytes_out');
+
+                        return \App\Support\Formatter::bytes((int) $total);
+                    })
+                    ->toggleable(),
+
                 TextColumn::make('disk_usage')
                     ->label(__('Disk Usage'))
                     ->toggleable(isToggledHiddenByDefault: true)
