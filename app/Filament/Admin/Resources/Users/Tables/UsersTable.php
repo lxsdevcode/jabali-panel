@@ -82,42 +82,26 @@ class UsersTable
                     }),
 
                 TextColumn::make('disk_usage')
-                    ->label(__('Disk Usage'))
-                    ->toggleable(isToggledHiddenByDefault: true)
-                    ->getStateUsing(function ($record) {
-                        $used = $record->disk_usage_formatted;
+                    ->label(__('Disk'))
+                    ->getStateUsing(fn ($record) => $record->disk_usage_formatted ?: '0 B')
+                    ->description(function ($record) {
                         $quotaMb = $record->disk_quota_mb;
-
                         if (! $quotaMb || $quotaMb <= 0) {
-                            return $used;
+                            return __('Unlimited');
                         }
-
                         $quota = $quotaMb >= 1024
                             ? number_format($quotaMb / 1024, 1).' GB'
                             : $quotaMb.' MB';
 
-                        return "{$used} / {$quota}";
-                    })
-                    ->description(function ($record) {
-                        if (! $record->disk_quota_mb || $record->disk_quota_mb <= 0) {
-                            return __('Unlimited');
-                        }
-
-                        return $record->disk_usage_percent.'% '.__('used');
+                        return $quota.' '.__('limit').' · '.$record->disk_usage_percent.'%';
                     })
                     ->color(function ($record) {
                         if (! $record->disk_quota_mb || $record->disk_quota_mb <= 0) {
-                            return 'gray';
+                            return null;
                         }
                         $percent = $record->disk_usage_percent;
-                        if ($percent >= 90) {
-                            return 'danger';
-                        }
-                        if ($percent >= 75) {
-                            return 'warning';
-                        }
 
-                        return null;
+                        return $percent >= 90 ? 'danger' : ($percent >= 75 ? 'warning' : null);
                     }),
 
                 TextColumn::make('created_at')
