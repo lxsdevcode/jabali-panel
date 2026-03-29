@@ -301,19 +301,18 @@ trait HasBackupWizard
                 ])
                     ->extraAlpineAttributes([
                         'x-init' => "
-                        const swapNextLabel = () => {
+                        const _swapLabel = () => {
                             const lbl = getStepIndex(step) === 1 ? '".__('Validate')."' : '".__('Next')."';
                             const footer = \$el.querySelector('.fi-sc-wizard-footer');
                             if (!footer) return;
-                            const btns = footer.querySelectorAll(':scope > div > button, :scope > div button');
-                            btns.forEach(b => {
-                                const t = b.querySelector('span') || b;
-                                const txt = t.textContent.trim();
-                                if (['Next', 'Validate', '".__('Next')."', '".__('Validate')."'].includes(txt)) t.textContent = lbl;
+                            footer.querySelectorAll('button span').forEach(s => {
+                                const t = s.textContent.trim();
+                                if (t === 'Next' || t === 'Validate' || t === '".__('Next')."' || t === '".__('Validate')."') s.textContent = lbl;
                             });
                         };
-                        \$watch('step', () => \$nextTick(swapNextLabel));
-                        \$nextTick(swapNextLabel);
+                        \$watch('step', () => \$nextTick(_swapLabel));
+                        \$nextTick(_swapLabel);
+                        new MutationObserver(() => _swapLabel()).observe(\$el.querySelector('.fi-sc-wizard-footer'), {childList: true, subtree: true, characterData: true});
                     ",
                     ])
                     ->submitAction(new HtmlString(
