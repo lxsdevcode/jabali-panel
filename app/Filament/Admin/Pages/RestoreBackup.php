@@ -355,16 +355,18 @@ class RestoreBackup extends Page implements HasActions, HasForms
                 ];
             } else {
                 $options = [
-                    'restore_files' => ! empty($this->selectedPaths) || ! empty($this->contents['domains']),
+                    'restore_files' => ! empty($this->selectedPaths),
                     'restore_databases' => ! empty($this->selectedDatabases),
                     'restore_mailboxes' => ! empty($this->selectedMailboxes),
                     'conflict_mode' => $this->conflictMode,
                     'selected_domains' => ! empty($this->selectedPaths)
-                        ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/'))
-                        : ($this->contents['domains'] ?? null),
+                        ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/')) ?: null
+                        : null,
                     'selected_databases' => $this->selectedDatabases ?: null,
                     'selected_mailboxes' => $this->selectedMailboxes ?: null,
-                    'selected_files' => array_filter($this->selectedPaths, fn ($p) => str_contains($p, '/')),
+                    'selected_files' => ! empty($this->selectedPaths)
+                        ? array_filter($this->selectedPaths, fn ($p) => str_contains($p, '/'))
+                        : null,
                 ];
             }
 

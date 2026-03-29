@@ -8,15 +8,6 @@
                 @endforeach
             </div>
         </div>
-    @elseif(!empty($this->contents['domains']))
-        <div>
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('All domains:') }}</span>
-            <div class="flex flex-wrap gap-1 mt-1">
-                @foreach($this->contents['domains'] as $d)
-                    <x-filament::badge color="info">{{ $d }}</x-filament::badge>
-                @endforeach
-            </div>
-        </div>
     @endif
 
     @if(!empty($this->selectedDatabases))
