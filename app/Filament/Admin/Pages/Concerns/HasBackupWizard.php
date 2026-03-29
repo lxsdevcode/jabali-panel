@@ -302,8 +302,16 @@ trait HasBackupWizard
                     ->extraAlpineAttributes([
                         'x-effect' => "
                         \$nextTick(() => {
-                            const btn = \$el.querySelector('.fi-sc-wizard-actions .fi-ac-action:not([style*=\"display: none\"]):last-of-type button span, .fi-sc-wizard-actions [x-on\\:click=\"requestNextStep()\"] button span');
-                            if (btn) btn.textContent = getStepIndex(step) === 1 ? '".__('Validate')."' : '".__('Next')."';
+                            const el = \$el.querySelector('.fi-sc-wizard-footer');
+                            if (! el) return;
+                            const labels = el.querySelectorAll('button span');
+                            const idx = getStepIndex(step);
+                            labels.forEach(s => {
+                                const text = s.textContent.trim();
+                                if (text === '".__('Next')."' || text === '".__('Validate')."') {
+                                    s.textContent = idx === 1 ? '".__('Validate')."' : '".__('Next')."';
+                                }
+                            });
                         })
                     ",
                     ])
