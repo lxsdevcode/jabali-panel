@@ -12980,10 +12980,14 @@ function serviceList(array $params): array
  */
 function serviceStart(array $params): array
 {
+    global $allowedServices;
     $service = $params['service'] ?? '';
 
     if (empty($service) || ! preg_match('/^[a-zA-Z0-9._-]+$/', $service)) {
         return ['success' => false, 'error' => 'Invalid service name'];
+    }
+    if (! in_array($service, $allowedServices, true)) {
+        return ['success' => false, 'error' => 'Service not allowed: '.$service];
     }
 
     exec('systemctl start '.escapeshellarg($service).' 2>&1', $output, $code);
@@ -13000,10 +13004,14 @@ function serviceStart(array $params): array
  */
 function serviceStop(array $params): array
 {
+    global $allowedServices;
     $service = $params['service'] ?? '';
 
     if (empty($service) || ! preg_match('/^[a-zA-Z0-9._-]+$/', $service)) {
         return ['success' => false, 'error' => 'Invalid service name'];
+    }
+    if (! in_array($service, $allowedServices, true)) {
+        return ['success' => false, 'error' => 'Service not allowed: '.$service];
     }
 
     exec('systemctl stop '.escapeshellarg($service).' 2>&1', $output, $code);
@@ -13020,10 +13028,14 @@ function serviceStop(array $params): array
  */
 function serviceRestart(array $params): array
 {
+    global $allowedServices;
     $service = $params['service'] ?? '';
 
     if (empty($service) || ! preg_match('/^[a-zA-Z0-9._-]+$/', $service)) {
         return ['success' => false, 'error' => 'Invalid service name'];
+    }
+    if (! in_array($service, $allowedServices, true)) {
+        return ['success' => false, 'error' => 'Service not allowed: '.$service];
     }
 
     $action = shouldReloadService($service) ? 'reload' : 'restart';
@@ -13045,10 +13057,14 @@ function serviceRestart(array $params): array
  */
 function serviceEnable(array $params): array
 {
+    global $allowedServices;
     $service = $params['service'] ?? '';
 
     if (empty($service) || ! preg_match('/^[a-zA-Z0-9._-]+$/', $service)) {
         return ['success' => false, 'error' => 'Invalid service name'];
+    }
+    if (! in_array($service, $allowedServices, true)) {
+        return ['success' => false, 'error' => 'Service not allowed: '.$service];
     }
 
     exec('systemctl enable '.escapeshellarg($service).' 2>&1', $output, $code);
@@ -13067,10 +13083,14 @@ function serviceEnable(array $params): array
  */
 function serviceDisable(array $params): array
 {
+    global $allowedServices;
     $service = $params['service'] ?? '';
 
     if (empty($service) || ! preg_match('/^[a-zA-Z0-9._-]+$/', $service)) {
         return ['success' => false, 'error' => 'Invalid service name'];
+    }
+    if (! in_array($service, $allowedServices, true)) {
+        return ['success' => false, 'error' => 'Service not allowed: '.$service];
     }
 
     exec('systemctl disable '.escapeshellarg($service).' 2>&1', $output, $code);
