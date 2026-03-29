@@ -299,7 +299,14 @@ trait HasBackupWizard
                             ]),
                         ]),
                 ])
-                    ->nextAction(fn (Action $action) => $action->label(__('Next')))
+                    ->extraAlpineAttributes([
+                        'x-effect' => "
+                        \$nextTick(() => {
+                            const btn = \$el.querySelector('.fi-sc-wizard-actions .fi-ac-action:not([style*=\"display: none\"]):last-of-type button span, .fi-sc-wizard-actions [x-on\\:click=\"requestNextStep()\"] button span');
+                            if (btn) btn.textContent = getStepIndex(step) === 1 ? '".__('Validate')."' : '".__('Next')."';
+                        })
+                    ",
+                    ])
                     ->submitAction(new HtmlString(
                         '<button type="submit" wire:click="callMountedAction" class="fi-btn fi-btn-size-md fi-color-primary fi-btn-color-primary relative grid-flow-col items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold outline-none transition duration-75 fi-ac-action fi-ac-btn-action shadow-sm bg-primary-600 text-white hover:bg-primary-500 dark:bg-primary-500 dark:hover:bg-primary-400">'.__('Save & Create Schedule').'</button>'
                     )),
