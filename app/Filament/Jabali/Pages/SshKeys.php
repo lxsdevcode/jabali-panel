@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Pages;
 
-use App\Models\Setting;
 use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
@@ -61,59 +60,13 @@ class SshKeys extends Page implements HasActions, HasForms, HasTable
 
     public ?array $generatedKey = null;
 
-    public bool $shellEnabled = false;
-
-    public bool $shellAccessAllowed = true;
-
     public function mount(): void
     {
-        $this->shellAccessAllowed = Setting::get('ssh_shell_access_enabled', '1') === '1';
         $this->loadSshKeys();
-        if ($this->shellAccessAllowed) {
-            $this->loadShellStatus();
-        } else {
-            $this->shellEnabled = false;
-        }
         $this->sshHost = request()->getHost();
         $this->sshPort = '22';
         $this->sshUsername = $this->getUsername();
         $this->sshCommand = 'ssh '.$this->sshUsername.'@'.$this->sshHost;
-    }
-
-    protected function loadShellStatus(): void
-    {
-        try {
-            $result = $this->agent()->call('ssh.shell_status', ['username' => $this->getUsername()]);
-            $this->shellEnabled = $result->get('shell_enabled', false);
-        } catch (\Exception $e) {
-            $this->shellEnabled = false;
-        }
-    }
-
-    public function toggleShellAccess(): void
-    {
-        if (! $this->shellAccessAllowed) {
-            Notification::make()
-                ->title(__('Terminal Access Disabled'))
-                ->body(__('Terminal access has been disabled by the administrator.'))
-                ->warning()
-                ->send();
-
-            return;
-        }
-
-        $command = $this->shellEnabled ? 'ssh.disable_shell' : 'ssh.enable_shell';
-        $label = $this->shellEnabled ? 'SSH Shell Disabled' : 'SSH Shell Enabled';
-
-        $this->agentCall(
-            action: $command,
-            params: ['username' => $this->getUsername()],
-            successTitle: $label,
-            errorTitle: 'Error',
-            onSuccess: function () {
-                $this->shellEnabled = ! $this->shellEnabled;
-            },
-        );
     }
 
     protected function getUsername(): string

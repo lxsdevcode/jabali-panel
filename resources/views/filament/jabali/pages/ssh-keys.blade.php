@@ -102,36 +102,6 @@
         </div>
     </x-filament::section>
 
-    {{-- Shell Access Toggle --}}
-    @if($this->shellAccessAllowed)
-        <x-filament::section icon="heroicon-o-command-line" compact>
-            <x-slot name="heading">{{ __('Terminal Access') }}</x-slot>
-            <x-slot name="headerEnd">
-                <x-filament::badge :color="$this->shellEnabled ? 'success' : 'gray'">
-                    {{ $this->shellEnabled ? __('Enabled') : __('SFTP Only') }}
-                </x-filament::badge>
-            </x-slot>
-
-            <div class="flex flex-wrap items-center justify-between gap-4">
-                <div class="fi-section-header-description">
-                    @if($this->shellEnabled)
-                        {{ __('You have jailed shell access with basic commands and wp-cli support (you can run wp-cli here).') }}
-                    @else
-                        {{ __('Currently SFTP-only. Enable shell access for terminal commands and wp-cli.') }}
-                    @endif
-                </div>
-                <x-filament::button
-                    wire:click="toggleShellAccess"
-                    :color="$this->shellEnabled ? 'danger' : 'success'"
-                    :icon="$this->shellEnabled ? 'heroicon-o-lock-closed' : 'heroicon-o-lock-open'"
-                    size="sm"
-                >
-                    {{ $this->shellEnabled ? __('Disable Shell') : __('Enable Shell') }}
-                </x-filament::button>
-            </div>
-        </x-filament::section>
-    @endif
-
     {{-- SSH Keys Table --}}
     <x-filament::section icon="heroicon-o-key">
         <x-slot name="heading">{{ __('SSH Keys') }}</x-slot>
