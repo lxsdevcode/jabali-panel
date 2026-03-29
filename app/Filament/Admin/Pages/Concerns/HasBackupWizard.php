@@ -299,22 +299,6 @@ trait HasBackupWizard
                             ]),
                         ]),
                 ])
-                    ->extraAlpineAttributes([
-                        'x-init' => "
-                        const _swapLabel = () => {
-                            const lbl = getStepIndex(step) === 1 ? '".__('Validate')."' : '".__('Next')."';
-                            const footer = \$el.querySelector('.fi-sc-wizard-footer');
-                            if (!footer) return;
-                            footer.querySelectorAll('button span').forEach(s => {
-                                const t = s.textContent.trim();
-                                if (t === 'Next' || t === 'Validate' || t === '".__('Next')."' || t === '".__('Validate')."') s.textContent = lbl;
-                            });
-                        };
-                        \$watch('step', () => \$nextTick(_swapLabel));
-                        \$nextTick(_swapLabel);
-                        new MutationObserver(() => _swapLabel()).observe(\$el.querySelector('.fi-sc-wizard-footer'), {childList: true, subtree: true, characterData: true});
-                    ",
-                    ])
                     ->submitAction(new HtmlString(
                         '<button type="submit" wire:click="callMountedAction" class="fi-btn fi-btn-size-md fi-color-primary fi-btn-color-primary relative grid-flow-col items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold outline-none transition duration-75 fi-ac-action fi-ac-btn-action shadow-sm bg-primary-600 text-white hover:bg-primary-500 dark:bg-primary-500 dark:hover:bg-primary-400">'.__('Save & Create Schedule').'</button>'
                     )),
