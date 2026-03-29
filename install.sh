@@ -4210,6 +4210,12 @@ upgrade_infra() {
     setup_restic
     setup_self_healing
 
+    # Update jabali-security if installed
+    if command -v jabali-security &>/dev/null; then
+        header "Updating Jabali Security"
+        jabali-security update || warn "jabali-security update failed (non-fatal)"
+    fi
+
     # Restart services to pick up changes
     header "Restarting Services"
     if [[ "${JABALI_SKIP_AGENT_RESTART:-}" != "1" ]]; then
