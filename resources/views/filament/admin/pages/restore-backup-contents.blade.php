@@ -28,6 +28,9 @@
                     <x-filament::badge color="warning">{{ $db }}</x-filament::badge>
                 @endforeach
             </div>
+            @if($this->contents['has_db_users'] ?? false)
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">{{ __('Includes MySQL users & grants') }}</p>
+            @endif
         </div>
 
         {{-- Email --}}

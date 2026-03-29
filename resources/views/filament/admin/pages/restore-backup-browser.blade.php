@@ -63,6 +63,9 @@
         @empty
             <p class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">{{ __('No databases in this backup') }}</p>
         @endforelse
+        @if($this->contents['has_db_users'] ?? false)
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-3 px-3">{{ __('MySQL users and grants will be restored automatically with the selected databases.') }}</p>
+        @endif
     </x-filament::section>
 
 @elseif($this->activeSection === 'mailboxes')
