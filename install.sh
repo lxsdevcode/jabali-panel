@@ -1087,7 +1087,7 @@ PHPINI
 		X-Frame-Options "SAMEORIGIN"
 		X-Content-Type-Options "nosniff"
 		X-XSS-Protection "1; mode=block"
-		# HSTS omitted — self-signed certs would lock out browsers
+		Strict-Transport-Security "max-age=0"
 		Referrer-Policy "strict-origin-when-cross-origin"
 	}
 
