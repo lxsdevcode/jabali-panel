@@ -83,6 +83,7 @@ trait HasBackupWizard
                             ->password()
                             ->revealable()
                             ->required()
+                            ->minLength(12)
                             ->helperText(__('Auto-generated. You may change it, but save it somewhere safe.')),
                     ]),
 
@@ -123,14 +124,16 @@ trait HasBackupWizard
                                 TextInput::make('port')
                                     ->label(__('Port'))
                                     ->numeric()
-                                    ->default(22),
+                                    ->default(22)
+                                    ->minValue(1)
+                                    ->maxValue(65535),
                             ])
                             ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp'),
                         TextInput::make('username')
                             ->label(__('Username'))
                             ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp')
                             ->required(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp'),
-                        TextInput::make('dest_password')
+                        TextInput::make('password')
                             ->label(__('Password'))
                             ->password()
                             ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp'),
@@ -195,7 +198,8 @@ trait HasBackupWizard
                             TextInput::make('time')
                                 ->label(__('Time (HH:MM)'))
                                 ->placeholder('03:00')
-                                ->required(),
+                                ->required()
+                                ->regex('/^(?:[01]\d|2[0-3]):[0-5]\d$/'),
                         ]),
                         TextInput::make('retention_count')
                             ->label(__('Keep last N backups'))
