@@ -61,7 +61,6 @@ trait HasBackupWizard
 
                 return [
                     'encryption_password' => $currentPassword,
-                    'add_remote' => false,
                     'dest_type' => 'sftp',
                     'schedule_name' => __('Daily Server Backup'),
                     'frequency' => 'daily',
@@ -103,10 +102,7 @@ trait HasBackupWizard
                     ->description(__('Where to store backups'))
                     ->schema([
                         Placeholder::make('destination_info')
-                            ->content(__('Backups are stored locally by default. You can optionally add a remote destination for off-site protection.')),
-                        Toggle::make('add_remote')
-                            ->label(__('Add a remote destination'))
-                            ->live(),
+                            ->content(__('Add a remote backup destination for off-site protection.')),
                         Select::make('dest_type')
                             ->label(__('Type'))
                             ->options([
@@ -116,22 +112,19 @@ trait HasBackupWizard
                                 'wasabi' => __('Wasabi'),
                                 'minio' => __('MinIO / S3-Compatible'),
                                 'rest' => __('Restic REST Server'),
-                                'local' => __('Local Path'),
                             ])
-                            ->visible(fn ($get) => $get('add_remote'))
-                            ->required(fn ($get) => $get('add_remote'))
+                            ->required()
                             ->live(),
                         TextInput::make('dest_name')
                             ->label(__('Name'))
                             ->placeholder(__('My Backup Server'))
-                            ->visible(fn ($get) => $get('add_remote'))
-                            ->required(fn ($get) => $get('add_remote')),
+                            ->required(),
                         // SFTP fields
                         Grid::make(2)
                             ->schema([
                                 TextInput::make('host')
                                     ->label(__('Host'))
-                                    ->required(fn ($get) => $get('dest_type') === 'sftp'),
+                                    ->required(),
                                 TextInput::make('port')
                                     ->label(__('Port'))
                                     ->numeric()
@@ -139,55 +132,55 @@ trait HasBackupWizard
                                     ->minValue(1)
                                     ->maxValue(65535),
                             ])
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp'),
+                            ->visible(fn ($get) => $get('dest_type') === 'sftp'),
                         TextInput::make('username')
                             ->label(__('Username'))
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp')
-                            ->required(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp'),
+                            ->visible(fn ($get) => $get('dest_type') === 'sftp')
+                            ->required(fn ($get) => $get('dest_type') === 'sftp'),
                         TextInput::make('password')
                             ->label(__('Password'))
                             ->password()
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp'),
+                            ->visible(fn ($get) => $get('dest_type') === 'sftp'),
                         Textarea::make('private_key')
                             ->label(__('SSH Private Key'))
                             ->rows(3)
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'sftp')
+                            ->visible(fn ($get) => $get('dest_type') === 'sftp')
                             ->helperText(__('Optional, alternative to password')),
                         TextInput::make('path')
                             ->label(__('Remote Path'))
                             ->default('/backups')
-                            ->visible(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['sftp', 'local'])),
+                            ->visible(fn ($get) => $get('dest_type') === 'sftp'),
                         // S3-compatible fields
                         TextInput::make('endpoint')
                             ->label(__('Endpoint'))
-                            ->visible(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
-                            ->required(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
+                            ->visible(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
+                            ->required(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
                         TextInput::make('bucket')
                             ->label(__('Bucket'))
-                            ->visible(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
-                            ->required(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
+                            ->visible(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
+                            ->required(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
                         TextInput::make('access_key')
                             ->label(__('Access Key'))
-                            ->visible(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
-                            ->required(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
+                            ->visible(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
+                            ->required(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
                         TextInput::make('secret_key')
                             ->label(__('Secret Key'))
                             ->password()
-                            ->visible(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
-                            ->required(fn ($get) => $get('add_remote') && in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
+                            ->visible(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio']))
+                            ->required(fn ($get) => in_array($get('dest_type'), ['s3', 'b2', 'wasabi', 'minio'])),
                         // REST server
                         TextInput::make('rest_url')
                             ->label(__('REST Server URL'))
                             ->placeholder('https://backup.example.com:8000')
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'rest')
-                            ->required(fn ($get) => $get('add_remote') && $get('dest_type') === 'rest'),
+                            ->visible(fn ($get) => $get('dest_type') === 'rest')
+                            ->required(fn ($get) => $get('dest_type') === 'rest'),
                         TextInput::make('rest_username')
                             ->label(__('Username'))
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'rest'),
+                            ->visible(fn ($get) => $get('dest_type') === 'rest'),
                         TextInput::make('rest_password')
                             ->label(__('Password'))
                             ->password()
-                            ->visible(fn ($get) => $get('add_remote') && $get('dest_type') === 'rest'),
+                            ->visible(fn ($get) => $get('dest_type') === 'rest'),
                     ]),
 
                 Step::make(__('Schedule'))
@@ -240,36 +233,36 @@ trait HasBackupWizard
                     return;
                 }
 
-                // 2. Create remote destination if requested
+                // 2. Create remote destination
                 $destinationId = null;
-                if (! empty($data['add_remote']) && ! empty($data['dest_type'])) {
-                    try {
-                        $config = $this->buildConfig($data['dest_type'], $data);
-                        $dest = BackupDestination::create([
-                            'name' => $data['dest_name'] ?? __('Remote Backup'),
-                            'type' => $data['dest_type'],
-                            'config' => $config,
-                            'is_server_backup' => true,
-                            'is_active' => true,
-                        ]);
+                try {
+                    $config = $this->buildConfig($data['dest_type'], $data);
+                    $dest = BackupDestination::create([
+                        'name' => $data['dest_name'],
+                        'type' => $data['dest_type'],
+                        'config' => $config,
+                        'is_server_backup' => true,
+                        'is_active' => true,
+                    ]);
 
-                        app(BackupOrchestrator::class)->testDestination($dest);
-                        $destinationId = $dest->id;
+                    app(BackupOrchestrator::class)->testDestination($dest);
+                    $destinationId = $dest->id;
 
-                        if ($dest->fresh()->test_status === 'failed') {
-                            Notification::make()
-                                ->title(__('Destination added but connection failed'))
-                                ->body($dest->test_message ?? __('Check credentials'))
-                                ->warning()
-                                ->send();
-                        }
-                    } catch (Exception $e) {
+                    if ($dest->fresh()->test_status === 'failed') {
                         Notification::make()
-                            ->title(__('Failed to add destination'))
-                            ->body(SafeError::message($e))
+                            ->title(__('Destination added but connection test failed'))
+                            ->body($dest->test_message ?? __('Check credentials'))
                             ->warning()
                             ->send();
                     }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title(__('Failed to add destination'))
+                        ->body(SafeError::message($e))
+                        ->danger()
+                        ->send();
+
+                    return;
                 }
 
                 // 3. Create backup schedule
