@@ -17781,6 +17781,31 @@ function backupRestore(array $params): array
                         $log[] = ['message' => "Restored database: {$dbName}", 'status' => 'success'];
                     }
                 }
+
+                // Restore MySQL users and grants from users.sql
+                $usersFile = "{$dbDir}/users.sql";
+                if (file_exists($usersFile)) {
+                    $sanitizedSql = validateMysqlUsersFile($username, $usersFile);
+                    if ($sanitizedSql !== null && trim($sanitizedSql) !== '') {
+                        $tmpFile = tempnam(sys_get_temp_dir(), 'jabali_users_');
+                        file_put_contents($tmpFile, $sanitizedSql . "\nFLUSH PRIVILEGES;\n");
+
+                        $userImportCmd = 'mysql --host=' . escapeshellarg($mysqlHost)
+                            . ' --user=' . escapeshellarg($mysqlUser)
+                            . ' --password=' . escapeshellarg($mysqlPass)
+                            . ' < ' . escapeshellarg($tmpFile) . ' 2>/dev/null';
+                        $out = [];
+                        $ret = 0;
+                        exec($userImportCmd, $out, $ret);
+                        @unlink($tmpFile);
+
+                        if ($ret === 0) {
+                            $log[] = ['message' => "Restored MySQL users and grants for {$username}", 'status' => 'success'];
+                        } else {
+                            $log[] = ['message' => "Failed to restore MySQL users for {$username}", 'status' => 'warning'];
+                        }
+                    }
+                }
             }
         }
 
