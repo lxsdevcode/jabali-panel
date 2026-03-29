@@ -7,6 +7,7 @@ namespace App\Filament\Jabali\Pages;
 use App\Models\CronJob;
 use App\Models\Domain;
 use App\Services\Agent\InteractsWithAgent;
+use App\Support\CronCommandValidator;
 use App\Support\SafeError;
 use BackedEnum;
 use Exception;
@@ -382,63 +383,9 @@ class CronJobs extends Page implements HasActions, HasForms, HasTable
             });
     }
 
-    /** @var list<string> */
-    private static array $allowedExecutables = [
-        '/usr/bin/php',
-        '/usr/bin/php8.2',
-        '/usr/bin/php8.3',
-        '/usr/bin/php8.4',
-        '/usr/local/bin/php',
-        '/usr/bin/curl',
-        '/usr/bin/wget',
-        '/usr/bin/wp',
-        '/usr/local/bin/wp',
-        '/usr/bin/mysql',
-        '/usr/bin/mysqldump',
-        '/usr/bin/psql',
-        '/usr/bin/pg_dump',
-        '/usr/bin/tar',
-        '/usr/bin/gzip',
-        '/usr/bin/gunzip',
-        '/usr/bin/rsync',
-        '/usr/bin/find',
-        '/usr/bin/python3',
-        '/usr/bin/node',
-        '/usr/bin/ruby',
-        '/usr/bin/perl',
-    ];
-
     private function validateCronCommand(string $command): bool|string
     {
-        $command = trim($command);
-
-        if (empty($command)) {
-            return __('Command cannot be empty.');
-        }
-
-        // Block dangerous shell operators
-        $dangerousPatterns = [';', '|', '&&', '||', '`', '$(', '${', '>', '<', "\n", "\r"];
-        foreach ($dangerousPatterns as $pattern) {
-            if (str_contains($command, $pattern)) {
-                return __('Shell operators are not allowed. Create separate cron jobs for each command.');
-            }
-        }
-
-        // Extract the executable (first token)
-        $parts = preg_split('/\s+/', $command, 2);
-        $executable = $parts[0];
-
-        // Must be an absolute path
-        if (! str_starts_with($executable, '/')) {
-            return __('Command must start with an absolute path (e.g., /usr/bin/php).');
-        }
-
-        // Check against allowlist
-        if (! in_array($executable, self::$allowedExecutables, true)) {
-            return __('This executable is not allowed. Permitted: php, curl, wget, wp, mysql, mysqldump, tar, rsync, python3, node, ruby, perl.');
-        }
-
-        return true;
+        return CronCommandValidator::validate($command);
     }
 
     public function deleteCronJob(int $id): void

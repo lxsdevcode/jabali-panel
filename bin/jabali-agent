@@ -58,6 +58,68 @@ function isProtectedUser(string $username): bool
     return in_array($username, $protectedUsers, true);
 }
 
+/**
+ * Validate a cron command against the executable allowlist.
+ * Blocks shell operators and requires an allowed absolute path as the first token.
+ * Returns true on success, or an error string on failure.
+ */
+function validateCronCommand(string $command): bool|string
+{
+    $command = trim($command);
+
+    if (empty($command)) {
+        return 'Command cannot be empty';
+    }
+
+    // Block dangerous shell operators that could chain arbitrary commands
+    $dangerousPatterns = [';', '|', '&&', '||', '`', '$(', '${', '>', '<', "\n", "\r"];
+    foreach ($dangerousPatterns as $pattern) {
+        if (str_contains($command, $pattern)) {
+            return 'Shell operators are not allowed in cron commands';
+        }
+    }
+
+    // Extract the executable (first token)
+    $parts = preg_split('/\s+/', $command, 2);
+    $executable = $parts[0];
+
+    // Must be an absolute path
+    if (! str_starts_with($executable, '/')) {
+        return 'Command must start with an absolute path';
+    }
+
+    $allowedExecutables = [
+        '/usr/bin/php',
+        '/usr/bin/php8.2',
+        '/usr/bin/php8.3',
+        '/usr/bin/php8.4',
+        '/usr/local/bin/php',
+        '/usr/bin/curl',
+        '/usr/bin/wget',
+        '/usr/bin/wp',
+        '/usr/local/bin/wp',
+        '/usr/bin/mysql',
+        '/usr/bin/mysqldump',
+        '/usr/bin/psql',
+        '/usr/bin/pg_dump',
+        '/usr/bin/tar',
+        '/usr/bin/gzip',
+        '/usr/bin/gunzip',
+        '/usr/bin/rsync',
+        '/usr/bin/find',
+        '/usr/bin/python3',
+        '/usr/bin/node',
+        '/usr/bin/ruby',
+        '/usr/bin/perl',
+    ];
+
+    if (! in_array($executable, $allowedExecutables, true)) {
+        return "Executable not allowed: $executable";
+    }
+
+    return true;
+}
+
 function sanitizePath(string $path): string
 {
     // Remove null bytes and normalize
@@ -9036,6 +9098,12 @@ function phpSetSettings(array $params): array
     // Settings can be nested under 'settings' key or flat at top level
     $s = $params['settings'] ?? $params;
     $phpVersion = $s['php_version'] ?? '8.4';
+
+    // Validate PHP version format strictly (e.g. "8.4", "8.3") to prevent command injection
+    if (! preg_match('/^\d+\.\d+$/', $phpVersion)) {
+        return ['success' => false, 'error' => 'Invalid PHP version format'];
+    }
+
     $memoryLimit = $s['memory_limit'] ?? '256M';
     $uploadMaxFilesize = $s['upload_max_filesize'] ?? '64M';
     $postMaxSize = $s['post_max_size'] ?? '64M';
@@ -9431,8 +9499,8 @@ function dnsEnableDnssec(array $params): array
 
     // Set proper ownership on key files
     exec('chown -R bind:bind '.escapeshellarg($domainKeysDir));
-    exec("chmod 640 {$domainKeysDir}/*.private");
-    exec("chmod 644 {$domainKeysDir}/*.key");
+    exec('find '.escapeshellarg($domainKeysDir).' -name "*.private" -exec chmod 640 {} +');
+    exec('find '.escapeshellarg($domainKeysDir).' -name "*.key" -exec chmod 644 {} +');
 
     // Update named.conf.local to enable inline signing
     $namedConf = '/etc/bind/named.conf.local';
@@ -18697,6 +18765,12 @@ function cronCreate(array $params): array
         return ['success' => false, 'error' => 'Invalid username'];
     }
 
+    // Validate cron command against executable allowlist (defense-in-depth)
+    $cmdValidation = validateCronCommand($command);
+    if ($cmdValidation !== true) {
+        return ['success' => false, 'error' => $cmdValidation];
+    }
+
     // Validate cron schedule format (5 parts)
     if (! preg_match('/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/', $schedule)) {
         return ['success' => false, 'error' => 'Invalid cron schedule format'];
@@ -18893,6 +18967,10 @@ function cronWordPressSetup(array $params): array
 
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
+    }
+
+    if (! validateDomain($domain)) {
+        return ['success' => false, 'error' => 'Invalid domain format'];
     }
 
     $domainPath = "/home/$username/domains/$domain/public_html";

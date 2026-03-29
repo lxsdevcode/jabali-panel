@@ -7,6 +7,16 @@ namespace App\Services\Agent;
 use Exception;
 use Illuminate\Support\Facades\Cache;
 
+/**
+ * Client for the jabali-agent root daemon via Unix domain socket.
+ *
+ * Security note: This client relies on Unix filesystem permissions for
+ * authentication. The socket at /var/run/jabali/agent.sock is owned by
+ * root:www-data with mode 0660, so only root and the www-data group
+ * (i.e. the web server / PHP-FPM) can connect. No additional
+ * application-level authentication is used because the socket is not
+ * network-accessible and the OS enforces peer identity.
+ */
 class AgentClient implements AgentClientInterface
 {
     private string $socketPath;

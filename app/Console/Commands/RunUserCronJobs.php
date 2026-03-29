@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\CronJob;
+use App\Support\CronCommandValidator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -93,6 +94,25 @@ class RunUserCronJobs extends Command
         }
 
         $this->info("Running cron job: {$job->name} (ID: {$job->id})");
+
+        // Defense-in-depth: validate command against allowlist before execution.
+        // WordPress cron commands (built with "cd ... && /usr/bin/php ...") use "&&"
+        // which the validator blocks. These are safe because they are programmatically
+        // constructed, so we skip validation for wordpress-type jobs.
+        if ($job->type !== 'wordpress') {
+            $validation = CronCommandValidator::validate($job->command);
+            if ($validation !== true) {
+                Log::warning("Cron job {$job->id} ({$job->name}) blocked by command validation: {$validation}");
+                $job->update([
+                    'last_run_at' => now(),
+                    'last_run_status' => 'failed',
+                    'last_run_output' => "Command blocked: {$validation}",
+                ]);
+                $this->error("  Blocked: {$validation}");
+
+                return;
+            }
+        }
 
         $startTime = microtime(true);
 
