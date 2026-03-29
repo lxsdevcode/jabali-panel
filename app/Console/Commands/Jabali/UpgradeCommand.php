@@ -425,6 +425,9 @@ class UpgradeCommand extends Command
         if (! File::isDirectory($this->basePath.'/.git')) {
             throw new Exception('Not a git repository.');
         }
+
+        // Fix .git ownership so both root (CLI) and www-data (panel) can use it
+        $this->executeCommand('chown -R www-data:www-data '.escapeshellarg($this->basePath.'/.git'));
     }
 
     protected function configureGitSafeDirectory(): void
