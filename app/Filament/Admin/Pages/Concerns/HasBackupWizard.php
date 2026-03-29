@@ -300,19 +300,20 @@ trait HasBackupWizard
                         ]),
                 ])
                     ->extraAlpineAttributes([
-                        'x-effect' => "
-                        \$nextTick(() => {
-                            const el = \$el.querySelector('.fi-sc-wizard-footer');
-                            if (! el) return;
-                            const labels = el.querySelectorAll('button span');
-                            const idx = getStepIndex(step);
-                            labels.forEach(s => {
-                                const text = s.textContent.trim();
-                                if (text === '".__('Next')."' || text === '".__('Validate')."') {
-                                    s.textContent = idx === 1 ? '".__('Validate')."' : '".__('Next')."';
-                                }
+                        'x-init' => "
+                        const swapNextLabel = () => {
+                            const lbl = getStepIndex(step) === 1 ? '".__('Validate')."' : '".__('Next')."';
+                            const footer = \$el.querySelector('.fi-sc-wizard-footer');
+                            if (!footer) return;
+                            const btns = footer.querySelectorAll(':scope > div > button, :scope > div button');
+                            btns.forEach(b => {
+                                const t = b.querySelector('span') || b;
+                                const txt = t.textContent.trim();
+                                if (['Next', 'Validate', '".__('Next')."', '".__('Validate')."'].includes(txt)) t.textContent = lbl;
                             });
-                        })
+                        };
+                        \$watch('step', () => \$nextTick(swapNextLabel));
+                        \$nextTick(swapNextLabel);
                     ",
                     ])
                     ->submitAction(new HtmlString(
