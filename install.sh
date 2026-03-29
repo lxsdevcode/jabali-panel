@@ -2567,6 +2567,7 @@ SQL
     local pdns_api_key=$(openssl rand -hex 32)
     mkdir -p /etc/jabali
     echo "POWERDNS_API_KEY=${pdns_api_key}" > /etc/jabali/powerdns-api.conf
+    chown root:www-data /etc/jabali/powerdns-api.conf
     chmod 640 /etc/jabali/powerdns-api.conf
 
     # Remove default bind backend config
@@ -2598,9 +2599,25 @@ log-dns-queries=no
 security-poll-suffix=
 PDNSCONF
 
-    # Stop and disable BIND9 if running
-    systemctl stop named 2>/dev/null || systemctl stop bind9 2>/dev/null || true
-    systemctl disable named 2>/dev/null || systemctl disable bind9 2>/dev/null || true
+    # Remove BIND9/named if installed (conflicts with PowerDNS on port 53)
+    if dpkg -l bind9 2>/dev/null | grep -q '^ii'; then
+        info "Removing BIND9 (conflicts with PowerDNS)..."
+        systemctl stop bind9 2>/dev/null || true
+        systemctl stop named 2>/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get purge -y bind9 bind9-utils bind9-dnsutils 2>/dev/null || true
+    fi
+    systemctl stop named 2>/dev/null || true
+    systemctl disable named 2>/dev/null || true
+
+    # Disable systemd-resolved if it holds port 53
+    if ss -tlnp | grep -q ':53 .*systemd-resolve'; then
+        info "Disabling systemd-resolved (conflicts with PowerDNS on port 53)..."
+        systemctl stop systemd-resolved 2>/dev/null || true
+        systemctl disable systemd-resolved 2>/dev/null || true
+        # Point resolv.conf to external DNS
+        rm -f /etc/resolv.conf
+        echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" > /etc/resolv.conf
+    fi
 
     # Enable and start PowerDNS
     systemctl enable pdns 2>/dev/null || true
