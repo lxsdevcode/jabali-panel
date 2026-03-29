@@ -211,11 +211,22 @@ trait HasBackupWizard
                             Toggle::make('include_databases')->label(__('Databases'))->default(true),
                             Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
                         ]),
-                        Toggle::make('never_show_again')
-                            ->label(__('Don\'t show this wizard again'))
-                            ->default(true)
-                            ->helperText(__('You can always access backup settings from the header buttons.')),
                     ]),
+            ])
+            ->extraModalFooterActions([
+                Action::make('neverShowAgain')
+                    ->label(__('Don\'t show again'))
+                    ->color('gray')
+                    ->action(function (): void {
+                        DnsSetting::set('backup_wizard_completed', '1');
+                        DnsSetting::clearCache();
+
+                        Notification::make()
+                            ->title(__('Wizard dismissed'))
+                            ->body(__('You can reopen it from the Backup Setup button.'))
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->action(function (array $data): void {
                 // 1. Save encryption password
@@ -286,11 +297,9 @@ trait HasBackupWizard
                     'next_run_at' => now()->setTime($hour, $minute)->addDay(),
                 ]);
 
-                // 4. Mark wizard as completed if user chose "don't show again"
-                if (! empty($data['never_show_again'])) {
-                    DnsSetting::set('backup_wizard_completed', '1');
-                    DnsSetting::clearCache();
-                }
+                // 4. Mark wizard as completed
+                DnsSetting::set('backup_wizard_completed', '1');
+                DnsSetting::clearCache();
 
                 Notification::make()
                     ->title(__('Backup setup complete'))
