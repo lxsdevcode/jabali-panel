@@ -50,7 +50,7 @@ trait HasBackupWizard
             ->icon('heroicon-o-shield-check')
             ->modalHeading(__('Backup Setup'))
             ->modalDescription(__('Set up encrypted backups for your server.'))
-            ->modalWidth('2xl')
+            ->modalWidth('4xl')
             ->modalCancelActionLabel(__('Skip for now'))
             ->fillForm(function (): array {
                 $currentPassword = '';
@@ -84,6 +84,7 @@ trait HasBackupWizard
                         ->description(__('Secure your backups'))
                         ->schema([
                             Placeholder::make('encryption_info')
+                                ->hiddenLabel()
                                 ->content(new HtmlString(
                                     '<div class="rounded-lg border border-warning-500/30 bg-warning-50 p-4 text-sm text-warning-800 dark:bg-warning-950/30 dark:text-warning-400">'.
                                     '<p class="font-semibold">'.__('All backups are encrypted with Restic for security.').'</p>'.
@@ -99,6 +100,7 @@ trait HasBackupWizard
                                 ->minLength(12)
                                 ->helperText(__('Auto-generated. You may change it, but save it somewhere safe.')),
                             Placeholder::make('dismiss_wizard')
+                                ->hiddenLabel()
                                 ->content(new HtmlString(
                                     '<button type="button" wire:click="dismissBackupWizard" class="text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">'.__('Don\'t show this wizard again').'</button>'
                                 )),
@@ -109,6 +111,7 @@ trait HasBackupWizard
                         ->description(__('Where to store backups'))
                         ->schema([
                             Placeholder::make('destination_info')
+                                ->hiddenLabel()
                                 ->content(__('Add a remote backup destination for off-site protection.')),
                             Select::make('dest_type')
                                 ->label(__('Type'))
@@ -296,7 +299,7 @@ trait HasBackupWizard
                             ]),
                         ]),
                 ])
-                    ->nextAction(fn (Action $action) => $action->label(__('Validate')))
+                    ->nextAction(fn (Action $action) => $action->label(__('Next')))
                     ->submitAction(new HtmlString(
                         '<button type="submit" wire:click="callMountedAction" class="fi-btn fi-btn-size-md fi-color-primary fi-btn-color-primary relative grid-flow-col items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold outline-none transition duration-75 fi-ac-action fi-ac-btn-action shadow-sm bg-primary-600 text-white hover:bg-primary-500 dark:bg-primary-500 dark:hover:bg-primary-400">'.__('Save & Create Schedule').'</button>'
                     )),
