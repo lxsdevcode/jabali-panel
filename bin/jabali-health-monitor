@@ -78,11 +78,6 @@ $optionalServices = [
         'restart_command' => 'systemctl restart redis-server',
         'fallback' => ['redis'],
     ],
-    'fail2ban' => [
-        'description' => 'Intrusion Prevention',
-        'check_command' => 'systemctl is-active fail2ban',
-        'restart_command' => 'systemctl restart fail2ban',
-    ],
     'opendkim' => [
         'description' => 'OpenDKIM',
         'check_command' => 'systemctl is-active opendkim',

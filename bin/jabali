@@ -46,7 +46,6 @@ $subcommand = $args[1] ?? '';
 
 // Command aliases
 $aliases = [
-    'fw' => 'firewall',
     'wordpress' => 'wp',
     'database' => 'db',
     'email' => 'mail',
@@ -275,23 +274,6 @@ function handleUpdate(array $options): void
         runShell('systemctl restart '.escapeshellarg($fpmService).' 2>/dev/null');
         runShell('systemctl reload nginx 2>/dev/null');
         echo C_GREEN.'✓ Services restarted'.C_RESET."\n";
-    }
-
-    // Step 9: Update jabali-security
-    if (is_dir('/usr/local/jabali-security')) {
-        step('Updating jabali-security...');
-        $secInstaller = '/usr/local/jabali-security/etc/jabali-security.update.sh';
-        if (file_exists($secInstaller)) {
-            $secResult = runShell('bash '.escapeshellarg($secInstaller).' 2>&1');
-        } else {
-            // Fallback: download and run installer with --update
-            $secResult = runShell('curl -fsSL https://git.linux-hosting.co.il/shukivaknin/jabali-security/raw/branch/master/install.sh | JABALI_WEB=no bash -s -- --update 2>&1');
-        }
-        if ($secResult !== false) {
-            echo C_GREEN.'✓ jabali-security updated'.C_RESET."\n";
-        } else {
-            echo C_YELLOW.'⚠ jabali-security update failed'.C_RESET."\n";
-        }
     }
 
     echo "\n".C_GREEN.C_BOLD.'Update complete!'.C_RESET." Jabali Panel v{$newVersion}\n\n";

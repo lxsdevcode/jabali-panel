@@ -142,22 +142,6 @@ class AuditLog extends Model
     }
 
     /**
-     * Log firewall actions.
-     */
-    public static function logFirewallAction(string $action, ?string $rule = null, ?array $metadata = null): self
-    {
-        return self::log(
-            action: $action,
-            category: 'firewall',
-            description: $rule ? "{$action} firewall rule: {$rule}" : "{$action} firewall",
-            targetType: 'firewall',
-            targetId: null,
-            targetName: $rule,
-            metadata: $metadata
-        );
-    }
-
-    /**
      * Log authentication events.
      */
     public static function logAuth(string $action, ?User $user = null, ?array $metadata = null): self

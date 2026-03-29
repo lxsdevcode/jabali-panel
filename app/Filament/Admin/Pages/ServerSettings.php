@@ -116,7 +116,7 @@ class ServerSettings extends Page implements HasActions, HasForms
     protected function normalizeTabName(?string $tab): string
     {
         return match ($tab) {
-            'general', 'dns', 'storage', 'email', 'notifications', 'php-fpm', 'database' => $tab,
+            'general', 'dns', 'storage', 'email', 'notifications', 'php-fpm', 'database', 'logs' => $tab,
             default => 'general',
         };
     }

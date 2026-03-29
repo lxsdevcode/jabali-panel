@@ -27,7 +27,6 @@ define('DNSSEC_ALGORITHM', 'ECDSAP256SHA256'); // Algorithm 13 - recommended for
 // Jabali nginx include locations
 define('JABALI_NGINX_DIR', '/etc/nginx/jabali');
 define('JABALI_NGINX_INCLUDES', '/etc/nginx/jabali/includes');
-define('JABALI_WAF_INCLUDE', '/etc/nginx/jabali/includes/waf.conf');
 define('JABALI_GEO_INCLUDE', '/etc/nginx/jabali/includes/geo.conf');
 define('JABALI_GEO_HTTP_CONF', '/etc/nginx/conf.d/jabali-geoip.conf');
 
@@ -3089,8 +3088,11 @@ function ensureJabaliNginxIncludeFiles(): void
         @mkdir(JABALI_NGINX_INCLUDES, 0755, true);
     }
 
-    if (! file_exists(JABALI_WAF_INCLUDE)) {
-        file_put_contents(JABALI_WAF_INCLUDE, "# Managed by Jabali\n# WAF configuration managed by jabali-security.\n");
+    // Ensure waf.conf exists so nginx includes don't fail.
+    // Content is managed by jabali-security; this is just a safety stub.
+    $wafInclude = JABALI_NGINX_INCLUDES . '/waf.conf';
+    if (! file_exists($wafInclude)) {
+        file_put_contents($wafInclude, "# Managed by jabali-security\n");
     }
 
     if (! file_exists(JABALI_GEO_INCLUDE)) {

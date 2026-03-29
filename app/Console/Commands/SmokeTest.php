@@ -1106,7 +1106,6 @@ class SmokeTest extends Command
             '/jabali-admin/ip-addresses' => 'IP Addresses',
             '/jabali-admin/automation-api' => 'Automation API',
             '/jabali-admin/server-updates' => 'Server Updates',
-            '/jabali-admin/waf' => 'WAF',
             '/jabali-admin/database-tuning' => 'Database Tuning',
             '/jabali-admin/php-manager' => 'PHP Manager',
             '/jabali-admin/email-queue' => 'Email Queue',

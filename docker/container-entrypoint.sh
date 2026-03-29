@@ -22,12 +22,8 @@ mkdir -p /var/run/jabali /var/log/jabali /var/run/php \
          "${APP_DIR}/bootstrap/cache"
 chown www-data:www-data /var/lib/jabali/caddy
 
-# Create log files needed by fail2ban
-touch /var/log/auth.log /var/log/nginx/access.log /var/log/nginx/error.log 2>/dev/null || true
-
-# Disable sshd jail (no SSH in container)
-mkdir -p /etc/fail2ban/jail.d
-printf '[sshd]\nenabled = false\n' > /etc/fail2ban/jail.d/00-container.conf
+# Create log files needed by nginx
+touch /var/log/nginx/access.log /var/log/nginx/error.log 2>/dev/null || true
 
 # ── 2. Initialize MariaDB if first run ─────────────────────────────
 if [ ! -f "$FIRST_RUN_MARKER" ]; then
