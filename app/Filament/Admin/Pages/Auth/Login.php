@@ -7,7 +7,6 @@ namespace App\Filament\Admin\Pages\Auth;
 use App\Models\User;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse;
 use Filament\Auth\Pages\Login as BaseLogin;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Illuminate\Support\Facades\Cache;
@@ -72,12 +71,6 @@ class Login extends BaseLogin
         }
 
         if ($credentialsValid) {
-            if (! $user->is_admin) {
-                $this->redirect(route('filament.jabali.pages.dashboard'));
-
-                return null;
-            }
-
             // Check if 2FA is enabled
             if ($user->two_factor_secret && $user->two_factor_confirmed_at) {
                 // Regenerate session before storing 2FA state to prevent session fixation
@@ -92,21 +85,7 @@ class Login extends BaseLogin
             }
         }
 
-        $response = parent::authenticate();
-
-        // If authentication successful, check if user is NOT admin
-        $user = Filament::auth()->user();
-        if ($user && ! $user->is_admin) {
-            // Log out from admin guard - regular users can't access admin panel
-            Filament::auth()->logout();
-
-            // Redirect to user panel using Livewire's redirect
-            $this->redirect(route('filament.jabali.pages.dashboard'));
-
-            return null;
-        }
-
-        return $response;
+        return parent::authenticate();
     }
 
     protected function getEmailFormComponent(): Component

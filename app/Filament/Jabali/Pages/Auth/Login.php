@@ -125,17 +125,6 @@ class Login extends BaseLogin
 
         session()->regenerate();
 
-        // If authentication successful, check if user is admin
-        $user = $authGuard->user();
-        if ($user && $user->is_admin) {
-            $authGuard->logout();
-
-            // Redirect admins to admin panel using Livewire's redirect
-            $this->redirect(route('filament.admin.pages.dashboard'));
-
-            return null;
-        }
-
         return app(LoginResponse::class);
     }
 

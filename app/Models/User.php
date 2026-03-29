@@ -68,6 +68,11 @@ class User extends Authenticatable implements FilamentUser
             return $this->is_admin && $this->is_active;
         }
 
+        // Admins can only access the admin panel
+        if ($this->is_admin) {
+            return false;
+        }
+
         return $this->is_active ?? true;
     }
 
