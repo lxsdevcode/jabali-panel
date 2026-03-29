@@ -17,6 +17,11 @@ class TrashResult
         return new self(success: true, message: $message, data: $data);
     }
 
+    public static function failure(string $message, array $data = []): self
+    {
+        return new self(success: false, message: $message, data: $data);
+    }
+
     public function restoredPath(): string
     {
         return $this->data['restored_path'] ?? '';

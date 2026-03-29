@@ -26,6 +26,10 @@ class AgentTrashManager
     {
         $result = $this->agent->fileTrash($this->username, $path);
 
+        if (! ($result['success'] ?? false)) {
+            return TrashResult::failure($result['error'] ?? 'Failed to move to trash');
+        }
+
         return TrashResult::success("Moved '".basename($path)."' to trash");
     }
 
@@ -43,6 +47,10 @@ class AgentTrashManager
     {
         $trashName = basename($trashName);
         $result = $this->agent->fileRestore($this->username, $trashName);
+
+        if (! ($result['success'] ?? false)) {
+            return TrashResult::failure($result['error'] ?? 'Failed to restore from trash');
+        }
 
         return TrashResult::success(
             message: 'Restored to: '.($result['restored_path'] ?? ''),

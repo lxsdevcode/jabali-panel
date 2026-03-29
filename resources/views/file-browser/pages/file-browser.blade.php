@@ -1,47 +1,4 @@
 <x-filament-panels::page>
-    <style>
-        /* Compact spacing for File Manager rows */
-        #file-dropzone .fi-ta-text:not(.fi-inline) {
-            padding-top: 0.2rem !important;
-            padding-bottom: 0.2rem !important;
-        }
-
-        #file-dropzone .fi-ta-text-item {
-            line-height: 1.05rem !important;
-        }
-
-        #file-dropzone .fi-ta-record-content-ctn {
-            gap: 0.25rem !important;
-            padding-top: 0.25rem !important;
-            padding-bottom: 0.25rem !important;
-        }
-
-        #file-dropzone .fi-ta-record-checkbox {
-            margin-top: 0.2rem !important;
-            margin-bottom: 0.2rem !important;
-        }
-
-        #file-dropzone td.fi-ta-cell.fi-ta-selection-cell,
-        #file-dropzone td.fi-ta-cell.fi-ta-group-selection-cell {
-            padding-top: 0.2rem !important;
-            padding-bottom: 0.2rem !important;
-        }
-
-        #file-dropzone td.fi-ta-cell:has(.fi-ta-actions) {
-            padding-top: 0.2rem !important;
-            padding-bottom: 0.2rem !important;
-        }
-
-        #file-dropzone .fi-ta-actions {
-            gap: 0.35rem !important;
-        }
-
-        #file-dropzone .fi-ta-actions .fi-btn,
-        #file-dropzone .fi-ta-actions .fi-icon-btn {
-            min-height: 1.65rem !important;
-        }
-    </style>
-
     {{-- Warning Banner --}}
     @if($this->getWarningMessage())
         <x-filament::section

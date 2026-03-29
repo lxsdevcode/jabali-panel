@@ -836,7 +836,7 @@ class FileBrowser extends Page implements HasActions, HasForms, HasTable
             return;
         }
         $this->dispatch('download-file',
-            content: base64_encode(base64_decode($result['content'])),
+            content: $result['content'],
             filename: basename($path)
         );
     }
