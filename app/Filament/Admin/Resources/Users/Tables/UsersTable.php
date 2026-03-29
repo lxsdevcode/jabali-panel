@@ -48,10 +48,6 @@ class UsersTable
                     ->label(__('Home'))
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                IconColumn::make('is_admin')
-                    ->boolean()
-                    ->label(__('Admin')),
-
                 IconColumn::make('is_active')
                     ->boolean()
                     ->label(__('Active')),
@@ -124,9 +120,6 @@ class UsersTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                TernaryFilter::make('is_admin')
-                    ->label(__('Administrator')),
-
                 TernaryFilter::make('is_active')
                     ->label(__('Active')),
             ])
