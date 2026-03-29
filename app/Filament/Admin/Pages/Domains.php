@@ -115,6 +115,20 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         'whois_error' => 'warning',
                         default => 'gray',
                     }),
+                TextColumn::make('bandwidth')
+                    ->label(__('Bandwidth'))
+                    ->state(fn (Domain $record): string => \App\Support\Formatter::bytes($record->currentMonthBandwidth()))
+                    ->badge()
+                    ->color(function (Domain $record): string {
+                        $limit = $record->user?->hostingPackage?->bandwidth_gb;
+                        if (! $limit) {
+                            return 'gray';
+                        }
+                        $pct = $record->currentMonthBandwidth() / ($limit * 1073741824) * 100;
+
+                        return $pct >= 95 ? 'danger' : ($pct >= 80 ? 'warning' : 'success');
+                    })
+                    ->toggleable(),
                 TextColumn::make('dns_checked_at')
                     ->label(__('Last DNS Check'))
                     ->since()

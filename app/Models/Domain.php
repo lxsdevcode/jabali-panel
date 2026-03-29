@@ -81,6 +81,19 @@ class Domain extends Model
         return $this->hasMany(SslCertificate::class);
     }
 
+    public function bandwidthUsage(): HasMany
+    {
+        return $this->hasMany(DomainBandwidthUsage::class);
+    }
+
+    public function currentMonthBandwidth(): int
+    {
+        return (int) $this->bandwidthUsage()
+            ->whereYear('date', now()->year)
+            ->whereMonth('date', now()->month)
+            ->sum('bytes_out');
+    }
+
     public function redirects(): HasMany
     {
         return $this->hasMany(DomainRedirect::class);

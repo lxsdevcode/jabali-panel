@@ -59,6 +59,14 @@ Schedule::command('jabali:run-cron-jobs')
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/user-cron-jobs.log'));
 
+// Bandwidth Sync - runs daily to track domain bandwidth from nginx logs
+Schedule::command('jabali:sync-bandwidth')
+    ->daily()
+    ->at('00:15')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/bandwidth-sync.log'));
+
 // Mailbox Quota Sync - runs every 15 minutes to update mailbox usage from disk
 Schedule::command('jabali:sync-mailbox-quotas')
     ->everyFifteenMinutes()

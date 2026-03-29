@@ -683,6 +683,7 @@ function handleAction(array $request): array
         'git.deploy' => gitDeploy($params),
         'rspamd.user_settings' => stalwartSpamSettings($params),
         'usage.bandwidth_total' => usageBandwidthTotal($params),
+        'usage.domain_bandwidth' => usageDomainBandwidth($params),
         'usage.user_resources' => usageUserResources($params),
         'server.set_hostname' => setHostname($params),
         'server.set_timezone' => setTimezone($params),
@@ -21811,6 +21812,38 @@ function usageBandwidthTotal(array $params): array
     }
 
     return ['success' => true, 'total_bytes' => $total];
+}
+
+function usageDomainBandwidth(array $params): array
+{
+    $username = $params['username'] ?? '';
+    $domain = $params['domain'] ?? '';
+
+    if (! validateUsername($username)) {
+        return ['success' => false, 'error' => 'Invalid username'];
+    }
+    if (! validateDomain($domain)) {
+        return ['success' => false, 'error' => 'Invalid domain'];
+    }
+
+    $logFile = "/home/{$username}/domains/{$domain}/logs/access.log";
+    if (! is_readable($logFile)) {
+        return ['success' => true, 'bytes_out' => 0, 'requests' => 0];
+    }
+
+    $cmd = "awk '{if (\$10 ~ /^[0-9]+$/) {sum+=\$10; n++}} END {print sum \" \" n}' " . escapeshellarg($logFile);
+    $out = [];
+    exec($cmd, $out, $code);
+
+    $bytesOut = 0;
+    $requests = 0;
+    if ($code === 0 && isset($out[0])) {
+        $parts = explode(' ', trim($out[0]));
+        $bytesOut = (int) ($parts[0] ?? 0);
+        $requests = (int) ($parts[1] ?? 0);
+    }
+
+    return ['success' => true, 'bytes_out' => $bytesOut, 'requests' => $requests];
 }
 
 function usageUserResources(array $params): array
