@@ -63,10 +63,20 @@
         @empty
             <p class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">{{ __('No databases in this backup') }}</p>
         @endforelse
-        @if($this->contents['has_db_users'] ?? false)
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-3 px-3">{{ __('MySQL users and grants will be restored automatically with the selected databases.') }}</p>
-        @endif
     </x-filament::section>
+
+    @if(!empty($this->contents['db_users'] ?? []))
+        <x-filament::section :heading="__('Select MySQL Users')" class="mt-4">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3 px-3">{{ __('Users and their grants will be restored with the selected databases.') }}</p>
+            @foreach($this->contents['db_users'] as $dbUser)
+                <label wire:key="dbuser-{{ $dbUser }}" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer">
+                    <x-filament::input.checkbox value="{{ $dbUser }}" wire:model="selectedDbUsers" />
+                    <x-heroicon-o-user class="h-4 w-4 text-purple-500" />
+                    <span class="text-sm font-medium text-gray-950 dark:text-white">{{ $dbUser }}</span>
+                </label>
+            @endforeach
+        </x-filament::section>
+    @endif
 
 @elseif($this->activeSection === 'mailboxes')
     <x-filament::section :heading="__('Select Mailboxes')">

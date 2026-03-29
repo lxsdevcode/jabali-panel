@@ -28,8 +28,13 @@
                     <x-filament::badge color="warning">{{ $db }}</x-filament::badge>
                 @endforeach
             </div>
-            @if($this->contents['has_db_users'] ?? false)
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">{{ __('Includes MySQL users & grants') }}</p>
+            @if(!empty($this->contents['db_users'] ?? []))
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">{{ count($this->contents['db_users']) }} {{ __('MySQL user(s)') }}</p>
+                <div class="flex flex-wrap gap-1 mt-1">
+                    @foreach($this->contents['db_users'] as $dbUser)
+                        <x-filament::badge color="gray">{{ $dbUser }}</x-filament::badge>
+                    @endforeach
+                </div>
             @endif
         </div>
 

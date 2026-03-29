@@ -54,6 +54,8 @@ class RestoreBackup extends Page implements HasActions, HasForms
 
     public array $selectedDatabases = [];
 
+    public array $selectedDbUsers = [];
+
     public array $selectedMailboxes = [];
 
     public string $activeSection = 'files';
@@ -141,6 +143,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
                     ->afterValidation(function (): void {
                         $this->selectedPaths = [];
                         $this->selectedDatabases = [];
+                        $this->selectedDbUsers = [];
                         $this->selectedMailboxes = [];
                         $this->loadContents();
                     }),
@@ -247,15 +250,37 @@ class RestoreBackup extends Page implements HasActions, HasForms
                 }
             }
 
+            // Extract MySQL user names from users.sql in the snapshot
+            $dbUsers = [];
+            if ($hasDbUsers) {
+                try {
+                    $usersPath = "home/{$this->selectedUser}/.jabali-backup/databases/users.sql";
+                    $usersResult = $agent->send('backup.read_snapshot_file', [
+                        'snapshot_id' => $backup->snapshot_id,
+                        'file_path' => $usersPath,
+                        'destination' => $destConfig,
+                        'repo' => $repo,
+                    ]);
+                    if ($usersResult['success'] ?? false) {
+                        preg_match_all('/CREATE\s+USER\s+[\'"`]([^\'"`]+)[\'"`]@/i', $usersResult['content'] ?? '', $matches);
+                        $dbUsers = array_values(array_unique($matches[1] ?? []));
+                    }
+                } catch (\Throwable) {
+                    // Non-critical — just won't show user selection
+                }
+            }
+
             $this->contents = [
                 'domains' => array_keys($domains),
                 'databases' => array_values(array_unique($databases)),
                 'mailboxes' => array_keys($mailboxes),
+                'db_users' => $dbUsers,
                 'has_db_users' => $hasDbUsers,
                 'total_files' => count($files),
             ];
 
             $this->selectedDatabases = $this->contents['databases'];
+            $this->selectedDbUsers = $this->contents['db_users'];
             $this->selectedMailboxes = $this->contents['mailboxes'];
         } catch (Exception $e) {
             $this->contents = [];
@@ -363,6 +388,7 @@ class RestoreBackup extends Page implements HasActions, HasForms
                         ? array_filter($this->selectedPaths, fn ($p) => ! str_contains($p, '/')) ?: null
                         : null,
                     'selected_databases' => $this->selectedDatabases ?: null,
+                    'selected_db_users' => ! empty($this->selectedDatabases) ? ($this->selectedDbUsers ?: []) : [],
                     'selected_mailboxes' => $this->selectedMailboxes ?: null,
                     'selected_files' => ! empty($this->selectedPaths)
                         ? array_filter($this->selectedPaths, fn ($p) => str_contains($p, '/'))

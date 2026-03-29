@@ -754,6 +754,7 @@ function handleAction(array $request): array
         'backup.list_domain_files' => backupListDomainFiles($params),
         'backup.list_snapshot_tree' => backupListSnapshotTree($params),
         'backup.list_snapshot_dir' => backupListSnapshotDir($params),
+        'backup.read_snapshot_file' => backupReadSnapshotFile($params),
         // cPanel migration operations
         'cpanel.analyze_backup' => cpanelAnalyzeBackup($params),
         'cpanel.validate_backup' => cpanelValidateBackup($params),
@@ -17689,6 +17690,7 @@ function backupRestore(array $params): array
     $selectedDomains   = $params['selected_domains'] ?? null;   // null = all
     $selectedDatabases = $params['selected_databases'] ?? null;  // null = all
     $selectedMailboxes = $params['selected_mailboxes'] ?? null;  // null = all
+    $selectedDbUsers   = $params['selected_db_users'] ?? null;   // null = all, [] = none
 
     if (empty($snapshotId)) {
         return ['success' => false, 'error' => 'snapshot_id is required'];
@@ -17784,25 +17786,46 @@ function backupRestore(array $params): array
 
                 // Restore MySQL users and grants from users.sql
                 $usersFile = "{$dbDir}/users.sql";
-                if (file_exists($usersFile)) {
+                if (file_exists($usersFile) && $selectedDbUsers !== []) {
                     $sanitizedSql = validateMysqlUsersFile($username, $usersFile);
                     if ($sanitizedSql !== null && trim($sanitizedSql) !== '') {
-                        $tmpFile = tempnam(sys_get_temp_dir(), 'jabali_users_');
-                        file_put_contents($tmpFile, $sanitizedSql . "\nFLUSH PRIVILEGES;\n");
+                        // Filter by selected users if specified
+                        if (is_array($selectedDbUsers) && ! empty($selectedDbUsers)) {
+                            $filteredLines = [];
+                            $includeBlock = true;
+                            foreach (explode("\n", $sanitizedSql) as $line) {
+                                $trimmed = trim($line);
+                                // Detect user blocks by DROP USER / CREATE USER statements
+                                if (preg_match('/^(DROP\s+USER|CREATE\s+USER)\s+.*?[\'"`]([^\'"`]+)[\'"`]@/i', $trimmed, $m)) {
+                                    $includeBlock = in_array($m[2], $selectedDbUsers);
+                                } elseif (preg_match('/^GRANT\s+.*\bTO\s+[\'"`]([^\'"`]+)[\'"`]@/i', $trimmed, $m)) {
+                                    $includeBlock = in_array($m[1], $selectedDbUsers);
+                                }
+                                if ($includeBlock || empty($trimmed) || str_starts_with($trimmed, '--') || str_starts_with($trimmed, '#') || preg_match('/^FLUSH\s+PRIVILEGES/i', $trimmed)) {
+                                    $filteredLines[] = $line;
+                                }
+                            }
+                            $sanitizedSql = implode("\n", $filteredLines);
+                        }
 
-                        $userImportCmd = 'mysql --host=' . escapeshellarg($mysqlHost)
-                            . ' --user=' . escapeshellarg($mysqlUser)
-                            . ' --password=' . escapeshellarg($mysqlPass)
-                            . ' < ' . escapeshellarg($tmpFile) . ' 2>/dev/null';
-                        $out = [];
-                        $ret = 0;
-                        exec($userImportCmd, $out, $ret);
-                        @unlink($tmpFile);
+                        if (trim($sanitizedSql) !== '') {
+                            $tmpFile = tempnam(sys_get_temp_dir(), 'jabali_users_');
+                            file_put_contents($tmpFile, $sanitizedSql . "\nFLUSH PRIVILEGES;\n");
 
-                        if ($ret === 0) {
-                            $log[] = ['message' => "Restored MySQL users and grants for {$username}", 'status' => 'success'];
-                        } else {
-                            $log[] = ['message' => "Failed to restore MySQL users for {$username}", 'status' => 'warning'];
+                            $userImportCmd = 'mysql --host=' . escapeshellarg($mysqlHost)
+                                . ' --user=' . escapeshellarg($mysqlUser)
+                                . ' --password=' . escapeshellarg($mysqlPass)
+                                . ' < ' . escapeshellarg($tmpFile) . ' 2>/dev/null';
+                            $out = [];
+                            $ret = 0;
+                            exec($userImportCmd, $out, $ret);
+                            @unlink($tmpFile);
+
+                            if ($ret === 0) {
+                                $log[] = ['message' => "Restored MySQL users and grants for {$username}", 'status' => 'success'];
+                            } else {
+                                $log[] = ['message' => "Failed to restore MySQL users for {$username}", 'status' => 'warning'];
+                            }
                         }
                     }
                 }
@@ -18176,6 +18199,42 @@ function backupTestDestination(array $params): array
     }
 
     return ['success' => false, 'error' => $error ?: 'Connection failed'];
+}
+
+/**
+ * Read a file from a restic snapshot using `restic dump`.
+ * Returns the file contents as a string.
+ */
+function backupReadSnapshotFile(array $params): array
+{
+    $snapshotId = $params['snapshot_id'] ?? '';
+    $filePath = $params['file_path'] ?? '';
+    $repo = $params['repo'] ?? '';
+    $destination = $params['destination'] ?? [];
+
+    if (empty($snapshotId) || empty($filePath)) {
+        return ['success' => false, 'error' => 'snapshot_id and file_path required'];
+    }
+
+    // Sanitize: only allow alphanumeric snapshot IDs and safe file paths
+    if (! preg_match('/^[a-f0-9]+$/', $snapshotId)) {
+        return ['success' => false, 'error' => 'Invalid snapshot ID'];
+    }
+    if (preg_match('/\.\./', $filePath)) {
+        return ['success' => false, 'error' => 'Invalid file path'];
+    }
+
+    $result = resticCmd(
+        'dump ' . escapeshellarg($snapshotId) . ' ' . escapeshellarg($filePath),
+        $repo,
+        $destination
+    );
+
+    if ($result['exitCode'] !== 0) {
+        return ['success' => false, 'error' => $result['output'] ?: 'Failed to read file from snapshot'];
+    }
+
+    return ['success' => true, 'content' => $result['output']];
 }
 
 // ── Aliases for panel compatibility ─────────────────────────────────────────
