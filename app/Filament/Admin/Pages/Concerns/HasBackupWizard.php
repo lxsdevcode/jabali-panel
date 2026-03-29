@@ -39,7 +39,15 @@ trait HasBackupWizard
             ->modalHeading(__('Backup Setup'))
             ->modalDescription(__('Set up encrypted backups for your server.'))
             ->modalWidth('2xl')
-            ->modalCancelActionLabel(__('Skip for now'))
+            ->modalCancelAction(fn (Action $action) => $action
+                ->label(__('Don\'t show again'))
+                ->color('gray')
+                ->action(function (): void {
+                    DnsSetting::set('backup_wizard_completed', '1');
+                    DnsSetting::clearCache();
+                })
+            )
+            ->modalCloseButton()
             ->fillForm(function (): array {
                 $currentPassword = '';
                 try {
@@ -212,21 +220,6 @@ trait HasBackupWizard
                             Toggle::make('include_mailboxes')->label(__('Mailboxes'))->default(true),
                         ]),
                     ]),
-            ])
-            ->extraModalFooterActions([
-                Action::make('neverShowAgain')
-                    ->label(__('Don\'t show again'))
-                    ->color('gray')
-                    ->action(function (): void {
-                        DnsSetting::set('backup_wizard_completed', '1');
-                        DnsSetting::clearCache();
-
-                        Notification::make()
-                            ->title(__('Wizard dismissed'))
-                            ->body(__('You can reopen it from the Backup Setup button.'))
-                            ->success()
-                            ->send();
-                    }),
             ])
             ->action(function (array $data): void {
                 // 1. Save encryption password
