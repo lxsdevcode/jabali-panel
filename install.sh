@@ -4127,9 +4127,11 @@ create_admin() {
                 'name' => 'Administrator',
                 'email' => '${ADMIN_EMAIL}',
                 'password' => bcrypt('${ADMIN_PASSWORD}'),
-                'is_admin' => true,
+                'is_active' => true,
             ]
         );
+        \$user->is_admin = true;
+        \$user->save();
     " 2>/dev/null || true
 
     # Save credentials
