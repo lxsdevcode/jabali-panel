@@ -59,6 +59,25 @@ class DiskUsageWidget extends Widget
         ];
     }
 
+    public function getLimitsData(): array
+    {
+        $user = Auth::user();
+        $package = $user->hostingPackage;
+
+        $domainsUsed = $user->domains()->count();
+        $databasesUsed = \App\Models\Database::where('user_id', $user->id)->count();
+        $mailboxesUsed = \App\Models\Mailbox::whereHas('emailDomain.domain', fn ($q) => $q->where('user_id', $user->id))->count();
+
+        return [
+            'domains_used' => $domainsUsed,
+            'domains_limit' => $package?->domains_limit ?: '∞',
+            'databases_used' => $databasesUsed,
+            'databases_limit' => $package?->databases_limit ?: '∞',
+            'mailboxes_used' => $mailboxesUsed,
+            'mailboxes_limit' => $package?->mailboxes_limit ?: '∞',
+        ];
+    }
+
     protected function getColor(float $percent): string
     {
         if ($percent >= 90) {

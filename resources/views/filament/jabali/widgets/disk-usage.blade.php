@@ -5,6 +5,7 @@
         @php
             $disk = $this->getDiskData();
             $bw = $this->getBandwidthData();
+            $limits = $this->getLimitsData();
         @endphp
 
         <div class="space-y-6">
@@ -65,6 +66,21 @@
                         <span><strong>{{ $bw['free'] }}</strong> <span class="text-gray-500 dark:text-gray-400">{{ __('Free') }}</span></span>
                     @endif
                     <span><strong>{{ $bw['quota'] }}</strong> <span class="text-gray-500 dark:text-gray-400">{{ __('Quota') }}</span></span>
+                </div>
+            </div>
+            {{-- Package Limits --}}
+            <div class="grid grid-cols-3 gap-4 pt-2 border-t border-gray-200 dark:border-white/10">
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-gray-950 dark:text-white">{{ $limits['domains_used'] }} <span class="text-gray-400 dark:text-gray-500">/</span> {{ $limits['domains_limit'] }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">{{ __('Domains') }}</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-gray-950 dark:text-white">{{ $limits['databases_used'] }} <span class="text-gray-400 dark:text-gray-500">/</span> {{ $limits['databases_limit'] }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">{{ __('Databases') }}</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-lg font-semibold text-gray-950 dark:text-white">{{ $limits['mailboxes_used'] }} <span class="text-gray-400 dark:text-gray-500">/</span> {{ $limits['mailboxes_limit'] }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">{{ __('Mailboxes') }}</div>
                 </div>
             </div>
         </div>
