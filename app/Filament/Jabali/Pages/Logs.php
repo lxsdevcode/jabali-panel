@@ -185,13 +185,18 @@ class Logs extends Page implements HasActions, HasForms
 
     public function setLogType(string $type): void
     {
-        $this->logType = $type;
+        $this->logType = in_array($type, ['access', 'error'], true) ? $type : 'access';
         $this->loadLogs();
+    }
+
+    private function isOwnedDomain(string $domain): bool
+    {
+        return in_array($domain, array_keys($this->getDomainOptions()), true);
     }
 
     public function loadLogs(): void
     {
-        if (! $this->selectedDomain) {
+        if (! $this->selectedDomain || ! $this->isOwnedDomain($this->selectedDomain)) {
             $this->logContent = '';
             $this->logInfo = [];
 
@@ -234,7 +239,7 @@ class Logs extends Page implements HasActions, HasForms
 
     public function generateStats(): void
     {
-        if (! $this->selectedDomain) {
+        if (! $this->selectedDomain || ! $this->isOwnedDomain($this->selectedDomain)) {
             Notification::make()
                 ->title(__('No domain selected'))
                 ->danger()

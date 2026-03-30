@@ -61,12 +61,10 @@ Route::post('/internal/page-cache', function (Request $request) use ($allowInter
     $enabled = $request->boolean('enabled');
     $secret = $request->input('secret');
 
-    if (empty($domain)) {
-        return response()->json(['error' => 'Domain is required'], 400);
+    if (empty($domain) || ! preg_match('/^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $domain)) {
+        return response()->json(['error' => 'Invalid domain'], 400);
     }
 
-    // Validate secret matches what's in wp-config.php
-    // The secret is the first 32 chars of AUTH_KEY from wp-config
     if (empty($secret) || strlen($secret) < 16) {
         return response()->json(['error' => 'Invalid secret'], 401);
     }
@@ -131,11 +129,17 @@ Route::post('/internal/page-cache-purge', function (Request $request) use ($allo
     $purgeAll = $request->boolean('purge_all');
     $secret = $request->input('secret');
 
-    if (empty($domain)) {
-        return response()->json(['error' => 'Domain is required'], 400);
+    if (empty($domain) || ! preg_match('/^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $domain)) {
+        return response()->json(['error' => 'Invalid domain'], 400);
     }
 
-    // Validate secret matches what's in wp-config.php
+    // Sanitize paths array
+    if (! is_array($paths)) {
+        $paths = [];
+    }
+    $paths = array_filter($paths, fn ($p) => is_string($p) && preg_match('#^/[a-zA-Z0-9/_.\-]*$#', $p));
+    $paths = array_values($paths);
+
     if (empty($secret) || strlen($secret) < 16) {
         return response()->json(['error' => 'Invalid secret'], 401);
     }

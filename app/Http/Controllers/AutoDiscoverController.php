@@ -102,7 +102,7 @@ class AutoDiscoverController extends Controller
 
         // Try to parse XML
         libxml_use_internal_errors(true);
-        $doc = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET);
+        $doc = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET | LIBXML_NOENT);
 
         if ($doc === false) {
             return null;
