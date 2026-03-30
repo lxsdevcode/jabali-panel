@@ -27,13 +27,47 @@ All notable changes to Jabali Panel will be documented in this file.
 - **Cloudflare real IP support** -- Nginx and Laravel now automatically restore real visitor IPs when behind Cloudflare CDN. Configured via `CF-Connecting-IP` header with all Cloudflare IP ranges trusted.
 - **Force Infrastructure Upgrade button** -- System Updates page now has a button to re-apply nginx, PHP, systemd, and cron configs without needing SSH access.
 
+- **First-time backup setup wizard** -- Modal wizard on the Backups page guides admins through encryption password, remote destination (with connection validation), and schedule creation. Dismissable via "Don't show again" or the X button.
+- **Per-user page cache directories** -- Nginx fastcgi cache now stored at `/home/{user}/cache/nginx/` instead of global `/var/cache/nginx/fastcgi/`. Per-user `keys_zone` in nginx. Purging is instant (`rm -rf` instead of file-by-file scanning). Upgrade command migrates existing servers automatically.
+- **MySQL user backup and restore** -- Backups now include MySQL users and grants (`users.sql`). Restore wizard shows selectable MySQL users alongside databases. Users are validated through `validateMysqlUsersFile()` to prevent privilege escalation.
+- **Bandwidth usage widget** -- User dashboard shows disk usage and bandwidth in a single "Usage" card with progress bars, plus package limits (domains/databases/mailboxes) with used/limit counters.
+- **SSH shell toggle in hosting packages** -- New `ssh_shell_enabled` boolean on hosting packages. Users created with an enabled package automatically get jailed shell access.
+- **Users page tabs** -- Admin Users page split into "Users" and "Administrators" tabs. Default shows normal users. Removed redundant Admin column and filter.
+- **Diagnostic report expansion** -- 10 new debug sections: agent socket connectivity, queue status, listening ports, firewall status, directory permissions, .env key validation, storage symlink check, recent audit log, nginx vhost count, mail service status.
+
 ### Fixed
 
+- **Page cache purge not working** -- WordPress plugin was calling port 443 (nginx) instead of 2223 (FrankenPHP panel). Fixed all 3 internal API URLs to use the correct panel port. Also fixed `sync_page_cache_with_jabali()` and phpMyAdmin signon.
+- **Page cache enable failing** -- Nginx regex `listen 443 ssl;` didn't match `listen 443 ssl http2;`. Changed to `listen 443 ssl[^;]*;` to match any SSL listen directive variant.
+- **Jabali Cache settings not saving** -- `flush_transients_by_patterns()` was calling `$redis->close()` on the shared object cache connection, killing Redis for the rest of the request. WordPress couldn't save options to the DB.
+- **Admin login redirecting to user panel** -- Simplified auth flow; `canAccessPanel()` now enforces admin-only access to admin panel and blocks admins from user panel. Non-admin users get a proper validation error instead of silent redirect.
+- **Installer creating non-admin user** -- `is_admin` is not in `$fillable` (intentional security). Installer now sets it directly on the model after `updateOrCreate`.
+- **Server Settings Logs tab not working** -- `normalizeTabName()` was missing `'logs'` from its match expression, bouncing back to General tab.
+- **Service notification showing `:service`** -- `successTitle` was using literal `:service` string instead of the `$service` variable.
+- **500 error on fresh install** -- jabali-security's `Security.php` page called `auth()->user()?->isAdmin()` but User model only had `is_admin` attribute. Added `isAdmin()` method.
+- **Diagnostic report gzencode failure** -- Falls back to uncompressed encryption when `gzencode()` throws stream error under FrankenPHP.
+- **Scheduler cron detection** -- Diagnostic report now checks both root and www-data crontabs instead of only root.
+- **Selective restore restoring all files** -- `restore_files` was set to `true` whenever the backup contained domains, even when no files were selected. Fixed to only restore when `selectedPaths` is non-empty.
+- **SSL issue CLI missing username** -- `jabali:ssl:issue` now resolves the username from the Domain model automatically.
 - **Silent service failures during install** -- PHP-FPM start failure is now fatal instead of silently ignored. Cron, nginx, Postfix, and Dovecot reload failures now emit warnings.
 - **Uninstall home directory safety** -- The home directory deletion prompt now always appears, even in `--force` mode. Defaults to "no" when piped via `curl | bash`.
 
+### Security
+
+- **cronRun command injection** (CRITICAL) -- `cronRun()` now validates commands against the allowlist before execution. Was bypassing `validateCronCommand()`, allowing arbitrary shell commands as any system user.
+- **Impersonation token IP bypass** (CRITICAL) -- IP check now hard-fails when either IP is missing. Was silently skipping the check when null.
+- **Domain ownership check in Logs page** (HIGH) -- `selectedDomain` is now validated against the authenticated user's domain list before forwarding to the agent.
+- **Internal API path validation** (HIGH) -- Domain format regex and paths array sanitization added to `page-cache` and `page-cache-purge` endpoints.
+- **WebhookEndpoint secret_token** (MEDIUM) -- Now encrypted at rest and hidden from JSON serialization.
+- **XXE in AutoDiscover** (MEDIUM) -- Added `LIBXML_NOENT` flag to prevent entity expansion attacks.
+- **Health monitor escapeshellarg** (MEDIUM) -- Service names now properly escaped in systemctl calls.
+- **UUID generation** (LOW) -- Replaced insecure `mt_rand()` with `Str::uuid()` in AutoconfigController.
+
 ### Removed
 
+- **Old security remnants** -- Removed 10 files (7 firewall CLI commands, 2 WAF blade views, 1 test), fail2ban from Docker, WAF constant from agent, `fw` alias from CLI, dead `AuditLog::logFirewallAction`, health monitor fail2ban entry.
+- **Dead code cleanup** -- Removed `RoundcubeIdentityService`, `MailAutoconfigSyncCommand`, 24 dead agent RPC routes, jabali-cache dead settings (`browser_cache`, `object_cache`, `minify_css`, `expired_cache`, `cache_debug`), 6 dead plugin methods, Developer card from plugin UI.
+- **Terminal Access from user panel** -- Shell access is now admin-controlled only via hosting packages. Removed toggle, methods, and blade section.
 - **Security page and tools** -- Removed the Security admin page (Fail2ban, ClamAV, UFW, ModSecurity/WAF, Lynis, WPScan, Nikto). All security is now handled by jabali-security, a standalone daemon installed automatically during panel installation. Removed ~10,000 lines of security-related code from the panel and agent.
 - **Debian package** -- Removed `packaging/` directory and deb build scripts. Installation is now exclusively via `curl | bash` with `install.sh`.
 

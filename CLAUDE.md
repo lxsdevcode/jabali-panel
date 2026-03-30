@@ -46,6 +46,17 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - Validate cron commands with `CronCommandValidator::validate()` (shared allowlist)
 - Service management functions must check `$allowedServices` global array
 
+## Security Rules
+
+- NEVER hardcode API keys, secrets, or credentials in source files
+- NEVER commit .env files or any file containing secrets
+- Always validate user input at system boundaries
+- Always sanitize file paths to prevent directory traversal
+- Validate Livewire public properties before forwarding to agent (ownership check)
+- Internal API calls must use port 2223 (panel), never 443 (nginx)
+- cronRun must validate commands against allowlist before execution
+- Impersonation tokens must enforce IP binding (hard-fail when null)
+
 ## Git & Deploy
 
 - Push to gitea first for testing, GitHub when stable
