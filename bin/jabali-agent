@@ -16803,6 +16803,12 @@ function cronRun(array $params): array
         return ['success' => false, 'error' => 'Invalid username'];
     }
 
+    // Validate command against allowlist (same as cronCreate)
+    $cmdValidation = validateCronCommand($command);
+    if ($cmdValidation !== true) {
+        return ['success' => false, 'error' => $cmdValidation];
+    }
+
     // Run the command as the user
     $cmd = sprintf('sudo -u %s bash -c %s 2>&1',
         escapeshellarg($username),

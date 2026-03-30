@@ -91,9 +91,8 @@ class ImpersonationToken extends Model
             return null;
         }
 
-        // Always validate IP — request()->ip() already returns the forwarded
-        // client IP when behind a trusted proxy, so there's no reason to skip
-        if ($ipAddress && $record->ip_address && $record->ip_address !== $ipAddress) {
+        // Always validate IP — reject if either IP is missing or mismatched
+        if (! $ipAddress || ! $record->ip_address || $record->ip_address !== $ipAddress) {
             return null;
         }
 

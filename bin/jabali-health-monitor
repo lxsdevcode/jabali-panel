@@ -159,7 +159,7 @@ function isServiceRunning(string $checkCommand): bool
  */
 function isServiceInstalled(string $service): bool
 {
-    exec("systemctl list-unit-files {$service}.service 2>/dev/null | grep -q {$service}", $output, $returnCode);
+    exec('systemctl list-unit-files ' . escapeshellarg("{$service}.service") . ' 2>/dev/null | grep -q ' . escapeshellarg($service), $output, $returnCode);
     return $returnCode === 0;
 }
 
@@ -168,7 +168,7 @@ function isServiceInstalled(string $service): bool
  */
 function isServiceEnabled(string $service): bool
 {
-    exec("systemctl is-enabled {$service} 2>/dev/null", $output, $returnCode);
+    exec('systemctl is-enabled ' . escapeshellarg($service) . ' 2>/dev/null', $output, $returnCode);
     if ($returnCode !== 0) {
         return true;
     }
