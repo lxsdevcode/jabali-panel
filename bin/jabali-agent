@@ -18531,6 +18531,7 @@ function logsGoaccess(array $params): array
                           '        alias '.$statsAlias.';'."\n".
                           '        index report.html;'."\n".
                           '        try_files $uri $uri/ =404;'."\n".
+                          "        add_header Content-Security-Policy \"default-src 'self' https: wss: data: 'unsafe-inline' 'unsafe-eval'\" always;\n".
                           '    }'."\n\n".
                           '$2';
             $config = preg_replace($pattern, $replacement, $config, 1);
@@ -18567,7 +18568,7 @@ function logsGoaccess(array $params): array
         '/usr/bin/goaccess %s -o %s --log-format=COMBINED --real-time-html --ws-url=%s --port=%d --pid-file=%s --daemonize --no-query-string --anonymize-ip --html-report-title=%s 2>&1',
         escapeshellarg($accessLog),
         escapeshellarg($outputFile),
-        escapeshellarg("wss://$domain/stats/ws"),
+        escapeshellarg("wss://$domain"),
         $port,
         escapeshellarg($pidFile),
         escapeshellarg("$domain Statistics")
