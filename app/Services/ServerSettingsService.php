@@ -84,7 +84,7 @@ class ServerSettingsService
      */
     public function saveResolvers(array $nameservers): array
     {
-        $result = $this->agent->send('dns.set_resolvers', ['nameservers' => $nameservers]);
+        $result = $this->agent->send('server.set_resolvers', ['nameservers' => $nameservers]);
 
         if ($result['success'] ?? false) {
             DnsSetting::set('custom_resolvers', implode(',', $nameservers));
@@ -113,7 +113,7 @@ class ServerSettingsService
      */
     public function applyFpmToAllUsers(array $settings): array
     {
-        $result = $this->agent->send('php.apply_fpm_settings', $settings);
+        $result = $this->agent->send('php.update_all_pool_limits', $settings);
 
         return [
             'success' => $result['success'] ?? false,

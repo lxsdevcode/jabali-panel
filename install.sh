@@ -3579,6 +3579,9 @@ upgrade_infra() {
     header "Updating Nginx Configuration"
     configure_nginx
 
+    header "Updating FrankenPHP"
+    install_frankenphp
+
     header "Updating Systemd Services"
     setup_agent_service
     setup_frankenphp_config

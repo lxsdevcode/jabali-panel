@@ -219,7 +219,7 @@ trait ManagesForwarders
 
     public function toggleForwarder(int $forwarderId): void
     {
-        $forwarder = EmailForwarder::with('emailDomain.domain')->find($forwarderId);
+        $forwarder = EmailForwarder::whereHas('emailDomain.domain', fn ($q) => $q->where('user_id', Auth::id()))->with('emailDomain.domain')->find($forwarderId);
         if (! $forwarder) {
             Notification::make()->title(__('Forwarder not found'))->danger()->send();
 

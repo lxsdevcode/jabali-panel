@@ -21,8 +21,14 @@ class MysqlCredential extends Model
         $this->attributes['mysql_password_encrypted'] = Crypt::encryptString($value);
     }
 
-    public function getPasswordAttribute()
+    public function getPasswordAttribute(): ?string
     {
-        return Crypt::decryptString($this->attributes['mysql_password_encrypted']);
+        $encrypted = $this->attributes['mysql_password_encrypted'] ?? null;
+
+        if ($encrypted === null || $encrypted === '') {
+            return null;
+        }
+
+        return Crypt::decryptString($encrypted);
     }
 }

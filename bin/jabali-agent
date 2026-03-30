@@ -665,6 +665,7 @@ function handleAction(array $request): array
         'php.set_default' => phpSetDefaultVersion($params),
         'php.reload_fpm' => phpReloadFpm($params),
         'php.reload_all_fpm' => phpReloadAllFpm($params),
+        'php.update_all_pool_limits' => phpUpdateAllPoolLimits($params),
         'php.list_versions' => phpListVersions($params),
         'ssh.generate_key' => sshGenerateKey($params),
         'git.generate_key' => gitGenerateKey($params),
@@ -4634,15 +4635,22 @@ function databaseSetGlobal(array $params): array
         return ['success' => false, 'error' => 'Invalid variable name'];
     }
 
-    $escapedValue = addslashes($value);
-    $query = "SET GLOBAL {$name} = '{$escapedValue}'";
-    $command = 'mysql -e '.escapeshellarg($query).' 2>&1';
-
-    exec($command, $output, $code);
-
-    if ($code !== 0) {
-        return ['success' => false, 'error' => implode("\n", $output)];
+    $conn = getMysqlConnection();
+    if (! $conn) {
+        return ['success' => false, 'error' => 'Cannot connect to MySQL'];
     }
+
+    $escapedValue = $conn->real_escape_string($value);
+    $query = "SET GLOBAL {$name} = '{$escapedValue}'";
+
+    if (! $conn->query($query)) {
+        $error = $conn->error;
+        $conn->close();
+
+        return ['success' => false, 'error' => $error];
+    }
+
+    $conn->close();
 
     return ['success' => true];
 }
