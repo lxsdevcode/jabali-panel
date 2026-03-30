@@ -7559,8 +7559,9 @@ function wpPageCachePurge(array $params): array
     // Files are stored in levels=1:2 subdirectories based on MD5 hash
 
     if (empty($pathsToCheck)) {
-        // Purge all cache for this domain
-        // We need to scan all cache files and check the key inside
+        // Purge all cache for this domain — delete all files in cache dir
+        // On a single-site server this is safe; on multi-site the cache key
+        // includes the domain so nginx will re-populate only what's needed
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST
@@ -7568,13 +7569,11 @@ function wpPageCachePurge(array $params): array
 
         foreach ($iterator as $file) {
             if ($file->isFile()) {
-                $content = file_get_contents($file->getPathname(), false, null, 0, 2048);
-                // Check if this cache file is for our domain
-                if (strpos($content, $domain) !== false) {
-                    if (unlink($file->getPathname())) {
-                        $purged++;
-                    }
+                if (@unlink($file->getPathname())) {
+                    $purged++;
                 }
+            } elseif ($file->isDir()) {
+                @rmdir($file->getPathname());
             }
         }
         logger("Purged all {$purged} cache files for domain: {$domain}");
