@@ -781,6 +781,7 @@ function handleAction(array $request): array
         'metrics.network' => metricsNetwork($params),
         'metrics.processes' => metricsProcesses($params),
         'system.kill_process' => systemKillProcess($params),
+        'system.fix_git_permissions' => systemFixGitPermissions($params),
         // Disk quota operations
         'quota.status' => quotaStatus($params),
         'quota.enable' => quotaEnable($params),
@@ -17345,6 +17346,28 @@ function systemKillProcess(array $params): array
             'signal' => $signal,
         ];
     }
+
+function systemFixGitPermissions(array $params): array
+{
+    $path = $params['path'] ?? '/var/www/jabali';
+    $gitDir = rtrim($path, '/') . '/.git';
+
+    if (! is_dir($gitDir)) {
+        return ['success' => false, 'error' => '.git directory not found'];
+    }
+
+    // Only allow /var/www/jabali
+    $realPath = realpath($gitDir);
+    if ($realPath === false || ! str_starts_with($realPath, '/var/www/jabali/')) {
+        return ['success' => false, 'error' => 'Invalid path'];
+    }
+
+    exec('chown -R www-data:www-data ' . escapeshellarg($realPath) . ' 2>&1', $output, $code);
+
+    return $code === 0
+        ? ['success' => true, 'message' => '.git permissions fixed']
+        : ['success' => false, 'error' => implode("\n", $output)];
+}
 
     $error = posix_strerror(posix_get_last_error());
     logger("Failed to kill process PID=$pid signal=$signal error=$error", 'ERROR');

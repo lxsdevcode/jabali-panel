@@ -3607,6 +3607,9 @@ upgrade_infra() {
     systemctl restart "php${PHP_VERSION}-fpm" 2>/dev/null || true
     systemctl reload nginx 2>/dev/null || true
 
+    # Fix .git ownership so both root CLI and www-data panel can use it
+    chown -R www-data:www-data "$JABALI_DIR/.git" 2>/dev/null || true
+
     log "Infrastructure upgrade complete"
 }
 
@@ -3676,6 +3679,9 @@ reinstall() {
     create_admin
     create_webmaster_mailbox
     configure_ssh_notifications
+
+    # Fix .git ownership so both root CLI and www-data panel can use it
+    chown -R www-data:www-data "$JABALI_DIR/.git" 2>/dev/null || true
 
     # Restart all services
     header "Restarting Services"
@@ -4257,6 +4263,9 @@ main() {
 
     # Install jabali-isolator (PHP-FPM nspawn containers)
     install_jabali_isolator
+
+    # Fix .git ownership so both root CLI and www-data panel can use it
+    chown -R www-data:www-data "$JABALI_DIR/.git" 2>/dev/null || true
 
     print_completion
 }

@@ -429,8 +429,15 @@ class UpgradeCommand extends Command
             throw new Exception('Not a git repository.');
         }
 
-        // Fix .git ownership so both root (CLI) and www-data (panel) can use it
-        $this->executeCommand('chown -R www-data:www-data '.escapeshellarg($this->basePath.'/.git'));
+        // Fix .git ownership via agent (runs as root) so www-data can fetch
+        try {
+            app(\App\Services\Agent\AgentClient::class)->send('system.fix_git_permissions', [
+                'path' => $this->basePath,
+            ]);
+        } catch (\Throwable) {
+            // Fallback: try direct chown (works if running as root CLI)
+            $this->executeCommand('chown -R www-data:www-data '.escapeshellarg($this->basePath.'/.git'));
+        }
     }
 
     protected function configureGitSafeDirectory(): void

@@ -191,6 +191,8 @@ function handleUpdate(array $options): void
 
     // Step 1: Pull latest code
     step('Pulling latest code...');
+    // Fix .git ownership before pull (root CLI creates root-owned files, www-data panel can't read them)
+    runShell('chown -R '.escapeshellarg($wwwUser).':'.escapeshellarg($wwwUser).' '.escapeshellarg($jabaliDir.'/.git').' 2>/dev/null');
     $pullOutput = runShell('cd '.escapeshellarg($jabaliDir).' && git pull 2>&1');
     if ($pullOutput === false) {
         fwrite(STDERR, C_RED.'✗ git pull failed'.C_RESET."\n");
@@ -297,6 +299,9 @@ function handleUpdate(array $options): void
         runShell('systemctl reload nginx 2>/dev/null');
         echo C_GREEN.'✓ Services restarted'.C_RESET."\n";
     }
+
+    // Fix .git ownership after update so panel (www-data) can check for updates
+    runShell('chown -R '.escapeshellarg($wwwUser).':'.escapeshellarg($wwwUser).' '.escapeshellarg($jabaliDir.'/.git').' 2>/dev/null');
 
     echo "\n".C_GREEN.C_BOLD.'Update complete!'.C_RESET." Jabali Panel v{$newVersion}\n\n";
 }
