@@ -318,45 +318,67 @@ class Jabali_Cache_Plugin
     /**
      * Send purge request to Jabali Panel API
      */
+    private $pending_purge_paths = [];
+
+    /**
+     * Collect paths and flush once at shutdown (avoids N HTTP requests per save)
+     */
     private function purge_paths(array $paths)
     {
         if (empty($paths)) {
             return false;
         }
 
-        // Get domain from site URL
+        $this->pending_purge_paths = array_merge($this->pending_purge_paths, $paths);
+
+        static $registered = false;
+        if (! $registered) {
+            add_action('shutdown', [$this, 'flush_pending_purges']);
+            $registered = true;
+        }
+
+        return true;
+    }
+
+    /**
+     * Send all collected purge paths in a single API call
+     */
+    public function flush_pending_purges()
+    {
+        if (empty($this->pending_purge_paths)) {
+            return;
+        }
+
+        $paths = array_unique($this->pending_purge_paths);
+        $this->pending_purge_paths = [];
+
         $site_url = get_site_url();
         $parsed = parse_url($site_url);
         $domain = $parsed['host'] ?? '';
 
         if (empty($domain)) {
-            return false;
+            return;
         }
 
-        // Generate secret from AUTH_KEY
         $secret = defined('AUTH_KEY') ? hash('sha256', AUTH_KEY) : '';
         if (empty($secret)) {
-            return false;
+            return;
         }
 
-        // Convert full URLs to paths
+        // Normalize URLs to paths
         $normalized_paths = [];
         foreach ($paths as $url) {
             if ($url === '/') {
                 $normalized_paths[] = '/';
             } else {
                 $parsed_url = parse_url($url);
-                $path = $parsed_url['path'] ?? '/';
-                $normalized_paths[] = $path;
+                $normalized_paths[] = $parsed_url['path'] ?? '/';
             }
         }
 
         $normalized_paths = array_unique($normalized_paths);
-
-        // Check if we should purge all (if home is in the list)
         $purge_all = in_array('/', $normalized_paths) && count($normalized_paths) > 5;
 
-        // Call Jabali Panel internal API
         $response = wp_remote_post('https://127.0.0.1/api/internal/page-cache-purge', [
             'timeout' => 10,
             'sslverify' => false,
@@ -377,24 +399,13 @@ class Jabali_Cache_Plugin
                 error_log('Jabali Cache: Failed to purge page cache - '.$response->get_error_message());
             }
 
-            return false;
+            return;
         }
 
         $code = wp_remote_retrieve_response_code($response);
-        if ($code !== 200) {
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                $body = wp_remote_retrieve_body($response);
-                error_log('Jabali Cache: Failed to purge page cache - HTTP '.$code.' - '.$body);
-            }
-
-            return false;
+        if ($code !== 200 && defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('Jabali Cache: Failed to purge page cache - HTTP '.$code);
         }
-
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('Jabali Cache: Purged '.count($normalized_paths).' paths');
-        }
-
-        return true;
     }
 
     /**
@@ -444,6 +455,11 @@ class Jabali_Cache_Plugin
      */
     public function on_option_updated($option, $old_value, $new_value)
     {
+        // Skip transients — internal WordPress cache, not user settings
+        if (strpos($option, '_transient_') === 0 || strpos($option, '_site_transient_') === 0) {
+            return;
+        }
+
         // Skip if values are identical
         if ($old_value === $new_value) {
             return;
@@ -518,29 +534,21 @@ class Jabali_Cache_Plugin
         }
 
         try {
-            $redis = new Redis;
-            $host = defined('JABALI_CACHE_HOST') ? JABALI_CACHE_HOST : '127.0.0.1';
-            $port = defined('JABALI_CACHE_PORT') ? JABALI_CACHE_PORT : 6379;
-            $db = defined('JABALI_CACHE_DATABASE') ? JABALI_CACHE_DATABASE : 0;
-            $prefix = defined('JABALI_CACHE_PREFIX') ? JABALI_CACHE_PREFIX : '';
+            // Reuse object cache Redis connection if available
+            global $wp_object_cache;
+            $redis = null;
+            if (isset($wp_object_cache) && method_exists($wp_object_cache, 'get_redis')) {
+                $redis = $wp_object_cache->get_redis();
+            }
 
-            if (! $redis->connect($host, $port, 2)) {
+            if (! $redis) {
                 return 0;
             }
 
-            // Authenticate if credentials are defined
-            if (defined('JABALI_CACHE_REDIS_USER') && defined('JABALI_CACHE_REDIS_PASS')) {
-                $redis->auth(['user' => JABALI_CACHE_REDIS_USER, 'pass' => JABALI_CACHE_REDIS_PASS]);
-            } elseif (defined('JABALI_CACHE_REDIS_PASS') && JABALI_CACHE_REDIS_PASS) {
-                $redis->auth(JABALI_CACHE_REDIS_PASS);
-            }
-
-            $redis->select($db);
+            $prefix = defined('JABALI_CACHE_PREFIX') ? JABALI_CACHE_PREFIX : '';
 
             $deleted = 0;
             foreach ($patterns as $pattern) {
-                // Search for transient keys matching the pattern
-                // WordPress stores transients as: {prefix}transient_{name} and {prefix}_transient_{name}
                 $scan_patterns = [
                     $prefix.'*transient*'.$pattern.'*',
                     $prefix.'*'.$pattern.'*transient*',
@@ -552,10 +560,8 @@ class Jabali_Cache_Plugin
                     do {
                         $keys = $redis->scan($cursor, $scan_pattern, 100);
                         if ($keys !== false && ! empty($keys)) {
-                            foreach ($keys as $key) {
-                                $redis->del($key);
-                                $deleted++;
-                            }
+                            $redis->del(...$keys);
+                            $deleted += count($keys);
                         }
                     } while ($cursor > 0);
                 }
@@ -2137,33 +2143,51 @@ class Jabali_Cache_Plugin
         }
     }
 
+    private $redis_connected_cached = null;
+
     public function is_redis_connected()
     {
+        if ($this->redis_connected_cached !== null) {
+            return $this->redis_connected_cached;
+        }
+
+        // Reuse the object cache connection if available
+        global $wp_object_cache;
+        if (isset($wp_object_cache) && method_exists($wp_object_cache, 'is_connected')) {
+            $this->redis_connected_cached = $wp_object_cache->is_connected();
+
+            return $this->redis_connected_cached;
+        }
+
         if (! class_exists('Redis')) {
+            $this->redis_connected_cached = false;
+
             return false;
         }
         try {
             $redis = new Redis;
             $host = defined('JABALI_CACHE_HOST') ? JABALI_CACHE_HOST : '127.0.0.1';
             $port = defined('JABALI_CACHE_PORT') ? JABALI_CACHE_PORT : 6379;
-            $db = defined('JABALI_CACHE_DATABASE') ? JABALI_CACHE_DATABASE : 0;
 
             if (! $redis->connect($host, $port, 1)) {
+                $this->redis_connected_cached = false;
+
                 return false;
             }
 
-            // Authenticate if credentials are defined
             if (defined('JABALI_CACHE_REDIS_USER') && defined('JABALI_CACHE_REDIS_PASS')) {
                 $redis->auth(['user' => JABALI_CACHE_REDIS_USER, 'pass' => JABALI_CACHE_REDIS_PASS]);
             } elseif (defined('JABALI_CACHE_REDIS_PASS') && JABALI_CACHE_REDIS_PASS) {
                 $redis->auth(JABALI_CACHE_REDIS_PASS);
             }
 
-            // Select database
-            $redis->select($db);
+            $this->redis_connected_cached = (bool) $redis->ping();
+            $redis->close();
 
-            return $redis->ping() ? true : false;
+            return $this->redis_connected_cached;
         } catch (Exception $e) {
+            $this->redis_connected_cached = false;
+
             return false;
         }
     }

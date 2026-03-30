@@ -74,12 +74,8 @@ function wp_cache_get($key, $group = 'default', $force = false, &$found = null)
 function wp_cache_get_multiple($keys, $group = 'default', $force = false)
 {
     global $wp_object_cache;
-    $results = [];
-    foreach ($keys as $key) {
-        $results[$key] = $wp_object_cache->get($key, $group, $force);
-    }
 
-    return $results;
+    return $wp_object_cache->get_multiple($keys, $group, $force);
 }
 
 function wp_cache_delete($key, $group = 'default')
@@ -92,12 +88,8 @@ function wp_cache_delete($key, $group = 'default')
 function wp_cache_delete_multiple(array $keys, $group = 'default')
 {
     global $wp_object_cache;
-    $results = [];
-    foreach ($keys as $key) {
-        $results[$key] = $wp_object_cache->delete($key, $group);
-    }
 
-    return $results;
+    return $wp_object_cache->delete_multiple($keys, $group);
 }
 
 function wp_cache_incr($key, $offset = 1, $group = 'default')
@@ -266,7 +258,11 @@ class Jabali_Redis_Object_Cache
             $timeout = defined('JABALI_CACHE_TIMEOUT') ? JABALI_CACHE_TIMEOUT : 1;
             $database = defined('JABALI_CACHE_DATABASE') ? JABALI_CACHE_DATABASE : 0;
 
-            $this->connected = $this->redis->connect($host, $port, $timeout);
+            // Use persistent connection to avoid TCP handshake on every request
+            $persistent_id = defined('JABALI_CACHE_PERSISTENT_ID')
+                ? JABALI_CACHE_PERSISTENT_ID
+                : md5($host.':'.$port.':'.$database);
+            $this->connected = $this->redis->pconnect($host, $port, $timeout, $persistent_id);
 
             if ($this->connected) {
                 // Authenticate with Redis ACL (username + password) or simple password
@@ -284,7 +280,14 @@ class Jabali_Redis_Object_Cache
                     $this->redis->select($database);
                 }
 
-                $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
+                // Prefer igbinary/msgpack for smaller payloads and faster serialization
+                if (defined('Redis::SERIALIZER_IGBINARY') && extension_loaded('igbinary')) {
+                    $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_IGBINARY);
+                } elseif (defined('Redis::SERIALIZER_MSGPACK') && extension_loaded('msgpack')) {
+                    $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_MSGPACK);
+                } else {
+                    $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
+                }
             }
         } catch (Exception $e) {
             $this->connected = false;
@@ -463,6 +466,100 @@ class Jabali_Redis_Object_Cache
         }
 
         return true;
+    }
+
+    /**
+     * Get multiple values using Redis MGET (single round-trip)
+     */
+    public function get_multiple(array $keys, $group = 'default', $force = false)
+    {
+        $results = [];
+        $redis_keys = [];
+        $redis_key_map = [];
+
+        foreach ($keys as $key) {
+            $cache_key = $this->build_key($key, $group);
+
+            if (! $force && isset($this->cache[$cache_key])) {
+                $results[$key] = $this->cache[$cache_key];
+                $this->cache_hits++;
+            } elseif ($this->is_non_persistent($group)) {
+                $results[$key] = false;
+                $this->cache_misses++;
+            } else {
+                $redis_keys[] = $cache_key;
+                $redis_key_map[$cache_key] = $key;
+            }
+        }
+
+        if (! empty($redis_keys) && $this->connected) {
+            try {
+                $values = $this->redis->mGet($redis_keys);
+                foreach ($redis_keys as $i => $cache_key) {
+                    $original_key = $redis_key_map[$cache_key];
+                    if ($values[$i] !== false) {
+                        $this->cache[$cache_key] = $values[$i];
+                        $results[$original_key] = $values[$i];
+                        $this->cache_hits++;
+                    } else {
+                        $results[$original_key] = false;
+                        $this->cache_misses++;
+                    }
+                }
+            } catch (Exception $e) {
+                foreach ($redis_keys as $cache_key) {
+                    $results[$redis_key_map[$cache_key]] = false;
+                    $this->cache_misses++;
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Delete multiple keys using single Redis DEL
+     */
+    public function delete_multiple(array $keys, $group = 'default')
+    {
+        $results = [];
+        $redis_keys = [];
+
+        foreach ($keys as $key) {
+            $cache_key = $this->build_key($key, $group);
+            unset($this->cache[$cache_key]);
+            $results[$key] = true;
+
+            if (! $this->is_non_persistent($group)) {
+                $redis_keys[] = $cache_key;
+            }
+        }
+
+        if (! empty($redis_keys) && $this->connected) {
+            try {
+                $this->redis->del(...$redis_keys);
+            } catch (Exception $e) {
+                // Local cache already cleared
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Check if Redis is connected
+     */
+    public function is_connected(): bool
+    {
+        return $this->connected;
+    }
+
+    /**
+     * Get the Redis instance for reuse
+     */
+    public function get_redis(): ?Redis
+    {
+        return $this->connected ? $this->redis : null;
     }
 
     /**
@@ -651,11 +748,4 @@ class Jabali_Redis_Object_Cache
         return $stats;
     }
 
-    /**
-     * Check if connected
-     */
-    public function is_connected()
-    {
-        return $this->connected;
-    }
 }
