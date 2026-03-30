@@ -75,12 +75,31 @@ $artisanCommand = $subcommand ? "jabali:{$command}:{$subcommand}" : "jabali:{$co
 
 // If noun:verb didn't match, try noun as standalone command
 if (! array_key_exists($artisanCommand, \Illuminate\Support\Facades\Artisan::all())) {
-    // Try hyphenated form for standalone commands (e.g. "jabali smoke-test")
     if (! $subcommand) {
-        fwrite(STDERR, "\033[31mUnknown command: jabali {$command}\033[0m\n");
+        // No verb — check if this noun has verbs and list them
+        $prefix = "jabali:{$command}:";
+        $verbs = [];
+        foreach (\Illuminate\Support\Facades\Artisan::all() as $name => $cmd) {
+            if (str_starts_with($name, $prefix)) {
+                $verb = substr($name, strlen($prefix));
+                $verbs[$verb] = $cmd->getDescription();
+            }
+        }
+
+        if (! empty($verbs)) {
+            echo C_BOLD."jabali {$command}".C_RESET." — available commands:\n\n";
+            ksort($verbs);
+            foreach ($verbs as $verb => $desc) {
+                echo '  '.C_GREEN.str_pad($verb, 20).C_RESET.C_CYAN.$desc.C_RESET."\n";
+            }
+            echo "\nUsage: jabali {$command} <verb> [options]\n";
+            exit(0);
+        }
+
+        fwrite(STDERR, C_RED."Unknown command: jabali {$command}".C_RESET."\n");
         fwrite(STDERR, "Run 'jabali --help' for available commands.\n");
     } else {
-        fwrite(STDERR, "\033[31mUnknown command: jabali {$command} {$subcommand}\033[0m\n");
+        fwrite(STDERR, C_RED."Unknown command: jabali {$command} {$subcommand}".C_RESET."\n");
         fwrite(STDERR, "Run 'jabali --help' for available commands.\n");
     }
     exit(2);
