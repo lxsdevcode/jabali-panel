@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Pages;
 
+use App\Filament\Jabali\Widgets\BandwidthUsageWidget;
 use App\Filament\Jabali\Widgets\DiskUsageWidget;
 use App\Filament\Jabali\Widgets\DomainsWidget;
 use App\Filament\Jabali\Widgets\MailboxesWidget;
@@ -29,6 +30,7 @@ class Dashboard extends BaseDashboard
         return [
             StatsOverview::class,
             DiskUsageWidget::class,
+            BandwidthUsageWidget::class,
             DomainsWidget::class,
             MailboxesWidget::class,
             RecentBackupsWidget::class,
