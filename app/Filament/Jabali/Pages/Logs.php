@@ -89,7 +89,7 @@ class Logs extends Page implements HasActions, HasForms
         if ($this->activeTab === 'logs' && $this->selectedDomain) {
             $this->loadLogs();
         }
-        if ($this->activeTab === 'stats' && $this->selectedDomain) {
+        if ($this->activeTab === 'stats' && $this->selectedDomain && ! $this->statsGenerated) {
             $this->generateStats();
         }
     }
