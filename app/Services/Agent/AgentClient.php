@@ -608,6 +608,14 @@ class AgentClient implements AgentClientInterface
         return $this->send('user.create', ['username' => $username, 'password' => $password]);
     }
 
+    /**
+     * Set password for an existing Linux user via chpasswd
+     */
+    public function setUserPassword(string $username, string $password): array
+    {
+        return $this->send('user.password', ['username' => $username, 'password' => $password]);
+    }
+
     // Email Domain operations — agent dispatches to legacy (Postfix/Dovecot) or stalwart (JMAP) backend
     public function emailEnableDomain(string $username, string $domain): array
     {

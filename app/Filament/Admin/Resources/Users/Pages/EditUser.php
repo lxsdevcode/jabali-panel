@@ -23,6 +23,8 @@ class EditUser extends EditRecord
 
     protected ?HostingPackage $selectedPackage = null;
 
+    protected ?string $plainPassword = null;
+
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $this->originalQuota = $data['disk_quota_mb'] ?? null;
@@ -32,6 +34,13 @@ class EditUser extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        // Capture plain-text password from Livewire state before dehydration hashes it
+        $rawPassword = $this->data['password'] ?? null;
+        if (filled($rawPassword)) {
+            $this->plainPassword = $rawPassword;
+            $data['sftp_password'] = $rawPassword;
+        }
+
         if (! empty($data['hosting_package_id'])) {
             $this->selectedPackage = HostingPackage::find($data['hosting_package_id']);
             $data['disk_quota_mb'] = $this->selectedPackage?->disk_quota_mb;
@@ -45,36 +54,74 @@ class EditUser extends EditRecord
 
     protected function afterSave(): void
     {
-        $newQuota = $this->record->disk_quota_mb;
-        if ($newQuota !== $this->originalQuota) {
-            // Always try to apply quota when changed
-            try {
-                $agent = app(AgentClient::class);
-                $result = $agent->quotaSet($this->record->username, (int) ($newQuota ?? 0));
+        $this->syncLinuxPassword();
+        $this->syncDiskQuota();
+    }
 
-                if ($result['success'] ?? false) {
-                    $message = $newQuota && $newQuota > 0
-                        ? __('Quota updated to :size GB', ['size' => number_format($newQuota / 1024, 1)])
-                        : __('Quota removed (unlimited)');
-
-                    Notification::make()
-                        ->title(__('Disk quota updated'))
-                        ->body($message)
-                        ->success()
-                        ->send();
-                } else {
-                    throw new Exception($result['error'] ?? __('Unknown error'));
-                }
-            } catch (Exception $e) {
-                // Show warning but don't fail - quota value is saved in database
-                Notification::make()
-                    ->title(__('Disk quota update failed'))
-                    ->body(__('Value saved but filesystem quota not applied: :error', ['error' => $e->getMessage()]))
-                    ->warning()
-                    ->send();
-            }
+    protected function syncLinuxPassword(): void
+    {
+        if (blank($this->plainPassword)) {
+            return;
         }
 
+        try {
+            $linuxService = new LinuxUserService;
+
+            if (! $linuxService->userExists($this->record->username)) {
+                return;
+            }
+
+            $result = $linuxService->setPassword($this->record->username, $this->plainPassword);
+
+            if ($result) {
+                Notification::make()
+                    ->title(__('System password updated'))
+                    ->body(__('Linux password synced for :username.', ['username' => $this->record->username]))
+                    ->success()
+                    ->send();
+            } else {
+                throw new Exception(__('Agent returned failure'));
+            }
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('System password sync failed'))
+                ->body(__('Database password saved but Linux password not updated: :error', ['error' => $e->getMessage()]))
+                ->warning()
+                ->send();
+        }
+    }
+
+    protected function syncDiskQuota(): void
+    {
+        $newQuota = $this->record->disk_quota_mb;
+        if ($newQuota === $this->originalQuota) {
+            return;
+        }
+
+        try {
+            $agent = app(AgentClient::class);
+            $result = $agent->quotaSet($this->record->username, (int) ($newQuota ?? 0));
+
+            if ($result['success'] ?? false) {
+                $message = $newQuota && $newQuota > 0
+                    ? __('Quota updated to :size GB', ['size' => number_format($newQuota / 1024, 1)])
+                    : __('Quota removed (unlimited)');
+
+                Notification::make()
+                    ->title(__('Disk quota updated'))
+                    ->body($message)
+                    ->success()
+                    ->send();
+            } else {
+                throw new Exception($result['error'] ?? __('Unknown error'));
+            }
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('Disk quota update failed'))
+                ->body(__('Value saved but filesystem quota not applied: :error', ['error' => $e->getMessage()]))
+                ->warning()
+                ->send();
+        }
     }
 
     protected function getHeaderActions(): array

@@ -23,12 +23,12 @@ class CreateUser extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Store plain password before Filament hashes it
-        $this->plainPassword = $data['password'] ?? null;
+        // Capture plain-text password from Livewire state before dehydration hashes it
+        $this->plainPassword = $this->data['password'] ?? null;
 
-        // Generate SFTP password (same as user password)
-        if (! empty($data['password'])) {
-            $data['sftp_password'] = $data['password'];
+        // Store plain password as SFTP password (encrypted by model cast)
+        if (filled($this->plainPassword)) {
+            $data['sftp_password'] = $this->plainPassword;
         }
 
         if (! empty($data['hosting_package_id'])) {
