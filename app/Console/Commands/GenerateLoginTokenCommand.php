@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 
 class GenerateLoginTokenCommand extends Command
 {
-    protected $signature = 'jabali:login-token
+    protected $signature = 'jabali:login:token
         {--user=admin : Username to generate token for}
         {--ttl=5 : Token lifetime in minutes}
         {--panel=admin : Panel to redirect to (admin or user)}';
