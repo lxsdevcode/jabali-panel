@@ -2032,6 +2032,10 @@ class Jabali_Cache_Plugin
             return;
         }
 
+        if (! current_user_can('manage_options')) {
+            wp_die(__('You do not have permission to perform this action.', 'jabali-cache'));
+        }
+
         $action = sanitize_text_field($_GET['action']);
 
         switch ($action) {
@@ -2109,6 +2113,9 @@ class Jabali_Cache_Plugin
             return false;
         }
         $content = file_get_contents($drop_in);
+        if ($content === false) {
+            return false;
+        }
 
         return strpos($content, 'Jabali_Redis_Object_Cache') !== false;
     }

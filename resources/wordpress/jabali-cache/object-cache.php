@@ -297,9 +297,8 @@ class Jabali_Redis_Object_Cache
      */
     private function get_blog_prefix()
     {
-        global $blog_id;
-        if (is_multisite()) {
-            return (int) $blog_id.':';
+        if (is_multisite() && isset($GLOBALS['blog_id'])) {
+            return (int) $GLOBALS['blog_id'].':';
         }
 
         return '';
@@ -474,7 +473,17 @@ class Jabali_Redis_Object_Cache
         $cache_key = $this->build_key($key, $group);
 
         if (! isset($this->cache[$cache_key])) {
-            $this->cache[$cache_key] = 0;
+            // Fetch current value from Redis if available
+            if (! $this->is_non_persistent($group) && $this->connected) {
+                try {
+                    $value = $this->redis->get($cache_key);
+                    $this->cache[$cache_key] = $value !== false ? (int) $value : 0;
+                } catch (Exception $e) {
+                    $this->cache[$cache_key] = 0;
+                }
+            } else {
+                $this->cache[$cache_key] = 0;
+            }
         }
 
         $this->cache[$cache_key] += $offset;
@@ -511,11 +520,14 @@ class Jabali_Redis_Object_Cache
 
         if ($this->connected) {
             try {
-                // Only flush keys with our prefix
-                $keys = $this->redis->keys($this->prefix.'*');
-                if (! empty($keys)) {
-                    $this->redis->del($keys);
-                }
+                // Use SCAN instead of KEYS to avoid blocking Redis
+                $iterator = null;
+                do {
+                    $keys = $this->redis->scan($iterator, $this->prefix.'*', 100);
+                    if (! empty($keys)) {
+                        $this->redis->del($keys);
+                    }
+                } while ($iterator > 0);
             } catch (Exception $e) {
                 return false;
             }
@@ -540,10 +552,13 @@ class Jabali_Redis_Object_Cache
 
         if ($this->connected) {
             try {
-                $keys = $this->redis->keys($pattern);
-                if (! empty($keys)) {
-                    $this->redis->del($keys);
-                }
+                $iterator = null;
+                do {
+                    $keys = $this->redis->scan($iterator, $pattern, 100);
+                    if (! empty($keys)) {
+                        $this->redis->del($keys);
+                    }
+                } while ($iterator > 0);
             } catch (Exception $e) {
                 return false;
             }
@@ -627,7 +642,7 @@ class Jabali_Redis_Object_Cache
                 $stats['redis_version'] = $info['redis_version'] ?? 'unknown';
                 $stats['used_memory'] = $info['used_memory_human'] ?? 'unknown';
                 $stats['connected_clients'] = $info['connected_clients'] ?? 0;
-                $stats['total_keys'] = count($this->redis->keys($this->prefix.'*'));
+                $stats['total_keys'] = $this->redis->dbSize();
             } catch (Exception $e) {
                 // Ignore
             }
