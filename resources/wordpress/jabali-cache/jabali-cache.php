@@ -1706,7 +1706,8 @@ class Jabali_Cache_Plugin
         }
 
         // Call Jabali Panel internal API (HTTPS with SSL verify disabled for localhost)
-        $response = wp_remote_post('https://127.0.0.1/api/internal/page-cache', [
+        $panel_port = defined('JABALI_PANEL_PORT') ? JABALI_PANEL_PORT : 2223;
+        $response = wp_remote_post("https://127.0.0.1:{$panel_port}/api/internal/page-cache", [
             'timeout' => 10,
             'sslverify' => false,
             'headers' => [

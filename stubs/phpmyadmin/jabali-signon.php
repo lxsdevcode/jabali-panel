@@ -32,7 +32,7 @@ if (! preg_match('/^[0-9a-f]{64}$/', $token)) {
 $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
 $ch = curl_init();
 curl_setopt_array($ch, [
-    CURLOPT_URL => 'https://127.0.0.1/api/phpmyadmin/verify-token',
+    CURLOPT_URL => 'https://127.0.0.1:' . ($_ENV['PANEL_PORT'] ?? '2223') . '/api/phpmyadmin/verify-token',
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => json_encode(['token' => $token]),
     CURLOPT_HTTPHEADER => [
