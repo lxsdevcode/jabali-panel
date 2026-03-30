@@ -71,11 +71,13 @@ switch ($command) {
 }
 
 // Route to artisan command
-$artisanCommand = $subcommand ? "jabali:{$command}:{$subcommand}" : null;
+$artisanCommand = $subcommand ? "jabali:{$command}:{$subcommand}" : "jabali:{$command}";
 
-if (! $artisanCommand || ! array_key_exists($artisanCommand, \Illuminate\Support\Facades\Artisan::all())) {
+// If noun:verb didn't match, try noun as standalone command
+if (! array_key_exists($artisanCommand, \Illuminate\Support\Facades\Artisan::all())) {
+    // Try hyphenated form for standalone commands (e.g. "jabali smoke-test")
     if (! $subcommand) {
-        fwrite(STDERR, "\033[31mMissing verb. Usage: jabali {$command} <verb>\033[0m\n");
+        fwrite(STDERR, "\033[31mUnknown command: jabali {$command}\033[0m\n");
         fwrite(STDERR, "Run 'jabali --help' for available commands.\n");
     } else {
         fwrite(STDERR, "\033[31mUnknown command: jabali {$command} {$subcommand}\033[0m\n");

@@ -34,6 +34,7 @@ class HelpCommand extends Command
         // Discover all jabali:* commands and group by noun
         $commands = Artisan::all();
         $groups = [];
+        $standalone = [];
 
         foreach ($commands as $name => $command) {
             if (! str_starts_with($name, 'jabali:')) {
@@ -44,13 +45,12 @@ class HelpCommand extends Command
             }
 
             $parts = explode(':', $name, 3);
-            if (count($parts) < 3) {
-                continue;
+            if (count($parts) === 3) {
+                $groups[$parts[1]][$parts[2]] = $command->getDescription();
+            } else {
+                // Two-part commands (jabali:smoke-test → "jabali smoke-test")
+                $standalone[$parts[1]] = $command->getDescription();
             }
-
-            $noun = $parts[1];
-            $verb = $parts[2];
-            $groups[$noun][$verb] = $command->getDescription();
         }
 
         ksort($groups);
@@ -64,9 +64,22 @@ class HelpCommand extends Command
             }
         }
 
+        // Standalone commands
         $this->line('');
         $this->line('  <fg=green>update</>');
         $this->line('    '.str_pad('', 20).'<fg=gray>Update Jabali Panel to latest version</>');
+
+        $standalone = array_filter($standalone, fn ($k) => $k !== 'upgrade', ARRAY_FILTER_USE_KEY);
+        if (! empty($standalone)) {
+            $this->line('');
+            $this->line('<fg=yellow>Utilities:</>');
+            ksort($standalone);
+            foreach ($standalone as $cmd => $description) {
+                $padded = str_pad($cmd, 22);
+                $this->line("  {$padded}<fg=gray>{$description}</>");
+            }
+        }
+
         $this->line('');
         $this->line('<fg=yellow>Global options:</>');
         $this->line('  --json              Output as JSON');
