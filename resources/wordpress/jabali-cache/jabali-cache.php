@@ -568,7 +568,7 @@ class Jabali_Cache_Plugin
                 }
             }
 
-            $redis->close();
+            // Don't close — this is the shared object cache connection
 
             return $deleted;
 
@@ -2641,7 +2641,8 @@ register_activation_hook(__FILE__, function () {
     // Initialize default settings if they don't exist
     $settings = get_option(Jabali_Cache_Plugin::OPTION_KEY);
     if ($settings === false) {
-        update_option(Jabali_Cache_Plugin::OPTION_KEY, ['page_cache' => true]);
+        $plugin_instance = Jabali_Cache_Plugin::get_instance();
+        update_option(Jabali_Cache_Plugin::OPTION_KEY, $plugin_instance->get_settings());
     }
 });
 
