@@ -1376,8 +1376,18 @@ server {
 
     # GoAccess statistics reports
     location /stats/ {
+        auth_request /jabali-auth-check;
         alias STATS_PLACEHOLDER/;
         index report.html;
+    }
+
+    location = /jabali-auth-check {
+        internal;
+        proxy_pass https://127.0.0.1:2223/api/auth-check;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-Original-URI \$request_uri;
+        proxy_set_header Cookie \$http_cookie;
     }
 
     location ~ /\.(?!well-known).* {
@@ -18504,14 +18514,6 @@ function logsGoaccess(array $params): array
     if (file_exists($pidFile)) {
         $pid = (int) trim(file_get_contents($pidFile));
         if ($pid > 0 && file_exists("/proc/$pid")) {
-            // Read stats password
-            $htpasswdFile = $statsDir.'/.htpasswd';
-            $sp = '';
-            if (file_exists($htpasswdFile)) {
-                foreach (file($htpasswdFile, FILE_IGNORE_NEW_LINES) as $l) {
-                    if (str_starts_with($l, '#pass:')) { $sp = substr($l, 6); break; }
-                }
-            }
             return [
                 'success' => true,
                 'domain' => $domain,
@@ -18519,8 +18521,6 @@ function logsGoaccess(array $params): array
                 'daemon_started' => false,
                 'report_url' => '/stats/report.html',
                 'ws_port' => $port,
-                'stats_user' => $username,
-                'stats_password' => $sp,
             ];
         }
         // Stale PID file — clean up
@@ -18538,12 +18538,19 @@ function logsGoaccess(array $params): array
             $pattern = '/(listen 443 ssl;.*?)(    location \/ \{)/s';
             $replacement = '$1    # Stats directory - serve static files directly'."\n".
                           '    location /stats/ {'."\n".
+                          '        auth_request /jabali-auth-check;'."\n".
                           '        alias '.$statsAlias.';'."\n".
                           '        index report.html;'."\n".
                           '        try_files $uri $uri/ =404;'."\n".
                           "        add_header Content-Security-Policy \"default-src 'self' https: wss: data: 'unsafe-inline' 'unsafe-eval'\" always;\n".
-                          '        auth_basic "Statistics";'."\n".
-                          '        auth_basic_user_file '.$statsDir.'/.htpasswd;'."\n".
+                          '    }'."\n\n".
+                          '    location = /jabali-auth-check {'."\n".
+                          '        internal;'."\n".
+                          '        proxy_pass https://127.0.0.1:2223/api/auth-check;'."\n".
+                          '        proxy_pass_request_body off;'."\n".
+                          '        proxy_set_header Content-Length "";'."\n".
+                          '        proxy_set_header X-Original-URI $request_uri;'."\n".
+                          '        proxy_set_header Cookie $http_cookie;'."\n".
                           '    }'."\n\n".
                           '$2';
             $config = preg_replace($pattern, $replacement, $config, 1);
@@ -18573,33 +18580,6 @@ function logsGoaccess(array $params): array
     // Ensure PID directory exists
     if (! is_dir($pidDir)) {
         mkdir($pidDir, 0755, true);
-    }
-
-    // Generate htpasswd for stats access control
-    $htpasswdFile = $statsDir.'/.htpasswd';
-    $statsPassword = '';
-    if (! file_exists($htpasswdFile)) {
-        $statsPassword = bin2hex(random_bytes(16));
-        $hash = password_hash($statsPassword, PASSWORD_BCRYPT);
-        file_put_contents($htpasswdFile, $username.':'.$hash."\n");
-        chown($htpasswdFile, $username);
-        chmod($htpasswdFile, 0640);
-    } else {
-        // Read existing password — stored as comment in htpasswd
-        $lines = file($htpasswdFile, FILE_IGNORE_NEW_LINES);
-        foreach ($lines as $line) {
-            if (str_starts_with($line, '#pass:')) {
-                $statsPassword = substr($line, 6);
-                break;
-            }
-        }
-    }
-    // Store plain password as comment for panel to retrieve
-    if ($statsPassword !== '') {
-        $hash = password_hash($statsPassword, PASSWORD_BCRYPT);
-        file_put_contents($htpasswdFile, $username.':'.$hash."\n".'#pass:'.$statsPassword."\n");
-        chown($htpasswdFile, $username);
-        chmod($htpasswdFile, 0640);
     }
 
     // Start GoAccess in daemon mode
@@ -18635,8 +18615,6 @@ function logsGoaccess(array $params): array
         'daemon_started' => true,
         'report_url' => '/stats/report.html',
         'ws_port' => $port,
-        'stats_user' => $username,
-        'stats_password' => $statsPassword,
     ];
 }
 

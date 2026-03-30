@@ -11,6 +11,15 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+// Auth check for nginx auth_request (stats, protected areas)
+Route::get('/auth-check', function (Request $request) {
+    if ($request->user('web') || $request->user('admin')) {
+        return response('', 200);
+    }
+
+    return response('', 401);
+})->middleware('web');
+
 Route::post('/phpmyadmin/verify-token', function (Request $request) {
     $token = $request->input('token');
 
