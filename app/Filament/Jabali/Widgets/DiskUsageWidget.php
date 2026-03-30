@@ -65,7 +65,16 @@ class DiskUsageWidget extends Widget
         $package = $user->hostingPackage;
 
         $domainsUsed = $user->domains()->count();
-        $databasesUsed = \App\Models\Database::where('user_id', $user->id)->count();
+
+        // Count MySQL databases matching username prefix (managed by agent, no Laravel model)
+        $databasesUsed = 0;
+        try {
+            $prefix = $user->username.'\\_';
+            $rows = \Illuminate\Support\Facades\DB::select('SHOW DATABASES LIKE ?', [$prefix.'%']);
+            $databasesUsed = count($rows);
+        } catch (\Throwable) {
+        }
+
         $mailboxesUsed = \App\Models\Mailbox::whereHas('emailDomain.domain', fn ($q) => $q->where('user_id', $user->id))->count();
 
         return [
