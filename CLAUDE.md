@@ -41,18 +41,24 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - The agent communicates via Unix socket — never expose it over network
 - `is_admin` is NOT in User `$fillable` (security) — set it directly on the model
 - Both guards (`web` and `admin`) share the same `users` provider
+- Use `PathSanitizer::clean()` for all user-supplied file paths (prevents traversal)
+- Use `proc_open()` for piping passwords to `chpasswd` (not `echo | chpasswd`)
+- Validate cron commands with `CronCommandValidator::validate()` (shared allowlist)
+- Service management functions must check `$allowedServices` global array
 
 ## Git & Deploy
 
 - Push to gitea first for testing, GitHub when stable
-- Deploy: `bash scripts/deploy.sh` or `jabali update` on server
+- Deploy: `jabali update` on server (pulls code, rebuilds caches, upgrades infra)
 - Never add `Co-Authored-By` lines to commits
+- `.git` ownership is auto-fixed to `www-data` during install/update
 
 ## Testing
 
 - PHPUnit only (no Pest). `php artisan test --compact`
 - Use factories for test data, clean up records in tests without RefreshDatabase
 - Run specific tests: `php artisan test --compact --filter=TestName`
+- Key test files: `PathSanitizerTest`, `FilePermissionTest`, `BackupSnapshotFileOperationsTest`
 
 <laravel-boost-guidelines>
 === foundation rules ===
