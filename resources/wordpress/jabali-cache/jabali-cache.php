@@ -67,7 +67,6 @@ class Jabali_Cache_Plugin
         add_action('save_post', [$this, 'purge_post_cache'], 10, 3);
         add_action('wp_trash_post', [$this, 'purge_post_cache_on_delete']);
         add_action('delete_post', [$this, 'purge_post_cache_on_delete']);
-        add_action('edit_post', [$this, 'purge_post_cache_on_edit'], 10, 2);
 
         // Comment changes
         add_action('comment_post', [$this, 'purge_comment_cache'], 10, 2);
@@ -143,11 +142,6 @@ class Jabali_Cache_Plugin
     /**
      * Purge cache on post edit
      */
-    public function purge_post_cache_on_edit($post_id, $post)
-    {
-        $this->purge_post_cache($post_id, $post, true);
-    }
-
     /**
      * Purge cache when a comment changes
      */
@@ -593,19 +587,14 @@ class Jabali_Cache_Plugin
     {
         $defaults = [
             'page_cache' => true,
-            'object_cache' => true,
             'html_minify' => false,
-            'minify_css' => true,
             'minify_js' => true,
             'lazy_load' => false,
             'lazy_load_iframes' => false,
-            'browser_cache' => false,
-            'expired_cache' => false,
             'remove_query_strings' => false,
             'disable_emojis' => false,
             'disable_embeds' => false,
             'defer_js' => false,
-            'cache_debug' => true,
             'local_google_fonts' => false,
             // LCP Optimization settings
             'lcp_preload' => true,
@@ -628,13 +617,6 @@ class Jabali_Cache_Plugin
         // HTML Minification
         if ($this->settings['html_minify'] && ! is_admin()) {
             add_action('template_redirect', [$this, 'start_html_buffer'], 1);
-        }
-
-        // CSS Minification
-        if ($this->settings['minify_css'] && ! is_admin()) {
-            add_filter('style_loader_tag', [$this, 'minify_inline_css'], 10, 4);
-            add_action('wp_head', [$this, 'start_css_capture'], 1);
-            add_action('wp_head', [$this, 'end_css_capture'], 999);
         }
 
         // JS Minification
@@ -677,17 +659,6 @@ class Jabali_Cache_Plugin
             $this->disable_embeds();
         }
 
-        // Expired Cache (No-Cache Headers)
-        if ($this->settings['expired_cache'] && ! is_admin()) {
-            add_action('template_redirect', [$this, 'send_expired_cache_headers'], 1);
-            add_action('send_headers', [$this, 'send_expired_cache_headers']);
-        }
-
-        // Debug mode - add debug info for admins
-        if ($this->settings['cache_debug'] && ! is_admin()) {
-            add_action('wp_footer', [$this, 'output_debug_info'], 999);
-        }
-
         // Local Google Fonts
         if ($this->settings['local_google_fonts'] && ! is_admin()) {
             add_filter('style_loader_src', [$this, 'localize_google_fonts_css'], 10, 2);
@@ -720,24 +691,6 @@ class Jabali_Cache_Plugin
     /**
      * CSS Minification - minify inline styles in style tags
      */
-    public function minify_inline_css($html, $handle, $href, $media)
-    {
-        return $html; // Return unchanged, we don't minify external CSS files
-    }
-
-    private $css_buffer_active = false;
-
-    public function start_css_capture()
-    {
-        // Not implemented - inline CSS minification would require output buffering
-        // which conflicts with page cache. External files are better cached by nginx.
-    }
-
-    public function end_css_capture()
-    {
-        // Not implemented
-    }
-
     /**
      * Minify inline JS within script tags
      */
@@ -773,87 +726,6 @@ class Jabali_Cache_Plugin
         }, $tag);
 
         return $tag;
-    }
-
-    /**
-     * Output debug info for admins
-     */
-    public function output_debug_info()
-    {
-        // Only show for admins with cache_debug param or setting enabled
-        if (! current_user_can('manage_options')) {
-            return;
-        }
-
-        // Check if ?cache_debug=1 is set
-        if (! isset($_GET['cache_debug']) && ! $this->settings['cache_debug']) {
-            return;
-        }
-
-        // Only output if explicitly requested via query param
-        if (! isset($_GET['cache_debug']) || $_GET['cache_debug'] !== '1') {
-            return;
-        }
-
-        $debug_info = [];
-        $debug_info['plugin_version'] = self::VERSION;
-        $debug_info['page_cache'] = $this->settings['page_cache'] ? 'enabled' : 'disabled';
-        $debug_info['object_cache'] = $this->is_drop_in_installed() ? 'enabled' : 'disabled';
-        $debug_info['redis_connected'] = $this->is_redis_connected() ? 'yes' : 'no';
-        $debug_info['minify_css'] = $this->settings['minify_css'] ? 'enabled' : 'disabled';
-        $debug_info['minify_js'] = $this->settings['minify_js'] ? 'enabled' : 'disabled';
-        $debug_info['defer_js'] = $this->settings['defer_js'] ? 'enabled' : 'disabled';
-        $debug_info['lazy_load'] = $this->settings['lazy_load'] ? 'enabled' : 'disabled';
-        $debug_info['logged_in'] = is_user_logged_in() ? 'yes' : 'no';
-        $debug_info['bypass_reason'] = $this->get_cache_bypass_reason();
-        $debug_info['page_generated'] = date('Y-m-d H:i:s');
-        $debug_info['queries'] = get_num_queries();
-        $debug_info['memory_peak'] = size_format(memory_get_peak_usage(true));
-
-        echo "\n<!-- Jabali Cache Debug Info\n";
-        foreach ($debug_info as $key => $value) {
-            echo "  {$key}: {$value}\n";
-        }
-        echo "-->\n";
-    }
-
-    /**
-     * Get reason why page cache might be bypassed
-     */
-    private function get_cache_bypass_reason()
-    {
-        if (is_user_logged_in()) {
-            return 'logged_in_user';
-        }
-
-        if (isset($_POST) && ! empty($_POST)) {
-            return 'post_request';
-        }
-
-        if (is_admin()) {
-            return 'admin_page';
-        }
-
-        // Check for WooCommerce cart/checkout
-        if (function_exists('is_cart') && is_cart()) {
-            return 'woocommerce_cart';
-        }
-        if (function_exists('is_checkout') && is_checkout()) {
-            return 'woocommerce_checkout';
-        }
-        if (function_exists('is_account_page') && is_account_page()) {
-            return 'woocommerce_account';
-        }
-
-        // Check for cookies that trigger bypass
-        if (isset($_COOKIE['wordpress_logged_in']) || isset($_COOKIE['wp-postpass'])) {
-            return 'bypass_cookie';
-        }
-        if (isset($_COOKIE['woocommerce_cart_hash']) || isset($_COOKIE['woocommerce_items_in_cart'])) {
-            return 'woocommerce_cookie';
-        }
-
-        return 'none';
     }
 
     // HTML Minification
@@ -1595,26 +1467,6 @@ class Jabali_Cache_Plugin
         return $stats;
     }
 
-    // Expired Cache - Send no-cache headers
-    public function send_expired_cache_headers()
-    {
-        // Skip if headers already sent
-        if (headers_sent()) {
-            return;
-        }
-
-        // Skip admin pages
-        if (is_admin()) {
-            return;
-        }
-
-        // Set headers to prevent caching
-        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0', true);
-        header('Pragma: no-cache', true);
-        header('Expires: Thu, 01 Jan 1970 00:00:00 GMT', true);
-        header('X-Jabali-Cache: no-cache', true);
-    }
-
     // Disable Page Cache - Send headers to bypass nginx fastcgi_cache
     public function disable_page_cache_headers()
     {
@@ -1659,11 +1511,10 @@ class Jabali_Cache_Plugin
     {
         $sanitized = [];
         $checkboxes = [
-            'page_cache', 'object_cache', 'html_minify', 'minify_css', 'minify_js',
-            'lazy_load', 'lazy_load_iframes', 'browser_cache', 'expired_cache',
-            'remove_query_strings', 'disable_emojis', 'disable_embeds', 'defer_js', 'cache_debug',
+            'page_cache', 'html_minify', 'minify_js',
+            'lazy_load', 'lazy_load_iframes',
+            'remove_query_strings', 'disable_emojis', 'disable_embeds', 'defer_js',
             'local_google_fonts',
-            // LCP Optimization settings
             'lcp_preload', 'preconnect_hints', 'preload_fonts', 'delay_third_party',
         ];
 
@@ -2390,16 +2241,6 @@ class Jabali_Cache_Plugin
                             </div>
                             <div class="jabali-setting-row">
                                 <div class="jabali-setting-info">
-                                    <span class="jabali-setting-label"><?php _e('CSS Minification', 'jabali-cache'); ?></span>
-                                    <span class="jabali-setting-desc"><?php _e('Minify inline CSS styles.', 'jabali-cache'); ?></span>
-                                </div>
-                                <label class="jabali-toggle">
-                                    <input type="checkbox" name="<?php echo self::OPTION_KEY; ?>[minify_css]" value="1" <?php checked($this->settings['minify_css']); ?>>
-                                    <span class="jabali-toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="jabali-setting-row">
-                                <div class="jabali-setting-info">
                                     <span class="jabali-setting-label"><?php _e('JS Minification', 'jabali-cache'); ?></span>
                                     <span class="jabali-setting-desc"><?php _e('Minify inline JavaScript (conservative).', 'jabali-cache'); ?></span>
                                 </div>
@@ -2564,38 +2405,6 @@ class Jabali_Cache_Plugin
                         </div>
                     </div>
 
-                    <!-- Developer Card -->
-                    <div class="jabali-card">
-                        <div class="jabali-card-header">
-                            <span class="dashicons dashicons-admin-tools"></span>
-                            <h2><?php _e('Developer', 'jabali-cache'); ?></h2>
-                        </div>
-                        <div class="jabali-card-body">
-                            <div class="jabali-setting-row">
-                                <div class="jabali-setting-info">
-                                    <span class="jabali-setting-label"><?php _e('Development Mode', 'jabali-cache'); ?></span>
-                                    <span class="jabali-setting-desc"><?php _e('Disable all caching. Use during development to always see changes immediately.', 'jabali-cache'); ?></span>
-                                </div>
-                                <label class="jabali-toggle">
-                                    <input type="checkbox" name="<?php echo self::OPTION_KEY; ?>[expired_cache]" value="1" <?php checked($this->settings['expired_cache']); ?>>
-                                    <span class="jabali-toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="jabali-setting-row">
-                                <div class="jabali-setting-info">
-                                    <span class="jabali-setting-label"><?php _e('Debug Mode', 'jabali-cache'); ?></span>
-                                    <span class="jabali-setting-desc"><?php _e('Show cache debug info in HTML comments when ?cache_debug=1 is added to URL.', 'jabali-cache'); ?></span>
-                                </div>
-                                <label class="jabali-toggle">
-                                    <input type="checkbox" name="<?php echo self::OPTION_KEY; ?>[cache_debug]" value="1" <?php checked($this->settings['cache_debug']); ?>>
-                                    <span class="jabali-toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="jabali-info-notice">
-                                <p><strong><?php _e('Tip:', 'jabali-cache'); ?></strong> <?php _e('Check response headers for X-Cache (HIT/MISS) and X-Cache-Reason to diagnose caching behavior.', 'jabali-cache'); ?></p>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <div class="jabali-submit-row">
