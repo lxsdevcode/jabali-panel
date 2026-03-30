@@ -19,9 +19,14 @@ class CreateUser extends CreateRecord
 
     protected ?HostingPackage $selectedPackage = null;
 
+    protected ?string $plainPassword = null;
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Generate SFTP password (same as user password or random)
+        // Store plain password before Filament hashes it
+        $this->plainPassword = $data['password'] ?? null;
+
+        // Generate SFTP password (same as user password)
         if (! empty($data['password'])) {
             $data['sftp_password'] = $data['password'];
         }
@@ -45,8 +50,7 @@ class CreateUser extends CreateRecord
             try {
                 $linuxService = new LinuxUserService;
 
-                // Get the plain password before it was hashed
-                $password = $this->data['sftp_password'] ?? null;
+                $password = $this->plainPassword;
 
                 $linuxService->createUser($this->record, $password);
 
