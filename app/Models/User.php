@@ -59,6 +59,11 @@ class User extends Authenticatable implements FilamentUser
         });
     }
 
+    public function isAdmin(): bool
+    {
+        return (bool) $this->is_admin;
+    }
+
     /**
      * Determine if the user can access the Filament panel.
      */
