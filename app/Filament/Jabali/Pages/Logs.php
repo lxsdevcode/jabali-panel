@@ -89,6 +89,9 @@ class Logs extends Page implements HasActions, HasForms
         if ($this->activeTab === 'logs' && $this->selectedDomain) {
             $this->loadLogs();
         }
+        if ($this->activeTab === 'stats' && $this->selectedDomain) {
+            $this->generateStats();
+        }
     }
 
     public function setTab(string $tab): void
@@ -168,7 +171,12 @@ class Logs extends Page implements HasActions, HasForms
     {
         $this->statsGenerated = false;
         $this->statsUrl = '';
-        $this->loadLogs();
+        if ($this->activeTab === 'logs') {
+            $this->loadLogs();
+        }
+        if ($this->activeTab === 'stats' && $this->selectedDomain) {
+            $this->generateStats();
+        }
     }
 
     public function setLogType(string $type): void
@@ -235,21 +243,22 @@ class Logs extends Page implements HasActions, HasForms
             $result = $this->agent()->send('logs.goaccess', [
                 'username' => $this->getUsername(),
                 'domain' => $this->selectedDomain,
-                'period' => 'all',
             ]);
 
             if ($result['success'] ?? false) {
                 $this->statsGenerated = true;
                 $this->statsUrl = 'https://'.$this->selectedDomain.($result['report_url'] ?? '/stats/report.html');
 
-                Notification::make()
-                    ->title(__('Statistics generated'))
-                    ->body(__('Report generated with :lines log entries', ['lines' => number_format($result['log_lines'] ?? 0)]))
-                    ->success()
-                    ->send();
+                if ($result['daemon_started'] ?? false) {
+                    Notification::make()
+                        ->title(__('Statistics daemon started'))
+                        ->body(__('Real-time report is now available for :domain', ['domain' => $this->selectedDomain]))
+                        ->success()
+                        ->send();
+                }
             } else {
                 Notification::make()
-                    ->title(__('Error generating statistics'))
+                    ->title(__('Error starting statistics'))
                     ->body($result['error'] ?? 'Unknown error')
                     ->danger()
                     ->send();
@@ -267,12 +276,13 @@ class Logs extends Page implements HasActions, HasForms
     {
         return [
 
-            Action::make('generateStats')
-                ->label(__('Generate Statistics'))
-                ->icon('heroicon-o-chart-bar')
+            Action::make('viewReport')
+                ->label(__('View Report'))
+                ->icon('heroicon-o-arrow-top-right-on-square')
                 ->color('primary')
-                ->visible(fn () => $this->selectedDomain !== null && $this->activeTab === 'stats')
-                ->action(fn () => $this->generateStats()),
+                ->url(fn () => $this->statsUrl)
+                ->openUrlInNewTab()
+                ->visible(fn () => $this->statsGenerated && $this->activeTab === 'stats'),
 
             Action::make('refreshLogs')
                 ->label(__('Refresh'))

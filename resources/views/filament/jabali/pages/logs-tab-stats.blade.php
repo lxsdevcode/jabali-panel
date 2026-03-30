@@ -5,7 +5,7 @@
                 {{ __('Select Domain') }}
             </x-slot>
             <x-slot name="description">
-                {{ __('Choose the domain you want to view logs for.') }}
+                {{ __('Choose the domain you want to view statistics for.') }}
             </x-slot>
 
             <div class="max-w-md">
@@ -19,13 +19,13 @@
             </div>
         </x-filament::section>
 
-        @if($this->selectedDomain && $this->statsGenerated)
-            <x-filament::section icon="heroicon-o-check-circle" icon-color="success" class="mt-4">
+        @if($this->selectedDomain && $this->statsGenerated && $this->statsUrl)
+            <x-filament::section icon="heroicon-o-chart-bar" icon-color="primary" class="mt-4">
                 <x-slot name="heading">
-                    {{ __('Statistics Report Ready') }}
+                    {{ __('Live Statistics') }}
                 </x-slot>
                 <x-slot name="description">
-                    {{ __('Traffic analysis report has been generated for :domain', ['domain' => $this->selectedDomain]) }}
+                    {{ __('Real-time traffic analysis for :domain. The report updates automatically.', ['domain' => $this->selectedDomain]) }}
                 </x-slot>
 
                 <x-filament::button
@@ -36,6 +36,13 @@
                 >
                     {{ __('View Report') }}
                 </x-filament::button>
+            </x-filament::section>
+        @elseif($this->selectedDomain && !$this->statsGenerated)
+            <x-filament::section class="mt-4">
+                <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+                    <x-filament::loading-indicator class="h-5 w-5" />
+                    {{ __('Starting statistics daemon...') }}
+                </div>
             </x-filament::section>
         @endif
     @else

@@ -1431,12 +1431,12 @@ configure_nginx() {
         fi
 
         # Add FastCGI cache settings if not present
-        if ! grep -q "fastcgi_cache_path" "$nginx_conf"; then
-            # Create cache directory
-            mkdir -p /var/cache/nginx/fastcgi
-            chown www-data:www-data /var/cache/nginx/fastcgi
+        if ! grep -q "fastcgi_cache_key" "$nginx_conf"; then
+            # Create directory for per-user cache zone configs
+            mkdir -p /etc/nginx/jabali/cache-zones
 
             # Add FastCGI cache configuration before the closing brace of http block
+            # Per-user fastcgi_cache_path directives are managed by the Jabali agent
             sed -i '/^http {/,/^}/ {
                 /include \/etc\/nginx\/sites-enabled\/\*;/a\
 \
@@ -1444,9 +1444,11 @@ configure_nginx() {
 \t# FastCGI Cache\
 \t##\
 \
-\tfastcgi_cache_path /var/cache/nginx/fastcgi levels=1:2 keys_zone=JABALI:100m inactive=60m max_size=1g;\
+\t# Per-user fastcgi cache paths are managed by the Jabali agent\
+\t# Each user gets: fastcgi_cache_path /home/{user}/cache/nginx levels=1:2 keys_zone=JABALI_{user}:10m inactive=60m max_size=512m;\
 \tfastcgi_cache_key "$scheme$request_method$host$request_uri";\
-\tfastcgi_cache_use_stale error timeout invalid_header http_500 http_503;
+\tfastcgi_cache_use_stale error timeout invalid_header http_500 http_503;\
+\tinclude /etc/nginx/jabali/cache-zones/*.conf;
             }' "$nginx_conf"
         fi
 

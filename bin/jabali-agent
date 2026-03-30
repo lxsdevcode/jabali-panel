@@ -826,6 +826,7 @@ function handleAction(array $request): array
         // Log analysis
         'logs.tail' => logsTail($params),
         'logs.goaccess' => logsGoaccess($params),
+        'logs.goaccess_stop' => logsGoaccessStop($params),
         // Redis ACL management
         'redis.create_user' => redisCreateUser($params),
         'redis.delete_user' => redisDeleteUser($params),
@@ -7179,6 +7180,33 @@ function wpPageCacheEnable(array $params): array
     $hasPageCache = strpos($config, 'fastcgi_cache JABALI') !== false;
     $hasHammerBypass = strpos($config, 'cache_reason "hammer"') !== false;
 
+    // Set up per-user cache zone
+    $cacheZoneDir = '/etc/nginx/jabali/cache-zones';
+    $cacheZoneFile = "{$cacheZoneDir}/{$username}.conf";
+    $userCacheDir = "/home/{$username}/cache/nginx";
+
+    if (! is_dir($cacheZoneDir)) {
+        @mkdir($cacheZoneDir, 0755, true);
+    }
+
+    if (! file_exists($cacheZoneFile)) {
+        if (! is_dir($userCacheDir)) {
+            mkdir($userCacheDir, 0755, true);
+            $userInfo = posix_getpwnam($username);
+            if ($userInfo) {
+                chown($userCacheDir, $userInfo['uid']);
+                chgrp($userCacheDir, $userInfo['gid']);
+                // Also ensure parent cache dir ownership
+                $parentCache = "/home/{$username}/cache";
+                chown($parentCache, $userInfo['uid']);
+                chgrp($parentCache, $userInfo['gid']);
+            }
+        }
+
+        $zoneContent = "fastcgi_cache_path /home/{$username}/cache/nginx levels=1:2 keys_zone=JABALI_{$username}:10m inactive=60m max_size=512m;\n";
+        file_put_contents($cacheZoneFile, $zoneContent);
+    }
+
     // If cache is already enabled, ensure hammer bypass exists
     if ($hasPageCache && ! $hasHammerBypass) {
         $hammerRule = <<<'HAMMER'
@@ -7310,20 +7338,18 @@ HAMMER;
 
 CACHE;
 
-    // Add cache directives to PHP location block
-    $phpCacheDirectives = <<<'PHPCACHE'
-
-        # Page Cache
-        fastcgi_cache JABALI;
-        fastcgi_cache_valid 200 301 302 60m;
-        fastcgi_cache_valid 404 1m;
-        fastcgi_cache_bypass $skip_cache;
-        fastcgi_no_cache $skip_cache;
-        add_header X-Cache $upstream_cache_status;
-        add_header X-Cache-Reason $cache_reason;
-        # bfcache-compatible: no-store breaks back/forward cache
-        add_header Cache-Control "public, no-cache";
-PHPCACHE;
+    // Add cache directives to PHP location block (per-user cache zone)
+    $phpCacheDirectives = "\n"
+        ."        # Page Cache\n"
+        ."        fastcgi_cache JABALI_{$username};\n"
+        ."        fastcgi_cache_valid 200 301 302 60m;\n"
+        ."        fastcgi_cache_valid 404 1m;\n"
+        .'        fastcgi_cache_bypass $skip_cache;'."\n"
+        .'        fastcgi_no_cache $skip_cache;'."\n"
+        .'        add_header X-Cache $upstream_cache_status;'."\n"
+        .'        add_header X-Cache-Reason $cache_reason;'."\n"
+        ."        # bfcache-compatible: no-store breaks back/forward cache\n"
+        .'        add_header Cache-Control "public, no-cache";';
 
     // Insert cache block after root directive in HTTPS server block
     // Use preg_replace_callback to avoid $ and {} being interpreted as backreferences
@@ -7456,7 +7482,7 @@ function wpPageCacheDisable(array $params): array
     $cacheLines = [
         '/^\s*# Page Cache\s*$/m',
         '/^\s*# bfcache-compatible:.*$/m',
-        '/^\s*fastcgi_cache\s+JABALI\s*;/m',
+        '/^\s*fastcgi_cache\s+JABALI[a-z0-9_]*\s*;/m',
         '/^\s*fastcgi_cache_valid\s+[^;]+;/m',
         '/^\s*fastcgi_cache_bypass\s+\$skip_cache\s*;/m',
         '/^\s*fastcgi_no_cache\s+\$skip_cache\s*;/m',
@@ -7506,6 +7532,45 @@ function wpPageCacheDisable(array $params): array
         return ['success' => false, 'error' => 'Failed to reload nginx'];
     }
 
+    // Clean up per-user cache zone if no other domains use it
+    $cacheUser = '';
+    if (! empty($username) && validateUsername($username)) {
+        $cacheUser = $username;
+    } else {
+        $cacheUser = getUsernameFromDomainConfig($domain);
+    }
+
+    if ($cacheUser !== '' && validateUsername($cacheUser)) {
+        // Check if user has any other domains with page cache enabled
+        $otherCacheExists = false;
+        $sitesAvailable = glob('/etc/nginx/sites-available/*.conf');
+        foreach ($sitesAvailable as $siteConf) {
+            $siteDomain = basename($siteConf, '.conf');
+            if ($siteDomain === $domain) {
+                continue;
+            }
+            $siteContent = file_get_contents($siteConf);
+            if (strpos($siteContent, "fastcgi_cache JABALI_{$cacheUser}") !== false) {
+                $otherCacheExists = true;
+                break;
+            }
+        }
+
+        // Clear the user's cache directory
+        $userCacheDir = "/home/{$cacheUser}/cache/nginx";
+        if (is_dir($userCacheDir)) {
+            exec('rm -rf ' . escapeshellarg($userCacheDir) . '/*');
+        }
+
+        // Remove cache zone config if no other domains use it
+        if (! $otherCacheExists) {
+            $cacheZoneFile = "/etc/nginx/jabali/cache-zones/{$cacheUser}.conf";
+            if (file_exists($cacheZoneFile)) {
+                @unlink($cacheZoneFile);
+            }
+        }
+    }
+
     // Update WordPress site record if siteId provided
     if (! empty($siteId) && ! empty($username) && validateUsername($username)) {
         $userInfo = posix_getpwnam($username);
@@ -7540,7 +7605,13 @@ function wpPageCachePurge(array $params): array
         return ['success' => false, 'error' => 'Domain is required'];
     }
 
-    $cacheDir = '/var/cache/nginx/fastcgi';
+    // Determine per-user cache directory from the domain's nginx config
+    $cacheUsername = getUsernameFromDomainConfig($domain);
+    if ($cacheUsername === '' || ! validateUsername($cacheUsername)) {
+        return ['success' => false, 'error' => 'Could not determine cache user for domain'];
+    }
+
+    $cacheDir = "/home/{$cacheUsername}/cache/nginx";
     if (! is_dir($cacheDir)) {
         return ['success' => false, 'error' => 'Cache directory not found'];
     }
@@ -7559,24 +7630,10 @@ function wpPageCachePurge(array $params): array
     // Files are stored in levels=1:2 subdirectories based on MD5 hash
 
     if (empty($pathsToCheck)) {
-        // Purge all cache for this domain — delete all files in cache dir
-        // On a single-site server this is safe; on multi-site the cache key
-        // includes the domain so nginx will re-populate only what's needed
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isFile()) {
-                if (@unlink($file->getPathname())) {
-                    $purged++;
-                }
-            } elseif ($file->isDir()) {
-                @rmdir($file->getPathname());
-            }
-        }
-        logger("Purged all {$purged} cache files for domain: {$domain}");
+        // Purge all cache for this domain — instant rm -rf of per-user dir
+        exec('rm -rf ' . escapeshellarg($cacheDir) . '/*');
+        $purged = 1;
+        logger("Purged all cache for domain: {$domain} (user: {$cacheUsername})");
     } else {
         // Purge specific paths - calculate the cache file location for each
         $schemes = ['https', 'http'];
@@ -7644,12 +7701,20 @@ function wpPageCacheStatus(array $params): array
         $enabled = strpos($config, 'fastcgi_cache JABALI') !== false;
     }
 
-    // Count cached files for this domain
+    // Count cached files for this domain using per-user cache directory
     $cachedFiles = 0;
     $cacheSize = 0;
-    $cacheDir = '/var/cache/nginx/fastcgi';
+    $cacheUsername = ! empty($username) && validateUsername($username)
+        ? $username
+        : getUsernameFromDomainConfig($domain);
 
-    if (is_dir($cacheDir) && $enabled) {
+    if ($cacheUsername !== '') {
+        $cacheDir = "/home/{$cacheUsername}/cache/nginx";
+    } else {
+        $cacheDir = '';
+    }
+
+    if ($cacheDir !== '' && is_dir($cacheDir) && $enabled) {
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST
@@ -7657,11 +7722,8 @@ function wpPageCacheStatus(array $params): array
 
         foreach ($iterator as $file) {
             if ($file->isFile()) {
-                $content = file_get_contents($file->getPathname(), false, null, 0, 2048);
-                if (strpos($content, $domain) !== false) {
-                    $cachedFiles++;
-                    $cacheSize += $file->getSize();
-                }
+                $cachedFiles++;
+                $cacheSize += $file->getSize();
             }
         }
     }
@@ -18333,6 +18395,25 @@ function isPathWithinUserHome(string $path, string $username): bool
     return str_starts_with($normalized, $home);
 }
 
+/**
+ * Extract the username from a domain's nginx vhost config root directive.
+ * The root follows the pattern /home/{username}/domains/...
+ */
+function getUsernameFromDomainConfig(string $domain): string
+{
+    $configFile = "/etc/nginx/sites-available/{$domain}.conf";
+    if (! file_exists($configFile)) {
+        return '';
+    }
+
+    $config = file_get_contents($configFile);
+    if (preg_match('#root\s+/home/([a-z][a-z0-9_]{0,31})/domains/#', $config, $matches)) {
+        return $matches[1];
+    }
+
+    return '';
+}
+
 function getDomainDocumentRoot(string $username, string $domain): string
 {
     $domainListFile = "/home/$username/.domains";
@@ -18368,27 +18449,28 @@ function resolveStatsDirectory(string $username, string $domain, string $documen
     return $statsDir;
 }
 
+function goaccessDaemonPort(string $domain): int
+{
+    return 7890 + (crc32($domain) % 1000);
+}
+
 function logsGoaccess(array $params): array
 {
     $username = $params['username'] ?? '';
     $domain = $params['domain'] ?? '';
-    $period = $params['period'] ?? 'today'; // today, week, month, all
 
     if (empty($username) || empty($domain)) {
         return ['success' => false, 'error' => 'Username and domain are required'];
     }
 
-    // Validate username
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
     }
 
-    // Validate domain
-    if (! preg_match('/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $domain)) {
+    if (! validateDomain($domain)) {
         return ['success' => false, 'error' => 'Invalid domain'];
     }
 
-    // Check if goaccess is installed
     if (! file_exists('/usr/bin/goaccess')) {
         return ['success' => false, 'error' => 'GoAccess is not installed'];
     }
@@ -18414,16 +18496,35 @@ function logsGoaccess(array $params): array
     }
 
     $outputFile = "$statsDir/report.html";
+    $pidDir = '/run/goaccess';
+    $pidFile = "$pidDir/$domain.pid";
+    $port = goaccessDaemonPort($domain);
 
-    // Ensure /stats location exists in nginx config to bypass WordPress
+    // Check if daemon is already running
+    if (file_exists($pidFile)) {
+        $pid = (int) trim(file_get_contents($pidFile));
+        if ($pid > 0 && file_exists("/proc/$pid")) {
+            return [
+                'success' => true,
+                'domain' => $domain,
+                'daemon_running' => true,
+                'daemon_started' => false,
+                'report_url' => '/stats/report.html',
+                'ws_port' => $port,
+            ];
+        }
+        // Stale PID file — clean up
+        unlink($pidFile);
+    }
+
+    // Ensure /stats and /stats/ws locations exist in nginx config
     $nginxConfig = "/etc/nginx/sites-available/$domain.conf";
     if (file_exists($nginxConfig)) {
         $config = file_get_contents($nginxConfig);
+        $nginxChanged = false;
+
         if (strpos($config, 'location /stats/') === false) {
             $statsAlias = $statsDir.'/';
-
-            // Add /stats location in the HTTPS (443) server block before the main location / block
-            // Find the 443 server block and insert the /stats location
             $pattern = '/(listen 443 ssl;.*?)(    location \/ \{)/s';
             $replacement = '$1    # Stats directory - serve static files directly'."\n".
                           '    location /stats/ {'."\n".
@@ -18433,68 +18534,100 @@ function logsGoaccess(array $params): array
                           '    }'."\n\n".
                           '$2';
             $config = preg_replace($pattern, $replacement, $config, 1);
-            file_put_contents($nginxConfig, $config);
+            $nginxChanged = true;
+        }
 
-            // Reload nginx
+        if (strpos($config, 'location /stats/ws') === false) {
+            $pattern = '/(location \/stats\/ \{[^}]+\})/s';
+            $replacement = '$1'."\n\n".
+                          '    # GoAccess WebSocket proxy'."\n".
+                          '    location /stats/ws {'."\n".
+                          '        proxy_pass http://127.0.0.1:'.$port.';'."\n".
+                          '        proxy_http_version 1.1;'."\n".
+                          '        proxy_set_header Upgrade $http_upgrade;'."\n".
+                          '        proxy_set_header Connection "upgrade";'."\n".
+                          '    }';
+            $config = preg_replace($pattern, $replacement, $config, 1);
+            $nginxChanged = true;
+        }
+
+        if ($nginxChanged) {
+            file_put_contents($nginxConfig, $config);
             exec('systemctl reload nginx 2>&1');
         }
     }
 
-    // Build date filter based on period
-    $dateFilter = '';
-    switch ($period) {
-        case 'today':
-            $dateFilter = date('d/M/Y');
-            break;
-        case 'week':
-            // Last 7 days - no filter needed, goaccess will show all
-            break;
-        case 'month':
-            // Current month
-            $dateFilter = date('/M/Y');
-            break;
-        case 'all':
-        default:
-            // No filter
-            break;
+    // Ensure PID directory exists
+    if (! is_dir($pidDir)) {
+        mkdir($pidDir, 0755, true);
     }
 
-    // Generate HTML report with GoAccess
-    // Using COMBINED log format (nginx default)
+    // Start GoAccess in daemon mode
     $cmd = sprintf(
-        '/usr/bin/goaccess %s -o %s --log-format=COMBINED --no-query-string --anonymize-ip --html-report-title=%s 2>&1',
+        '/usr/bin/goaccess %s -o %s --log-format=COMBINED --real-time-html --ws-url=%s --port=%d --pid-file=%s --daemonize --no-query-string --anonymize-ip --html-report-title=%s 2>&1',
         escapeshellarg($accessLog),
         escapeshellarg($outputFile),
+        escapeshellarg("wss://$domain/stats/ws"),
+        $port,
+        escapeshellarg($pidFile),
         escapeshellarg("$domain Statistics")
     );
 
     exec($cmd, $output, $exitCode);
 
-    if ($exitCode !== 0 || ! file_exists($outputFile)) {
+    if ($exitCode !== 0) {
         return [
             'success' => false,
-            'error' => 'Failed to generate report: '.implode("\n", $output),
+            'error' => 'Failed to start GoAccess daemon: '.implode("\n", $output),
         ];
     }
 
-    // Set proper ownership
-    chown($outputFile, $username);
-    chgrp($outputFile, $username);
-
-    // Get basic stats from the log file
-    $lineCount = intval(trim(shell_exec('wc -l < '.escapeshellarg($accessLog))));
-    $fileSize = filesize($accessLog);
+    // Set proper ownership on the report file
+    if (file_exists($outputFile)) {
+        chown($outputFile, $username);
+        chgrp($outputFile, $username);
+    }
 
     return [
         'success' => true,
         'domain' => $domain,
-        'period' => $period,
-        'report_path' => $outputFile,
-        'report_url' => '/stats/report.html', // Relative URL for domain
-        'log_lines' => $lineCount,
-        'log_size' => $fileSize,
-        'generated_at' => date('Y-m-d H:i:s'),
+        'daemon_running' => true,
+        'daemon_started' => true,
+        'report_url' => '/stats/report.html',
+        'ws_port' => $port,
     ];
+}
+
+function logsGoaccessStop(array $params): array
+{
+    $domain = $params['domain'] ?? '';
+
+    if (empty($domain) || ! validateDomain($domain)) {
+        return ['success' => false, 'error' => 'Invalid domain'];
+    }
+
+    $pidFile = "/run/goaccess/$domain.pid";
+
+    if (! file_exists($pidFile)) {
+        return ['success' => true, 'was_running' => false];
+    }
+
+    $pid = (int) trim(file_get_contents($pidFile));
+
+    if ($pid > 0 && file_exists("/proc/$pid")) {
+        posix_kill($pid, SIGTERM);
+        // Wait briefly for graceful shutdown
+        usleep(200000);
+        if (file_exists("/proc/$pid")) {
+            posix_kill($pid, SIGKILL);
+        }
+    }
+
+    if (file_exists($pidFile)) {
+        unlink($pidFile);
+    }
+
+    return ['success' => true, 'was_running' => true];
 }
 
 // ============ JABALI SYSTEM SSH KEY ============
