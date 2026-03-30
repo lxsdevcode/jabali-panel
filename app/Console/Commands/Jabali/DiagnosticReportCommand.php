@@ -312,9 +312,17 @@ class DiagnosticReportCommand extends Command
             throw new Exception('Failed to load report encryption key');
         }
 
-        $compressed = gzencode(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $jsonData = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        try {
+            $compressed = gzencode($jsonData);
+        } catch (\Throwable) {
+            $compressed = false;
+        }
+
+        // Fall back to uncompressed if gzencode fails (e.g., FrankenPHP stream issues)
         if ($compressed === false) {
-            throw new Exception('Failed to compress report data');
+            $compressed = $jsonData;
         }
 
         $iv = '';
