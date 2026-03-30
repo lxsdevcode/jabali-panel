@@ -85,7 +85,7 @@ class UpgradeCommand extends Command
         $this->line("Current version: <info>{$currentVersion}</info>");
 
         // Step 1: Check git status
-        $this->info('[1/9] Checking repository status...');
+        $this->info('[1/10] Checking repository status...');
         try {
             $this->configureGitSafeDirectory();
             $this->ensureGitRepository();
@@ -112,7 +112,7 @@ class UpgradeCommand extends Command
         }
 
         // Step 2: Fetch updates
-        $this->info('[2/9] Fetching updates from repository...');
+        $this->info('[2/10] Fetching updates from repository...');
         try {
             $updateSource = $this->fetchUpdates();
         } catch (Exception $e) {
@@ -131,7 +131,7 @@ class UpgradeCommand extends Command
 
         // Step 4: Pull changes
         $oldHead = trim($this->executeCommandOrFail('git rev-parse HEAD'));
-        $this->info('[3/9] Pulling latest changes...');
+        $this->info('[3/10] Pulling latest changes...');
         try {
             if (! $this->isRunningAsRoot()) {
                 // Running as www-data (from web UI) — use agent to pull as root
@@ -181,7 +181,7 @@ class UpgradeCommand extends Command
         $shouldRunMigrations = $this->shouldRunMigrations($changedFiles, $this->option('force'));
 
         // Step 5: Install composer dependencies
-        $this->info('[4/9] Installing PHP dependencies...');
+        $this->info('[4/10] Installing PHP dependencies...');
         if ($shouldRunComposer) {
             try {
                 $this->ensureCommandAvailable('composer');
@@ -203,7 +203,7 @@ class UpgradeCommand extends Command
         }
 
         // Step 5b: Install npm dependencies and build assets
-        $this->info('[5/9] Building frontend assets...');
+        $this->info('[5/10] Building frontend assets...');
         if ($shouldRunNpm) {
             try {
                 $this->ensureCommandAvailable('npm');
@@ -253,7 +253,7 @@ class UpgradeCommand extends Command
         }
 
         // Step 6: Run migrations
-        $this->info('[6/9] Running database migrations...');
+        $this->info('[6/10] Running database migrations...');
         if ($shouldRunMigrations) {
             try {
                 Artisan::call('migrate', ['--force' => true]);
@@ -268,7 +268,7 @@ class UpgradeCommand extends Command
         }
 
         // Step 7: Clear caches
-        $this->info('[7/9] Clearing caches...');
+        $this->info('[7/10] Clearing caches...');
         try {
             Artisan::call('optimize:clear');
             $this->line(Artisan::output());
@@ -277,11 +277,14 @@ class UpgradeCommand extends Command
         }
 
         // Step 8: Setup Redis ACL if not configured
-        $this->info('[8/9] Checking Redis ACL configuration...');
+        $this->info('[8/10] Checking Redis ACL configuration...');
         $this->setupRedisAcl();
 
-        // Step 9: Restart services
-        $this->info('[9/9] Restarting services...');
+        // Step 9: Migrate nginx page cache to per-user directories
+        $this->migrateNginxPageCache();
+
+        // Step 10: Restart services
+        $this->info('[10/10] Restarting services...');
         $this->restartServices();
 
         $newVersion = $this->getCurrentVersion();
@@ -724,6 +727,59 @@ class UpgradeCommand extends Command
         }
 
         return false;
+    }
+
+    /**
+     * Migrate nginx page cache from global /var/cache/nginx/fastcgi to per-user directories.
+     */
+    private function migrateNginxPageCache(): void
+    {
+        $nginxConf = '/etc/nginx/nginx.conf';
+        if (! file_exists($nginxConf)) {
+            return;
+        }
+
+        $config = file_get_contents($nginxConf);
+
+        // Skip if already migrated (include directive exists)
+        if (str_contains($config, 'cache-zones/*.conf')) {
+            return;
+        }
+
+        // Skip if no fastcgi cache configured at all
+        if (! str_contains($config, 'fastcgi_cache_path')) {
+            return;
+        }
+
+        $this->info('[9/10] Migrating nginx page cache to per-user directories...');
+
+        // Create the cache-zones directory
+        if (! is_dir('/etc/nginx/jabali/cache-zones')) {
+            @mkdir('/etc/nginx/jabali/cache-zones', 0755, true);
+        }
+
+        // Remove old global fastcgi_cache_path line
+        $config = preg_replace('/^\s*fastcgi_cache_path\s+\/var\/cache\/nginx\/fastcgi[^;]*;\s*\n/m', '', $config);
+
+        // Add include for per-user cache zones after fastcgi_cache_use_stale
+        if (str_contains($config, 'fastcgi_cache_use_stale')) {
+            $config = preg_replace(
+                '/(fastcgi_cache_use_stale[^;]+;)/m',
+                "$1\n\tinclude /etc/nginx/jabali/cache-zones/*.conf;",
+                $config,
+                1
+            );
+        }
+
+        file_put_contents($nginxConf, $config);
+
+        // Test nginx config
+        exec('nginx -t 2>&1', $output, $exitCode);
+        if ($exitCode === 0) {
+            $this->line('  Nginx page cache migrated to per-user directories.');
+        } else {
+            $this->warn('  Nginx config test failed after migration. Check /etc/nginx/nginx.conf.');
+        }
     }
 
     protected function restartServices(): void
