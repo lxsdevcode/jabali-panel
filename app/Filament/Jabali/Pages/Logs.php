@@ -251,7 +251,10 @@ class Logs extends Page implements HasActions, HasForms
 
             if ($result['success'] ?? false) {
                 $this->statsGenerated = true;
-                $this->statsUrl = 'https://'.$this->selectedDomain.($result['report_url'] ?? '/stats/report.html');
+                $statsUser = $result['stats_user'] ?? '';
+                $statsPass = $result['stats_password'] ?? '';
+                $authPrefix = ($statsUser && $statsPass) ? rawurlencode($statsUser).':'.rawurlencode($statsPass).'@' : '';
+                $this->statsUrl = 'https://'.$authPrefix.$this->selectedDomain.($result['report_url'] ?? '/stats/report.html');
 
                 if ($result['daemon_started'] ?? false) {
                     Notification::make()
