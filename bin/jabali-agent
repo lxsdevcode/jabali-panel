@@ -7327,7 +7327,7 @@ PHPCACHE;
     // Insert cache block after root directive in HTTPS server block
     // Use preg_replace_callback to avoid $ and {} being interpreted as backreferences
     $config = preg_replace_callback(
-        '/(listen 443 ssl;[^}]*?root [^;]+;)/s',
+        '/(listen 443 ssl[^;]*;[^}]*?root [^;]+;)/s',
         function ($matches) use ($cacheBlock) {
             return $matches[1].$cacheBlock;
         },
