@@ -3274,7 +3274,7 @@ setup_restic() {
         return
     fi
 
-    # Generate password if not exists
+    # Generate encryption password if not exists
     local password_file="/etc/jabali/restic-password"
     if [[ ! -f "$password_file" ]]; then
         mkdir -p /etc/jabali
@@ -3283,18 +3283,10 @@ setup_restic() {
         log "Restic password generated"
     fi
 
-    # Initialize default local repository
-    local repo_path="/var/backups/jabali/restic"
-    mkdir -p "$repo_path"
+    # Create default local backup directory (repo is initialized on first backup)
+    mkdir -p /var/backups/jabali/restic
 
-    if [[ ! -f "${repo_path}/config" ]]; then
-        RESTIC_PASSWORD_FILE="$password_file" restic init --repo "$repo_path" 2>/dev/null
-        log "Restic repository initialized at ${repo_path}"
-    else
-        info "Restic repository already initialized"
-    fi
-
-    log "Restic backup configured"
+    log "Restic backup configured (add a destination in the panel to start backing up)"
 }
 
 # Setup SSL certificates for panel and mail services
