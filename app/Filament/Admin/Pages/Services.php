@@ -277,7 +277,7 @@ class Services extends Page implements HasActions, HasForms, HasTable
         $this->agentCall(
             action: "service.{$action}",
             params: ['service' => $service],
-            successTitle: ':service '.$actionPast,
+            successTitle: $service.' '.$actionPast,
             errorTitle: 'Action failed',
             onSuccess: function () use ($actionPast, $service): void {
                 AuditLog::logServiceAction($actionPast, $service);
