@@ -1357,6 +1357,16 @@ server {
         fastcgi_next_upstream_timeout 5s;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
+        # Default cache headers for dynamic content
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+    }
+
+    # Static asset caching
+    location ~* \.(jpg|jpeg|png|gif|ico|svg|webp|avif|css|js|woff|woff2|ttf|eot|otf|mp4|webm|ogg|mp3|pdf|zip)$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        access_log off;
     }
 
     # Webmail — Bulwark (Stalwart backend) or Roundcube (legacy backend)
@@ -7325,6 +7335,11 @@ PHPCACHE;
         1
     );
 
+    // Remove default no-cache headers from PHP block (page cache handles its own)
+    $config = preg_replace('/^\s*# Default cache headers for dynamic content\s*\n/m', '', $config);
+    $config = preg_replace('/^\s*add_header\s+Cache-Control\s+"no-cache,\s*no-store,\s*must-revalidate"\s+always\s*;\s*\n/m', '', $config);
+    $config = preg_replace('/^\s*add_header\s+Pragma\s+"no-cache"\s+always\s*;\s*\n/m', '', $config);
+
     // Insert cache directives after include fastcgi_params in PHP location
     $config = preg_replace_callback(
         '/(location\s+~\s+\\\\.php\$\s*\{[^}]*?include\s+fastcgi_params;)/s',
@@ -7454,6 +7469,18 @@ function wpPageCacheDisable(array $params): array
     }
     // Clean up multiple blank lines
     $config = preg_replace('/\n{3,}/', "\n\n", $config);
+
+    // Restore default no-cache headers for dynamic content in PHP block
+    $defaultCacheHeaders = "\n        # Default cache headers for dynamic content\n"
+        ."        add_header Cache-Control \"no-cache, no-store, must-revalidate\" always;\n"
+        ."        add_header Pragma \"no-cache\" always;";
+    $config = preg_replace_callback(
+        '/(location\s+~\s+\\\\.php\$\s*\{[^}]*?include\s+fastcgi_params;)/s',
+        function ($matches) use ($defaultCacheHeaders) {
+            return $matches[1].$defaultCacheHeaders;
+        },
+        $config
+    );
 
     // Backup original config
     copy($configFile, $configFile.'.bak');

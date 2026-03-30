@@ -170,6 +170,16 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         ->form($this->getIndexForm())
                         ->fillForm(fn (Domain $record) => ['directory_index' => $record->directory_index])
                         ->action(fn (Domain $record, array $data) => $this->saveIndexSettings($record, $data)),
+                    Action::make('togglePageCache')
+                        ->label(fn (Domain $record) => $record->page_cache_enabled ? __('Disable Page Cache') : __('Enable Page Cache'))
+                        ->icon(fn (Domain $record) => $record->page_cache_enabled ? 'heroicon-o-bolt-slash' : 'heroicon-o-bolt')
+                        ->color(fn (Domain $record) => $record->page_cache_enabled ? 'warning' : 'success')
+                        ->requiresConfirmation()
+                        ->modalHeading(fn (Domain $record) => $record->page_cache_enabled ? __('Disable Page Cache') : __('Enable Page Cache'))
+                        ->modalDescription(fn (Domain $record) => $record->page_cache_enabled
+                            ? __('This will disable nginx page caching for :domain. Pages will no longer be served from cache.', ['domain' => $record->domain])
+                            : __('This will enable nginx page caching for :domain. Cached pages will load faster for visitors.', ['domain' => $record->domain]))
+                        ->action(fn (Domain $record) => $this->togglePageCache($record)),
                 ])
                     ->label(__('Settings'))
                     ->icon('heroicon-o-cog-6-tooth')
@@ -673,6 +683,26 @@ class Domains extends Page implements HasActions, HasForms, HasTable
             errorTitle: 'Error toggling domain',
             onSuccess: function () use ($domain, $newStatus): void {
                 $domain->update(['is_active' => $newStatus]);
+            },
+        );
+    }
+
+    public function togglePageCache(Domain $domain): void
+    {
+        $newStatus = ! $domain->page_cache_enabled;
+        $action = $newStatus ? 'wp.page_cache_enable' : 'wp.page_cache_disable';
+        $label = $newStatus ? __('Page Cache Enabled') : __('Page Cache Disabled');
+
+        $this->agentCall(
+            action: $action,
+            params: [
+                'username' => $this->getUsername(),
+                'domain' => $domain->domain,
+            ],
+            successTitle: $label,
+            errorTitle: __('Error toggling page cache'),
+            onSuccess: function () use ($domain, $newStatus): void {
+                $domain->update(['page_cache_enabled' => $newStatus]);
             },
         );
     }
