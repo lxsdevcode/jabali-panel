@@ -77,6 +77,9 @@ class SslCommandTest extends TestCase
 
     public function test_ssl_issue_calls_agent(): void
     {
+        $user = \App\Models\User::factory()->create();
+        $domain = \App\Models\Domain::create(['domain' => 'ssl-test-'.$user->id.'.example.com', 'user_id' => $user->id, 'document_root' => "/home/{$user->username}/domains/ssl-test/public_html"]);
+
         $agent = $this->createMock(AgentClientInterface::class);
         $agent->method('send')->willReturn([
             'success' => true,
@@ -84,9 +87,12 @@ class SslCommandTest extends TestCase
         ]);
         $this->app->instance(AgentClientInterface::class, $agent);
 
-        $this->artisan('jabali:ssl:issue', ['domain' => 'example.com'])
+        $this->artisan('jabali:ssl:issue', ['domain' => $domain->domain])
             ->assertExitCode(0)
-            ->expectsOutputToContain('example.com');
+            ->expectsOutputToContain($domain->domain);
+
+        $domain->delete();
+        $user->delete();
     }
 
     public function test_ssl_renew_calls_agent(): void
