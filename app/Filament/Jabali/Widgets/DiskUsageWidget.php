@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Widgets;
 
+use App\Models\DomainBandwidthUsage;
 use App\Support\Formatter;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Facades\Auth;
@@ -12,11 +13,11 @@ class DiskUsageWidget extends Widget
 {
     protected static ?int $sort = 4;
 
-    protected int|string|array $columnSpan = 1;
+    protected int|string|array $columnSpan = 'full';
 
     protected string $view = 'filament.jabali.widgets.disk-usage';
 
-    public function getData(): array
+    public function getDiskData(): array
     {
         $user = Auth::user();
         $usedBytes = $user->getDiskUsageBytes();
@@ -31,6 +32,30 @@ class DiskUsageWidget extends Widget
             'has_quota' => $quotaBytes > 0,
             'home' => $user->home_directory,
             'color' => $this->getColor($percent),
+        ];
+    }
+
+    public function getBandwidthData(): array
+    {
+        $user = Auth::user();
+        $package = $user->hostingPackage;
+        $quotaBytes = $package ? (int) $package->bandwidth_gb * 1073741824 : 0;
+
+        $usedBytes = (int) DomainBandwidthUsage::whereHas('domain', fn ($q) => $q->where('user_id', $user->id))
+            ->whereYear('date', now()->year)
+            ->whereMonth('date', now()->month)
+            ->sum('bytes_out');
+
+        $percent = $quotaBytes > 0 ? min(100, round(($usedBytes / $quotaBytes) * 100, 1)) : 0;
+
+        return [
+            'used' => Formatter::bytes($usedBytes),
+            'quota' => $quotaBytes > 0 ? Formatter::bytes($quotaBytes) : __('Unlimited'),
+            'free' => $quotaBytes > 0 ? Formatter::bytes(max(0, $quotaBytes - $usedBytes)) : null,
+            'percent' => $percent,
+            'has_quota' => $quotaBytes > 0,
+            'period' => now()->format('F Y'),
+            'color' => $this->getColor((float) $percent),
         ];
     }
 
