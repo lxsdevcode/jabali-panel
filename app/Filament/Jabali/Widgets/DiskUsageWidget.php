@@ -13,7 +13,7 @@ class DiskUsageWidget extends Widget
 {
     protected static ?int $sort = 4;
 
-    protected int|string|array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 1;
 
     protected string $view = 'filament.jabali.widgets.disk-usage';
 

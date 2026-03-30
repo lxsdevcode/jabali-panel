@@ -7,7 +7,7 @@
             $bw = $this->getBandwidthData();
         @endphp
 
-        <div class="grid gap-6 md:grid-cols-2">
+        <div class="space-y-6">
             {{-- Disk Usage --}}
             <div>
                 <div class="mb-3">
