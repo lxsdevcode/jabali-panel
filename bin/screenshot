@@ -12,17 +12,26 @@ fi
 
 # Create temp directory for this run
 TMPDIR="/tmp/chromium-screenshot-$$"
-mkdir -p "$TMPDIR/data"
+mkdir -p "$TMPDIR/data" "$TMPDIR/.local/share" "$TMPDIR/.cache" "$TMPDIR/.config"
 
-# Set environment
+# Snap Chromium needs its own writable home + snap dir
+SNAP_HOME="/var/www/snap"
+if [[ ! -d "$SNAP_HOME" ]]; then
+    mkdir -p "$SNAP_HOME" 2>/dev/null || true
+    chown www-data:www-data "$SNAP_HOME" 2>/dev/null || true
+fi
+
+# Set environment for headless operation
 export HOME="$TMPDIR"
-export XDG_CONFIG_HOME="$TMPDIR"
-export XDG_CACHE_HOME="$TMPDIR"
+export XDG_CONFIG_HOME="$TMPDIR/.config"
+export XDG_CACHE_HOME="$TMPDIR/.cache"
+export XDG_DATA_HOME="$TMPDIR/.local/share"
 export XDG_RUNTIME_DIR="$TMPDIR"
+export DBUS_SESSION_BUS_ADDRESS=/dev/null
 
-# Find chromium binary
+# Find chromium binary — prefer non-snap
 CHROME=""
-for bin in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome /snap/bin/chromium; do
+for bin in /usr/bin/chromium /usr/bin/google-chrome /usr/bin/chromium-browser /snap/bin/chromium; do
     if [[ -x "$bin" ]]; then
         CHROME="$bin"
         break
@@ -35,16 +44,19 @@ if [[ -z "$CHROME" ]]; then
     exit 1
 fi
 
-# Use old headless mode which is more stable
+# Run headless Chromium
 "$CHROME" \
-    --headless \
+    --headless=new \
     --disable-gpu \
     --no-sandbox \
     --disable-setuid-sandbox \
-    --single-process \
     --disable-dev-shm-usage \
     --disable-software-rasterizer \
     --disable-extensions \
+    --disable-background-networking \
+    --disable-sync \
+    --no-first-run \
+    --no-default-browser-check \
     --user-data-dir="$TMPDIR/data" \
     --ignore-certificate-errors \
     --window-size=1280,800 \
@@ -57,7 +69,7 @@ RESULT=$?
 # Clean up temp directory
 rm -rf "$TMPDIR" 2>/dev/null
 
-# Check if screenshot was created
+# Check if screenshot was created and is not empty
 if [[ -f "$OUTPUT" ]] && [[ $(stat -c%s "$OUTPUT" 2>/dev/null || echo 0) -gt 1000 ]]; then
     exit 0
 else
