@@ -18,7 +18,21 @@ class SslIssueCommand extends JabaliCommand
         $this->setupFormatter();
 
         $domain = $this->argument('domain');
-        $params = ['domain' => $domain];
+
+        // Look up the domain's owner
+        $domainModel = \App\Models\Domain::where('domain', $domain)->first();
+        $username = $domainModel?->user?->username ?? '';
+
+        if (empty($username)) {
+            $this->error("Domain '{$domain}' not found or has no owner.");
+
+            return Command::FAILURE;
+        }
+
+        $params = [
+            'domain' => $domain,
+            'username' => $username,
+        ];
 
         if ($this->option('force')) {
             $params['force'] = true;
