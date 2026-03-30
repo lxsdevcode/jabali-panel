@@ -747,5 +747,4 @@ class Jabali_Redis_Object_Cache
 
         return $stats;
     }
-
 }
