@@ -184,9 +184,9 @@ class DiagnosticReportCommand extends Command
             // skip
         }
 
-        // Cron / Laravel scheduler
+        // Cron / Laravel scheduler (check both root and www-data crontabs)
         try {
-            $result = $this->executeCommand('crontab -l 2>/dev/null | grep -c "artisan schedule:run"');
+            $result = $this->executeCommand('(crontab -l 2>/dev/null; crontab -u www-data -l 2>/dev/null) | grep -c "artisan schedule:run"');
             $data['scheduler_cron'] = ((int) trim($result['output'])) > 0;
         } catch (Exception) {
             $data['scheduler_cron'] = false;
@@ -281,6 +281,109 @@ class DiagnosticReportCommand extends Command
                 ->take(10)
                 ->get()
                 ->toArray();
+        } catch (Exception) {
+            // skip
+        }
+
+        // Agent socket connectivity
+        try {
+            $agent = app(AgentClient::class);
+            $ping = $agent->call('server.info', []);
+            $data['agent_socket'] = $ping->success ? 'connected' : 'error';
+        } catch (Exception $e) {
+            $data['agent_socket'] = 'unreachable: '.$e->getMessage();
+        }
+
+        // Pending/failed queue jobs
+        try {
+            $data['queue'] = [
+                'failed' => DB::table('failed_jobs')->count(),
+                'pending' => DB::table('jobs')->count(),
+            ];
+        } catch (Exception) {
+            // skip
+        }
+
+        // Listening ports
+        try {
+            $result = $this->executeCommand('ss -tlnp 2>/dev/null | grep -E ":(22|25|80|443|993|587|2223|53|3306|6379|8080) " | head -20');
+            $data['listening_ports'] = $result['exitCode'] === 0 ? $result['output'] : null;
+        } catch (Exception) {
+            // skip
+        }
+
+        // Firewall status
+        try {
+            $result = $this->executeCommand('ufw status 2>/dev/null | head -15');
+            $data['firewall'] = $result['exitCode'] === 0 ? $result['output'] : null;
+        } catch (Exception) {
+            // skip
+        }
+
+        // Key directory permissions
+        try {
+            $dirs = [
+                $this->basePath.'/storage',
+                $this->basePath.'/bootstrap/cache',
+                '/var/run/jabali',
+                '/etc/jabali',
+            ];
+            $perms = [];
+            foreach ($dirs as $dir) {
+                if (is_dir($dir)) {
+                    $stat = stat($dir);
+                    $perms[$dir] = [
+                        'owner' => posix_getpwuid($stat['uid'])['name'] ?? $stat['uid'],
+                        'group' => posix_getgrgid($stat['gid'])['name'] ?? $stat['gid'],
+                        'mode' => substr(sprintf('%o', $stat['mode']), -4),
+                        'writable' => is_writable($dir),
+                    ];
+                }
+            }
+            $data['directory_permissions'] = $perms;
+        } catch (Exception) {
+            // skip
+        }
+
+        // .env validation (check required keys exist without exposing values)
+        try {
+            $required = ['APP_KEY', 'APP_URL', 'DB_DATABASE', 'DB_USERNAME', 'REDIS_HOST'];
+            $missing = [];
+            foreach ($required as $key) {
+                if (empty(env($key))) {
+                    $missing[] = $key;
+                }
+            }
+            $data['env_missing_keys'] = $missing;
+        } catch (Exception) {
+            // skip
+        }
+
+        // Storage symlink
+        $data['storage_link'] = is_link($this->basePath.'/public/storage');
+
+        // Recent audit log
+        try {
+            $data['recent_audit'] = \App\Models\AuditLog::latest()
+                ->take(5)
+                ->get(['action', 'category', 'target_name', 'created_at'])
+                ->toArray();
+        } catch (Exception) {
+            // skip
+        }
+
+        // Nginx vhost count
+        try {
+            $result = $this->executeCommand('ls /etc/nginx/sites-enabled/ 2>/dev/null | wc -l');
+            $data['nginx_vhosts'] = $result['exitCode'] === 0 ? (int) trim($result['output']) : null;
+        } catch (Exception) {
+            // skip
+        }
+
+        // Mail stack status
+        try {
+            $result = $this->executeCommand('systemctl is-active stalwart-mail postfix dovecot 2>/dev/null');
+            $data['mail_services'] = $result['output'] ?? null;
         } catch (Exception) {
             // skip
         }
