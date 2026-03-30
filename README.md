@@ -62,7 +62,7 @@ The panel runs on port 2223 via FrankenPHP, independent of nginx. If nginx goes 
 
 ## Container Deployment
 
-Jabali can run as a single container with all services managed by supervisord (MariaDB, Redis, Nginx, PHP-FPM, jabali-agent, queue-worker, cron, BIND9, OpenDKIM, Rspamd, Postfix, Dovecot). The `Containerfile` uses a multi-stage build based on `debian:bookworm-slim`.
+Jabali can run as a single container with all services managed by supervisord (MariaDB, Redis, Nginx, PHP-FPM, jabali-agent, queue-worker, cron, PowerDNS, Stalwart Mail Server). The `Containerfile` uses a multi-stage build based on `debian:bookworm-slim`.
 
 ### Quick Start (Docker Hub)
 
@@ -119,8 +119,8 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - Health monitor with auto-restarts and alerts
 - cPanel and WHM migrations with step-by-step logs
 - IMAP sync for migrating mail from external servers
-- Built-in mail stack with webmail SSO
-- Shared mailbox folders with Dovecot ACL permissions
+- Stalwart Mail Server with webmail SSO
+- Shared mailbox folders via Stalwart Mail Server
 - `mail.domain.ext` auto-redirects to webmail
 - PowerDNS with REST API and native DNSSEC
 - Restic backups with deduplication, encryption, and SFTP/S3 support
@@ -128,6 +128,8 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - Integrated security suite (jabali-security) with real-time threat detection
 - Encrypted diagnostic reports with email and clipboard support
 - Passphrase password generator (optional, 3 random words)
+- GoAccess real-time statistics with WebSocket updates
+- Domain bandwidth tracking synced daily from nginx logs
 - Audit logs and admin notifications
 
 ## Feature Map
@@ -161,7 +163,7 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - SSL management
 - Cron jobs
 - Backups and restore
-- Logs and statistics
+- Logs, statistics, and bandwidth usage
 - Protected directories
 
 ### Platform
@@ -187,10 +189,11 @@ Service stack (single-node default):
 - Nginx (user domain sites, phpMyAdmin, webmail proxy)
 - PHP-FPM (user site pools)
 - MariaDB (user databases)
-- Postfix, Dovecot, Rspamd (or Stalwart all-in-one)
+- Stalwart Mail Server (SMTP, IMAP, JMAP, ManageSieve)
 - PowerDNS (DNS with REST API, MySQL backend)
 - Restic (encrypted, deduplicated backups)
 - Redis
+- GoAccess (real-time web analytics in daemon mode with WebSocket)
 - jabali-security (real-time threat detection, brute-force protection, WAF)
 
 ## Requirements
@@ -247,6 +250,8 @@ jabali update --force
 ```
 
 ## CLI
+
+The `jabali` command uses a noun:verb pattern. Aliases: `wordpress` -> `wp`, `database` -> `db`, `email` -> `mail`.
 
 ```
 jabali --help            # Show available commands

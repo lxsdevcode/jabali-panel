@@ -9,6 +9,14 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - **Agent client**: `App\Services\Agent\AgentClient` — all privileged ops go through the agent
 - **Admin panel**: `/jabali-admin/` (Filament, `admin` guard)
 - **User panel**: `/jabali-panel/` (Filament, `web` guard)
+- **Mail**: Stalwart Mail Server (SMTP, IMAP, JMAP, ManageSieve) — the only mail backend
+- **DNS**: PowerDNS with REST API and MySQL backend (DNSSEC supported)
+- **Backups**: Restic-based with snapshot browsing, restore wizard, remote destinations (SFTP, S3, B2)
+- **Stats**: GoAccess in daemon mode with real-time WebSocket updates
+- **Bandwidth**: Daily sync from nginx access logs, displayed on Users and Domains pages
+- **File browser**: Two adapters — live files via agent, backup snapshots via Restic
+- **Security**: jabali-security daemon (separate repo) with Filament plugin
+- **CLI**: `jabali` command with noun:verb pattern (e.g. `jabali backup create`)
 - **WordPress plugin**: `resources/wordpress/jabali-cache/` (separate PHP codebase, not Laravel)
 
 ## Key Directories
