@@ -3502,6 +3502,15 @@ create_admin() {
         \$user->save();
     " 2>/dev/null || true
 
+    # Create Linux system user for admin (if not exists)
+    if ! id admin &>/dev/null; then
+        useradd -m -d /home/admin -s /usr/sbin/nologin admin 2>/dev/null || true
+        usermod -aG sftpusers admin 2>/dev/null || true
+    fi
+
+    # Set Linux password so SFTP login works
+    echo "admin:${ADMIN_PASSWORD}" | chpasswd 2>/dev/null || true
+
     # Save credentials
     echo "ADMIN_EMAIL=${ADMIN_EMAIL}" >> /root/.jabali_db_credentials
     echo "ADMIN_PASSWORD=${ADMIN_PASSWORD}" >> /root/.jabali_db_credentials
