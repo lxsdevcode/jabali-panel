@@ -1356,6 +1356,7 @@ server {
         fastcgi_next_upstream_tries 2;
         fastcgi_next_upstream_timeout 5s;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
         include fastcgi_params;
         # Default cache headers for dynamic content
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
