@@ -783,6 +783,7 @@ function handleAction(array $request): array
         'metrics.processes' => metricsProcesses($params),
         'system.kill_process' => systemKillProcess($params),
         'system.fix_git_permissions' => systemFixGitPermissions($params),
+        'system.ensure_dir' => systemEnsureDir($params),
         // Disk quota operations
         'quota.status' => quotaStatus($params),
         'quota.enable' => quotaEnable($params),
@@ -17375,6 +17376,26 @@ function systemFixGitPermissions(array $params): array
     return $code === 0
         ? ['success' => true, 'message' => '.git permissions fixed']
         : ['success' => false, 'error' => implode("\n", $output)];
+}
+
+function systemEnsureDir(array $params): array
+{
+    $path = $params['path'] ?? '';
+    $owner = $params['owner'] ?? 'www-data';
+    $mode = $params['mode'] ?? '0755';
+
+    // Only allow paths under /var/lib/jabali or /var/www/jabali
+    if (! str_starts_with($path, '/var/lib/jabali') && ! str_starts_with($path, '/var/www/jabali')) {
+        return ['success' => false, 'error' => 'Path not allowed'];
+    }
+
+    if (! is_dir($path)) {
+        mkdir($path, octdec($mode), true);
+        chown($path, $owner);
+        chgrp($path, $owner);
+    }
+
+    return ['success' => is_dir($path)];
 }
 
     $error = posix_strerror(posix_get_last_error());

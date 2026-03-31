@@ -185,8 +185,20 @@ Route::get('/webmail-sso/{mailbox}', function (\App\Models\Mailbox $mailbox) {
     }
 
     $ssoDir = '/var/lib/jabali/sso-tokens';
-    if (! is_dir($ssoDir) && ! @mkdir($ssoDir, 0700, true)) {
-        abort(500, 'SSO token directory could not be created. Run: mkdir -p /var/lib/jabali/sso-tokens && chown www-data:www-data /var/lib/jabali/sso-tokens && chmod 700 /var/lib/jabali/sso-tokens');
+    if (! is_dir($ssoDir)) {
+        @mkdir($ssoDir, 0700, true);
+        if (! is_dir($ssoDir)) {
+            // Try via agent (has root access to create system dirs)
+            try {
+                app(\App\Services\Agent\AgentClient::class)->send('system.ensure_dir', [
+                    'path' => $ssoDir,
+                    'owner' => 'www-data',
+                    'mode' => '0700',
+                ]);
+            } catch (\Throwable) {
+                abort(500, 'SSO token directory could not be created.');
+            }
+        }
     }
 
     // Bulwark webmail — SSO via token file
