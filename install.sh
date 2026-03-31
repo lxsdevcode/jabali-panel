@@ -3684,6 +3684,23 @@ upgrade_infra() {
         jabali-security update || warn "jabali-security update failed (non-fatal)"
     fi
 
+    # Patch existing vhosts: add Bulwark static file serving if missing
+    if [[ -d /opt/bulwark/.next/static ]]; then
+        for vhost in /etc/nginx/sites-available/*.conf; do
+            if grep -q "location.*webmail/" "$vhost" 2>/dev/null && ! grep -q "webmail/_next/static" "$vhost" 2>/dev/null; then
+                sed -i '/location \^~ \/webmail\//i\
+    location ^~ /webmail/_next/static/ {\
+        alias /opt/bulwark/.next/static/;\
+        expires 365d;\
+        add_header Cache-Control "public, max-age=31536000, immutable";\
+        access_log off;\
+    }\
+' "$vhost"
+                info "Patched $(basename "$vhost"): added webmail static file serving"
+            fi
+        done
+    fi
+
     # Restart services to pick up changes
     header "Restarting Services"
     if [[ "${JABALI_SKIP_AGENT_RESTART:-}" != "1" ]]; then
