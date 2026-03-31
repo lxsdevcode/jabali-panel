@@ -11811,6 +11811,11 @@ function sshEnableShell(array $params): array
         chgrp($jailHome, $username);
     }
 
+    // Give user ownership of their home directory (chroot required root, but shell access needs write)
+    $realHome = $userInfo['dir'];
+    chown($realHome, $username);
+    chgrp($realHome, $username);
+
     // Add user to shellusers group and remove from sftpusers
     exec('usermod -aG shellusers '.escapeshellarg($username));
     exec('gpasswd -d '.escapeshellarg($username).' sftpusers 2>/dev/null');
@@ -11865,6 +11870,11 @@ function sshDisableShell(array $params): array
 
     // Change shell to nologin
     exec('usermod -s /usr/sbin/nologin '.escapeshellarg($username));
+
+    // Restore root ownership of home directory (required for SFTP chroot)
+    $realHome = $userInfo['dir'];
+    chown($realHome, 'root');
+    chgrp($realHome, 'root');
 
     // Unmount bind mount if exists
     $jailHome = "/var/jail/home/$username";
