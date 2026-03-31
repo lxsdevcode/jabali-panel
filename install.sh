@@ -3411,6 +3411,7 @@ setup_panel_ssl() {
             chown root:www-data /etc/ssl/jabali/panel.key
             chmod 640 /etc/ssl/jabali/panel.key
             systemctl reload jabali-panel 2>/dev/null || true
+            systemctl restart stalwart-mail 2>/dev/null || true
             log "Panel SSL: Let's Encrypt certificate issued for $SERVER_HOSTNAME"
         else
             info "Could not issue Let's Encrypt cert for panel — using self-signed"
@@ -3433,6 +3434,7 @@ if [ -f /etc/ssl/jabali/panel.crt ]; then
             chown root:www-data /etc/ssl/jabali/panel.key
             chmod 640 /etc/ssl/jabali/panel.key
             systemctl reload jabali-panel 2>/dev/null || true
+            systemctl restart stalwart-mail 2>/dev/null || true
             break
         fi
     done
