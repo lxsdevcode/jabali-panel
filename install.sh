@@ -2559,10 +2559,100 @@ GRANT ALL ON powerdns.* TO '${db_user}'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 
-    # Import schema
-    local schema_file=$(find /usr/share -name "*.mysql.sql" -path "*pdns*" 2>/dev/null | head -1)
-    if [[ -n "$schema_file" ]]; then
-        mysql -u root powerdns < "$schema_file" 2>/dev/null || true
+    # Import schema — check if tables exist first
+    local has_tables=$(mysql -u root -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='powerdns'" 2>/dev/null)
+    if [[ "$has_tables" -eq 0 ]] || [[ -z "$has_tables" ]]; then
+        # Try package-provided schema file first
+        local schema_file=$(find /usr/share -name "*.mysql.sql" -path "*pdns*" 2>/dev/null | head -1)
+        if [[ -n "$schema_file" ]]; then
+            mysql -u root powerdns < "$schema_file" 2>/dev/null || true
+            log "PowerDNS schema imported from ${schema_file}"
+        else
+            # Fallback: create tables inline (PowerDNS 4.x MySQL backend)
+            mysql -u root powerdns <<'SCHEMA'
+CREATE TABLE IF NOT EXISTS domains (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  master VARCHAR(128) DEFAULT NULL,
+  last_check INT DEFAULT NULL,
+  type VARCHAR(8) NOT NULL DEFAULT 'NATIVE',
+  notified_serial INT UNSIGNED DEFAULT NULL,
+  account VARCHAR(40) DEFAULT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS records (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  domain_id INT DEFAULT NULL,
+  name VARCHAR(255) DEFAULT NULL,
+  type VARCHAR(10) DEFAULT NULL,
+  content VARCHAR(65535) DEFAULT NULL,
+  ttl INT DEFAULT NULL,
+  prio INT DEFAULT NULL,
+  disabled TINYINT(1) DEFAULT 0,
+  ordername VARCHAR(255) DEFAULT NULL,
+  auth TINYINT(1) DEFAULT 1,
+  CONSTRAINT FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX IF NOT EXISTS nametype_index ON records(name, type);
+CREATE INDEX IF NOT EXISTS domain_id ON records(domain_id);
+CREATE INDEX IF NOT EXISTS ordername ON records(ordername);
+
+CREATE TABLE IF NOT EXISTS supermasters (
+  ip VARCHAR(64) NOT NULL,
+  nameserver VARCHAR(255) NOT NULL,
+  account VARCHAR(40) NOT NULL,
+  PRIMARY KEY(ip, nameserver)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS comments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  domain_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  type VARCHAR(10) NOT NULL,
+  modified_at INT NOT NULL,
+  account VARCHAR(40) DEFAULT NULL,
+  comment TEXT NOT NULL,
+  CONSTRAINT FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX IF NOT EXISTS comments_name_type_idx ON comments(name, type);
+CREATE INDEX IF NOT EXISTS comments_order_idx ON comments(domain_id, modified_at);
+
+CREATE TABLE IF NOT EXISTS domainmetadata (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  domain_id INT NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  content TEXT,
+  CONSTRAINT FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX IF NOT EXISTS domainmetadata_idx ON domainmetadata(domain_id, kind);
+
+CREATE TABLE IF NOT EXISTS cryptokeys (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  domain_id INT NOT NULL,
+  flags INT NOT NULL DEFAULT 0,
+  active BOOL DEFAULT 1,
+  published BOOL DEFAULT 1,
+  content TEXT,
+  CONSTRAINT FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX IF NOT EXISTS domainidindex ON cryptokeys(domain_id);
+
+CREATE TABLE IF NOT EXISTS tsigkeys (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  algorithm VARCHAR(50) NOT NULL,
+  secret VARCHAR(255) NOT NULL,
+  CONSTRAINT UNIQUE KEY (name, algorithm)
+) ENGINE=InnoDB;
+SCHEMA
+            log "PowerDNS schema created (inline fallback)"
+        fi
+    else
+        info "PowerDNS tables already exist"
     fi
 
     # Generate API key
