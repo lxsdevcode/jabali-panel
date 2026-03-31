@@ -1,0 +1,21 @@
+// Jabali Panel — allow shell users to access their own nspawn container
+// Installed to: /etc/polkit-1/rules.d/50-jabali-shell.rules
+polkit.addRule(function(action, subject) {
+    // Allow systemd-run and machinectl for shellusers group
+    if ((action.id === "org.freedesktop.machine1.shell" ||
+         action.id === "org.freedesktop.machine1.login" ||
+         action.id === "org.freedesktop.systemd1.manage-units") &&
+        subject.isInGroup("shellusers")) {
+
+        // Only allow access to the user's own container (username-jail)
+        var machine = action.lookup("machine");
+        var expectedContainer = subject.user + "-jail";
+
+        if (machine === expectedContainer) {
+            return polkit.Result.YES;
+        }
+
+        // Deny access to other containers
+        return polkit.Result.NO;
+    }
+});

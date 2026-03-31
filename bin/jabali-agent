@@ -11803,19 +11803,17 @@ function sshEnableShell(array $params): array
         return ['success' => false, 'error' => 'User does not exist'];
     }
 
-    // Create user's home directory in jail
-    $jailHome = "/var/jail/home/$username";
-    if (! is_dir($jailHome)) {
-        mkdir($jailHome, 0750, true);
-        chown($jailHome, $username);
-        chgrp($jailHome, $username);
-    }
+    $homeDir = $userInfo['dir'];
+    $container = "{$username}-jail";
 
-    $realHome = $userInfo['dir'];
+    // Give user ownership of their home directory (shell users need writable home)
+    chown($homeDir, $username);
+    chgrp($homeDir, $username);
+    chmod($homeDir, 0750);
 
-    // Create writable directories that shell tools need (home stays root-owned for SFTP chroot)
+    // Create writable directories for shell tools (VS Code, SSH, etc.)
     foreach (['.vscode-server', '.ssh', '.local', '.cache', '.config'] as $dir) {
-        $path = "$realHome/$dir";
+        $path = "$homeDir/$dir";
         if (! is_dir($path)) {
             mkdir($path, 0755, true);
         }
@@ -11823,9 +11821,9 @@ function sshEnableShell(array $params): array
         chgrp($path, $username);
     }
 
-    // Ensure .bash_profile and .bashrc are writable by the user
+    // Create shell config files
     foreach (['.bash_profile', '.bashrc', '.profile'] as $file) {
-        $path = "$realHome/$file";
+        $path = "$homeDir/$file";
         if (! file_exists($path)) {
             touch($path);
         }
@@ -11833,38 +11831,34 @@ function sshEnableShell(array $params): array
         chgrp($path, $username);
     }
 
-    // Add user to shellusers group and remove from sftpusers
-    exec('usermod -aG shellusers '.escapeshellarg($username));
-    exec('gpasswd -d '.escapeshellarg($username).' sftpusers 2>/dev/null');
+    // Move from sftpusers to shellusers
+    exec('usermod -aG shellusers ' . escapeshellarg($username));
+    exec('gpasswd -d ' . escapeshellarg($username) . ' sftpusers 2>/dev/null');
 
-    // Change shell to bash (relative to chroot /var/jail, so /bin/bash)
-    exec('usermod -s /bin/bash '.escapeshellarg($username));
+    // Set login shell to jabali-shell wrapper (routes through nspawn container)
+    exec('usermod -s /usr/local/bin/jabali-shell ' . escapeshellarg($username));
 
-    // Add user to jail's passwd/group
-    $passwdLine = "$username:x:{$userInfo['uid']}:{$userInfo['gid']}::/home/$username:/bin/bash\n";
-    file_put_contents('/var/jail/etc/passwd', $passwdLine, FILE_APPEND);
-
-    $groupLine = "$username:x:{$userInfo['gid']}:\n";
-    file_put_contents('/var/jail/etc/group', $groupLine, FILE_APPEND);
-
-    // Bind mount user's actual home to jail home for file access
-    $realHome = $userInfo['dir'];
-    if (! is_mounted($jailHome)) {
-        exec('mount --bind '.escapeshellarg($realHome).' '.escapeshellarg($jailHome));
-
-        // Add to fstab for persistence
-        $fstabEntry = "$realHome $jailHome none bind 0 0\n";
-        if (strpos(file_get_contents('/etc/fstab'), $jailHome) === false) {
-            file_put_contents('/etc/fstab', $fstabEntry, FILE_APPEND);
+    // Ensure nspawn container is running
+    $containerRunning = false;
+    exec("machinectl show " . escapeshellarg($container) . " --property=State 2>/dev/null", $stateOut);
+    if (! empty($stateOut[0]) && trim($stateOut[0]) === 'State=running') {
+        $containerRunning = true;
+    } else {
+        // Try to start it
+        if (trim((string) shell_exec('which jabali-isolate 2>/dev/null'))) {
+            exec('jabali-isolate start ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
+            $containerRunning = ($isoExit === 0);
         }
     }
 
-    logger("Enabled shell access for user $username");
+    logger("Enabled shell access for user $username (container: $container, running: " . ($containerRunning ? 'yes' : 'no') . ')');
 
     return [
         'success' => true,
         'message' => "Shell access enabled for $username",
-        'shell' => '/bin/bash',
+        'shell' => '/usr/local/bin/jabali-shell',
+        'container' => $container,
+        'container_running' => $containerRunning,
     ];
 }
 
@@ -11881,39 +11875,33 @@ function sshDisableShell(array $params): array
         return ['success' => false, 'error' => 'User does not exist'];
     }
 
-    // Remove from shellusers and add to sftpusers
-    exec('gpasswd -d '.escapeshellarg($username).' shellusers 2>/dev/null');
-    exec('usermod -aG sftpusers '.escapeshellarg($username));
+    $homeDir = $userInfo['dir'];
 
-    // Change shell to nologin
-    exec('usermod -s /usr/sbin/nologin '.escapeshellarg($username));
+    // Move from shellusers to sftpusers
+    exec('gpasswd -d ' . escapeshellarg($username) . ' shellusers 2>/dev/null');
+    exec('usermod -aG sftpusers ' . escapeshellarg($username));
 
-    // Home directory stays root-owned (SFTP chroot requires it)
+    // Set shell to nologin (SFTP-only)
+    exec('usermod -s /usr/sbin/nologin ' . escapeshellarg($username));
 
-    // Unmount bind mount if exists
+    // Restore root ownership (required for OpenSSH SFTP chroot)
+    chown($homeDir, 'root');
+    chgrp($homeDir, $username);
+    chmod($homeDir, 0750);
+
+    // Clean up any legacy jail artifacts
     $jailHome = "/var/jail/home/$username";
-    if (is_mounted($jailHome)) {
-        exec('umount '.escapeshellarg($jailHome));
-
+    if (function_exists('is_mounted') && is_mounted($jailHome)) {
+        exec('umount ' . escapeshellarg($jailHome) . ' 2>/dev/null');
         // Remove from fstab
-        $fstab = file_get_contents('/etc/fstab');
-        $fstab = preg_replace('/.*'.preg_quote($jailHome, '/').'.*\n/', '', $fstab);
-        file_put_contents('/etc/fstab', $fstab);
+        if (file_exists('/etc/fstab')) {
+            $fstab = file_get_contents('/etc/fstab');
+            $fstab = preg_replace('/.*' . preg_quote($jailHome, '/') . '.*\n/', '', $fstab);
+            file_put_contents('/etc/fstab', $fstab);
+        }
     }
 
-    // Remove from jail passwd/group
-    if (file_exists('/var/jail/etc/passwd')) {
-        $passwd = file_get_contents('/var/jail/etc/passwd');
-        $passwd = preg_replace('/^'.preg_quote($username, '/').':.*\n/m', '', $passwd);
-        file_put_contents('/var/jail/etc/passwd', $passwd);
-    }
-    if (file_exists('/var/jail/etc/group')) {
-        $group = file_get_contents('/var/jail/etc/group');
-        $group = preg_replace('/^'.preg_quote($username, '/').':.*\n/m', '', $group);
-        file_put_contents('/var/jail/etc/group', $group);
-    }
-
-    logger("Disabled shell access for user $username");
+    logger("Disabled shell access for user $username (SFTP-only)");
 
     return [
         'success' => true,

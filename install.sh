@@ -3688,6 +3688,10 @@ upgrade_infra() {
     setup_restic
     setup_self_healing
 
+    # Configure SSH + jabali-shell
+    configure_sshd
+    install_jabali_shell
+
     # Update jabali-security if installed
     if command -v jabali-security &>/dev/null; then
         header "Updating Jabali Security"
@@ -4206,6 +4210,93 @@ JABALI_SECURITY_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-securit
 JABALI_ISOLATOR_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-isolator.git"
 JABALI_ISOLATOR_DIR="/usr/local/jabali-isolator"
 
+configure_sshd() {
+    header "Configuring SSH Access"
+
+    # Create groups if they don't exist
+    getent group sftpusers &>/dev/null || groupadd sftpusers
+    getent group shellusers &>/dev/null || groupadd shellusers
+
+    local sshd_config="/etc/ssh/sshd_config"
+
+    # Add SFTP chroot block if missing
+    if ! grep -q "Match Group sftpusers" "$sshd_config" 2>/dev/null; then
+        cat >> "$sshd_config" <<'SSHD_SFTP'
+
+# Jabali Panel — SFTP-only users (chroot to home directory)
+Match Group sftpusers
+    ChrootDirectory /home/%u
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no
+SSHD_SFTP
+        log "Added SFTP chroot block to sshd_config"
+    fi
+
+    # Add shell users block if missing
+    if ! grep -q "Match Group shellusers" "$sshd_config" 2>/dev/null; then
+        cat >> "$sshd_config" <<'SSHD_SHELL'
+
+# Jabali Panel — shell users (routed through nspawn container)
+Match Group shellusers
+    ForceCommand /usr/local/bin/jabali-shell
+    AllowTcpForwarding no
+    X11Forwarding no
+SSHD_SHELL
+        log "Added shell users block to sshd_config"
+    fi
+
+    # Test and reload SSH
+    if sshd -t 2>/dev/null; then
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+        log "SSH configured"
+    else
+        warn "sshd_config test failed — check manually"
+    fi
+}
+
+install_jabali_shell() {
+    header "Installing Jabali Shell Wrapper"
+
+    # Install wrapper script
+    local src="$JABALI_DIR/stubs/jabali-shell.sh"
+    if [[ -f "$src" ]]; then
+        cp "$src" /usr/local/bin/jabali-shell
+        chmod 755 /usr/local/bin/jabali-shell
+        chown root:root /usr/local/bin/jabali-shell
+        log "Jabali shell wrapper installed"
+    else
+        warn "jabali-shell.sh stub not found — skipping"
+    fi
+
+    # Add jabali-shell to allowed shells
+    if ! grep -q "/usr/local/bin/jabali-shell" /etc/shells 2>/dev/null; then
+        echo "/usr/local/bin/jabali-shell" >> /etc/shells
+    fi
+
+    # Install polkit rule for container access
+    local polkit_src="$JABALI_DIR/stubs/polkit-jabali-shell.rules"
+    if [[ -f "$polkit_src" ]]; then
+        mkdir -p /etc/polkit-1/rules.d
+        cp "$polkit_src" /etc/polkit-1/rules.d/50-jabali-shell.rules
+        chmod 644 /etc/polkit-1/rules.d/50-jabali-shell.rules
+        log "Polkit rule installed for container shell access"
+    fi
+
+    # Install sudoers rule as fallback (for systems without polkit)
+    local sudoers_file="/etc/sudoers.d/jabali-shell"
+    if [[ ! -f "$sudoers_file" ]]; then
+        cat > "$sudoers_file" <<'SUDOERS'
+# Jabali Panel — allow shell users to access their container
+%shellusers ALL=(root) NOPASSWD: /usr/bin/systemd-run --quiet --wait --pty --machine=*
+%shellusers ALL=(root) NOPASSWD: /usr/bin/systemd-run --quiet --wait --pipe --machine=*
+%shellusers ALL=(root) NOPASSWD: /usr/local/bin/jabali-isolate start *
+SUDOERS
+        chmod 440 "$sudoers_file"
+        log "Sudoers rule installed for container shell access"
+    fi
+}
+
 install_jabali_security() {
     header "Installing Jabali Security"
 
@@ -4380,6 +4471,10 @@ main() {
 
     # Install jabali-isolator (PHP-FPM nspawn containers)
     install_jabali_isolator
+
+    # Configure SSH access (SFTP chroot + nspawn shell)
+    configure_sshd
+    install_jabali_shell
 
     # Fix .git ownership so both root CLI and www-data panel can use it
     chown -R www-data:www-data "$JABALI_DIR/.git" 2>/dev/null || true
