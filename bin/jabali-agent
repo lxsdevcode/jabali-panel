@@ -1398,6 +1398,13 @@ NGINXCONF;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    location ^~ /webmail/_next/static/ {
+        alias /opt/bulwark/.next/static/;
+        expires 365d;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        access_log off;
+    }
+
     location ^~ /webmail/ {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
