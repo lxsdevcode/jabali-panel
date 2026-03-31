@@ -217,11 +217,9 @@ Route::get('/webmail-sso/{mailbox}', function (\App\Models\Mailbox $mailbox) {
     file_put_contents($ssoFile, json_encode($tokenData), LOCK_EX);
     chmod($ssoFile, 0600);
 
-    // Redirect to webmail on the mailbox's own domain
-    $domain = $mailbox->emailDomain?->domain?->domain ?? '';
-    $ssoUrl = $domain
-        ? "https://{$domain}/webmail/api/auth/sso?token={$token}"
-        : "/webmail/api/auth/sso?token={$token}";
+    // Always use the panel hostname for SSO — keeps cookies on same domain
+    $hostname = config('jabali.panel.hostname') ?: request()->getHost();
+    $ssoUrl = "https://{$hostname}/webmail/api/auth/sso?token={$token}";
 
     if (! $mailbox->plain_password) {
         // No stored password - show message about needing to reset password first
