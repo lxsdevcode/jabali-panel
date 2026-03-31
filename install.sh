@@ -4208,7 +4208,7 @@ show_usage() {
     echo ""
 }
 
-JABALI_SECURITY_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-security.git"
+JABALI_SECURITY_REPO="https://raw.githubusercontent.com/shukiv/jabali-security/master/install.sh"
 JABALI_ISOLATOR_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-isolator.git"
 JABALI_ISOLATOR_DIR="/usr/local/jabali-isolator"
 
@@ -4302,16 +4302,11 @@ SUDOERS
 install_jabali_security() {
     header "Installing Jabali Security"
 
-    local tmp_installer="/tmp/jabali-security-install.sh"
-    local raw_url
-    raw_url="$(echo "$JABALI_SECURITY_REPO" | sed 's|\.git$||')/raw/branch/master/install.sh"
-
     info "Downloading jabali-security installer..."
-    if curl -fsSL --retry 3 --connect-timeout 30 "$raw_url" -o "$tmp_installer" 2>/dev/null; then
-        JABALI_WEB=no bash "$tmp_installer" || warn "jabali-security installation failed (non-fatal)"
-        rm -f "$tmp_installer"
+    if curl -fsSL --retry 3 --connect-timeout 30 "$JABALI_SECURITY_REPO" | JABALI_WEB=no bash; then
+        log "Jabali Security installed"
     else
-        warn "Could not download jabali-security installer — skipping"
+        warn "jabali-security installation failed (non-fatal)"
     fi
 }
 
