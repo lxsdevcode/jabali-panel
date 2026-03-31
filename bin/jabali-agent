@@ -11811,10 +11811,27 @@ function sshEnableShell(array $params): array
         chgrp($jailHome, $username);
     }
 
-    // Give user ownership of their home directory (chroot required root, but shell access needs write)
     $realHome = $userInfo['dir'];
-    chown($realHome, $username);
-    chgrp($realHome, $username);
+
+    // Create writable directories that shell tools need (home stays root-owned for SFTP chroot)
+    foreach (['.vscode-server', '.ssh', '.local', '.cache', '.config'] as $dir) {
+        $path = "$realHome/$dir";
+        if (! is_dir($path)) {
+            mkdir($path, 0755, true);
+        }
+        chown($path, $username);
+        chgrp($path, $username);
+    }
+
+    // Ensure .bash_profile and .bashrc are writable by the user
+    foreach (['.bash_profile', '.bashrc', '.profile'] as $file) {
+        $path = "$realHome/$file";
+        if (! file_exists($path)) {
+            touch($path);
+        }
+        chown($path, $username);
+        chgrp($path, $username);
+    }
 
     // Add user to shellusers group and remove from sftpusers
     exec('usermod -aG shellusers '.escapeshellarg($username));
@@ -11871,10 +11888,7 @@ function sshDisableShell(array $params): array
     // Change shell to nologin
     exec('usermod -s /usr/sbin/nologin '.escapeshellarg($username));
 
-    // Restore root ownership of home directory (required for SFTP chroot)
-    $realHome = $userInfo['dir'];
-    chown($realHome, 'root');
-    chgrp($realHome, 'root');
+    // Home directory stays root-owned (SFTP chroot requires it)
 
     // Unmount bind mount if exists
     $jailHome = "/var/jail/home/$username";
