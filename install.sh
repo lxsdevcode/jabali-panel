@@ -2562,8 +2562,12 @@ SQL
     # Import schema — check if tables exist first
     local has_tables=$(mysql -u root -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='powerdns'" 2>/dev/null)
     if [[ "$has_tables" -eq 0 ]] || [[ -z "$has_tables" ]]; then
-        # Try package-provided schema file first
-        local schema_file=$(find /usr/share -name "*.mysql.sql" -path "*pdns*" 2>/dev/null | head -1)
+        # Try package-provided schema file first (exclude migration files like 3.4.0_to_4.1.0_*)
+        local schema_file=$(find /usr/share -name "schema.mysql.sql" -path "*pdns*" 2>/dev/null | head -1)
+        if [[ -z "$schema_file" ]]; then
+            # Try alternate naming: 4.*.schema.mysql.sql but NOT X_to_X migration files
+            schema_file=$(find /usr/share -name "*.mysql.sql" -path "*pdns*" ! -name "*_to_*" 2>/dev/null | head -1)
+        fi
         if [[ -n "$schema_file" ]]; then
             mysql -u root powerdns < "$schema_file" 2>/dev/null || true
             log "PowerDNS schema imported from ${schema_file}"
