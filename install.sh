@@ -1642,6 +1642,14 @@ PHPMYADMIN_EOF
         access_log off;
     }
 
+    # Bulwark webmail static assets (served directly for correct MIME types)
+    location ^~ /webmail/_next/static/ {
+        alias /opt/bulwark/.next/static/;
+        expires 365d;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        access_log off;
+    }
+
     # Bulwark webmail
     location = /webmail {
         proxy_pass http://127.0.0.1:3000;
@@ -3686,7 +3694,8 @@ upgrade_infra() {
 
     # Patch existing vhosts: add Bulwark static file serving if missing
     if [[ -d /opt/bulwark/.next/static ]]; then
-        for vhost in /etc/nginx/sites-available/*.conf; do
+        for vhost in /etc/nginx/sites-available/*; do
+            [[ -f "$vhost" ]] || continue
             if grep -q "location.*webmail/" "$vhost" 2>/dev/null && ! grep -q "webmail/_next/static" "$vhost" 2>/dev/null; then
                 sed -i '/location \^~ \/webmail\//i\
     location ^~ /webmail/_next/static/ {\
