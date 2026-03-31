@@ -3692,10 +3692,12 @@ upgrade_infra() {
     configure_sshd
     install_jabali_shell
 
-    # Update jabali-security if installed
+    # Install or update jabali-security
     if command -v jabali-security &>/dev/null; then
         header "Updating Jabali Security"
         jabali-security update || warn "jabali-security update failed (non-fatal)"
+    else
+        install_jabali_security
     fi
 
     # Patch existing vhosts: add Bulwark static file serving if missing
