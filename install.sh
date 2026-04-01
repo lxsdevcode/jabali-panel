@@ -3837,6 +3837,13 @@ upgrade_infra() {
     setup_restic
     setup_self_healing
 
+    # Fix waf.conf if it uses modsecurity directive without the module loaded
+    local waf_conf="/etc/nginx/jabali/includes/waf.conf"
+    if [[ -f "$waf_conf" ]] && grep -q "^modsecurity" "$waf_conf" && ! nginx -V 2>&1 | grep -q modsecurity; then
+        echo "# Managed by Jabali — jabali-security will configure ModSecurity here" > "$waf_conf"
+        info "Fixed waf.conf (modsecurity module not loaded)"
+    fi
+
     # Install/update jabali-isolator (nspawn containers for PHP-FPM + shell)
     install_jabali_isolator
 
