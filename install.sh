@@ -4105,6 +4105,41 @@ uninstall() {
     rm -f /etc/systemd/system/jabali-panel.service
     rm -rf /etc/systemd/system/jabali-panel.service.d
 
+    # Stop and remove Stalwart Mail Server
+    systemctl stop stalwart-mail 2>/dev/null || true
+    systemctl disable stalwart-mail 2>/dev/null || true
+    rm -f /etc/systemd/system/stalwart-mail.service
+
+    # Stop and remove Bulwark Webmail
+    systemctl stop bulwark 2>/dev/null || true
+    systemctl disable bulwark 2>/dev/null || true
+    rm -f /etc/systemd/system/bulwark.service
+
+    # Stop and remove jabali-security
+    if command -v jabali-security &>/dev/null; then
+        jabali-security uninstall --force 2>/dev/null || true
+    fi
+    systemctl stop jabali-security 2>/dev/null || true
+    systemctl disable jabali-security 2>/dev/null || true
+    rm -f /etc/systemd/system/jabali-security.service
+
+    # Stop and remove nspawn containers (jabali-isolator)
+    if command -v jabali-isolate &>/dev/null; then
+        for machine_dir in /var/lib/machines/*-php; do
+            [[ -d "$machine_dir" ]] || continue
+            local container_name
+            container_name=$(basename "$machine_dir")
+            local user_name="${container_name%-php}"
+            jabali-isolate destroy "$user_name" 2>/dev/null || true
+        done
+    fi
+
+    # Stop idle container timer
+    systemctl stop jabali-container-idle-check.timer 2>/dev/null || true
+    systemctl disable jabali-container-idle-check.timer 2>/dev/null || true
+    rm -f /etc/systemd/system/jabali-container-idle-check.timer
+    rm -f /etc/systemd/system/jabali-container-idle-check.service
+
     local services=(
         nginx
         php-fpm
@@ -4291,12 +4326,38 @@ uninstall() {
     rm -rf /var/lib/GeoIP
     rm -f /usr/local/bin/geoipupdate
 
+    # Stalwart Mail Server
+    rm -f /usr/local/bin/stalwart
+    rm -rf /etc/stalwart-mail
+    rm -rf /var/lib/stalwart-mail
+    rm -rf /var/log/stalwart-mail
+
+    # Bulwark Webmail
+    rm -rf /opt/bulwark
+
+    # jabali-security
+    rm -rf /usr/local/jabali-security
+    rm -rf /etc/jabali-security
+    rm -f /usr/local/bin/jabali-security
+
+    # jabali-isolator
+    rm -rf /usr/local/jabali-isolator
+    rm -f /usr/local/bin/jabali-isolate
+    rm -f /usr/local/bin/jabali-container-idle-check
+    rm -rf /var/lib/machines/*-php
+    rm -rf /etc/systemd/nspawn/*-php.nspawn
+    rm -rf /run/jabali-isolator
+    rm -rf /run/jabali-fpm
+
     # SSL certificates (Let's Encrypt)
     rm -rf /etc/letsencrypt
 
     # PHP repository
     rm -f /etc/apt/sources.list.d/php.list
     rm -f /usr/share/keyrings/sury-php.gpg
+    # Nginx repository
+    rm -f /etc/apt/sources.list.d/nginx.list
+    rm -f /usr/share/keyrings/sury-nginx.gpg
     # NodeSource repository
     rm -f /etc/apt/sources.list.d/nodesource.list
     rm -f /etc/apt/sources.list.d/nodesource.sources
@@ -4307,6 +4368,12 @@ uninstall() {
     rm -f /etc/apt/sources.list.d/jabali-contrib.list
 
     fi  # end of keep_packages check
+
+    # jabali-shell and sudoers
+    rm -f /usr/local/bin/jabali-shell
+    rm -f /etc/sudoers.d/jabali-shell
+    rm -f /etc/polkit-1/rules.d/50-jabali-shell.rules
+    sed -i '\|/usr/local/bin/jabali-shell|d' /etc/shells 2>/dev/null || true
 
     # Jabali-specific configs
     rm -rf /var/backups/users
