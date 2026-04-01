@@ -89,6 +89,7 @@ function validateCronCommand(string $command): bool|string
         '/usr/bin/php8.2',
         '/usr/bin/php8.3',
         '/usr/bin/php8.4',
+        '/usr/bin/php8.5',
         '/usr/local/bin/php',
         '/usr/bin/curl',
         '/usr/bin/wget',
@@ -9022,7 +9023,7 @@ function phpGetSettings(array $params): array
 
     // Default settings (same as createFpmPool defaults)
     $defaults = [
-        'php_version' => '8.4',
+        'php_version' => '8.5',
         'memory_limit' => '512M',
         'upload_max_filesize' => '64M',
         'post_max_size' => '64M',
@@ -9104,7 +9105,7 @@ function phpSetSettings(array $params): array
 
     // Settings can be nested under 'settings' key or flat at top level
     $s = $params['settings'] ?? $params;
-    $phpVersion = $s['php_version'] ?? '8.4';
+    $phpVersion = $s['php_version'] ?? '8.5';
 
     // Validate PHP version format strictly (e.g. "8.4", "8.3") to prevent command injection
     if (! preg_match('/^\d+\.\d+$/', $phpVersion)) {

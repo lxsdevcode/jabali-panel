@@ -67,12 +67,12 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
     {
         if ((bool) config('jabali.demo')) {
             $this->installedVersions = [
-                ['version' => '8.4', 'fpm_status' => 'active'],
-                ['version' => '8.3', 'fpm_status' => 'active'],
+                ['version' => '8.5', 'fpm_status' => 'active'],
+                ['version' => '8.4', 'fpm_status' => 'inactive'],
+                ['version' => '8.3', 'fpm_status' => 'inactive'],
                 ['version' => '8.2', 'fpm_status' => 'inactive'],
-                ['version' => '8.1', 'fpm_status' => 'inactive'],
             ];
-            $this->defaultVersion = '8.4';
+            $this->defaultVersion = '8.5';
             $allVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
             $installed = array_column($this->installedVersions, 'version');
             $this->availableVersions = array_diff($allVersions, $installed);

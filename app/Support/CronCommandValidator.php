@@ -18,6 +18,7 @@ class CronCommandValidator
         '/usr/bin/php8.2',
         '/usr/bin/php8.3',
         '/usr/bin/php8.4',
+        '/usr/bin/php8.5',
         '/usr/local/bin/php',
         '/usr/bin/curl',
         '/usr/bin/wget',

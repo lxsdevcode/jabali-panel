@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PHP_VERSION="${PHP_VERSION:-8.4}"
+PHP_VERSION="${PHP_VERSION:-8.5}"
 APP_DIR="/var/www/jabali"
 FIRST_RUN_MARKER="/var/lib/mysql/.jabali-initialized"
 

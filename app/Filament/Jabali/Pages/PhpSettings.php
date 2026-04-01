@@ -93,10 +93,10 @@ class PhpSettings extends Page implements HasActions, HasForms
     {
         if ((bool) config('jabali.demo')) {
             $this->phpVersions = [
+                '8.5' => 'PHP 8.5',
                 '8.4' => 'PHP 8.4',
                 '8.3' => 'PHP 8.3',
                 '8.2' => 'PHP 8.2',
-                '8.1' => 'PHP 8.1',
             ];
 
             return;
@@ -113,7 +113,7 @@ class PhpSettings extends Page implements HasActions, HasForms
         }
 
         if (empty($this->phpVersions)) {
-            $this->phpVersions = ['8.4' => 'PHP 8.4'];
+            $this->phpVersions = ['8.5' => 'PHP 8.5'];
         }
     }
 

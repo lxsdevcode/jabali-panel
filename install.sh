@@ -144,7 +144,7 @@ detect_php_version() {
 
     # Fallback: check for PHP-FPM sockets
     if [[ -z "$PHP_VERSION" ]]; then
-        for ver in 8.4 8.3 8.2 8.1 8.0; do
+        for ver in 8.5 8.4 8.3 8.2 8.1 8.0; do
             if [[ -f "/etc/php/${ver}/fpm/php.ini" ]]; then
                 PHP_VERSION="$ver"
                 break
@@ -467,7 +467,7 @@ install_packages() {
     # Clean up broken PHP state from previous failed installations
     # Detect which PHP version packages are present (if any) for cleanup
     local _cleanup_ver=""
-    for _cv in 8.5 8.4 8.3 8.2 8.1 8.0; do
+    for _cv in 8.5 8.4 8.3 8.2 8.1; do
         if dpkg -l "php${_cv}*" 2>/dev/null | grep -qE '^(ii|rc|iU|iF|hi|pi)'; then
             _cleanup_ver="$_cv"
             break
@@ -581,7 +581,7 @@ install_packages() {
     # Prevent Apache2 and libapache2-mod-php from being installed
     # (php metapackage recommends libapache2-mod-php, but we use nginx+php-fpm)
     info "Blocking Apache2 and mod-php installation (we use nginx + php-fpm)..."
-    apt-mark hold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.4} 2>/dev/null || true
+    apt-mark hold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.5} 2>/dev/null || true
 
     run_quiet "Installing base packages (this may take a few minutes)..." \
         env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${base_packages[@]}" || {
@@ -635,7 +635,7 @@ install_packages() {
     fi
 
     # Unhold packages in case user wants to install them manually later
-    apt-mark unhold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.4} >/dev/null 2>&1 || true
+    apt-mark unhold apache2 libapache2-mod-php libapache2-mod-php${PHP_VERSION:-8.5} >/dev/null 2>&1 || true
 
     # Install PHP and detect the version from the Sury repository
     info "Installing PHP..."
@@ -647,7 +647,7 @@ install_packages() {
     if command -v php &>/dev/null; then
         PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)
     fi
-    PHP_VERSION="${PHP_VERSION:-8.4}"
+    PHP_VERSION="${PHP_VERSION:-8.5}"
     info "Using PHP ${PHP_VERSION}..."
 
     # Stop, disable and mask Apache2 if installed (conflicts with nginx on port 80)
@@ -3543,7 +3543,7 @@ setup_self_healing() {
     )
 
     # Add PHP-FPM (detect version)
-    for version in 8.4 8.3 8.2 8.1 8.0; do
+    for version in 8.5 8.4 8.3 8.2 8.1 8.0; do
         if systemctl list-unit-files "php${version}-fpm.service" &>/dev/null | grep -q "php${version}-fpm"; then
             services+=("php${version}-fpm")
             break
@@ -3922,7 +3922,7 @@ uninstall() {
     if command -v php &>/dev/null; then
         PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)
     fi
-    PHP_VERSION="${PHP_VERSION:-8.4}"
+    PHP_VERSION="${PHP_VERSION:-8.5}"
 
     if [[ "$keep_packages" == "true" ]]; then
         echo -e "${YELLOW}${BOLD}This will remove Jabali Panel files and settings (packages will be kept).${NC}"
