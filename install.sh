@@ -2313,7 +2313,7 @@ create_webmaster_mailbox() {
         return
     fi
 
-    header "Creating Webmaster Mailbox"
+    info "Creating webmaster mailbox..."
 
     local webmaster_password=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9!@#$%' | head -c 16)
 
@@ -2466,8 +2466,11 @@ create_webmaster_mailbox() {
         echo 'Webmaster mailbox created successfully';
     " 2>/dev/null || true
 
-    log "Webmaster mailbox: webmaster@${SERVER_HOSTNAME}"
-    log "Webmaster password: ${webmaster_password}"
+    # Export for print_completion()
+    WEBMASTER_EMAIL="webmaster@${SERVER_HOSTNAME}"
+    WEBMASTER_PASSWORD="${webmaster_password}"
+
+    log "Webmaster mailbox: ${WEBMASTER_EMAIL}"
 
     # Configure authenticated SMTP in .env using the webmaster mailbox
     local mail_host="mail.${SERVER_HOSTNAME}"
@@ -2484,7 +2487,7 @@ create_webmaster_mailbox() {
     sed -i "s/^MAIL_PASSWORD=.*/MAIL_PASSWORD=${webmaster_password}/" .env
     php artisan config:cache --quiet 2>/dev/null || true
 
-    log "SMTP configured: webmaster@${SERVER_HOSTNAME} via ${mail_host}:587"
+    log "SMTP configured via ${mail_host}:587"
 
     # Save credentials
     echo "" >> /root/jabali_credentials.txt
@@ -3636,6 +3639,15 @@ print_completion() {
     echo -e "  ${BOLD}Panel URLs${NC}"
     echo -e "  Admin:      ${CYAN}${admin_url}${NC}"
     echo -e "  User:       ${CYAN}${user_url}${NC}"
+
+    if [[ -n "${WEBMASTER_EMAIL:-}" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Webmaster Mailbox${NC}"
+        echo -e "  Email:      ${CYAN}${WEBMASTER_EMAIL}${NC}"
+        echo -e "  Password:   ${CYAN}${WEBMASTER_PASSWORD}${NC}"
+        echo -e "  SMTP:       ${CYAN}mail.${SERVER_HOSTNAME}:587 (TLS)${NC}"
+    fi
+
     echo ""
     echo -e "  ${BOLD}Quick Reference${NC}"
     echo -e "  CLI:        ${CYAN}jabali --help${NC}"
