@@ -49,6 +49,20 @@ class ServerSettingsService
     }
 
     /**
+     * @return array{success: bool, error?: string}
+     */
+    public function savePanelPort(int $port): array
+    {
+        $result = $this->agent->send('server.set_panel_port', ['port' => $port]);
+
+        if (! ($result['success'] ?? false)) {
+            return ['success' => false, 'error' => $result['error'] ?? 'Unknown error'];
+        }
+
+        return ['success' => true];
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @return array{success: bool, error?: string}
      */

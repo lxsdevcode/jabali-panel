@@ -91,6 +91,8 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     public ?array $timezoneData = [];
 
+    public ?array $panelPortData = [];
+
     // Version info (non-form)
     public bool $isSystemdResolved = false;
 
@@ -186,6 +188,10 @@ class ServerSettings extends Page implements HasActions, HasForms
 
         $this->hostnameData = [
             'hostname' => $agentHostname,
+        ];
+
+        $this->panelPortData = [
+            'port' => (int) (env('PANEL_PORT', 8443)),
         ];
 
         $this->dnsData = [
@@ -351,6 +357,26 @@ class ServerSettings extends Page implements HasActions, HasForms
                         FormAction::make('saveHostname')
                             ->label(__('Save Hostname'))
                             ->action('saveHostname'),
+                    ]),
+                ]),
+            Section::make(__('Panel Port'))
+                ->icon('heroicon-o-globe-alt')
+                ->schema([
+                    TextInput::make('panelPortData.port')
+                        ->label(__('HTTPS Port'))
+                        ->numeric()
+                        ->minValue(1024)
+                        ->maxValue(65535)
+                        ->required()
+                        ->helperText(__('The port used to access the admin and user panels (requires service restart)')),
+                    Actions::make([
+                        FormAction::make('savePanelPort')
+                            ->label(__('Save Panel Port'))
+                            ->action('savePanelPort')
+                            ->requiresConfirmation()
+                            ->modalHeading(__('Change Panel Port'))
+                            ->modalDescription(__('This will update the port, restart the panel service, and update firewall rules. You will need to reconnect on the new port.'))
+                            ->color('warning'),
                     ]),
                 ]),
             Section::make(__('Server Timezone'))
@@ -996,6 +1022,33 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ->warning()
                 ->send();
         }
+    }
+
+    public function savePanelPort(): void
+    {
+        $port = (int) ($this->panelPortData['port'] ?? 0);
+
+        if ($port < 1024 || $port > 65535) {
+            Notification::make()->title(__('Port must be between 1024 and 65535'))->danger()->send();
+
+            return;
+        }
+
+        $service = app(ServerSettingsService::class);
+        $result = $service->savePanelPort($port);
+
+        if (! ($result['success'] ?? false)) {
+            Notification::make()->title(__('Failed to change panel port'))->body($result['error'] ?? __('Unknown error'))->danger()->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title(__('Panel port changed to :port', ['port' => $port]))
+            ->body(__('Reconnect at the new port. The page will not auto-redirect.'))
+            ->success()
+            ->duration(10000)
+            ->send();
     }
 
     public function saveDns(): void

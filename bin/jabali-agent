@@ -675,6 +675,7 @@ function handleAction(array $request): array
         'usage.domain_bandwidth' => usageDomainBandwidth($params),
         'server.set_hostname' => setHostname($params),
         'server.set_timezone' => setTimezone($params),
+        'server.set_panel_port' => setPanelPort($params),
         'server.set_upload_limits' => setUploadLimits($params),
         'server.info' => getServerInfo($params),
         'server.versions' => serverVersions($params),
@@ -12196,6 +12197,71 @@ function setHostname(array $params): array
     file_put_contents('/etc/hosts', $hosts);
 
     return ['success' => true, 'hostname' => $hostname];
+}
+
+function setPanelPort(array $params): array
+{
+    $port = (int) ($params['port'] ?? 0);
+
+    if ($port < 1024 || $port > 65535) {
+        return ['success' => false, 'error' => 'Port must be between 1024 and 65535'];
+    }
+
+    $envFile = '/var/www/jabali/.env';
+    if (! file_exists($envFile)) {
+        return ['success' => false, 'error' => '.env file not found'];
+    }
+
+    $oldPort = trim((string) shell_exec("grep -oP '(?<=^PANEL_PORT=)\d+' " . escapeshellarg($envFile) . " 2>/dev/null")) ?: '8443';
+
+    // Update .env
+    $env = file_get_contents($envFile);
+    if (preg_match('/^PANEL_PORT=\d+$/m', $env)) {
+        $env = preg_replace('/^PANEL_PORT=\d+$/m', "PANEL_PORT={$port}", $env);
+    } else {
+        $env .= "\nPANEL_PORT={$port}\n";
+    }
+    file_put_contents($envFile, $env);
+
+    // Update APP_URL port
+    $env = file_get_contents($envFile);
+    $env = preg_replace('/^(APP_URL=https?:\/\/[^:]+):\d+/m', "\${1}:{$port}", $env);
+    file_put_contents($envFile, $env);
+
+    // Update Caddyfile
+    $caddyfile = '/etc/jabali/Caddyfile';
+    if (file_exists($caddyfile)) {
+        $caddy = file_get_contents($caddyfile);
+        $caddy = preg_replace('/^:\d+\s*\{/m', ":{$port} {", $caddy);
+        file_put_contents($caddyfile, $caddy);
+    }
+
+    // Update nginx redirects (panel paths redirect to FrankenPHP port)
+    $defaultConf = '/etc/nginx/sites-available/default';
+    if (file_exists($defaultConf)) {
+        $nginx = file_get_contents($defaultConf);
+        $nginx = str_replace(":\$host:{$oldPort}", ":\$host:{$port}", $nginx);
+        $nginx = preg_replace('/https:\/\/127\.0\.0\.1:\d+/', "https://127.0.0.1:{$port}", $nginx);
+        $nginx = preg_replace('/return 301 https:\/\/\$host:\d+/', "return 301 https://\$host:{$port}", $nginx);
+        file_put_contents($defaultConf, $nginx);
+        exec('nginx -t 2>&1', $nginxOut, $nginxExit);
+        if ($nginxExit === 0) {
+            exec('systemctl reload nginx 2>/dev/null');
+        }
+    }
+
+    // Update firewall
+    exec('ufw allow ' . escapeshellarg((string) $port) . '/tcp 2>/dev/null');
+    if ($oldPort !== (string) $port) {
+        exec('ufw delete allow ' . escapeshellarg($oldPort) . '/tcp 2>/dev/null');
+    }
+
+    // Restart FrankenPHP panel service
+    exec('systemctl restart jabali-panel 2>/dev/null');
+
+    logger("Panel port changed from {$oldPort} to {$port}");
+
+    return ['success' => true, 'old_port' => (int) $oldPort, 'new_port' => $port];
 }
 
 function setUploadLimits(array $params): array

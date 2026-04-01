@@ -16,7 +16,7 @@
 }
 
 # Panel HTTPS server
-:{$PANEL_PORT:2223} {
+:{$PANEL_PORT:8443} {
 	root * {$APP_ROOT:/var/www/jabali}/public
 
 	tls {$PANEL_TLS_CERT:/etc/ssl/jabali/panel.crt} {$PANEL_TLS_KEY:/etc/ssl/jabali/panel.key}

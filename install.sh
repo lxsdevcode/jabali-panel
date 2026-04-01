@@ -38,6 +38,7 @@ JABALI_DIR="/var/www/jabali"
 JABALI_USER="www-data"
 JABALI_REPO="https://github.com/shukiv/jabali-panel.git"
 JABALI_BRANCH="main"
+PANEL_PORT="${PANEL_PORT:-8443}"
 NODE_VERSION="20"
 
 # PHP version will be detected after installation
@@ -1107,7 +1108,7 @@ PHPINI
 	}
 }
 
-:2223 {
+:${PANEL_PORT} {
 	root * /var/www/jabali/public
 
 	tls /etc/ssl/jabali/panel.crt /etc/ssl/jabali/panel.key
@@ -1769,7 +1770,7 @@ server {
 
     # Health check — proxy to FrankenPHP panel
     location = /up {
-        proxy_pass https://127.0.0.1:2223;
+        proxy_pass https://127.0.0.1:${PANEL_PORT};
         proxy_ssl_verify off;
     }
 
@@ -1778,7 +1779,7 @@ server {
     }
 }
 
-# HTTPS — phpMyAdmin and webmail only (panel served by FrankenPHP on port 2223)
+# HTTPS — phpMyAdmin and webmail only (panel served by FrankenPHP on port ${PANEL_PORT})
 server {
     listen 443 ssl${NGINX_HTTP2_LISTEN} default_server;
     listen [::]:443 ssl${NGINX_HTTP2_LISTEN} default_server;
@@ -1791,10 +1792,10 @@ server {
 
     # Redirect panel paths to FrankenPHP
     location ~ ^/(jabali-admin|jabali-panel|livewire|login|up) {
-        return 301 https://\$host:2223\$request_uri;
+        return 301 https://\$host:${PANEL_PORT}\$request_uri;
     }
     location = / {
-        return 301 https://\$host:2223/;
+        return 301 https://\$host:${PANEL_PORT}/;
     }
 
 ${phpmyadmin_block}
@@ -3014,7 +3015,7 @@ APP_NAME=Jabali
 APP_ENV=production
 APP_KEY=
 APP_DEBUG=false
-APP_URL=https://$(hostname -I | awk '{print $1}'):2223
+APP_URL=https://$(hostname -I | awk '{print $1}'):${PANEL_PORT}
 
 LOG_CHANNEL=stack
 LOG_LEVEL=error
@@ -3046,7 +3047,7 @@ MAIL_FROM_NAME="Jabali Panel"
 
 MAIL_BACKEND=${MAIL_BACKEND}
 
-PANEL_PORT=2223
+PANEL_PORT=${PANEL_PORT}
 PANEL_HOSTNAME=${SERVER_HOSTNAME:-}
 PANEL_TLS_CERT=/etc/ssl/jabali/panel.crt
 PANEL_TLS_KEY=/etc/ssl/jabali/panel.key
@@ -3652,8 +3653,8 @@ create_admin() {
 # Print completion message
 print_completion() {
     local server_ip=$(hostname -I | awk '{print $1}')
-    local admin_url="https://${SERVER_HOSTNAME}:2223/jabali-admin/"
-    local user_url="https://${SERVER_HOSTNAME}:2223/jabali-panel/"
+    local admin_url="https://${SERVER_HOSTNAME}:${PANEL_PORT}/jabali-admin/"
+    local user_url="https://${SERVER_HOSTNAME}:${PANEL_PORT}/jabali-panel/"
 
     echo ""
     echo ""
