@@ -388,7 +388,11 @@ add_repositories() {
     export DEBIAN_FRONTEND=noninteractive
 
     # Fix any broken dpkg state from previous installs
-    dpkg --configure -a 2>/dev/null || true
+    # Force-remove any half-installed packages that block dpkg
+    dpkg -l 2>/dev/null | awk '/^.F/ || /^iU/ {print $2}' | while read -r pkg; do
+        dpkg --remove --force-remove-reinstreq "$pkg" 2>/dev/null || true
+    done
+    DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confold 2>/dev/null || true
 
     # Update package list
     run_quiet "Updating package lists..." apt-get update -qq
