@@ -4418,8 +4418,9 @@ install_jabali_isolator() {
     if ! command -v systemd-nspawn &>/dev/null; then
         info "Installing systemd-container package..."
         # Fix any broken dpkg state (e.g. from crowdsec bouncer conffile prompt)
-        dpkg --configure -a 2>/dev/null || true
-        apt-get install -y systemd-container >/dev/null 2>&1 || {
+        DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confold 2>/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -f 2>/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get install -y systemd-container >/dev/null 2>&1 || {
             warn "Could not install systemd-container — jabali-isolator requires it"
             return
         }
