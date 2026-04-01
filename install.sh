@@ -4369,6 +4369,7 @@ install_jabali_shell() {
 %shellusers ALL=(root) NOPASSWD: /usr/bin/nsenter --target * --mount --pid --uts *
 %shellusers ALL=(root) NOPASSWD: /usr/local/bin/jabali-isolate create *
 %shellusers ALL=(root) NOPASSWD: /usr/local/bin/jabali-isolate start *
+%shellusers ALL=(root) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/*.conf
 SUDOERS
     chmod 440 "$sudoers_file"
     log "Sudoers rule installed for container shell access"

@@ -13,9 +13,25 @@ CONTAINER="${JUSER}-php"
 
 # Ensure container is running
 if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=running"; then
-    # Create if needed, then start
     if command -v jabali-isolate &>/dev/null; then
         if [[ ! -d "/var/lib/machines/${CONTAINER}" ]]; then
+            # Ensure PHP-FPM pool exists (jabali-isolate requires it)
+            PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.4")
+            POOL="/etc/php/${PHP_VER}/fpm/pool.d/${JUSER}.conf"
+            if [[ ! -f "$POOL" ]]; then
+                sudo tee "$POOL" > /dev/null <<POOL_EOF
+[$JUSER]
+user = $JUSER
+group = $JUSER
+listen = /run/php/php${PHP_VER}-fpm-${JUSER}.sock
+listen.owner = $JUSER
+listen.group = www-data
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 5
+pm.process_idle_timeout = 10s
+POOL_EOF
+            fi
             sudo /usr/local/bin/jabali-isolate create "$JUSER" 2>/dev/null || true
         fi
         sudo /usr/local/bin/jabali-isolate start "$JUSER" 2>/dev/null || true
