@@ -9,7 +9,6 @@ use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
-use Illuminate\Support\Facades\Cache;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -24,6 +23,7 @@ use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Url;
 
 class Logs extends Page implements HasActions, HasForms
