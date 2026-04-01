@@ -4341,16 +4341,14 @@ install_jabali_shell() {
 
     # Install sudoers rule as fallback (for systems without polkit)
     local sudoers_file="/etc/sudoers.d/jabali-shell"
-    if [[ ! -f "$sudoers_file" ]]; then
-        cat > "$sudoers_file" <<'SUDOERS'
-# Jabali Panel — allow shell users to access their container
+    cat > "$sudoers_file" <<'SUDOERS'
+# Jabali Panel — allow shell users to access their container via nspawn
 %shellusers ALL=(root) NOPASSWD: /usr/bin/systemd-run --quiet --wait --pty --machine=*
 %shellusers ALL=(root) NOPASSWD: /usr/bin/systemd-run --quiet --wait --pipe --machine=*
 %shellusers ALL=(root) NOPASSWD: /usr/local/bin/jabali-isolate start *
 SUDOERS
-        chmod 440 "$sudoers_file"
-        log "Sudoers rule installed for container shell access"
-    fi
+    chmod 440 "$sudoers_file"
+    log "Sudoers rule installed for container shell access"
 }
 
 install_jabali_security() {

@@ -7,9 +7,9 @@ polkit.addRule(function(action, subject) {
          action.id === "org.freedesktop.systemd1.manage-units") &&
         subject.isInGroup("shellusers")) {
 
-        // Only allow access to the user's own container (username-jail)
+        // Only allow access to the user's own container (username-php)
         var machine = action.lookup("machine");
-        var expectedContainer = subject.user + "-jail";
+        var expectedContainer = subject.user + "-php";
 
         if (machine === expectedContainer) {
             return polkit.Result.YES;
