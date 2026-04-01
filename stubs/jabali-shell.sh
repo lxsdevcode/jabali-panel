@@ -13,8 +13,11 @@ CONTAINER="${JUSER}-php"
 
 # Ensure container is running
 if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=running"; then
-    # Try to start it
+    # Create if needed, then start
     if command -v jabali-isolate &>/dev/null; then
+        if [[ ! -d "/var/lib/machines/${CONTAINER}" ]]; then
+            sudo /usr/local/bin/jabali-isolate create "$JUSER" 2>/dev/null || true
+        fi
         sudo /usr/local/bin/jabali-isolate start "$JUSER" 2>/dev/null || true
         sleep 1
     fi

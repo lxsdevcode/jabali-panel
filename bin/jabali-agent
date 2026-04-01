@@ -11857,14 +11857,18 @@ function sshEnableShell(array $params): array
     exec('usermod -aG shellusers ' . escapeshellarg($username));
     exec('gpasswd -d ' . escapeshellarg($username) . ' sftpusers 2>/dev/null');
 
-    // Ensure nspawn container is running
+    // Ensure nspawn container exists and is running
     $containerRunning = false;
     exec("machinectl show " . escapeshellarg($container) . " --property=State 2>/dev/null", $stateOut);
     if (! empty($stateOut[0]) && trim($stateOut[0]) === 'State=running') {
         $containerRunning = true;
     } else {
-        // Try to start it
         if (trim((string) shell_exec('which jabali-isolate 2>/dev/null'))) {
+            // Create container if it doesn't exist
+            if (! is_dir("/var/lib/machines/$container")) {
+                exec('jabali-isolate create ' . escapeshellarg($username) . ' 2>&1', $createOut, $createExit);
+            }
+            // Start it
             exec('jabali-isolate start ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
             $containerRunning = ($isoExit === 0);
         }
