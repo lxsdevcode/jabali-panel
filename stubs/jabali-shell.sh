@@ -42,8 +42,8 @@ GID_NUM="$(id -g)"
 if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
     exec sudo nsenter --target "$LEADER" --mount --pid --ipc --uts --no-fork \
         setpriv --reuid="$UID_NUM" --regid="$GID_NUM" --init-groups \
-        env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash TERM="${TERM:-xterm-256color}" BASH_ENV=/dev/null \
-        /bin/bash -c 'set +m 2>/dev/null; exec /bin/bash -il 2>/dev/null'
+        env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash TERM="${TERM:-xterm-256color}" \
+        /bin/bash -il 2> >(grep -v setpgid >&2)
 fi
 
 # Command provided → execute inside container (covers SFTP, SCP, rsync, VS Code, etc.)
