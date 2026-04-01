@@ -11,6 +11,9 @@
 #
 set -e
 
+# Ensure sbin directories are in PATH (some minimal images or piped installs miss them)
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 # Version - prefer local VERSION file if present, fallback for curl installs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
@@ -4360,6 +4363,15 @@ install_jabali_security() {
     else
         warn "jabali-security installation failed (non-fatal)"
     fi
+
+    # CrowdSec's firewall bouncer often fails its post-install script,
+    # leaving dpkg in a broken state that blocks all subsequent apt operations.
+    # Fix it here so the rest of the install isn't affected.
+    if dpkg -l crowdsec-firewall-bouncer-nftables 2>/dev/null | grep -q '^.F'; then
+        info "Fixing broken crowdsec-firewall-bouncer package..."
+        dpkg --configure -a 2>/dev/null || true
+        apt-get install -f -y 2>/dev/null || true
+    fi
 }
 
 install_jabali_isolator() {
@@ -4368,9 +4380,6 @@ install_jabali_isolator() {
     # Require systemd-container for systemd-nspawn
     if ! command -v systemd-nspawn &>/dev/null; then
         info "Installing systemd-container package..."
-        # Fix any broken dpkg state first (e.g. from crowdsec bouncer)
-        apt-get install -f -y >/dev/null 2>&1 || true
-        dpkg --configure -a >/dev/null 2>&1 || true
         apt-get install -y systemd-container >/dev/null 2>&1 || {
             warn "Could not install systemd-container — jabali-isolator requires it"
             return
