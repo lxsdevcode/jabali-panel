@@ -23,7 +23,7 @@ Route::get('/auth-check', function (Request $request) {
     parse_str(parse_url($originalUri, PHP_URL_QUERY) ?? '', $query);
     $token = $query['_stats_token'] ?? '';
 
-    if ($token !== '' && Cache::pull('stats_token:'.$token)) {
+    if ($token !== '' && Cache::get('stats_token:'.$token)) {
         return response('', 200);
     }
 
