@@ -4255,7 +4255,7 @@ SSHD_SFTP
         log "Added SFTP chroot block to sshd_config"
     fi
 
-    # Add shell users block if missing
+    # Add or update shell users block
     if ! grep -q "Match Group shellusers" "$sshd_config" 2>/dev/null; then
         cat >> "$sshd_config" <<'SSHD_SHELL'
 
@@ -4266,6 +4266,25 @@ Match Group shellusers
     X11Forwarding no
 SSHD_SHELL
         log "Added shell users block to sshd_config"
+    elif grep -q "ChrootDirectory /var/jail" "$sshd_config" 2>/dev/null; then
+        # Migrate old jail-based shellusers block to nspawn
+        # Use awk to remove the old block (Match Group shellusers ... until next Match or EOF)
+        awk '
+            /^Match Group shellusers/ { skip=1; next }
+            /^Match / && skip { skip=0 }
+            !skip { print }
+        ' "$sshd_config" > "${sshd_config}.tmp" && mv "${sshd_config}.tmp" "$sshd_config"
+        chmod 644 "$sshd_config"
+        # Append new block
+        cat >> "$sshd_config" <<'SSHD_SHELL'
+
+# Jabali Panel — shell users (routed through nspawn container)
+Match Group shellusers
+    ForceCommand /usr/local/bin/jabali-shell
+    AllowTcpForwarding no
+    X11Forwarding no
+SSHD_SHELL
+        log "Migrated shellusers SSH config from jail to nspawn"
     fi
 
     # Test and reload SSH
