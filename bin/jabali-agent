@@ -887,25 +887,6 @@ function createUser(array $params): array
     $fpmPoolCreated = (bool) ($fpmResult['pool_created'] ?? false);
     $fpmReloadRequired = false;
 
-    // Create and start nspawn container for PHP-FPM isolation
-    $containerCreated = false;
-    if (trim((string) shell_exec('which jabali-isolate 2>/dev/null'))) {
-        $isoOut = [];
-        $isoExit = 0;
-        exec('jabali-isolate create ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
-        if ($isoExit === 0) {
-            exec('jabali-isolate start ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
-            $containerCreated = ($isoExit === 0);
-            if ($containerCreated) {
-                logger("Created and started nspawn container for $username");
-            } else {
-                logger("Warning: nspawn container created but failed to start for $username");
-            }
-        } else {
-            logger("Warning: Failed to create nspawn container for $username");
-        }
-    }
-
     // Create Redis ACL user for isolated caching
     $redisPassword = bin2hex(random_bytes(16)); // 32 char password
     $redisResult = redisCreateUser(['username' => $username, 'password' => $redisPassword]);
@@ -934,7 +915,6 @@ function createUser(array $params): array
         'redis_user' => $redisResult['success'] ? "jabali_{$username}" : null,
         'fpm_pool_created' => $fpmPoolCreated,
         'fpm_reload_required' => $fpmReloadRequired,
-        'container_created' => $containerCreated,
     ];
 }
 
@@ -11860,13 +11840,6 @@ function sshEnableShell(array $params): array
     // Set login shell to bash (OpenSSH rejects nologin before ForceCommand runs)
     exec('usermod -s /bin/bash ' . escapeshellarg($username));
 
-    // Ensure PHP-FPM pool exists (required by jabali-isolate for container creation)
-    $phpVersion = trim((string) shell_exec('php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;" 2>/dev/null')) ?: '8.4';
-    $poolFile = "/etc/php/{$phpVersion}/fpm/pool.d/{$username}.conf";
-    if (! file_exists($poolFile)) {
-        createFpmPool($username, true);
-    }
-
     // Ensure nspawn container exists and is running
     $containerRunning = false;
     exec("machinectl show " . escapeshellarg($container) . " --property=State 2>/dev/null", $stateOut);
@@ -11916,6 +11889,14 @@ function sshDisableShell(array $params): array
 
     // Set shell to nologin (SFTP-only)
     exec('usermod -s /usr/sbin/nologin ' . escapeshellarg($username));
+
+    // Stop nspawn container if running
+    if (trim((string) shell_exec('which jabali-isolate 2>/dev/null'))) {
+        exec('jabali-isolate stop ' . escapeshellarg($username) . ' 2>&1', $isoOut, $isoExit);
+        if ($isoExit === 0) {
+            logger("Stopped nspawn container for $username");
+        }
+    }
 
     // Restore root ownership (required for OpenSSH SFTP chroot)
     chown($homeDir, 'root');

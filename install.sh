@@ -4459,8 +4459,33 @@ install_jabali_isolator() {
         info "Installed jabali-isolate CLI to /usr/local/bin/jabali-isolate"
     fi
 
-    # Create socket directory
-    mkdir -p /run/jabali-fpm
+    # Install idle container checker (stops containers with no active SSH sessions)
+    install -m 755 "$JABALI_DIR/stubs/jabali-container-idle-check.sh" /usr/local/bin/jabali-container-idle-check
+
+    cat > /etc/systemd/system/jabali-container-idle-check.service <<'IDLE_SVC'
+[Unit]
+Description=Jabali Container Idle Checker
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jabali-container-idle-check
+IDLE_SVC
+
+    cat > /etc/systemd/system/jabali-container-idle-check.timer <<'IDLE_TMR'
+[Unit]
+Description=Check for idle Jabali containers every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+IDLE_TMR
+
+    systemctl daemon-reload
+    systemctl enable --now jabali-container-idle-check.timer 2>/dev/null || true
 
     info "Jabali Isolator installed"
 }
