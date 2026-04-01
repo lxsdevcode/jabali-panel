@@ -33,21 +33,19 @@ if [[ -z "$LEADER" || "$LEADER" == "0" ]]; then
     exit 1
 fi
 
+UID_NUM="$(id -u)"
+GID_NUM="$(id -g)"
+
 # No command → interactive shell
 if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
     exec sudo nsenter --target "$LEADER" --mount --pid --uts \
-        sudo -u "$JUSER" -i \
-        HOME="/home/$JUSER" \
-        USER="$JUSER" \
-        SHELL=/bin/bash \
-        TERM="${TERM:-xterm-256color}" \
+        setpriv --reuid="$UID_NUM" --regid="$GID_NUM" --init-groups \
+        env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash TERM="${TERM:-xterm-256color}" \
         /bin/bash --login
 fi
 
 # Command provided → execute inside container (covers SFTP, SCP, rsync, VS Code, etc.)
 exec sudo nsenter --target "$LEADER" --mount --pid --uts \
-    sudo -u "$JUSER" \
-    HOME="/home/$JUSER" \
-    USER="$JUSER" \
-    SHELL=/bin/bash \
+    setpriv --reuid="$UID_NUM" --regid="$GID_NUM" --init-groups \
+    env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash \
     /bin/sh -c "$SSH_ORIGINAL_COMMAND"
