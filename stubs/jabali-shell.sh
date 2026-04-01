@@ -8,14 +8,14 @@
 #   3. SFTP/SCP/rsync: handled transparently through container
 set -euo pipefail
 
-USER="$(whoami)"
-CONTAINER="${USER}-php"
+JUSER="$(whoami)"
+CONTAINER="${JUSER}-php"
 
 # Ensure container is running
 if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=running"; then
     # Try to start it
     if command -v jabali-isolate &>/dev/null; then
-        sudo /usr/local/bin/jabali-isolate start "$USER" 2>/dev/null || true
+        sudo /usr/local/bin/jabali-isolate start "$JUSER" 2>/dev/null || true
         sleep 1
     fi
 
@@ -26,23 +26,28 @@ if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=
     fi
 fi
 
-# No command → interactive shell with proper PTY
+# Get the leader PID of the container for nsenter
+LEADER=$(machinectl show "$CONTAINER" --property=Leader --value 2>/dev/null)
+if [[ -z "$LEADER" || "$LEADER" == "0" ]]; then
+    echo "Error: Could not find container process. Contact your administrator." >&2
+    exit 1
+fi
+
+# No command → interactive shell
 if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    exec sudo systemd-run --quiet --wait --pty \
-        --machine="$CONTAINER" \
-        --uid="$(id -u)" --gid="$(id -g)" \
-        --setenv=HOME="/home/$USER" \
-        --setenv=USER="$USER" \
-        --setenv=SHELL=/bin/bash \
-        --setenv=TERM="${TERM:-xterm-256color}" \
+    exec sudo nsenter --target "$LEADER" --mount --pid --uts \
+        sudo -u "$JUSER" -i \
+        HOME="/home/$JUSER" \
+        USER="$JUSER" \
+        SHELL=/bin/bash \
+        TERM="${TERM:-xterm-256color}" \
         /bin/bash --login
 fi
 
 # Command provided → execute inside container (covers SFTP, SCP, rsync, VS Code, etc.)
-exec sudo systemd-run --quiet --wait --pipe \
-    --machine="$CONTAINER" \
-    --uid="$(id -u)" --gid="$(id -g)" \
-    --setenv=HOME="/home/$USER" \
-    --setenv=USER="$USER" \
-    --setenv=SHELL=/bin/bash \
+exec sudo nsenter --target "$LEADER" --mount --pid --uts \
+    sudo -u "$JUSER" \
+    HOME="/home/$JUSER" \
+    USER="$JUSER" \
+    SHELL=/bin/bash \
     /bin/sh -c "$SSH_ORIGINAL_COMMAND"
