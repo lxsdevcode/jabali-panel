@@ -43,7 +43,7 @@ if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
     exec sudo nsenter --target "$LEADER" --mount --pid --ipc --uts --no-fork \
         setpriv --reuid="$UID_NUM" --regid="$GID_NUM" --init-groups \
         env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash TERM="${TERM:-xterm-256color}" \
-        setsid /bin/bash -il
+        /bin/bash --noediting -il
 fi
 
 # Command provided → execute inside container (covers SFTP, SCP, rsync, VS Code, etc.)
