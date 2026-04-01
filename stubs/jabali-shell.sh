@@ -40,14 +40,14 @@ GID_NUM="$(id -g)"
 
 # No command → interactive shell
 if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-    exec sudo nsenter --target "$LEADER" --mount --pid --uts --no-fork \
+    exec sudo nsenter --target "$LEADER" --mount --pid --ipc --uts --no-fork \
         setpriv --reuid="$UID_NUM" --regid="$GID_NUM" --init-groups \
         env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash TERM="${TERM:-xterm-256color}" \
         /bin/bash -il
 fi
 
 # Command provided → execute inside container (covers SFTP, SCP, rsync, VS Code, etc.)
-exec sudo nsenter --target "$LEADER" --mount --pid --uts \
+exec sudo nsenter --target "$LEADER" --mount --pid --ipc --uts \
     setpriv --reuid="$UID_NUM" --regid="$GID_NUM" --init-groups \
     env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash \
     /bin/sh -c "$SSH_ORIGINAL_COMMAND"
