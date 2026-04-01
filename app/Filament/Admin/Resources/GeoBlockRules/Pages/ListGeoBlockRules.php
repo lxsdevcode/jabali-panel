@@ -85,7 +85,7 @@ class ListGeoBlockRules extends ListRecords
                     FileUpload::make('mmdb_file')
                         ->label(__('GeoIP .mmdb File'))
                         ->required()
-                        ->acceptedFileTypes(['application/octet-stream', 'application/x-maxmind-db'])
+                        ->acceptedFileTypes(['application/octet-stream', 'application/x-maxmind-db', '.mmdb'])
                         ->helperText(__('Upload a MaxMind GeoIP .mmdb file (GeoLite2 or GeoIP2).')),
                     TextInput::make('edition')
                         ->label(__('Edition ID'))
