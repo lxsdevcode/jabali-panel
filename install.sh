@@ -386,6 +386,9 @@ add_repositories() {
     export NEEDRESTART_MODE=a
     export DEBIAN_FRONTEND=noninteractive
 
+    # Fix any broken dpkg state from previous installs (crowdsec bouncer is a common offender)
+    dpkg --configure -a 2>/dev/null || true
+
     # Update package list
     run_quiet "Updating package lists..." apt-get update -qq
 
