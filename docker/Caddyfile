@@ -1,5 +1,7 @@
 {
-	frankenphp
+	frankenphp {
+		num_threads 4
+	}
 	order php_server before file_server
 
 	# Disable Caddy admin API

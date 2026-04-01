@@ -1053,11 +1053,18 @@ setup_frankenphp_config() {
 [PHP]
 max_execution_time = 600
 max_input_time = 600
-memory_limit = 512M
+memory_limit = 128M
 post_max_size = 512M
 upload_max_filesize = 512M
 max_file_uploads = 50
 date.timezone = UTC
+
+[opcache]
+opcache.enable=1
+opcache.memory_consumption=64
+opcache.interned_strings_buffer=8
+opcache.max_accelerated_files=10000
+opcache.validate_timestamps=0
 PHPINI
 
     local panel_hostname="${SERVER_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
@@ -1077,9 +1084,17 @@ PHPINI
         log "Generated self-signed SSL certificate for panel"
     fi
 
+    local cpus
+    cpus=$(nproc 2>/dev/null || echo 2)
+    local num_threads=$(( cpus * 2 ))
+    [ "$num_threads" -lt 2 ] && num_threads=2
+    [ "$num_threads" -gt 8 ] && num_threads=8
+
     cat > /etc/jabali/Caddyfile <<CADDYEOF
 {
-	frankenphp
+	frankenphp {
+		num_threads ${num_threads}
+	}
 	order php_server before file_server
 
 	admin off
@@ -1143,6 +1158,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/www/jabali
 Environment=XDG_DATA_HOME=/var/lib/jabali
+Environment=GOMEMLIMIT=256MiB
 ExecStart=/usr/local/bin/frankenphp run --config /etc/jabali/Caddyfile
 ExecReload=/usr/local/bin/frankenphp reload --config /etc/jabali/Caddyfile
 Restart=always
