@@ -668,6 +668,11 @@ function handleAction(array $request): array
         'php.reload_all_fpm' => phpReloadAllFpm($params),
         'php.update_all_pool_limits' => phpUpdateAllPoolLimits($params),
         'php.list_versions' => phpListVersions($params),
+        'php.list_extensions' => phpListExtensions($params),
+        'php.install_extension' => phpInstallExtension($params),
+        'php.remove_extension' => phpRemoveExtension($params),
+        'php.enable_extension' => phpEnableExtension($params),
+        'php.disable_extension' => phpDisableExtension($params),
         'ssh.generate_key' => sshGenerateKey($params),
         'git.generate_key' => gitGenerateKey($params),
         'git.deploy' => gitDeploy($params),
@@ -11640,6 +11645,160 @@ function phpListVersions(array $params): array
     }
 
     return ['success' => true, 'versions' => $versions, 'default' => $defaultVersion];
+}
+
+function phpListExtensions(array $params): array
+{
+    $version = $params['version'] ?? '';
+
+    if (! preg_match('/^\d+\.\d+$/', $version)) {
+        return ['success' => false, 'error' => 'Invalid PHP version format'];
+    }
+
+    $modsDir = "/etc/php/{$version}/mods-available";
+    if (! is_dir($modsDir)) {
+        return ['success' => false, 'error' => "PHP {$version} mods-available directory not found"];
+    }
+
+    // Get list of enabled modules for CLI SAPI
+    $enabledOutput = [];
+    exec('phpquery -v '.escapeshellarg($version).' -s cli -M 2>/dev/null', $enabledOutput);
+    $enabled = array_map('trim', $enabledOutput);
+
+    $extensions = [];
+    foreach (glob("{$modsDir}/*.ini") as $iniFile) {
+        $name = basename($iniFile, '.ini');
+        $extensions[] = [
+            'name' => $name,
+            'enabled' => in_array($name, $enabled, true),
+        ];
+    }
+
+    usort($extensions, fn ($a, $b) => strcmp($a['name'], $b['name']));
+
+    return ['success' => true, 'extensions' => $extensions, 'version' => $version];
+}
+
+function phpInstallExtension(array $params): array
+{
+    $version = $params['version'] ?? '';
+    $extension = $params['extension'] ?? '';
+
+    if (! preg_match('/^\d+\.\d+$/', $version)) {
+        return ['success' => false, 'error' => 'Invalid PHP version format'];
+    }
+    if (! preg_match('/^[a-z][a-z0-9_-]*$/', $extension)) {
+        return ['success' => false, 'error' => 'Invalid extension name'];
+    }
+
+    $package = "php{$version}-{$extension}";
+    $output = [];
+    $exitCode = 0;
+    exec('DEBIAN_FRONTEND=noninteractive apt-get install -y '.escapeshellarg($package).' 2>&1', $output, $exitCode);
+
+    if ($exitCode !== 0) {
+        return ['success' => false, 'error' => "Failed to install {$package}: ".implode("\n", array_slice($output, -5))];
+    }
+
+    // Reload FPM to pick up new extension
+    exec('systemctl reload '.escapeshellarg("php{$version}-fpm").' 2>/dev/null');
+
+    logger("Installed PHP extension: {$package}");
+
+    return ['success' => true, 'message' => "{$package} installed successfully"];
+}
+
+function phpRemoveExtension(array $params): array
+{
+    $version = $params['version'] ?? '';
+    $extension = $params['extension'] ?? '';
+
+    if (! preg_match('/^\d+\.\d+$/', $version)) {
+        return ['success' => false, 'error' => 'Invalid PHP version format'];
+    }
+    if (! preg_match('/^[a-z][a-z0-9_-]*$/', $extension)) {
+        return ['success' => false, 'error' => 'Invalid extension name'];
+    }
+
+    // Prevent removing critical extensions
+    $protected = ['cli', 'fpm', 'common', 'opcache'];
+    if (in_array($extension, $protected, true)) {
+        return ['success' => false, 'error' => "Cannot remove core extension: {$extension}"];
+    }
+
+    $package = "php{$version}-{$extension}";
+    $output = [];
+    $exitCode = 0;
+    exec('DEBIAN_FRONTEND=noninteractive apt-get remove -y '.escapeshellarg($package).' 2>&1', $output, $exitCode);
+
+    if ($exitCode !== 0) {
+        return ['success' => false, 'error' => "Failed to remove {$package}: ".implode("\n", array_slice($output, -5))];
+    }
+
+    exec('systemctl reload '.escapeshellarg("php{$version}-fpm").' 2>/dev/null');
+
+    logger("Removed PHP extension: {$package}");
+
+    return ['success' => true, 'message' => "{$package} removed successfully"];
+}
+
+function phpEnableExtension(array $params): array
+{
+    $version = $params['version'] ?? '';
+    $extension = $params['extension'] ?? '';
+
+    if (! preg_match('/^\d+\.\d+$/', $version)) {
+        return ['success' => false, 'error' => 'Invalid PHP version format'];
+    }
+    if (! preg_match('/^[a-z][a-z0-9_-]*$/', $extension)) {
+        return ['success' => false, 'error' => 'Invalid extension name'];
+    }
+
+    $output = [];
+    $exitCode = 0;
+    exec('phpenmod -v '.escapeshellarg($version).' '.escapeshellarg($extension).' 2>&1', $output, $exitCode);
+
+    if ($exitCode !== 0) {
+        return ['success' => false, 'error' => "Failed to enable {$extension}: ".implode("\n", $output)];
+    }
+
+    exec('systemctl reload '.escapeshellarg("php{$version}-fpm").' 2>/dev/null');
+
+    logger("Enabled PHP extension: {$extension} for PHP {$version}");
+
+    return ['success' => true, 'message' => "{$extension} enabled for PHP {$version}"];
+}
+
+function phpDisableExtension(array $params): array
+{
+    $version = $params['version'] ?? '';
+    $extension = $params['extension'] ?? '';
+
+    if (! preg_match('/^\d+\.\d+$/', $version)) {
+        return ['success' => false, 'error' => 'Invalid PHP version format'];
+    }
+    if (! preg_match('/^[a-z][a-z0-9_-]*$/', $extension)) {
+        return ['success' => false, 'error' => 'Invalid extension name'];
+    }
+
+    $protected = ['cli', 'fpm', 'common', 'opcache'];
+    if (in_array($extension, $protected, true)) {
+        return ['success' => false, 'error' => "Cannot disable core extension: {$extension}"];
+    }
+
+    $output = [];
+    $exitCode = 0;
+    exec('phpdismod -v '.escapeshellarg($version).' '.escapeshellarg($extension).' 2>&1', $output, $exitCode);
+
+    if ($exitCode !== 0) {
+        return ['success' => false, 'error' => "Failed to disable {$extension}: ".implode("\n", $output)];
+    }
+
+    exec('systemctl reload '.escapeshellarg("php{$version}-fpm").' 2>/dev/null');
+
+    logger("Disabled PHP extension: {$extension} for PHP {$version}");
+
+    return ['success' => true, 'message' => "{$extension} disabled for PHP {$version}"];
 }
 
 function phpInstallWordPressModules(array $params): array

@@ -44,6 +44,10 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public ?string $defaultVersion = null;
 
+    public ?string $selectedExtensionVersion = null;
+
+    public array $extensions = [];
+
     public static function getNavigationLabel(): string
     {
         return __('PHP Manager');
@@ -288,9 +292,106 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
         );
     }
 
+    public function loadExtensions(?string $version = null): void
+    {
+        $version = $version ?? $this->selectedExtensionVersion;
+        if (! $version) {
+            $this->extensions = [];
+
+            return;
+        }
+
+        $this->selectedExtensionVersion = $version;
+
+        try {
+            $result = $this->agent()->call('php.list_extensions', ['version' => $version]);
+            $this->extensions = $result->success ? $result->get('extensions', []) : [];
+        } catch (\Exception) {
+            $this->extensions = [];
+        }
+    }
+
+    public function installExtension(string $extension): void
+    {
+        if (! $this->selectedExtensionVersion) {
+            return;
+        }
+
+        $this->agentCall(
+            action: 'php.install_extension',
+            params: ['version' => $this->selectedExtensionVersion, 'extension' => $extension],
+            successTitle: __('Extension :ext installed', ['ext' => $extension]),
+            errorTitle: __('Failed to install :ext', ['ext' => $extension]),
+            onSuccess: fn () => $this->loadExtensions(),
+        );
+    }
+
+    public function removeExtension(string $extension): void
+    {
+        if (! $this->selectedExtensionVersion) {
+            return;
+        }
+
+        $this->agentCall(
+            action: 'php.remove_extension',
+            params: ['version' => $this->selectedExtensionVersion, 'extension' => $extension],
+            successTitle: __('Extension :ext removed', ['ext' => $extension]),
+            errorTitle: __('Failed to remove :ext', ['ext' => $extension]),
+            onSuccess: fn () => $this->loadExtensions(),
+        );
+    }
+
+    public function enableExtension(string $extension): void
+    {
+        if (! $this->selectedExtensionVersion) {
+            return;
+        }
+
+        $this->agentCall(
+            action: 'php.enable_extension',
+            params: ['version' => $this->selectedExtensionVersion, 'extension' => $extension],
+            successTitle: __('Extension :ext enabled', ['ext' => $extension]),
+            errorTitle: __('Failed to enable :ext', ['ext' => $extension]),
+            onSuccess: fn () => $this->loadExtensions(),
+        );
+    }
+
+    public function disableExtension(string $extension): void
+    {
+        if (! $this->selectedExtensionVersion) {
+            return;
+        }
+
+        $this->agentCall(
+            action: 'php.disable_extension',
+            params: ['version' => $this->selectedExtensionVersion, 'extension' => $extension],
+            successTitle: __('Extension :ext disabled', ['ext' => $extension]),
+            errorTitle: __('Failed to disable :ext', ['ext' => $extension]),
+            onSuccess: fn () => $this->loadExtensions(),
+        );
+    }
+
     protected function getHeaderActions(): array
     {
+        $installed = array_column($this->installedVersions, 'version');
+        $commonExtensions = ['redis', 'imagick', 'gd', 'mbstring', 'curl', 'xml', 'zip', 'bcmath', 'intl', 'soap', 'imap', 'ldap', 'pgsql', 'sqlite3', 'mysql', 'memcached', 'apcu', 'xdebug', 'readline', 'exif', 'bz2', 'tidy'];
+
         return [
+            Action::make('installExtension')
+                ->label(__('Install Extension'))
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary')
+                ->visible(fn (): bool => ! empty($this->selectedExtensionVersion))
+                ->form([
+                    \Filament\Forms\Components\Select::make('extension')
+                        ->label(__('Extension'))
+                        ->options(fn (): array => array_combine($commonExtensions, array_map(fn ($e) => "php{$this->selectedExtensionVersion}-{$e}", $commonExtensions)))
+                        ->searchable()
+                        ->required(),
+                ])
+                ->action(function (array $data): void {
+                    $this->installExtension($data['extension']);
+                }),
         ];
     }
 }
