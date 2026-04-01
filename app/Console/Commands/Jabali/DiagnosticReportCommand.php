@@ -306,7 +306,8 @@ class DiagnosticReportCommand extends Command
 
         // Listening ports
         try {
-            $result = $this->executeCommand('ss -tlnp 2>/dev/null | grep -E ":(22|25|80|443|993|587|2223|53|3306|6379|8080) " | head -20');
+            $panelPort = config('jabali.panel.port', 8443);
+            $result = $this->executeCommand("ss -tlnp 2>/dev/null | grep -E ':(22|25|80|443|993|587|{$panelPort}|53|3306|6379|8080) ' | head -20");
             $data['listening_ports'] = $result['exitCode'] === 0 ? $result['output'] : null;
         } catch (Exception) {
             // skip

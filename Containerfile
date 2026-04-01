@@ -119,9 +119,9 @@ RUN chmod +x /usr/local/bin/container-entrypoint.sh
 RUN chown -R www-data:www-data /var/www/jabali/storage /var/www/jabali/bootstrap/cache \
     && chmod -R ug+rwX /var/www/jabali/storage /var/www/jabali/bootstrap/cache
 
-EXPOSE 80 443 2223 25 587 993 110 53/tcp 53/udp 8080
+EXPOSE 80 443 8443 25 587 993 110 53/tcp 53/udp 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -fsk https://127.0.0.1:2223/up || exit 1
+    CMD curl -fsk https://127.0.0.1:8443/up || exit 1
 
 ENTRYPOINT ["/usr/local/bin/container-entrypoint.sh"]

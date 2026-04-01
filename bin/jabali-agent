@@ -55,6 +55,25 @@ function isProtectedUser(string $username): bool
 }
 
 /**
+ * Escape a value for use in a MySQL LIKE pattern.
+ * Escapes the wildcard characters % and _ so they match literally.
+ */
+function escapeMysqlLike(mysqli $conn, string $value): string
+{
+    $value = $conn->real_escape_string($value);
+
+    return str_replace(['%', '_'], ['\\%', '\\_'], $value);
+}
+
+/**
+ * Escape a MySQL identifier (database name, table name) for use inside backticks.
+ */
+function escapeMysqlIdentifier(string $identifier): string
+{
+    return '`'.str_replace('`', '``', $identifier).'`';
+}
+
+/**
  * Validate a cron command against the executable allowlist.
  * Blocks shell operators and requires an allowed absolute path as the first token.
  * Returns true on success, or an error string on failure.
@@ -1066,13 +1085,14 @@ function deleteUser(array $params): array
         $dbUserDeletedCount = 0;
 
         // Get all databases belonging to this user
-        $result = $mysqli->query("SHOW DATABASES LIKE '{$mysqli->real_escape_string($dbPrefix)}%'");
+        $escapedPrefix = escapeMysqlLike($mysqli, $dbPrefix);
+        $result = $mysqli->query("SHOW DATABASES LIKE '{$escapedPrefix}%'");
         if ($result) {
             while ($row = $result->fetch_row()) {
                 $dbName = $row[0];
                 // Double-check it starts with username_
                 if (strpos($dbName, $dbPrefix) === 0) {
-                    $mysqli->query("DROP DATABASE IF EXISTS `{$mysqli->real_escape_string($dbName)}`");
+                    $mysqli->query('DROP DATABASE IF EXISTS '.escapeMysqlIdentifier($dbName));
                     logger("Deleted MySQL database: $dbName");
                     $dbDeletedCount++;
                 }
@@ -1081,7 +1101,7 @@ function deleteUser(array $params): array
         }
 
         // Get all MySQL users belonging to this user
-        $result = $mysqli->query("SELECT User, Host FROM mysql.user WHERE User LIKE '{$mysqli->real_escape_string($dbPrefix)}%'");
+        $result = $mysqli->query("SELECT User, Host FROM mysql.user WHERE User LIKE '{$escapedPrefix}%'");
         if ($result) {
             while ($row = $result->fetch_assoc()) {
                 $dbUser = $row['User'];
@@ -1347,7 +1367,7 @@ server {
 
     location = /jabali-auth-check {
         internal;
-        proxy_pass https://127.0.0.1:2223/api/auth-check;
+        proxy_pass https://127.0.0.1:PANEL_PORT_PLACEHOLDER/api/auth-check;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         proxy_set_header X-Original-URI \$request_uri;
@@ -1418,6 +1438,7 @@ NGINX;
     $config = str_replace('SOCKET_PLACEHOLDER', $fpmSocket, $config);
     $config = str_replace('LOGS_PLACEHOLDER', $logs, $config);
     $config = str_replace('STATS_PLACEHOLDER', $stats, $config);
+    $config = str_replace('PANEL_PORT_PLACEHOLDER', (string) getPanelPort(), $config);
 
     // nginx >= 1.25 uses "http2 on;" directive; older uses "listen ... http2"
     $nginxVer = '';
@@ -2693,21 +2714,22 @@ function mysqlCreateMasterUser(array $params): array
     // Create master user with pattern like: user1_admin
     $masterUser = $username.'_admin';
     $password = bin2hex(random_bytes(16));
+    $escapedMasterUser = $conn->real_escape_string($masterUser);
 
     // Drop if exists
-    $conn->query("DROP USER IF EXISTS '{$masterUser}'@'localhost'");
+    $conn->query("DROP USER IF EXISTS '{$escapedMasterUser}'@'localhost'");
 
     // Create user
     $escapedPassword = $conn->real_escape_string($password);
-    if (! $conn->query("CREATE USER '{$masterUser}'@'localhost' IDENTIFIED BY '{$escapedPassword}'")) {
+    if (! $conn->query("CREATE USER '{$escapedMasterUser}'@'localhost' IDENTIFIED BY '{$escapedPassword}'")) {
         $conn->close();
 
         return ['success' => false, 'error' => 'Failed to create master user: '.$conn->error];
     }
 
     // Grant privileges to all user's databases using wildcard
-    $pattern = $username.'\\_%';
-    if (! $conn->query("GRANT ALL PRIVILEGES ON `{$pattern}`.* TO '{$masterUser}'@'localhost'")) {
+    $pattern = str_replace('`', '``', $username).'\\_';
+    if (! $conn->query("GRANT ALL PRIVILEGES ON `{$pattern}%`.* TO '{$escapedMasterUser}'@'localhost'")) {
         $conn->close();
 
         return ['success' => false, 'error' => 'Failed to grant privileges: '.$conn->error];
@@ -18843,6 +18865,13 @@ function resolveStatsDirectory(string $username, string $domain, string $documen
     return $statsDir;
 }
 
+function getPanelPort(): int
+{
+    $port = trim((string) shell_exec("grep -oP '(?<=^PANEL_PORT=)\\d+' /var/www/jabali/.env 2>/dev/null"));
+
+    return $port !== '' ? (int) $port : 8443;
+}
+
 function goaccessDaemonPort(string $domain): int
 {
     return 7890 + (crc32($domain) % 1000);
@@ -18930,7 +18959,7 @@ function logsGoaccess(array $params): array
                           '    }'."\n\n".
                           '    location = /jabali-auth-check {'."\n".
                           '        internal;'."\n".
-                          '        proxy_pass https://127.0.0.1:2223/api/auth-check;'."\n".
+                          '        proxy_pass https://127.0.0.1:'.getPanelPort().'/api/auth-check;'."\n".
                           '        proxy_pass_request_body off;'."\n".
                           '        proxy_set_header Content-Length "";'."\n".
                           '        proxy_set_header X-Original-URI $request_uri;'."\n".

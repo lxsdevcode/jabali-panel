@@ -373,7 +373,7 @@ class Jabali_Cache_Plugin
         $normalized_paths = array_unique($normalized_paths);
         $purge_all = in_array('/', $normalized_paths) && count($normalized_paths) > 5;
 
-        $panel_port = defined('JABALI_PANEL_PORT') ? JABALI_PANEL_PORT : 2223;
+        $panel_port = defined('JABALI_PANEL_PORT') ? JABALI_PANEL_PORT : 8443;
         $response = wp_remote_post("https://127.0.0.1:{$panel_port}/api/internal/page-cache-purge", [
             'timeout' => 10,
             'sslverify' => false,
@@ -1557,7 +1557,7 @@ class Jabali_Cache_Plugin
         }
 
         // Call Jabali Panel internal API (HTTPS with SSL verify disabled for localhost)
-        $panel_port = defined('JABALI_PANEL_PORT') ? JABALI_PANEL_PORT : 2223;
+        $panel_port = defined('JABALI_PANEL_PORT') ? JABALI_PANEL_PORT : 8443;
         $response = wp_remote_post("https://127.0.0.1:{$panel_port}/api/internal/page-cache", [
             'timeout' => 10,
             'sslverify' => false,

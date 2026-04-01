@@ -42,7 +42,7 @@ class GenerateLoginTokenCommand extends Command
         $hostname = config('jabali.panel.hostname') ?: config('app.url');
         $url = rtrim($hostname, '/');
         if (! str_starts_with($url, 'http')) {
-            $url = "https://{$url}:2223";
+            $url = "https://{$url}:".config('jabali.panel.port', 8443);
         }
         $url .= "/auto-login?token={$token}";
 

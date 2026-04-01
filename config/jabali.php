@@ -14,6 +14,7 @@ return [
 
     'panel' => [
         'hostname' => env('PANEL_HOSTNAME', env('SERVER_HOSTNAME', '')),
+        'port' => (int) env('PANEL_PORT', 8443),
         'tls_cert' => env('PANEL_TLS_CERT', '/etc/ssl/jabali/panel.crt'),
     ],
 ];
