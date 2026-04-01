@@ -3715,6 +3715,89 @@ print_completion() {
     echo ""
 }
 
+upgrade_stalwart() {
+    local dpkg_arch
+    dpkg_arch=$(dpkg --print-architecture)
+    local rust_arch
+    case "$dpkg_arch" in
+        amd64)  rust_arch="x86_64" ;;
+        arm64)  rust_arch="aarch64" ;;
+        armhf)  rust_arch="armv7" ;;
+        *)      warn "Unsupported architecture for Stalwart: $dpkg_arch"; return ;;
+    esac
+
+    local current_ver
+    current_ver=$(/usr/local/bin/stalwart --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "unknown")
+
+    # Get latest version from GitHub API
+    local latest_ver
+    latest_ver=$(curl -fsSL --connect-timeout 10 https://api.github.com/repos/stalwartlabs/mail-server/releases/latest 2>/dev/null | grep -oP '"tag_name":\s*"v?\K[0-9.]+' | head -1)
+
+    if [[ -z "$latest_ver" ]]; then
+        warn "Could not check Stalwart latest version"
+        return
+    fi
+
+    if [[ "$current_ver" == "$latest_ver" ]]; then
+        log "Stalwart v${current_ver} is already up to date"
+        return
+    fi
+
+    info "Upgrading Stalwart from v${current_ver} to v${latest_ver}..."
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local url="https://github.com/stalwartlabs/mail-server/releases/latest/download/stalwart-${rust_arch}-unknown-linux-gnu.tar.gz"
+
+    if curl -fsSL "$url" -o "${tmp_dir}/stalwart.tar.gz" 2>/dev/null; then
+        systemctl stop stalwart-mail 2>/dev/null || true
+        tar -xzf "${tmp_dir}/stalwart.tar.gz" -C "${tmp_dir}"
+        install -m 755 "${tmp_dir}/stalwart" /usr/local/bin/stalwart
+        systemctl start stalwart-mail 2>/dev/null || true
+        log "Stalwart upgraded to v${latest_ver}"
+    else
+        warn "Failed to download Stalwart v${latest_ver}"
+    fi
+    rm -rf "${tmp_dir}"
+}
+
+upgrade_bulwark() {
+    local bulwark_dir="/opt/bulwark"
+
+    if ! command -v node >/dev/null 2>&1; then
+        warn "Node.js not available — skipping Bulwark update"
+        return
+    fi
+
+    cd "$bulwark_dir"
+
+    # Check if there are updates
+    git fetch --depth 1 origin main 2>/dev/null || { warn "Could not fetch Bulwark updates"; return; }
+    local local_hash remote_hash
+    local_hash=$(git rev-parse HEAD 2>/dev/null)
+    remote_hash=$(git rev-parse origin/main 2>/dev/null)
+
+    if [[ "$local_hash" == "$remote_hash" ]]; then
+        log "Bulwark Webmail is already up to date"
+        return
+    fi
+
+    info "Updating Bulwark Webmail..."
+    git reset --hard origin/main 2>/dev/null || { warn "Could not update Bulwark"; return; }
+
+    npm ci --omit=dev 2>/dev/null || npm install --omit=dev 2>/dev/null || { warn "Bulwark npm install failed"; return; }
+    npm run build 2>/dev/null || { warn "Bulwark build failed"; return; }
+
+    # Re-link static assets for standalone mode
+    ln -sfn "${bulwark_dir}/.next/static" "${bulwark_dir}/.next/standalone/.next/static"
+    ln -sfn "${bulwark_dir}/public" "${bulwark_dir}/.next/standalone/public"
+    ln -sfn "${bulwark_dir}/.env.local" "${bulwark_dir}/.next/standalone/.env.local"
+    chown -R www-data:www-data "${bulwark_dir}/.next" "${bulwark_dir}/.env.local"
+
+    systemctl restart bulwark 2>/dev/null || true
+    log "Bulwark Webmail updated"
+}
+
 # Upgrade Jabali Panel infrastructure (called by: jabali update)
 # Re-runs safe config functions without wiping data.
 # Skips: mariadb (would drop user), redis (would regen password), firewall (would reset rules)
@@ -3773,6 +3856,28 @@ upgrade_infra() {
         else
             warn "Agent not running — shell user migration will run on next update"
         fi
+    fi
+
+    # Update Stalwart Mail Server (binary from GitHub releases)
+    if [[ -x /usr/local/bin/stalwart ]]; then
+        header "Updating Stalwart Mail Server"
+        upgrade_stalwart
+    fi
+
+    # Update Bulwark Webmail (Next.js app from GitHub)
+    if [[ -d /opt/bulwark/.git ]]; then
+        header "Updating Bulwark Webmail"
+        upgrade_bulwark
+    fi
+
+    # Update WP-CLI
+    if command -v wp &>/dev/null; then
+        wp cli update --yes 2>/dev/null || true
+    fi
+
+    # Update Composer
+    if command -v composer &>/dev/null; then
+        composer self-update --quiet 2>/dev/null || true
     fi
 
     # Install or update jabali-security
