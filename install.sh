@@ -2039,14 +2039,7 @@ rotate = "daily"
 ansi = false
 enable = true
 
-[acme."letsencrypt"]
-directory = "https://acme-v02.api.letsencrypt.org/directory"
-challenge = "tls-alpn-01"
-contact = ["postmaster@${SERVER_HOSTNAME}"]
-domains = ["${SERVER_HOSTNAME}", "mail.${SERVER_HOSTNAME}"]
-cache = "/etc/stalwart-mail/acme"
-renew-before = "30d"
-
+# TLS: certbot issues certs, tls.toml overrides this default on LE-enabled installs
 [certificate.default]
 cert = "/etc/ssl/jabali/panel.crt"
 private-key = "/etc/ssl/jabali/panel.key"
@@ -3502,10 +3495,28 @@ MAILNGINX
             if certbot certonly --webroot -w /var/www/html -d "$mail_hostname" --non-interactive --agree-tos --email "$ADMIN_EMAIL" 2>/dev/null; then
                 log "Let's Encrypt certificate issued for $mail_hostname"
 
-                # Stalwart manages its own TLS via built-in ACME (tls-alpn-01)
-                # No need to configure certs manually — ACME handles it
-                log "Stalwart ACME will handle TLS for mail domains automatically"
-                log "Mail services updated to use Let's Encrypt certificate"
+                # Configure Stalwart to use the LE cert
+                local mail_cert="/etc/letsencrypt/live/$mail_hostname/fullchain.pem"
+                local mail_key="/etc/letsencrypt/live/$mail_hostname/privkey.pem"
+                cat > /etc/stalwart-mail/tls.toml <<TLSCONF
+[certificate."default"]
+cert = "file://${mail_cert}"
+private-key = "file://${mail_key}"
+default = true
+TLSCONF
+                systemctl restart stalwart-mail 2>/dev/null || true
+
+                # Add certbot deploy hook to restart Stalwart on renewal
+                mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+                cat > /etc/letsencrypt/renewal-hooks/deploy/stalwart-mail.sh <<'HOOK'
+#!/bin/bash
+if echo "$RENEWED_DOMAINS" | grep -q "mail\."; then
+    systemctl restart stalwart-mail 2>/dev/null || true
+fi
+HOOK
+                chmod +x /etc/letsencrypt/renewal-hooks/deploy/stalwart-mail.sh
+
+                log "Stalwart TLS configured with Let's Encrypt certificate"
             else
                 warn "Could not issue certificate for $mail_hostname"
             fi
