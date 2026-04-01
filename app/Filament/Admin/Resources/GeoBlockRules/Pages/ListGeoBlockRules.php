@@ -85,7 +85,6 @@ class ListGeoBlockRules extends ListRecords
                     FileUpload::make('mmdb_file')
                         ->label(__('GeoIP .mmdb File'))
                         ->required()
-                        ->acceptedFileTypes(['application/octet-stream', 'application/x-maxmind-db', '.mmdb'])
                         ->helperText(__('Upload a MaxMind GeoIP .mmdb file (GeoLite2 or GeoIP2).')),
                     TextInput::make('edition')
                         ->label(__('Edition ID'))
@@ -113,6 +112,16 @@ class ListGeoBlockRules extends ListRecords
                             ->title(__('Uploaded file not found'))
                             ->danger()
                             ->send();
+
+                        return;
+                    }
+
+                    if (! str_ends_with(strtolower($data['mmdb_file']), '.mmdb')) {
+                        Notification::make()
+                            ->title(__('Invalid file type — upload a .mmdb file'))
+                            ->danger()
+                            ->send();
+                        @unlink($filePath);
 
                         return;
                     }
