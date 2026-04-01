@@ -11826,7 +11826,7 @@ function sshEnableShell(array $params): array
     }
 
     $homeDir = $userInfo['dir'];
-    $container = "{$username}-jail";
+    $container = "{$username}-php";
 
     // Give user ownership of their home directory (shell users need writable home)
     chown($homeDir, $username);

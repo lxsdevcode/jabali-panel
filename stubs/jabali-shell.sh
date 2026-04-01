@@ -9,7 +9,7 @@
 set -euo pipefail
 
 USER="$(whoami)"
-CONTAINER="${USER}-jail"
+CONTAINER="${USER}-php"
 
 # Ensure container is running
 if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=running"; then
