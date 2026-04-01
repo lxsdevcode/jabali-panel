@@ -437,11 +437,10 @@ EOF
         echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ ${codename} main" > /etc/apt/sources.list.d/php.list
     fi
 
-    # Add Sury nginx repository (recommended when using sury PHP)
+    # Add nginx repository (recommended when using sury PHP)
     info "Configuring nginx repository..."
     if grep -qi ubuntu /etc/os-release 2>/dev/null; then
-        curl -fsSL https://packages.sury.org/nginx/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-nginx.gpg 2>/dev/null || true
-        echo "deb [signed-by=/usr/share/keyrings/sury-nginx.gpg] https://packages.sury.org/nginx/ubuntu/ ${codename} main" > /etc/apt/sources.list.d/nginx.list
+        add-apt-repository -y ppa:ondrej/nginx 2>/dev/null || true
     else
         curl -fsSL https://packages.sury.org/nginx/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-nginx.gpg 2>/dev/null || true
         echo "deb [signed-by=/usr/share/keyrings/sury-nginx.gpg] https://packages.sury.org/nginx/ ${codename} main" > /etc/apt/sources.list.d/nginx.list
