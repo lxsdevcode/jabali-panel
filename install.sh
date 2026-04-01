@@ -38,7 +38,7 @@ JABALI_DIR="/var/www/jabali"
 JABALI_USER="www-data"
 JABALI_REPO="https://github.com/shukiv/jabali-panel.git"
 JABALI_BRANCH="main"
-PANEL_PORT="${PANEL_PORT:-2223}"
+PANEL_PORT="${PANEL_PORT:-8443}"
 NODE_VERSION="20"
 
 # PHP version will be detected after installation
