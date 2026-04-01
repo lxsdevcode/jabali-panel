@@ -3068,7 +3068,7 @@ PDNSENV
 
     # Install dependencies
     run_quiet "Installing Composer dependencies..." \
-        sudo -u $JABALI_USER COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader
+        env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader
     if [ ! -f "$JABALI_DIR/vendor/autoload.php" ]; then
         error "Composer install failed - vendor/autoload.php not found"
         exit 1
