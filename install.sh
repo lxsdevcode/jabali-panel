@@ -1602,10 +1602,7 @@ REALIP
     local jabali_includes="/etc/nginx/jabali/includes"
     mkdir -p "$jabali_includes"
     if [[ ! -f "$jabali_includes/waf.conf" ]]; then
-        cat > "$jabali_includes/waf.conf" <<'EOF'
-# Managed by Jabali
-modsecurity off;
-EOF
+        echo "# Managed by Jabali — jabali-security will configure ModSecurity here" > "$jabali_includes/waf.conf"
     fi
     if [[ ! -f "$jabali_includes/geo.conf" ]]; then
         echo "# Managed by Jabali" > "$jabali_includes/geo.conf"
