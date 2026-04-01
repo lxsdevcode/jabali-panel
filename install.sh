@@ -3688,6 +3688,9 @@ upgrade_infra() {
     setup_restic
     setup_self_healing
 
+    # Install/update jabali-isolator (nspawn containers for PHP-FPM + shell)
+    install_jabali_isolator
+
     # Configure SSH + jabali-shell
     configure_sshd
     install_jabali_shell
@@ -4229,7 +4232,7 @@ show_usage() {
 }
 
 JABALI_SECURITY_REPO="https://raw.githubusercontent.com/shukiv/jabali-security/master/install.sh"
-JABALI_ISOLATOR_REPO="https://git.linux-hosting.co.il/shukivaknin/jabali-isolator.git"
+JABALI_ISOLATOR_REPO="https://github.com/shukiv/jabali-isolator.git"
 JABALI_ISOLATOR_DIR="/usr/local/jabali-isolator"
 
 configure_sshd() {
