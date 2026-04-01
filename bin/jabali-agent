@@ -11857,6 +11857,13 @@ function sshEnableShell(array $params): array
     exec('usermod -aG shellusers ' . escapeshellarg($username));
     exec('gpasswd -d ' . escapeshellarg($username) . ' sftpusers 2>/dev/null');
 
+    // Ensure PHP-FPM pool exists (required by jabali-isolate for container creation)
+    $phpVersion = trim((string) shell_exec('php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;" 2>/dev/null')) ?: '8.4';
+    $poolFile = "/etc/php/{$phpVersion}/fpm/pool.d/{$username}.conf";
+    if (! file_exists($poolFile)) {
+        createFpmPool($username, true);
+    }
+
     // Ensure nspawn container exists and is running
     $containerRunning = false;
     exec("machinectl show " . escapeshellarg($container) . " --property=State 2>/dev/null", $stateOut);
