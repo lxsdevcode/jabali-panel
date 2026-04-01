@@ -11853,9 +11853,12 @@ function sshEnableShell(array $params): array
         chgrp($path, $username);
     }
 
-    // Move from sftpusers to shellusers (ForceCommand in sshd_config handles shell routing)
+    // Move from sftpusers to shellusers
     exec('usermod -aG shellusers ' . escapeshellarg($username));
     exec('gpasswd -d ' . escapeshellarg($username) . ' sftpusers 2>/dev/null');
+
+    // Set login shell to bash (OpenSSH rejects nologin before ForceCommand runs)
+    exec('usermod -s /bin/bash ' . escapeshellarg($username));
 
     // Ensure PHP-FPM pool exists (required by jabali-isolate for container creation)
     $phpVersion = trim((string) shell_exec('php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;" 2>/dev/null')) ?: '8.4';
@@ -11907,9 +11910,12 @@ function sshDisableShell(array $params): array
 
     $homeDir = $userInfo['dir'];
 
-    // Move from shellusers to sftpusers (sshd_config Match blocks handle the rest)
+    // Move from shellusers to sftpusers
     exec('gpasswd -d ' . escapeshellarg($username) . ' shellusers 2>/dev/null');
     exec('usermod -aG sftpusers ' . escapeshellarg($username));
+
+    // Set shell to nologin (SFTP-only)
+    exec('usermod -s /usr/sbin/nologin ' . escapeshellarg($username));
 
     // Restore root ownership (required for OpenSSH SFTP chroot)
     chown($homeDir, 'root');
