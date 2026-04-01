@@ -69,7 +69,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
                 ['version' => '8.1', 'fpm_status' => 'inactive'],
             ];
             $this->defaultVersion = '8.4';
-            $allVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+            $allVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
             $installed = array_column($this->installedVersions, 'version');
             $this->availableVersions = array_diff($allVersions, $installed);
 
@@ -94,7 +94,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
             $this->defaultVersion = null;
         }
 
-        $allVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+        $allVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
         $installed = array_column($this->installedVersions, 'version');
         $this->availableVersions = array_diff($allVersions, $installed);
     }
@@ -129,7 +129,7 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public function getAllVersionsData(): array
     {
-        $allVersions = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+        $allVersions = ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
         $installedMap = [];
 
         foreach ($this->installedVersions as $php) {
@@ -197,6 +197,16 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
                     ->modalHeading(__('Reload PHP-FPM'))
                     ->modalDescription(fn (array $record): string => __('Are you sure you want to reload PHP :version FPM?', ['version' => $record['version']]))
                     ->action(fn (array $record) => $this->reloadFpm($record['version'])),
+                Action::make('setDefault')
+                    ->label(__('Set Default'))
+                    ->icon('heroicon-o-check-badge')
+                    ->color('info')
+                    ->size('sm')
+                    ->visible(fn (array $record): bool => $record['installed'] && ! $record['is_default'])
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Set Default PHP Version'))
+                    ->modalDescription(fn (array $record): string => __('Set PHP :version as the default CLI version?', ['version' => $record['version']]))
+                    ->action(fn (array $record) => $this->setDefaultPhp($record['version'])),
                 Action::make('uninstall')
                     ->label(__('Uninstall'))
                     ->icon('heroicon-o-trash')
