@@ -386,7 +386,14 @@ add_repositories() {
     export NEEDRESTART_MODE=a
     export DEBIAN_FRONTEND=noninteractive
 
-    # Fix any broken dpkg state from previous installs (crowdsec bouncer is a common offender)
+    # Fix any broken dpkg state from previous installs
+    # crowdsec-firewall-bouncer-nftables often fails its post-install script,
+    # which breaks ALL subsequent apt operations. Force-remove it if broken.
+    if dpkg -s crowdsec-firewall-bouncer-nftables &>/dev/null && \
+       ! dpkg -s crowdsec-firewall-bouncer-nftables 2>/dev/null | grep -q "^Status: install ok installed"; then
+        info "Removing broken crowdsec-firewall-bouncer package..."
+        dpkg --remove --force-remove-reinstreq crowdsec-firewall-bouncer-nftables 2>/dev/null || true
+    fi
     dpkg --configure -a 2>/dev/null || true
 
     # Update package list
@@ -659,6 +666,9 @@ install_packages() {
         info "Resetting failed PHP-FPM service state..."
         systemctl reset-failed php${PHP_VERSION}-fpm
     fi
+
+    # Fix any broken dpkg state before PHP install
+    dpkg --configure -a 2>/dev/null || true
 
     # Required PHP extensions for Jabali Panel
     local php_extensions=(
