@@ -614,6 +614,7 @@ function handleAction(array $request): array
         'ssh.enable_shell' => sshEnableShell($params),
         'ssh.disable_shell' => sshDisableShell($params),
         'ssh.shell_status' => sshGetShellStatus($params),
+        'ssh.migrate_shell_users' => sshMigrateShellUsers($params),
         'file.list' => fileList($params),
         'file.read' => fileRead($params),
         'file.write' => fileWrite($params),
@@ -958,6 +959,13 @@ function deleteUser(array $params): array
         return ['success' => false, 'error' => 'User does not exist'];
     }
 
+    // Disable shell access first (cleans up group membership, restores home ownership)
+    exec('groups '.escapeshellarg($username), $grpOut);
+    if (! empty($grpOut[0]) && strpos($grpOut[0], 'shellusers') !== false) {
+        sshDisableShell(['username' => $username]);
+        $steps[] = 'Shell access disabled';
+    }
+
     $homeDir = "/home/$username";
 
     // Get domains from .domains file if not provided
@@ -1136,7 +1144,7 @@ function deleteUser(array $params): array
     }
 
     // Delete user with --force to ignore warnings about mail spool
-    // Don't use -r since home directory is owned by root for chroot
+    // Don't use -r since home directory may be owned by root (SFTP chroot)
     $cmd = sprintf('userdel --force %s 2>&1', escapeshellarg($username));
     $userdelOutput = [];
     exec($cmd, $userdelOutput, $userdelExit);
@@ -11939,6 +11947,107 @@ function sshGetShellStatus(array $params): array
         'shell_enabled' => $hasShell && $inShellUsers,
         'sftp_only' => ! $hasShell || $inSftpUsers,
         'groups' => $groups,
+    ];
+}
+
+function sshMigrateShellUsers(array $params): array
+{
+    $migrated = [];
+    $errors = [];
+
+    // Get members of shellusers group
+    $groupInfo = posix_getgrnam('shellusers');
+    if (! $groupInfo || empty($groupInfo['members'])) {
+        return ['success' => true, 'message' => 'No shell users to migrate', 'migrated' => []];
+    }
+
+    foreach ($groupInfo['members'] as $username) {
+        if (! validateUsername($username)) {
+            continue;
+        }
+
+        $userInfo = posix_getpwnam($username);
+        if (! $userInfo) {
+            continue;
+        }
+
+        $homeDir = $userInfo['dir'];
+        $shell = $userInfo['shell'];
+        $jailHome = "/var/jail/home/$username";
+        $userSteps = [];
+
+        // Unmount any old jail bind mounts
+        if (is_mounted($jailHome)) {
+            exec('umount ' . escapeshellarg($jailHome) . ' 2>/dev/null', $umOut, $umExit);
+            if ($umExit === 0) {
+                $userSteps[] = 'unmounted jail bind mount';
+            }
+        }
+
+        // Remove fstab entries for this user's jail
+        if (file_exists('/etc/fstab')) {
+            $fstab = file_get_contents('/etc/fstab');
+            $newFstab = preg_replace('/.*' . preg_quote($jailHome, '/') . '.*\n/', '', $fstab);
+            if ($newFstab !== $fstab) {
+                file_put_contents('/etc/fstab', $newFstab);
+                $userSteps[] = 'removed fstab entries';
+            }
+        }
+
+        // Change home ownership to user:user (nspawn shell needs writable home)
+        if (fileowner($homeDir) === 0) {
+            chown($homeDir, $username);
+            chgrp($homeDir, $username);
+            chmod($homeDir, 0750);
+            $userSteps[] = 'home ownership set to user';
+        }
+
+        // Create writable directories for shell tools
+        foreach (['.vscode-server', '.ssh', '.local', '.cache', '.config'] as $dir) {
+            $path = "$homeDir/$dir";
+            if (! is_dir($path)) {
+                mkdir($path, 0755, true);
+            }
+            chown($path, $username);
+            chgrp($path, $username);
+        }
+
+        // Set shell to jabali-shell if still pointing to old shell
+        if ($shell !== '/usr/local/bin/jabali-shell') {
+            exec('usermod -s /usr/local/bin/jabali-shell ' . escapeshellarg($username));
+            $userSteps[] = "shell changed from $shell to jabali-shell";
+        }
+
+        // Clean up jail passwd/group entries
+        foreach (['/var/jail/etc/passwd', '/var/jail/etc/group'] as $jailFile) {
+            if (file_exists($jailFile)) {
+                $content = file_get_contents($jailFile);
+                $newContent = preg_replace('/^' . preg_quote($username, '/') . ':.*\n/m', '', $content);
+                if ($newContent !== $content) {
+                    file_put_contents($jailFile, $newContent);
+                    $userSteps[] = 'cleaned ' . basename($jailFile);
+                }
+            }
+        }
+
+        if (! empty($userSteps)) {
+            $migrated[$username] = $userSteps;
+            logger("Migrated shell user $username to nspawn: " . implode(', ', $userSteps));
+        }
+    }
+
+    // Clean up empty jail directories
+    foreach (['/var/jail/home', '/var/jail/etc', '/var/jail'] as $dir) {
+        if (is_dir($dir) && count(scandir($dir)) <= 2) {
+            @rmdir($dir);
+        }
+    }
+
+    return [
+        'success' => true,
+        'message' => 'Shell user migration complete',
+        'migrated' => $migrated,
+        'errors' => $errors,
     ];
 }
 

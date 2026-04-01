@@ -3692,6 +3692,26 @@ upgrade_infra() {
     configure_sshd
     install_jabali_shell
 
+    # Migrate old jail-based shell users to nspawn (one-time)
+    if [[ -d /var/jail ]] && getent group shellusers &>/dev/null; then
+        header "Migrating Shell Users to nspawn"
+        # Agent handles the actual migration — call via socket if running
+        if systemctl is-active --quiet jabali-agent 2>/dev/null; then
+            local response
+            response=$(curl -s --unix-socket /var/run/jabali-agent.sock \
+                -X POST -H "Content-Type: application/json" \
+                -d '{"action":"ssh.migrate_shell_users","params":{}}' \
+                http://localhost/rpc 2>/dev/null) || true
+            if echo "$response" | grep -q '"success":true'; then
+                info "Shell user migration complete"
+            else
+                warn "Shell user migration via agent failed (will retry on next update)"
+            fi
+        else
+            warn "Agent not running — shell user migration will run on next update"
+        fi
+    fi
+
     # Install or update jabali-security
     if command -v jabali-security &>/dev/null; then
         header "Updating Jabali Security"
