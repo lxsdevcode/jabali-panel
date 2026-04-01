@@ -1,11 +1,11 @@
 <x-filament-panels::page>
-    <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <div class="grid gap-6 md:grid-cols-2">
         <x-filament::section
             icon="heroicon-o-book-open"
             icon-color="primary"
         >
             <x-slot name="heading">{{ __('Documentation') }}</x-slot>
-            <x-slot name="description">{{ __('Find answers in our docs or talk with our trainned support bot. Explore setup guides, troubleshooting steps, and best practices.') }}</x-slot>
+            <x-slot name="description">{{ __('Find answers in our docs or talk with our trained support bot. Explore setup guides, troubleshooting steps, and best practices.') }}</x-slot>
 
             <div class="flex justify-center">
                 <x-filament::button
@@ -37,48 +37,6 @@
                     color="gray"
                 >
                     {{ __('Open GitHub Issues') }}
-                </x-filament::button>
-            </div>
-        </x-filament::section>
-
-        <x-filament::section
-            icon="heroicon-o-lifebuoy"
-            icon-color="primary"
-        >
-            <x-slot name="heading">{{ __('Paid Support') }}</x-slot>
-            <x-slot name="description">{{ __('Get professional assistance for migrations, performance tuning, and priority fixes. Plans include onboarding and dedicated support.') }}</x-slot>
-
-            <div class="flex justify-center">
-                <x-filament::button
-                    tag="a"
-                    href="https://jabali-panel.com/support/"
-                    target="_blank"
-                    rel="noopener"
-                    icon="heroicon-o-arrow-top-right-on-square"
-                >
-                    {{ __('View Support Plans') }}
-                </x-filament::button>
-            </div>
-        </x-filament::section>
-
-        <x-filament::section
-            icon="heroicon-o-clock"
-            icon-color="gray"
-            compact
-        >
-            <x-slot name="heading">{{ __('Emergency Support') }}</x-slot>
-            <x-slot name="description">{{ __('We typically respond within 4-8 hours. For critical incidents, use Emergency Support for faster response.') }}</x-slot>
-
-            <div class="flex justify-center">
-                <x-filament::button
-                    tag="a"
-                    href="https://jabali-panel.com/emergency/"
-                    target="_blank"
-                    rel="noopener"
-                    icon="heroicon-o-arrow-top-right-on-square"
-                    color="warning"
-                >
-                    {{ __('Emergency Support') }}
                 </x-filament::button>
             </div>
         </x-filament::section>
