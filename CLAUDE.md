@@ -4,7 +4,7 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 
 ## Architecture
 
-- **Panel**: Laravel app on FrankenPHP, port 2223 (independent of nginx)
+- **Panel**: Laravel app on FrankenPHP, port 8443 (configurable via PANEL_PORT env, independent of nginx)
 - **Agent**: PHP binary (`bin/jabali-agent`) for root operations via Unix socket
 - **Agent client**: `App\Services\Agent\AgentClient` — all privileged ops go through the agent
 - **Admin panel**: `/jabali-admin/` (Filament, `admin` guard)
@@ -16,6 +16,7 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - **Bandwidth**: Daily sync from nginx access logs, displayed on Users and Domains pages
 - **File browser**: Two adapters — live files via agent, backup snapshots via Restic
 - **Security**: jabali-security daemon (separate repo) with Filament plugin
+- **Isolation**: jabali-isolator (separate repo) — nspawn containers for SSH shell access only; web serving uses host FPM pools
 - **CLI**: `jabali` command with noun:verb pattern (e.g. `jabali backup create`)
 - **WordPress plugin**: `resources/wordpress/jabali-cache/` (separate PHP codebase, not Laravel)
 
@@ -30,11 +31,13 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - `resources/wordpress/jabali-cache/` — WordPress cache plugin (standalone PHP, not Laravel)
 - `install.sh` — server installer script
 - `stubs/` — config file templates deployed during install
+- `stubs/jabali-shell.sh` — SSH login shell wrapper (nsenter into nspawn container)
+- `stubs/jabali-container-idle-check.sh` — stops idle containers (systemd timer, every 5 min)
 
 ## Development Rules
 
 - ALWAYS use `escapeshellarg()` for shell command arguments in the agent
-- NEVER hardcode port 443 for internal API calls — use port 2223 (FrankenPHP panel)
+- NEVER hardcode port 443 for internal API calls — use PANEL_PORT from .env (default 8443)
 - ALWAYS run `vendor/bin/pint --dirty` before committing
 - ALWAYS run `php artisan test --compact` after code changes
 - Use `php -l <file>` to syntax-check agent/CLI files (not covered by pint)
@@ -53,7 +56,7 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - Always validate user input at system boundaries
 - Always sanitize file paths to prevent directory traversal
 - Validate Livewire public properties before forwarding to agent (ownership check)
-- Internal API calls must use port 2223 (panel), never 443 (nginx)
+- Internal API calls must use PANEL_PORT (default 8443), never 443 (nginx)
 - cronRun must validate commands against allowlist before execution
 - Impersonation tokens must enforce IP binding (hard-fail when null)
 
