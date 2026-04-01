@@ -3664,6 +3664,13 @@ print_completion() {
         echo -e "  SMTP:       ${CYAN}mail.${SERVER_HOSTNAME}:587 (TLS)${NC}"
     fi
 
+    if [[ "${INSTALL_DNS:-}" == "true" ]]; then
+        echo ""
+        echo -e "  ${BOLD}DNS Nameservers${NC}"
+        echo -e "  ns1:        ${CYAN}ns1.${SERVER_HOSTNAME} -> ${server_ip}${NC}"
+        echo -e "  ns2:        ${CYAN}ns2.${SERVER_HOSTNAME} -> ${server_ip}${NC}"
+    fi
+
     echo ""
     echo -e "  ${BOLD}Quick Reference${NC}"
     echo -e "  CLI:        ${CYAN}jabali --help${NC}"
