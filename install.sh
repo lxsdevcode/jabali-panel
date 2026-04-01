@@ -4394,7 +4394,7 @@ install_jabali_shell() {
     local sudoers_file="/etc/sudoers.d/jabali-shell"
     cat > "$sudoers_file" <<'SUDOERS'
 # Jabali Panel — allow shell users to enter their container via nsenter
-%shellusers ALL=(root) NOPASSWD: /usr/bin/nsenter --target * --mount --pid --uts *
+%shellusers ALL=(root) NOPASSWD: /usr/bin/nsenter --target * --mount --pid --ipc --uts *
 %shellusers ALL=(root) NOPASSWD: /usr/local/bin/jabali-isolate create *
 %shellusers ALL=(root) NOPASSWD: /usr/local/bin/jabali-isolate start *
 %shellusers ALL=(root) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/*.conf
