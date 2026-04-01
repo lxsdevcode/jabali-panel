@@ -11,8 +11,8 @@ set -euo pipefail
 JUSER="$(whoami)"
 CONTAINER="${JUSER}-php"
 
-# Ensure container is running
-if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=running"; then
+# Ensure container is running (use machinectl list which works for non-root)
+if ! machinectl list --no-legend 2>/dev/null | grep -q "^${CONTAINER} "; then
     if command -v jabali-isolate &>/dev/null; then
         if [[ ! -d "/var/lib/machines/${CONTAINER}" ]]; then
             # Ensure PHP-FPM pool exists (jabali-isolate requires it)
@@ -32,14 +32,14 @@ pm.max_children = 5
 pm.process_idle_timeout = 10s
 POOL_EOF
             fi
-            sudo /usr/local/bin/jabali-isolate create "$JUSER" 2>/dev/null || true
+            sudo /usr/local/bin/jabali-isolate create "$JUSER" >/dev/null 2>&1 || true
         fi
-        sudo /usr/local/bin/jabali-isolate start "$JUSER" 2>/dev/null || true
+        sudo /usr/local/bin/jabali-isolate start "$JUSER" >/dev/null 2>&1 || true
         sleep 1
     fi
 
     # Verify it started
-    if ! machinectl show "$CONTAINER" --property=State 2>/dev/null | grep -q "State=running"; then
+    if ! machinectl list --no-legend 2>/dev/null | grep -q "^${CONTAINER} "; then
         echo "Error: Your container is not running. Contact your administrator." >&2
         exit 1
     fi
