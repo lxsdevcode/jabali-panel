@@ -388,13 +388,6 @@ add_repositories() {
     export DEBIAN_FRONTEND=noninteractive
 
     # Fix any broken dpkg state from previous installs
-    # crowdsec-firewall-bouncer-nftables often fails its post-install script,
-    # which breaks ALL subsequent apt operations. Force-remove it if broken.
-    if dpkg -s crowdsec-firewall-bouncer-nftables &>/dev/null && \
-       ! dpkg -s crowdsec-firewall-bouncer-nftables 2>/dev/null | grep -q "^Status: install ok installed"; then
-        info "Removing broken crowdsec-firewall-bouncer package..."
-        dpkg --remove --force-remove-reinstreq crowdsec-firewall-bouncer-nftables 2>/dev/null || true
-    fi
     dpkg --configure -a 2>/dev/null || true
 
     # Update package list
@@ -4413,14 +4406,6 @@ install_jabali_security() {
         warn "jabali-security installation failed (non-fatal)"
     fi
 
-    # CrowdSec's firewall bouncer often fails its post-install script,
-    # leaving dpkg in a broken state that blocks all subsequent apt operations.
-    # Fix it here so the rest of the install isn't affected.
-    if dpkg -l crowdsec-firewall-bouncer-nftables 2>/dev/null | grep -q '^.F'; then
-        info "Fixing broken crowdsec-firewall-bouncer package..."
-        dpkg --configure -a 2>/dev/null || true
-        apt-get install -f -y 2>/dev/null || true
-    fi
 }
 
 install_jabali_isolator() {
@@ -4429,10 +4414,6 @@ install_jabali_isolator() {
     # Require systemd-container for systemd-nspawn
     if ! command -v systemd-nspawn &>/dev/null; then
         info "Installing systemd-container package..."
-        # Remove broken crowdsec bouncer if it's blocking dpkg
-        if dpkg -l crowdsec-firewall-bouncer-nftables 2>/dev/null | grep -qE '^.(F|H|U)'; then
-            dpkg --remove --force-remove-reinstreq crowdsec-firewall-bouncer-nftables 2>/dev/null || true
-        fi
         DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confold 2>/dev/null || true
         DEBIAN_FRONTEND=noninteractive apt-get install -y systemd-container >/dev/null 2>&1 || {
             warn "Could not install systemd-container — jabali-isolator requires it"
