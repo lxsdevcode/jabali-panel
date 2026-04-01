@@ -9,6 +9,7 @@ use App\Services\Agent\InteractsWithAgent;
 use App\Support\Formatter;
 use App\Support\SafeError;
 use BackedEnum;
+use Illuminate\Support\Facades\Cache;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -256,7 +257,10 @@ class Logs extends Page implements HasActions, HasForms
 
             if ($result['success'] ?? false) {
                 $this->statsGenerated = true;
-                $this->statsUrl = 'https://'.$this->selectedDomain.($result['report_url'] ?? '/stats/report.html');
+                $token = bin2hex(random_bytes(16));
+                Cache::put('stats_token:'.$token, true, now()->addMinutes(5));
+                $reportPath = $result['report_url'] ?? '/stats/report.html';
+                $this->statsUrl = 'https://'.$this->selectedDomain.$reportPath.'?_stats_token='.$token;
 
                 if ($result['daemon_started'] ?? false) {
                     Notification::make()

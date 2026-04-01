@@ -13,7 +13,17 @@ Route::get('/user', function (Request $request) {
 
 // Auth check for nginx auth_request (stats, protected areas)
 Route::get('/auth-check', function (Request $request) {
+    // Check session-based auth first (same-domain access)
     if ($request->user('web') || $request->user('admin')) {
+        return response('', 200);
+    }
+
+    // Check signed stats token (cross-domain access from panel)
+    $originalUri = $request->header('X-Original-URI', '');
+    parse_str(parse_url($originalUri, PHP_URL_QUERY) ?? '', $query);
+    $token = $query['_stats_token'] ?? '';
+
+    if ($token !== '' && Cache::pull('stats_token:'.$token)) {
         return response('', 200);
     }
 
