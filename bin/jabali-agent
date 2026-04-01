@@ -11801,9 +11801,23 @@ function sshGenerateKey(array $params): array
 function sshEnableShell(array $params): array
 {
     $username = $params['username'] ?? '';
+    $force = $params['force'] ?? false;
 
     if (! validateUsername($username)) {
         return ['success' => false, 'error' => 'Invalid username'];
+    }
+
+    // Respect jabali-security's SSH_SHELL_ACCESS_ENABLED setting
+    if (! $force) {
+        $secConf = '/etc/jabali-security/jabali-security.conf';
+        if (file_exists($secConf)) {
+            $content = file_get_contents($secConf);
+            if ($content !== false && preg_match('/^SSH_SHELL_ACCESS_ENABLED="([^"]*)"$/m', $content, $m)) {
+                if (strtolower($m[1]) === 'no') {
+                    return ['success' => false, 'error' => 'Shell access is disabled (SSH_SHELL_ACCESS_ENABLED=no in jabali-security config)'];
+                }
+            }
+        }
     }
 
     $userInfo = posix_getpwnam($username);
@@ -11839,12 +11853,9 @@ function sshEnableShell(array $params): array
         chgrp($path, $username);
     }
 
-    // Move from sftpusers to shellusers
+    // Move from sftpusers to shellusers (ForceCommand in sshd_config handles shell routing)
     exec('usermod -aG shellusers ' . escapeshellarg($username));
     exec('gpasswd -d ' . escapeshellarg($username) . ' sftpusers 2>/dev/null');
-
-    // Set login shell to jabali-shell wrapper (routes through nspawn container)
-    exec('usermod -s /usr/local/bin/jabali-shell ' . escapeshellarg($username));
 
     // Ensure nspawn container is running
     $containerRunning = false;
@@ -11885,12 +11896,9 @@ function sshDisableShell(array $params): array
 
     $homeDir = $userInfo['dir'];
 
-    // Move from shellusers to sftpusers
+    // Move from shellusers to sftpusers (sshd_config Match blocks handle the rest)
     exec('gpasswd -d ' . escapeshellarg($username) . ' shellusers 2>/dev/null');
     exec('usermod -aG sftpusers ' . escapeshellarg($username));
-
-    // Set shell to nologin (SFTP-only)
-    exec('usermod -s /usr/sbin/nologin ' . escapeshellarg($username));
 
     // Restore root ownership (required for OpenSSH SFTP chroot)
     chown($homeDir, 'root');
