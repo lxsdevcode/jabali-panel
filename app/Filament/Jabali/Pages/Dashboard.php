@@ -9,14 +9,19 @@ use App\Filament\Jabali\Widgets\DomainsWidget;
 use App\Filament\Jabali\Widgets\MailboxesWidget;
 use App\Filament\Jabali\Widgets\RecentBackupsWidget;
 use App\Filament\Jabali\Widgets\StatsOverview;
+use App\Models\AuditLog;
 use App\Models\DnsSetting;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
+use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class Dashboard extends BaseDashboard
 {
@@ -56,6 +61,58 @@ class Dashboard extends BaseDashboard
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('generateSupportAccess')
+                ->label(__('Support Access'))
+                ->icon('heroicon-o-link')
+                ->color('info')
+                ->modalHeading(__('Generate Support Access Link'))
+                ->modalDescription(__('Share this one-time link with your developer. It expires in 15 minutes and can only be used once.'))
+                ->modalWidth('md')
+                ->form([
+                    Select::make('ttl')
+                        ->label(__('Expires in'))
+                        ->options([
+                            '15' => __('15 minutes'),
+                            '30' => __('30 minutes'),
+                            '60' => __('1 hour'),
+                        ])
+                        ->default('15')
+                        ->required(),
+                ])
+                ->modalSubmitActionLabel(__('Generate'))
+                ->action(function (array $data): void {
+                    $user = Auth::user();
+                    $ttl = (int) $data['ttl'];
+                    $token = Str::random(64);
+                    $cacheKey = 'login_token:'.hash('sha256', $token);
+
+                    Cache::put($cacheKey, [
+                        'user_id' => $user->id,
+                        'panel' => 'user',
+                    ], now()->addMinutes($ttl));
+
+                    $hostname = config('jabali.panel.hostname') ?: request()->getHost();
+                    $port = config('jabali.panel.port', 8443);
+                    $url = "https://{$hostname}:{$port}/auto-login?token={$token}";
+
+                    AuditLog::log(
+                        'login_token_generated',
+                        'auth',
+                        "Support access link generated ({$ttl} min)",
+                        'user',
+                        $user->id,
+                        $user->username,
+                        ['panel' => 'user', 'ttl' => $ttl]
+                    );
+
+                    Notification::make()
+                        ->title(__('Support access link generated'))
+                        ->body($url)
+                        ->success()
+                        ->persistent()
+                        ->send();
+                }),
+
             Action::make('onboarding')->modalCancelActionLabel(__('Maybe later'))
                 ->label(__('Setup Wizard'))
                 ->icon('heroicon-o-sparkles')

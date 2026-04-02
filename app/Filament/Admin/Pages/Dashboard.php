@@ -6,11 +6,14 @@ namespace App\Filament\Admin\Pages;
 
 use App\Filament\Admin\Widgets\Dashboard\RecentActivityTable;
 use App\Filament\Admin\Widgets\DashboardStatsWidget;
+use App\Models\AuditLog;
 use App\Models\DnsSetting;
+use App\Models\User;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -22,6 +25,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class Dashboard extends Page implements HasActions, HasForms
 {
@@ -82,6 +87,79 @@ class Dashboard extends Page implements HasActions, HasForms
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('generateLoginLink')
+                ->label(__('Login Link'))
+                ->icon('heroicon-o-link')
+                ->color('info')
+                ->modalHeading(__('Generate One-Time Login Link'))
+                ->modalDescription(__('Create a shareable login URL that expires after one use.'))
+                ->modalWidth('md')
+                ->form([
+                    Select::make('user_id')
+                        ->label(__('User'))
+                        ->options(fn () => User::orderBy('username')->pluck('username', 'id')->toArray())
+                        ->required()
+                        ->searchable()
+                        ->live(),
+                    Select::make('panel')
+                        ->label(__('Panel'))
+                        ->options([
+                            'admin' => __('Admin Panel'),
+                            'user' => __('User Panel'),
+                        ])
+                        ->default('admin')
+                        ->required(),
+                    Select::make('ttl')
+                        ->label(__('Expires in'))
+                        ->options([
+                            '15' => __('15 minutes'),
+                            '30' => __('30 minutes'),
+                            '60' => __('1 hour'),
+                        ])
+                        ->default('15')
+                        ->required(),
+                ])
+                ->modalSubmitActionLabel(__('Generate'))
+                ->action(function (array $data): void {
+                    $user = User::find($data['user_id']);
+                    if (! $user) {
+                        Notification::make()->title(__('User not found'))->danger()->send();
+
+                        return;
+                    }
+
+                    $ttl = (int) $data['ttl'];
+                    $panel = $data['panel'];
+                    $token = Str::random(64);
+                    $cacheKey = 'login_token:'.hash('sha256', $token);
+
+                    Cache::put($cacheKey, [
+                        'user_id' => $user->id,
+                        'panel' => $panel,
+                    ], now()->addMinutes($ttl));
+
+                    $hostname = config('jabali.panel.hostname') ?: request()->getHost();
+                    $port = config('jabali.panel.port', 8443);
+                    $url = "https://{$hostname}:{$port}/auto-login?token={$token}";
+
+                    AuditLog::log(
+                        'login_token_generated',
+                        'auth',
+                        "Login link generated for {$user->username} ({$panel} panel, {$ttl} min)",
+                        'user',
+                        $user->id,
+                        $user->username,
+                        ['panel' => $panel, 'ttl' => $ttl]
+                    );
+
+                    Notification::make()
+                        ->title(__('Login link generated'))
+                        ->body($url)
+                        ->success()
+                        ->persistent()
+                        ->send();
+                }),
+
             Action::make('refresh')
                 ->label(__('Refresh'))
                 ->icon('heroicon-o-arrow-path')
