@@ -219,12 +219,12 @@ class SslCheckCommand extends Command
                                 ->orWhere('last_check_at', '<', now()->subHours(6));
                         });
                 })->orWhere(function ($q2) {
-                    // Domains with self-signed certs that need real LE certs
-                    $q2->where('type', 'self_signed');
+                    // Domains with self-signed or no real cert that need LE certs
+                    $q2->whereIn('type', ['self_signed', 'none', '']);
                 })->orWhere(function ($q2) {
                     // Domains with pending status
                     $q2->where('status', 'pending');
-                });
+                })->orWhereNull('type');
             })
             ->with(['user', 'sslCertificate'])
             ->get();

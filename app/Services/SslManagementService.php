@@ -94,13 +94,10 @@ class SslManagementService
         $hasSsl = $ssl['has_ssl'] ?? false;
 
         if ($hasSsl) {
-            $type = $ssl['type'] ?? 'lets_encrypt';
-            if ($type === 'self_signed') {
-                $type = 'self_signed';
-            } elseif ($type === 'custom') {
-                $type = 'custom';
-            } else {
-                $type = 'lets_encrypt';
+            $type = $ssl['type'] ?? 'none';
+            if (! in_array($type, ['lets_encrypt', 'self_signed', 'custom'], true)) {
+                // snakeoil or unknown certs — check if self-signed
+                $type = ($ssl['is_self_signed'] ?? false) ? 'self_signed' : 'none';
             }
 
             return SslCertificate::updateOrCreate(
