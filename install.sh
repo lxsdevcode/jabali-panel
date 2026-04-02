@@ -3476,20 +3476,29 @@ setup_panel_ssl() {
     mkdir -p /etc/letsencrypt/renewal-hooks/deploy
     cat > /etc/letsencrypt/renewal-hooks/deploy/jabali-panel.sh <<'DEPLOYHOOK'
 #!/bin/bash
-# Copy renewed cert to FrankenPHP panel cert path and reload
-if [ -f /etc/ssl/jabali/panel.crt ]; then
+# Copy renewed panel cert to FrankenPHP cert path and reload
+# Only copy if the renewed cert covers the panel hostname
+PANEL_HOSTNAME=$(hostname -f 2>/dev/null || hostname)
+PANEL_CERT="/etc/ssl/jabali/panel.crt"
+
+if [ -f "$PANEL_CERT" ]; then
     for domain in $RENEWED_DOMAINS; do
-        if [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
-            cp "/etc/letsencrypt/live/$domain/fullchain.pem" /etc/ssl/jabali/panel.crt
-            cp "/etc/letsencrypt/live/$domain/privkey.pem" /etc/ssl/jabali/panel.key
-            chmod 644 /etc/ssl/jabali/panel.crt
-            chown root:www-data /etc/ssl/jabali/panel.key
-            chmod 640 /etc/ssl/jabali/panel.key
-            systemctl reload jabali-panel 2>/dev/null || true
-            systemctl restart stalwart-mail 2>/dev/null || true
-            break
+        cert_path="/etc/letsencrypt/live/$domain/fullchain.pem"
+        if [ -f "$cert_path" ]; then
+            # Check if this cert covers the panel hostname
+            if openssl x509 -in "$cert_path" -noout -text 2>/dev/null | grep -qF "DNS:$PANEL_HOSTNAME"; then
+                cp "$cert_path" "$PANEL_CERT"
+                cp "/etc/letsencrypt/live/$domain/privkey.pem" /etc/ssl/jabali/panel.key
+                chmod 644 "$PANEL_CERT"
+                chown root:www-data /etc/ssl/jabali/panel.key
+                chmod 640 /etc/ssl/jabali/panel.key
+                systemctl reload jabali-panel 2>/dev/null || true
+                break
+            fi
         fi
     done
+    # Always restart Stalwart so it picks up any renewed cert
+    systemctl restart stalwart-mail 2>/dev/null || true
 fi
 DEPLOYHOOK
     chmod 755 /etc/letsencrypt/renewal-hooks/deploy/jabali-panel.sh
