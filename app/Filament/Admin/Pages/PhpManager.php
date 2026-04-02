@@ -9,6 +9,7 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
@@ -107,7 +108,24 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     protected function getForms(): array
     {
-        return ['statsForm'];
+        return ['statsForm', 'extensionVersionForm'];
+    }
+
+    public function extensionVersionForm(Schema $schema): Schema
+    {
+        $options = [];
+        foreach ($this->installedVersions as $v) {
+            $options[$v['version']] = 'PHP '.$v['version'];
+        }
+
+        return $schema->schema([
+            Select::make('selectedExtensionVersion')
+                ->label(__('PHP Version'))
+                ->options($options)
+                ->placeholder(__('Select PHP Version'))
+                ->live()
+                ->afterStateUpdated(fn (?string $state) => $this->loadExtensions($state)),
+        ]);
     }
 
     public function statsForm(Schema $schema): Schema
