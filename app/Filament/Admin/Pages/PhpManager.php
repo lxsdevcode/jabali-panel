@@ -44,6 +44,8 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     public ?string $defaultVersion = null;
 
+    public string $activeTab = 'versions';
+
     public ?string $selectedExtensionVersion = null;
 
     public array $extensions = [];
