@@ -14504,8 +14504,11 @@ function sslCheck(array $params): array
         'certificate' => null,
     ];
 
-    // Check nginx config for SSL
-    $nginxConf = "/etc/nginx/sites-available/$domain";
+    // Check nginx config for SSL (try with and without .conf extension)
+    $nginxConf = "/etc/nginx/sites-available/{$domain}.conf";
+    if (! file_exists($nginxConf)) {
+        $nginxConf = "/etc/nginx/sites-available/$domain";
+    }
     if (! file_exists($nginxConf)) {
         return ['success' => true, 'ssl' => $result];
     }
@@ -14813,18 +14816,33 @@ function sslPanelIssue(array $params): array
     $hostname = trim($params['hostname'] ?? '');
 
     if (empty($hostname)) {
-        // Read from .env APP_URL
+        // Try PANEL_HOSTNAME from .env first, then system hostname, then APP_URL
         $envFile = '/var/www/jabali/.env';
         if (file_exists($envFile)) {
             $env = file_get_contents($envFile);
-            if (preg_match('/^APP_URL=https?:\/\/([^:\/\s]+)/m', $env, $m)) {
-                $hostname = $m[1];
+            if (preg_match('/^PANEL_HOSTNAME=(.+)$/m', $env, $m)) {
+                $hostname = trim($m[1]);
+            }
+            if (empty($hostname) || filter_var($hostname, FILTER_VALIDATE_IP)) {
+                if (preg_match('/^SERVER_HOSTNAME=(.+)$/m', $env, $m)) {
+                    $hostname = trim($m[1]);
+                }
+            }
+            if (empty($hostname) || filter_var($hostname, FILTER_VALIDATE_IP)) {
+                if (preg_match('/^APP_URL=https?:\/\/([^:\/\s]+)/m', $env, $m)) {
+                    $hostname = $m[1];
+                }
             }
         }
     }
 
-    if (empty($hostname) || $hostname === 'localhost') {
-        return ['success' => false, 'error' => 'No panel hostname configured'];
+    // Fall back to system hostname
+    if (empty($hostname) || filter_var($hostname, FILTER_VALIDATE_IP)) {
+        $hostname = trim(gethostname() ?: '');
+    }
+
+    if (empty($hostname) || $hostname === 'localhost' || filter_var($hostname, FILTER_VALIDATE_IP)) {
+        return ['success' => false, 'error' => "Cannot issue certificate for IP address or localhost. Set PANEL_HOSTNAME in .env to a valid domain name (e.g. mx.jabali-panel.com)"];
     }
 
     $email = $params['email'] ?? "admin@{$hostname}";

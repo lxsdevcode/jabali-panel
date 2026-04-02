@@ -23,7 +23,9 @@ class PanelCertificateWidget extends Widget
     {
         try {
             $agent = app(AgentClient::class);
-            $result = $agent->sslPanelIssue();
+            $cert = $this->getCertificate();
+            $hostname = $cert?->hostname ?: config('jabali.panel.hostname');
+            $result = $agent->sslPanelIssue($hostname);
 
             if ($result['success'] ?? false) {
                 // Re-sync cert info
