@@ -443,10 +443,17 @@ class SslCheckCommand extends Command
 
     private function domainPointsToServer(string $domain): bool
     {
+        // If this server has an nginx vhost for the domain (or its parent),
+        // the ACME challenge will be handled locally regardless of DNS proxy
+        $baseDomain = preg_replace('/^(mail|www)\./', '', $domain);
+        if (file_exists("/etc/nginx/sites-available/{$baseDomain}.conf")
+            || file_exists("/etc/nginx/sites-available/{$baseDomain}")) {
+            return true;
+        }
+
         // Get server's public IP
         $serverIp = $this->getServerPublicIp();
         if (! $serverIp) {
-            // If we can't determine server IP, assume it's okay to try
             return true;
         }
 
