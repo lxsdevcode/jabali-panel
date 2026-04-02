@@ -14963,7 +14963,8 @@ function sslPanelIssue(array $params): array
     copy($leCert, $panelCert);
     copy($leKey, $panelKey);
     chmod($panelCert, 0644);
-    chmod($panelKey, 0600);
+    chmod($panelKey, 0640);
+    chgrp($panelKey, 'www-data');
 
     // Reload services that use the panel cert
     exec('systemctl reload nginx 2>/dev/null');
