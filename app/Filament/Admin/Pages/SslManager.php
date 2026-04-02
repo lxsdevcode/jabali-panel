@@ -160,6 +160,14 @@ class SslManager extends Page implements HasTable
                         : $query),
             ])
             ->recordActions([
+                Action::make('issue')
+                    ->label(__('Issue'))
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn (SslCertificate $record) => $record->type === 'self_signed' || in_array($record->status, ['pending', 'failed'], true))
+                    ->action(fn (SslCertificate $record) => $record->service === 'mail'
+                        ? $this->issueMailSslForDomain($record->domain_id)
+                        : $this->issueSslForDomain($record->domain_id)),
                 Action::make('renew')
                     ->label(__('Renew'))
                     ->icon('heroicon-o-arrow-path')

@@ -42,3 +42,4 @@ frankenphp-worker.php
 
 # External plugins deployed at runtime (not part of this repo)
 /app/JabaliSecurity/
+.dmux/
