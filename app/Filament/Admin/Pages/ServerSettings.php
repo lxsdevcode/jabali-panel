@@ -42,6 +42,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Url;
 use Livewire\WithFileUploads;
 
@@ -304,25 +305,43 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ->icon('heroicon-o-paint-brush')
                 ->schema([
                     Grid::make(['default' => 1, 'md' => 3])->schema([
-                        FileUpload::make('brandingLogo')
-                            ->label(__('Light Logo'))
-                            ->image()
-                            ->directory('branding')
-                            ->visibility('public')
-                            ->imagePreviewHeight('80')
-                            ->placeholder(fn (): string => $this->currentLogo ? '' : __('No logo uploaded')),
-                        FileUpload::make('brandingLogoDark')
-                            ->label(__('Dark Logo'))
-                            ->image()
-                            ->directory('branding')
-                            ->visibility('public')
-                            ->imagePreviewHeight('80')
-                            ->placeholder(fn (): string => $this->currentLogoDark ? '' : __('No logo uploaded')),
+                        Placeholder::make('currentLogoPreview')
+                            ->label(__('Current Light Logo'))
+                            ->content(new HtmlString(
+                                '<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
+                                .'" alt="'.__('Light Logo').'" class="max-h-12 max-w-full rounded-lg border border-gray-200 bg-white p-2 object-contain dark:border-gray-700">'
+                            )),
+                        Placeholder::make('currentLogoDarkPreview')
+                            ->label(__('Current Dark Logo'))
+                            ->content(new HtmlString(
+                                '<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
+                                .'" alt="'.__('Dark Logo').'" class="max-h-12 max-w-full rounded-lg border border-gray-700 bg-gray-900 p-2 object-contain">'
+                            )),
                         TextInput::make('brandingData.panel_name')
                             ->label(__('Control Panel Name'))
                             ->placeholder(__('Jabali'))
                             ->helperText(__('Appears in browser title and navigation'))
                             ->required(),
+                    ]),
+                    Grid::make(['default' => 1, 'md' => 2])->schema([
+                        FileUpload::make('brandingLogo')
+                            ->label(__('Upload Light Logo'))
+                            ->image()
+                            ->disk('public')
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                            ->maxSize(512)
+                            ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
+                        FileUpload::make('brandingLogoDark')
+                            ->label(__('Upload Dark Logo'))
+                            ->image()
+                            ->disk('public')
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                            ->maxSize(512)
+                            ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                     ]),
                 ])
                 ->footer([
