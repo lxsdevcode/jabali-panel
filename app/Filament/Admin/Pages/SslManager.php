@@ -81,6 +81,7 @@ class SslManager extends Page implements HasTable
                     ->getTitleFromRecordUsing(fn (SslCertificate $record): string => $record->domain?->domain ?? __('Unknown'))
                     ->getDescriptionFromRecordUsing(fn (SslCertificate $record): string => $record->domain?->user?->username ?? '')
                     ->collapsible()
+                    ->collapsed()
             )
             ->columns([
                 TextColumn::make('domain.domain')
