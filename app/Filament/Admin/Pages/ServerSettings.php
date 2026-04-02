@@ -42,7 +42,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Url;
 use Livewire\WithFileUploads;
 
@@ -68,6 +67,10 @@ class ServerSettings extends Page implements HasActions, HasForms
 
     // Form data arrays
     public ?array $brandingData = [];
+
+    public ?array $brandingLogo = null;
+
+    public ?array $brandingLogoDark = null;
 
     public ?string $currentLogoDark = null;
 
@@ -301,50 +304,40 @@ class ServerSettings extends Page implements HasActions, HasForms
                 ->icon('heroicon-o-paint-brush')
                 ->schema([
                     Grid::make(['default' => 1, 'md' => 3])->schema([
-                        Placeholder::make('currentLogoLight')
+                        FileUpload::make('brandingLogo')
                             ->label(__('Light Logo'))
-                            ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-4 cursor-pointer" style="min-height:80px" wire:click="mountAction(\'uploadLogoLight\')" title="'.__('Click to change').'">'
-                                .'<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
-                                .'" alt="Light Logo" class="max-h-12 max-w-full object-contain">'
-                                .'</div>'
-                                .'<button type="button" wire:click="mountAction(\'uploadLogoLight\')" class="mt-1 text-xs text-primary-500 hover:underline">'.__('Change').'</button>'
-                            )),
-                        Placeholder::make('currentLogoDarkPreview')
+                            ->image()
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->imagePreviewHeight('80')
+                            ->placeholder(fn (): string => $this->currentLogo ? '' : __('No logo uploaded')),
+                        FileUpload::make('brandingLogoDark')
                             ->label(__('Dark Logo'))
-                            ->content(new HtmlString(
-                                '<div class="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-900 p-4 cursor-pointer" style="min-height:80px" wire:click="mountAction(\'uploadLogoDark\')" title="'.__('Click to change').'">'
-                                .'<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
-                                .'" alt="Dark Logo" class="max-h-12 max-w-full object-contain">'
-                                .'</div>'
-                                .'<button type="button" wire:click="mountAction(\'uploadLogoDark\')" class="mt-1 text-xs text-primary-500 hover:underline">'.__('Change').'</button>'
-                            )),
+                            ->image()
+                            ->directory('branding')
+                            ->visibility('public')
+                            ->imagePreviewHeight('80')
+                            ->placeholder(fn (): string => $this->currentLogoDark ? '' : __('No logo uploaded')),
                         TextInput::make('brandingData.panel_name')
                             ->label(__('Control Panel Name'))
                             ->placeholder(__('Jabali'))
                             ->helperText(__('Appears in browser title and navigation'))
                             ->required(),
                     ]),
-                    Placeholder::make('brandingActions')
-                        ->label('')
-                        ->content(new HtmlString(
-                            '<div class="flex flex-wrap gap-2">'
-                            .'<button type="button" wire:click="mountAction(\'uploadLogoLight\')" class="fi-btn fi-btn-size-md inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">'
-                            .'<svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" /></svg>'
-                            .__('Light Logo').'</button>'
-                            .'<button type="button" wire:click="mountAction(\'uploadLogoDark\')" class="fi-btn fi-btn-size-md inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">'
-                            .'<svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>'
-                            .__('Dark Logo').'</button>'
-                            .(($this->currentLogo || $this->currentLogoDark)
-                                ? '<button type="button" wire:click="removeLogo" class="fi-btn fi-btn-size-md inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white bg-danger-600 hover:bg-danger-500">'
-                                .'<svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>'
-                                .__('Remove Logos').'</button>'
-                                : '')
-                            .'<button type="button" wire:click="saveBranding" class="fi-btn fi-btn-size-md inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500">'
-                            .'<svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>'
-                            .__('Save Branding').'</button>'
-                            .'</div>'
-                        )),
+                ])
+                ->footerActions([
+                    \Filament\Schemas\Components\Actions\Action::make('saveBranding')
+                        ->label(__('Save Branding'))
+                        ->icon('heroicon-o-check')
+                        ->color('primary')
+                        ->action(fn () => $this->saveBranding()),
+                    \Filament\Schemas\Components\Actions\Action::make('removeBranding')
+                        ->label(__('Remove Logos'))
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->visible(fn (): bool => (bool) ($this->currentLogo || $this->currentLogoDark))
+                        ->requiresConfirmation()
+                        ->action(fn () => $this->removeLogo()),
                 ]),
             Section::make(__('Server Hostname'))
                 ->icon('heroicon-o-server')
@@ -1394,38 +1387,6 @@ class ServerSettings extends Page implements HasActions, HasForms
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('uploadLogoLight')
-                ->extraAttributes(['class' => 'hidden'])
-                ->modalHeading(__('Upload Light Logo'))
-                ->modalSubmitActionLabel(__('Upload'))
-                ->form([
-                    FileUpload::make('logo')
-                        ->label(__('Logo Image'))
-                        ->disk('public')
-                        ->directory('branding')
-                        ->visibility('public')
-                        ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                        ->maxSize(512)
-                        ->required()
-                        ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
-                ])
-                ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo')),
-            Action::make('uploadLogoDark')
-                ->extraAttributes(['class' => 'hidden'])
-                ->modalHeading(__('Upload Dark Logo'))
-                ->modalSubmitActionLabel(__('Upload'))
-                ->form([
-                    FileUpload::make('logo')
-                        ->label(__('Logo Image'))
-                        ->disk('public')
-                        ->directory('branding')
-                        ->visibility('public')
-                        ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                        ->maxSize(512)
-                        ->required()
-                        ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
-                ])
-                ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark')),
             Action::make('export_config')
                 ->label(__('Export'))
                 ->icon('heroicon-o-arrow-down-tray')
