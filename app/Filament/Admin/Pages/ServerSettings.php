@@ -301,14 +301,6 @@ class ServerSettings extends Page implements HasActions, HasForms
     protected function generalTabContent(): array
     {
         return [
-            Section::make(__('Panel Branding'))
-                ->icon('heroicon-o-paint-brush')
-                ->schema([
-                    TextInput::make('brandingData.panel_name')
-                        ->label(__('Control Panel Name'))
-                        ->placeholder(__('Jabali'))
-                        ->helperText(__('Appears in browser title and navigation')),
-                ]),
             Section::make(__('Server Hostname'))
                 ->icon('heroicon-o-server')
                 ->schema([
