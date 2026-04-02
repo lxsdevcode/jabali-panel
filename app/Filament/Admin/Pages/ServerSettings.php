@@ -879,6 +879,16 @@ class ServerSettings extends Page implements HasActions, HasForms
         $this->mountAction('uploadLogoDarkModal');
     }
 
+    public function uploadLogoLight(array $data): void
+    {
+        $this->uploadLogo($data, 'custom_logo');
+    }
+
+    public function uploadLogoDark(array $data): void
+    {
+        $this->uploadLogo($data, 'custom_logo_dark');
+    }
+
     public function saveTimezone(): void
     {
         $timezone = $this->timezoneData['timezone'] ?? '';
@@ -1391,7 +1401,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->required()
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
-                ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo'))
+                ->action('uploadLogoLight')
                 ->extraAttributes(['class' => 'hidden']),
             Action::make('uploadLogoDarkModal')
                 ->modalHeading(__('Upload Dark Logo'))
@@ -1407,7 +1417,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->required()
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
-                ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark'))
+                ->action('uploadLogoDark')
                 ->extraAttributes(['class' => 'hidden']),
             Action::make('export_config')
                 ->label(__('Export'))
