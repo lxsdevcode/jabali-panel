@@ -14582,22 +14582,20 @@ function sslIssue(array $params): array
         return ['success' => false, 'error' => "Domain $domain does not resolve to any IP address"];
     }
 
-    // Build certbot command
-    $domains = '-d '.escapeshellarg($domain);
+    // Build domain list for certbot
+    $baseDomains = '-d '.escapeshellarg($domain);
     if ($includeWww) {
         $wwwDomain = "www.$domain";
         $wwwIp = gethostbyname($wwwDomain);
         if ($wwwIp !== $wwwDomain) {
-            $domains .= ' -d '.escapeshellarg($wwwDomain);
+            $baseDomains .= ' -d '.escapeshellarg($wwwDomain);
         }
     }
 
-    // Include mail subdomain if it resolves
+    // Always include mail subdomain — don't rely on gethostbyname which
+    // may fail if the server's resolver doesn't have the record yet
     $mailDomain = "mail.$domain";
-    $mailIp = gethostbyname($mailDomain);
-    if ($mailIp !== $mailDomain) {
-        $domains .= ' -d '.escapeshellarg($mailDomain);
-    }
+    $domainsWithMail = $baseDomains.' -d '.escapeshellarg($mailDomain);
 
     $webroot = "/home/$username/domains/$domain/public_html";
     if (! is_dir($webroot)) {
@@ -14612,7 +14610,8 @@ function sslIssue(array $params): array
         chown($wellKnown, $username);
     }
 
-    // Run certbot
+    // Try with mail subdomain first, fall back to without if it fails
+    $domains = $domainsWithMail;
     $cmd = sprintf(
         'certbot certonly --webroot -w %s %s --email %s --agree-tos --non-interactive --force-renewal 2>&1',
         escapeshellarg($webroot),
@@ -14620,13 +14619,31 @@ function sslIssue(array $params): array
         escapeshellarg($email)
     );
 
-    logger("Running certbot: $cmd");
+    logger("Running certbot (with mail): $cmd");
     exec($cmd, $output, $exitCode);
     $outputStr = implode("\n", $output);
     logger("Certbot output: $outputStr");
 
     if ($exitCode !== 0) {
-        return ['success' => false, 'error' => "Certbot failed: $outputStr"];
+        // Retry without mail subdomain
+        logger("Certbot failed with mail subdomain, retrying without: $outputStr");
+        $output = [];
+        $domains = $baseDomains;
+        $cmd = sprintf(
+            'certbot certonly --webroot -w %s %s --email %s --agree-tos --non-interactive --force-renewal 2>&1',
+            escapeshellarg($webroot),
+            $domains,
+            escapeshellarg($email)
+        );
+
+        logger("Running certbot (without mail): $cmd");
+        exec($cmd, $output, $exitCode);
+        $outputStr = implode("\n", $output);
+        logger("Certbot output: $outputStr");
+
+        if ($exitCode !== 0) {
+            return ['success' => false, 'error' => "Certbot failed: $outputStr"];
+        }
     }
 
     // Get certificate paths
