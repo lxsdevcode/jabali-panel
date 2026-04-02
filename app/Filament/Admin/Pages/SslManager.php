@@ -22,6 +22,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
@@ -74,6 +75,13 @@ class SslManager extends Page implements HasTable
     {
         return $table
             ->query(SslCertificate::with(['domain.user']))
+            ->defaultGroup(
+                Group::make('domain_id')
+                    ->label(__('Domain'))
+                    ->getTitleFromRecordUsing(fn (SslCertificate $record): string => $record->domain?->domain ?? __('Unknown'))
+                    ->getDescriptionFromRecordUsing(fn (SslCertificate $record): string => $record->domain?->user?->username ?? '')
+                    ->collapsible()
+            )
             ->columns([
                 TextColumn::make('domain.domain')
                     ->label(__('Domain'))
