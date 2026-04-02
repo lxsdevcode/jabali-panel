@@ -14870,8 +14870,16 @@ function sslPanelIssue(array $params): array
                 $isSelfSigned = ($issuerCN === $subjectCN);
                 $isValid = $expiryTime > time() + 86400; // at least 1 day left
 
-                if (! $isSelfSigned && $isValid) {
-                    logger("Found existing valid LE cert at {$existCert}, installing");
+                // Verify the cert actually covers the requested hostname
+                $sans = [];
+                if (isset($certData['extensions']['subjectAltName'])) {
+                    preg_match_all('/DNS:([^,\s]+)/', $certData['extensions']['subjectAltName'], $sanMatches);
+                    $sans = $sanMatches[1] ?? [];
+                }
+                $coversHostname = in_array($hostname, $sans, true) || $subjectCN === $hostname;
+
+                if (! $isSelfSigned && $isValid && $coversHostname) {
+                    logger("Found existing valid LE cert at {$existCert} covering {$hostname}, installing");
                     copy($existCert, $panelCert);
                     copy($existKey, $panelKey);
                     chmod($panelCert, 0644);
