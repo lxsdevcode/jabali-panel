@@ -1803,6 +1803,12 @@ function deleteDomain(array $params): array
         return ['success' => false, 'error' => 'Failed to delete domain'];
     }
 
+    // Remove centralized log symlink
+    $symlink = "/var/log/nginx/domains/{$domain}";
+    if (is_link($symlink)) {
+        unlink($symlink);
+    }
+
     logger("Deleted domain $domain for user $username");
 
     return ['success' => true, 'message' => "Domain $domain deleted"];
@@ -4448,6 +4454,16 @@ function domainCreate(array $params): array
             chown($dir, $uid);
             chgrp($dir, $gid);
         }
+    }
+
+    // Symlink domain logs to /var/log/nginx/domains/ for centralized access
+    $centralLogDir = '/var/log/nginx/domains';
+    if (! is_dir($centralLogDir)) {
+        mkdir($centralLogDir, 0755, true);
+    }
+    $symlink = "{$centralLogDir}/{$domain}";
+    if (! file_exists($symlink)) {
+        symlink($logs, $symlink);
     }
 
     // Create default index.html
