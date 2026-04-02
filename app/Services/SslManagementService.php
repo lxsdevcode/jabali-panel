@@ -23,21 +23,33 @@ class SslManagementService
                 true,
             );
 
-            return SslCertificate::updateOrCreate(
+            $certData = [
+                'type' => 'lets_encrypt',
+                'status' => 'active',
+                'issuer' => "Let's Encrypt",
+                'certificate' => $result['certificate'] ?? null,
+                'issued_at' => now(),
+                'expires_at' => isset($result['valid_to']) ? Carbon::parse($result['valid_to']) : now()->addDays(90),
+                'last_check_at' => now(),
+                'last_error' => null,
+                'renewal_attempts' => 0,
+                'auto_renew' => true,
+            ];
+
+            $cert = SslCertificate::updateOrCreate(
                 ['domain_id' => $domain->id, 'service' => $service],
-                [
-                    'type' => 'lets_encrypt',
-                    'status' => 'active',
-                    'issuer' => "Let's Encrypt",
-                    'certificate' => $result['certificate'] ?? null,
-                    'issued_at' => now(),
-                    'expires_at' => isset($result['valid_to']) ? Carbon::parse($result['valid_to']) : now()->addDays(90),
-                    'last_check_at' => now(),
-                    'last_error' => null,
-                    'renewal_attempts' => 0,
-                    'auto_renew' => true,
-                ],
+                $certData,
             );
+
+            // If this is a web cert that also covers mail.$domain, create the mail record too
+            if ($service === 'web') {
+                SslCertificate::updateOrCreate(
+                    ['domain_id' => $domain->id, 'service' => 'mail'],
+                    $certData,
+                );
+            }
+
+            return $cert;
         } catch (\Exception $e) {
             return SslCertificate::updateOrCreate(
                 ['domain_id' => $domain->id, 'service' => $service],
