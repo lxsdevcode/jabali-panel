@@ -3788,6 +3788,7 @@ export async function GET(request: NextRequest) {
 SSO_ROUTE
 
     # 6. Patch auth-store to check session cookie on page load (SSO support)
+    # Uses PUT (not GET) because upstream strips password from GET responses.
     if grep -q "set({ isLoading: false });" stores/auth-store.ts 2>/dev/null && \
        ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
         python3 -c "
@@ -3796,7 +3797,7 @@ old = '        set({ isLoading: false });\n      },'
 new = '''        // SSO fallback: check session cookie even when not authenticated
         if (!state.isAuthenticated && !state.client) {
           try {
-            const res = await fetch('/webmail/api/auth/session');
+            const res = await fetch('/webmail/api/auth/session', { method: 'PUT' });
             if (res.ok) {
               const data = await res.json();
               if (data.serverUrl && data.username && data.password) {
@@ -3826,6 +3827,8 @@ if old in content:
 
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
+    # Bump this when Jabali patches change to force a rebuild even without upstream changes
+    local jabali_patch_version="2"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
@@ -3834,22 +3837,37 @@ upgrade_bulwark() {
 
     cd "$bulwark_dir"
 
-    # Check if there are updates
+    # Check if upstream has updates
     git fetch --depth 1 origin main 2>/dev/null || { warn "Could not fetch Bulwark updates"; return; }
     local local_hash remote_hash
     local_hash=$(git rev-parse HEAD 2>/dev/null)
     remote_hash=$(git rev-parse origin/main 2>/dev/null)
 
-    if [[ "$local_hash" == "$remote_hash" ]]; then
+    local needs_rebuild=false
+    if [[ "$local_hash" != "$remote_hash" ]]; then
+        needs_rebuild=true
+        info "Updating Bulwark Webmail (upstream change)..."
+        git reset --hard origin/main 2>/dev/null || { warn "Could not update Bulwark"; return; }
+    fi
+
+    # Also rebuild if our patch version changed (e.g. SSO fix)
+    local current_patch_ver=""
+    [[ -f .jabali-patch-version ]] && current_patch_ver=$(cat .jabali-patch-version 2>/dev/null)
+    if [[ "$current_patch_ver" != "$jabali_patch_version" ]]; then
+        needs_rebuild=true
+        info "Re-patching Bulwark (patch version ${current_patch_ver:-0} → ${jabali_patch_version})..."
+        # Reset to clean upstream state before re-patching
+        git checkout -- . 2>/dev/null || true
+    fi
+
+    if [[ "$needs_rebuild" != "true" ]]; then
         log "Bulwark Webmail is already up to date"
         return
     fi
 
-    info "Updating Bulwark Webmail..."
-    git reset --hard origin/main 2>/dev/null || { warn "Could not update Bulwark"; return; }
-
     # Re-apply Jabali patches (basePath, SSO route, auth-store, etc.)
     patch_bulwark "$bulwark_dir"
+    echo "$jabali_patch_version" > .jabali-patch-version
 
     npm ci --omit=dev 2>/dev/null || npm install --omit=dev 2>/dev/null || { warn "Bulwark npm install failed"; return; }
     npm run build 2>/dev/null || { warn "Bulwark build failed"; return; }
