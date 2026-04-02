@@ -71,6 +71,14 @@ class SslManager extends Page implements HasTable
         $this->lastUpdated = now()->format('H:i:s');
     }
 
+    public function getDomainCertsProperty(): \Illuminate\Support\Collection
+    {
+        return Domain::with(['user', 'sslCertificates'])
+            ->whereHas('sslCertificates')
+            ->orderBy('domain')
+            ->get();
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -230,13 +238,13 @@ class SslManager extends Page implements HasTable
         $this->lastUpdated = now()->format('H:i:s');
     }
 
-    public function renewSslForDomain(int $domainId): void
+    public function renewSslForDomain(int $domainId, string $service = 'web'): void
     {
         try {
             $domain = Domain::with('user')->findOrFail($domainId);
 
-            $service = app(SslManagementService::class);
-            $cert = $service->renew($domain);
+            $sslService = app(SslManagementService::class);
+            $cert = $sslService->renew($domain, $service);
 
             if ($cert->status === 'failed') {
                 Notification::make()
