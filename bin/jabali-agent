@@ -14855,10 +14855,26 @@ function sslPanelIssue(array $params): array
     $panelKey = '/etc/ssl/jabali/panel.key';
 
     // Check if a valid LE cert already exists on disk (avoids rate limits)
+    // Check live/ first (current symlinks), then archive/ (all issued certs)
     $existingPaths = [
         ['/etc/letsencrypt/live/panel/fullchain.pem', '/etc/letsencrypt/live/panel/privkey.pem'],
         ["/etc/letsencrypt/live/{$hostname}/fullchain.pem", "/etc/letsencrypt/live/{$hostname}/privkey.pem"],
     ];
+
+    // Also scan archive directories for the latest cert files
+    foreach (['panel', $hostname] as $certName) {
+        $archiveDir = "/etc/letsencrypt/archive/{$certName}";
+        if (is_dir($archiveDir)) {
+            // Find the highest-numbered fullchain (e.g. fullchain5.pem is newest)
+            $fullchains = glob("{$archiveDir}/fullchain*.pem");
+            $privkeys = glob("{$archiveDir}/privkey*.pem");
+            if ($fullchains && $privkeys) {
+                natsort($fullchains);
+                natsort($privkeys);
+                $existingPaths[] = [end($fullchains), end($privkeys)];
+            }
+        }
+    }
 
     foreach ($existingPaths as [$existCert, $existKey]) {
         if (file_exists($existCert) && file_exists($existKey)) {
