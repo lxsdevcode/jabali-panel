@@ -12,6 +12,7 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - **Mail**: Stalwart Mail Server (SMTP, IMAP, JMAP, ManageSieve) — the only mail backend
 - **DNS**: PowerDNS with REST API and MySQL backend (DNSSEC supported)
 - **Backups**: Restic-based with snapshot browsing, restore wizard, remote destinations (SFTP, S3, B2)
+- **SSL**: Certbot webroot for domains (includes mail.$domain), panel cert via `ssl.panel.issue` agent command
 - **Stats**: GoAccess in daemon mode with real-time WebSocket updates
 - **Bandwidth**: Daily sync from nginx access logs, displayed on Users and Domains pages
 - **File browser**: Two adapters — live files via agent, backup snapshots via Restic
@@ -48,6 +49,11 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - Use `proc_open()` for piping passwords to `chpasswd` (not `echo | chpasswd`)
 - Validate cron commands with `CronCommandValidator::validate()` (shared allowlist)
 - Service management functions must check `$allowedServices` global array
+- Nginx vhost config files use `.conf` extension (`/etc/nginx/sites-available/$domain.conf`)
+- Agent `sslCheck` and `sslInstallCertificate` must try `.conf` extension first, then fall back
+- Filament v5 `FormAction` closures in `->action()` silently fail on this page — use `wire:click` in Blade for branding
+- Logo/file URLs must use relative paths (`/storage/...`), not `asset()` — APP_URL has IP, user accesses via hostname
+- FrankenPHP Caddyfile must NOT block `/storage/*` — uploaded files are served via public/storage symlink
 
 ## Security Rules
 
@@ -72,7 +78,7 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - PHPUnit only (no Pest). `php artisan test --compact`
 - Use factories for test data, clean up records in tests without RefreshDatabase
 - Run specific tests: `php artisan test --compact --filter=TestName`
-- Key test files: `PathSanitizerTest`, `FilePermissionTest`, `BackupSnapshotFileOperationsTest`
+- Key test files: `PathSanitizerTest`, `FilePermissionTest`, `BackupSnapshotFileOperationsTest`, `ServerSettingsBrandingTest`, `SslManagementServiceTest`
 
 <laravel-boost-guidelines>
 === foundation rules ===
