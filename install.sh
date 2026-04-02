@@ -2169,160 +2169,8 @@ APP_NAME=Webmail
 SESSION_SECRET=${existing_secret:-$(openssl rand -base64 32)}
 BULWARK_ENV
 
-            # Configure basePath so Bulwark serves under /webmail/
-            sed -i 's|output: "standalone",|output: "standalone",\n  basePath: "/webmail",|' next.config.ts
-
-            # Use localePrefix: 'always' to avoid rewrite loops in Next.js 16 proxy mode
-            sed -i "s|localePrefix: 'never'|localePrefix: 'always'|" i18n/routing.ts
-
-            # Rewrite proxy.ts to skip intl middleware for locale-prefixed paths
-            # (Next.js 16 proxy rewrites make HTTP requests to self, causing loops)
-            cat > proxy.ts <<'PROXY_TS'
-import { type NextRequest, NextResponse } from "next/server";
-import createIntlMiddleware from "next-intl/middleware";
-import { routing } from "./i18n/routing";
-
-const intlMiddleware = createIntlMiddleware(routing);
-
-function addSecurityHeaders(response: ReturnType<typeof NextResponse.next>, request: NextRequest) {
-  const nonce = crypto.randomUUID();
-  const isDev = process.env.NODE_ENV === "development";
-  const scriptSrc = `'self' 'nonce-${nonce}' 'unsafe-eval'`;
-  const connectSrc = isDev ? `'self' https: ws: wss:` : `'self' https:`;
-  const csp = [
-    `default-src 'self'`, `script-src ${scriptSrc}`,
-    `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`,
-    `font-src 'self'`, `connect-src ${connectSrc}`,
-    `frame-src 'none'`, `object-src 'none'`,
-    `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`,
-  ].join("; ");
-  const existing = response.headers.get("x-middleware-override-headers");
-  response.headers.set("x-middleware-override-headers", existing ? `${existing},x-nonce` : "x-nonce");
-  response.headers.set("x-middleware-request-x-nonce", nonce);
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("X-XSS-Protection", "0");
-  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  response.headers.set("Content-Security-Policy-Report-Only", csp);
-  return response;
-}
-
-export function proxy(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-  const locales = routing.locales as readonly string[];
-  const hasLocale = locales.some((l) => pathname === `/${l}` || pathname.startsWith(`/${l}/`));
-  if (hasLocale) {
-    return addSecurityHeaders(NextResponse.next(), request);
-  }
-  let intlResponse: ReturnType<typeof intlMiddleware> | null = null;
-  try { intlResponse = intlMiddleware(request); } catch (error) { console.error("Locale middleware error:", error); }
-  return addSecurityHeaders(intlResponse ?? NextResponse.next(), request);
-}
-
-export const config = {
-  matcher: ["/", "/((?!api|_next|.*\\..*).*)" ],
-};
-PROXY_TS
-
-            # Fix client-side fetch calls to include basePath (raw fetch ignores Next.js basePath)
-            find hooks/ lib/ stores/ components/ -name '*.ts' -o -name '*.tsx' 2>/dev/null | \
-                xargs grep -l "fetch('/api/" 2>/dev/null | \
-                xargs -r sed -i "s|fetch('/api/|fetch('/webmail/api/|g"
-            find components/ -name '*.tsx' 2>/dev/null | \
-                xargs grep -l 'fetch("/api/' 2>/dev/null | \
-                xargs -r sed -i 's|fetch("/api/|fetch("/webmail/api/|g'
-
-            # Add SSO API route for Jabali panel single sign-on
-            mkdir -p app/api/auth/sso
-            cat > app/api/auth/sso/route.ts <<'SSO_ROUTE'
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { readFileSync, unlinkSync, existsSync } from 'node:fs';
-import { logger } from '@/lib/logger';
-import { encryptSession } from '@/lib/auth/crypto';
-import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE } from '@/lib/auth/session-cookie';
-
-const SSO_TOKEN_DIR = '/var/lib/jabali/sso-tokens';
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  path: '/',
-  maxAge: SESSION_COOKIE_MAX_AGE,
-};
-
-function getBaseUrl(request: NextRequest): string {
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'localhost';
-  const proto = request.headers.get('x-forwarded-proto') || 'https';
-  return `${proto}://${host}`;
-}
-
-export async function GET(request: NextRequest) {
-  const token = request.nextUrl.searchParams.get('token');
-  const baseUrl = getBaseUrl(request);
-  if (!token || !/^[a-f0-9]{64}$/.test(token)) {
-    return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
-  }
-  const tokenFile = `${SSO_TOKEN_DIR}/bulwark_sso_${token}`;
-  try {
-    if (!existsSync(tokenFile)) {
-      return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
-    }
-    const raw = readFileSync(tokenFile, 'utf-8');
-    try { unlinkSync(tokenFile); } catch {}
-    const data = JSON.parse(raw);
-    if (!data.email || !data.expires || data.expires < Math.floor(Date.now() / 1000) || !data.password) {
-      return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
-    }
-    const jmapServerUrl = baseUrl || process.env.JMAP_SERVER_URL || '';
-    const sessionToken = encryptSession(jmapServerUrl, data.email, data.password);
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE, sessionToken, COOKIE_OPTIONS);
-    logger.info('SSO login successful', { email: data.email });
-    return NextResponse.redirect(`${baseUrl}/webmail/en`);
-  } catch (error) {
-    logger.error('SSO error', { error: error instanceof Error ? error.message : 'Unknown' });
-    return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
-  }
-}
-SSO_ROUTE
-
-            # Patch auth-store to check session cookie on page load (SSO support)
-            # Without this, SSO sets the cookie but checkAuth() skips restore
-            # because localStorage has no prior auth state
-            if grep -q "set({ isLoading: false });" stores/auth-store.ts 2>/dev/null && \
-               ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
-                python3 -c "
-content = open('stores/auth-store.ts').read()
-old = '        set({ isLoading: false });\n      },'
-new = '''        // SSO fallback: check session cookie even when not authenticated
-        if (!state.isAuthenticated && !state.client) {
-          try {
-            const res = await fetch('/webmail/api/auth/session');
-            if (res.ok) {
-              const data = await res.json();
-              if (data.serverUrl && data.username && data.password) {
-                set({ isLoading: true });
-                const { serverUrl, username, password } = data;
-                const client = new JMAPClient(serverUrl, username, password);
-                client.onConnectionChange((connected) => { set({ connectionLost: !connected }); });
-                await client.connect();
-                const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), username);
-                initializeFeatureStores(client);
-                set({ isAuthenticated: true, isLoading: false, serverUrl, username, client, identities, primaryIdentity, authMode: 'basic', rememberMe: true });
-                return;
-              }
-            }
-          } catch (error) { debug.error('SSO session check failed:', error); }
-        }
-
-        set({ isLoading: false });
-      },'''
-if old in content:
-    open('stores/auth-store.ts', 'w').write(content.replace(old, new, 1))
-" 2>/dev/null || true
-            fi
+            # Apply all Jabali patches (basePath, SSO, auth-store, proxy, fetch paths)
+            patch_bulwark "$bulwark_dir"
 
             info "Building Bulwark (this may take a minute)..."
             npm install >/dev/null 2>&1
@@ -3812,6 +3660,170 @@ upgrade_stalwart() {
     rm -rf "${tmp_dir}"
 }
 
+# Apply Jabali-specific patches to Bulwark source tree.
+# Called during both initial install and upgrades (which reset to upstream HEAD).
+# Must be run from inside the Bulwark directory.
+patch_bulwark() {
+    local bulwark_dir="${1:-/opt/bulwark}"
+    cd "$bulwark_dir"
+
+    # 1. basePath so Bulwark serves under /webmail/
+    if ! grep -q 'basePath:' next.config.ts 2>/dev/null; then
+        sed -i 's|output: "standalone",|output: "standalone",\n  basePath: "/webmail",|' next.config.ts
+    fi
+
+    # 2. localePrefix: 'always' to avoid rewrite loops in proxy mode
+    sed -i "s|localePrefix: 'never'|localePrefix: 'always'|" i18n/routing.ts 2>/dev/null || true
+
+    # 3. Rewrite proxy.ts to skip intl middleware for locale-prefixed paths
+    cat > proxy.ts <<'PROXY_TS'
+import { type NextRequest, NextResponse } from "next/server";
+import createIntlMiddleware from "next-intl/middleware";
+import { routing } from "./i18n/routing";
+
+const intlMiddleware = createIntlMiddleware(routing);
+
+function addSecurityHeaders(response: ReturnType<typeof NextResponse.next>, request: NextRequest) {
+  const nonce = crypto.randomUUID();
+  const isDev = process.env.NODE_ENV === "development";
+  const scriptSrc = `'self' 'nonce-${nonce}' 'unsafe-eval'`;
+  const connectSrc = isDev ? `'self' https: ws: wss:` : `'self' https:`;
+  const csp = [
+    `default-src 'self'`, `script-src ${scriptSrc}`,
+    `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`,
+    `font-src 'self'`, `connect-src ${connectSrc}`,
+    `frame-src 'none'`, `object-src 'none'`,
+    `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`,
+  ].join("; ");
+  const existing = response.headers.get("x-middleware-override-headers");
+  response.headers.set("x-middleware-override-headers", existing ? `${existing},x-nonce` : "x-nonce");
+  response.headers.set("x-middleware-request-x-nonce", nonce);
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("X-XSS-Protection", "0");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  response.headers.set("Content-Security-Policy-Report-Only", csp);
+  return response;
+}
+
+export function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const locales = routing.locales as readonly string[];
+  const hasLocale = locales.some((l) => pathname === `/${l}` || pathname.startsWith(`/${l}/`));
+  if (hasLocale) {
+    return addSecurityHeaders(NextResponse.next(), request);
+  }
+  let intlResponse: ReturnType<typeof intlMiddleware> | null = null;
+  try { intlResponse = intlMiddleware(request); } catch (error) { console.error("Locale middleware error:", error); }
+  return addSecurityHeaders(intlResponse ?? NextResponse.next(), request);
+}
+
+export const config = {
+  matcher: ["/", "/((?!api|_next|.*\\..*).*)" ],
+};
+PROXY_TS
+
+    # 4. Fix client-side fetch calls to include basePath
+    find hooks/ lib/ stores/ components/ -name '*.ts' -o -name '*.tsx' 2>/dev/null | \
+        xargs grep -l "fetch('/api/" 2>/dev/null | \
+        xargs -r sed -i "s|fetch('/api/|fetch('/webmail/api/|g"
+    find components/ -name '*.tsx' 2>/dev/null | \
+        xargs grep -l 'fetch("/api/' 2>/dev/null | \
+        xargs -r sed -i 's|fetch("/api/|fetch("/webmail/api/|g'
+
+    # 5. SSO API route for Jabali panel single sign-on
+    mkdir -p app/api/auth/sso
+    cat > app/api/auth/sso/route.ts <<'SSO_ROUTE'
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { readFileSync, unlinkSync, existsSync } from 'node:fs';
+import { logger } from '@/lib/logger';
+import { encryptSession } from '@/lib/auth/crypto';
+import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE } from '@/lib/auth/session-cookie';
+
+const SSO_TOKEN_DIR = '/var/lib/jabali/sso-tokens';
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  path: '/',
+  maxAge: SESSION_COOKIE_MAX_AGE,
+};
+
+function getBaseUrl(request: NextRequest): string {
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'localhost';
+  const proto = request.headers.get('x-forwarded-proto') || 'https';
+  return `${proto}://${host}`;
+}
+
+export async function GET(request: NextRequest) {
+  const token = request.nextUrl.searchParams.get('token');
+  const baseUrl = getBaseUrl(request);
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+    return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
+  }
+  const tokenFile = `${SSO_TOKEN_DIR}/bulwark_sso_${token}`;
+  try {
+    if (!existsSync(tokenFile)) {
+      return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
+    }
+    const raw = readFileSync(tokenFile, 'utf-8');
+    try { unlinkSync(tokenFile); } catch {}
+    const data = JSON.parse(raw);
+    if (!data.email || !data.expires || data.expires < Math.floor(Date.now() / 1000) || !data.password) {
+      return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
+    }
+    const jmapServerUrl = baseUrl || process.env.JMAP_SERVER_URL || '';
+    const sessionToken = encryptSession(jmapServerUrl, data.email, data.password);
+    const cookieStore = await cookies();
+    cookieStore.set(SESSION_COOKIE, sessionToken, COOKIE_OPTIONS);
+    logger.info('SSO login successful', { email: data.email });
+    return NextResponse.redirect(`${baseUrl}/webmail/en`);
+  } catch (error) {
+    logger.error('SSO error', { error: error instanceof Error ? error.message : 'Unknown' });
+    return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
+  }
+}
+SSO_ROUTE
+
+    # 6. Patch auth-store to check session cookie on page load (SSO support)
+    if grep -q "set({ isLoading: false });" stores/auth-store.ts 2>/dev/null && \
+       ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
+        python3 -c "
+content = open('stores/auth-store.ts').read()
+old = '        set({ isLoading: false });\n      },'
+new = '''        // SSO fallback: check session cookie even when not authenticated
+        if (!state.isAuthenticated && !state.client) {
+          try {
+            const res = await fetch('/webmail/api/auth/session');
+            if (res.ok) {
+              const data = await res.json();
+              if (data.serverUrl && data.username && data.password) {
+                set({ isLoading: true });
+                const { serverUrl, username, password } = data;
+                const client = new JMAPClient(serverUrl, username, password);
+                client.onConnectionChange((connected) => { set({ connectionLost: !connected }); });
+                await client.connect();
+                const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), username);
+                initializeFeatureStores(client);
+                set({ isAuthenticated: true, isLoading: false, serverUrl, username, client, identities, primaryIdentity, authMode: 'basic', rememberMe: true });
+                return;
+              }
+            }
+          } catch (error) { debug.error('SSO session check failed:', error); }
+        }
+
+        set({ isLoading: false });
+      },'''
+if old in content:
+    open('stores/auth-store.ts', 'w').write(content.replace(old, new, 1))
+" 2>/dev/null || true
+    fi
+
+    log "Bulwark patches applied (basePath, SSO, auth-store)"
+}
+
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
 
@@ -3835,6 +3847,9 @@ upgrade_bulwark() {
 
     info "Updating Bulwark Webmail..."
     git reset --hard origin/main 2>/dev/null || { warn "Could not update Bulwark"; return; }
+
+    # Re-apply Jabali patches (basePath, SSO route, auth-store, etc.)
+    patch_bulwark "$bulwark_dir"
 
     npm ci --omit=dev 2>/dev/null || npm install --omit=dev 2>/dev/null || { warn "Bulwark npm install failed"; return; }
     npm run build 2>/dev/null || { warn "Bulwark build failed"; return; }
