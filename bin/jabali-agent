@@ -766,6 +766,7 @@ function handleAction(array $request): array
         'ssl.delete' => sslDelete($params),
         'ssl.mail.issue' => stalwartSslMailIssue($params),
         'ssl.mail.status' => stalwartSslMailStatus($params),
+        'ssl.panel.issue' => sslPanelIssue($params),
         // Backup operations
         'backup.create' => backupCreate($params),
         'backup.create_server' => backupCreateServer($params),
@@ -14797,6 +14798,102 @@ function sslRenew(array $params): array
     return [
         'success' => true,
         'message' => "SSL certificate renewed for $domain",
+        'valid_from' => date('Y-m-d H:i:s', $certData['validFrom_time_t'] ?? 0),
+        'valid_to' => date('Y-m-d H:i:s', $certData['validTo_time_t'] ?? 0),
+    ];
+}
+
+/**
+ * Issue Let's Encrypt SSL certificate for the panel hostname.
+ * Uses certbot webroot with /var/www/html (nginx serves ACME challenges on port 80).
+ * Installs the cert to /etc/ssl/jabali/panel.crt and panel.key, then reloads services.
+ */
+function sslPanelIssue(array $params): array
+{
+    $hostname = trim($params['hostname'] ?? '');
+
+    if (empty($hostname)) {
+        // Read from .env APP_URL
+        $envFile = '/var/www/jabali/.env';
+        if (file_exists($envFile)) {
+            $env = file_get_contents($envFile);
+            if (preg_match('/^APP_URL=https?:\/\/([^:\/\s]+)/m', $env, $m)) {
+                $hostname = $m[1];
+            }
+        }
+    }
+
+    if (empty($hostname) || $hostname === 'localhost') {
+        return ['success' => false, 'error' => 'No panel hostname configured'];
+    }
+
+    $email = $params['email'] ?? "admin@{$hostname}";
+
+    logger("Issuing panel SSL certificate for: {$hostname}");
+
+    // Check certbot
+    exec('which certbot 2>/dev/null', $output, $code);
+    if ($code !== 0) {
+        return ['success' => false, 'error' => 'Certbot is not installed'];
+    }
+
+    // Webroot for ACME challenges (nginx default server serves /.well-known/acme-challenge/ from here)
+    $webroot = '/var/www/html';
+    if (! is_dir($webroot)) {
+        mkdir($webroot, 0755, true);
+    }
+
+    $wellKnown = "{$webroot}/.well-known/acme-challenge";
+    if (! is_dir($wellKnown)) {
+        mkdir($wellKnown, 0755, true);
+    }
+
+    $cmd = sprintf(
+        'certbot certonly --webroot -w %s -d %s --email %s --agree-tos --non-interactive --cert-name panel 2>&1',
+        escapeshellarg($webroot),
+        escapeshellarg($hostname),
+        escapeshellarg($email)
+    );
+
+    logger("Running certbot for panel: {$cmd}");
+    $output = [];
+    exec($cmd, $output, $exitCode);
+    $outputStr = implode("\n", $output);
+    logger("Certbot panel output: {$outputStr}");
+
+    if ($exitCode !== 0) {
+        return ['success' => false, 'error' => "Certbot failed: {$outputStr}"];
+    }
+
+    $leCert = '/etc/letsencrypt/live/panel/fullchain.pem';
+    $leKey = '/etc/letsencrypt/live/panel/privkey.pem';
+
+    if (! file_exists($leCert) || ! file_exists($leKey)) {
+        return ['success' => false, 'error' => 'Certificate files not found after certbot'];
+    }
+
+    // Install to panel cert location
+    $panelCert = '/etc/ssl/jabali/panel.crt';
+    $panelKey = '/etc/ssl/jabali/panel.key';
+
+    copy($leCert, $panelCert);
+    copy($leKey, $panelKey);
+    chmod($panelCert, 0644);
+    chmod($panelKey, 0600);
+
+    // Reload services that use the panel cert
+    exec('systemctl reload nginx 2>/dev/null');
+    exec('systemctl restart jabali-panel 2>/dev/null');
+
+    // Read cert info for response
+    $certData = openssl_x509_parse(file_get_contents($panelCert));
+
+    logger("Panel SSL certificate issued successfully for {$hostname}");
+
+    return [
+        'success' => true,
+        'message' => "Panel SSL certificate issued for {$hostname}",
+        'issuer' => $certData['issuer']['O'] ?? $certData['issuer']['CN'] ?? 'Unknown',
         'valid_from' => date('Y-m-d H:i:s', $certData['validFrom_time_t'] ?? 0),
         'valid_to' => date('Y-m-d H:i:s', $certData['validTo_time_t'] ?? 0),
     ];

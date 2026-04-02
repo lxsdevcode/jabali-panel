@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Widgets;
 
 use App\Models\PanelCertificate;
+use App\Services\Agent\AgentClient;
+use App\Support\SafeError;
+use Exception;
+use Filament\Notifications\Notification;
 use Filament\Widgets\Widget;
 
 class PanelCertificateWidget extends Widget
@@ -14,6 +18,37 @@ class PanelCertificateWidget extends Widget
     protected int|string|array $columnSpan = 'full';
 
     protected string $view = 'filament.admin.widgets.panel-certificate';
+
+    public function issuePanelCert(): void
+    {
+        try {
+            $agent = app(AgentClient::class);
+            $result = $agent->sslPanelIssue();
+
+            if ($result['success'] ?? false) {
+                // Re-sync cert info
+                \Artisan::call('jabali:panel-cert-sync');
+
+                Notification::make()
+                    ->title(__('Panel certificate issued'))
+                    ->body($result['message'] ?? __('Let\'s Encrypt certificate installed successfully.'))
+                    ->success()
+                    ->send();
+            } else {
+                Notification::make()
+                    ->title(__('Certificate issuance failed'))
+                    ->body($result['error'] ?? __('Unknown error'))
+                    ->danger()
+                    ->send();
+            }
+        } catch (Exception $e) {
+            Notification::make()
+                ->title(__('Certificate issuance failed'))
+                ->body(SafeError::message($e))
+                ->danger()
+                ->send();
+        }
+    }
 
     protected function getCertificate(): ?PanelCertificate
     {

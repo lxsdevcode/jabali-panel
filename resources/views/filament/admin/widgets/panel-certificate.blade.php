@@ -61,11 +61,19 @@
             </div>
         @endif
 
-        @if($cert['is_self_signed'])
-            <div class="mt-3 rounded-lg bg-yellow-50 p-3 dark:bg-yellow-950/20">
+        @if($cert['is_self_signed'] || $cert['status'] === 'pending')
+            <div class="mt-3 flex items-center justify-between rounded-lg bg-yellow-50 p-3 dark:bg-yellow-950/20">
                 <p class="text-sm text-yellow-700 dark:text-yellow-400">
-                    {{ __('Using self-signed certificate. ACME will issue a trusted certificate once DNS resolves to this server.') }}
+                    {{ __('Using self-signed certificate. Click "Issue Certificate" to request a Let\'s Encrypt certificate.') }}
                 </p>
+                <x-filament::button
+                    size="sm"
+                    wire:click="issuePanelCert"
+                    wire:loading.attr="disabled"
+                    icon="heroicon-m-shield-check"
+                >
+                    {{ __('Issue Certificate') }}
+                </x-filament::button>
             </div>
         @endif
     </x-filament::section>

@@ -803,6 +803,14 @@ class AgentClient implements AgentClientInterface
         ]);
     }
 
+    public function sslPanelIssue(?string $hostname = null, ?string $email = null): array
+    {
+        return $this->send('ssl.panel.issue', array_filter([
+            'hostname' => $hostname,
+            'email' => $email,
+        ]));
+    }
+
     public function sslGenerateSelfSigned(string $domain, string $username, int $days = 365): array
     {
         return $this->send('ssl.generate_self_signed', [
