@@ -3828,7 +3828,7 @@ if old in content:
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="3"
+    local jabali_patch_version="4"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
@@ -3868,7 +3868,7 @@ upgrade_bulwark() {
     # Re-apply Jabali patches (basePath, SSO route, auth-store, etc.)
     patch_bulwark "$bulwark_dir"
 
-    npm ci --omit=dev --ignore-scripts 2>/dev/null || npm install --omit=dev --ignore-scripts 2>/dev/null || { warn "Bulwark npm install failed"; return; }
+    npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts 2>/dev/null || { warn "Bulwark npm install failed"; return; }
     npm run build 2>/dev/null || { warn "Bulwark build failed"; return; }
 
     # Re-link static assets for standalone mode
