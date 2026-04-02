@@ -1,4 +1,6 @@
 <x-filament-panels::page>
+    {{ $this->settingsForm }}
+
     @if ($activeTab === 'general')
         <x-filament::section icon="heroicon-o-paint-brush">
             <x-slot name="heading">{{ __('Panel Branding') }}</x-slot>
@@ -23,7 +25,7 @@
                         <p class="text-sm font-medium text-gray-950 dark:text-white">{{ __('Light Logo') }}</p>
                         @if ($this->currentLogo)
                             <div class="flex h-24 items-center justify-center rounded-lg bg-white p-2 dark:bg-gray-800">
-                                <img src="{{ asset('storage/' . $this->currentLogo) }}" alt="{{ __('Light Logo') }}" class="max-h-full max-w-full object-contain">
+                                <img src="/storage/{{ $this->currentLogo }}" alt="{{ __('Light Logo') }}" class="max-h-full max-w-full object-contain">
                             </div>
                         @endif
                         <div>
@@ -50,7 +52,7 @@
                         <p class="text-sm font-medium text-gray-950 dark:text-white">{{ __('Dark Logo') }}</p>
                         @if ($this->currentLogoDark)
                             <div class="flex h-24 items-center justify-center rounded-lg bg-gray-900 p-2 dark:bg-gray-800">
-                                <img src="{{ asset('storage/' . $this->currentLogoDark) }}" alt="{{ __('Dark Logo') }}" class="max-h-full max-w-full object-contain">
+                                <img src="/storage/{{ $this->currentLogoDark }}" alt="{{ __('Dark Logo') }}" class="max-h-full max-w-full object-contain">
                             </div>
                         @endif
                         <div>
@@ -86,8 +88,6 @@
             </div>
         </x-filament::section>
     @endif
-
-    {{ $this->settingsForm }}
 
     <x-filament-actions::modals />
 </x-filament-panels::page>
