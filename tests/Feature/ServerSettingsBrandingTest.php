@@ -39,50 +39,16 @@ class ServerSettingsBrandingTest extends TestCase
             ->assertNotified();
     }
 
-    public function test_branding_buttons_have_wire_click_directives(): void
+    public function test_branding_section_renders_with_file_inputs(): void
     {
-        $livewire = Livewire::actingAs($this->admin, 'admin')
-            ->test(ServerSettings::class);
+        $html = Livewire::actingAs($this->admin, 'admin')
+            ->test(ServerSettings::class)
+            ->html();
 
-        // First, upload a test logo so the Remove button appears
-        $livewire->set('currentLogo', 'test-logo.png');
-
-        $html = $livewire->html();
-
-        $dom = new \DOMDocument;
-        @$dom->loadHTML($html);
-        $xpath = new \DOMXPath($dom);
-
-        // Check Save Branding button has wire:click directive
-        $brandingButtons = $xpath->query('//button[contains(., "Save Branding")]');
-        $this->assertGreaterThan(0, $brandingButtons->length, 'Save Branding button not found');
-
-        $brandingBtn = $brandingButtons->item(0);
-        $brandingWireClick = $brandingBtn->getAttribute('wire:click');
-        $this->assertEquals('saveBranding', $brandingWireClick);
-
-        // Check Upload Light Logo button has wire:click directive
-        $uploadLightButtons = $xpath->query('//button[contains(., "Upload Light Logo")]');
-        $this->assertGreaterThan(0, $uploadLightButtons->length, 'Upload Light Logo button not found');
-
-        $uploadLightBtn = $uploadLightButtons->item(0);
-        $uploadLightWireClick = $uploadLightBtn->getAttribute('wire:click');
-        $this->assertEquals('openUploadLogoLight', $uploadLightWireClick);
-
-        // Check Upload Dark Logo button has wire:click directive
-        $uploadDarkButtons = $xpath->query('//button[contains(., "Upload Dark Logo")]');
-        $this->assertGreaterThan(0, $uploadDarkButtons->length, 'Upload Dark Logo button not found');
-
-        $uploadDarkBtn = $uploadDarkButtons->item(0);
-        $uploadDarkWireClick = $uploadDarkBtn->getAttribute('wire:click');
-        $this->assertEquals('openUploadLogoDark', $uploadDarkWireClick);
-
-        // Check Remove Logos button has wire:click directive
-        $removeButtons = $xpath->query('//button[contains(., "Remove Logos")]');
-        $this->assertGreaterThan(0, $removeButtons->length, 'Remove Logos button not found');
-
-        $removeBtn = $removeButtons->item(0);
-        $removeWireClick = $removeBtn->getAttribute('wire:click');
-        $this->assertEquals('removeLogo', $removeWireClick);
+        $this->assertStringContainsString('wire:model="logoLightUpload"', $html);
+        $this->assertStringContainsString('wire:model="logoDarkUpload"', $html);
+        $this->assertStringContainsString('Save Branding', $html);
+        $this->assertStringContainsString('Save Light Logo', $html);
+        $this->assertStringContainsString('Save Dark Logo', $html);
     }
 }

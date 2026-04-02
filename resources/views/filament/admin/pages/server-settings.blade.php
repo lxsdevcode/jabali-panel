@@ -30,8 +30,11 @@
                                 <p class="text-xs text-gray-400">{{ __('No logo') }}</p>
                             </div>
                         @endif
-                        <x-filament::button wire:click="openUploadLogoLight" icon="heroicon-o-photo" color="gray" size="sm" class="w-full">
-                            {{ __('Upload Light Logo') }}
+                        <input type="file" wire:model="logoLightUpload" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="block w-full text-sm text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-700 dark:text-gray-400 dark:file:bg-gray-700 dark:file:text-gray-300">
+                        <div wire:loading wire:target="logoLightUpload" class="text-xs text-primary-500">{{ __('Uploading...') }}</div>
+                        @error('logoLightUpload') <p class="text-xs text-danger-500">{{ $message }}</p> @enderror
+                        <x-filament::button wire:click="saveLogoLight" icon="heroicon-o-photo" color="gray" size="sm" class="w-full" wire:loading.attr="disabled" wire:target="logoLightUpload">
+                            {{ __('Save Light Logo') }}
                         </x-filament::button>
                     </div>
 
@@ -47,8 +50,11 @@
                                 <p class="text-xs text-gray-400">{{ __('No logo') }}</p>
                             </div>
                         @endif
-                        <x-filament::button wire:click="openUploadLogoDark" icon="heroicon-o-moon" color="gray" size="sm" class="w-full">
-                            {{ __('Upload Dark Logo') }}
+                        <input type="file" wire:model="logoDarkUpload" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="block w-full text-sm text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-700 dark:text-gray-400 dark:file:bg-gray-700 dark:file:text-gray-300">
+                        <div wire:loading wire:target="logoDarkUpload" class="text-xs text-primary-500">{{ __('Uploading...') }}</div>
+                        @error('logoDarkUpload') <p class="text-xs text-danger-500">{{ $message }}</p> @enderror
+                        <x-filament::button wire:click="saveLogoDark" icon="heroicon-o-moon" color="gray" size="sm" class="w-full" wire:loading.attr="disabled" wire:target="logoDarkUpload">
+                            {{ __('Save Dark Logo') }}
                         </x-filament::button>
                     </div>
                 </div>

@@ -68,6 +68,11 @@ class ServerSettings extends Page implements HasActions, HasForms
     // Form data arrays
     public ?array $brandingData = [];
 
+    // Livewire file upload properties for branding logos
+    public $logoLightUpload = null;
+
+    public $logoDarkUpload = null;
+
     public ?string $currentLogoDark = null;
 
     public ?array $hostnameData = [];
@@ -869,24 +874,43 @@ class ServerSettings extends Page implements HasActions, HasForms
         Notification::make()->title(__('Branding updated'))->body(__('Refresh to see changes.'))->success()->send();
     }
 
-    public function openUploadLogoLight(): void
+    public function saveLogoLight(): void
     {
-        $this->mountAction('uploadLogoLightModal');
+        $this->saveLivewireUpload($this->logoLightUpload, 'custom_logo', 'currentLogo');
     }
 
-    public function openUploadLogoDark(): void
+    public function saveLogoDark(): void
     {
-        $this->mountAction('uploadLogoDarkModal');
+        $this->saveLivewireUpload($this->logoDarkUpload, 'custom_logo_dark', 'currentLogoDark');
     }
 
-    public function uploadLogoLight(array $data): void
+    private function saveLivewireUpload($file, string $settingKey, string $property): void
     {
-        $this->uploadLogo($data, 'custom_logo');
-    }
+        if (! $file) {
+            Notification::make()->title(__('No file selected'))->warning()->send();
 
-    public function uploadLogoDark(array $data): void
-    {
-        $this->uploadLogo($data, 'custom_logo_dark');
+            return;
+        }
+
+        try {
+            $path = $file->store('branding', 'public');
+
+            // Delete old logo
+            if ($this->{$property} && Storage::disk('public')->exists($this->{$property})) {
+                Storage::disk('public')->delete($this->{$property});
+            }
+
+            DnsSetting::set($settingKey, $path);
+            DnsSetting::clearCache();
+            $this->{$property} = $path;
+
+            // Reset the file input
+            $settingKey === 'custom_logo' ? $this->logoLightUpload = null : $this->logoDarkUpload = null;
+
+            Notification::make()->title(__('Logo uploaded'))->success()->send();
+        } catch (Exception $e) {
+            Notification::make()->title(__('Failed to upload logo'))->body(SafeError::message($e))->danger()->send();
+        }
     }
 
     public function saveTimezone(): void
