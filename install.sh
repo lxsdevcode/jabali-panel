@@ -1085,10 +1085,17 @@ date.timezone = UTC
 
 [opcache]
 opcache.enable=1
-opcache.memory_consumption=64
-opcache.interned_strings_buffer=8
-opcache.max_accelerated_files=10000
+opcache.memory_consumption=128
+opcache.interned_strings_buffer=16
+opcache.max_accelerated_files=20000
 opcache.validate_timestamps=0
+opcache.save_comments=1
+opcache.preload=/var/www/jabali/bootstrap/preload.php
+opcache.preload_user=www-data
+
+[realpath_cache]
+realpath_cache_size=4096K
+realpath_cache_ttl=600
 PHPINI
 
     local panel_hostname="${SERVER_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
@@ -1118,10 +1125,14 @@ PHPINI
 {
 	frankenphp {
 		num_threads ${num_threads}
+		max_threads $(( num_threads * 3 ))
 	}
 	order php_server before file_server
 
 	admin off
+	log {
+		level WARN
+	}
 
 	# Disable automatic HTTPS/ACME — panel uses self-signed or certbot-managed certs
 	auto_https off
@@ -1137,6 +1148,12 @@ PHPINI
 	tls /etc/ssl/jabali/panel.crt /etc/ssl/jabali/panel.key
 
 	encode zstd gzip
+
+	# Performance: don't resolve symlinks on every request
+	php_server {
+		resolve_root_symlink false
+		try_files {path} index.php
+	}
 
 	header {
 		X-Frame-Options "SAMEORIGIN"
@@ -1161,8 +1178,6 @@ PHPINI
 		not path /.well-known/*
 	}
 	respond @blocked_other 404
-
-	php_server
 }
 CADDYEOF
 
@@ -1185,7 +1200,8 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/www/jabali
 Environment=XDG_DATA_HOME=/var/lib/jabali
-Environment=GOMEMLIMIT=256MiB
+Environment=GODEBUG=cgocheck=0
+Environment=GOMEMLIMIT=512MiB
 ExecStart=/usr/local/bin/frankenphp run --config /etc/jabali/Caddyfile
 ExecReload=/usr/local/bin/frankenphp reload --config /etc/jabali/Caddyfile
 Restart=always
