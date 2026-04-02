@@ -19000,7 +19000,7 @@ function logsGoaccess(array $params): array
         '/usr/bin/goaccess %s -o %s --log-format=COMBINED --real-time-html --ws-url=%s --port=%d --pid-file=%s --daemonize --no-query-string --anonymize-ip --html-report-title=%s 2>&1',
         escapeshellarg($accessLog),
         escapeshellarg($outputFile),
-        escapeshellarg("wss://$domain"),
+        escapeshellarg("wss://$domain:443/stats/ws"),
         $port,
         escapeshellarg($pidFile),
         escapeshellarg("$domain Statistics")
