@@ -1156,7 +1156,10 @@ PHPINI
 	}
 	respond @blocked 404
 
-	@blocked_other path /node_modules/* /storage/* /.*
+	@blocked_other {
+		path /node_modules/* /.*
+		not path /.well-known/*
+	}
 	respond @blocked_other 404
 
 	php_server
