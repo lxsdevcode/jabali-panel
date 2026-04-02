@@ -15000,7 +15000,11 @@ function sslCertbotLog(array $params): array
     foreach ($logFiles as $logFile) {
         if (file_exists($logFile) && is_readable($logFile)) {
             $allLines = file($logFile, FILE_IGNORE_NEW_LINES);
-            $lastLines = array_slice($allLines, -$lines);
+            // Filter out DEBUG lines — only show INFO, WARNING, ERROR
+            $filtered = array_filter($allLines, function ($line) {
+                return ! str_contains($line, ':DEBUG:');
+            });
+            $lastLines = array_slice($filtered, -$lines);
 
             return ['success' => true, 'log' => implode("\n", $lastLines), 'file' => $logFile];
         }
@@ -15011,7 +15015,10 @@ function sslCertbotLog(array $params): array
     if (! empty($globFiles)) {
         $logFile = end($globFiles);
         $allLines = file($logFile, FILE_IGNORE_NEW_LINES);
-        $lastLines = array_slice($allLines, -$lines);
+        $filtered = array_filter($allLines, function ($line) {
+            return ! str_contains($line, ':DEBUG:');
+        });
+        $lastLines = array_slice($filtered, -$lines);
 
         return ['success' => true, 'log' => implode("\n", $lastLines), 'file' => $logFile];
     }
