@@ -44,14 +44,16 @@ class IssueSslCertificate implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        // Skip if domain already has active SSL for this service
+        // Skip if domain already has a real (non-snakeoil) active SSL for this service
         $existingSsl = SslCertificate::where('domain_id', $domain->id)
             ->where('service', $this->service)
             ->where('status', 'active')
+            ->whereNotIn('type', ['none', 'self_signed', ''])
+            ->whereNotNull('type')
             ->first();
 
         if ($existingSsl) {
-            Log::info("IssueSslCertificate: Domain {$domain->domain} already has active {$this->service} SSL");
+            Log::info("IssueSslCertificate: Domain {$domain->domain} already has active {$this->service} SSL ({$existingSsl->type})");
 
             return;
         }
@@ -64,15 +66,7 @@ class IssueSslCertificate implements ShouldBeUnique, ShouldQueue
 
         Log::info("IssueSslCertificate: Issuing {$this->service} SSL for {$domain->domain}");
 
-        $existingCert = SslCertificate::where('domain_id', $domain->id)
-            ->where('service', $this->service)
-            ->first();
-
-        if ($existingCert) {
-            $cert = $service->renew($domain, $this->service);
-        } else {
-            $cert = $service->issue($domain, $this->service);
-        }
+        $cert = $service->issue($domain, $this->service);
 
         if ($cert->status === 'failed') {
             Log::warning("IssueSslCertificate: Failed to issue {$this->service} SSL for {$domain->domain}: {$cert->last_error}");
