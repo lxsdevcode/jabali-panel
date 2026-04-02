@@ -11473,8 +11473,12 @@ function phpInstall(array $params): array
         exec('apt-get update 2>&1');
     }
 
-    // Core PHP packages + WordPress recommended modules (imagick, opcache, redis, soap, imap, exif)
-    $packages = "php{$version}-fpm php{$version}-cli php{$version}-common php{$version}-mysql php{$version}-zip php{$version}-gd php{$version}-mbstring php{$version}-curl php{$version}-xml php{$version}-bcmath php{$version}-intl php{$version}-imagick php{$version}-opcache php{$version}-redis php{$version}-soap php{$version}-imap php{$version}-exif";
+    // Core PHP packages + default modules (matching config/jabali.php php.extensions defaults)
+    $defaultExtensions = ['bcmath', 'curl', 'gd', 'imagick', 'imap', 'intl', 'mbstring', 'mysql', 'opcache', 'redis', 'xml', 'zip'];
+    $packages = "php{$version}-fpm php{$version}-cli php{$version}-common";
+    foreach ($defaultExtensions as $ext) {
+        $packages .= " php{$version}-{$ext}";
+    }
 
     exec("DEBIAN_FRONTEND=noninteractive apt-get install -y $packages 2>&1", $output, $exitCode);
 

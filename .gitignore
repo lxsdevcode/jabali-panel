@@ -37,3 +37,5 @@ SECURITY.md
 **/caddy
 frankenphp
 frankenphp-worker.php
+
+.devfleet-worktrees/

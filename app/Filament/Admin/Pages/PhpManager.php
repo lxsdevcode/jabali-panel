@@ -373,8 +373,10 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
     protected function getHeaderActions(): array
     {
-        $installed = array_column($this->installedVersions, 'version');
-        $commonExtensions = ['redis', 'imagick', 'gd', 'mbstring', 'curl', 'xml', 'zip', 'bcmath', 'intl', 'soap', 'imap', 'ldap', 'pgsql', 'sqlite3', 'mysql', 'memcached', 'apcu', 'xdebug', 'readline', 'exif', 'bz2', 'tidy'];
+        /** @var array<string, bool> $extensions */
+        $extensions = config('jabali.php.extensions', []);
+        $extensionNames = array_keys($extensions);
+        sort($extensionNames);
 
         return [
             Action::make('installExtension')
@@ -385,7 +387,10 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
                 ->form([
                     \Filament\Forms\Components\Select::make('extension')
                         ->label(__('Extension'))
-                        ->options(fn (): array => array_combine($commonExtensions, array_map(fn ($e) => "php{$this->selectedExtensionVersion}-{$e}", $commonExtensions)))
+                        ->options(fn (): array => array_combine(
+                            $extensionNames,
+                            array_map(fn (string $e): string => "php{$this->selectedExtensionVersion}-{$e}", $extensionNames),
+                        ))
                         ->searchable()
                         ->required(),
                 ])
