@@ -31,7 +31,9 @@
             {{ $this->extensionVersionForm }}
 
             @if ($selectedExtensionVersion)
-                @livewire('admin.php-extensions', ['version' => $selectedExtensionVersion], key('ext-'.$selectedExtensionVersion))
+                <div class="mt-4">
+                    @livewire('admin.php-extensions', ['version' => $selectedExtensionVersion], key('ext-'.$selectedExtensionVersion))
+                </div>
             @endif
         </x-filament::section>
     @endif
