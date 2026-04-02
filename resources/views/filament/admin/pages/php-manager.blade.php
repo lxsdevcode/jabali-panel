@@ -1,4 +1,6 @@
 <x-filament-panels::page>
+    {{ $this->statsForm }}
+
     <x-filament::tabs>
         <x-filament::tabs.item
             :active="$activeTab === 'versions'"
@@ -16,8 +18,6 @@
             {{ __('PHP Extensions') }}
         </x-filament::tabs.item>
     </x-filament::tabs>
-
-    {{ $this->statsForm }}
 
     @if ($activeTab === 'versions')
         {{ $this->table }}
