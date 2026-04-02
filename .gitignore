@@ -39,3 +39,6 @@ frankenphp
 frankenphp-worker.php
 
 .devfleet-worktrees/
+
+# External plugins deployed at runtime (not part of this repo)
+/app/JabaliSecurity/
