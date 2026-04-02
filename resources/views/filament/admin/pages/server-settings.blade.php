@@ -23,7 +23,7 @@
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Light Logo') }}</p>
                         @if ($this->currentLogo)
                             <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
-                                <img src="{{ Storage::disk('public')->url($this->currentLogo) }}" alt="{{ __('Light Logo') }}" class="max-h-full max-w-full object-contain">
+                                <img src="{{ asset('storage/' . $this->currentLogo) }}" alt="{{ __('Light Logo') }}" class="max-h-full max-w-full object-contain">
                             </div>
                         @else
                             <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
@@ -40,7 +40,7 @@
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Dark Logo') }}</p>
                         @if ($this->currentLogoDark)
                             <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
-                                <img src="{{ Storage::disk('public')->url($this->currentLogoDark) }}" alt="{{ __('Dark Logo') }}" class="max-h-full max-w-full object-contain">
+                                <img src="{{ asset('storage/' . $this->currentLogoDark) }}" alt="{{ __('Dark Logo') }}" class="max-h-full max-w-full object-contain">
                             </div>
                         @else
                             <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
