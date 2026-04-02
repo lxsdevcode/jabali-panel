@@ -4620,6 +4620,24 @@ SSHD_SHELL
         log "Migrated shellusers SSH config from jail to nspawn"
     fi
 
+    # Fix home dir ownership for existing shell users (one-time migration)
+    # Shell users don't use ChrootDirectory, so home dir should be user-owned
+    if getent group shellusers &>/dev/null; then
+        local shell_members
+        shell_members=$(getent group shellusers | cut -d: -f4)
+        if [[ -n "$shell_members" ]]; then
+            IFS=',' read -ra members <<< "$shell_members"
+            for member in "${members[@]}"; do
+                local member_home="/home/$member"
+                if [[ -d "$member_home" ]] && [[ "$(stat -c '%U' "$member_home" 2>/dev/null)" == "root" ]]; then
+                    chown "$member":"$member" "$member_home"
+                    chmod 755 "$member_home"
+                    info "Fixed home dir ownership for shell user: $member"
+                fi
+            done
+        fi
+    fi
+
     # Test and reload SSH
     if sshd -t 2>/dev/null; then
         systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
