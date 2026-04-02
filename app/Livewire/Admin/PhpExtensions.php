@@ -39,6 +39,9 @@ class PhpExtensions extends Component implements HasActions, HasForms, HasTable
     public function mount(string $version): void
     {
         if (! preg_match(self::VERSION_PATTERN, $version)) {
+            $this->version = '';
+            $this->extensions = [];
+
             return;
         }
 
