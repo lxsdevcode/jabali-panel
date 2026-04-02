@@ -303,12 +303,44 @@ class PhpManager extends Page implements HasActions, HasForms, HasTable
 
         $this->selectedExtensionVersion = $version;
 
+        // Get installed extensions from agent
+        $installed = [];
         try {
             $result = $this->agent()->call('php.list_extensions', ['version' => $version]);
-            $this->extensions = $result->success ? $result->get('extensions', []) : [];
+            $installed = $result->success ? $result->get('extensions', []) : [];
         } catch (\Exception) {
-            $this->extensions = [];
+            $installed = [];
         }
+
+        // Build lookup of installed extensions
+        $installedMap = [];
+        foreach ($installed as $ext) {
+            $installedMap[$ext['name']] = $ext;
+        }
+
+        // Merge with known extensions from config (add uninstalled ones)
+        /** @var array<string, bool> $knownExtensions */
+        $knownExtensions = config('jabali.php.extensions', []);
+        foreach ($knownExtensions as $name => $isDefault) {
+            if (! isset($installedMap[$name])) {
+                $installed[] = [
+                    'name' => $name,
+                    'enabled' => false,
+                    'installed' => false,
+                ];
+            }
+        }
+
+        // Mark installed extensions
+        $this->extensions = array_map(function (array $ext): array {
+            if (! isset($ext['installed'])) {
+                $ext['installed'] = true;
+            }
+
+            return $ext;
+        }, $installed);
+
+        usort($this->extensions, fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
     }
 
     public function installExtension(string $extension): void

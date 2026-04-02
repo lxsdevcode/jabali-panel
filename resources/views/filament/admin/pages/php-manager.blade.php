@@ -39,15 +39,25 @@
                                     {{ $ext['name'] }}
                                 </td>
                                 <td class="fi-ta-cell px-3 py-4 text-sm">
-                                    @if ($ext['enabled'])
+                                    @if (! ($ext['installed'] ?? true))
+                                        <x-filament::badge color="gray">{{ __('Not Installed') }}</x-filament::badge>
+                                    @elseif ($ext['enabled'])
                                         <x-filament::badge color="success">{{ __('Enabled') }}</x-filament::badge>
                                     @else
-                                        <x-filament::badge color="gray">{{ __('Disabled') }}</x-filament::badge>
+                                        <x-filament::badge color="warning">{{ __('Disabled') }}</x-filament::badge>
                                     @endif
                                 </td>
                                 <td class="fi-ta-cell px-3 py-4 text-sm text-end">
                                     <div class="flex items-center justify-end gap-2">
-                                        @if ($ext['enabled'])
+                                        @if (! ($ext['installed'] ?? true))
+                                            <x-filament::button
+                                                size="xs"
+                                                color="primary"
+                                                wire:click="installExtension('{{ $ext['name'] }}')"
+                                            >
+                                                {{ __('Install') }}
+                                            </x-filament::button>
+                                        @elseif ($ext['enabled'])
                                             <x-filament::button
                                                 size="xs"
                                                 color="warning"
@@ -55,6 +65,14 @@
                                                 wire:confirm="{{ __('Disable :ext? This may break sites using it.', ['ext' => $ext['name']]) }}"
                                             >
                                                 {{ __('Disable') }}
+                                            </x-filament::button>
+                                            <x-filament::button
+                                                size="xs"
+                                                color="danger"
+                                                wire:click="removeExtension('{{ $ext['name'] }}')"
+                                                wire:confirm="{{ __('Remove :ext? This will uninstall the package.', ['ext' => $ext['name']]) }}"
+                                            >
+                                                {{ __('Remove') }}
                                             </x-filament::button>
                                         @else
                                             <x-filament::button
@@ -64,15 +82,15 @@
                                             >
                                                 {{ __('Enable') }}
                                             </x-filament::button>
+                                            <x-filament::button
+                                                size="xs"
+                                                color="danger"
+                                                wire:click="removeExtension('{{ $ext['name'] }}')"
+                                                wire:confirm="{{ __('Remove :ext? This will uninstall the package.', ['ext' => $ext['name']]) }}"
+                                            >
+                                                {{ __('Remove') }}
+                                            </x-filament::button>
                                         @endif
-                                        <x-filament::button
-                                            size="xs"
-                                            color="danger"
-                                            wire:click="removeExtension('{{ $ext['name'] }}')"
-                                            wire:confirm="{{ __('Remove :ext? This will uninstall the package.', ['ext' => $ext['name']]) }}"
-                                        >
-                                            {{ __('Remove') }}
-                                        </x-filament::button>
                                     </div>
                                 </td>
                             </tr>
