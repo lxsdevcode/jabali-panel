@@ -767,6 +767,7 @@ function handleAction(array $request): array
         'ssl.mail.issue' => stalwartSslMailIssue($params),
         'ssl.mail.status' => stalwartSslMailStatus($params),
         'ssl.panel.issue' => sslPanelIssue($params),
+        'ssl.list' => sslList($params),
         'ssl.certbot_log' => sslCertbotLog($params),
         // Backup operations
         'backup.create' => backupCreate($params),
@@ -14988,6 +14989,53 @@ function sslPanelIssue(array $params): array
 /**
  * Generate self-signed SSL certificate
  */
+function sslList(array $params): array
+{
+    $certificates = [];
+
+    // Scan all nginx vhost configs for SSL certificates
+    $configs = glob('/etc/nginx/sites-available/*.conf');
+    foreach ($configs as $configFile) {
+        $domain = basename($configFile, '.conf');
+        $confContent = file_get_contents($configFile);
+
+        if (! preg_match('/ssl_certificate\s+([^;]+);/', $confContent, $matches)) {
+            continue;
+        }
+
+        $certPath = trim($matches[1]);
+        if (! file_exists($certPath) || str_contains($certPath, 'snakeoil')) {
+            $certificates[] = [
+                'domain' => $domain,
+                'valid' => false,
+                'issuer' => str_contains($certPath, 'snakeoil') ? 'Self-signed (snakeoil)' : 'Not found',
+                'valid_to' => '-',
+                'days_remaining' => 0,
+            ];
+
+            continue;
+        }
+
+        $certData = openssl_x509_parse(file_get_contents($certPath));
+        if (! $certData) {
+            continue;
+        }
+
+        $expiryTime = $certData['validTo_time_t'] ?? 0;
+        $daysRemaining = (int) floor(($expiryTime - time()) / 86400);
+
+        $certificates[] = [
+            'domain' => $domain,
+            'valid' => $expiryTime > time(),
+            'issuer' => $certData['issuer']['O'] ?? $certData['issuer']['CN'] ?? 'Unknown',
+            'valid_to' => date('Y-m-d', $expiryTime),
+            'days_remaining' => $daysRemaining,
+        ];
+    }
+
+    return ['success' => true, 'certificates' => $certificates];
+}
+
 function sslCertbotLog(array $params): array
 {
     $lines = (int) ($params['lines'] ?? 500);
