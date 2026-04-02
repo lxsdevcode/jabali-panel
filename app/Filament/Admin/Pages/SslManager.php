@@ -61,11 +61,13 @@ class SslManager extends Page
         $this->lastUpdated = now()->format('H:i:s');
     }
 
-    public function getDomainCertsProperty(): \Illuminate\Support\Collection
+    public function getUserCertsProperty(): \Illuminate\Support\Collection
     {
-        return Domain::with(['user', 'sslCertificates'])
-            ->whereHas('sslCertificates')
-            ->orderBy('domain')
+        return User::with(['domains' => function ($q) {
+            $q->whereHas('sslCertificates')->with('sslCertificates')->orderBy('domain');
+        }])
+            ->whereHas('domains.sslCertificates')
+            ->orderBy('username')
             ->get();
     }
 
