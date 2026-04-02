@@ -649,14 +649,19 @@ install_packages() {
     # Install PHP and detect the version from the Sury repository
     info "Installing PHP..."
 
-    # Install base PHP package first to determine available version
-    # Use --no-install-recommends to avoid pulling in apache2, postfix, exim4
-    run_quiet "Installing base PHP package..." \
-        env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php-fpm php-cli 2>/dev/null || true
-    if command -v php &>/dev/null; then
-        PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)
+    # Always target PHP 8.5 from Sury — do not fall back to distro default (8.4)
+    PHP_VERSION="8.5"
+    run_quiet "Installing PHP ${PHP_VERSION} base packages..." \
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "php${PHP_VERSION}-fpm" "php${PHP_VERSION}-cli" 2>/dev/null || true
+    if ! command -v "php${PHP_VERSION}" &>/dev/null; then
+        warn "PHP ${PHP_VERSION} not available from Sury, falling back to distro default..."
+        run_quiet "Installing distro PHP..." \
+            env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends php-fpm php-cli 2>/dev/null || true
+        if command -v php &>/dev/null; then
+            PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)
+        fi
+        PHP_VERSION="${PHP_VERSION:-8.4}"
     fi
-    PHP_VERSION="${PHP_VERSION:-8.5}"
     info "Using PHP ${PHP_VERSION}..."
 
     # Stop, disable and mask Apache2 if installed (conflicts with nginx on port 80)
@@ -702,9 +707,19 @@ install_packages() {
         php${PHP_VERSION}-opcache
     )
 
+    # Filter out packages that don't exist (e.g. opcache is bundled in php-common on some versions)
+    local available_extensions=()
+    for pkg in "${php_extensions[@]}"; do
+        if apt-cache show "$pkg" &>/dev/null; then
+            available_extensions+=("$pkg")
+        else
+            info "Skipping $pkg (bundled or unavailable)"
+        fi
+    done
+
     # Install all PHP packages (use --force-confmiss to handle dpkg's "deleted config" state)
     if ! run_quiet "Installing PHP extensions..." \
-        env DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confmiss" "${php_extensions[@]}"; then
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confmiss" "${available_extensions[@]}"; then
         warn "PHP installation had errors, attempting aggressive recovery..."
 
         # Stop PHP-FPM if it's somehow running in a broken state

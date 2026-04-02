@@ -11475,12 +11475,23 @@ function phpInstall(array $params): array
 
     // Core PHP packages + default modules (matching config/jabali.php php.extensions defaults)
     $defaultExtensions = ['bcmath', 'curl', 'gd', 'imagick', 'imap', 'intl', 'mbstring', 'mysql', 'opcache', 'redis', 'xml', 'zip'];
-    $packages = "php{$version}-fpm php{$version}-cli php{$version}-common";
+    $packages = ["php{$version}-fpm", "php{$version}-cli", "php{$version}-common"];
     foreach ($defaultExtensions as $ext) {
-        $packages .= " php{$version}-{$ext}";
+        $packages[] = "php{$version}-{$ext}";
     }
 
-    exec("DEBIAN_FRONTEND=noninteractive apt-get install -y $packages 2>&1", $output, $exitCode);
+    // Filter out packages that don't exist in the repository (e.g. opcache is bundled in common on some versions)
+    exec('apt-get update -qq 2>/dev/null');
+    $available = [];
+    foreach ($packages as $pkg) {
+        exec("apt-cache show ".escapeshellarg($pkg)." 2>/dev/null", $cacheOutput, $cacheCode);
+        if ($cacheCode === 0) {
+            $available[] = $pkg;
+        }
+        $cacheOutput = [];
+    }
+
+    exec("DEBIAN_FRONTEND=noninteractive apt-get install -y ".implode(' ', array_map('escapeshellarg', $available))." 2>&1", $output, $exitCode);
 
     if ($exitCode !== 0) {
         return ['success' => false, 'error' => 'Failed to install PHP: '.implode("\n", $output)];
