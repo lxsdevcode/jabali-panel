@@ -48,7 +48,6 @@ class ServerSettingsBrandingTest extends TestCase
         $this->assertStringContainsString('wire:model="logoLightUpload"', $html);
         $this->assertStringContainsString('wire:model="logoDarkUpload"', $html);
         $this->assertStringContainsString('Save Branding', $html);
-        $this->assertStringContainsString('Save Light Logo', $html);
-        $this->assertStringContainsString('Save Dark Logo', $html);
+        $this->assertStringContainsString('Choose File', $html);
     }
 }

@@ -19,43 +19,57 @@
 
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
                     {{-- Light Logo --}}
-                    <div class="space-y-3">
-                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Light Logo') }}</p>
+                    <div class="space-y-3 rounded-xl bg-gray-50 p-4 ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">
+                        <p class="text-sm font-medium text-gray-950 dark:text-white">{{ __('Light Logo') }}</p>
                         @if ($this->currentLogo)
-                            <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
+                            <div class="flex h-24 items-center justify-center rounded-lg bg-white p-2 dark:bg-gray-800">
                                 <img src="{{ asset('storage/' . $this->currentLogo) }}" alt="{{ __('Light Logo') }}" class="max-h-full max-w-full object-contain">
                             </div>
-                        @else
-                            <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
-                                <p class="text-xs text-gray-400">{{ __('No logo') }}</p>
-                            </div>
                         @endif
-                        <input type="file" wire:model="logoLightUpload" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="block w-full text-sm text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-700 dark:text-gray-400 dark:file:bg-gray-700 dark:file:text-gray-300">
-                        <div wire:loading wire:target="logoLightUpload" class="text-xs text-primary-500">{{ __('Uploading...') }}</div>
-                        @error('logoLightUpload') <p class="text-xs text-danger-500">{{ $message }}</p> @enderror
-                        <x-filament::button wire:click="saveLogoLight" icon="heroicon-o-photo" color="gray" size="sm" class="w-full" wire:loading.attr="disabled" wire:target="logoLightUpload">
-                            {{ __('Save Light Logo') }}
-                        </x-filament::button>
+                        <div>
+                            <input type="file" id="logoLightUpload" wire:model="logoLightUpload" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden">
+                            <label for="logoLightUpload" class="fi-btn fi-btn-size-sm fi-color-custom fi-color-gray inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold shadow-sm ring-1 ring-gray-950/10 transition-colors hover:bg-gray-50 dark:ring-white/20 dark:hover:bg-white/5">
+                                <x-heroicon-m-arrow-up-tray class="h-4 w-4" />
+                                {{ __('Choose File') }}
+                            </label>
+                            <span wire:loading wire:target="logoLightUpload" class="ml-2 text-xs text-primary-600">{{ __('Uploading...') }}</span>
+                            @if ($logoLightUpload)
+                                <span class="ml-2 text-xs text-green-600">{{ __('Ready') }}</span>
+                            @endif
+                            @error('logoLightUpload') <p class="mt-1 text-xs text-danger-600">{{ $message }}</p> @enderror
+                        </div>
+                        @if ($logoLightUpload)
+                            <x-filament::button wire:click="saveLogoLight" icon="heroicon-o-check" size="sm">
+                                {{ __('Save Light Logo') }}
+                            </x-filament::button>
+                        @endif
                     </div>
 
                     {{-- Dark Logo --}}
-                    <div class="space-y-3">
-                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Dark Logo') }}</p>
+                    <div class="space-y-3 rounded-xl bg-gray-50 p-4 ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">
+                        <p class="text-sm font-medium text-gray-950 dark:text-white">{{ __('Dark Logo') }}</p>
                         @if ($this->currentLogoDark)
-                            <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
+                            <div class="flex h-24 items-center justify-center rounded-lg bg-gray-900 p-2 dark:bg-gray-800">
                                 <img src="{{ asset('storage/' . $this->currentLogoDark) }}" alt="{{ __('Dark Logo') }}" class="max-h-full max-w-full object-contain">
                             </div>
-                        @else
-                            <div class="flex aspect-square max-h-32 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
-                                <p class="text-xs text-gray-400">{{ __('No logo') }}</p>
-                            </div>
                         @endif
-                        <input type="file" wire:model="logoDarkUpload" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="block w-full text-sm text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-700 dark:text-gray-400 dark:file:bg-gray-700 dark:file:text-gray-300">
-                        <div wire:loading wire:target="logoDarkUpload" class="text-xs text-primary-500">{{ __('Uploading...') }}</div>
-                        @error('logoDarkUpload') <p class="text-xs text-danger-500">{{ $message }}</p> @enderror
-                        <x-filament::button wire:click="saveLogoDark" icon="heroicon-o-moon" color="gray" size="sm" class="w-full" wire:loading.attr="disabled" wire:target="logoDarkUpload">
-                            {{ __('Save Dark Logo') }}
-                        </x-filament::button>
+                        <div>
+                            <input type="file" id="logoDarkUpload" wire:model="logoDarkUpload" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden">
+                            <label for="logoDarkUpload" class="fi-btn fi-btn-size-sm fi-color-custom fi-color-gray inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold shadow-sm ring-1 ring-gray-950/10 transition-colors hover:bg-gray-50 dark:ring-white/20 dark:hover:bg-white/5">
+                                <x-heroicon-m-arrow-up-tray class="h-4 w-4" />
+                                {{ __('Choose File') }}
+                            </label>
+                            <span wire:loading wire:target="logoDarkUpload" class="ml-2 text-xs text-primary-600">{{ __('Uploading...') }}</span>
+                            @if ($logoDarkUpload)
+                                <span class="ml-2 text-xs text-green-600">{{ __('Ready') }}</span>
+                            @endif
+                            @error('logoDarkUpload') <p class="mt-1 text-xs text-danger-600">{{ $message }}</p> @enderror
+                        </div>
+                        @if ($logoDarkUpload)
+                            <x-filament::button wire:click="saveLogoDark" icon="heroicon-o-check" size="sm">
+                                {{ __('Save Dark Logo') }}
+                            </x-filament::button>
+                        @endif
                     </div>
                 </div>
 
