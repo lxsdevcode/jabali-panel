@@ -9,6 +9,7 @@ use App\Filament\Admin\Widgets\SslStatsOverview;
 use App\Models\Domain;
 use App\Models\SslCertificate;
 use App\Models\User;
+use App\Services\Agent\AgentClient;
 use App\Services\SslManagementService;
 use App\Support\SafeError;
 use BackedEnum;
