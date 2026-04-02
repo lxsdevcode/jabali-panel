@@ -42,7 +42,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Url;
 use Livewire\WithFileUploads;
 
@@ -300,41 +299,25 @@ class ServerSettings extends Page implements HasActions, HasForms
             Section::make(__('Panel Branding'))
                 ->icon('heroicon-o-paint-brush')
                 ->schema([
-                    Grid::make(['default' => 1, 'md' => 3])->schema([
-                        Placeholder::make('currentLogoPreview')
-                            ->label(__('Light Logo'))
-                            ->content(new HtmlString(
-                                '<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
-                                .'" alt="'.__('Light Logo').'" class="aspect-square h-24 w-full rounded-lg border border-gray-200 bg-white p-3 object-contain dark:border-gray-700">'
-                            )),
-                        Placeholder::make('currentLogoDarkPreview')
-                            ->label(__('Dark Logo'))
-                            ->content(new HtmlString(
-                                '<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
-                                .'" alt="'.__('Dark Logo').'" class="aspect-square h-24 w-full rounded-lg border border-gray-700 bg-gray-900 p-3 object-contain">'
-                            )),
-                        TextInput::make('brandingData.panel_name')
-                            ->label(__('Control Panel Name'))
-                            ->placeholder(__('Jabali'))
-                            ->helperText(__('Appears in browser title and navigation'))
-                            ->required(),
-                    ]),
+                    TextInput::make('brandingData.panel_name')
+                        ->label(__('Control Panel Name'))
+                        ->placeholder(__('Jabali'))
+                        ->helperText(__('Appears in browser title and navigation'))
+                        ->required(),
                     Actions::make([
+                        FormAction::make('saveBranding')
+                            ->label(__('Save Branding'))
+                            ->action('saveBranding'),
                         FormAction::make('uploadLogoLight')
-                            ->label(__('Light Logo'))
+                            ->label(__('Upload Light Logo'))
                             ->icon('heroicon-o-photo')
                             ->color('gray')
                             ->action(fn () => $this->mountAction('uploadLogoLightModal')),
                         FormAction::make('uploadLogoDark')
-                            ->label(__('Dark Logo'))
+                            ->label(__('Upload Dark Logo'))
                             ->icon('heroicon-o-moon')
                             ->color('gray')
                             ->action(fn () => $this->mountAction('uploadLogoDarkModal')),
-                        FormAction::make('saveBranding')
-                            ->label(__('Save Branding'))
-                            ->icon('heroicon-o-check')
-                            ->color('primary')
-                            ->action('saveBranding'),
                         FormAction::make('removeBranding')
                             ->label(__('Remove Logos'))
                             ->icon('heroicon-o-trash')
