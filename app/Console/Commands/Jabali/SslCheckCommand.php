@@ -210,12 +210,21 @@ class SslCheckCommand extends Command
 
         $domains = Domain::whereDoesntHave('sslCertificate')
             ->orWhereHas('sslCertificate', function ($q) {
-                $q->where('status', 'failed')
-                    ->where('renewal_attempts', '<', 3)
-                    ->where(function ($q2) {
-                        $q2->whereNull('last_check_at')
-                            ->orWhere('last_check_at', '<', now()->subHours(6));
-                    });
+                $q->where(function ($q2) {
+                    // Domains with failed certs (retry up to 3 times, not checked in 6h)
+                    $q2->where('status', 'failed')
+                        ->where('renewal_attempts', '<', 3)
+                        ->where(function ($q3) {
+                            $q3->whereNull('last_check_at')
+                                ->orWhere('last_check_at', '<', now()->subHours(6));
+                        });
+                })->orWhere(function ($q2) {
+                    // Domains with self-signed certs that need real LE certs
+                    $q2->where('type', 'self_signed');
+                })->orWhere(function ($q2) {
+                    // Domains with pending status
+                    $q2->where('status', 'pending');
+                });
             })
             ->with(['user', 'sslCertificate'])
             ->get();
