@@ -39,17 +39,21 @@ class ServerSettingsBrandingTest extends TestCase
             ->assertNotified();
     }
 
-    public function test_branding_buttons_have_same_structure_as_hostname(): void
+    public function test_branding_buttons_have_wire_click_directives(): void
     {
-        $html = Livewire::actingAs($this->admin, 'admin')
-            ->test(ServerSettings::class)
-            ->html();
+        $livewire = Livewire::actingAs($this->admin, 'admin')
+            ->test(ServerSettings::class);
+
+        // First, upload a test logo so the Remove button appears
+        $livewire->set('currentLogo', 'test-logo.png');
+
+        $html = $livewire->html();
 
         $dom = new \DOMDocument;
         @$dom->loadHTML($html);
         $xpath = new \DOMXPath($dom);
 
-        // Check Save Branding button
+        // Check Save Branding button has wire:click directive
         $brandingButtons = $xpath->query('//button[contains(., "Save Branding")]');
         $this->assertGreaterThan(0, $brandingButtons->length, 'Save Branding button not found');
 
@@ -57,32 +61,28 @@ class ServerSettingsBrandingTest extends TestCase
         $brandingWireClick = $brandingBtn->getAttribute('wire:click');
         $this->assertEquals('saveBranding', $brandingWireClick);
 
-        // Check Save Hostname button
-        $hostnameButtons = $xpath->query('//button[contains(., "Save Hostname")]');
-        $this->assertGreaterThan(0, $hostnameButtons->length, 'Save Hostname button not found');
+        // Check Upload Light Logo button has wire:click directive
+        $uploadLightButtons = $xpath->query('//button[contains(., "Upload Light Logo")]');
+        $this->assertGreaterThan(0, $uploadLightButtons->length, 'Upload Light Logo button not found');
 
-        $hostnameBtn = $hostnameButtons->item(0);
-        $hostnameWireClick = $hostnameBtn->getAttribute('wire:click');
-        $this->assertEquals('saveHostname', $hostnameWireClick);
+        $uploadLightBtn = $uploadLightButtons->item(0);
+        $uploadLightWireClick = $uploadLightBtn->getAttribute('wire:click');
+        $this->assertEquals('openUploadLogoLight', $uploadLightWireClick);
 
-        // Verify both have the same parent structure (fi-sc-actions > fi-ac)
-        $brandingParent1 = $brandingBtn->parentNode;
-        $brandingParent2 = $brandingParent1?->parentNode;
-        $hostnameParent1 = $hostnameBtn->parentNode;
-        $hostnameParent2 = $hostnameParent1?->parentNode;
+        // Check Upload Dark Logo button has wire:click directive
+        $uploadDarkButtons = $xpath->query('//button[contains(., "Upload Dark Logo")]');
+        $this->assertGreaterThan(0, $uploadDarkButtons->length, 'Upload Dark Logo button not found');
 
-        $brandingP2Class = $brandingParent2 instanceof \DOMElement ? $brandingParent2->getAttribute('class') : '';
-        $hostnameP2Class = $hostnameParent2 instanceof \DOMElement ? $hostnameParent2->getAttribute('class') : '';
+        $uploadDarkBtn = $uploadDarkButtons->item(0);
+        $uploadDarkWireClick = $uploadDarkBtn->getAttribute('wire:click');
+        $this->assertEquals('openUploadLogoDark', $uploadDarkWireClick);
 
-        // Both should be inside fi-sc-actions (Actions::make layout)
-        fwrite(STDERR, "\n[DEBUG] Save Branding parent classes: ".
-            ($brandingParent1 instanceof \DOMElement ? $brandingParent1->getAttribute('class') : 'n/a').
-            ' > '.$brandingP2Class."\n");
-        fwrite(STDERR, '[DEBUG] Save Hostname parent classes: '.
-            ($hostnameParent1 instanceof \DOMElement ? $hostnameParent1->getAttribute('class') : 'n/a').
-            ' > '.$hostnameP2Class."\n");
+        // Check Remove Logos button has wire:click directive
+        $removeButtons = $xpath->query('//button[contains(., "Remove Logos")]');
+        $this->assertGreaterThan(0, $removeButtons->length, 'Remove Logos button not found');
 
-        $this->assertStringContainsString('fi-sc-actions', $brandingP2Class,
-            'Save Branding should be inside fi-sc-actions wrapper (same as hostname)');
+        $removeBtn = $removeButtons->item(0);
+        $removeWireClick = $removeBtn->getAttribute('wire:click');
+        $this->assertEquals('removeLogo', $removeWireClick);
     }
 }

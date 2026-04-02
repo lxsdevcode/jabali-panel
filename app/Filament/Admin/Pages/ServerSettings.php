@@ -303,28 +303,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->label(__('Control Panel Name'))
                         ->placeholder(__('Jabali'))
                         ->helperText(__('Appears in browser title and navigation')),
-                    Actions::make([
-                        FormAction::make('saveBranding')
-                            ->label(__('Save Branding'))
-                            ->action('saveBranding'),
-                        FormAction::make('uploadLogoLight')
-                            ->label(__('Upload Light Logo'))
-                            ->icon('heroicon-o-photo')
-                            ->color('gray')
-                            ->action('openUploadLogoLight'),
-                        FormAction::make('uploadLogoDark')
-                            ->label(__('Upload Dark Logo'))
-                            ->icon('heroicon-o-moon')
-                            ->color('gray')
-                            ->action('openUploadLogoDark'),
-                        FormAction::make('removeBranding')
-                            ->label(__('Remove Logos'))
-                            ->icon('heroicon-o-trash')
-                            ->color('danger')
-                            ->visible(fn (): bool => (bool) ($this->currentLogo || $this->currentLogoDark))
-                            ->requiresConfirmation()
-                            ->action('removeLogo'),
-                    ]),
                 ]),
             Section::make(__('Server Hostname'))
                 ->icon('heroicon-o-server')
