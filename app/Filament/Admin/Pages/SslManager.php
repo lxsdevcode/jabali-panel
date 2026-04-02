@@ -63,12 +63,34 @@ class SslManager extends Page
 
     public function getUserCertsProperty(): \Illuminate\Support\Collection
     {
-        return User::with(['domains' => function ($q) {
+        $users = User::with(['domains' => function ($q) {
             $q->whereHas('sslCertificates')->with('sslCertificates')->orderBy('domain');
         }])
             ->whereHas('domains.sslCertificates')
             ->orderBy('username')
             ->get();
+
+        // Group each user's domains by root domain (e.g. dev.jabali.site → jabali.site)
+        foreach ($users as $user) {
+            $user->groupedDomains = $user->domains->groupBy(function (Domain $domain) {
+                return $this->getRootDomain($domain->domain);
+            })->sortKeys();
+        }
+
+        return $users;
+    }
+
+    private function getRootDomain(string $domain): string
+    {
+        $parts = explode('.', $domain);
+        $count = count($parts);
+
+        if ($count <= 2) {
+            return $domain;
+        }
+
+        // Return last 2 parts (e.g. jabali.site from dev.jabali.site)
+        return implode('.', array_slice($parts, -2));
     }
 
     public function issueSslForDomain(int $domainId): void

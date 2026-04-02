@@ -61,12 +61,12 @@
                         </div>
                     </button>
 
-                    {{-- Domains + certs --}}
+                    {{-- Domains grouped by root domain --}}
                     <div x-show="open" x-collapse x-cloak class="mt-1 mb-2 ml-7 mr-2">
-                        @foreach ($user->domains as $domain)
+                        @foreach ($user->groupedDomains as $rootDomain => $domains)
                             <div class="mb-3">
                                 <p class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                                    {{ $domain->domain }}
+                                    {{ $rootDomain }}
                                 </p>
                                 <table class="w-full text-sm">
                                     <thead>
@@ -80,6 +80,7 @@
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100 dark:divide-white/5">
+                                        @foreach ($domains as $domain)
                                         @foreach ($domain->sslCertificates->sortBy('service') as $cert)
                                             <tr>
                                                 <td class="px-3 py-2 text-gray-950 dark:text-white">
@@ -140,6 +141,7 @@
                                                     </div>
                                                 </td>
                                             </tr>
+                                        @endforeach
                                         @endforeach
                                     </tbody>
                                 </table>
