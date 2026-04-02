@@ -86,7 +86,7 @@ class SslPanelCommand extends JabaliCommand
         }
 
         if (! in_array($hostname, $sans, true) && $subjectCN !== $hostname) {
-            $this->formatter()->warning("Certificate does NOT cover hostname {$hostname}!");
+            $this->formatter()->error("Certificate does NOT cover hostname {$hostname}!");
         }
 
         return Command::SUCCESS;
