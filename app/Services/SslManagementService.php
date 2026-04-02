@@ -90,17 +90,27 @@ class SslManagementService
             $domain->user->username,
         );
 
-        $hasSsl = $result['has_ssl'] ?? false;
+        $ssl = $result['ssl'] ?? $result;
+        $hasSsl = $ssl['has_ssl'] ?? false;
 
         if ($hasSsl) {
+            $type = $ssl['type'] ?? 'lets_encrypt';
+            if ($type === 'self_signed') {
+                $type = 'self_signed';
+            } elseif ($type === 'custom') {
+                $type = 'custom';
+            } else {
+                $type = 'lets_encrypt';
+            }
+
             return SslCertificate::updateOrCreate(
                 ['domain_id' => $domain->id, 'service' => $service],
                 [
-                    'type' => 'lets_encrypt',
-                    'status' => 'active',
-                    'issuer' => $result['issuer'] ?? null,
-                    'issued_at' => isset($result['valid_from']) ? Carbon::parse($result['valid_from']) : null,
-                    'expires_at' => isset($result['valid_to']) ? Carbon::parse($result['valid_to']) : null,
+                    'type' => $type,
+                    'status' => ($ssl['is_expired'] ?? false) ? 'expired' : 'active',
+                    'issuer' => $ssl['issuer'] ?? null,
+                    'issued_at' => isset($ssl['valid_from']) ? Carbon::parse($ssl['valid_from']) : null,
+                    'expires_at' => isset($ssl['valid_to']) ? Carbon::parse($ssl['valid_to']) : null,
                     'last_check_at' => now(),
                     'last_error' => null,
                 ],
