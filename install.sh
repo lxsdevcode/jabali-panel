@@ -421,14 +421,13 @@ EOF
     # Add PHP repository
     info "Configuring PHP repository..."
     if grep -qi ubuntu /etc/os-release 2>/dev/null; then
-        # Ubuntu: use Sury's Ubuntu-specific repository
-        info "Using Sury PHP PPA for Ubuntu ($codename)"
-        curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-php.gpg 2>/dev/null || true
-        echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ubuntu/ ${codename} main" > /etc/apt/sources.list.d/php.list
-        # Fallback: try add-apt-repository if the above doesn't work
-        if ! apt-get update -qq 2>/dev/null; then
-            rm -f /etc/apt/sources.list.d/php.list
-            add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+        # Ubuntu: use Ondrej PPA via Launchpad (avoids Sury CDN rate limiting)
+        info "Using Ondrej PHP PPA for Ubuntu ($codename)"
+        if ! add-apt-repository -y ppa:ondrej/php 2>/dev/null; then
+            # Fallback: direct Sury URL
+            warn "PPA failed, trying Sury direct URL..."
+            curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-php.gpg 2>/dev/null || true
+            echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ubuntu/ ${codename} main" > /etc/apt/sources.list.d/php.list
         fi
     else
         # Debian: use Sury's Debian repository
@@ -440,7 +439,7 @@ EOF
     # Add nginx repository (recommended when using sury PHP)
     info "Configuring nginx repository..."
     if grep -qi ubuntu /etc/os-release 2>/dev/null; then
-        add-apt-repository -y ppa:ondrej/nginx 2>/dev/null || true
+        add-apt-repository -y ppa:ondrej/nginx 2>/dev/null || warn "Ondrej nginx PPA unavailable, using distro nginx"
     else
         curl -fsSL https://packages.sury.org/nginx/apt.gpg | gpg --dearmor --yes -o /usr/share/keyrings/sury-nginx.gpg 2>/dev/null || true
         echo "deb [signed-by=/usr/share/keyrings/sury-nginx.gpg] https://packages.sury.org/nginx/ ${codename} main" > /etc/apt/sources.list.d/nginx.list
