@@ -7,7 +7,6 @@ namespace App\Filament\Admin\Pages;
 use App\Filament\Admin\Widgets\PanelCertificateWidget;
 use App\Filament\Admin\Widgets\SslStatsOverview;
 use App\Models\Domain;
-use App\Models\SslCertificate;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
 use App\Services\SslManagementService;
@@ -18,19 +17,10 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Grouping\Group;
-use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
 
-class SslManager extends Page implements HasTable
+class SslManager extends Page
 {
-    use InteractsWithTable;
-
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
     protected static ?int $navigationSort = 8;
@@ -77,131 +67,6 @@ class SslManager extends Page implements HasTable
             ->whereHas('sslCertificates')
             ->orderBy('domain')
             ->get();
-    }
-
-    public function table(Table $table): Table
-    {
-        return $table
-            ->query(SslCertificate::with(['domain.user']))
-            ->defaultGroup(
-                Group::make('domain_id')
-                    ->label(__('Domain'))
-                    ->getTitleFromRecordUsing(fn (SslCertificate $record): string => $record->domain?->domain ?? __('Unknown'))
-                    ->getDescriptionFromRecordUsing(fn (SslCertificate $record): string => $record->domain?->user?->username ?? '')
-                    ->collapsible()
-                    ->collapsed()
-            )
-            ->columns([
-                TextColumn::make('domain.domain')
-                    ->label(__('Domain'))
-                    ->searchable()
-                    ->sortable()
-                    ->formatStateUsing(function ($state, SslCertificate $record) {
-                        if ($record->service === 'mail') {
-                            return 'mail.'.$state;
-                        }
-
-                        return $state;
-                    })
-                    ->description(fn (SslCertificate $record) => $record->domain?->user?->username ?? __('Unknown')),
-                TextColumn::make('service')
-                    ->label(__('Service'))
-                    ->badge()
-                    ->color(fn (string $state) => match ($state) {
-                        'web' => 'info',
-                        'mail' => 'warning',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'web' => __('HTTPS'),
-                        'mail' => __('Mail (IMAPS/SMTPS)'),
-                        default => ucfirst($state),
-                    }),
-                TextColumn::make('type')
-                    ->label(__('Type'))
-                    ->badge()
-                    ->color('gray')
-                    ->formatStateUsing(fn ($state) => $state ? ucfirst(str_replace('_', ' ', $state)) : __('Unknown')),
-                TextColumn::make('status')
-                    ->label(__('Status'))
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'active' => 'success',
-                        'expired' => 'danger',
-                        'expiring' => 'warning',
-                        'failed' => 'danger',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn ($state) => $state ? ucfirst($state) : __('Unknown')),
-                TextColumn::make('expires_at')
-                    ->label(__('Expires'))
-                    ->date('M d, Y')
-                    ->description(fn (SslCertificate $record) => $record->days_until_expiry !== null
-                        ? __(':days days', ['days' => $record->days_until_expiry])
-                        : null)
-                    ->color(fn (SslCertificate $record) => match (true) {
-                        $record->days_until_expiry !== null && $record->days_until_expiry <= 7 => 'danger',
-                        $record->days_until_expiry !== null && $record->days_until_expiry <= 30 => 'warning',
-                        default => 'gray',
-                    }),
-                TextColumn::make('last_check_at')
-                    ->label(__('Last Check'))
-                    ->since()
-                    ->sortable(),
-                TextColumn::make('last_error')
-                    ->label(__('Error'))
-                    ->limit(30)
-                    ->tooltip(fn ($state) => $state)
-                    ->color('danger')
-                    ->placeholder(__('-')),
-            ])
-            ->filters([
-                SelectFilter::make('service')
-                    ->label(__('Service'))
-                    ->options([
-                        'web' => __('HTTPS'),
-                        'mail' => __('Mail'),
-                    ]),
-                SelectFilter::make('status')
-                    ->label(__('Status'))
-                    ->options([
-                        'active' => __('Active'),
-                        'expiring' => __('Expiring Soon'),
-                        'expired' => __('Expired'),
-                        'failed' => __('Failed'),
-                    ]),
-                SelectFilter::make('user')
-                    ->label(__('User'))
-                    ->options(fn () => User::pluck('username', 'id')->toArray())
-                    ->query(fn (Builder $query, array $data) => $data['value']
-                        ? $query->whereHas('domain', fn ($q) => $q->where('user_id', $data['value']))
-                        : $query),
-            ])
-            ->recordActions([
-                Action::make('issue')
-                    ->label(__('Issue'))
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn (SslCertificate $record) => $record->type === 'self_signed' || in_array($record->status, ['pending', 'failed'], true))
-                    ->action(fn (SslCertificate $record) => $record->service === 'mail'
-                        ? $this->issueMailSslForDomain($record->domain_id)
-                        : $this->issueSslForDomain($record->domain_id)),
-                Action::make('renew')
-                    ->label(__('Renew'))
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('primary')
-                    ->visible(fn (SslCertificate $record) => $record->type === 'lets_encrypt' && $record->status === 'active')
-                    ->action(fn (SslCertificate $record) => $record->service === 'mail'
-                        ? $this->renewMailSslForDomain($record->domain_id)
-                        : $this->renewSslForDomain($record->domain_id)),
-                Action::make('check')
-                    ->label(__('Check'))
-                    ->icon('heroicon-o-magnifying-glass')
-                    ->color('gray')
-                    ->action(fn (SslCertificate $record) => $this->checkSslForDomain($record->domain_id)),
-            ])
-            ->heading(__('SSL Certificates'))
-            ->poll('30s');
     }
 
     public function issueSslForDomain(int $domainId): void
