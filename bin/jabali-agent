@@ -14851,6 +14851,46 @@ function sslPanelIssue(array $params): array
 
     logger("Issuing panel SSL certificate for: {$hostname}");
 
+    $panelCert = '/etc/ssl/jabali/panel.crt';
+    $panelKey = '/etc/ssl/jabali/panel.key';
+
+    // Check if a valid LE cert already exists on disk (avoids rate limits)
+    $existingPaths = [
+        ['/etc/letsencrypt/live/panel/fullchain.pem', '/etc/letsencrypt/live/panel/privkey.pem'],
+        ["/etc/letsencrypt/live/{$hostname}/fullchain.pem", "/etc/letsencrypt/live/{$hostname}/privkey.pem"],
+    ];
+
+    foreach ($existingPaths as [$existCert, $existKey]) {
+        if (file_exists($existCert) && file_exists($existKey)) {
+            $certData = openssl_x509_parse(file_get_contents($existCert));
+            if ($certData) {
+                $expiryTime = $certData['validTo_time_t'] ?? 0;
+                $issuerCN = $certData['issuer']['CN'] ?? '';
+                $subjectCN = $certData['subject']['CN'] ?? '';
+                $isSelfSigned = ($issuerCN === $subjectCN);
+                $isValid = $expiryTime > time() + 86400; // at least 1 day left
+
+                if (! $isSelfSigned && $isValid) {
+                    logger("Found existing valid LE cert at {$existCert}, installing");
+                    copy($existCert, $panelCert);
+                    copy($existKey, $panelKey);
+                    chmod($panelCert, 0644);
+                    chmod($panelKey, 0600);
+                    exec('systemctl reload nginx 2>/dev/null');
+                    exec('systemctl restart jabali-panel 2>/dev/null');
+
+                    return [
+                        'success' => true,
+                        'message' => "Installed existing Let's Encrypt certificate for {$hostname}",
+                        'issuer' => $certData['issuer']['O'] ?? $certData['issuer']['CN'] ?? 'Unknown',
+                        'valid_from' => date('Y-m-d H:i:s', $certData['validFrom_time_t'] ?? 0),
+                        'valid_to' => date('Y-m-d H:i:s', $expiryTime),
+                    ];
+                }
+            }
+        }
+    }
+
     // Check certbot
     exec('which certbot 2>/dev/null', $output, $code);
     if ($code !== 0) {
