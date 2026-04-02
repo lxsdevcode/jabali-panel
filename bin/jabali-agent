@@ -18872,9 +18872,9 @@ function getPanelPort(): int
     return $port !== '' ? (int) $port : 8443;
 }
 
-function goaccessDaemonPort(string $domain): int
+function goaccessSocketPath(string $domain): string
 {
-    return 7890 + (crc32($domain) % 1000);
+    return '/run/goaccess/'.preg_replace('/[^a-z0-9._-]/i', '_', $domain).'.sock';
 }
 
 function logsGoaccess(array $params): array
@@ -18921,7 +18921,7 @@ function logsGoaccess(array $params): array
     $outputFile = "$statsDir/report.html";
     $pidDir = '/run/goaccess';
     $pidFile = "$pidDir/$domain.pid";
-    $port = goaccessDaemonPort($domain);
+    $socketPath = goaccessSocketPath($domain);
 
     // Check if daemon is already running
     if (file_exists($pidFile)) {
@@ -18933,7 +18933,6 @@ function logsGoaccess(array $params): array
                 'daemon_running' => true,
                 'daemon_started' => false,
                 'report_url' => '/stats/report.html',
-                'ws_port' => $port,
             ];
         }
         // Stale PID file — clean up
@@ -18975,12 +18974,20 @@ function logsGoaccess(array $params): array
             $replacement = '$1'."\n\n".
                           '    # GoAccess WebSocket proxy'."\n".
                           '    location /stats/ws {'."\n".
-                          '        proxy_pass http://127.0.0.1:'.$port.';'."\n".
+                          '        proxy_pass http://unix:'.$socketPath.';'."\n".
                           '        proxy_http_version 1.1;'."\n".
                           '        proxy_set_header Upgrade $http_upgrade;'."\n".
                           '        proxy_set_header Connection "upgrade";'."\n".
                           '    }';
             $config = preg_replace($pattern, $replacement, $config, 1);
+            $nginxChanged = true;
+        } elseif (strpos($config, 'proxy_pass http://127.0.0.1:') !== false) {
+            // Migrate existing TCP proxy to Unix socket
+            $config = preg_replace(
+                '/proxy_pass http:\/\/127\.0\.0\.1:\d+;(\s*#.*GoAccess)?/',
+                'proxy_pass http://unix:'.$socketPath.';',
+                $config
+            );
             $nginxChanged = true;
         }
 
@@ -18995,13 +19002,18 @@ function logsGoaccess(array $params): array
         mkdir($pidDir, 0755, true);
     }
 
-    // Start GoAccess in daemon mode
+    // Remove stale socket if present
+    if (file_exists($socketPath)) {
+        unlink($socketPath);
+    }
+
+    // Start GoAccess in daemon mode with Unix socket
     $cmd = sprintf(
-        '/usr/bin/goaccess %s -o %s --log-format=COMBINED --real-time-html --ws-url=%s --port=%d --pid-file=%s --daemonize --no-query-string --anonymize-ip --html-report-title=%s 2>&1',
+        '/usr/bin/goaccess %s -o %s --log-format=COMBINED --real-time-html --ws-url=%s --unix-socket=%s --pid-file=%s --daemonize --no-query-string --anonymize-ip --html-report-title=%s 2>&1',
         escapeshellarg($accessLog),
         escapeshellarg($outputFile),
         escapeshellarg("wss://$domain:443/stats/ws"),
-        $port,
+        escapeshellarg($socketPath),
         escapeshellarg($pidFile),
         escapeshellarg("$domain Statistics")
     );
@@ -19027,7 +19039,6 @@ function logsGoaccess(array $params): array
         'daemon_running' => true,
         'daemon_started' => true,
         'report_url' => '/stats/report.html',
-        'ws_port' => $port,
     ];
 }
 
