@@ -3869,7 +3869,7 @@ upgrade_bulwark() {
     patch_bulwark "$bulwark_dir"
     echo "$jabali_patch_version" > .jabali-patch-version
 
-    npm ci --omit=dev 2>/dev/null || npm install --omit=dev 2>/dev/null || { warn "Bulwark npm install failed"; return; }
+    npm ci --omit=dev --ignore-scripts 2>/dev/null || npm install --omit=dev --ignore-scripts 2>/dev/null || { warn "Bulwark npm install failed"; return; }
     npm run build 2>/dev/null || { warn "Bulwark build failed"; return; }
 
     # Re-link static assets for standalone mode
