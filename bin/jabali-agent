@@ -12066,6 +12066,11 @@ function sshEnableShell(array $params): array
     exec('usermod -aG shellusers ' . escapeshellarg($username));
     exec('gpasswd -d ' . escapeshellarg($username) . ' sftpusers 2>/dev/null');
 
+    // Shell users don't use ChrootDirectory — make home dir writable by user
+    chown($homeDir, $username);
+    chgrp($homeDir, $username);
+    chmod($homeDir, 0755);
+
     // Set login shell to bash (OpenSSH rejects nologin before ForceCommand runs)
     exec('usermod -s /bin/bash ' . escapeshellarg($username));
 
