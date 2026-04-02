@@ -309,7 +309,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->label(__('Current Light Logo'))
                             ->content(new HtmlString(
                                 '<img src="'.e($this->currentLogo ? asset('storage/'.$this->currentLogo) : asset('images/jabali_logo.svg'))
-                                .'" alt="'.__('Light Logo').'" class="max-h-12 max-w-full rounded-lg border border-gray-200 bg-white p-2 object-contain dark:border-gray-700">'
+                                .'" alt="'.__('Light Logo').'" class="aspect-square h-24 w-full rounded-lg border border-gray-200 bg-white p-3 object-contain dark:border-gray-700">'
                             )),
                         FileUpload::make('brandingLogo')
                             ->label(__('Upload Light Logo'))
@@ -324,7 +324,7 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->label(__('Current Dark Logo'))
                             ->content(new HtmlString(
                                 '<img src="'.e($this->currentLogoDark ? asset('storage/'.$this->currentLogoDark) : asset('images/jabali_logo_dark.svg'))
-                                .'" alt="'.__('Dark Logo').'" class="max-h-12 max-w-full rounded-lg border border-gray-700 bg-gray-900 p-2 object-contain">'
+                                .'" alt="'.__('Dark Logo').'" class="aspect-square h-24 w-full rounded-lg border border-gray-700 bg-gray-900 p-3 object-contain">'
                             )),
                         FileUpload::make('brandingLogoDark')
                             ->label(__('Upload Dark Logo'))
