@@ -471,40 +471,18 @@ class SslManager extends Page implements HasTable
 
     public function getLetsEncryptLog(): string
     {
-        $logFiles = [
-            '/var/log/letsencrypt/letsencrypt.log',
-            '/var/log/certbot/letsencrypt.log',
-            '/var/log/certbot.log',
-        ];
+        try {
+            $agent = app(AgentClient::class);
+            $result = $agent->send('ssl.certbot_log', ['lines' => 500]);
 
-        $logContent = '';
-        $foundFile = null;
-
-        foreach ($logFiles as $logFile) {
-            if (file_exists($logFile)) {
-                $foundFile = $logFile;
-                $lines = file($logFile);
-                $lastLines = array_slice($lines, -500);
-                $logContent .= "=== {$logFile} ===\n".implode('', $lastLines);
-                break;
+            if ($result['success'] ?? false) {
+                return "=== {$result['file']} ===\n".$result['log'];
             }
-        }
 
-        if (! $foundFile) {
-            $certbotLogs = glob('/var/log/letsencrypt/*.log');
-            if (! empty($certbotLogs)) {
-                $foundFile = end($certbotLogs);
-                $lines = file($foundFile);
-                $lastLines = array_slice($lines, -500);
-                $logContent = "=== {$foundFile} ===\n".implode('', $lastLines);
-            }
+            return $result['error'] ?? __('No certbot log files found.');
+        } catch (Exception $e) {
+            return __('Failed to read certbot log: ').$e->getMessage();
         }
-
-        if (! $foundFile) {
-            return __("No Let's Encrypt/Certbot log files found.")."\n\n".__('Searched locations:')."\n".implode("\n", $logFiles)."\n/var/log/letsencrypt/*.log";
-        }
-
-        return $logContent;
     }
 
     protected function getHeaderActions(): array

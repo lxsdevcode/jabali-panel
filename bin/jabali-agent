@@ -767,6 +767,7 @@ function handleAction(array $request): array
         'ssl.mail.issue' => stalwartSslMailIssue($params),
         'ssl.mail.status' => stalwartSslMailStatus($params),
         'ssl.panel.issue' => sslPanelIssue($params),
+        'ssl.certbot_log' => sslCertbotLog($params),
         // Backup operations
         'backup.create' => backupCreate($params),
         'backup.create_server' => backupCreateServer($params),
@@ -14987,6 +14988,37 @@ function sslPanelIssue(array $params): array
 /**
  * Generate self-signed SSL certificate
  */
+function sslCertbotLog(array $params): array
+{
+    $lines = (int) ($params['lines'] ?? 500);
+    $logFiles = [
+        '/var/log/letsencrypt/letsencrypt.log',
+        '/var/log/certbot/letsencrypt.log',
+        '/var/log/certbot.log',
+    ];
+
+    foreach ($logFiles as $logFile) {
+        if (file_exists($logFile) && is_readable($logFile)) {
+            $allLines = file($logFile, FILE_IGNORE_NEW_LINES);
+            $lastLines = array_slice($allLines, -$lines);
+
+            return ['success' => true, 'log' => implode("\n", $lastLines), 'file' => $logFile];
+        }
+    }
+
+    // Try glob
+    $globFiles = glob('/var/log/letsencrypt/*.log');
+    if (! empty($globFiles)) {
+        $logFile = end($globFiles);
+        $allLines = file($logFile, FILE_IGNORE_NEW_LINES);
+        $lastLines = array_slice($allLines, -$lines);
+
+        return ['success' => true, 'log' => implode("\n", $lastLines), 'file' => $logFile];
+    }
+
+    return ['success' => false, 'error' => 'No certbot log files found'];
+}
+
 function sslGenerateSelfSigned(array $params): array
 {
     $domain = $params['domain'] ?? '';
