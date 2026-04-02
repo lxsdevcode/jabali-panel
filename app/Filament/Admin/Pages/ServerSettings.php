@@ -302,30 +302,55 @@ class ServerSettings extends Page implements HasActions, HasForms
                     TextInput::make('brandingData.panel_name')
                         ->label(__('Control Panel Name'))
                         ->placeholder(__('Jabali'))
-                        ->helperText(__('Appears in browser title and navigation'))
-                        ->required(),
-                    Actions::make([
-                        FormAction::make('saveBranding')
-                            ->label(__('Save Branding'))
-                            ->action('saveBranding'),
-                        FormAction::make('uploadLogoLight')
-                            ->label(__('Upload Light Logo'))
-                            ->icon('heroicon-o-photo')
-                            ->color('gray')
-                            ->action(fn () => $this->mountAction('uploadLogoLightModal')),
-                        FormAction::make('uploadLogoDark')
-                            ->label(__('Upload Dark Logo'))
-                            ->icon('heroicon-o-moon')
-                            ->color('gray')
-                            ->action(fn () => $this->mountAction('uploadLogoDarkModal')),
-                        FormAction::make('removeBranding')
-                            ->label(__('Remove Logos'))
-                            ->icon('heroicon-o-trash')
-                            ->color('danger')
-                            ->visible(fn (): bool => (bool) ($this->currentLogo || $this->currentLogoDark))
-                            ->requiresConfirmation()
-                            ->action('removeLogo'),
-                    ]),
+                        ->helperText(__('Appears in browser title and navigation')),
+                ])
+                ->footer([
+                    Action::make('saveBranding')
+                        ->label(__('Save Branding'))
+                        ->action('saveBranding'),
+                    Action::make('uploadLogoLight')
+                        ->label(__('Upload Light Logo'))
+                        ->icon('heroicon-o-photo')
+                        ->color('gray')
+                        ->modalHeading(__('Upload Light Logo'))
+                        ->modalSubmitActionLabel(__('Upload'))
+                        ->schema([
+                            FileUpload::make('logo')
+                                ->label(__('Logo Image'))
+                                ->disk('public')
+                                ->directory('branding')
+                                ->visibility('public')
+                                ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                                ->maxSize(512)
+                                ->required()
+                                ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
+                        ])
+                        ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo')),
+                    Action::make('uploadLogoDark')
+                        ->label(__('Upload Dark Logo'))
+                        ->icon('heroicon-o-moon')
+                        ->color('gray')
+                        ->modalHeading(__('Upload Dark Logo'))
+                        ->modalSubmitActionLabel(__('Upload'))
+                        ->schema([
+                            FileUpload::make('logo')
+                                ->label(__('Logo Image'))
+                                ->disk('public')
+                                ->directory('branding')
+                                ->visibility('public')
+                                ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
+                                ->maxSize(512)
+                                ->required()
+                                ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
+                        ])
+                        ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark')),
+                    Action::make('removeBranding')
+                        ->label(__('Remove Logos'))
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->visible(fn (): bool => (bool) ($this->currentLogo || $this->currentLogoDark))
+                        ->requiresConfirmation()
+                        ->action('removeLogo'),
                 ]),
             Section::make(__('Server Hostname'))
                 ->icon('heroicon-o-server')
@@ -1375,38 +1400,6 @@ class ServerSettings extends Page implements HasActions, HasForms
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('uploadLogoLightModal')
-                ->modalHeading(__('Upload Light Logo'))
-                ->modalSubmitActionLabel(__('Upload'))
-                ->form([
-                    FileUpload::make('logo')
-                        ->label(__('Logo Image'))
-                        ->disk('public')
-                        ->directory('branding')
-                        ->visibility('public')
-                        ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                        ->maxSize(512)
-                        ->required()
-                        ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
-                ])
-                ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo'))
-                ->extraAttributes(['class' => 'hidden']),
-            Action::make('uploadLogoDarkModal')
-                ->modalHeading(__('Upload Dark Logo'))
-                ->modalSubmitActionLabel(__('Upload'))
-                ->form([
-                    FileUpload::make('logo')
-                        ->label(__('Logo Image'))
-                        ->disk('public')
-                        ->directory('branding')
-                        ->visibility('public')
-                        ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-                        ->maxSize(512)
-                        ->required()
-                        ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
-                ])
-                ->action(fn (array $data) => $this->uploadLogo($data, 'custom_logo_dark'))
-                ->extraAttributes(['class' => 'hidden']),
             Action::make('export_config')
                 ->label(__('Export'))
                 ->icon('heroicon-o-arrow-down-tray')
