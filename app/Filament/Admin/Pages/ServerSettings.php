@@ -936,22 +936,11 @@ class ServerSettings extends Page implements HasActions, HasForms
         try {
             $logo = $data['logo'] ?? null;
 
-            logger('uploadLogo called', [
-                'settingKey' => $settingKey,
-                'data_keys' => array_keys($data),
-                'logo_type' => gettype($logo),
-                'logo_value' => $logo,
-            ]);
-
             if (empty($logo)) {
-                logger('uploadLogo: logo is empty, returning');
-
                 return;
             }
 
             $path = is_array($logo) ? ($logo[0] ?? null) : $logo;
-
-            logger('uploadLogo: resolved path', ['path' => $path, 'exists' => Storage::disk('public')->exists($path)]);
 
             if ($path) {
                 $currentProperty = $settingKey === 'custom_logo_dark' ? 'currentLogoDark' : 'currentLogo';
@@ -965,13 +954,10 @@ class ServerSettings extends Page implements HasActions, HasForms
                 DnsSetting::clearCache();
                 $this->{$currentProperty} = $path;
 
-                logger('uploadLogo: saved', ['settingKey' => $settingKey, 'path' => $path]);
-
                 Notification::make()->title(__('Logo uploaded'))->success()->send();
                 $this->redirect(static::getUrl());
             }
         } catch (Exception $e) {
-            logger('uploadLogo error: '.$e->getMessage());
             Notification::make()->title(__('Failed to upload logo'))->body(SafeError::message($e))->danger()->send();
         }
     }
@@ -1418,7 +1404,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
                 ->action(function (array $data): void {
-                    logger('uploadLogoLightModal action fired', ['data' => $data]);
                     $this->uploadLogo($data, 'custom_logo');
                 })
                 ->extraAttributes(['class' => 'hidden']),
@@ -1437,7 +1422,6 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
                 ->action(function (array $data): void {
-                    logger('uploadLogoDarkModal action fired', ['data' => $data]);
                     $this->uploadLogo($data, 'custom_logo_dark');
                 })
                 ->extraAttributes(['class' => 'hidden']),
