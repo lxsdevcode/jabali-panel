@@ -1401,7 +1401,10 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->required()
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
-                ->action('uploadLogoLight')
+                ->action(function (array $data): void {
+                    logger('uploadLogoLightModal action fired', ['data' => $data]);
+                    $this->uploadLogo($data, 'custom_logo');
+                })
                 ->extraAttributes(['class' => 'hidden']),
             Action::make('uploadLogoDarkModal')
                 ->modalHeading(__('Upload Dark Logo'))
@@ -1417,7 +1420,10 @@ class ServerSettings extends Page implements HasActions, HasForms
                         ->required()
                         ->helperText(__('PNG, JPEG, WebP or SVG. Max 512KB.')),
                 ])
-                ->action('uploadLogoDark')
+                ->action(function (array $data): void {
+                    logger('uploadLogoDarkModal action fired', ['data' => $data]);
+                    $this->uploadLogo($data, 'custom_logo_dark');
+                })
                 ->extraAttributes(['class' => 'hidden']),
             Action::make('export_config')
                 ->label(__('Export'))
