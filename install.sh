@@ -1077,7 +1077,7 @@ setup_frankenphp_config() {
 [PHP]
 max_execution_time = 600
 max_input_time = 600
-memory_limit = 128M
+memory_limit = 512M
 post_max_size = 512M
 upload_max_filesize = 512M
 max_file_uploads = 50
