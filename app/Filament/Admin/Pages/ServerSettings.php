@@ -325,13 +325,13 @@ class ServerSettings extends Page implements HasActions, HasForms
                             ->required(),
                     ]),
                 ])
-                ->footerActions([
-                    \Filament\Schemas\Components\Actions\Action::make('saveBranding')
+                ->footer([
+                    Action::make('saveBranding')
                         ->label(__('Save Branding'))
                         ->icon('heroicon-o-check')
                         ->color('primary')
                         ->action(fn () => $this->saveBranding()),
-                    \Filament\Schemas\Components\Actions\Action::make('removeBranding')
+                    Action::make('removeBranding')
                         ->label(__('Remove Logos'))
                         ->icon('heroicon-o-trash')
                         ->color('danger')
