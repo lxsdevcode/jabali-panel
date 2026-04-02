@@ -37,6 +37,11 @@ class SslPanelIssueCommand extends JabaliCommand
         $this->formatter()->info("From:    {$result->get('valid_from', '-')}");
         $this->formatter()->info("To:      {$result->get('valid_to', '-')}");
 
+        // Ensure panel is running after cert change
+        $process = new \Symfony\Component\Process\Process(['systemctl', 'restart', 'jabali-panel']);
+        $process->run();
+        $this->formatter()->info('Panel service restarted.');
+
         return Command::SUCCESS;
     }
 }

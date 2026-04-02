@@ -14901,7 +14901,8 @@ function sslPanelIssue(array $params): array
                     copy($existCert, $panelCert);
                     copy($existKey, $panelKey);
                     chmod($panelCert, 0644);
-                    chmod($panelKey, 0600);
+                    chmod($panelKey, 0640);
+                    chgrp($panelKey, 'www-data');
                     exec('systemctl reload nginx 2>/dev/null');
                     exec('systemctl restart jabali-panel 2>/dev/null');
 
