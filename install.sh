@@ -394,6 +394,9 @@ add_repositories() {
     done
     DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confold 2>/dev/null || true
 
+    # Clean up stale third-party source files from previous installs (they cause apt-get update failures)
+    rm -f /etc/apt/sources.list.d/php.list /etc/apt/sources.list.d/nginx.list
+
     # Update package list
     run_quiet "Updating package lists..." apt-get update -qq
 
