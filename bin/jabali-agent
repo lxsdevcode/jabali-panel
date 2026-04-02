@@ -11698,17 +11698,23 @@ function phpListExtensions(array $params): array
         return ['success' => false, 'error' => "PHP {$version} mods-available directory not found"];
     }
 
-    // Get list of enabled modules for CLI SAPI
-    $enabledOutput = [];
-    exec('phpquery -v '.escapeshellarg($version).' -s cli -M 2>/dev/null', $enabledOutput);
-    $enabled = array_map('trim', $enabledOutput);
+    // Check enabled state via conf.d symlinks (phpquery -M is unreliable on PHP 8.5)
+    $confDir = "/etc/php/{$version}/cli/conf.d";
 
     $extensions = [];
     foreach (glob("{$modsDir}/*.ini") as $iniFile) {
         $name = basename($iniFile, '.ini');
+        // Extension is enabled if a symlink exists in cli/conf.d pointing to its .ini
+        $enabled = false;
+        if (is_dir($confDir)) {
+            foreach (glob("{$confDir}/*-{$name}.ini") as $link) {
+                $enabled = true;
+                break;
+            }
+        }
         $extensions[] = [
             'name' => $name,
-            'enabled' => in_array($name, $enabled, true),
+            'enabled' => $enabled,
         ];
     }
 
