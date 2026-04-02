@@ -3828,7 +3828,7 @@ if old in content:
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="2"
+    local jabali_patch_version="3"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
@@ -3867,7 +3867,6 @@ upgrade_bulwark() {
 
     # Re-apply Jabali patches (basePath, SSO route, auth-store, etc.)
     patch_bulwark "$bulwark_dir"
-    echo "$jabali_patch_version" > .jabali-patch-version
 
     npm ci --omit=dev --ignore-scripts 2>/dev/null || npm install --omit=dev --ignore-scripts 2>/dev/null || { warn "Bulwark npm install failed"; return; }
     npm run build 2>/dev/null || { warn "Bulwark build failed"; return; }
@@ -3877,6 +3876,9 @@ upgrade_bulwark() {
     ln -sfn "${bulwark_dir}/public" "${bulwark_dir}/.next/standalone/public"
     ln -sfn "${bulwark_dir}/.env.local" "${bulwark_dir}/.next/standalone/.env.local"
     chown -R www-data:www-data "${bulwark_dir}/.next" "${bulwark_dir}/.env.local"
+
+    # Only mark patch version after successful build
+    echo "$jabali_patch_version" > .jabali-patch-version
 
     systemctl restart bulwark 2>/dev/null || true
     log "Bulwark Webmail updated"
