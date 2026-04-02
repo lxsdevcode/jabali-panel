@@ -19,6 +19,8 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - **Security**: jabali-security daemon (separate repo) with Filament plugin
 - **Isolation**: jabali-isolator (separate repo) — nspawn containers for SSH shell access only; web serving uses host FPM pools
 - **CLI**: `jabali` command with noun:verb pattern (e.g. `jabali backup create`)
+- **Webmail**: Bulwark (Next.js JMAP client) at `/opt/bulwark`, served under `/webmail/` via nginx proxy to port 3000
+- **Webmail SSO**: Token file at `/var/lib/jabali/sso-tokens/`, Bulwark reads via custom API route, session uses PUT (not GET) for credentials
 - **WordPress plugin**: `resources/wordpress/jabali-cache/` (separate PHP codebase, not Laravel)
 
 ## Key Directories
@@ -54,6 +56,9 @@ A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament
 - Filament v5 `FormAction` closures in `->action()` silently fail on this page — use `wire:click` in Blade for branding
 - Logo/file URLs must use relative paths (`/storage/...`), not `asset()` — APP_URL has IP, user accesses via hostname
 - FrankenPHP Caddyfile must NOT block `/storage/*` — uploaded files are served via public/storage symlink
+- Bulwark patches (basePath, SSO, auth-store, proxy.ts) are applied via `patch_bulwark()` in install.sh — called from both install and `upgrade_bulwark()`
+- Bulwark SSO fallback must use PUT to `/webmail/api/auth/session` (upstream strips password from GET)
+- Bump `jabali_patch_version` in `upgrade_bulwark()` when changing any Bulwark patch — version marker written only after successful build
 
 ## Security Rules
 

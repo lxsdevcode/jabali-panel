@@ -63,6 +63,22 @@ All notable changes to Jabali Panel will be documented in this file.
 - **Health monitor escapeshellarg** (MEDIUM) -- Service names now properly escaped in systemctl calls.
 - **UUID generation** (LOW) -- Replaced insecure `mt_rand()` with `Str::uuid()` in AutoconfigController.
 
+- **SSL Manager redesign** -- Custom Blade view with per-user accordions and per-domain grouping (root domain → subdomains). Certbot log viewer. Issue/renew/check actions per domain. Removed HasTable interface in favor of native Alpine.js collapsibles.
+- **SSL CLI commands** -- `jabali ssl panel` shows panel cert status (issuer, expiry, SANs). `jabali ssl panel-issue` issues Let's Encrypt cert for the panel and restarts FrankenPHP. `jabali ssl list` lists all domain SSL certificates via agent.
+- **Auto SSL on domain creation** -- New domains automatically get SSL certificates issued via a queued job (`IssueSslCertificate`). Skips domains that already have valid Let's Encrypt certs.
+- **Webmail SSO patch versioning** -- Bulwark patches (basePath, SSO route, auth-store fallback, proxy.ts) are now extracted into a shared `patch_bulwark()` function called from both install and upgrade paths. A patch version marker ensures patches are re-applied when they change, even without upstream Bulwark updates.
+- **FrankenPHP performance tuning** -- OPcache preloading (`bootstrap/preload.php`), `resolve_root_symlink false`, `max_threads`, realpath cache (4MB/600s), `GOMEMLIMIT=512MiB`.
+
+### Fixed
+
+- **Webmail SSO broken after Bulwark upgrade** -- `upgrade_bulwark()` ran `git reset --hard` which wiped all Jabali patches (SSO route, basePath, auth-store fallback) without re-applying them. Also fixed the SSO fallback to use PUT instead of GET for session retrieval, since upstream Bulwark now strips passwords from GET responses.
+- **SSL certificate detection always showing Pending** -- `SslManagementService::check()` was reading flat `$result['has_ssl']` instead of nested `$result['ssl']['has_ssl']`. Snakeoil certs now correctly mapped to `type=none` instead of `lets_encrypt`.
+- **Panel certificate wrong cert installed** -- `sslPanelIssue()` now verifies hostname in SANs before using an existing cert. Certbot deploy hook also checks SANs match panel hostname before copying.
+- **Panel certificate key permissions** -- Fixed from `0600 root:root` to `0640 root:www-data` so FrankenPHP can read the private key.
+- **SSL certificate cascade delete** -- Changed `domain_id` foreign key from `cascadeOnDelete` to `nullOnDelete` so cert records survive accidental domain deletion.
+- **Panel Branding buttons not working** -- Filament v5 `FormAction` closures silently fail in schema context on this page. Replaced with native Livewire `wire:click` in Blade with `WithFileUploads` trait.
+- **Logo preview not showing** -- Changed from `Storage::disk('public')->url()` (generates IP-based URL) to relative `/storage/...` paths. Removed FrankenPHP Caddyfile rule that blocked `/storage/*`.
+
 ### Removed
 
 - **Old security remnants** -- Removed 10 files (7 firewall CLI commands, 2 WAF blade views, 1 test), fail2ban from Docker, WAF constant from agent, `fw` alias from CLI, dead `AuditLog::logFirewallAction`, health monitor fail2ban entry.
