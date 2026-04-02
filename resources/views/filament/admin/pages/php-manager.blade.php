@@ -17,8 +17,9 @@
         </x-filament::tabs.item>
     </x-filament::tabs>
 
+    {{ $this->statsForm }}
+
     @if ($activeTab === 'versions')
-        {{ $this->statsForm }}
         {{ $this->table }}
     @endif
 
