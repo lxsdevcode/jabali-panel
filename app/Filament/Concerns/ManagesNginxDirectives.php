@@ -39,7 +39,7 @@ trait ManagesNginxDirectives
                                 Repeater::make('rules')
                                     ->label(__('Add rules using the form below. They will be converted to nginx directives automatically.'))
                                     ->live()
-                                    ->afterStateUpdated(fn () => $this->nginxTestPassed = false)
+                                    ->afterStateUpdated(fn (?array $state) => $this->nginxTestPassed = empty($state))
                                     ->schema([
                                         Select::make('type')
                                             ->label(__('Type'))
@@ -176,7 +176,7 @@ trait ManagesNginxDirectives
                                         ? __('Admin mode: most directives allowed.')
                                         : __('Restricted to safe directives (rewrite, add_header, proxy_pass, etc.). Dangerous directives are blocked.'))
                                     ->live(onBlur: true)
-                                    ->afterStateUpdated(fn () => $this->nginxTestPassed = false),
+                                    ->afterStateUpdated(fn (?string $state) => $this->nginxTestPassed = empty(trim($state ?? ''))),
                             ]),
                     ]),
             ])
