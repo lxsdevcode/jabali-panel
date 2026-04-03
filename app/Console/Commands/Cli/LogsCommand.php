@@ -195,48 +195,49 @@ class LogsCommand extends JabaliCommand
             ],
 
             // Web
-            'Nginx Error Log (last 30)' => [
-                'tail -30 /var/log/nginx/error.log 2>/dev/null',
+            'Nginx Error Log' => [
+                'tail -100 /var/log/nginx/error.log 2>/dev/null',
             ],
-            'PHP-FPM Log (last 20)' => [
-                'tail -20 /var/log/php*/php*-fpm.log 2>/dev/null',
+            'PHP-FPM Log' => [
+                'tail -100 /var/log/php*/php*-fpm.log 2>/dev/null',
             ],
-            'FrankenPHP / Panel Log (last 20)' => [
-                'journalctl -u jabali-panel --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            'FrankenPHP / Panel Log' => [
+                'journalctl -u jabali-panel --since "1 hour ago" --no-pager 2>/dev/null',
             ],
 
             // Laravel
-            'Laravel Log (last 40)' => [
-                'tail -40 '.escapeshellarg(base_path('storage/logs/laravel.log')).' 2>/dev/null',
+            'Laravel Log' => [
+                'tail -200 '.escapeshellarg(base_path('storage/logs/laravel.log')).' 2>/dev/null',
             ],
             'Queue Failed Jobs' => [
                 'cd '.escapeshellarg(base_path()).' && php artisan queue:failed --no-interaction 2>/dev/null | tail -15',
             ],
 
             // Agent
-            'Agent Log (last 30)' => [
-                'tail -30 /var/log/jabali/agent.log 2>/dev/null',
+            'Agent Log' => [
+                'journalctl -u jabali-agent --since "1 hour ago" --no-pager 2>/dev/null',
+                'tail -100 /var/log/jabali/agent.log 2>/dev/null',
             ],
-            'Health Monitor (last 20)' => [
-                'tail -20 /var/log/jabali/health-monitor.log 2>/dev/null',
+            'Health Monitor' => [
+                'tail -100 /var/log/jabali/health-monitor.log 2>/dev/null',
             ],
 
             // Mail
-            'Stalwart Mail Log (last 30)' => [
-                'journalctl -u stalwart-mail --since "1 hour ago" --no-pager 2>/dev/null | tail -30',
+            'Stalwart Mail Log' => [
+                'journalctl -u stalwart-mail --since "1 hour ago" --no-pager 2>/dev/null',
             ],
             'Stalwart Config' => [
                 'grep -E "^(server|storage|certificate)" /etc/stalwart-mail/config.toml 2>/dev/null | head -20',
             ],
 
             // Webmail
-            'Bulwark Log (last 20)' => [
-                'journalctl -u bulwark --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            'Bulwark Log' => [
+                'journalctl -u bulwark --since "1 hour ago" --no-pager 2>/dev/null',
             ],
 
             // SSL
-            'Certbot Log (last 30)' => [
-                'tail -30 /var/log/letsencrypt/letsencrypt.log 2>/dev/null',
+            'Certbot Log' => [
+                'tail -100 /var/log/letsencrypt/letsencrypt.log 2>/dev/null',
             ],
             'SSL Certificates' => [
                 'certbot certificates 2>/dev/null',
@@ -246,21 +247,21 @@ class LogsCommand extends JabaliCommand
             ],
 
             // DNS
-            'PowerDNS Log (last 20)' => [
-                'journalctl -u pdns --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            'PowerDNS Log' => [
+                'journalctl -u pdns --since "1 hour ago" --no-pager 2>/dev/null',
             ],
 
             // Database
-            'MariaDB Error Log (last 20)' => [
-                'tail -20 /var/log/mysql/error.log 2>/dev/null',
+            'MariaDB Error Log' => [
+                'tail -100 /var/log/mysql/error.log 2>/dev/null',
             ],
 
             // Security
             'CrowdSec Alerts (last 10)' => [
                 'cscli alerts list --limit 10 2>/dev/null',
             ],
-            'Jabali Security Log (last 20)' => [
-                'journalctl -u jabali-security --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            'Jabali Security Log' => [
+                'journalctl -u jabali-security --since "1 hour ago" --no-pager 2>/dev/null',
             ],
             'Firewall' => [
                 'ufw status numbered 2>/dev/null | head -20',
@@ -270,8 +271,8 @@ class LogsCommand extends JabaliCommand
             'SSH Config' => [
                 'grep -iE "pubkey|authorized|allow|deny|match|forcecommand|passwordauth" /etc/ssh/sshd_config 2>/dev/null',
             ],
-            'SSH Auth Log (last 30)' => [
-                'journalctl -u ssh --since "1 hour ago" --no-pager 2>/dev/null | tail -30',
+            'SSH Auth Log' => [
+                'journalctl -u ssh --since "1 hour ago" --no-pager 2>/dev/null',
             ],
             'Shell Users' => [
                 'getent group shellusers 2>/dev/null',
@@ -282,6 +283,7 @@ class LogsCommand extends JabaliCommand
             ],
             'Containers' => [
                 'machinectl list --no-pager 2>/dev/null',
+                'journalctl -u "systemd-nspawn@*" --since "1 hour ago" --no-pager 2>/dev/null',
             ],
         ];
 
