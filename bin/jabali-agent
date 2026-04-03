@@ -10467,25 +10467,35 @@ function stalwartEmailMailboxCreate(array $params): array
     $maildirPath = "/home/{$username}/mail/{$domain}/{$localPart}/";
 
     // Create or update account in Stalwart's internal directory via API
-    try {
-        $api = new StalwartApiClient;
-        // Delete existing account if recreating
-        if ($folderExists) {
-            $api->delete("principal/{$email}");
+    // Retry up to 10 times (Stalwart may still be starting during install)
+    $stalwartCreated = false;
+    for ($attempt = 1; $attempt <= 10; $attempt++) {
+        try {
+            $api = new StalwartApiClient;
+            if ($folderExists) {
+                $api->delete("principal/{$email}");
+            }
+            $result = $api->post('principal', [
+                'type' => 'individual',
+                'name' => $email,
+                'emails' => [$email],
+                'secrets' => [$password],
+                'roles' => ['user'],
+                'quota' => $quotaBytes,
+            ]);
+            if ($result['http_code'] >= 400) {
+                logger("Warning: Stalwart API create failed (HTTP {$result['http_code']}): ".($result['raw'] ?? ''));
+            } else {
+                $stalwartCreated = true;
+            }
+            break;
+        } catch (RuntimeException $e) {
+            if ($attempt < 10) {
+                sleep(2);
+            } else {
+                logger("Warning: could not create Stalwart account for {$email} after {$attempt} attempts: ".$e->getMessage());
+            }
         }
-        $result = $api->post('principal', [
-            'type' => 'individual',
-            'name' => $email,
-            'emails' => [$email],
-            'secrets' => [$password],
-            'roles' => ['user'],
-            'quota' => $quotaBytes,
-        ]);
-        if ($result['http_code'] >= 400) {
-            logger("Warning: Stalwart API create failed (HTTP {$result['http_code']}): ".($result['raw'] ?? ''));
-        }
-    } catch (RuntimeException $e) {
-        logger("Warning: could not create Stalwart account for {$email}: ".$e->getMessage());
     }
 
     $action = $folderExists ? 'Recreated' : 'Created';
