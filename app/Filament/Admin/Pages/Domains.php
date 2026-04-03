@@ -11,6 +11,7 @@ use App\Services\Agent\AgentClient;
 use App\Services\DomainHealthService;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -161,50 +162,52 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->preload(),
             ])
             ->recordActions([
-                Action::make('checkDns')
-                    ->label(__('Check DNS'))
-                    ->icon('heroicon-o-magnifying-glass')
-                    ->color('gray')
-                    ->action(fn (Domain $record) => $this->checkDns($record)),
-                Action::make('checkWhois')
-                    ->label(__('Check WHOIS'))
-                    ->icon('heroicon-o-document-magnifying-glass')
-                    ->color('gray')
-                    ->action(fn (Domain $record) => $this->checkWhois($record)),
-                Action::make('toggleDomain')
-                    ->label(fn (Domain $record): string => $record->is_active ? __('Disable') : __('Enable'))
-                    ->icon(fn (Domain $record): string => $record->is_active ? 'heroicon-o-pause-circle' : 'heroicon-o-play-circle')
-                    ->color(fn (Domain $record): string => $record->is_active ? 'warning' : 'success')
-                    ->requiresConfirmation()
-                    ->action(fn (Domain $record) => $this->toggleDomain($record)),
-                Action::make('domainInfo')
-                    ->label(__('Domain Info'))
-                    ->icon('heroicon-o-information-circle')
-                    ->color('info')
-                    ->modalHeading(fn (Domain $record): string => $record->domain)
-                    ->modalContent(function (Domain $record) {
-                        $whoisData = app(DomainHealthService::class)->checkWhois($record);
+                ActionGroup::make([
+                    Action::make('checkDns')
+                        ->label(__('Check DNS'))
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->color('gray')
+                        ->action(fn (Domain $record) => $this->checkDns($record)),
+                    Action::make('checkWhois')
+                        ->label(__('Check WHOIS'))
+                        ->icon('heroicon-o-document-magnifying-glass')
+                        ->color('gray')
+                        ->action(fn (Domain $record) => $this->checkWhois($record)),
+                    Action::make('toggleDomain')
+                        ->label(fn (Domain $record): string => $record->is_active ? __('Disable') : __('Enable'))
+                        ->icon(fn (Domain $record): string => $record->is_active ? 'heroicon-o-pause-circle' : 'heroicon-o-play-circle')
+                        ->color(fn (Domain $record): string => $record->is_active ? 'warning' : 'success')
+                        ->requiresConfirmation()
+                        ->action(fn (Domain $record) => $this->toggleDomain($record)),
+                    Action::make('domainInfo')
+                        ->label(__('Domain Info'))
+                        ->icon('heroicon-o-information-circle')
+                        ->color('info')
+                        ->modalHeading(fn (Domain $record): string => $record->domain)
+                        ->modalContent(function (Domain $record) {
+                            $whoisData = app(DomainHealthService::class)->checkWhois($record);
 
-                        return view('filament.admin.pages.domain-info-modal', [
-                            'domain' => $record,
-                            'whoisData' => $whoisData,
-                        ]);
-                    })
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel(__('Close'))
-                    ->modalWidth('3xl'),
-                $this->nginxDirectivesAction()
-                    ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
-                    ->modalWidth(Width::FourExtraLarge)
-                    ->modalSubmitActionLabel(__('Apply')),
-                Action::make('deleteDomain')
-                    ->iconButton()
-                    ->icon('heroicon-o-trash')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->modalHeading(fn (Domain $record): string => __('Delete :domain', ['domain' => $record->domain]))
-                    ->modalDescription(__('This will permanently delete the domain, its DNS records, SSL certificates, and all associated data. This cannot be undone.'))
-                    ->action(fn (Domain $record) => $this->deleteDomain($record)),
+                            return view('filament.admin.pages.domain-info-modal', [
+                                'domain' => $record,
+                                'whoisData' => $whoisData,
+                            ]);
+                        })
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel(__('Close'))
+                        ->modalWidth('3xl'),
+                    $this->nginxDirectivesAction()
+                        ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
+                        ->modalWidth(Width::FourExtraLarge)
+                        ->modalSubmitActionLabel(__('Apply')),
+                    Action::make('deleteDomain')
+                        ->label(__('Delete'))
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading(fn (Domain $record): string => __('Delete :domain', ['domain' => $record->domain]))
+                        ->modalDescription(__('This will permanently delete the domain, its DNS records, SSL certificates, and all associated data. This cannot be undone.'))
+                        ->action(fn (Domain $record) => $this->deleteDomain($record)),
+                ]),
             ])
             ->headerActions([
                 Action::make('checkAllDns')
