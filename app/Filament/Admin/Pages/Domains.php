@@ -162,6 +162,25 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->preload(),
             ])
             ->recordActions([
+                Action::make('domainInfo')
+                    ->label(__('Domain Info'))
+                    ->icon('heroicon-o-information-circle')
+                    ->color('info')
+                    ->modalHeading(fn (Domain $record): string => $record->domain)
+                    ->modalContent(function (Domain $record) {
+                        $whoisData = app(DomainHealthService::class)->checkWhois($record);
+
+                        return view('filament.admin.pages.domain-info-modal', [
+                            'domain' => $record,
+                            'whoisData' => $whoisData,
+                        ]);
+                    })
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel(__('Close'))
+                    ->modalWidth('3xl'),
+                $this->nginxDirectivesAction()
+                    ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
+                    ->modalWidth(Width::FourExtraLarge),
                 ActionGroup::make([
                     Action::make('checkDns')
                         ->label(__('Check DNS'))
@@ -179,25 +198,6 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         ->color(fn (Domain $record): string => $record->is_active ? 'warning' : 'success')
                         ->requiresConfirmation()
                         ->action(fn (Domain $record) => $this->toggleDomain($record)),
-                    Action::make('domainInfo')
-                        ->label(__('Domain Info'))
-                        ->icon('heroicon-o-information-circle')
-                        ->color('info')
-                        ->modalHeading(fn (Domain $record): string => $record->domain)
-                        ->modalContent(function (Domain $record) {
-                            $whoisData = app(DomainHealthService::class)->checkWhois($record);
-
-                            return view('filament.admin.pages.domain-info-modal', [
-                                'domain' => $record,
-                                'whoisData' => $whoisData,
-                            ]);
-                        })
-                        ->modalSubmitAction(false)
-                        ->modalCancelActionLabel(__('Close'))
-                        ->modalWidth('3xl'),
-                    $this->nginxDirectivesAction()
-                        ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
-                        ->modalWidth(Width::FourExtraLarge),
                     Action::make('deleteDomain')
                         ->label(__('Delete'))
                         ->icon('heroicon-o-trash')
