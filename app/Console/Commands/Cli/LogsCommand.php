@@ -80,8 +80,9 @@ class LogsCommand extends JabaliCommand
         $linkUrl = $url ?: $cliOutput;
         $hours = intdiv($ttl, 3600);
 
-        // Send link via email to admin recipients
+        // Send link via email and ntfy
         $this->sendLinkEmail($linkUrl, $hours);
+        $this->sendNtfy($linkUrl, $hours);
 
         $this->line('');
         $this->formatter()->success('Diagnostic logs shared:');
@@ -121,6 +122,38 @@ class LogsCommand extends JabaliCommand
             $this->formatter()->success('Link sent to: '.implode(', ', $recipientList));
         } catch (\Throwable $e) {
             $this->formatter()->error('Email failed: '.$e->getMessage());
+        }
+    }
+
+    private function sendNtfy(string $url, int $hours): void
+    {
+        $ntfyTopic = DnsSetting::get('ntfy_topic', '');
+        $ntfyServer = DnsSetting::get('ntfy_server', 'https://ntfy.sh');
+
+        if (empty($ntfyTopic)) {
+            return;
+        }
+
+        $hostname = gethostname() ?: 'localhost';
+
+        try {
+            $process = new Process([
+                'curl', '-s',
+                '-H', 'Title: Jabali Diagnostic Logs',
+                '-H', "Tags: clipboard,{$hostname}",
+                '-H', 'Priority: default',
+                '-H', "Click: {$url}",
+                '-d', "Diagnostic logs from {$hostname}\n{$url}\nExpires in {$hours}h",
+                "{$ntfyServer}/{$ntfyTopic}",
+            ]);
+            $process->setTimeout(10);
+            $process->run();
+
+            if ($process->getExitCode() === 0) {
+                $this->formatter()->success("Notification sent to ntfy topic: {$ntfyTopic}");
+            }
+        } catch (\Throwable $e) {
+            $this->formatter()->error('ntfy failed: '.$e->getMessage());
         }
     }
 

@@ -8,10 +8,10 @@ use App\Support\SafeError;
 use BackedEnum;
 use Exception;
 use Filament\Actions\Action;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Contracts\Support\Htmlable;
-use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Artisan;
 
 class Support extends Page
@@ -24,7 +24,7 @@ class Support extends Page
 
     protected string $view = 'filament.admin.pages.support';
 
-    public string $diagnosticReport = '';
+    public string $diagnosticUrl = '';
 
     public static function getNavigationLabel(): string
     {
@@ -36,24 +36,6 @@ class Support extends Page
         return __('Support');
     }
 
-    public function copyReport(): void
-    {
-        $encoded = base64_encode($this->diagnosticReport);
-        $this->js("navigator.clipboard.writeText(atob('{$encoded}'))");
-
-        Notification::make()
-            ->title(__('Copied to clipboard'))
-            ->success()
-            ->duration(2000)
-            ->send();
-    }
-
-    public function emailReport(): void
-    {
-        $encoded = base64_encode($this->diagnosticReport);
-        $this->js("window.location.href = 'mailto:webmaster@jabali-panel.com?subject=' + encodeURIComponent('[Jabali] Diagnostic Report') + '&body=' + encodeURIComponent(atob('{$encoded}'))");
-    }
-
     protected function getHeaderActions(): array
     {
         return [
@@ -61,14 +43,26 @@ class Support extends Page
                 ->label(__('Diagnostic Report'))
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('gray')
-                ->modalHeading(__('Diagnostic Report'))
-                ->modalDescription(__('The report is encrypted — only the Jabali team can read it. Copy it into a GitHub issue or send it via email.'))
-                ->modalSubmitAction(false)
-                ->modalCancelActionLabel(__('Close'))
-                ->mountUsing(function () {
+                ->modalHeading(__('Generating Report'))
+                ->modalDescription(__('Collecting logs and uploading to encrypted paste...'))
+                ->modalSubmitActionLabel(__('Generate & Share'))
+                ->action(function (): void {
                     try {
-                        Artisan::call('jabali:report');
-                        $this->diagnosticReport = trim(Artisan::output());
+                        Artisan::call('jabali:logs:share', ['--json' => true]);
+                        $output = json_decode(trim(Artisan::output()), true);
+                        $this->diagnosticUrl = $output['url'] ?? '';
+
+                        if (empty($this->diagnosticUrl)) {
+                            Notification::make()
+                                ->title(__('Upload failed'))
+                                ->body(__('Could not generate paste link. Run "jabali logs share --raw" on the CLI.'))
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        $this->mountAction('showDiagnosticLink');
                     } catch (Exception $e) {
                         Notification::make()
                             ->title(__('Report generation failed'))
@@ -76,20 +70,21 @@ class Support extends Page
                             ->danger()
                             ->send();
                     }
-                })
-                ->modalContent(fn (): View => view('filament.admin.pages.support-report', [
-                    'report' => $this->diagnosticReport,
-                ]))
-                ->extraModalFooterActions([
-                    Action::make('emailReport')
-                        ->label(__('Send via Email'))
-                        ->icon('heroicon-o-envelope')
-                        ->color('success')
-                        ->action(fn () => $this->emailReport()),
-                    Action::make('copyReport')
-                        ->label(__('Copy to Clipboard'))
-                        ->icon('heroicon-o-clipboard-document')
-                        ->action(fn () => $this->copyReport()),
+                }),
+
+            Action::make('showDiagnosticLink')
+                ->hidden()
+                ->modalHeading(__('Diagnostic Report'))
+                ->modalDescription(__('Share this link in a GitHub issue or with the Jabali team. It expires in 24 hours.'))
+                ->modalWidth('md')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel(__('Close'))
+                ->infolist([
+                    TextEntry::make('url')
+                        ->label(__('Report URL'))
+                        ->state(fn () => $this->diagnosticUrl)
+                        ->copyable()
+                        ->fontFamily('mono'),
                 ]),
         ];
     }

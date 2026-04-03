@@ -2,6 +2,8 @@
 
 A web hosting control panel for WordPress and PHP hosting. Laravel 12 + Filament v5 + Livewire v4.
 
+> **Cross-repo context**: Read `~/projects/jabali-shared/CONTEXT.md` before making changes that touch the security integration. Update the change log there when modifying API contracts or the Filament plugin interface.
+
 ## Architecture
 
 - **Panel**: Laravel app on FrankenPHP, port 8443 (configurable via PANEL_PORT env, independent of nginx)
