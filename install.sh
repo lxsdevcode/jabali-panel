@@ -2203,6 +2203,7 @@ ExecStart=/usr/bin/node ${bulwark_dir}/.next/standalone/server.js
 Restart=always
 RestartSec=5
 User=www-data
+EnvironmentFile=${bulwark_dir}/.env.local
 Environment=NODE_ENV=production HOSTNAME=127.0.0.1 PORT=3000 NODE_TLS_REJECT_UNAUTHORIZED=0
 
 [Install]
@@ -3828,9 +3829,57 @@ export async function GET(request: NextRequest) {
 }
 SSO_ROUTE
 
-    # 6. No auth-store patch needed — the SSO route now POSTs to the session
-    # endpoint directly, establishing the full session server-side. The regular
-    # checkAuth() account restoration handles it from there.
+    # 6. Auth-store patch: when checkAuth() finds zero accounts in the client-side
+    # store, try to restore from an existing session cookie (set by SSO).
+    # Without this, SSO sets cookies but the client-side store is empty so
+    # checkAuth() sends the user to the login page.
+    local auth_store="stores/auth-store.ts"
+    if [[ -f "$auth_store" ]]; then
+        # Find the line "// Legacy single-account fallback" and inject SSO cookie
+        # restoration block before it, inside the `if (accounts.length > 0)` else branch.
+        python3 -c "
+import sys
+content = open('$auth_store').read()
+
+# The injection point: right after the accounts.length > 0 block ends and before
+# the legacy fallback. We look for the pattern where accounts is empty.
+marker = '// Legacy single-account fallback'
+if marker not in content:
+    print('auth-store: marker not found, skipping patch', file=sys.stderr)
+    sys.exit(0)
+
+# Check if already patched
+if 'SSO cookie restoration' in content:
+    print('auth-store: already patched', file=sys.stderr)
+    sys.exit(0)
+
+patch = '''
+        // SSO cookie restoration: if no accounts are registered but a session
+        // cookie exists (e.g. from panel SSO), try to restore from the cookie.
+        try {
+          const ssoRes = await fetch('/webmail/api/auth/session?slot=0', {
+            method: 'PUT',
+            credentials: 'same-origin',
+          });
+          if (ssoRes.ok) {
+            const { serverUrl: ssoServerUrl, username: ssoUsername, password: ssoPassword } = await ssoRes.json();
+            if (ssoServerUrl && ssoUsername && ssoPassword) {
+              // Use the store's own login method so the account is properly registered
+              await get().login(ssoServerUrl, ssoUsername, ssoPassword, undefined, true);
+              return;
+            }
+          }
+        } catch (ssoErr) {
+          // SSO restoration failed — fall through to normal flow
+        }
+
+        '''
+
+content = content.replace(marker, patch + marker)
+open('$auth_store', 'w').write(content)
+print('auth-store: SSO cookie restoration patch applied')
+" 2>&1 || true
+    fi
 
     log "Bulwark patches applied (basePath, SSO, auth-store)"
 }
@@ -3838,7 +3887,7 @@ SSO_ROUTE
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="8"
+    local jabali_patch_version="9"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
