@@ -15,9 +15,7 @@ class LogsCommand extends JabaliCommand
 
     protected $description = 'Collect diagnostic logs and send to Jabali support';
 
-    private const NTFY_SERVER = 'https://ntfy.jabali-panel.com';
-
-    private const NTFY_TOPIC = 'jabali-support';
+    private const NTFY_CONF = '/etc/jabali/ntfy.conf';
 
     private const ENCLOSED_URL = 'https://enclosed.jabali-panel.com';
 
@@ -109,16 +107,27 @@ class LogsCommand extends JabaliCommand
 
     private function sendNtfy(string $url, string $password, string $hostname, int $hours): void
     {
+        $conf = $this->readNtfyConf();
+        if (! $conf) {
+            $this->formatter()->error('ntfy not configured — create '.self::NTFY_CONF.' with NTFY_URL and NTFY_TOKEN');
+
+            return;
+        }
+
         try {
-            $process = new Process([
-                'curl', '-s',
+            $headers = [
                 '-H', "Title: Diagnostic logs from {$hostname}",
                 '-H', "Tags: stethoscope,{$hostname}",
                 '-H', 'Priority: default',
                 '-H', "Click: {$url}",
-                '-d', "Host: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h",
-                self::NTFY_SERVER.'/'.self::NTFY_TOPIC,
-            ]);
+                '-H', "Authorization: Bearer {$conf['token']}",
+            ];
+
+            $process = new Process(array_merge(
+                ['curl', '-s'],
+                $headers,
+                ['-d', "Host: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h", $conf['url']],
+            ));
             $process->setTimeout(10);
             $process->run();
 
@@ -128,6 +137,35 @@ class LogsCommand extends JabaliCommand
         } catch (\Throwable $e) {
             $this->formatter()->error('Notification failed: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Read /etc/jabali/ntfy.conf — expects NTFY_URL (server/topic) and NTFY_TOKEN.
+     */
+    private function readNtfyConf(): ?array
+    {
+        if (! file_exists(self::NTFY_CONF)) {
+            return null;
+        }
+
+        $conf = [];
+        foreach (file(self::NTFY_CONF, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            if (str_starts_with($line, '#')) {
+                continue;
+            }
+            if (preg_match('/^(\w+)=(.+)$/', $line, $m)) {
+                $conf[strtolower($m[1])] = trim($m[2], '"\'');
+            }
+        }
+
+        $url = $conf['ntfy_url'] ?? '';
+        $token = $conf['ntfy_token'] ?? '';
+
+        if (empty($url) || empty($token)) {
+            return null;
+        }
+
+        return ['url' => $url, 'token' => $token];
     }
 
     private function collectLogs(): array
