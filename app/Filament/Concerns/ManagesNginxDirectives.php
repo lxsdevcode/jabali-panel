@@ -38,6 +38,8 @@ trait ManagesNginxDirectives
                             ->schema([
                                 Repeater::make('rules')
                                     ->label(__('Add rules using the form below. They will be converted to nginx directives automatically.'))
+                                    ->live()
+                                    ->afterStateUpdated(fn () => $this->nginxTestPassed = false)
                                     ->schema([
                                         Select::make('type')
                                             ->label(__('Type'))
@@ -57,10 +59,16 @@ trait ManagesNginxDirectives
                                         TextInput::make('source')
                                             ->label(__('Source Path'))
                                             ->placeholder('/old-page')
+                                            ->required(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy']))
+                                            ->regex('/^\//')
+                                            ->validationMessages(['regex' => __('Must start with /')])
                                             ->visible(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy', 'ip_access'])),
                                         TextInput::make('destination')
                                             ->label(__('Destination'))
                                             ->placeholder('https://example.com/new-page')
+                                            ->required(fn (Get $get) => in_array($get('type'), ['redirect', 'proxy']))
+                                            ->regex('/^(https?:\/\/|\/)\S+$/')
+                                            ->validationMessages(['regex' => __('Must be a URL or path starting with /')])
                                             ->visible(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy'])),
                                         Select::make('redirect_type')
                                             ->label(__('Redirect Type'))
@@ -71,6 +79,7 @@ trait ManagesNginxDirectives
                                         // Header fields
                                         Select::make('header_name')
                                             ->label(__('Header'))
+                                            ->required(fn (Get $get) => $get('type') === 'header')
                                             ->options([
                                                 'X-Frame-Options' => 'X-Frame-Options',
                                                 'X-Content-Type-Options' => 'X-Content-Type-Options',
@@ -83,9 +92,14 @@ trait ManagesNginxDirectives
                                             ->visible(fn (Get $get) => $get('type') === 'header'),
                                         TextInput::make('header_custom_name')
                                             ->label(__('Header Name'))
+                                            ->required(fn (Get $get) => $get('type') === 'header' && $get('header_name') === 'custom')
+                                            ->regex('/^[A-Za-z][A-Za-z0-9-]*$/')
+                                            ->validationMessages(['regex' => __('Invalid header name (letters, digits, hyphens only)')])
                                             ->visible(fn (Get $get) => $get('type') === 'header' && $get('header_name') === 'custom'),
                                         TextInput::make('header_value')
                                             ->label(__('Value'))
+                                            ->required(fn (Get $get) => $get('type') === 'header')
+                                            ->maxLength(1024)
                                             ->visible(fn (Get $get) => $get('type') === 'header'),
 
                                         // Rewrite fields
@@ -103,16 +117,21 @@ trait ManagesNginxDirectives
                                         // IP Access fields
                                         Select::make('ip_action')
                                             ->label(__('Action'))
+                                            ->required(fn (Get $get) => $get('type') === 'ip_access')
                                             ->options(['allow' => __('Allow'), 'deny' => __('Deny')])
                                             ->visible(fn (Get $get) => $get('type') === 'ip_access'),
                                         TextInput::make('ip_address')
                                             ->label(__('IP / CIDR'))
                                             ->placeholder('1.2.3.4 or 10.0.0.0/8')
+                                            ->required(fn (Get $get) => $get('type') === 'ip_access')
+                                            ->regex('/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/')
+                                            ->validationMessages(['regex' => __('Must be a valid IPv4 address or CIDR (e.g. 10.0.0.1 or 10.0.0.0/24)')])
                                             ->visible(fn (Get $get) => $get('type') === 'ip_access'),
 
                                         // PHP value fields
                                         Select::make('php_setting')
                                             ->label(__('Setting'))
+                                            ->required(fn (Get $get) => $get('type') === 'php_value')
                                             ->options([
                                                 'memory_limit' => 'memory_limit',
                                                 'upload_max_filesize' => 'upload_max_filesize',
@@ -120,16 +139,25 @@ trait ManagesNginxDirectives
                                                 'max_execution_time' => 'max_execution_time',
                                                 'max_input_vars' => 'max_input_vars',
                                             ])
+                                            ->live()
                                             ->visible(fn (Get $get) => $get('type') === 'php_value'),
                                         TextInput::make('php_value')
                                             ->label(__('Value'))
-                                            ->placeholder('512M')
+                                            ->placeholder(fn (Get $get) => in_array($get('php_setting'), ['max_execution_time', 'max_input_vars']) ? '300' : '512M')
+                                            ->required(fn (Get $get) => $get('type') === 'php_value')
+                                            ->regex(fn (Get $get) => in_array($get('php_setting'), ['max_execution_time', 'max_input_vars'])
+                                                ? '/^\d+$/'
+                                                : '/^\d+[KkMmGg]$/')
+                                            ->validationMessages(['regex' => __('Must be a valid PHP value (e.g. 512M, 1G, 300)')])
                                             ->visible(fn (Get $get) => $get('type') === 'php_value'),
 
                                         // Max body size
                                         TextInput::make('max_body_size')
                                             ->label(__('Max Size'))
                                             ->placeholder('100m')
+                                            ->required(fn (Get $get) => $get('type') === 'client_max_body')
+                                            ->regex('/^\d+[KkMmGg]$/')
+                                            ->validationMessages(['regex' => __('Must be a size value (e.g. 100m, 1G)')])
                                             ->visible(fn (Get $get) => $get('type') === 'client_max_body'),
                                     ])
                                     ->columns(2)
@@ -146,7 +174,9 @@ trait ManagesNginxDirectives
                                     ->placeholder("# Example:\nrewrite ^/old$ /new permanent;\nadd_header X-Frame-Options \"DENY\" always;")
                                     ->helperText($isAdmin
                                         ? __('Admin mode: most directives allowed.')
-                                        : __('Restricted to safe directives (rewrite, add_header, proxy_pass, etc.). Dangerous directives are blocked.')),
+                                        : __('Restricted to safe directives (rewrite, add_header, proxy_pass, etc.). Dangerous directives are blocked.'))
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn () => $this->nginxTestPassed = false),
                             ]),
                     ]),
             ])
