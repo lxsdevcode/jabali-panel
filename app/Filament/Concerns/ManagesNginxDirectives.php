@@ -282,7 +282,7 @@ trait ManagesNginxDirectives
                 }
 
                 $record->update([
-                    'custom_nginx_directives' => $combined ?: null,
+                    'custom_nginx_directives' => $rawDirectives ?: null,
                     'custom_nginx_rules' => ! empty($rules) ? $rules : null,
                 ]);
 
