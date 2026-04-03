@@ -115,21 +115,26 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 ## Highlights
 
 - Per-user Linux accounts and PHP-FPM isolation
+- SSH shell access via nspawn containers with auto-start and 5-minute idle timeout
 - Root agent for SSL, mail, backups, and migrations
 - Health monitor with auto-restarts and alerts
 - cPanel and WHM migrations with step-by-step logs
 - IMAP sync for migrating mail from external servers
-- Stalwart Mail Server with webmail SSO
+- Stalwart Mail Server with webmail SSO (Bulwark JMAP client)
 - Shared mailbox folders via Stalwart Mail Server
 - `mail.domain.ext` auto-redirects to webmail
+- One-time login tokens (CLI + dashboard UI) with IP binding
 - PowerDNS with REST API and native DNSSEC
 - Restic backups with deduplication, encryption, and SFTP/S3 support
+- First-time backup setup wizard with encryption password and remote destinations
 - WordPress management (install, updates, and SSO)
 - Integrated security suite (jabali-security) with real-time threat detection
-- Encrypted diagnostic reports with email and clipboard support
+- Encrypted diagnostic log sharing with ticket tracking
+- Per-user page cache directories (moved from global nginx cache)
 - Passphrase password generator (optional, 3 random words)
 - GoAccess real-time statistics with WebSocket updates
 - Domain bandwidth tracking synced daily from nginx logs
+- 80+ CLI commands with full panel parity (noun:verb pattern)
 - Audit logs and admin notifications
 
 ## Feature Map
@@ -143,10 +148,13 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - DNS zones, templates, and DNSSEC
 - SSL issuance and renewals
 - IP address assignments
-- Backups and restores (local + remote)
+- Backups and restores (local + remote) with first-time setup wizard
 - Migrations (cPanel restore, WHM downloads, IMAP sync)
 - Security (jabali-security daemon with real-time monitoring)
-- Diagnostic report (encrypted, for support)
+- One-time login link generator for support access (IP-bound tokens)
+- Diagnostic report (encrypted sharing to support via paste service)
+- Database tuning and query analysis
+- Email queue management with delivery logs
 - Audit logs and notifications
 
 ### User Panel
@@ -155,15 +163,17 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - DNS records editor
 - Mail domains, mailboxes, forwarders, shared folders, and per-domain disclaimers
 - IMAP sync (single and bulk mail migration)
-- Webmail SSO (Roundcube)
+- Webmail SSO (Bulwark, Next.js JMAP client)
 - WordPress manager (install, SSO)
 - File manager plus SFTP/SSH keys
+- SSH shell access via nspawn containers with 5-minute idle timeout
 - Databases (MySQL and PostgreSQL in tabbed view)
 - PHP settings per account
 - SSL management
 - Cron jobs
 - Backups and restore
 - Logs, statistics, and bandwidth usage
+- Support access link generator (one-time IP-bound tokens)
 - Protected directories
 
 ### Platform
@@ -180,13 +190,16 @@ podman build --secret id=composer_auth,src=auth.json -t jabali-panel:latest .
 - Panel web server: FrankenPHP on port 8443 (independent of nginx)
 - Data plane: root agent handling privileged operations via Unix socket
 - Job queue: async tasks and migration steps
+- Webmail: Bulwark (Next.js JMAP client) at `/opt/bulwark`, served at `/webmail/` via nginx proxy to port 3000
+- SSH shell: jabali-isolator (Python, separate repo) managing nspawn containers for SSH access isolation
+- Security: jabali-security daemon (separate repo) with real-time threat detection and automated response
 - Logging: panel and agent logs for troubleshooting
 - Server metrics: live /proc filesystem reads
 
 Service stack (single-node default):
 
 - FrankenPHP (panel on port 8443, self-signed or Let's Encrypt SSL)
-- Nginx (user domain sites, phpMyAdmin, webmail proxy)
+- Nginx (user domain sites, phpMyAdmin, webmail proxy, Bulwark proxy)
 - PHP-FPM (user site pools)
 - MariaDB (user databases)
 - Stalwart Mail Server (SMTP, IMAP, JMAP, ManageSieve)
@@ -194,7 +207,9 @@ Service stack (single-node default):
 - Restic (encrypted, deduplicated backups)
 - Redis
 - GoAccess (real-time web analytics in daemon mode with WebSocket)
+- jabali-isolator (nspawn container management for SSH shell isolation)
 - jabali-security (real-time threat detection, brute-force protection, WAF)
+- Bulwark (Next.js JMAP webmail client on port 3000)
 
 ## Requirements
 
@@ -253,15 +268,124 @@ jabali update --force
 
 The `jabali` command uses a noun:verb pattern. Aliases: `wordpress` -> `wp`, `database` -> `db`, `email` -> `mail`.
 
-```
-jabali --help            # Show available commands
-jabali update            # Update panel to latest version
-jabali backup create <user>
-jabali backup restore <path> --user=<user>
-jabali report            # Encrypted diagnostic report
-jabali cpanel analyze <file>
-jabali cpanel restore <file> <user>
-```
+### User Management
+- `jabali user create <username> [--email=] [--password=]` — Create user
+- `jabali user delete <username> [--force]` — Delete user
+- `jabali user suspend <username>` — Suspend user
+- `jabali user unsuspend <username>` — Unsuspend user
+- `jabali user reset-password <username>` — Generate password reset link
+- `jabali user quota set <username> <quota>` — Set disk quota
+- `jabali user list [--status=] [--limit=]` — List users
+
+### Domain Management
+- `jabali domain create <user> <domain> [--type=]` — Add domain to user
+- `jabali domain delete <domain> [--force]` — Delete domain
+- `jabali domain verify <domain>` — Verify domain ownership
+- `jabali domain point <domain> <ip>` — Update A record
+- `jabali domain list [--user=] [--status=]` — List domains
+
+### Database (db)
+- `jabali db create <user> <name> [--type=mysql|postgres]` — Create database
+- `jabali db delete <database> [--force]` — Delete database
+- `jabali db user create <database> <username>` — Create DB user
+- `jabali db user delete <database> <username>` — Delete DB user
+- `jabali db backup <database>` — Backup database
+- `jabali db list [--user=] [--type=]` — List databases
+
+### Mail (email/mail)
+- `jabali mail domain create <user> <domain>` — Add mail domain
+- `jabali mail domain delete <domain>` — Delete mail domain
+- `jabali mail user create <domain> <username>` — Create mailbox
+- `jabali mail user delete <mailbox>` — Delete mailbox
+- `jabali mail user password <mailbox>` — Set password
+- `jabali mail forward create <domain> <address> <target>` — Create forwarder
+- `jabali mail forward delete <address>` — Delete forwarder
+- `jabali mail list-domains [--user=]` — List mail domains
+- `jabali mail list-users [--domain=]` — List mailboxes
+
+### SSL/TLS
+- `jabali ssl create <domain> [--auto-renew]` — Issue Let's Encrypt certificate
+- `jabali ssl renew <domain>` — Renew certificate
+- `jabali ssl delete <domain>` — Delete certificate
+- `jabali ssl list [--domain=]` — List certificates
+- `jabali ssl check <domain>` — Check certificate status
+
+### DNS
+- `jabali dns zone create <domain> [--nameserver=]` — Create DNS zone
+- `jabali dns zone delete <domain>` — Delete DNS zone
+- `jabali dns record create <domain> <type> <value>` — Add DNS record
+- `jabali dns record delete <domain> <id>` — Delete DNS record
+- `jabali dns record list <domain>` — List DNS records
+- `jabali dns dnssec enable <domain>` — Enable DNSSEC
+- `jabali dns dnssec disable <domain>` — Disable DNSSEC
+
+### Backups
+- `jabali backup create <user>` — Backup user account
+- `jabali backup list <user> [--remote]` — List backups
+- `jabali backup restore <path> --user=<user>` — Restore from backup
+- `jabali backup delete <backup-id>` — Delete backup
+- `jabali backup destination add [--type=sftp|s3|b2]` — Configure remote destination
+
+### Cron Jobs
+- `jabali cron list <user>` — List cron jobs
+- `jabali cron create <user> <expression> <command>` — Add cron job
+- `jabali cron delete <user> <id>` — Delete cron job
+- `jabali cron run <user> <id>` — Run cron job manually
+
+### PHP
+- `jabali php version list` — List available PHP versions
+- `jabali php pool create <user> [--version=] [--memory=]` — Create PHP-FPM pool
+- `jabali php pool delete <user>` — Delete pool
+- `jabali php pool config <user>` — Show pool configuration
+- `jabali php setting set <user> <setting> <value>` — Set PHP setting
+
+### Services
+- `jabali service list [--status=]` — List services
+- `jabali service start <service>` — Start service
+- `jabali service stop <service>` — Stop service
+- `jabali service restart <service>` — Restart service
+- `jabali service status <service>` — Check service status
+- `jabali service enable <service>` — Enable service at boot
+- `jabali service disable <service>` — Disable service at boot
+
+### System Management
+- `jabali system info` — Display system information
+- `jabali system update` — Update panel to latest version (with --force option)
+- `jabali system health [--verbose]` — Check system health
+- `jabali system reboot [--force]` — Reboot server
+- `jabali system logs [--service=] [--lines=]` — View system logs
+- `jabali system status` — Overall server status
+
+### WordPress (wp)
+- `jabali wp install <user> <domain>` — Install WordPress
+- `jabali wp delete <domain> [--force]` — Delete WordPress site
+- `jabali wp update <domain>` — Update WordPress
+- `jabali wp plugin list <domain>` — List plugins
+- `jabali wp plugin install <domain> <plugin>` — Install plugin
+- `jabali wp plugin activate <domain> <plugin>` — Activate plugin
+- `jabali wp plugin deactivate <domain> <plugin>` — Deactivate plugin
+- `jabali wp user create <domain> <username> <email>` — Create WordPress user
+
+### Migration
+- `jabali cpanel analyze <file>` — Analyze cPanel backup
+- `jabali cpanel restore <file> <user>` — Restore cPanel backup
+- `jabali whm download <host> <user> <password>` — Download WHM backup
+- `jabali imap sync <user> [--source-host=] [--source-user=]` — Sync IMAP mail
+
+### Agent Management
+- `jabali agent status` — Check agent health
+- `jabali agent restart [--force]` — Restart agent
+- `jabali agent logs [--lines=]` — View agent logs
+
+### Support Access
+- `jabali login create <user> [--hours=24]` — Create one-time support login link
+- `jabali login list [--user=]` — List active links
+- `jabali login revoke <link-id>` — Revoke login link
+
+### Diagnostics
+- `jabali report` — Generate encrypted diagnostic report
+- `jabali report encrypt <data>` — Encrypt data for support
+- `jabali logs export [--service=] [--since=]` — Export logs
 
 ## Development
 
@@ -283,8 +407,13 @@ GPL-3.0 — see [LICENSE](LICENSE) for details.
 
 ## Mail Subdomain
 
-Visiting `mail.domain.ext` in a browser automatically redirects to webmail (Roundcube). Autoconfig and autodiscover paths are excluded so mail client auto-discovery continues to work.
+Visiting `mail.domain.ext` in a browser automatically redirects to webmail (Bulwark). Autoconfig and autodiscover paths are excluded so mail client auto-discovery continues to work.
 
-## Documentation Notes
+## Documentation
 
-- cPanel Migration tabs (Domains, Databases, Mailboxes, Forwarders, SSL) only render after a backup is analyzed.
+See the [docs/](docs/) directory for comprehensive guides including:
+- Architecture Decision Records (ADRs)
+- Security policies and audit logs
+- Installation and upgrade procedures
+- API documentation
+- Feature-specific guides
