@@ -2203,7 +2203,7 @@ ExecStart=/usr/bin/node ${bulwark_dir}/.next/standalone/server.js
 Restart=always
 RestartSec=5
 User=www-data
-Environment=NODE_ENV=production HOSTNAME=127.0.0.1 PORT=3000
+Environment=NODE_ENV=production HOSTNAME=127.0.0.1 PORT=3000 NODE_TLS_REJECT_UNAUTHORIZED=0
 
 [Install]
 WantedBy=multi-user.target
@@ -3780,7 +3780,7 @@ export async function GET(request: NextRequest) {
     }
 
     // POST to the session endpoint internally (same as login form)
-    // This establishes the full session with stalwart auth context
+    // Use baseUrl so the JMAP server URL matches what the browser will use
     const jmapServerUrl = baseUrl || process.env.JMAP_SERVER_URL || '';
     const sessionRes = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/webmail/api/auth/session`, {
       method: 'POST',
@@ -3826,7 +3826,7 @@ SSO_ROUTE
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="7"
+    local jabali_patch_version="8"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
