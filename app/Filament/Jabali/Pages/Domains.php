@@ -9,6 +9,7 @@ use App\Models\Domain;
 use App\Models\DomainAlias;
 use App\Models\DomainHotlinkSetting;
 use App\Models\DomainRedirect;
+use App\Filament\Concerns\ManagesNginxDirectives;
 use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;
@@ -43,6 +44,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
     use InteractsWithAgent;
     use InteractsWithForms;
     use InteractsWithTable;
+    use ManagesNginxDirectives;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-globe-alt';
 
@@ -180,6 +182,10 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                             ? __('This will disable nginx page caching for :domain. Pages will no longer be served from cache.', ['domain' => $record->domain])
                             : __('This will enable nginx page caching for :domain. Cached pages will load faster for visitors.', ['domain' => $record->domain]))
                         ->action(fn (Domain $record) => $this->togglePageCache($record)),
+                    $this->nginxDirectivesAction()
+                        ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
+                        ->modalWidth(Width::FourExtraLarge)
+                        ->modalSubmitActionLabel(__('Apply')),
                 ])
                     ->label(__('Settings'))
                     ->icon('heroicon-o-cog-6-tooth')

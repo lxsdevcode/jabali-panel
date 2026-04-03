@@ -31,6 +31,8 @@ class Domain extends Model
         'ssl_enabled',
         'directory_index',
         'page_cache_enabled',
+        'custom_nginx_directives',
+        'custom_nginx_rules',
         'dns_status',
         'dns_resolved_ip',
         'dns_checked_at',
@@ -45,6 +47,7 @@ class Domain extends Model
             'is_active' => 'boolean',
             'ssl_enabled' => 'boolean',
             'page_cache_enabled' => 'boolean',
+            'custom_nginx_rules' => 'array',
             'dns_checked_at' => 'datetime',
             'whois_expiry' => 'date',
         ];

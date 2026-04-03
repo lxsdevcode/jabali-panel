@@ -7,6 +7,7 @@ namespace App\Filament\Admin\Pages;
 use App\Models\Domain;
 use App\Models\User;
 use App\Services\Agent\AgentClient;
+use App\Filament\Concerns\ManagesNginxDirectives;
 use App\Services\DomainHealthService;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -23,6 +24,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +34,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
     use InteractsWithActions;
     use InteractsWithForms;
     use InteractsWithTable;
+    use ManagesNginxDirectives;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-globe-alt';
 
@@ -190,6 +193,10 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel(__('Close'))
                     ->modalWidth('3xl'),
+                $this->nginxDirectivesAction()
+                    ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
+                    ->modalWidth(Width::FourExtraLarge)
+                    ->modalSubmitActionLabel(__('Apply')),
                 Action::make('deleteDomain')
                     ->iconButton()
                     ->icon('heroicon-o-trash')

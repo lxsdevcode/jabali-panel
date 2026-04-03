@@ -599,6 +599,7 @@ function handleAction(array $request): array
         'domain.delete' => domainDelete($params),
         'domain.list' => domainList($params),
         'domain.toggle' => domainToggle($params),
+        'domain.apply_custom_directives' => domainApplyCustomDirectives($params),
         'domain.set_redirects' => domainSetRedirects($params),
         'domain.set_hotlink_protection' => domainSetHotlinkProtection($params),
         'domain.set_directory_index' => domainSetDirectoryIndex($params),
@@ -4998,6 +4999,88 @@ function domainToggle(array $params): array
     exec('nginx -t && systemctl reload nginx 2>&1');
 
     return ['success' => true, 'message' => "Domain {$domain} {$action}"];
+}
+
+/**
+ * Apply custom nginx directives for a domain.
+ * Writes to a separate include file, validates with nginx -t, rolls back on failure.
+ */
+function domainApplyCustomDirectives(array $params): array
+{
+    $domain = strtolower(trim($params['domain'] ?? ''));
+    $directives = $params['directives'] ?? '';
+
+    if (! preg_match('/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/', $domain)) {
+        return ['success' => false, 'error' => 'Invalid domain format'];
+    }
+
+    // Verify domain vhost exists
+    $vhostFile = "/etc/nginx/sites-available/{$domain}.conf";
+    if (! file_exists($vhostFile)) {
+        return ['success' => false, 'error' => 'Domain vhost not found'];
+    }
+
+    $customDir = '/etc/nginx/jabali/custom';
+    if (! is_dir($customDir)) {
+        mkdir($customDir, 0755, true);
+    }
+
+    $customFile = "{$customDir}/{$domain}.conf";
+    $backupFile = "{$customFile}.bak";
+
+    // Backup existing custom config
+    if (file_exists($customFile)) {
+        copy($customFile, $backupFile);
+    }
+
+    // Write new directives (empty string = clear custom config)
+    $content = trim($directives);
+    if ($content !== '') {
+        $content = "# Custom nginx directives for {$domain}\n# Managed by Jabali Panel — do not edit manually\n\n{$content}\n";
+    }
+    file_put_contents($customFile, $content);
+
+    // Ensure vhost includes the custom config file
+    $vhost = file_get_contents($vhostFile);
+    $includeDirective = "include /etc/nginx/jabali/custom/{$domain}.conf;";
+    if (! str_contains($vhost, $includeDirective)) {
+        // Insert include before the last closing brace of the HTTPS server block
+        // Find the last server block (HTTPS) and add include inside it
+        $insertPos = strrpos($vhost, '}');
+        if ($insertPos !== false) {
+            $vhost = substr($vhost, 0, $insertPos)
+                . "\n    # Custom directives (managed by panel)\n"
+                . "    {$includeDirective}\n"
+                . substr($vhost, $insertPos);
+            file_put_contents($vhostFile, $vhost);
+        }
+    }
+
+    // Test nginx config
+    exec('nginx -t 2>&1', $output, $exitCode);
+    if ($exitCode !== 0) {
+        $error = implode("\n", $output);
+
+        // Rollback
+        if (file_exists($backupFile)) {
+            copy($backupFile, $customFile);
+            @unlink($backupFile);
+        } else {
+            @unlink($customFile);
+        }
+
+        logger("Custom directives rejected for {$domain}: {$error}", 'WARNING');
+
+        return ['success' => false, 'error' => "Nginx config test failed:\n{$error}"];
+    }
+
+    // Reload nginx
+    exec('nginx -s reload 2>&1');
+    @unlink($backupFile);
+
+    logger("Custom nginx directives applied for {$domain}");
+
+    return ['success' => true];
 }
 
 function domainSetRedirects(array $params): array
