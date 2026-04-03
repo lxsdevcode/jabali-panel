@@ -23,16 +23,24 @@ class LogsCommand extends JabaliCommand
     {
         $this->setupFormatter();
 
+        if ($this->option('raw')) {
+            $this->line(implode("\n", $this->collectLogs()));
+
+            return Command::SUCCESS;
+        }
+
+        if (! $this->confirmAction(
+            'This will collect server diagnostic logs (services, configs, error logs) and send them encrypted to Jabali support. No personal data is collected. Continue?'
+        )) {
+            $this->formatter()->info('Cancelled.');
+
+            return Command::SUCCESS;
+        }
+
         $this->formatter()->info('Collecting diagnostic logs...');
 
         $logs = $this->collectLogs();
         $report = implode("\n", $logs);
-
-        if ($this->option('raw')) {
-            $this->line($report);
-
-            return Command::SUCCESS;
-        }
 
         // Check if node is available
         $nodeCheck = Process::fromShellCommandline('which node 2>/dev/null');
@@ -84,12 +92,15 @@ class LogsCommand extends JabaliCommand
         $linkUrl = $url ?: $cliOutput;
         $hours = intdiv($ttl, 3600);
 
+        // Generate a ticket ID so the user can reference it in issues
+        $ticketId = strtoupper(substr(md5($linkUrl), 0, 8));
+
         // Send link + password to Jabali support via ntfy
-        $sent = $this->sendNtfy($linkUrl, $password, $hostname, $hours);
+        $sent = $this->sendNtfy($linkUrl, $password, $hostname, $hours, $ticketId);
 
         if ($this->option('json')) {
             $this->formatter()->json([
-                'url' => $linkUrl,
+                'ticket' => $ticketId,
                 'ttl_seconds' => $ttl,
                 'sent' => $sent,
             ]);
@@ -106,21 +117,24 @@ class LogsCommand extends JabaliCommand
 
         $this->line('');
         $this->formatter()->success('Diagnostic logs sent to Jabali support.');
-        $this->formatter()->info("Link expires in {$hours} hour(s).");
+        $this->line('');
+        $this->line("  Ticket ID: {$ticketId}");
+        $this->line('');
+        $this->formatter()->info("Share this ID in your GitHub issue so we can find your logs. Expires in {$hours} hour(s).");
 
         return Command::SUCCESS;
     }
 
-    private function sendNtfy(string $url, string $password, string $hostname, int $hours): bool
+    private function sendNtfy(string $url, string $password, string $hostname, int $hours, string $ticketId): bool
     {
         try {
             $process = new Process([
                 'curl', '-s', '-f',
-                '-H', "Title: Diagnostic logs from {$hostname}",
+                '-H', "Title: [{$ticketId}] Diagnostic logs from {$hostname}",
                 '-H', "Tags: stethoscope,{$hostname}",
                 '-H', 'Priority: default',
                 '-H', "Click: {$url}",
-                '-d', "Host: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h",
+                '-d', "Ticket: {$ticketId}\nHost: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h",
                 self::NTFY_URL,
             ]);
             $process->setTimeout(10);
