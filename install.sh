@@ -1679,7 +1679,7 @@ PHPMYADMIN_EOF
     }
 
     location ^~ /dav/ {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1692,7 +1692,7 @@ PHPMYADMIN_EOF
     }
 
     location ^~ /jmap/ {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1702,9 +1702,9 @@ PHPMYADMIN_EOF
         proxy_set_header Connection "upgrade";
         sub_filter_types application/json;
         sub_filter_once off;
-        sub_filter "http://${SERVER_HOSTNAME}:8080" "https://${SERVER_HOSTNAME}";
-        sub_filter "ws://${SERVER_HOSTNAME}:8080" "wss://${SERVER_HOSTNAME}";
-        sub_filter "http://127.0.0.1:8080" "https://${SERVER_HOSTNAME}";
+        sub_filter "http://${SERVER_HOSTNAME}:8090" "https://${SERVER_HOSTNAME}";
+        sub_filter "ws://${SERVER_HOSTNAME}:8090" "wss://${SERVER_HOSTNAME}";
+        sub_filter "http://127.0.0.1:8090" "https://${SERVER_HOSTNAME}";
     }
 
     # Bulwark webmail branding assets
@@ -1771,7 +1771,7 @@ server {
 
     # Mail autoconfig/autodiscover over HTTP (avoids SSL cert mismatch for subdomains)
     location = /mail/config-v1.1.xml {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1779,7 +1779,7 @@ server {
     }
 
     location = /.well-known/autoconfig/mail/config-v1.1.xml {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1787,7 +1787,7 @@ server {
     }
 
     location /autodiscover/ {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -1795,7 +1795,7 @@ server {
     }
 
     location /Autodiscover/ {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -2020,7 +2020,7 @@ protocol = "managesieve"
 
 [server.listener.http]
 protocol = "http"
-bind = ["[::]:8080"]
+bind = ["[::]:8090"]
 
 [email.folders.sent]
 name = "Sent"

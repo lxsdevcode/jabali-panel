@@ -484,8 +484,8 @@ TOML;
         }
 
         // Test JMAP
-        $this->line('  Testing JMAP (port 8080)...');
-        $result = $this->executeCommand('curl -sf http://127.0.0.1:8080/.well-known/jmap 2>/dev/null', 10);
+        $this->line('  Testing JMAP (port 8090)...');
+        $result = $this->executeCommand('curl -sf http://127.0.0.1:8090/.well-known/jmap 2>/dev/null', 10);
         if ($result['exitCode'] !== 0) {
             $this->warn('  JMAP test failed (may need authentication)');
         } else {
