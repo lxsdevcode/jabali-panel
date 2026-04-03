@@ -148,6 +148,65 @@ trait ManagesNginxDirectives
                             ]),
                     ]),
             ])
+            ->extraModalFooterActions(fn (Action $action) => [
+                Action::make('testConfig')
+                    ->label(__('Test Configuration'))
+                    ->icon('heroicon-o-beaker')
+                    ->color('info')
+                    ->action(function (array $data, Domain $record) use ($isAdmin): void {
+                        $rules = $data['rules'] ?? [];
+                        $rawDirectives = trim($data['raw_directives'] ?? '');
+                        $generated = self::generateDirectives($rules);
+                        $combined = trim($generated."\n\n".$rawDirectives);
+
+                        if (trim($combined) === '') {
+                            Notification::make()
+                                ->title(__('Nothing to test'))
+                                ->body(__('Add some rules or raw directives first.'))
+                                ->warning()
+                                ->send();
+
+                            return;
+                        }
+
+                        $validation = $isAdmin
+                            ? NginxDirectiveValidator::validateForAdmin($combined)
+                            : NginxDirectiveValidator::validateForUser($combined);
+
+                        if (! $validation['valid']) {
+                            Notification::make()
+                                ->title(__('Validation Error'))
+                                ->body($validation['error'])
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        $agent = app(AgentClient::class);
+                        $result = $agent->call('domain.test_custom_directives', [
+                            'domain' => $record->domain,
+                            'directives' => $combined,
+                        ]);
+
+                        if (! $result->success) {
+                            Notification::make()
+                                ->title(__('Test Failed'))
+                                ->body($result->error ?? __('Nginx config test failed'))
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title(__('Test Passed'))
+                            ->body(__('Nginx configuration is valid. You can now apply the changes.'))
+                            ->success()
+                            ->send();
+                    }),
+            ])
             ->fillForm(function (Domain $record): array {
                 return [
                     'rules' => $record->custom_nginx_rules ?? [],

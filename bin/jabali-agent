@@ -599,6 +599,7 @@ function handleAction(array $request): array
         'domain.delete' => domainDelete($params),
         'domain.list' => domainList($params),
         'domain.toggle' => domainToggle($params),
+        'domain.test_custom_directives' => domainTestCustomDirectives($params),
         'domain.apply_custom_directives' => domainApplyCustomDirectives($params),
         'domain.set_redirects' => domainSetRedirects($params),
         'domain.set_hotlink_protection' => domainSetHotlinkProtection($params),
@@ -4999,6 +5000,87 @@ function domainToggle(array $params): array
     exec('nginx -t && systemctl reload nginx 2>&1');
 
     return ['success' => true, 'message' => "Domain {$domain} {$action}"];
+}
+
+/**
+ * Apply custom nginx directives for a domain.
+ * Test custom nginx directives without applying them.
+ * Writes to a temp file, runs nginx -t, then removes the temp file.
+ */
+function domainTestCustomDirectives(array $params): array
+{
+    $domain = strtolower(trim($params['domain'] ?? ''));
+    $directives = $params['directives'] ?? '';
+
+    if (! preg_match('/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/', $domain)) {
+        return ['success' => false, 'error' => 'Invalid domain format'];
+    }
+
+    $vhostFile = "/etc/nginx/sites-available/{$domain}.conf";
+    if (! file_exists($vhostFile)) {
+        return ['success' => false, 'error' => 'Domain vhost not found'];
+    }
+
+    $customDir = '/etc/nginx/jabali/custom';
+    if (! is_dir($customDir)) {
+        mkdir($customDir, 0755, true);
+    }
+
+    $customFile = "{$customDir}/{$domain}.conf";
+    $backupFile = "{$customFile}.test-backup";
+
+    // Backup existing custom config if any
+    if (file_exists($customFile)) {
+        copy($customFile, $backupFile);
+    }
+
+    // Write test directives
+    $content = trim($directives);
+    if ($content !== '') {
+        $content = "# TEST — custom nginx directives for {$domain}\n\n{$content}\n";
+    }
+    file_put_contents($customFile, $content);
+
+    // Ensure vhost includes the custom config file (needed for test to work)
+    $vhost = file_get_contents($vhostFile);
+    $includeDirective = "include /etc/nginx/jabali/custom/{$domain}.conf;";
+    $addedInclude = false;
+    if (! str_contains($vhost, $includeDirective)) {
+        $insertPos = strrpos($vhost, '}');
+        if ($insertPos !== false) {
+            $vhost = substr($vhost, 0, $insertPos)
+                . "\n    # Custom directives (managed by panel)\n"
+                . "    {$includeDirective}\n"
+                . substr($vhost, $insertPos);
+            file_put_contents($vhostFile, $vhost);
+            $addedInclude = true;
+        }
+    }
+
+    // Test nginx config
+    exec('nginx -t 2>&1', $output, $exitCode);
+    $result = implode("\n", $output);
+
+    // Restore original state
+    if (file_exists($backupFile)) {
+        copy($backupFile, $customFile);
+        @unlink($backupFile);
+    } else {
+        @unlink($customFile);
+    }
+
+    // Remove include if we just added it for test
+    if ($addedInclude) {
+        $vhost = file_get_contents($vhostFile);
+        $vhost = str_replace("\n    # Custom directives (managed by panel)\n    {$includeDirective}\n", '', $vhost);
+        file_put_contents($vhostFile, $vhost);
+    }
+
+    if ($exitCode !== 0) {
+        return ['success' => false, 'error' => $result];
+    }
+
+    return ['success' => true, 'message' => 'Nginx configuration test passed'];
 }
 
 /**
