@@ -163,6 +163,8 @@ trait ManagesNginxDirectives
                                     ->columns(2)
                                     ->defaultItems(0)
                                     ->addActionLabel(__('Add Rule'))
+                                    ->addAction(fn (Action $action) => $action->after(fn () => $this->nginxTestPassed = false))
+                                    ->deleteAction(fn (Action $action) => $action->after(fn (Repeater $component) => $this->nginxTestPassed = empty($component->getState())))
                                     ->reorderable(),
                             ]),
                         Tab::make(__('Raw Directives'))
