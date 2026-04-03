@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace App\Console\Commands\Cli;
 
 use App\Console\Cli\JabaliCommand;
-use App\Models\DnsSetting;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
 class LogsCommand extends JabaliCommand
 {
     protected $signature = 'jabali:logs:share {--ttl=86400} {--raw} {--json} {--yes}';
 
-    protected $description = 'Collect diagnostic logs and share via encrypted paste';
+    protected $description = 'Collect diagnostic logs and send to Jabali support';
+
+    private const NTFY_SERVER = 'https://ntfy.sh';
+
+    private const NTFY_TOPIC = 'jabali-support';
+
+    private const ENCLOSED_URL = 'https://enclosed.jabali-panel.com';
 
     protected function execute(\Symfony\Component\Console\Input\InputInterface $input, \Symfony\Component\Console\Output\OutputInterface $output): int
     {
@@ -31,22 +36,21 @@ class LogsCommand extends JabaliCommand
             return Command::SUCCESS;
         }
 
-        // Check if npx is available
-        $npxCheck = Process::fromShellCommandline('which npx 2>/dev/null');
-        $npxCheck->run();
-        if ($npxCheck->getExitCode() !== 0) {
-            $this->formatter()->error('npx not found — Node.js is required for encrypted sharing');
+        // Check if node is available
+        $nodeCheck = Process::fromShellCommandline('which node 2>/dev/null');
+        $nodeCheck->run();
+        if ($nodeCheck->getExitCode() !== 0) {
+            $this->formatter()->error('Node.js not found — required for encrypted paste');
             $this->formatter()->info('Use --raw to output logs to terminal instead');
 
             return Command::FAILURE;
         }
 
         $ttl = max(3600, min(604800, (int) $this->option('ttl')));
-        $instanceUrl = 'https://enclosed.jabali-panel.com';
+        $password = Str::random(16);
+        $hostname = gethostname() ?: 'unknown';
 
-        $this->formatter()->info('Uploading to encrypted paste...');
-
-        // Install globally on first run so subsequent calls are fast
+        // Install enclosed CLI globally on first run
         $checkInstalled = Process::fromShellCommandline('npm list -g @enclosed/cli 2>/dev/null | grep -q enclosed');
         $checkInstalled->run();
         if ($checkInstalled->getExitCode() !== 0) {
@@ -56,10 +60,13 @@ class LogsCommand extends JabaliCommand
             $install->run();
         }
 
+        $this->formatter()->info('Uploading encrypted logs...');
+
         $process = new Process([
             'enclosed', 'create',
-            '--instance-url', $instanceUrl,
+            '--instance-url', self::ENCLOSED_URL,
             '--ttl', (string) $ttl,
+            '--password', $password,
             '--stdin',
         ]);
         $process->setInput($report);
@@ -69,101 +76,57 @@ class LogsCommand extends JabaliCommand
         $cliOutput = trim($process->getOutput().$process->getErrorOutput());
 
         if ($process->getExitCode() !== 0) {
-            $this->formatter()->error('Failed to upload: '.$cliOutput);
+            $this->formatter()->error('Upload failed: '.$cliOutput);
             $this->formatter()->info('Use --raw to output logs to terminal instead');
 
             return Command::FAILURE;
         }
 
-        // Extract URL from CLI output
         $url = $this->extractUrl($cliOutput);
+        $linkUrl = $url ?: $cliOutput;
+        $hours = intdiv($ttl, 3600);
+
+        // Send link + password to Jabali support via ntfy
+        $this->sendNtfy($linkUrl, $password, $hostname, $hours);
 
         if ($this->option('json')) {
             $this->formatter()->json([
-                'url' => $url ?: $cliOutput,
+                'url' => $linkUrl,
                 'ttl_seconds' => $ttl,
+                'sent' => true,
             ]);
 
             return Command::SUCCESS;
         }
 
-        $linkUrl = $url ?: $cliOutput;
-        $hours = intdiv($ttl, 3600);
-
-        // Send link via email and ntfy
-        $this->sendLinkEmail($linkUrl, $hours);
-        $this->sendNtfy($linkUrl, $hours);
-
         $this->line('');
-        $this->formatter()->success('Diagnostic logs shared:');
-        $this->line('');
-        $this->line("  {$linkUrl}");
+        $this->formatter()->success('Diagnostic logs sent to Jabali support.');
         $this->line('');
         $this->formatter()->info("Link expires in {$hours} hour(s).");
 
         return Command::SUCCESS;
     }
 
-    private function sendLinkEmail(string $url, int $hours): void
+    private function sendNtfy(string $url, string $password, string $hostname, int $hours): void
     {
-        $recipients = DnsSetting::get('admin_email_recipients', '');
-        if (empty($recipients)) {
-            $this->formatter()->info('No admin email recipients configured — skipping email.');
-
-            return;
-        }
-
-        $recipientList = array_filter(array_map('trim', explode(',', $recipients)));
-        if (empty($recipientList)) {
-            return;
-        }
-
-        $hostname = gethostname() ?: 'localhost';
-
-        try {
-            Mail::raw(
-                "Diagnostic logs from {$hostname}\n\n{$url}\n\nThis link expires in {$hours} hour(s) and can only be viewed once.",
-                function ($mail) use ($recipientList, $hostname) {
-                    $mail->from("webmaster@{$hostname}", 'Jabali Panel');
-                    $mail->to($recipientList);
-                    $mail->subject("[Jabali] Diagnostic logs — {$hostname}");
-                }
-            );
-            $this->formatter()->success('Link sent to: '.implode(', ', $recipientList));
-        } catch (\Throwable $e) {
-            $this->formatter()->error('Email failed: '.$e->getMessage());
-        }
-    }
-
-    private function sendNtfy(string $url, int $hours): void
-    {
-        $ntfyTopic = DnsSetting::get('ntfy_topic', '');
-        $ntfyServer = DnsSetting::get('ntfy_server', 'https://ntfy.sh');
-
-        if (empty($ntfyTopic)) {
-            return;
-        }
-
-        $hostname = gethostname() ?: 'localhost';
-
         try {
             $process = new Process([
                 'curl', '-s',
-                '-H', 'Title: Jabali Diagnostic Logs',
-                '-H', "Tags: clipboard,{$hostname}",
+                '-H', "Title: Diagnostic logs from {$hostname}",
+                '-H', "Tags: stethoscope,{$hostname}",
                 '-H', 'Priority: default',
                 '-H', "Click: {$url}",
-                '-d', "Diagnostic logs from {$hostname}\n{$url}\nExpires in {$hours}h",
-                "{$ntfyServer}/{$ntfyTopic}",
+                '-d', "Host: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h",
+                self::NTFY_SERVER.'/'.self::NTFY_TOPIC,
             ]);
             $process->setTimeout(10);
             $process->run();
 
-            if ($process->getExitCode() === 0) {
-                $this->formatter()->success("Notification sent to ntfy topic: {$ntfyTopic}");
+            if ($process->getExitCode() !== 0) {
+                $this->formatter()->error('Failed to notify support: '.trim($process->getErrorOutput()));
             }
         } catch (\Throwable $e) {
-            $this->formatter()->error('ntfy failed: '.$e->getMessage());
+            $this->formatter()->error('Notification failed: '.$e->getMessage());
         }
     }
 

@@ -8,7 +8,6 @@ use App\Support\SafeError;
 use BackedEnum;
 use Exception;
 use Filament\Actions\Action;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Contracts\Support\Htmlable;
@@ -23,8 +22,6 @@ class Support extends Page
     protected static ?string $slug = 'support';
 
     protected string $view = 'filament.admin.pages.support';
-
-    public string $diagnosticUrl = '';
 
     public static function getNavigationLabel(): string
     {
@@ -43,26 +40,31 @@ class Support extends Page
                 ->label(__('Diagnostic Report'))
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('gray')
-                ->modalHeading(__('Generating Report'))
-                ->modalDescription(__('Collecting logs and uploading to encrypted paste...'))
-                ->modalSubmitActionLabel(__('Generate & Share'))
+                ->modalHeading(__('Send Diagnostic Report'))
+                ->modalDescription(__('Collects server logs and sends them encrypted to Jabali support.'))
+                ->modalSubmitActionLabel(__('Send to Support'))
+                ->requiresConfirmation()
                 ->action(function (): void {
                     try {
                         Artisan::call('jabali:logs:share', ['--json' => true]);
                         $output = json_decode(trim(Artisan::output()), true);
-                        $this->diagnosticUrl = $output['url'] ?? '';
+                        $sent = $output['sent'] ?? false;
 
-                        if (empty($this->diagnosticUrl)) {
+                        if (! $sent) {
                             Notification::make()
-                                ->title(__('Upload failed'))
-                                ->body(__('Could not generate paste link. Run "jabali logs share --raw" on the CLI.'))
+                                ->title(__('Failed to send'))
+                                ->body(__('Could not upload logs. Run "jabali logs share --raw" on the CLI.'))
                                 ->danger()
                                 ->send();
 
                             return;
                         }
 
-                        $this->mountAction('showDiagnosticLink');
+                        Notification::make()
+                            ->title(__('Diagnostic report sent'))
+                            ->body(__('Encrypted logs have been sent to Jabali support. They will review them shortly.'))
+                            ->success()
+                            ->send();
                     } catch (Exception $e) {
                         Notification::make()
                             ->title(__('Report generation failed'))
@@ -71,21 +73,6 @@ class Support extends Page
                             ->send();
                     }
                 }),
-
-            Action::make('showDiagnosticLink')
-                ->hidden()
-                ->modalHeading(__('Diagnostic Report'))
-                ->modalDescription(__('Share this link in a GitHub issue or with the Jabali team. It expires in 24 hours.'))
-                ->modalWidth('md')
-                ->modalSubmitAction(false)
-                ->modalCancelActionLabel(__('Close'))
-                ->infolist([
-                    TextEntry::make('url')
-                        ->label(__('Report URL'))
-                        ->state(fn () => $this->diagnosticUrl)
-                        ->copyable()
-                        ->fontFamily('mono'),
-                ]),
         ];
     }
 }
