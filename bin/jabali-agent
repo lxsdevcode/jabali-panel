@@ -5061,12 +5061,12 @@ function domainTestCustomDirectives(array $params): array
     exec('nginx -t 2>&1', $output, $exitCode);
     $result = implode("\n", $output);
 
-    // Restore original state
+    // Restore original state (keep empty file so include never breaks)
     if (file_exists($backupFile)) {
         copy($backupFile, $customFile);
         @unlink($backupFile);
     } else {
-        @unlink($customFile);
+        file_put_contents($customFile, '');
     }
 
     // Remove include if we just added it for test
@@ -5143,12 +5143,12 @@ function domainApplyCustomDirectives(array $params): array
     if ($exitCode !== 0) {
         $error = implode("\n", $output);
 
-        // Rollback
+        // Rollback (keep empty file so include never breaks)
         if (file_exists($backupFile)) {
             copy($backupFile, $customFile);
             @unlink($backupFile);
         } else {
-            @unlink($customFile);
+            file_put_contents($customFile, '');
         }
 
         logger("Custom directives rejected for {$domain}: {$error}", 'WARNING');
