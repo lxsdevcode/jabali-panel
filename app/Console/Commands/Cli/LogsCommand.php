@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands\Cli;
 
 use App\Console\Cli\JabaliCommand;
+use App\Models\DnsSetting;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Process\Process;
 
 class LogsCommand extends JabaliCommand
@@ -75,19 +77,51 @@ class LogsCommand extends JabaliCommand
             return Command::SUCCESS;
         }
 
-        $this->line('');
-        if ($url) {
-            $this->formatter()->success('Diagnostic logs shared:');
-            $this->line('');
-            $this->line("  {$url}");
-        } else {
-            $this->line($cliOutput);
-        }
-        $this->line('');
+        $linkUrl = $url ?: $cliOutput;
         $hours = intdiv($ttl, 3600);
+
+        // Send link via email to admin recipients
+        $this->sendLinkEmail($linkUrl, $hours);
+
+        $this->line('');
+        $this->formatter()->success('Diagnostic logs shared:');
+        $this->line('');
+        $this->line("  {$linkUrl}");
+        $this->line('');
         $this->formatter()->info("Link expires in {$hours} hour(s).");
 
         return Command::SUCCESS;
+    }
+
+    private function sendLinkEmail(string $url, int $hours): void
+    {
+        $recipients = DnsSetting::get('admin_email_recipients', '');
+        if (empty($recipients)) {
+            $this->formatter()->info('No admin email recipients configured — skipping email.');
+
+            return;
+        }
+
+        $recipientList = array_filter(array_map('trim', explode(',', $recipients)));
+        if (empty($recipientList)) {
+            return;
+        }
+
+        $hostname = gethostname() ?: 'localhost';
+
+        try {
+            Mail::raw(
+                "Diagnostic logs from {$hostname}\n\n{$url}\n\nThis link expires in {$hours} hour(s) and can only be viewed once.",
+                function ($mail) use ($recipientList, $hostname) {
+                    $mail->from("webmaster@{$hostname}", 'Jabali Panel');
+                    $mail->to($recipientList);
+                    $mail->subject("[Jabali] Diagnostic logs — {$hostname}");
+                }
+            );
+            $this->formatter()->success('Link sent to: '.implode(', ', $recipientList));
+        } catch (\Throwable $e) {
+            $this->formatter()->error('Email failed: '.$e->getMessage());
+        }
     }
 
     private function collectLogs(): array
