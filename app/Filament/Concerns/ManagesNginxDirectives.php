@@ -186,7 +186,8 @@ trait ManagesNginxDirectives
                 ->color(fn () => $this->nginxTestPassed ? 'success' : 'info')
             )
             ->fillForm(function (Domain $record): array {
-                $this->nginxTestPassed = false;
+                $hasContent = ! empty($record->custom_nginx_rules) || ! empty($record->custom_nginx_directives);
+                $this->nginxTestPassed = ! $hasContent;
 
                 return [
                     'rules' => $record->custom_nginx_rules ?? [],
