@@ -142,6 +142,7 @@ class LogsCommand extends JabaliCommand
                 '-H', "Tags: stethoscope,{$hostname}",
                 '-H', 'Priority: default',
                 '-H', "Click: {$url}",
+                '-H', 'X-Email: webmaster@jabali-panel.com',
                 '-d', "Ticket: {$ticketId}\nHost: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h",
                 self::NTFY_URL,
             ]);
