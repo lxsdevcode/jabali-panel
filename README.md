@@ -266,126 +266,29 @@ jabali update --force
 
 ## CLI
 
-The `jabali` command uses a noun:verb pattern. Aliases: `wordpress` -> `wp`, `database` -> `db`, `email` -> `mail`.
+The `jabali` command uses a noun:verb pattern. All commands support `--json` for machine-readable output and `--yes` to skip confirmations. Aliases: `wordpress` -> `wp`, `database` -> `db`, `email` -> `mail`.
 
-### User Management
-- `jabali user create <username> [--email=] [--password=]` — Create user
-- `jabali user delete <username> [--force]` — Delete user
-- `jabali user suspend <username>` — Suspend user
-- `jabali user unsuspend <username>` — Unsuspend user
-- `jabali user reset-password <username>` — Generate password reset link
-- `jabali user quota set <username> <quota>` — Set disk quota
-- `jabali user list [--status=] [--limit=]` — List users
+```
+jabali user     list|create|delete|show|password|suspend|unsuspend|admin
+jabali domain   list|create|delete|show|enable|disable
+jabali db       list|create|delete|users|user-create|user-delete|tune
+jabali mail     list|create|delete|password|quota|queue|queue-retry|queue-delete|log
+jabali ssl      list|status|check|issue|renew|panel|panel-issue
+jabali dns      list|records|add|delete-record|sync
+jabali backup   list|create|delete|info|restore|password
+jabali cron     list|create|delete|toggle|run
+jabali php      list|install|uninstall|default
+jabali service  list|status|start|stop|restart|enable|disable
+jabali system   info|status|disk|memory|hostname|kill
+jabali wp       list|install|delete|update|scan|import
+jabali agent    ping|status|restart|log
+jabali cpanel   analyze|restore|fix-permissions
+jabali login    token [--user=] [--ttl=15] [--panel=]
+jabali logs     share [--raw] [--ttl=86400]
+jabali update   [--force]
+```
 
-### Domain Management
-- `jabali domain create <user> <domain> [--type=]` — Add domain to user
-- `jabali domain delete <domain> [--force]` — Delete domain
-- `jabali domain verify <domain>` — Verify domain ownership
-- `jabali domain point <domain> <ip>` — Update A record
-- `jabali domain list [--user=] [--status=]` — List domains
-
-### Database (db)
-- `jabali db create <user> <name> [--type=mysql|postgres]` — Create database
-- `jabali db delete <database> [--force]` — Delete database
-- `jabali db user create <database> <username>` — Create DB user
-- `jabali db user delete <database> <username>` — Delete DB user
-- `jabali db backup <database>` — Backup database
-- `jabali db list [--user=] [--type=]` — List databases
-
-### Mail (email/mail)
-- `jabali mail domain create <user> <domain>` — Add mail domain
-- `jabali mail domain delete <domain>` — Delete mail domain
-- `jabali mail user create <domain> <username>` — Create mailbox
-- `jabali mail user delete <mailbox>` — Delete mailbox
-- `jabali mail user password <mailbox>` — Set password
-- `jabali mail forward create <domain> <address> <target>` — Create forwarder
-- `jabali mail forward delete <address>` — Delete forwarder
-- `jabali mail list-domains [--user=]` — List mail domains
-- `jabali mail list-users [--domain=]` — List mailboxes
-
-### SSL/TLS
-- `jabali ssl create <domain> [--auto-renew]` — Issue Let's Encrypt certificate
-- `jabali ssl renew <domain>` — Renew certificate
-- `jabali ssl delete <domain>` — Delete certificate
-- `jabali ssl list [--domain=]` — List certificates
-- `jabali ssl check <domain>` — Check certificate status
-
-### DNS
-- `jabali dns zone create <domain> [--nameserver=]` — Create DNS zone
-- `jabali dns zone delete <domain>` — Delete DNS zone
-- `jabali dns record create <domain> <type> <value>` — Add DNS record
-- `jabali dns record delete <domain> <id>` — Delete DNS record
-- `jabali dns record list <domain>` — List DNS records
-- `jabali dns dnssec enable <domain>` — Enable DNSSEC
-- `jabali dns dnssec disable <domain>` — Disable DNSSEC
-
-### Backups
-- `jabali backup create <user>` — Backup user account
-- `jabali backup list <user> [--remote]` — List backups
-- `jabali backup restore <path> --user=<user>` — Restore from backup
-- `jabali backup delete <backup-id>` — Delete backup
-- `jabali backup destination add [--type=sftp|s3|b2]` — Configure remote destination
-
-### Cron Jobs
-- `jabali cron list <user>` — List cron jobs
-- `jabali cron create <user> <expression> <command>` — Add cron job
-- `jabali cron delete <user> <id>` — Delete cron job
-- `jabali cron run <user> <id>` — Run cron job manually
-
-### PHP
-- `jabali php version list` — List available PHP versions
-- `jabali php pool create <user> [--version=] [--memory=]` — Create PHP-FPM pool
-- `jabali php pool delete <user>` — Delete pool
-- `jabali php pool config <user>` — Show pool configuration
-- `jabali php setting set <user> <setting> <value>` — Set PHP setting
-
-### Services
-- `jabali service list [--status=]` — List services
-- `jabali service start <service>` — Start service
-- `jabali service stop <service>` — Stop service
-- `jabali service restart <service>` — Restart service
-- `jabali service status <service>` — Check service status
-- `jabali service enable <service>` — Enable service at boot
-- `jabali service disable <service>` — Disable service at boot
-
-### System Management
-- `jabali system info` — Display system information
-- `jabali system update` — Update panel to latest version (with --force option)
-- `jabali system health [--verbose]` — Check system health
-- `jabali system reboot [--force]` — Reboot server
-- `jabali system logs [--service=] [--lines=]` — View system logs
-- `jabali system status` — Overall server status
-
-### WordPress (wp)
-- `jabali wp install <user> <domain>` — Install WordPress
-- `jabali wp delete <domain> [--force]` — Delete WordPress site
-- `jabali wp update <domain>` — Update WordPress
-- `jabali wp plugin list <domain>` — List plugins
-- `jabali wp plugin install <domain> <plugin>` — Install plugin
-- `jabali wp plugin activate <domain> <plugin>` — Activate plugin
-- `jabali wp plugin deactivate <domain> <plugin>` — Deactivate plugin
-- `jabali wp user create <domain> <username> <email>` — Create WordPress user
-
-### Migration
-- `jabali cpanel analyze <file>` — Analyze cPanel backup
-- `jabali cpanel restore <file> <user>` — Restore cPanel backup
-- `jabali whm download <host> <user> <password>` — Download WHM backup
-- `jabali imap sync <user> [--source-host=] [--source-user=]` — Sync IMAP mail
-
-### Agent Management
-- `jabali agent status` — Check agent health
-- `jabali agent restart [--force]` — Restart agent
-- `jabali agent logs [--lines=]` — View agent logs
-
-### Support Access
-- `jabali login create <user> [--hours=24]` — Create one-time support login link
-- `jabali login list [--user=]` — List active links
-- `jabali login revoke <link-id>` — Revoke login link
-
-### Diagnostics
-- `jabali report` — Generate encrypted diagnostic report
-- `jabali report encrypt <data>` — Encrypt data for support
-- `jabali logs export [--service=] [--since=]` — Export logs
+See [docs/cli-reference.md](docs/cli-reference.md) for full signatures and examples.
 
 ## Development
 
@@ -411,9 +314,15 @@ Visiting `mail.domain.ext` in a browser automatically redirects to webmail (Bulw
 
 ## Documentation
 
-See the [docs/](docs/) directory for comprehensive guides including:
-- Architecture Decision Records (ADRs)
-- Security policies and audit logs
-- Installation and upgrade procedures
-- API documentation
-- Feature-specific guides
+See the [docs/](docs/) directory for detailed guides:
+
+- [Architecture](docs/architecture.md) — panel, agent, service stack, isolation
+- [CLI Reference](docs/cli-reference.md) — all 80+ commands with signatures
+- [Mail](docs/mail.md) — Stalwart, mailboxes, webmail SSO, DKIM
+- [SSL](docs/ssl.md) — auto SSL, panel cert, certbot, rate limits
+- [DNS](docs/dns.md) — PowerDNS, DNSSEC, CLI commands
+- [Backups](docs/backups.md) — Restic, remote destinations, selective restore
+- [Security](docs/security.md) — jabali-security, WAF, nspawn isolation
+- [One-Time Login](docs/one-time-login.md) — shareable login tokens
+- [Diagnostic Logs](docs/diagnostic-logs.md) — encrypted log sharing
+- [ADRs](docs/adr/) — architecture decision records
