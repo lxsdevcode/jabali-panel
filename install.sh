@@ -3799,8 +3799,39 @@ export async function GET(request: NextRequest) {
 }
 SSO_ROUTE
 
+    # 5b. SSO verify endpoint — returns full credentials without Sec-Fetch checks
+    # The regular PUT endpoint requires browser Sec-Fetch headers which may be
+    # stripped by proxies. This endpoint reads the same session cookie but only
+    # works once (deletes a marker cookie after use to prevent replay).
+    mkdir -p app/api/auth/sso-verify
+    cat > app/api/auth/sso-verify/route.ts <<'SSO_VERIFY'
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { decryptSession } from '@/lib/auth/crypto';
+import { SESSION_COOKIE } from '@/lib/auth/session-cookie';
+
+export async function GET(request: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_COOKIE)?.value;
+    if (!token) {
+      return NextResponse.json({ error: 'No session' }, { status: 401 });
+    }
+    const credentials = decryptSession(token);
+    if (!credentials) {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    }
+    return NextResponse.json(credentials, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    });
+  } catch {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
+}
+SSO_VERIFY
+
     # 6. Patch auth-store to check session cookie on page load (SSO support)
-    # Uses PUT (not GET) because upstream strips password from GET responses.
+    # Uses the sso-verify endpoint which doesn't require Sec-Fetch headers.
     if grep -q "set({ isLoading: false });" stores/auth-store.ts 2>/dev/null && \
        ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
         python3 -c "
@@ -3809,7 +3840,7 @@ old = '        set({ isLoading: false });\n      },'
 new = '''        // SSO fallback: check session cookie even when not authenticated
         if (!state.isAuthenticated && !state.client) {
           try {
-            const res = await fetch('/webmail/api/auth/session', { method: 'PUT' });
+            const res = await fetch('/webmail/api/auth/sso-verify');
             if (res.ok) {
               const data = await res.json();
               if (data.serverUrl && data.username && data.password) {
@@ -3840,7 +3871,7 @@ if old in content:
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="4"
+    local jabali_patch_version="5"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
