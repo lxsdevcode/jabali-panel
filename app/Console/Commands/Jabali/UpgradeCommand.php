@@ -742,7 +742,7 @@ class UpgradeCommand extends Command
     private function migrateNginxPageCache(): void
     {
         $nginxConf = '/etc/nginx/nginx.conf';
-        if (! file_exists($nginxConf)) {
+        if (! file_exists($nginxConf) || posix_getuid() !== 0) {
             return;
         }
 
@@ -778,7 +778,11 @@ class UpgradeCommand extends Command
             );
         }
 
-        file_put_contents($nginxConf, $config);
+        if (file_put_contents($nginxConf, $config) === false) {
+            $this->warn('  Could not write nginx.conf (permission denied). Run jabali update as root.');
+
+            return;
+        }
 
         // Test nginx config
         exec('nginx -t 2>&1', $output, $exitCode);
