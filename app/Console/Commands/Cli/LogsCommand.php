@@ -29,11 +29,11 @@ class LogsCommand extends JabaliCommand
             return Command::SUCCESS;
         }
 
-        if (! $this->confirmAction(
-            'This will collect server diagnostic logs (services, configs, error logs) and send them encrypted to Jabali support. No personal data is collected. Continue?'
-        )) {
-            $this->formatter()->info('Cancelled.');
-
+        $this->line('');
+        $this->line('  Collects: services, configs, error logs');
+        $this->line('  Sent encrypted to Jabali support. No personal data collected.');
+        $this->line('');
+        if (! $this->confirmAction('Send diagnostic logs?')) {
             return Command::SUCCESS;
         }
 
