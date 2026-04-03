@@ -30,8 +30,8 @@ class LogsCommand extends JabaliCommand
         }
 
         $this->line('');
-        $this->line('  Collects: services, configs, error logs');
-        $this->line('  Sent encrypted to Jabali support. No personal data collected.');
+        $this->line('  Collects: services, configs, error logs.');
+        $this->line('  No passwords or personal data. Sent encrypted to Jabali support.');
         $this->line('');
         if (! $this->confirmAction('Send diagnostic logs?')) {
             return Command::SUCCESS;
