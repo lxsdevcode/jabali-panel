@@ -14,7 +14,8 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 
 trait ManagesNginxDirectives
@@ -28,122 +29,123 @@ trait ManagesNginxDirectives
             ->icon('heroicon-o-code-bracket')
             ->color('warning')
             ->form([
-                Section::make(__('Rule Builder'))
-                    ->description(__('Add rules using the form below. They will be converted to nginx directives automatically.'))
-                    ->schema([
-                        Repeater::make('rules')
-                            ->label('')
+                Tabs::make('directives')
+                    ->tabs([
+                        Tab::make(__('Rule Builder'))
+                            ->icon('heroicon-o-wrench-screwdriver')
                             ->schema([
-                                Select::make('type')
-                                    ->label(__('Type'))
-                                    ->options([
-                                        'redirect' => __('Redirect'),
-                                        'header' => __('Custom Header'),
-                                        'rewrite' => __('Rewrite Rule'),
-                                        'proxy' => __('Proxy Pass'),
-                                        'ip_access' => __('IP Access Control'),
-                                        'php_value' => __('PHP Setting'),
-                                        'client_max_body' => __('Max Upload Size'),
+                                Repeater::make('rules')
+                                    ->label(__('Add rules using the form below. They will be converted to nginx directives automatically.'))
+                                    ->schema([
+                                        Select::make('type')
+                                            ->label(__('Type'))
+                                            ->options([
+                                                'redirect' => __('Redirect'),
+                                                'header' => __('Custom Header'),
+                                                'rewrite' => __('Rewrite Rule'),
+                                                'proxy' => __('Proxy Pass'),
+                                                'ip_access' => __('IP Access Control'),
+                                                'php_value' => __('PHP Setting'),
+                                                'client_max_body' => __('Max Upload Size'),
+                                            ])
+                                            ->required()
+                                            ->live(),
+
+                                        // Redirect fields
+                                        TextInput::make('source')
+                                            ->label(__('Source Path'))
+                                            ->placeholder('/old-page')
+                                            ->visible(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy', 'ip_access'])),
+                                        TextInput::make('destination')
+                                            ->label(__('Destination'))
+                                            ->placeholder('https://example.com/new-page')
+                                            ->visible(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy'])),
+                                        Select::make('redirect_type')
+                                            ->label(__('Redirect Type'))
+                                            ->options(['301' => '301 Permanent', '302' => '302 Temporary'])
+                                            ->default('301')
+                                            ->visible(fn (Get $get) => $get('type') === 'redirect'),
+
+                                        // Header fields
+                                        Select::make('header_name')
+                                            ->label(__('Header'))
+                                            ->options([
+                                                'X-Frame-Options' => 'X-Frame-Options',
+                                                'X-Content-Type-Options' => 'X-Content-Type-Options',
+                                                'Strict-Transport-Security' => 'Strict-Transport-Security',
+                                                'Content-Security-Policy' => 'Content-Security-Policy',
+                                                'Referrer-Policy' => 'Referrer-Policy',
+                                                'Permissions-Policy' => 'Permissions-Policy',
+                                                'custom' => __('Custom'),
+                                            ])
+                                            ->visible(fn (Get $get) => $get('type') === 'header'),
+                                        TextInput::make('header_custom_name')
+                                            ->label(__('Header Name'))
+                                            ->visible(fn (Get $get) => $get('type') === 'header' && $get('header_name') === 'custom'),
+                                        TextInput::make('header_value')
+                                            ->label(__('Value'))
+                                            ->visible(fn (Get $get) => $get('type') === 'header'),
+
+                                        // Rewrite fields
+                                        Select::make('rewrite_flag')
+                                            ->label(__('Flag'))
+                                            ->options(['last' => 'last', 'break' => 'break', 'permanent' => 'permanent', 'redirect' => 'redirect'])
+                                            ->default('last')
+                                            ->visible(fn (Get $get) => $get('type') === 'rewrite'),
+
+                                        // Proxy fields
+                                        Toggle::make('proxy_websocket')
+                                            ->label(__('WebSocket Support'))
+                                            ->visible(fn (Get $get) => $get('type') === 'proxy'),
+
+                                        // IP Access fields
+                                        Select::make('ip_action')
+                                            ->label(__('Action'))
+                                            ->options(['allow' => __('Allow'), 'deny' => __('Deny')])
+                                            ->visible(fn (Get $get) => $get('type') === 'ip_access'),
+                                        TextInput::make('ip_address')
+                                            ->label(__('IP / CIDR'))
+                                            ->placeholder('1.2.3.4 or 10.0.0.0/8')
+                                            ->visible(fn (Get $get) => $get('type') === 'ip_access'),
+
+                                        // PHP value fields
+                                        Select::make('php_setting')
+                                            ->label(__('Setting'))
+                                            ->options([
+                                                'memory_limit' => 'memory_limit',
+                                                'upload_max_filesize' => 'upload_max_filesize',
+                                                'post_max_size' => 'post_max_size',
+                                                'max_execution_time' => 'max_execution_time',
+                                                'max_input_vars' => 'max_input_vars',
+                                            ])
+                                            ->visible(fn (Get $get) => $get('type') === 'php_value'),
+                                        TextInput::make('php_value')
+                                            ->label(__('Value'))
+                                            ->placeholder('512M')
+                                            ->visible(fn (Get $get) => $get('type') === 'php_value'),
+
+                                        // Max body size
+                                        TextInput::make('max_body_size')
+                                            ->label(__('Max Size'))
+                                            ->placeholder('100m')
+                                            ->visible(fn (Get $get) => $get('type') === 'client_max_body'),
                                     ])
-                                    ->required()
-                                    ->live(),
-
-                                // Redirect fields
-                                TextInput::make('source')
-                                    ->label(__('Source Path'))
-                                    ->placeholder('/old-page')
-                                    ->visible(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy', 'ip_access'])),
-                                TextInput::make('destination')
-                                    ->label(__('Destination'))
-                                    ->placeholder('https://example.com/new-page')
-                                    ->visible(fn (Get $get) => in_array($get('type'), ['redirect', 'rewrite', 'proxy'])),
-                                Select::make('redirect_type')
-                                    ->label(__('Redirect Type'))
-                                    ->options(['301' => '301 Permanent', '302' => '302 Temporary'])
-                                    ->default('301')
-                                    ->visible(fn (Get $get) => $get('type') === 'redirect'),
-
-                                // Header fields
-                                Select::make('header_name')
-                                    ->label(__('Header'))
-                                    ->options([
-                                        'X-Frame-Options' => 'X-Frame-Options',
-                                        'X-Content-Type-Options' => 'X-Content-Type-Options',
-                                        'Strict-Transport-Security' => 'Strict-Transport-Security',
-                                        'Content-Security-Policy' => 'Content-Security-Policy',
-                                        'Referrer-Policy' => 'Referrer-Policy',
-                                        'Permissions-Policy' => 'Permissions-Policy',
-                                        'custom' => __('Custom'),
-                                    ])
-                                    ->visible(fn (Get $get) => $get('type') === 'header'),
-                                TextInput::make('header_custom_name')
-                                    ->label(__('Header Name'))
-                                    ->visible(fn (Get $get) => $get('type') === 'header' && $get('header_name') === 'custom'),
-                                TextInput::make('header_value')
-                                    ->label(__('Value'))
-                                    ->visible(fn (Get $get) => $get('type') === 'header'),
-
-                                // Rewrite fields
-                                Select::make('rewrite_flag')
-                                    ->label(__('Flag'))
-                                    ->options(['last' => 'last', 'break' => 'break', 'permanent' => 'permanent', 'redirect' => 'redirect'])
-                                    ->default('last')
-                                    ->visible(fn (Get $get) => $get('type') === 'rewrite'),
-
-                                // Proxy fields
-                                Toggle::make('proxy_websocket')
-                                    ->label(__('WebSocket Support'))
-                                    ->visible(fn (Get $get) => $get('type') === 'proxy'),
-
-                                // IP Access fields
-                                Select::make('ip_action')
-                                    ->label(__('Action'))
-                                    ->options(['allow' => __('Allow'), 'deny' => __('Deny')])
-                                    ->visible(fn (Get $get) => $get('type') === 'ip_access'),
-                                TextInput::make('ip_address')
-                                    ->label(__('IP / CIDR'))
-                                    ->placeholder('1.2.3.4 or 10.0.0.0/8')
-                                    ->visible(fn (Get $get) => $get('type') === 'ip_access'),
-
-                                // PHP value fields
-                                Select::make('php_setting')
-                                    ->label(__('Setting'))
-                                    ->options([
-                                        'memory_limit' => 'memory_limit',
-                                        'upload_max_filesize' => 'upload_max_filesize',
-                                        'post_max_size' => 'post_max_size',
-                                        'max_execution_time' => 'max_execution_time',
-                                        'max_input_vars' => 'max_input_vars',
-                                    ])
-                                    ->visible(fn (Get $get) => $get('type') === 'php_value'),
-                                TextInput::make('php_value')
-                                    ->label(__('Value'))
-                                    ->placeholder('512M')
-                                    ->visible(fn (Get $get) => $get('type') === 'php_value'),
-
-                                // Max body size
-                                TextInput::make('max_body_size')
-                                    ->label(__('Max Size'))
-                                    ->placeholder('100m')
-                                    ->visible(fn (Get $get) => $get('type') === 'client_max_body'),
-                            ])
-                            ->columns(2)
-                            ->defaultItems(0)
-                            ->addActionLabel(__('Add Rule'))
-                            ->reorderable(),
-                    ])
-                    ->collapsible(),
-
-                Section::make(__('Raw Directives'))
-                    ->description(__('Advanced: edit nginx directives directly. The builder rules above will be merged with any manual edits.'))
-                    ->schema([
-                        Textarea::make('raw_directives')
-                            ->label('')
-                            ->rows(12)
-                            ->placeholder("# Example:\nrewrite ^/old$ /new permanent;\nadd_header X-Frame-Options \"DENY\" always;")
-                            ->helperText($isAdmin
-                                ? __('Admin mode: most directives allowed.')
-                                : __('Restricted to safe directives (rewrite, add_header, proxy_pass, etc.). Dangerous directives are blocked.')),
+                                    ->columns(2)
+                                    ->defaultItems(0)
+                                    ->addActionLabel(__('Add Rule'))
+                                    ->reorderable(),
+                            ]),
+                        Tab::make(__('Raw Directives'))
+                            ->icon('heroicon-o-code-bracket')
+                            ->schema([
+                                Textarea::make('raw_directives')
+                                    ->label('')
+                                    ->rows(12)
+                                    ->placeholder("# Example:\nrewrite ^/old$ /new permanent;\nadd_header X-Frame-Options \"DENY\" always;")
+                                    ->helperText($isAdmin
+                                        ? __('Admin mode: most directives allowed.')
+                                        : __('Restricted to safe directives (rewrite, add_header, proxy_pass, etc.). Dangerous directives are blocked.')),
+                            ]),
                     ]),
             ])
             ->fillForm(function (Domain $record): array {
