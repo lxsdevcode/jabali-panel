@@ -3978,29 +3978,33 @@ upgrade_infra() {
         [[ -f "$vhost" ]] || continue
         if grep -q 'location.*webmail' "$vhost" && ! grep -q 'location.*\^~.*/jmap/' "$vhost"; then
             domain_name=$(basename "$vhost" .conf)
-            local jmap_block
-            jmap_block=$(cat <<'JMAP_EOF'
-
+            python3 -c "
+import sys
+with open(sys.argv[1]) as f:
+    content = f.read()
+block = '''
     location = /.well-known/jmap {
         return 301 /jmap/session;
     }
 
     location ^~ /jmap/ {
         proxy_pass http://127.0.0.1:8090;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
         sub_filter_types application/json;
         sub_filter_once off;
     }
-JMAP_EOF
-)
-            # Insert before the first 'location = /webmail' line
-            sed -i "/location = \/webmail/i\\${jmap_block}" "$vhost"
+
+'''
+content = content.replace('    location = /webmail', block + '    location = /webmail', 1)
+with open(sys.argv[1], 'w') as f:
+    f.write(content)
+" "$vhost"
             info "Added JMAP proxy to $domain_name"
         fi
     done
