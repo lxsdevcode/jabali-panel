@@ -17,6 +17,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
@@ -40,6 +41,8 @@ class Dashboard extends Page implements HasActions, HasForms
     protected static ?string $slug = 'dashboard';
 
     protected string $view = 'filament.admin.pages.dashboard';
+
+    public string $generatedLoginUrl = '';
 
     public static function getNavigationLabel(): string
     {
@@ -152,13 +155,24 @@ class Dashboard extends Page implements HasActions, HasForms
                         ['panel' => $panel, 'ttl' => $ttl]
                     );
 
-                    Notification::make()
-                        ->title(__('Login link generated'))
-                        ->body($url)
-                        ->success()
-                        ->persistent()
-                        ->send();
+                    $this->generatedLoginUrl = $url;
+                    $this->mountAction('showLoginLink');
                 }),
+
+            Action::make('showLoginLink')
+                ->hidden()
+                ->modalHeading(__('Login Link'))
+                ->modalDescription(__('Copy this link and share it. It can only be used once.'))
+                ->modalWidth('md')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel(__('Close'))
+                ->infolist([
+                    TextEntry::make('url')
+                        ->label(__('Login URL'))
+                        ->state(fn () => $this->generatedLoginUrl)
+                        ->copyable()
+                        ->fontFamily('mono'),
+                ]),
 
             Action::make('refresh')
                 ->label(__('Refresh'))

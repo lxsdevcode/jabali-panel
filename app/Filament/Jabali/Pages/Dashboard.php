@@ -14,7 +14,7 @@ use App\Models\DnsSetting;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -28,6 +28,8 @@ class Dashboard extends BaseDashboard
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-home';
 
     protected static ?int $navigationSort = 1;
+
+    public string $generatedLoginUrl = '';
 
     public function getWidgets(): array
     {
@@ -105,13 +107,24 @@ class Dashboard extends BaseDashboard
                         ['panel' => 'user', 'ttl' => $ttl]
                     );
 
-                    Notification::make()
-                        ->title(__('Support access link generated'))
-                        ->body($url)
-                        ->success()
-                        ->persistent()
-                        ->send();
+                    $this->generatedLoginUrl = $url;
+                    $this->mountAction('showLoginLink');
                 }),
+
+            Action::make('showLoginLink')
+                ->hidden()
+                ->modalHeading(__('Support Access Link'))
+                ->modalDescription(__('Copy this link and share it. It can only be used once.'))
+                ->modalWidth('md')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel(__('Close'))
+                ->infolist([
+                    TextEntry::make('url')
+                        ->label(__('Login URL'))
+                        ->state(fn () => $this->generatedLoginUrl)
+                        ->copyable()
+                        ->fontFamily('mono'),
+                ]),
 
             Action::make('onboarding')->modalCancelActionLabel(__('Maybe later'))
                 ->label(__('Setup Wizard'))
