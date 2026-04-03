@@ -3919,6 +3919,15 @@ upgrade_bulwark() {
         git checkout -- . 2>/dev/null || true
     fi
 
+    # Migrate JMAP_SERVER_URL to local Stalwart if still pointing through nginx
+    if [[ -f "${bulwark_dir}/.env.local" ]]; then
+        if grep -q 'JMAP_SERVER_URL=https://' "${bulwark_dir}/.env.local" 2>/dev/null; then
+            sed -i 's|JMAP_SERVER_URL=https://.*|JMAP_SERVER_URL=http://127.0.0.1:8090|' "${bulwark_dir}/.env.local"
+            systemctl restart bulwark 2>/dev/null || true
+            info "Migrated JMAP_SERVER_URL to local Stalwart"
+        fi
+    fi
+
     if [[ "$needs_rebuild" != "true" ]]; then
         log "Bulwark Webmail is already up to date"
         return
