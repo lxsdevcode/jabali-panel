@@ -2228,6 +2228,18 @@ create_webmaster_mailbox() {
 
     info "Creating webmaster mailbox..."
 
+    # Ensure Stalwart is running and its HTTP API is reachable
+    systemctl start stalwart-mail 2>/dev/null || true
+    local _wait=0
+    while ! curl -sf "http://127.0.0.1:8090/.well-known/jmap" >/dev/null 2>&1; do
+        sleep 1
+        _wait=$((_wait + 1))
+        if [[ $_wait -ge 15 ]]; then
+            warn "Stalwart HTTP API not reachable after 15s — webmaster mailbox may lack Stalwart account"
+            break
+        fi
+    done
+
     local webmaster_password=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9!@#$%' | head -c 16)
 
     # Extract root domain for email (e.g., panel.example.com -> example.com)
