@@ -85,57 +85,65 @@ class LogsCommand extends JabaliCommand
         $hours = intdiv($ttl, 3600);
 
         // Send link + password to Jabali support via ntfy
-        $this->sendNtfy($linkUrl, $password, $hostname, $hours);
+        $sent = $this->sendNtfy($linkUrl, $password, $hostname, $hours);
 
         if ($this->option('json')) {
             $this->formatter()->json([
                 'url' => $linkUrl,
                 'ttl_seconds' => $ttl,
-                'sent' => true,
+                'sent' => $sent,
             ]);
 
-            return Command::SUCCESS;
+            return $sent ? Command::SUCCESS : Command::FAILURE;
+        }
+
+        if (! $sent) {
+            $this->line('');
+            $this->formatter()->error('Logs uploaded but could not notify support.');
+            $this->formatter()->info('Create /etc/jabali/ntfy.conf with NTFY_URL and NTFY_TOKEN first.');
+
+            return Command::FAILURE;
         }
 
         $this->line('');
         $this->formatter()->success('Diagnostic logs sent to Jabali support.');
-        $this->line('');
         $this->formatter()->info("Link expires in {$hours} hour(s).");
 
         return Command::SUCCESS;
     }
 
-    private function sendNtfy(string $url, string $password, string $hostname, int $hours): void
+    private function sendNtfy(string $url, string $password, string $hostname, int $hours): bool
     {
         $conf = $this->readNtfyConf();
         if (! $conf) {
-            $this->formatter()->error('ntfy not configured — create '.self::NTFY_CONF.' with NTFY_URL and NTFY_TOKEN');
-
-            return;
+            return false;
         }
 
         try {
-            $headers = [
+            $process = new Process([
+                'curl', '-s', '-f',
                 '-H', "Title: Diagnostic logs from {$hostname}",
                 '-H', "Tags: stethoscope,{$hostname}",
                 '-H', 'Priority: default',
                 '-H', "Click: {$url}",
                 '-H', "Authorization: Bearer {$conf['token']}",
-            ];
-
-            $process = new Process(array_merge(
-                ['curl', '-s'],
-                $headers,
-                ['-d', "Host: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h", $conf['url']],
-            ));
+                '-d', "Host: {$hostname}\nLink: {$url}\nPassword: {$password}\nExpires: {$hours}h",
+                $conf['url'],
+            ]);
             $process->setTimeout(10);
             $process->run();
 
             if ($process->getExitCode() !== 0) {
                 $this->formatter()->error('Failed to notify support: '.trim($process->getErrorOutput()));
+
+                return false;
             }
+
+            return true;
         } catch (\Throwable $e) {
             $this->formatter()->error('Notification failed: '.$e->getMessage());
+
+            return false;
         }
     }
 
