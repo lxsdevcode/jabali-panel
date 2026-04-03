@@ -184,7 +184,7 @@ Route::get('/webmail-sso/{mailbox}', function (\App\Models\Mailbox $mailbox) {
         abort(403);
     }
 
-    $ssoDir = '/var/lib/jabali/sso-tokens';
+    $ssoDir = config('jabali.sso_token_dir', '/var/lib/jabali/sso-tokens');
     if (! is_dir($ssoDir)) {
         @mkdir($ssoDir, 0700, true);
         if (! is_dir($ssoDir)) {
