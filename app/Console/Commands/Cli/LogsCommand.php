@@ -37,9 +37,17 @@ class LogsCommand extends JabaliCommand
             return Command::SUCCESS;
         }
 
+        $userNote = '';
+        if (! $this->option('yes')) {
+            $userNote = (string) $this->ask('Describe the issue (optional, press Enter to skip)');
+        }
+
         $this->formatter()->info('Collecting diagnostic logs...');
 
         $logs = $this->collectLogs();
+        if ($userNote !== '') {
+            array_splice($logs, 1, 0, ["User note: {$userNote}", '']);
+        }
         $report = implode("\n", $logs);
 
         // Check if node is available
