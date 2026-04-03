@@ -742,7 +742,7 @@ class UpgradeCommand extends Command
     private function migrateNginxPageCache(): void
     {
         $nginxConf = '/etc/nginx/nginx.conf';
-        if (! file_exists($nginxConf) || posix_getuid() !== 0) {
+        if (! file_exists($nginxConf)) {
             return;
         }
 
@@ -760,10 +760,14 @@ class UpgradeCommand extends Command
 
         $this->info('[9/10] Migrating nginx page cache to per-user directories...');
 
-        // Create the cache-zones directory
-        if (! is_dir('/etc/nginx/jabali/cache-zones')) {
-            @mkdir('/etc/nginx/jabali/cache-zones', 0755, true);
-        }
+        $agent = app(\App\Services\Agent\AgentClient::class);
+
+        // Create the cache-zones directory via agent
+        $agent->call('system.write_config', [
+            'path' => '/etc/nginx/jabali/cache-zones/.keep',
+            'content' => '',
+            'mkdir' => true,
+        ]);
 
         // Remove old global fastcgi_cache_path line
         $config = preg_replace('/^\s*fastcgi_cache_path\s+\/var\/cache\/nginx\/fastcgi[^;]*;\s*\n/m', '', $config);
@@ -778,19 +782,19 @@ class UpgradeCommand extends Command
             );
         }
 
-        if (file_put_contents($nginxConf, $config) === false) {
-            $this->warn('  Could not write nginx.conf (permission denied). Run jabali update as root.');
+        // Write nginx config via agent
+        $result = $agent->call('system.write_config', [
+            'path' => $nginxConf,
+            'content' => $config,
+        ]);
+
+        if (! $result->success) {
+            $this->warn('  Could not write nginx.conf: '.($result->error ?? 'unknown error'));
 
             return;
         }
 
-        // Test nginx config
-        exec('nginx -t 2>&1', $output, $exitCode);
-        if ($exitCode === 0) {
-            $this->line('  Nginx page cache migrated to per-user directories.');
-        } else {
-            $this->warn('  Nginx config test failed after migration. Check /etc/nginx/nginx.conf.');
-        }
+        $this->line('  Nginx page cache migrated to per-user directories.');
     }
 
     protected function restartServices(): void

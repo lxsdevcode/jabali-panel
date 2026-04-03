@@ -32,12 +32,6 @@ class MigrateRedisUsersCommand extends Command
 
     public function handle(): int
     {
-        if (posix_getuid() !== 0) {
-            $this->error('This command must be run as root.');
-
-            return Command::FAILURE;
-        }
-
         $dryRun = $this->option('dry-run');
         $force = $this->option('force');
 
@@ -116,10 +110,13 @@ class MigrateRedisUsersCommand extends Command
                                "REDIS_PASS={$redisPassword}\n".
                                "REDIS_PREFIX={$user->username}:\n";
 
-                file_put_contents($credFile, $credContent);
-                chmod($credFile, 0600);
-                chown($credFile, $user->username);
-                chgrp($credFile, $user->username);
+                $this->agent->call('system.write_config', [
+                    'path' => $credFile,
+                    'content' => $credContent,
+                    'owner' => $user->username,
+                    'group' => $user->username,
+                    'mode' => '0600',
+                ]);
 
                 $this->info("    ✓ Created Redis user for {$user->username}");
                 $this->created++;

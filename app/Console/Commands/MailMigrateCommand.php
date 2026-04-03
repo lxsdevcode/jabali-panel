@@ -28,12 +28,6 @@ class MailMigrateCommand extends Command
 
     public function handle(): int
     {
-        if (posix_getuid() !== 0) {
-            $this->error('This command must be run as root.');
-
-            return Command::FAILURE;
-        }
-
         if ($this->option('rollback')) {
             return $this->rollback();
         }
@@ -203,7 +197,10 @@ class MailMigrateCommand extends Command
             return false;
         }
 
-        $this->executeCommand('mkdir -p /etc/stalwart-mail /var/lib/stalwart-mail /var/log/stalwart-mail');
+        $agent = app(\App\Services\Agent\AgentClient::class);
+        foreach (['/etc/stalwart-mail', '/var/lib/stalwart-mail', '/var/log/stalwart-mail'] as $dir) {
+            $agent->call('system.write_config', ['path' => "{$dir}/.keep", 'content' => '', 'mkdir' => true]);
+        }
         $this->line('  Stalwart installed successfully.');
 
         return true;
@@ -211,19 +208,22 @@ class MailMigrateCommand extends Command
 
     private function generateStalwartConfig(): bool
     {
+        $agent = app(\App\Services\Agent\AgentClient::class);
+
         $hostname = DB::table('dns_settings')->where('key', 'mail_hostname')->value('value')
             ?? gethostname();
 
         $apiToken = bin2hex(random_bytes(32));
 
-        $confDir = '/etc/jabali';
-        if (! is_dir($confDir)) {
-            mkdir($confDir, 0750, true);
-        }
-        file_put_contents("{$confDir}/stalwart-api.conf", "STALWART_API_TOKEN={$apiToken}\n");
-        chmod("{$confDir}/stalwart-api.conf", 0640);
-        chown("{$confDir}/stalwart-api.conf", 'root');
-        chgrp("{$confDir}/stalwart-api.conf", 'www-data');
+        // Write API token config via agent
+        $agent->call('system.write_config', [
+            'path' => '/etc/jabali/stalwart-api.conf',
+            'content' => "STALWART_API_TOKEN={$apiToken}\n",
+            'owner' => 'root',
+            'group' => 'www-data',
+            'mode' => '0640',
+            'mkdir' => true,
+        ]);
 
         $dbConnection = config('database.default', 'mysql');
         $dbHost = config("database.connections.{$dbConnection}.host", '127.0.0.1');
@@ -250,14 +250,20 @@ class MailMigrateCommand extends Command
             $this->line("  Using existing Let's Encrypt certificate for {$hostname}");
         }
 
-        if (file_put_contents('/etc/stalwart-mail/config.toml', $config) === false) {
-            $this->error('Failed to write Stalwart configuration');
+        // Write Stalwart config via agent
+        $result = $agent->call('system.write_config', [
+            'path' => '/etc/stalwart-mail/config.toml',
+            'content' => $config,
+            'mode' => '0640',
+        ]);
+
+        if (! $result->success) {
+            $this->error('Failed to write Stalwart configuration: '.($result->error ?? 'unknown'));
 
             return false;
         }
-        chmod('/etc/stalwart-mail/config.toml', 0640);
 
-        // Create systemd service
+        // Create systemd service via agent
         if (! file_exists('/etc/systemd/system/stalwart-mail.service')) {
             $service = <<<'SYSTEMD'
 [Unit]
@@ -277,8 +283,11 @@ LimitNOFILE=65535
 [Install]
 WantedBy=multi-user.target
 SYSTEMD;
-            file_put_contents('/etc/systemd/system/stalwart-mail.service', $service);
-            $this->executeCommand('systemctl daemon-reload');
+            $agent->call('system.write_config', [
+                'path' => '/etc/systemd/system/stalwart-mail.service',
+                'content' => $service,
+            ]);
+            $agent->call('system.systemctl', ['action' => 'daemon-reload']);
         }
 
         $this->line('  Stalwart configuration generated.');
@@ -447,16 +456,18 @@ TOML;
 
     private function switchServices(): void
     {
+        $agent = app(\App\Services\Agent\AgentClient::class);
+
         foreach (['postfix', 'dovecot', 'opendkim', 'rspamd'] as $service) {
-            $this->executeCommand('systemctl stop '.escapeshellarg($service).' 2>/dev/null');
-            $this->executeCommand('systemctl disable '.escapeshellarg($service).' 2>/dev/null');
+            $agent->call('system.systemctl', ['action' => 'stop', 'service' => $service]);
+            $agent->call('system.systemctl', ['action' => 'disable', 'service' => $service]);
             $this->line("  Stopped and disabled {$service}");
         }
 
-        $this->executeCommand('systemctl enable stalwart-mail');
-        $result = $this->executeCommand('systemctl start stalwart-mail');
-        if ($result['exitCode'] !== 0) {
-            $this->error('Failed to start Stalwart: '.$result['output']);
+        $agent->call('system.systemctl', ['action' => 'enable', 'service' => 'stalwart-mail']);
+        $result = $agent->call('system.systemctl', ['action' => 'start', 'service' => 'stalwart-mail']);
+        if (! $result->success) {
+            $this->error('Failed to start Stalwart: '.($result->error ?? 'unknown'));
             $this->warn('You may need to run --rollback to restore services.');
 
             return;
@@ -505,13 +516,15 @@ TOML;
     {
         $this->info('Rolling back to legacy mail stack...');
 
-        $this->executeCommand('systemctl stop stalwart-mail 2>/dev/null');
-        $this->executeCommand('systemctl disable stalwart-mail 2>/dev/null');
+        $agent = app(\App\Services\Agent\AgentClient::class);
+
+        $agent->call('system.systemctl', ['action' => 'stop', 'service' => 'stalwart-mail']);
+        $agent->call('system.systemctl', ['action' => 'disable', 'service' => 'stalwart-mail']);
         $this->line('  Stopped Stalwart');
 
         foreach (['opendkim', 'dovecot', 'postfix'] as $service) {
-            $this->executeCommand('systemctl enable '.escapeshellarg($service).' 2>/dev/null');
-            $this->executeCommand('systemctl start '.escapeshellarg($service).' 2>/dev/null');
+            $agent->call('system.systemctl', ['action' => 'enable', 'service' => $service]);
+            $agent->call('system.systemctl', ['action' => 'start', 'service' => $service]);
             $this->line("  Started {$service}");
         }
 

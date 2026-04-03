@@ -814,6 +814,8 @@ function handleAction(array $request): array
         'system.kill_process' => systemKillProcess($params),
         'system.fix_git_permissions' => systemFixGitPermissions($params),
         'system.ensure_dir' => systemEnsureDir($params),
+        'system.write_config' => systemWriteConfig($params),
+        'system.systemctl' => systemSystemctl($params),
         // Disk quota operations
         'quota.status' => quotaStatus($params),
         'quota.enable' => quotaEnable($params),
@@ -18116,6 +18118,105 @@ function systemEnsureDir(array $params): array
     }
 
     return ['success' => is_dir($path)];
+}
+
+/**
+ * Write a configuration file to an allowed system path.
+ * Restricted to /etc/nginx/, /etc/jabali/, /etc/stalwart-mail/, /etc/systemd/system/,
+ * and /home/{user}/ (for per-user credential files).
+ */
+function systemWriteConfig(array $params): array
+{
+    $path = $params['path'] ?? '';
+    $content = $params['content'] ?? '';
+    $owner = $params['owner'] ?? 'root';
+    $group = $params['group'] ?? 'root';
+    $mode = $params['mode'] ?? '0644';
+    $mkdir = $params['mkdir'] ?? false;
+
+    $allowedPrefixes = [
+        '/etc/nginx/',
+        '/etc/jabali/',
+        '/etc/stalwart-mail/',
+        '/etc/systemd/system/',
+        '/home/',
+        '/var/lib/stalwart-mail/',
+        '/var/log/stalwart-mail/',
+    ];
+
+    $allowed = false;
+    foreach ($allowedPrefixes as $prefix) {
+        if (str_starts_with($path, $prefix)) {
+            $allowed = true;
+            break;
+        }
+    }
+
+    if (! $allowed) {
+        return ['success' => false, 'error' => 'Path not allowed: '.$path];
+    }
+
+    // Prevent path traversal
+    if (str_contains($path, '..')) {
+        return ['success' => false, 'error' => 'Path traversal not allowed'];
+    }
+
+    // Create parent directory if requested
+    $parentDir = dirname($path);
+    if ($mkdir && ! is_dir($parentDir)) {
+        mkdir($parentDir, 0755, true);
+        chown($parentDir, $owner);
+        chgrp($parentDir, $group);
+    }
+
+    if (! is_dir($parentDir)) {
+        return ['success' => false, 'error' => 'Parent directory does not exist: '.$parentDir];
+    }
+
+    if (@file_put_contents($path, $content) === false) {
+        return ['success' => false, 'error' => 'Failed to write file: '.$path];
+    }
+
+    chmod($path, octdec($mode));
+    chown($path, $owner);
+    chgrp($path, $group);
+
+    logger("Config file written: {$path} (owner={$owner}:{$group} mode={$mode})");
+
+    return ['success' => true, 'path' => $path];
+}
+
+/**
+ * Run systemctl commands (start, stop, restart, reload, enable, disable, daemon-reload).
+ * Action and service name are validated against allowlists — no shell injection risk.
+ */
+function systemSystemctl(array $params): array
+{
+    $action = $params['action'] ?? '';
+    $service = $params['service'] ?? '';
+
+    $allowedActions = ['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'daemon-reload'];
+    if (! in_array($action, $allowedActions, true)) {
+        return ['success' => false, 'error' => 'Invalid action: '.$action];
+    }
+
+    if ($action === 'daemon-reload') {
+        exec('systemctl daemon-reload 2>&1', $output, $exitCode);
+    } else {
+        if (empty($service) || ! preg_match('/^[a-zA-Z0-9@._-]+$/', $service)) {
+            return ['success' => false, 'error' => 'Invalid service name'];
+        }
+        exec('systemctl '.escapeshellarg($action).' '.escapeshellarg($service).' 2>&1', $output, $exitCode);
+    }
+
+    $result = implode("\n", $output);
+    logger("systemctl {$action} {$service}: exit={$exitCode}");
+
+    return [
+        'success' => $exitCode === 0,
+        'output' => $result,
+        'error' => $exitCode !== 0 ? $result : null,
+    ];
 }
 
     $error = posix_strerror(posix_get_last_error());
