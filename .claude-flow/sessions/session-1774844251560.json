@@ -1,0 +1,23 @@
+{
+  "id": "session-1774844251560",
+  "startedAt": "2026-03-30T04:17:31.560Z",
+  "cwd": "/home/shuki/projects/jabali",
+  "context": {
+    "lastMatchedPatterns": [
+      "mem-MEMORY-key-technical-details",
+      "mem-feedback_no_coauthor----",
+      "mem-project_feature_backlog-feature-backlog",
+      "mem-feedback_short_issue_replies----",
+      "mem-project_architecture_changes----"
+    ]
+  },
+  "metrics": {
+    "edits": 42,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "updatedAt": "2026-03-30T05:29:20.918Z",
+  "endedAt": "2026-03-30T15:01:57.416Z",
+  "duration": 38665856
+}

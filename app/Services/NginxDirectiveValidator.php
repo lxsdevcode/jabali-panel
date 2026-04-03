@@ -66,7 +66,7 @@ class NginxDirectiveValidator
 
         // Check for blocked directives first
         foreach (self::BLOCKED_DIRECTIVES as $blocked) {
-            if (preg_match('/(?:^|\s)' . preg_quote($blocked, '/') . '\b/mi', $directives)) {
+            if (preg_match('/(?:^|\s)'.preg_quote($blocked, '/').'\b/mi', $directives)) {
                 return [
                     'valid' => false,
                     'error' => "The directive '{$blocked}' is not allowed for security reasons.",
@@ -129,7 +129,7 @@ class NginxDirectiveValidator
 
         // Admins can use anything except the most dangerous directives
         foreach (['load_module', 'lua_', 'perl_', 'js_'] as $blocked) {
-            if (preg_match('/(?:^|\s)' . preg_quote($blocked, '/') . '\b/mi', $directives)) {
+            if (preg_match('/(?:^|\s)'.preg_quote($blocked, '/').'\b/mi', $directives)) {
                 return [
                     'valid' => false,
                     'error' => "The directive '{$blocked}' is blocked even for admins.",

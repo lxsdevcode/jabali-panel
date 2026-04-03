@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Filament\Jabali\Pages;
 
+use App\Filament\Concerns\ManagesNginxDirectives;
 use App\Models\AuditLog;
 use App\Models\Domain;
 use App\Models\DomainAlias;
 use App\Models\DomainHotlinkSetting;
 use App\Models\DomainRedirect;
-use App\Filament\Concerns\ManagesNginxDirectives;
 use App\Services\Agent\InteractsWithAgent;
 use App\Support\SafeError;
 use BackedEnum;

@@ -160,7 +160,7 @@ trait ManagesNginxDirectives
                 $generated = self::generateDirectives($rules);
 
                 // Combine: generated rules first, then raw directives
-                $combined = trim($generated . "\n\n" . $rawDirectives);
+                $combined = trim($generated."\n\n".$rawDirectives);
 
                 // Validate
                 $isAdmin = auth()->user()?->is_admin;

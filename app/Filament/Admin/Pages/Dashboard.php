@@ -24,6 +24,7 @@ use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Cache;
@@ -98,12 +99,6 @@ class Dashboard extends Page implements HasActions, HasForms
                 ->modalDescription(__('Create a shareable login URL that expires after one use.'))
                 ->modalWidth('md')
                 ->form([
-                    Select::make('user_id')
-                        ->label(__('User'))
-                        ->options(fn () => User::orderBy('username')->pluck('username', 'id')->toArray())
-                        ->required()
-                        ->searchable()
-                        ->live(),
                     Select::make('panel')
                         ->label(__('Panel'))
                         ->options([
@@ -111,7 +106,27 @@ class Dashboard extends Page implements HasActions, HasForms
                             'user' => __('User Panel'),
                         ])
                         ->default('admin')
-                        ->required(),
+                        ->required()
+                        ->live(),
+                    Select::make('user_id')
+                        ->label(__('User'))
+                        ->options(function (Get $get): array {
+                            $panel = $get('panel');
+
+                            if ($panel === 'admin') {
+                                return User::where('is_admin', true)
+                                    ->orderBy('username')
+                                    ->pluck('username', 'id')
+                                    ->toArray();
+                            }
+
+                            return User::where('is_admin', false)
+                                ->orderBy('username')
+                                ->pluck('username', 'id')
+                                ->toArray();
+                        })
+                        ->required()
+                        ->searchable(),
                     Select::make('ttl')
                         ->label(__('Expires in'))
                         ->options([

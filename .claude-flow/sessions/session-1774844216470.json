@@ -1,0 +1,14 @@
+{
+  "id": "session-1774844216470",
+  "startedAt": "2026-03-30T04:16:56.470Z",
+  "cwd": "/home/shuki/projects/jabali",
+  "context": {},
+  "metrics": {
+    "edits": 0,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "endedAt": "2026-03-30T04:17:07.103Z",
+  "duration": 10633
+}
