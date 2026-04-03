@@ -32,6 +32,24 @@ document.addEventListener('livewire:init', () => {
         return skeleton;
     }
 
+    function hideSkeleton() {
+        document.querySelectorAll('.fi-sc-tabs').forEach(container => {
+            const tabBar = container.querySelector('.fi-tabs');
+            if (!tabBar) return;
+
+            let sibling = tabBar.nextElementSibling;
+            while (sibling) {
+                if (!sibling.hasAttribute('data-tab-skeleton')) {
+                    sibling.style.display = '';
+                }
+                sibling = sibling.nextElementSibling;
+            }
+
+            const skeleton = container.querySelector('[data-tab-skeleton]');
+            if (skeleton) skeleton.style.display = 'none';
+        });
+    }
+
     Livewire.hook('commit', ({ commit, succeed }) => {
         const updates = Object.keys(commit.updates || {});
         if (!updates.includes('activeTab') && !updates.includes('viewMode')) return;
@@ -53,23 +71,9 @@ document.addEventListener('livewire:init', () => {
             skeleton.style.display = 'flex';
         });
 
-        succeed(() => {
-            document.querySelectorAll('.fi-sc-tabs').forEach(container => {
-                const tabBar = container.querySelector('.fi-tabs');
-                if (!tabBar) return;
-
-                let sibling = tabBar.nextElementSibling;
-                while (sibling) {
-                    if (!sibling.hasAttribute('data-tab-skeleton')) {
-                        sibling.style.display = '';
-                    }
-                    sibling = sibling.nextElementSibling;
-                }
-
-                const skeleton = container.querySelector('[data-tab-skeleton]');
-                if (skeleton) skeleton.style.display = 'none';
-            });
-        });
+        succeed(() => { hideSkeleton(); });
     });
+
+    Livewire.hook('morph.updated', () => { hideSkeleton(); });
 });
 </script>
