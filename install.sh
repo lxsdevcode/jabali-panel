@@ -4519,6 +4519,7 @@ uninstall() {
 
     # jabali-shell and sudoers
     rm -f /usr/local/bin/jabali-shell
+    rm -f /usr/local/bin/jabali-shell-bwrap
     rm -f /etc/sudoers.d/jabali-shell
     rm -f /etc/polkit-1/rules.d/50-jabali-shell.rules
     sed -i '\|/usr/local/bin/jabali-shell|d' /etc/shells 2>/dev/null || true
@@ -4651,10 +4652,10 @@ SSHD_SFTP
     if ! grep -q "Match Group shellusers" "$sshd_config" 2>/dev/null; then
         cat >> "$sshd_config" <<'SSHD_SHELL'
 
-# Jabali Panel — shell users (routed through nspawn container)
+# Jabali Panel — shell users (nspawn container or bwrap sandbox)
 Match Group shellusers
     ForceCommand /usr/local/bin/jabali-shell
-    AllowTcpForwarding no
+    AllowTcpForwarding yes
     X11Forwarding no
 SSHD_SHELL
         log "Added shell users block to sshd_config"
@@ -4670,10 +4671,10 @@ SSHD_SHELL
         # Append new block
         cat >> "$sshd_config" <<'SSHD_SHELL'
 
-# Jabali Panel — shell users (routed through nspawn container)
+# Jabali Panel — shell users (nspawn container or bwrap sandbox)
 Match Group shellusers
     ForceCommand /usr/local/bin/jabali-shell
-    AllowTcpForwarding no
+    AllowTcpForwarding yes
     X11Forwarding no
 SSHD_SHELL
         log "Migrated shellusers SSH config from jail to nspawn"
@@ -4709,7 +4710,14 @@ SSHD_SHELL
 install_jabali_shell() {
     header "Installing Jabali Shell Wrapper"
 
-    # Install wrapper script
+    # Install bubblewrap (fallback for LXC environments where nspawn isn't available)
+    if ! command -v bwrap &>/dev/null; then
+        info "Installing bubblewrap (bwrap) for sandbox fallback..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y bubblewrap >/dev/null 2>&1 || \
+            warn "Could not install bubblewrap — bwrap fallback will not be available"
+    fi
+
+    # Install main wrapper script (nspawn → bwrap → fail)
     local src="$JABALI_DIR/stubs/jabali-shell.sh"
     if [[ -f "$src" ]]; then
         cp "$src" /usr/local/bin/jabali-shell
@@ -4718,6 +4726,15 @@ install_jabali_shell() {
         log "Jabali shell wrapper installed"
     else
         warn "jabali-shell.sh stub not found — skipping"
+    fi
+
+    # Install bwrap wrapper script
+    local bwrap_src="$JABALI_DIR/stubs/jabali-shell-bwrap.sh"
+    if [[ -f "$bwrap_src" ]]; then
+        cp "$bwrap_src" /usr/local/bin/jabali-shell-bwrap
+        chmod 755 /usr/local/bin/jabali-shell-bwrap
+        chown root:root /usr/local/bin/jabali-shell-bwrap
+        log "Jabali bwrap shell wrapper installed"
     fi
 
     # Add jabali-shell to allowed shells
@@ -4734,7 +4751,7 @@ install_jabali_shell() {
         log "Polkit rule installed for container shell access"
     fi
 
-    # Install sudoers rule as fallback (for systems without polkit)
+    # Install sudoers rule (nspawn + bwrap)
     local sudoers_file="/etc/sudoers.d/jabali-shell"
     cat > "$sudoers_file" <<'SUDOERS'
 # Jabali Panel — allow shell users to enter their container via nsenter
@@ -4744,7 +4761,7 @@ install_jabali_shell() {
 %shellusers ALL=(root) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/*.conf
 SUDOERS
     chmod 440 "$sudoers_file"
-    log "Sudoers rule installed for container shell access"
+    log "Sudoers rule installed for shell access"
 }
 
 install_jabali_security() {
