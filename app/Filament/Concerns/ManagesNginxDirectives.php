@@ -8,17 +8,16 @@ use App\Models\Domain;
 use App\Services\Agent\AgentClient;
 use App\Services\NginxDirectiveValidator;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
-use Illuminate\Support\HtmlString;
 
 trait ManagesNginxDirectives
 {
@@ -33,14 +32,11 @@ trait ManagesNginxDirectives
             ->icon('heroicon-o-code-bracket')
             ->color('warning')
             ->form([
-                Placeholder::make('warning')
-                    ->hiddenLabel()
-                    ->content(new HtmlString(
-                        '<div class="flex gap-3 rounded-lg bg-danger-50 p-4 text-sm text-danger-700 dark:bg-danger-950/50 dark:text-danger-400">'
-                        .'<svg class="mt-0.5 h-5 w-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>'
-                        .'<div>'.__('Incorrect directives can break your website. Changes are tested with nginx before applying, but you are responsible for ensuring your configuration is correct.').'</div>'
-                        .'</div>'
-                    )),
+                Section::make(__('Use with caution'))
+                    ->description(__('Incorrect directives can break your website. Changes are tested with nginx before applying, but you are responsible for ensuring your configuration is correct.'))
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->iconColor('danger')
+                    ->compact(),
                 Tabs::make('directives')
                     ->tabs([
                         Tab::make(__('Rule Builder'))
