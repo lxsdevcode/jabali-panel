@@ -4659,16 +4659,15 @@ Match Group shellusers
     X11Forwarding no
 SSHD_SHELL
         log "Added shell users block to sshd_config"
-    elif grep -q "ChrootDirectory /var/jail" "$sshd_config" 2>/dev/null; then
-        # Migrate old jail-based shellusers block to nspawn
-        # Use awk to remove the old block (Match Group shellusers ... until next Match or EOF)
+    else
+        # Existing shellusers block — replace it with current config
+        # Handles: jail→nspawn migration, AllowTcpForwarding no→yes, etc.
         awk '
             /^Match Group shellusers/ { skip=1; next }
             /^Match / && skip { skip=0 }
             !skip { print }
         ' "$sshd_config" > "${sshd_config}.tmp" && mv "${sshd_config}.tmp" "$sshd_config"
         chmod 644 "$sshd_config"
-        # Append new block
         cat >> "$sshd_config" <<'SSHD_SHELL'
 
 # Jabali Panel — shell users (nspawn container or bwrap sandbox)
@@ -4677,7 +4676,7 @@ Match Group shellusers
     AllowTcpForwarding yes
     X11Forwarding no
 SSHD_SHELL
-        log "Migrated shellusers SSH config from jail to nspawn"
+        log "Updated shellusers SSH config"
     fi
 
     # Fix home dir ownership for existing shell users (one-time migration)

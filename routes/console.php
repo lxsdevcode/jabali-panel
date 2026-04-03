@@ -140,7 +140,7 @@ Schedule::call(function () {
     \App\Models\ImpersonationToken::where(function ($q) {
         $q->where('expires_at', '<', now())
             ->orWhere(function ($q2) {
-                $q2->where('used', true)
+                $q2->whereNotNull('used_at')
                     ->where('created_at', '<', now()->subDay());
             });
     })->delete();
