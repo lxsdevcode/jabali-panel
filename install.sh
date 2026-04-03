@@ -4385,6 +4385,11 @@ uninstall() {
     rm -f /usr/local/bin/wp
     rm -f /root/.jabali_db_credentials
     rm -f /root/.jabali_redis_credentials
+    rm -f /root/jabali_credentials.txt
+    rm -f /etc/powerdns/pdns.d/jabali.conf
+    rm -f /etc/needrestart/conf.d/99-jabali.conf
+    rm -f /etc/systemd/resolved.conf.d/jabali.conf
+    rm -rf /root/.jabali_reinstall_backup_*
     log "Jabali Panel removed"
 
     header "Removing Database"
