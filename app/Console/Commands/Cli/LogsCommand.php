@@ -46,8 +46,18 @@ class LogsCommand extends JabaliCommand
 
         $this->formatter()->info('Uploading to encrypted paste...');
 
+        // Install globally on first run so subsequent calls are fast
+        $checkInstalled = Process::fromShellCommandline('npm list -g @enclosed/cli 2>/dev/null | grep -q enclosed');
+        $checkInstalled->run();
+        if ($checkInstalled->getExitCode() !== 0) {
+            $this->formatter()->info('Installing enclosed CLI (first time only)...');
+            $install = Process::fromShellCommandline('npm install -g @enclosed/cli 2>/dev/null');
+            $install->setTimeout(60);
+            $install->run();
+        }
+
         $process = new Process([
-            'npx', '--yes', '@enclosed/cli', 'create',
+            'enclosed', 'create',
             '--instance-url', $instanceUrl,
             '--ttl', (string) $ttl,
             '--stdin',
