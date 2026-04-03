@@ -221,19 +221,30 @@ trait ManagesNginxDirectives
 
                 $agent = app(AgentClient::class);
 
+                // Empty = clear all custom directives (no test needed)
+                if (trim($combined) === '') {
+                    $agent->call('domain.apply_custom_directives', [
+                        'domain' => $record->domain,
+                        'directives' => '',
+                    ]);
+
+                    $record->update([
+                        'custom_nginx_directives' => null,
+                        'custom_nginx_rules' => null,
+                    ]);
+
+                    $this->nginxTestPassed = false;
+
+                    Notification::make()
+                        ->title(__('Custom directives cleared'))
+                        ->success()
+                        ->send();
+
+                    return;
+                }
+
                 // Step 1: Test first
                 if (! $this->nginxTestPassed) {
-                    if (trim($combined) === '') {
-                        Notification::make()
-                            ->title(__('Nothing to test'))
-                            ->body(__('Add some rules or raw directives first.'))
-                            ->warning()
-                            ->send();
-
-                        $this->halt();
-
-                        return;
-                    }
 
                     $result = $agent->call('domain.test_custom_directives', [
                         'domain' => $record->domain,
