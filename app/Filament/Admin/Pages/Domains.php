@@ -197,8 +197,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         ->modalWidth('3xl'),
                     $this->nginxDirectivesAction()
                         ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
-                        ->modalWidth(Width::FourExtraLarge)
-                        ->modalSubmitActionLabel(__('Apply')),
+                        ->modalWidth(Width::FourExtraLarge),
                     Action::make('deleteDomain')
                         ->label(__('Delete'))
                         ->icon('heroicon-o-trash')

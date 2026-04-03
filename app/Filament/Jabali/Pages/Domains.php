@@ -184,8 +184,7 @@ class Domains extends Page implements HasActions, HasForms, HasTable
                         ->action(fn (Domain $record) => $this->togglePageCache($record)),
                     $this->nginxDirectivesAction()
                         ->modalHeading(fn (Domain $record) => __('Nginx Directives for :domain', ['domain' => $record->domain]))
-                        ->modalWidth(Width::FourExtraLarge)
-                        ->modalSubmitActionLabel(__('Apply')),
+                        ->modalWidth(Width::FourExtraLarge),
                 ])
                     ->label(__('Settings'))
                     ->icon('heroicon-o-cog-6-tooth')
