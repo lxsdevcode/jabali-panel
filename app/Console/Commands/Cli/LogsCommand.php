@@ -171,23 +171,103 @@ class LogsCommand extends JabaliCommand
         $logs[] = '';
 
         $sections = [
+            // System
             'System Info' => [
                 'uname -a',
                 'cat /etc/os-release 2>/dev/null | head -5',
                 'uptime',
                 'free -h',
-                'df -h / /home',
+                'df -h / /home /var',
             ],
             'Jabali Version' => [
                 'cat '.escapeshellarg(base_path('VERSION')).' 2>/dev/null',
                 'php -v | head -1',
+                'node -v 2>/dev/null',
+                'nginx -v 2>&1',
             ],
             'Services' => [
-                'systemctl is-active nginx mariadb stalwart-mail pdns redis-server jabali-agent jabali-queue jabali-panel bulwark 2>/dev/null',
+                'systemctl is-active nginx mariadb stalwart-mail pdns redis-server jabali-agent jabali-queue jabali-panel bulwark jabali-security crowdsec 2>/dev/null',
                 'systemctl --failed --no-pager 2>/dev/null | head -20',
             ],
+            'Listening Ports' => [
+                'ss -tlnp 2>/dev/null | head -30',
+            ],
+
+            // Web
+            'Nginx Error Log (last 30)' => [
+                'tail -30 /var/log/nginx/error.log 2>/dev/null',
+            ],
+            'PHP-FPM Log (last 20)' => [
+                'tail -20 /var/log/php*/php*-fpm.log 2>/dev/null',
+            ],
+            'FrankenPHP / Panel Log (last 20)' => [
+                'journalctl -u jabali-panel --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            ],
+
+            // Laravel
+            'Laravel Log (last 40)' => [
+                'tail -40 '.escapeshellarg(base_path('storage/logs/laravel.log')).' 2>/dev/null',
+            ],
+            'Queue Failed Jobs' => [
+                'cd '.escapeshellarg(base_path()).' && php artisan queue:failed --no-interaction 2>/dev/null | tail -15',
+            ],
+
+            // Agent
+            'Agent Log (last 30)' => [
+                'tail -30 /var/log/jabali/agent.log 2>/dev/null',
+            ],
+            'Health Monitor (last 20)' => [
+                'tail -20 /var/log/jabali/health-monitor.log 2>/dev/null',
+            ],
+
+            // Mail
+            'Stalwart Mail Log (last 30)' => [
+                'journalctl -u stalwart-mail --since "1 hour ago" --no-pager 2>/dev/null | tail -30',
+            ],
+            'Stalwart Config' => [
+                'grep -E "^(server|storage|certificate)" /etc/stalwart-mail/config.toml 2>/dev/null | head -20',
+            ],
+
+            // Webmail
+            'Bulwark Log (last 20)' => [
+                'journalctl -u bulwark --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            ],
+
+            // SSL
+            'Certbot Log (last 30)' => [
+                'tail -30 /var/log/letsencrypt/letsencrypt.log 2>/dev/null',
+            ],
+            'SSL Certificates' => [
+                'certbot certificates 2>/dev/null',
+            ],
+            'Panel Certificate' => [
+                'openssl x509 -in /etc/ssl/jabali/panel.crt -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null',
+            ],
+
+            // DNS
+            'PowerDNS Log (last 20)' => [
+                'journalctl -u pdns --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            ],
+
+            // Database
+            'MariaDB Error Log (last 20)' => [
+                'tail -20 /var/log/mysql/error.log 2>/dev/null',
+            ],
+
+            // Security
+            'CrowdSec Alerts (last 10)' => [
+                'cscli alerts list --limit 10 2>/dev/null',
+            ],
+            'Jabali Security Log (last 20)' => [
+                'journalctl -u jabali-security --since "1 hour ago" --no-pager 2>/dev/null | tail -20',
+            ],
+            'Firewall' => [
+                'ufw status numbered 2>/dev/null | head -20',
+            ],
+
+            // SSH
             'SSH Config' => [
-                'grep -iE "pubkey|authorized|allow|deny|match|forcecommand" /etc/ssh/sshd_config 2>/dev/null',
+                'grep -iE "pubkey|authorized|allow|deny|match|forcecommand|passwordauth" /etc/ssh/sshd_config 2>/dev/null',
             ],
             'SSH Auth Log (last 30)' => [
                 'journalctl -u ssh --since "1 hour ago" --no-pager 2>/dev/null | tail -30',
@@ -198,27 +278,6 @@ class LogsCommand extends JabaliCommand
             ],
             'Home Directories' => [
                 'ls -la /home/ 2>/dev/null',
-            ],
-            'Listening Ports' => [
-                'ss -tlnp 2>/dev/null | head -25',
-            ],
-            'Nginx Error Log (last 20)' => [
-                'tail -20 /var/log/nginx/error.log 2>/dev/null',
-            ],
-            'PHP-FPM Log (last 20)' => [
-                'tail -20 /var/log/php*/php*-fpm.log 2>/dev/null',
-            ],
-            'Laravel Log (last 30)' => [
-                'tail -30 '.escapeshellarg(base_path('storage/logs/laravel.log')).' 2>/dev/null',
-            ],
-            'Agent Log (last 20)' => [
-                'tail -20 /var/log/jabali/agent.log 2>/dev/null',
-            ],
-            'Health Monitor (last 20)' => [
-                'tail -20 /var/log/jabali/health-monitor.log 2>/dev/null',
-            ],
-            'Firewall' => [
-                'ufw status 2>/dev/null | head -15',
             ],
             'Containers' => [
                 'machinectl list --no-pager 2>/dev/null',
