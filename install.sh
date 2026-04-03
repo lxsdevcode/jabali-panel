@@ -3744,24 +3744,16 @@ PROXY_TS
         xargs grep -l 'fetch("/api/' 2>/dev/null | \
         xargs -r sed -i 's|fetch("/api/|fetch("/webmail/api/|g'
 
-    # 5. SSO API route for Jabali panel single sign-on
+    # 5. SSO API route — reads token file, POSTs to session endpoint internally,
+    #    then redirects to /webmail/en with full session established.
+    #    This avoids client-side JMAP connection issues (self-signed certs, etc.)
     mkdir -p app/api/auth/sso
     cat > app/api/auth/sso/route.ts <<'SSO_ROUTE'
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { readFileSync, unlinkSync, existsSync } from 'node:fs';
 import { logger } from '@/lib/logger';
-import { encryptSession } from '@/lib/auth/crypto';
-import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE } from '@/lib/auth/session-cookie';
 
 const SSO_TOKEN_DIR = '/var/lib/jabali/sso-tokens';
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  path: '/',
-  maxAge: SESSION_COOKIE_MAX_AGE,
-};
 
 function getBaseUrl(request: NextRequest): string {
   const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'localhost';
@@ -3786,12 +3778,37 @@ export async function GET(request: NextRequest) {
     if (!data.email || !data.expires || data.expires < Math.floor(Date.now() / 1000) || !data.password) {
       return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
     }
+
+    // POST to the session endpoint internally (same as login form)
+    // This establishes the full session with stalwart auth context
     const jmapServerUrl = baseUrl || process.env.JMAP_SERVER_URL || '';
-    const sessionToken = encryptSession(jmapServerUrl, data.email, data.password);
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE, sessionToken, COOKIE_OPTIONS);
+    const sessionRes = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/webmail/api/auth/session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': request.headers.get('cookie') || '',
+      },
+      body: JSON.stringify({
+        serverUrl: jmapServerUrl,
+        username: data.email,
+        password: data.password,
+      }),
+    });
+
+    if (!sessionRes.ok) {
+      logger.error('SSO session POST failed', { status: sessionRes.status });
+      return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
+    }
+
+    // Forward the Set-Cookie headers from the session response
+    const redirect = NextResponse.redirect(`${baseUrl}/webmail/en`);
+    const setCookies = sessionRes.headers.getSetCookie();
+    for (const cookie of setCookies) {
+      redirect.headers.append('Set-Cookie', cookie);
+    }
+
     logger.info('SSO login successful', { email: data.email });
-    return NextResponse.redirect(`${baseUrl}/webmail/en`);
+    return redirect;
   } catch (error) {
     logger.error('SSO error', { error: error instanceof Error ? error.message : 'Unknown' });
     return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
@@ -3799,73 +3816,9 @@ export async function GET(request: NextRequest) {
 }
 SSO_ROUTE
 
-    # 5b. SSO verify endpoint — returns full credentials without Sec-Fetch checks
-    # The regular PUT endpoint requires browser Sec-Fetch headers which may be
-    # stripped by proxies. This endpoint reads the same session cookie but only
-    # works once (deletes a marker cookie after use to prevent replay).
-    mkdir -p app/api/auth/sso-verify
-    cat > app/api/auth/sso-verify/route.ts <<'SSO_VERIFY'
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { decryptSession } from '@/lib/auth/crypto';
-import { SESSION_COOKIE } from '@/lib/auth/session-cookie';
-
-export async function GET(request: NextRequest) {
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE)?.value;
-    if (!token) {
-      return NextResponse.json({ error: 'No session' }, { status: 401 });
-    }
-    const credentials = decryptSession(token);
-    if (!credentials) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
-    }
-    return NextResponse.json(credentials, {
-      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
-    });
-  } catch {
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
-  }
-}
-SSO_VERIFY
-
-    # 6. Patch auth-store: inject SSO check at the TOP of checkAuth (before account restore)
-    # Must run before the accounts.length > 0 block, otherwise stale localStorage
-    # accounts cause a redirect to login before the SSO fallback is reached.
-    if ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
-        python3 -c "
-content = open('stores/auth-store.ts').read()
-
-# Find the start of checkAuth's account logic
-old = '        const accountStore = useAccountStore.getState();\n        const accounts = accountStore.accounts;'
-new = '''        // SSO fallback: check session cookie BEFORE account restore
-        // (stale localStorage accounts would redirect to login before reaching a late check)
-        try {
-          const ssoRes = await fetch('/webmail/api/auth/sso-verify');
-          if (ssoRes.ok) {
-            const ssoData = await ssoRes.json();
-            if (ssoData.serverUrl && ssoData.username && ssoData.password) {
-              set({ isLoading: true });
-              const { serverUrl, username, password } = ssoData;
-              const ssoClient = new JMAPClient(serverUrl, username, password);
-              ssoClient.onConnectionChange((connected) => { set({ connectionLost: !connected }); });
-              await ssoClient.connect();
-              const { identities, primaryIdentity } = loadIdentities(await ssoClient.getIdentities(), username);
-              initializeFeatureStores(ssoClient);
-              set({ isAuthenticated: true, isLoading: false, serverUrl, username, client: ssoClient, identities, primaryIdentity, authMode: 'basic', rememberMe: true });
-              return;
-            }
-          }
-        } catch (e) { /* no SSO cookie — continue to normal account restore */ }
-
-        const accountStore = useAccountStore.getState();
-        const accounts = accountStore.accounts;'''
-
-if old in content:
-    open('stores/auth-store.ts', 'w').write(content.replace(old, new, 1))
-" 2>/dev/null || true
-    fi
+    # 6. No auth-store patch needed — the SSO route now POSTs to the session
+    # endpoint directly, establishing the full session server-side. The regular
+    # checkAuth() account restoration handles it from there.
 
     log "Bulwark patches applied (basePath, SSO, auth-store)"
 }
@@ -3873,7 +3826,7 @@ if old in content:
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="6"
+    local jabali_patch_version="7"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
