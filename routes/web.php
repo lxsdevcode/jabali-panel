@@ -217,8 +217,8 @@ Route::get('/webmail-sso/{mailbox}', function (\App\Models\Mailbox $mailbox) {
     file_put_contents($ssoFile, json_encode($tokenData), LOCK_EX);
     chmod($ssoFile, 0600);
 
-    // Always use the panel hostname for SSO — keeps cookies on same domain
-    $hostname = config('jabali.panel.hostname') ?: request()->getHost();
+    // Use the same host the user is browsing on so cookies match
+    $hostname = request()->getHost();
     $ssoUrl = "https://{$hostname}/webmail/api/auth/sso?token={$token}";
 
     if (! $mailbox->plain_password) {
