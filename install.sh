@@ -3792,9 +3792,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/webmail/en/login`);
     }
 
-    // POST to the session endpoint internally (same as login form)
-    // Use baseUrl so the JMAP server URL matches what the browser will use
-    const jmapServerUrl = baseUrl || process.env.JMAP_SERVER_URL || '';
+    // POST to the session endpoint internally
+    // Prefer JMAP_SERVER_URL env (points to local Stalwart) over baseUrl
+    const jmapServerUrl = process.env.JMAP_SERVER_URL || baseUrl || '';
     const sessionRes = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/webmail/api/auth/session`, {
       method: 'POST',
       headers: {
@@ -3887,7 +3887,7 @@ print('auth-store: SSO cookie restoration patch applied')
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="9"
+    local jabali_patch_version="10"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
