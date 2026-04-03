@@ -3830,36 +3830,38 @@ export async function GET(request: NextRequest) {
 }
 SSO_VERIFY
 
-    # 6. Patch auth-store to check session cookie on page load (SSO support)
-    # Uses the sso-verify endpoint which doesn't require Sec-Fetch headers.
-    if grep -q "set({ isLoading: false });" stores/auth-store.ts 2>/dev/null && \
-       ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
+    # 6. Patch auth-store: inject SSO check at the TOP of checkAuth (before account restore)
+    # Must run before the accounts.length > 0 block, otherwise stale localStorage
+    # accounts cause a redirect to login before the SSO fallback is reached.
+    if ! grep -q "SSO fallback" stores/auth-store.ts 2>/dev/null; then
         python3 -c "
 content = open('stores/auth-store.ts').read()
-old = '        set({ isLoading: false });\n      },'
-new = '''        // SSO fallback: check session cookie even when not authenticated
-        if (!state.isAuthenticated && !state.client) {
-          try {
-            const res = await fetch('/webmail/api/auth/sso-verify');
-            if (res.ok) {
-              const data = await res.json();
-              if (data.serverUrl && data.username && data.password) {
-                set({ isLoading: true });
-                const { serverUrl, username, password } = data;
-                const client = new JMAPClient(serverUrl, username, password);
-                client.onConnectionChange((connected) => { set({ connectionLost: !connected }); });
-                await client.connect();
-                const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), username);
-                initializeFeatureStores(client);
-                set({ isAuthenticated: true, isLoading: false, serverUrl, username, client, identities, primaryIdentity, authMode: 'basic', rememberMe: true });
-                return;
-              }
-            }
-          } catch (error) { debug.error('SSO session check failed:', error); }
-        }
 
-        set({ isLoading: false });
-      },'''
+# Find the start of checkAuth's account logic
+old = '        const accountStore = useAccountStore.getState();\n        const accounts = accountStore.accounts;'
+new = '''        // SSO fallback: check session cookie BEFORE account restore
+        // (stale localStorage accounts would redirect to login before reaching a late check)
+        try {
+          const ssoRes = await fetch('/webmail/api/auth/sso-verify');
+          if (ssoRes.ok) {
+            const ssoData = await ssoRes.json();
+            if (ssoData.serverUrl && ssoData.username && ssoData.password) {
+              set({ isLoading: true });
+              const { serverUrl, username, password } = ssoData;
+              const ssoClient = new JMAPClient(serverUrl, username, password);
+              ssoClient.onConnectionChange((connected) => { set({ connectionLost: !connected }); });
+              await ssoClient.connect();
+              const { identities, primaryIdentity } = loadIdentities(await ssoClient.getIdentities(), username);
+              initializeFeatureStores(ssoClient);
+              set({ isAuthenticated: true, isLoading: false, serverUrl, username, client: ssoClient, identities, primaryIdentity, authMode: 'basic', rememberMe: true });
+              return;
+            }
+          }
+        } catch (e) { /* no SSO cookie — continue to normal account restore */ }
+
+        const accountStore = useAccountStore.getState();
+        const accounts = accountStore.accounts;'''
+
 if old in content:
     open('stores/auth-store.ts', 'w').write(content.replace(old, new, 1))
 " 2>/dev/null || true
@@ -3871,7 +3873,7 @@ if old in content:
 upgrade_bulwark() {
     local bulwark_dir="/opt/bulwark"
     # Bump this when Jabali patches change to force a rebuild even without upstream changes
-    local jabali_patch_version="5"
+    local jabali_patch_version="6"
 
     if ! command -v node >/dev/null 2>&1; then
         warn "Node.js not available — skipping Bulwark update"
