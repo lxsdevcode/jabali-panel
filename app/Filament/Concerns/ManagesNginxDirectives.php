@@ -20,6 +20,8 @@ use Filament\Schemas\Components\Utilities\Get;
 
 trait ManagesNginxDirectives
 {
+    public bool $nginxTestPassed = false;
+
     public function nginxDirectivesAction(): Action
     {
         $isAdmin = auth()->user()?->is_admin;
@@ -148,38 +150,25 @@ trait ManagesNginxDirectives
                             ]),
                     ]),
             ])
-            ->extraModalFooterActions(fn (Action $action): array => [
-                $action->makeModalSubmitAction('testConfig', arguments: ['test_only' => true])
-                    ->label(__('Test Configuration'))
-                    ->icon('heroicon-o-beaker')
-                    ->color('info'),
-            ])
+            ->modalSubmitAction(fn (Action $action) => $action
+                ->label(fn () => $this->nginxTestPassed ? __('Apply') : __('Test Configuration'))
+                ->icon(fn () => $this->nginxTestPassed ? 'heroicon-o-check' : 'heroicon-o-beaker')
+                ->color(fn () => $this->nginxTestPassed ? 'success' : 'info')
+            )
             ->fillForm(function (Domain $record): array {
+                $this->nginxTestPassed = false;
+
                 return [
                     'rules' => $record->custom_nginx_rules ?? [],
                     'raw_directives' => $record->custom_nginx_directives ?? '',
                 ];
             })
-            ->action(function (array $data, array $arguments, Domain $record): void {
-                $testOnly = $arguments['test_only'] ?? false;
+            ->action(function (array $data, Domain $record): void {
                 $rules = $data['rules'] ?? [];
                 $rawDirectives = trim($data['raw_directives'] ?? '');
 
-                // Generate directives from builder rules
                 $generated = self::generateDirectives($rules);
-
-                // Combine: generated rules first, then raw directives
                 $combined = trim($generated."\n\n".$rawDirectives);
-
-                if (trim($combined) === '' && $testOnly) {
-                    Notification::make()
-                        ->title(__('Nothing to test'))
-                        ->body(__('Add some rules or raw directives first.'))
-                        ->warning()
-                        ->send();
-
-                    return;
-                }
 
                 // Validate
                 $isAdmin = auth()->user()?->is_admin;
@@ -193,14 +182,29 @@ trait ManagesNginxDirectives
                         ->body($validation['error'])
                         ->danger()
                         ->send();
+                    $this->nginxTestPassed = false;
+
+                    $this->halt();
 
                     return;
                 }
 
                 $agent = app(AgentClient::class);
 
-                if ($testOnly) {
-                    // Test only — don't apply
+                // Step 1: Test first
+                if (! $this->nginxTestPassed) {
+                    if (trim($combined) === '') {
+                        Notification::make()
+                            ->title(__('Nothing to test'))
+                            ->body(__('Add some rules or raw directives first.'))
+                            ->warning()
+                            ->send();
+
+                        $this->halt();
+
+                        return;
+                    }
+
                     $result = $agent->call('domain.test_custom_directives', [
                         'domain' => $record->domain,
                         'directives' => $combined,
@@ -214,17 +218,20 @@ trait ManagesNginxDirectives
                             ->persistent()
                             ->send();
                     } else {
+                        $this->nginxTestPassed = true;
                         Notification::make()
                             ->title(__('Test Passed'))
-                            ->body(__('Nginx configuration is valid. You can now apply.'))
+                            ->body(__('Click Apply to save the changes.'))
                             ->success()
                             ->send();
                     }
 
+                    $this->halt();
+
                     return;
                 }
 
-                // Apply (also tests via nginx -t before reloading)
+                // Step 2: Apply (tests again as safety net)
                 $result = $agent->call('domain.apply_custom_directives', [
                     'domain' => $record->domain,
                     'directives' => $combined,
@@ -237,15 +244,19 @@ trait ManagesNginxDirectives
                         ->danger()
                         ->persistent()
                         ->send();
+                    $this->nginxTestPassed = false;
+
+                    $this->halt();
 
                     return;
                 }
 
-                // Save to database
                 $record->update([
                     'custom_nginx_directives' => $combined ?: null,
                     'custom_nginx_rules' => ! empty($rules) ? $rules : null,
                 ]);
+
+                $this->nginxTestPassed = false;
 
                 Notification::make()
                     ->title(__('Nginx directives applied'))
