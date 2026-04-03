@@ -28,6 +28,12 @@ class MailMigrateCommand extends Command
 
     public function handle(): int
     {
+        if (posix_getuid() !== 0) {
+            $this->error('This command must be run as root.');
+
+            return Command::FAILURE;
+        }
+
         if ($this->option('rollback')) {
             return $this->rollback();
         }

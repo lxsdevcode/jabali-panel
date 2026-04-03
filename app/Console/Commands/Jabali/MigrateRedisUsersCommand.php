@@ -32,6 +32,12 @@ class MigrateRedisUsersCommand extends Command
 
     public function handle(): int
     {
+        if (posix_getuid() !== 0) {
+            $this->error('This command must be run as root.');
+
+            return Command::FAILURE;
+        }
+
         $dryRun = $this->option('dry-run');
         $force = $this->option('force');
 
