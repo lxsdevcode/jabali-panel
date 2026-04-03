@@ -2162,7 +2162,7 @@ SYSTEMD
         fi
 
         cat > .env.local <<BULWARK_ENV
-JMAP_SERVER_URL=https://${SERVER_HOSTNAME}
+JMAP_SERVER_URL=http://127.0.0.1:8090
 HOSTNAME=127.0.0.1
 PORT=3000
 APP_NAME=Webmail
