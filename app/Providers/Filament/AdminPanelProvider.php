@@ -77,6 +77,11 @@ $this->getRtlScript()
             ->widgets([
                 AccountWidget::class,
             ])
+            ->plugins(array_filter([
+                class_exists(\App\JabaliSecurity\JabaliSecurityPlugin::class)
+                    ? \App\JabaliSecurity\JabaliSecurityPlugin::make()
+                    : null,
+            ]))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
