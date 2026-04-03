@@ -15,7 +15,7 @@ class LogsCommand extends JabaliCommand
 
     protected $description = 'Collect diagnostic logs and send to Jabali support';
 
-    private const NTFY_SERVER = 'https://ntfy.sh';
+    private const NTFY_SERVER = 'https://ntfy.jabali-panel.com';
 
     private const NTFY_TOPIC = 'jabali-support';
 
