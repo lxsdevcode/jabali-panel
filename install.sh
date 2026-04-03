@@ -3316,24 +3316,36 @@ setup_panel_ssl() {
     server_ip=$(echo "$server_ip" | tr -d '[:space:]')
 
     # Try to issue Let's Encrypt cert for the panel hostname
-    local panel_resolved=$(dig +short "$SERVER_HOSTNAME" 2>/dev/null | head -1)
-    if [[ "$panel_resolved" == "$server_ip" ]]; then
-        info "Attempting Let's Encrypt certificate for panel ($SERVER_HOSTNAME)..."
-        if certbot certonly --webroot -w /var/www/html -d "$SERVER_HOSTNAME" --non-interactive --agree-tos --email "${ADMIN_EMAIL:-admin@$SERVER_HOSTNAME}" 2>/dev/null; then
-            # Copy to panel cert path so FrankenPHP uses it
-            cp /etc/letsencrypt/live/$SERVER_HOSTNAME/fullchain.pem /etc/ssl/jabali/panel.crt
-            cp /etc/letsencrypt/live/$SERVER_HOSTNAME/privkey.pem /etc/ssl/jabali/panel.key
-            chmod 644 /etc/ssl/jabali/panel.crt
-            chown root:www-data /etc/ssl/jabali/panel.key
-            chmod 640 /etc/ssl/jabali/panel.key
-            systemctl reload jabali-panel 2>/dev/null || true
-            systemctl restart stalwart-mail 2>/dev/null || true
-            log "Panel SSL: Let's Encrypt certificate issued for $SERVER_HOSTNAME"
-        else
-            info "Could not issue Let's Encrypt cert for panel — using self-signed"
-        fi
+    # Skip if a valid LE cert already exists (avoids rate limit on reinstalls)
+    local le_cert="/etc/letsencrypt/live/${SERVER_HOSTNAME}/fullchain.pem"
+    if [[ -f "$le_cert" ]] && openssl x509 -in "$le_cert" -noout -checkend 86400 2>/dev/null; then
+        # Valid LE cert exists and won't expire in 24h — reuse it
+        cp "$le_cert" /etc/ssl/jabali/panel.crt
+        cp "/etc/letsencrypt/live/${SERVER_HOSTNAME}/privkey.pem" /etc/ssl/jabali/panel.key
+        chmod 644 /etc/ssl/jabali/panel.crt
+        chown root:www-data /etc/ssl/jabali/panel.key
+        chmod 640 /etc/ssl/jabali/panel.key
+        systemctl reload jabali-panel 2>/dev/null || true
+        log "Panel SSL: Reusing existing Let's Encrypt certificate for $SERVER_HOSTNAME"
     else
-        info "Panel hostname does not resolve to this server — using self-signed certificate"
+        local panel_resolved=$(dig +short "$SERVER_HOSTNAME" 2>/dev/null | head -1)
+        if [[ "$panel_resolved" == "$server_ip" ]]; then
+            info "Attempting Let's Encrypt certificate for panel ($SERVER_HOSTNAME)..."
+            if certbot certonly --webroot -w /var/www/html -d "$SERVER_HOSTNAME" --non-interactive --agree-tos --email "${ADMIN_EMAIL:-admin@$SERVER_HOSTNAME}" --keep-until-expiring 2>/dev/null; then
+                cp /etc/letsencrypt/live/$SERVER_HOSTNAME/fullchain.pem /etc/ssl/jabali/panel.crt
+                cp /etc/letsencrypt/live/$SERVER_HOSTNAME/privkey.pem /etc/ssl/jabali/panel.key
+                chmod 644 /etc/ssl/jabali/panel.crt
+                chown root:www-data /etc/ssl/jabali/panel.key
+                chmod 640 /etc/ssl/jabali/panel.key
+                systemctl reload jabali-panel 2>/dev/null || true
+                systemctl restart stalwart-mail 2>/dev/null || true
+                log "Panel SSL: Let's Encrypt certificate issued for $SERVER_HOSTNAME"
+            else
+                info "Could not issue Let's Encrypt cert for panel — using self-signed"
+            fi
+        else
+            info "Panel hostname does not resolve to this server — using self-signed certificate"
+        fi
     fi
 
     # Certbot deploy hook: auto-copy renewed cert to FrankenPHP and reload
