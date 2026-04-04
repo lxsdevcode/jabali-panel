@@ -144,17 +144,15 @@ class UserForm
                         Select::make('ssh_isolation_mode')
                             ->label(__('SSH Isolation Mode'))
                             ->options([
-                                '' => __('Inherit from package'),
                                 'container' => __('Container (nspawn) — high isolation, full security'),
                                 'sandbox' => __('Sandbox (bwrap) — moderate isolation, IDE-compatible'),
                                 'standard' => __('Standard — no isolation, for trusted users only'),
                             ])
-                            ->default('')
-                            ->dehydrateStateUsing(fn ($state) => filled($state) ? $state : null)
-                            ->afterStateHydrated(fn ($state, $set) => $set('ssh_isolation_mode', $state ?? ''))
+                            ->placeholder(__('Inherit from package'))
+                            ->default(null)
                             ->helperText(fn (Get $get): string => match (true) {
                                 blank($get('hosting_package_id')) => __('No package selected — defaults to Container'),
-                                default => __('Leave blank to inherit from hosting package'),
+                                default => __('Leave empty to inherit from hosting package'),
                             }),
 
                         DateTimePicker::make('email_verified_at')
