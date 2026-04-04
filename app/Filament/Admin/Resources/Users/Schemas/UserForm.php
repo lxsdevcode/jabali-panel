@@ -145,9 +145,9 @@ class UserForm
                             ->label(__('SSH Isolation Mode'))
                             ->options([
                                 '' => __('Inherit from package'),
-                                'container' => __('Container (nspawn)'),
-                                'sandbox' => __('Sandbox (bwrap)'),
-                                'standard' => __('Standard shell'),
+                                'container' => __('Container (nspawn) — high isolation, full security'),
+                                'sandbox' => __('Sandbox (bwrap) — moderate isolation, IDE-compatible'),
+                                'standard' => __('Standard — no isolation, for trusted users only'),
                             ])
                             ->default('')
                             ->dehydrateStateUsing(fn ($state) => filled($state) ? $state : null)
