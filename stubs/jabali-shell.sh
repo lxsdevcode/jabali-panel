@@ -12,6 +12,15 @@
 #   3. SFTP/SCP/rsync: handled transparently
 set -euo pipefail
 
+
+# Suppress stderr for non-interactive sessions (e.g. VSCode Remote SSH).
+# Without this, bash startup messages and PS1 prompt leak onto stderr,
+# causing VSCode to incorrectly detect the remote platform as "windows"
+# instead of "linux", which makes it attempt to run powershell and fail.
+if ! tty -s; then
+    exec 2>/dev/null
+fi
+
 JUSER="$(whoami)"
 CONTAINER="${JUSER}-php"
 
