@@ -343,7 +343,7 @@ protocol = "managesieve"
 
 [server.listener.http]
 protocol = "http"
-bind = ["[::]:8080"]
+bind = ["[::]:8090"]
 
 [storage]
 data = "rocksdb"
