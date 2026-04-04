@@ -28,6 +28,7 @@ class User extends Authenticatable implements FilamentUser
         'hosting_package_id',
         'locale',
         'disk_quota_mb',
+        'ssh_isolation_mode',
     ];
 
     protected $hidden = [
@@ -92,6 +93,16 @@ class User extends Authenticatable implements FilamentUser
     public function hostingPackage(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(HostingPackage::class);
+    }
+
+    /**
+     * Get effective SSH isolation mode (user override or package default).
+     */
+    public function getEffectiveSshIsolationMode(): string
+    {
+        return $this->ssh_isolation_mode
+            ?? $this->hostingPackage?->ssh_isolation_mode
+            ?? 'container';
     }
 
     /**

@@ -22,6 +22,7 @@ class HostingPackage extends Model
         'mailboxes_limit',
         'is_active',
         'ssh_shell_enabled',
+        'ssh_isolation_mode',
     ];
 
     protected function casts(): array

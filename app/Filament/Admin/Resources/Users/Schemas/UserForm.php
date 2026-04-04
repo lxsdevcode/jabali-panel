@@ -15,6 +15,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Hash;
 
@@ -139,6 +140,22 @@ class UserForm
                             ->visibleOn('create')
                             ->dehydrated(false)
                             ->inline(false),
+
+                        Select::make('ssh_isolation_mode')
+                            ->label(__('SSH Isolation Mode'))
+                            ->options([
+                                '' => __('Inherit from package'),
+                                'container' => __('Container (nspawn)'),
+                                'sandbox' => __('Sandbox (bwrap)'),
+                                'standard' => __('Standard shell'),
+                            ])
+                            ->default('')
+                            ->dehydrateStateUsing(fn ($state) => filled($state) ? $state : null)
+                            ->afterStateHydrated(fn ($state, $set) => $set('ssh_isolation_mode', $state ?? ''))
+                            ->helperText(fn (Get $get): string => match (true) {
+                                blank($get('hosting_package_id')) => __('No package selected — defaults to Container'),
+                                default => __('Leave blank to inherit from hosting package'),
+                            }),
 
                         DateTimePicker::make('email_verified_at')
                             ->label(__('Email Verified At')),

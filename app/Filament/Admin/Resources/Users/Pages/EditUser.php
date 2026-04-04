@@ -56,6 +56,23 @@ class EditUser extends EditRecord
     {
         $this->syncLinuxPassword();
         $this->syncDiskQuota();
+        $this->syncShellMode();
+    }
+
+    protected function syncShellMode(): void
+    {
+        if (! $this->record->wasChanged('ssh_isolation_mode')) {
+            return;
+        }
+
+        try {
+            app(AgentClient::class)->sshSetShellMode(
+                $this->record->username,
+                $this->record->getEffectiveSshIsolationMode(),
+            );
+        } catch (\Throwable) {
+            // Best-effort
+        }
     }
 
     protected function syncLinuxPassword(): void

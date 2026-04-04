@@ -68,6 +68,10 @@ class CreateUser extends CreateRecord
                     try {
                         $agent = app(AgentClient::class);
                         $agent->send('ssh.enable_shell', ['username' => $this->record->username]);
+                        $agent->sshSetShellMode(
+                            $this->record->username,
+                            $this->record->getEffectiveSshIsolationMode(),
+                        );
                     } catch (\Throwable) {
                         // Best-effort — don't fail user creation
                     }

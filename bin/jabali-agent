@@ -637,6 +637,7 @@ function handleAction(array $request): array
         'ssh.disable_shell' => sshDisableShell($params),
         'ssh.shell_status' => sshGetShellStatus($params),
         'ssh.migrate_shell_users' => sshMigrateShellUsers($params),
+        'ssh.set_shell_mode' => sshSetShellMode($params),
         'file.list' => fileList($params),
         'file.read' => fileRead($params),
         'file.write' => fileWrite($params),
@@ -12485,6 +12486,41 @@ function sshMigrateShellUsers(array $params): array
         'migrated' => $migrated,
         'errors' => $errors,
     ];
+}
+
+function sshSetShellMode(array $params): array
+{
+    $username = $params['username'] ?? '';
+    $mode = $params['mode'] ?? '';
+
+    if (! validateUsername($username)) {
+        return ['success' => false, 'error' => 'Invalid username'];
+    }
+
+    $allowed = ['container', 'sandbox', 'standard'];
+    if (! in_array($mode, $allowed, true)) {
+        return ['success' => false, 'error' => 'Invalid mode. Allowed: '.implode(', ', $allowed)];
+    }
+
+    $userInfo = posix_getpwnam($username);
+    if (! $userInfo) {
+        return ['success' => false, 'error' => 'System user not found'];
+    }
+
+    $homeDir = $userInfo['dir'];
+    if (! is_dir($homeDir)) {
+        return ['success' => false, 'error' => 'Home directory does not exist'];
+    }
+
+    $configFile = "{$homeDir}/.jabali-shell-mode";
+    file_put_contents($configFile, $mode."\n");
+    chown($configFile, $userInfo['uid']);
+    chgrp($configFile, $userInfo['gid']);
+    chmod($configFile, 0644);
+
+    logger("SSH isolation mode set to '{$mode}' for {$username}");
+
+    return ['success' => true, 'message' => "Shell mode set to {$mode} for {$username}"];
 }
 
 function is_mounted(string $path): bool

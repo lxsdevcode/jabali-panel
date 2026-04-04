@@ -1,10 +1,10 @@
 #!/bin/bash
 # jabali-shell — SSH login shell for Jabali Panel users
 #
-# Two-tier isolation:
-#   1. nspawn (preferred) — full container via jabali-isolator
-#   2. bwrap (fallback)  — bubblewrap sandbox (works inside LXC)
-#   If neither is available, access is denied.
+# Isolation modes (configured per-user via panel):
+#   container — full nspawn container via jabali-isolator
+#   sandbox   — bubblewrap sandbox (lighter, IDE-compatible)
+#   standard  — plain bash shell, no isolation
 #
 # Three modes per tier:
 #   1. Interactive SSH login: ssh user@host → bash inside sandbox
@@ -15,9 +15,21 @@ set -euo pipefail
 JUSER="$(whoami)"
 CONTAINER="${JUSER}-php"
 
+# Read configured isolation mode (default: container)
+SHELL_MODE="container"
+MODE_FILE="${HOME}/.jabali-shell-mode"
+if [[ -r "$MODE_FILE" ]]; then
+    SHELL_MODE="$(head -1 "$MODE_FILE" | tr -d '[:space:]')"
+fi
+
+# Validate mode
+case "$SHELL_MODE" in
+    container|sandbox|standard) ;;
+    *) SHELL_MODE="container" ;;
+esac
+
 # --- Tier 1: nspawn container ---
 try_nspawn() {
-    # Check if nspawn is available and containers can run
     command -v machinectl &>/dev/null || return 1
 
     # Ensure container is running
@@ -32,13 +44,11 @@ try_nspawn() {
             return 1
         fi
 
-        # Verify it started
         if ! machinectl list --no-legend 2>/dev/null | grep -q "^${CONTAINER} "; then
             return 1
         fi
     fi
 
-    # Get the leader PID
     local leader
     leader=$(machinectl show "$CONTAINER" --property=Leader --value 2>/dev/null)
     if [[ -z "$leader" || "$leader" == "0" ]]; then
@@ -49,7 +59,6 @@ try_nspawn() {
     uid_num="$(id -u)"
     gid_num="$(id -g)"
 
-    # No command → interactive shell
     if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
         exec sudo nsenter --target "$leader" --mount --pid --ipc --uts --no-fork \
             setpriv --reuid="$uid_num" --regid="$gid_num" --init-groups \
@@ -57,7 +66,6 @@ try_nspawn() {
             /bin/bash -il
     fi
 
-    # Command provided → execute inside container
     exec sudo nsenter --target "$leader" --mount --pid --ipc --uts \
         setpriv --reuid="$uid_num" --regid="$gid_num" --init-groups \
         env HOME="/home/$JUSER" USER="$JUSER" SHELL=/bin/bash \
@@ -68,7 +76,6 @@ try_nspawn() {
 try_bwrap() {
     command -v bwrap &>/dev/null || return 1
 
-    # Delegate to the bwrap wrapper script
     local bwrap_shell="/usr/local/bin/jabali-shell-bwrap"
     if [[ -x "$bwrap_shell" ]]; then
         exec "$bwrap_shell"
@@ -77,14 +84,29 @@ try_bwrap() {
     return 1
 }
 
-# --- Main: try nspawn, then bwrap, then fail ---
-if try_nspawn; then
-    exit 0
-fi
+# --- Tier 3: standard shell (no isolation) ---
+try_standard() {
+    if [[ -z "${SSH_ORIGINAL_COMMAND:-}" ]]; then
+        exec /bin/bash -il
+    fi
 
-if try_bwrap; then
-    exit 0
-fi
+    exec /bin/sh -c "$SSH_ORIGINAL_COMMAND"
+}
 
-echo "Error: No isolation backend available (nspawn and bwrap both failed). Contact your administrator." >&2
-exit 1
+# --- Main: dispatch based on configured mode ---
+case "$SHELL_MODE" in
+    container)
+        if try_nspawn; then exit 0; fi
+        if try_bwrap; then exit 0; fi
+        echo "Error: Container isolation unavailable (nspawn and bwrap both failed). Contact your administrator." >&2
+        exit 1
+        ;;
+    sandbox)
+        if try_bwrap; then exit 0; fi
+        echo "Error: Sandbox isolation unavailable (bwrap not found). Contact your administrator." >&2
+        exit 1
+        ;;
+    standard)
+        try_standard
+        ;;
+esac

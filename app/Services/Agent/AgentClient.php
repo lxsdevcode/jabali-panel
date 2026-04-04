@@ -1383,4 +1383,12 @@ class AgentClient implements AgentClientInterface
             'value' => $value,
         ]);
     }
+
+    public function sshSetShellMode(string $username, string $mode): array
+    {
+        return $this->send('ssh.set_shell_mode', [
+            'username' => $username,
+            'mode' => $mode,
+        ]);
+    }
 }
