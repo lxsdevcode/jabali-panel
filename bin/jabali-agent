@@ -1427,9 +1427,8 @@ NGINXCONF;
         proxy_set_header Connection "upgrade";
         sub_filter_types application/json;
         sub_filter_once off;
-        sub_filter "http://{$domain}:8090" "https://{$domain}";
-        sub_filter "ws://{$domain}:8090" "wss://{$domain}";
-        sub_filter "http://127.0.0.1:8090" "https://{$domain}";
+        sub_filter "http://127.0.0.1:8090" "https://$host";
+        sub_filter "ws://127.0.0.1:8090" "wss://$host";
     }
 
     location = /webmail {
