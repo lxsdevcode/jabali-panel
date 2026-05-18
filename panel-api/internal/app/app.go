@@ -726,6 +726,8 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Policies:       deps.MailOutboundPolicies,
 			ThrottleClient: deps.StalwartAdminThrottle,
 		})
+		// M47: admin mail-queue (ADR-0103) over the Wave-1 agent.
+		api.RegisterAdminMailQueueRoutes(v1, deps.Agent)
 		// Admin: process kill (Server Status page). POST /admin/processes/:pid/kill.
 		api.RegisterAdminProcessesRoutes(v1, api.AdminProcessesHandlerConfig{
 			Agent: deps.Agent,
