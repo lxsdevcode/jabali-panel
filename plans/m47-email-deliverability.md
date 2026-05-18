@@ -163,3 +163,12 @@ main, never the github mirror.
 7. **Process:** M49 is still landing migrations/ADRs on main —
    re-verify `000139` next-free and ADR-0103 via
    `git ls-tree origin/main` at Wave-0 commit time, not before.
+
+## 8. Stalwart gate — RESOLVED
+
+Wire surface pinned in ADR-0103 (2026-05-18): 0.16 = generic typed-object
+API via `stalwart-cli` (ADR-0045 pattern). Queue = `QueuedMessage`
+object; agent shells `stalwart-cli query/delete/update QueuedMessage`
+with env Basic-auth (token /etc/jabali-panel/stalwart-admin.token).
+NO `/api/queue/messages` (0.15-only, 404s on 0.16). Waves 1/2/4
+unblocked.

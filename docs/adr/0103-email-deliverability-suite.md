@@ -81,3 +81,39 @@ existing stack — not a new MTA:
   Barracuda BRBL, SURBL; paid via operator-configured creds only;
   cache ≥1 h, poll 4–6 h). **PTR is informational only** (provider-
   controlled; show current vs expected, no "fix" action).
+
+## Stalwart 0.16 wire surface — PINNED (2026-05-18, gate resolved)
+
+The advisor-flagged hard blocker is resolved by introspecting the
+installed `stalwart-cli` (ADR-0045: "stalwart-cli is the v0.16
+management surface"). Stalwart 0.16 has **no `/api/queue/messages`
+HTTP route and no `queue` cli subcommand** (those were 0.15; live
+mx returns 404 for the path, `unrecognized subcommand` for the cli).
+0.16 exposes a **generic typed-object API**; jabali's agent shells
+`stalwart-cli` exactly as it shells `cscli` for crowdsec — NOT a
+hand-rolled HTTP client (no contract to drift).
+
+**Pinned contract (verified on mx Stalwart 0.16.0):**
+
+- Object type: **`QueuedMessage`**. Fields: `recipients`
+  (`map<emailAddress, QueuedRecipient>` — envelope recipients +
+  per-recipient delivery status), `returnPath` (MAIL FROM), `size`,
+  `nextRetry` (datetime), `priority`, `receivedFromIp`,
+  `receivedViaPort` (+ server `id`). Sibling types: `MtaStageMail`,
+  `MtaVirtualQueue`, `MtaQueueQuota`.
+- Verbs (Wave 1):
+  - list  → `stalwart-cli query QueuedMessage --json [--where f=v]`
+  - cancel→ `stalwart-cli delete QueuedMessage <id>`
+  - retry → `stalwart-cli update QueuedMessage <id> nextRetry=<RFC3339-now>`
+- Auth: env `STALWART_URL` (jabali: `http://127.0.0.1:8446`),
+  `STALWART_USER=admin`, `STALWART_PASSWORD` = contents of
+  `/etc/jabali-panel/stalwart-admin.token` (0640 jabali:jabali-mail;
+  same credential mailbox_jmap.go uses; Basic, verified via
+  `/jmap/session` 200).
+- `query` supports `--where field=value|>=|<=|>|<`, `--fields`,
+  `--json` — drives Wave 2 pagination/per-domain scoping.
+
+The agent's `mail.queue.*` handlers wrap these cli calls + a contract
+test pins the `QueuedMessage` field KINDS
+(`feedback_schema_enumerate_kinds_not_names`). Supersedes the
+`/api/queue/messages` figure in §Decision (0.15-only, never on 0.16).
