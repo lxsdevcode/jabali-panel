@@ -117,3 +117,22 @@ The agent's `mail.queue.*` handlers wrap these cli calls + a contract
 test pins the `QueuedMessage` field KINDS
 (`feedback_schema_enumerate_kinds_not_names`). Supersedes the
 `/api/queue/messages` figure in §Decision (0.15-only, never on 0.16).
+
+## Wave 3 Stalwart pin (2026-05-18) — outbound throttle
+
+Per-user/domain outbound throttle maps to Stalwart 0.16 object
+**`MtaOutboundThrottle`** (verified via `stalwart-cli describe`):
+`enable` bool, `key` `set<MtaOutboundThrottleKey>`, `match`
+`object<Expression>`, `rate` `object<Rate>`, `description`. Agent
+`mail.throttle.apply` will `stalwart-cli create|update
+MtaOutboundThrottle` (env Basic-auth as Wave 1).
+
+**Still to pin before Wave-3 agent code (verify-wire-contract gate):**
+`MtaOutboundThrottleKey` enum values (decides sender vs
+recipient-domain scoping — security-load-bearing: wrong key = no
+protection OR locks out all senders), the `Rate` object shape
+(requests/period), and whether scope is best expressed via `key` vs
+a `match` Expression. Pin all three via `stalwart-cli describe`
+before writing the apply; do NOT guess (the queue-gate lesson).
+Wave-3 DB half (`mail_outbound_policy` repo + /admin/mail/throttle
+CRUD + reconciler loop) is Stalwart-independent and can land first.
