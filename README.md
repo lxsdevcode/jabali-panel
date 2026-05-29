@@ -423,7 +423,7 @@ Jabali Panel is proudly supported by:
 
 <a href="https://cloudblast.io/">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/cloudblast.svg">
-    <img src="docs/sponsors/cloudblast-light.svg" alt="CloudBlast" height="42">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/cloudblast-dark.png">
+    <img src="docs/sponsors/cloudblast-light.png" alt="CloudBlast" height="42">
   </picture>
 </a>
