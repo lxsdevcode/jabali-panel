@@ -9716,6 +9716,57 @@ provision_new_software() {
   ensure_jabali_panel_dir_traversable
   ensure_snuffleupagus_loadable
 
+  # GH#111: install_php / install_phpmyadmin* run only in fresh-install
+  # main(), so `jabali update` never installed the PHP 8.4 default nor
+  # applied the phpMyAdmin DI patch — existing hosts stayed broken
+  # ("ServiceNotFoundException: config", panel showing 8.4 not installed).
+  # Converge them here (idempotent) so updates reach existing hosts.
+  if declare -f install_phpmyadmin >/dev/null 2>&1; then
+    # Ensure the configured PHP versions AND the phpMyAdmin pool version
+    # (8.4) are actually installed before the configure/patch steps run
+    # (_install_php_version + the pma pool _die if the binary is absent).
+    # Extension list mirrors install_base_packages — keep in sync.
+    local _pv
+    for _pv in $(printf '%s\n' ${JABALI_PHP_VERSIONS:-8.4} 8.4 | sort -u); do
+      command -v "php${_pv}" >/dev/null 2>&1 && continue
+      _log "provision: php${_pv} missing — installing fpm/cli + extensions"
+      local _pkgs=("php${_pv}-fpm" "php${_pv}-cli") _e
+      for _e in mysql mbstring zip gd curl xml intl bcmath opcache; do
+        apt-cache show "php${_pv}-${_e}" >/dev/null 2>&1 && _pkgs+=("php${_pv}-${_e}")
+      done
+      # Refresh the apt cache so php${_pv} from Sury is found even if
+      # the index hasn't been updated recently in the provision context.
+      apt-get update -qq 2>/dev/null || true
+      apt-get install -y -qq --no-install-recommends "${_pkgs[@]}" \
+        || _warn "provision: php${_pv} package install had issues"
+    done
+    declare -f install_php >/dev/null 2>&1 && install_php
+    declare -f install_phpmyadmin_fpm_pool >/dev/null 2>&1 && install_phpmyadmin_fpm_pool
+    install_phpmyadmin
+  fi
+
+  # GH#114: if /etc/nginx/conf.d/jabali-bulwark-upstream.conf goes missing
+  # (an update dropped it), the per-domain *-mail.conf vhosts proxy_pass to
+  # an undefined `jabali_bulwark` upstream -> `nginx -t` fails with "host
+  # not found in upstream" -> EVERY vhost_apply + SSL deploy fails -> all
+  # certs freeze "pending". Re-drop it on update (idempotent) so one
+  # missing include can't take down all of nginx + SSL, and make sure the
+  # webmail service it points at is actually running.
+  local _bulwark_up="${REPO_DIR:-/opt/jabali-panel}/install/nginx/jabali-bulwark-upstream.conf"
+  if [[ -f "$_bulwark_up" ]] && [[ -d /opt/jabali-webmail ]]; then
+    if ! cmp -s "$_bulwark_up" /etc/nginx/conf.d/jabali-bulwark-upstream.conf 2>/dev/null; then
+      install -m 0644 -o root -g root "$_bulwark_up" /etc/nginx/conf.d/jabali-bulwark-upstream.conf
+      _log "provision: restored jabali-bulwark-upstream.conf (GH#114)"
+      if nginx -t >/dev/null 2>&1; then
+        systemctl reload nginx 2>/dev/null || true
+      else
+        _warn "provision: nginx -t still failing after restoring bulwark upstream — check nginx config"
+      fi
+    fi
+    systemctl is-active --quiet jabali-webmail.service 2>/dev/null \
+      || systemctl restart jabali-webmail.service 2>/dev/null || true
+  fi
+
   # Snuffleupagus: flip simulation → enforce on existing installs.
   # Fresh installs already default to enforce (install_snuffleupagus).
   local sp_mode_file="/etc/jabali/snuffleupagus/mode"
@@ -9921,53 +9972,7 @@ EOF
     install_aide
   fi
 
-  # GH#111: install_php / install_phpmyadmin* run only in fresh-install
-  # main(), so `jabali update` never installed the PHP 8.4 default nor
-  # applied the phpMyAdmin DI patch — existing hosts stayed broken
-  # ("ServiceNotFoundException: config", panel showing 8.4 not installed).
-  # Converge them here (idempotent) so updates reach existing hosts.
-  if declare -f install_phpmyadmin >/dev/null 2>&1; then
-    # Ensure the configured PHP versions AND the phpMyAdmin pool version
-    # (8.4) are actually installed before the configure/patch steps run
-    # (_install_php_version + the pma pool _die if the binary is absent).
-    # Extension list mirrors install_base_packages — keep in sync.
-    local _pv
-    for _pv in $(printf '%s\n' ${JABALI_PHP_VERSIONS:-8.4} 8.4 | sort -u); do
-      command -v "php${_pv}" >/dev/null 2>&1 && continue
-      _log "provision: php${_pv} missing — installing fpm/cli + extensions"
-      local _pkgs=("php${_pv}-fpm" "php${_pv}-cli") _e
-      for _e in mysql mbstring zip gd curl xml intl bcmath opcache; do
-        apt-cache show "php${_pv}-${_e}" >/dev/null 2>&1 && _pkgs+=("php${_pv}-${_e}")
-      done
-      apt-get install -y -qq --no-install-recommends "${_pkgs[@]}" \
-        || _warn "provision: php${_pv} package install had issues"
-    done
-    declare -f install_php >/dev/null 2>&1 && install_php
-    declare -f install_phpmyadmin_fpm_pool >/dev/null 2>&1 && install_phpmyadmin_fpm_pool
-    install_phpmyadmin
-  fi
 
-  # GH#114: if /etc/nginx/conf.d/jabali-bulwark-upstream.conf goes missing
-  # (an update dropped it), the per-domain *-mail.conf vhosts proxy_pass to
-  # an undefined `jabali_bulwark` upstream -> `nginx -t` fails with "host
-  # not found in upstream" -> EVERY vhost_apply + SSL deploy fails -> all
-  # certs freeze "pending". Re-drop it on update (idempotent) so one
-  # missing include can't take down all of nginx + SSL, and make sure the
-  # webmail service it points at is actually running.
-  local _bulwark_up="${REPO_DIR:-/opt/jabali-panel}/install/nginx/jabali-bulwark-upstream.conf"
-  if [[ -f "$_bulwark_up" ]] && [[ -d /opt/jabali-webmail ]]; then
-    if ! cmp -s "$_bulwark_up" /etc/nginx/conf.d/jabali-bulwark-upstream.conf 2>/dev/null; then
-      install -m 0644 -o root -g root "$_bulwark_up" /etc/nginx/conf.d/jabali-bulwark-upstream.conf
-      _log "provision: restored jabali-bulwark-upstream.conf (GH#114)"
-      if nginx -t >/dev/null 2>&1; then
-        systemctl reload nginx 2>/dev/null || true
-      else
-        _warn "provision: nginx -t still failing after restoring bulwark upstream — check nginx config"
-      fi
-    fi
-    systemctl is-active --quiet jabali-webmail.service 2>/dev/null \
-      || systemctl restart jabali-webmail.service 2>/dev/null || true
-  fi
 }
 
 main() {
