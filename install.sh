@@ -9921,10 +9921,30 @@ EOF
     install_aide
   fi
 
-  # Strip legacy jabali-firehol-blocklists.{timer,service} on existing
-  # hosts — replaced by CrowdSec console blocklist catalog.
-  if declare -f install_crowdsec_blocklists >/dev/null 2>&1; then
-    install_crowdsec_blocklists
+  # GH#111: install_php / install_phpmyadmin* run only in fresh-install
+  # main(), so `jabali update` never installed the PHP 8.4 default nor
+  # applied the phpMyAdmin DI patch — existing hosts stayed broken
+  # ("ServiceNotFoundException: config", panel showing 8.4 not installed).
+  # Converge them here (idempotent) so updates reach existing hosts.
+  if declare -f install_phpmyadmin >/dev/null 2>&1; then
+    # Ensure the configured PHP versions AND the phpMyAdmin pool version
+    # (8.4) are actually installed before the configure/patch steps run
+    # (_install_php_version + the pma pool _die if the binary is absent).
+    # Extension list mirrors install_base_packages — keep in sync.
+    local _pv
+    for _pv in $(printf '%s\n' ${JABALI_PHP_VERSIONS:-8.4} 8.4 | sort -u); do
+      command -v "php${_pv}" >/dev/null 2>&1 && continue
+      _log "provision: php${_pv} missing — installing fpm/cli + extensions"
+      local _pkgs=("php${_pv}-fpm" "php${_pv}-cli") _e
+      for _e in mysql mbstring zip gd curl xml intl bcmath opcache; do
+        apt-cache show "php${_pv}-${_e}" >/dev/null 2>&1 && _pkgs+=("php${_pv}-${_e}")
+      done
+      apt-get install -y -qq --no-install-recommends "${_pkgs[@]}" \
+        || _warn "provision: php${_pv} package install had issues"
+    done
+    declare -f install_php >/dev/null 2>&1 && install_php
+    declare -f install_phpmyadmin_fpm_pool >/dev/null 2>&1 && install_phpmyadmin_fpm_pool
+    install_phpmyadmin
   fi
 }
 
