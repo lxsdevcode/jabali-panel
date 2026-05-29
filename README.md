@@ -421,4 +421,9 @@ See the [`docs/`](docs/) directory for detailed guides:
 
 Jabali Panel is proudly supported by:
 
-[<img src="docs/sponsors/cloudblast.svg" alt="CloudBlast" height="42">](https://cloudblast.io/)
+<a href="https://cloudblast.io/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/cloudblast.svg">
+    <img src="docs/sponsors/cloudblast-light.svg" alt="CloudBlast" height="42">
+  </picture>
+</a>
