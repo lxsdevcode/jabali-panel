@@ -1435,6 +1435,35 @@ func sanHostnamesForDomain(d *models.Domain) []string {
 // background ticker is cheap and a stuck cert should never become permanent.
 const acmeRetryInterval = 3 * time.Hour
 
+// acmeRetryDelay is the per-attempt backoff before re-trying a failed ACME
+// issuance. 3 hours is a sane cap for persistent ACME-side failures
+// (rate limits, validation that keeps failing), but a punishingly long
+// wait for transient config errors the admin just fixed (e.g. nginx
+// upstream missing -> "nginx test failed" -> all certs stuck in
+// pending_acme_retry for 3h after a 30-second fix; observed in GH#114).
+// Use exponential backoff capped at the existing 3h:
+//   attempt 1 -> 5m   (quickest retry after a fix)
+//   attempt 2 -> 15m
+//   attempt 3 -> 45m
+//   attempt 4 -> 2h
+//   attempt 5+ -> 3h  (cap)
+// retryCount is the count AFTER this failure is recorded.
+func acmeRetryDelay(retryCount int) time.Duration {
+	delays := []time.Duration{
+		5 * time.Minute,
+		15 * time.Minute,
+		45 * time.Minute,
+		2 * time.Hour,
+	}
+	if retryCount < 1 {
+		retryCount = 1
+	}
+	if retryCount-1 >= len(delays) {
+		return acmeRetryInterval
+	}
+	return delays[retryCount-1]
+}
+
 // reconcileSSLForDomain converges the ssl_certificates row for a domain to
 // reflect the state the DB has declared. State machine:
 //   - ssl_enabled && (no row | pending, retry_count=0)                              → tryACMEOrFallback
@@ -1610,9 +1639,10 @@ func (r *Reconciler) fallbackToSelfSignAndRetry(ctx context.Context, domain *mod
 	}
 
 	newRetryCount := cert.RetryCount + 1
-	nextRetry := time.Now().UTC().Add(acmeRetryInterval)
+	delay := acmeRetryDelay(newRetryCount)
+	nextRetry := time.Now().UTC().Add(delay)
 	_ = r.sslCerts.UpdateAfterACMEFailure(ctx, cert.ID, lastError, nextRetry, newRetryCount, fallbackCertPath, fallbackKeyPath, fallbackExpiresAt)
-	r.log.Warn("ssl: acme unavailable, retrying in 3h", "domain", domain.Name, "retry_count", newRetryCount, "next_retry_at", nextRetry.Format(time.RFC3339), "err", lastError)
+	r.log.Warn("ssl: acme unavailable, retrying with backoff", "domain", domain.Name, "retry_count", newRetryCount, "delay", delay.String(), "next_retry_at", nextRetry.Format(time.RFC3339), "err", lastError)
 }
 
 // sslRenewForDomain runs an ACME renewal and updates the cert row on success.
