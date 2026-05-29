@@ -9946,6 +9946,28 @@ EOF
     declare -f install_phpmyadmin_fpm_pool >/dev/null 2>&1 && install_phpmyadmin_fpm_pool
     install_phpmyadmin
   fi
+
+  # GH#114: if /etc/nginx/conf.d/jabali-bulwark-upstream.conf goes missing
+  # (an update dropped it), the per-domain *-mail.conf vhosts proxy_pass to
+  # an undefined `jabali_bulwark` upstream -> `nginx -t` fails with "host
+  # not found in upstream" -> EVERY vhost_apply + SSL deploy fails -> all
+  # certs freeze "pending". Re-drop it on update (idempotent) so one
+  # missing include can't take down all of nginx + SSL, and make sure the
+  # webmail service it points at is actually running.
+  local _bulwark_up="${REPO_DIR:-/opt/jabali-panel}/install/nginx/jabali-bulwark-upstream.conf"
+  if [[ -f "$_bulwark_up" ]] && [[ -d /opt/jabali-webmail ]]; then
+    if ! cmp -s "$_bulwark_up" /etc/nginx/conf.d/jabali-bulwark-upstream.conf 2>/dev/null; then
+      install -m 0644 -o root -g root "$_bulwark_up" /etc/nginx/conf.d/jabali-bulwark-upstream.conf
+      _log "provision: restored jabali-bulwark-upstream.conf (GH#114)"
+      if nginx -t >/dev/null 2>&1; then
+        systemctl reload nginx 2>/dev/null || true
+      else
+        _warn "provision: nginx -t still failing after restoring bulwark upstream — check nginx config"
+      fi
+    fi
+    systemctl is-active --quiet jabali-webmail.service 2>/dev/null \
+      || systemctl restart jabali-webmail.service 2>/dev/null || true
+  fi
 }
 
 main() {
