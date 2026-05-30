@@ -17,9 +17,10 @@ import {
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, PlusOutlined } from "@icons";
+import { DeleteOutlined, FolderOpenOutlined, PlusOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
+import { DomainPathBrowserModal } from "./DomainPathBrowserModal";
 import {
   useCreateDirectoryPrivacyCredential,
   useCreateDirectoryPrivacyRule,
@@ -54,6 +55,7 @@ export const DomainDirectoryPrivacySection = ({
   const qc = useQueryClient();
   const [form] = Form.useForm<NewRuleForm>();
   const [adding, setAdding] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
   const realmPlaceholder = domainName || "Restricted";
 
   if (isLoading && !data) {
@@ -184,7 +186,14 @@ export const DomainDirectoryPrivacySection = ({
               },
             ]}
           >
-            <Input placeholder="/secret" />
+            <Input
+              placeholder="/secret"
+              addonAfter={
+                <a onClick={() => setBrowserOpen(true)}>
+                  <FolderOpenOutlined /> Browse
+                </a>
+              }
+            />
           </Form.Item>
           <Form.Item
             label="Authentication name"
@@ -242,6 +251,16 @@ export const DomainDirectoryPrivacySection = ({
           Add protected directory
         </Button>
       )}
+      <DomainPathBrowserModal
+        domainId={domainId}
+        open={browserOpen}
+        initialPath={form.getFieldValue("path") || "/"}
+        onCancel={() => setBrowserOpen(false)}
+        onSelect={(picked) => {
+          form.setFieldsValue({ path: picked });
+          setBrowserOpen(false);
+        }}
+      />
     </Space>
   );
 };

@@ -459,6 +459,16 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Reconcile: schedule,
 			})
 		}
+		// Per-domain docroot folder browser — powers the Directory
+		// Privacy path picker. Reuses the M11 files.list agent call,
+		// scoped to the domain owner + docroot.
+		if deps.Domains != nil && deps.Users != nil && deps.Agent != nil {
+			api.RegisterDomainPathBrowseRoutes(v1, api.DomainPathBrowseConfig{
+				Domains: deps.Domains,
+				Users:   deps.Users,
+				Agent:   deps.Agent,
+			})
+		}
 		if deps.Databases != nil && deps.DatabaseUsers != nil {
 			api.RegisterDatabaseRoutes(v1, api.DatabaseHandlerConfig{
 				Databases:         deps.Databases,
