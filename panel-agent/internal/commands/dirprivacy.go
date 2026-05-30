@@ -138,6 +138,13 @@ func writeHtpasswd(filePath string, creds []directoryPrivacyCredential) error {
 // modifier — once nginx picks this location it stops looking at regex
 // locations, which is what we want for a password-gated directory.
 //
+// Special case: path "/" means "the whole docroot". We can't emit
+// `location ^~ //` (invalid) or `location /` (would clash with the
+// existing default location in the vhost template). Instead we emit
+// server-scope auth_basic so EVERY location inherits the challenge —
+// the ACME challenge location in the vhost template carries an
+// `auth_basic off;` of its own so cert renewal still works.
+//
 // Empty rules slice → empty string (zero overhead, no comment line).
 func buildDirectoryPrivacyDirectives(rules []directoryPrivacyRule) string {
 	if len(rules) == 0 {
@@ -155,6 +162,18 @@ func buildDirectoryPrivacyDirectives(rules []directoryPrivacyRule) string {
 		}
 		realm := sanitisePrivacyRealm(r.Realm)
 		htpasswd := dirPrivacyFileForRule(r.RuleID)
+		if path == "/" {
+			// Server-scope auth — covers every location via
+			// inheritance; ACME challenge location overrides with
+			// `auth_basic off;` in the vhost template.
+			sb.WriteString("    auth_basic ")
+			sb.WriteString(strconv.Quote(realm))
+			sb.WriteString(";\n")
+			sb.WriteString("    auth_basic_user_file ")
+			sb.WriteString(htpasswd)
+			sb.WriteString(";\n")
+			continue
+		}
 		sb.WriteString("    location ^~ ")
 		sb.WriteString(path)
 		sb.WriteString("/ {\n")

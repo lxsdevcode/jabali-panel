@@ -159,3 +159,18 @@ func TestBuildDirectoryPrivacyDirectives_Empty(t *testing.T) {
 		t.Errorf("empty rules: got %q, want \"\"", got)
 	}
 }
+
+// Root path "/" must emit server-scope auth_basic (no `location` block)
+// so the existing default location /{}+ ACME challenge location aren't
+// shadowed, and EVERY request gets the challenge via inheritance.
+func TestBuildDirectoryPrivacyDirectives_RootPath_ServerScope(t *testing.T) {
+	got := buildDirectoryPrivacyDirectives([]directoryPrivacyRule{
+		{RuleID: "01HZZZ8RMJG3K4P5N6Q7R8S9T0", Path: "/", Realm: "Whole site"},
+	})
+	if strings.Contains(got, "location ^~ ") {
+		t.Errorf("root path must not emit location block: %q", got)
+	}
+	if !strings.Contains(got, `auth_basic "Whole site"`) {
+		t.Errorf("missing server-scope auth_basic: %q", got)
+	}
+}

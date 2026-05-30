@@ -133,6 +133,10 @@ const vhostTemplate = `server {
         default_type "text/plain";
         root {{.DocRoot}};
         try_files $uri =404;
+        # M50: if Directory Privacy with path "/" applied auth_basic at
+        # server scope, override here so the ACME validator can reach
+        # the challenge token without a 401.
+        auth_basic off;
     }
 {{ end }}
 {{ if .SSLCertPath }}
