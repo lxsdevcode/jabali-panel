@@ -72,6 +72,24 @@ trap '__rc=$?; printf "\033[1;31m[jabali-install]\033[0m install.sh exited with 
 REPO_URL="${JABALI_REPO_URL:-https://git.linux-hosting.co.il/shukivaknin/jabali2.git}"
 REPO_BRANCH="${JABALI_REPO_BRANCH:-main}"
 REPO_DIR="${JABALI_REPO_DIR:-/opt/jabali-panel}"
+
+# DNS forwarder escape hatch for restricted-network labs where outbound
+# UDP/53 is blocked by the upstream firewall (common on corporate / lab
+# / VirtualBox-NAT-DNS-proxy setups). When set, install.sh:
+#   - masks systemd-resolved
+#   - writes a plain /etc/resolv.conf with `nameserver <forwarder>` and
+#     `options use-vc` so glibc forces TCP/53 (which firewalls usually
+#     allow when UDP/53 is blocked)
+#   - chattr +i's the file so apt postinst's `ln -sf` symlink attempts
+#     are deflected (and install.sh's own resolv.conf-rewrite block is
+#     short-circuited)
+#   - sets pdns-recursor `forward-zones-recurse=.=<forwarder>` so the
+#     recursor forwards instead of recursing to public roots over UDP
+#   - skips the resolved→recursor→public chain sanity probe
+# Unset (default) preserves the original behaviour: systemd-resolved
+# owns /etc/resolv.conf and pdns-recursor recurses through 1.1.1.1 +
+# 9.9.9.9 via UDP.
+DNS_FORWARDER="${JABALI_DNS_FORWARDER:-}"
 GO_VERSION="${JABALI_GO_VERSION:-1.25.1}"
 GO_ROOT="${JABALI_GO_ROOT:-/usr/local/go}"
 SERVICE_USER="${JABALI_SERVICE_USER:-jabali}"
@@ -898,19 +916,37 @@ POLICYEOF
   # if it's already a symlink, another tool (resolvconf, NetworkManager,
   # or a prior systemd-resolved setup) owns it and we must not fight
   # that. Idempotent across reinstalls.
-  local resolved_state
-  resolved_state="$(systemctl is-enabled systemd-resolved.service 2>/dev/null || true)"
+  if [[ -n "$DNS_FORWARDER" ]]; then
+    _log "DNS forwarder mode active — leaving systemd-resolved masked, /etc/resolv.conf direct to ${DNS_FORWARDER} over TCP"
+    systemctl mask systemd-resolved.service 2>/dev/null || true
+    systemctl stop systemd-resolved.service 2>/dev/null || true
+    # Re-assert the plain resolv.conf in case a postinst clobbered it.
+    chattr -i /etc/resolv.conf 2>/dev/null || true
+    cat > /etc/resolv.conf <<EOF
+# Managed by jabali install.sh (JABALI_DNS_FORWARDER=${DNS_FORWARDER}).
+nameserver ${DNS_FORWARDER}
+options use-vc timeout:5 attempts:2
+EOF
+    chattr +i /etc/resolv.conf 2>/dev/null || true
+    # Drop the resolved NSS shim so glibc goes straight to dns -> resolv.conf -> use-vc.
+    if grep -q "resolve \[!UNAVAIL=return\]" /etc/nsswitch.conf 2>/dev/null; then
+      sed -i 's/ resolve \[!UNAVAIL=return\]//' /etc/nsswitch.conf
+    fi
+  else
+    local resolved_state
+    resolved_state="$(systemctl is-enabled systemd-resolved.service 2>/dev/null || true)"
 
-  if [[ "$resolved_state" == "masked" ]]; then
-    _log "unmasking systemd-resolved (was masked; image default or prior admin action)"
-    systemctl unmask systemd-resolved.service
-    resolved_state="disabled"
-  fi
+    if [[ "$resolved_state" == "masked" ]]; then
+      _log "unmasking systemd-resolved (was masked; image default or prior admin action)"
+      systemctl unmask systemd-resolved.service
+      resolved_state="disabled"
+    fi
 
-  if [[ "$resolved_state" != "enabled" ]] || ! systemctl is-active --quiet systemd-resolved.service; then
-    _log "enabling + starting systemd-resolved"
-    if ! systemctl enable --now systemd-resolved.service; then
-      _warn "systemd-resolved failed to start — panel DNS Resolvers page will be non-functional until fixed manually (check 'journalctl -u systemd-resolved')"
+    if [[ "$resolved_state" != "enabled" ]] || ! systemctl is-active --quiet systemd-resolved.service; then
+      _log "enabling + starting systemd-resolved"
+      if ! systemctl enable --now systemd-resolved.service; then
+        _warn "systemd-resolved failed to start — panel DNS Resolvers page will be non-functional until fixed manually (check 'journalctl -u systemd-resolved')"
+      fi
     fi
   fi
 
@@ -959,7 +995,8 @@ EARLYDNS
   #      means another manager owns it; don't stomp)
   #   2. systemd-resolved started successfully above (checking is-active
   #      as the cheapest post-start health probe)
-  if [[ ! -L /etc/resolv.conf && -e /etc/resolv.conf ]] \
+  if [[ -z "$DNS_FORWARDER" ]] \
+     && [[ ! -L /etc/resolv.conf && -e /etc/resolv.conf ]] \
      && systemctl is-active --quiet systemd-resolved.service; then
 
     # Before flipping the symlink, migrate the admin's existing DNS
@@ -2444,7 +2481,13 @@ install_pdns_recursor() {
 
   # Managed-header in line 1 is the "did install.sh write this?" marker
   # downstream idempotency guards test against.
-  cat > "$rec_conf_new" <<'RECCONF'
+  local _rec_recurse_upstream
+  if [[ -n "$DNS_FORWARDER" ]]; then
+    _rec_recurse_upstream="$DNS_FORWARDER"
+  else
+    _rec_recurse_upstream="1.1.1.1;9.9.9.9"
+  fi
+  cat > "$rec_conf_new" <<RECCONF
 # Managed by jabali-panel install.sh (M6.3). Hand edits will be overwritten
 # on the next install.sh run. See docs/adr/0047-pdns-recursor-local-self-resolution.md
 local-address=127.0.0.1, ::1
@@ -2468,7 +2511,7 @@ forward-zones-file=/etc/powerdns/recursor.forwards
 # Everything else recurses through public upstream. We DO NOT chain
 # through jabali.conf's DNS= — that config lives in systemd-resolved
 # and is only consulted by the stub, not by the recursor.
-forward-zones-recurse=.=1.1.1.1;9.9.9.9
+forward-zones-recurse=.=${_rec_recurse_upstream}
 
 # DNSSEC: off. systemd-resolved validates DNSSEC upstream already.
 # Doubling up costs CPU per query for no security benefit on a
@@ -2756,6 +2799,17 @@ RESOLVEDEOF
     done
     return 1
   }
+
+  # DNS forwarder mode: systemd-resolved is masked and /etc/resolv.conf
+  # points straight at the operator-supplied JABALI_DNS_FORWARDER, so
+  # the resolved→recursor→public chain doesn't exist and the probes
+  # below would 100%-of-the-time false-positive. Recursor still serves
+  # the panel-internal vhost lookups via forward-zones-recurse=$DNS_FORWARDER
+  # set in install_pdns_recursor.
+  if [[ -n "$DNS_FORWARDER" ]]; then
+    _ok "pdns-recursor running on 127.0.0.1:53 — chain probes skipped (DNS forwarder ${DNS_FORWARDER} in effect)"
+    return 0
+  fi
 
   # Probe 1: stub → recursor → public. Proves the full chain end-to-end.
   if ! _probe_dns 127.0.0.53 deb.debian.org; then
@@ -10017,6 +10071,43 @@ EOF
 
 }
 
+# apply_dns_forwarder_override switches the host off systemd-resolved
+# and onto a plain /etc/resolv.conf with `options use-vc` (force TCP)
+# pointing at the operator-supplied JABALI_DNS_FORWARDER. Required on
+# restricted-network labs where outbound UDP/53 is dropped but TCP/53
+# to a LAN resolver still works (corporate, VirtualBox NAT with
+# DNS-proxy quirks, lab firewalls). No-op when the env is unset.
+#
+# The chattr +i is load-bearing: several apt postinst scripts (libnss-
+# resolve, openresolv, resolvconf) run `ln -sf /run/systemd/resolve/
+# stub-resolv.conf /etc/resolv.conf` and propagate the failure as a
+# package-install failure under set -e. Immutable defeats the rename
+# silently — apt logs a non-fatal warning and moves on.
+apply_dns_forwarder_override() {
+  [[ -z "$DNS_FORWARDER" ]] && return 0
+  _log "DNS forwarder mode: ${DNS_FORWARDER} (UDP/53 outbound assumed blocked; falling back to plain resolv.conf + TCP)"
+
+  if systemctl list-unit-files systemd-resolved.service >/dev/null 2>&1; then
+    systemctl stop systemd-resolved 2>/dev/null || true
+    systemctl mask systemd-resolved 2>/dev/null || true
+  fi
+  chattr -i /etc/resolv.conf 2>/dev/null || true
+  rm -f /etc/resolv.conf
+  cat > /etc/resolv.conf <<EOF
+# Managed by jabali install.sh (JABALI_DNS_FORWARDER=${DNS_FORWARDER}).
+# systemd-resolved is masked to keep package postinst from re-symlinking
+# this file to the stub. `options use-vc` forces glibc onto TCP/53 — the
+# lab firewall blocks UDP/53 outbound but TCP works.
+nameserver ${DNS_FORWARDER}
+options use-vc timeout:5 attempts:2
+EOF
+  chattr +i /etc/resolv.conf 2>/dev/null || true
+  if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+    _die "DNS forwarder ${DNS_FORWARDER} did not resolve deb.debian.org over TCP — check the forwarder is reachable on TCP/53"
+  fi
+  _ok "DNS forwarder ${DNS_FORWARDER} live via TCP/53 (systemd-resolved masked, /etc/resolv.conf immutable)"
+}
+
 main() {
   print_banner
   preflight
@@ -10026,6 +10117,12 @@ main() {
   # with enough RAM.
   ensure_swap
   prompt_server_settings
+  # DNS forwarder escape hatch — must land BEFORE install_base_packages
+  # so the first apt update / GPG-key curl already runs against the
+  # static /etc/resolv.conf instead of failing on systemd-resolved's
+  # blocked UDP/53 path. No-op when JABALI_DNS_FORWARDER is unset, so
+  # production installs see no behavioural change.
+  apply_dns_forwarder_override
   prompt_admin_account
   install_base_packages
   # NTP / time sync — must run before anything that depends on accurate
