@@ -534,6 +534,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Domains:    deps.Domains,
 			Reconciler: deps.Reconciler,
 		})
+		// Per-domain SAN auto-add opt-out (M50 SSL ergonomics).
+		api.RegisterDomainSkipAutoSANRoutes(v1, api.DomainSkipAutoSANConfig{
+			Domains:    deps.Domains,
+			Reconciler: deps.Reconciler,
+		})
 		// Per-domain MTA-STS toggle (M47 Wave 7b, ADR-0109).
 		api.RegisterDomainMTAStsRoutes(v1, api.DomainMTAStsHandlerConfig{
 			Agent:          deps.Agent,

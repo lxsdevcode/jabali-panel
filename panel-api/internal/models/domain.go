@@ -229,6 +229,12 @@ type Domain struct {
 	// timestamp — useful for operator audit and the reconciler to
 	// re-publish DNS after a backup restore.
 	EmailEnabled    bool       `gorm:"type:tinyint(1);not null;default:1" json:"email_enabled"`
+	// SkipAutoSAN opts the domain out of ADR-0070 auto-added mail/
+	// autoconfig SAN entries on the LE cert. Set when the tenant runs
+	// mail elsewhere (or has no mail subdomain DNS) — without this the
+	// LE challenge fails for the missing subdomain and the WHOLE cert
+	// stays pending.
+	SkipAutoSAN     bool       `gorm:"column:skip_auto_san;type:tinyint(1);not null;default:0" json:"skip_auto_san"`
 	DkimSelector    *string    `gorm:"type:varchar(64)" json:"dkim_selector,omitempty"`
 	DkimPublicKey   *string    `gorm:"type:text" json:"dkim_public_key,omitempty"`
 	EmailEnabledAt  *time.Time `gorm:"type:datetime(6)" json:"email_enabled_at,omitempty"`

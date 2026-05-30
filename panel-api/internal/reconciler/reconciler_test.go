@@ -221,6 +221,10 @@ func (f *fakeDomainRepo) UpdateCacheEnabled(ctx context.Context, id string, enab
 	return nil
 }
 
+func (f *fakeDomainRepo) UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error {
+	return nil
+}
+
 func (f *fakeDomainRepo) UpdateMTASTSEnabled(context.Context, string, bool) (uint64, error) {
 	return 0, nil
 }

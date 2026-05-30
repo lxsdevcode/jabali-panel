@@ -231,6 +231,10 @@ func (m *MockDomainRepository) UpdateCacheEnabled(ctx context.Context, id string
 	return args.Error(0)
 }
 
+func (m *MockDomainRepository) UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error {
+	return nil
+}
+
 func (m *MockDomainRepository) UpdateMTASTSEnabled(context.Context, string, bool) (uint64, error) {
 	return 0, nil
 }

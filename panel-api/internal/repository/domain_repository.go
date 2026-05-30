@@ -81,6 +81,9 @@ type DomainRepository interface {
 	// UpdateCacheEnabled writes domains.cache_enabled (ADR-0108).
 	// Dedicated method: cache_enabled is not in Update()'s allowlist.
 	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
+	// UpdateSkipAutoSAN writes domains.skip_auto_san (M50 SAN opt-out).
+	// Dedicated method per [[feedback_domain_update_allowlist_silent_drop]].
+	UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error
 	// UpdateMTASTSEnabled writes domains.mta_sts_enabled (ADR-0109). On
 	// enable, also bumps mta_sts_id to the current unix timestamp so the
 	// TXT record id rotates (forces caches to refetch). On disable, the
@@ -516,6 +519,21 @@ func (r *domainRepo) UpdateCacheEnabled(ctx context.Context, id string, enabled 
 	res := r.db.WithContext(ctx).Model(&models.Domain{}).
 		Where("id = ?", id).
 		Update("cache_enabled", enabled)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateSkipAutoSAN writes domains.skip_auto_san — tenant opt-out of
+// the ADR-0070 auto-added mail/autoconfig SAN entries.
+func (r *domainRepo) UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error {
+	res := r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Update("skip_auto_san", enabled)
 	if res.Error != nil {
 		return translate(res.Error)
 	}

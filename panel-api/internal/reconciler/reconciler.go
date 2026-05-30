@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"context"
+	"net"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1464,6 +1465,14 @@ func sanHostnamesForDomain(d *models.Domain) []string {
 	if d == nil {
 		return nil
 	}
+	// Tenant opt-out: when SkipAutoSAN is set, panel won't add ANY
+	// auto-derived SAN names (mail/autoconfig/mta-sts). Cert covers
+	// just <domain> + www.<domain>. Use this when the domain's mail
+	// runs elsewhere or the operator manages their own DNS without
+	// the helper subdomains.
+	if d.SkipAutoSAN {
+		return nil
+	}
 	var out []string
 	if d.EmailEnabled {
 		out = append(out, "mail."+d.Name, "autoconfig."+d.Name)
@@ -1477,6 +1486,41 @@ func sanHostnamesForDomain(d *models.Domain) []string {
 		out = append(out, "mta-sts."+d.Name)
 	}
 	return out
+}
+
+// resolvableSANs filters out hostnames with no A/AAAA records — those
+// would fail the LE HTTP-01 challenge and tank the whole cert. Logs
+// each drop so the operator can see which SAN is missing DNS. Resolves
+// in parallel with a short per-host timeout so a slow recursor doesn't
+// stall every cert issue.
+func (r *Reconciler) resolvableSANs(ctx context.Context, names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	type result struct {
+		name string
+		ok   bool
+	}
+	resolver := net.DefaultResolver
+	resCh := make(chan result, len(names))
+	for _, n := range names {
+		go func(name string) {
+			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			addrs, err := resolver.LookupHost(lookupCtx, name)
+			resCh <- result{name: name, ok: err == nil && len(addrs) > 0}
+		}(n)
+	}
+	keep := make([]string, 0, len(names))
+	for i := 0; i < len(names); i++ {
+		res := <-resCh
+		if res.ok {
+			keep = append(keep, res.name)
+		} else {
+			r.log.Warn("ssl: skipping SAN with no DNS A/AAAA records", "san", res.name)
+		}
+	}
+	return keep
 }
 
 // acmeRetryInterval is how long to wait between ACME (Let's Encrypt) attempts
@@ -1618,7 +1662,12 @@ func (r *Reconciler) tryACMEOrFallback(ctx context.Context, domain *models.Domai
 		"staging": staging,
 	}
 	if extras := sanHostnamesForDomain(domain); len(extras) > 0 {
-		params["hostnames"] = extras
+		// Drop unresolvable SAN names — they would otherwise fail
+		// HTTP-01 and tank the whole cert. The base name +
+		// www.<name> always remain (added agent-side).
+		if filtered := r.resolvableSANs(issueCtx, extras); len(filtered) > 0 {
+			params["hostnames"] = filtered
+		}
 	}
 
 	raw, err := r.agent.Call(issueCtx, "ssl.issue", params)
@@ -1670,7 +1719,11 @@ func (r *Reconciler) fallbackToSelfSignAndRetry(ctx context.Context, domain *mod
 			"days":   365,
 		}
 		if extras := sanHostnamesForDomain(domain); len(extras) > 0 {
-			ssParams["hostnames"] = extras
+			// Self-sign uses the SAME SAN filter so the fallback
+			// cert covers exactly what ACME will retry next tick.
+			if filtered := r.resolvableSANs(selfSignCtx, extras); len(filtered) > 0 {
+				ssParams["hostnames"] = filtered
+			}
 		}
 		raw, sErr := r.agent.Call(selfSignCtx, "ssl.self_sign", ssParams)
 		if sErr != nil {

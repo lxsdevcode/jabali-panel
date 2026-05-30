@@ -27,6 +27,7 @@ import { DomainDirectoryPrivacySection } from "./DomainDirectoryPrivacySection";
 import { DomainListenIPSection } from "./DomainListenIPSection";
 import { DomainMailboxesSection } from "./DomainMailboxesSection";
 import { DomainSSLSection } from "./DomainSSLSection";
+import { DomainSkipAutoSANToggle } from "./DomainSkipAutoSANToggle";
 import { DomainCacheSection } from "./DomainCacheSection";
 import { DomainMTASTSSection } from "./DomainMTASTSSection";
 import { DomainDeliverabilitySection } from "./DomainDeliverabilitySection";
@@ -133,13 +134,16 @@ export const DomainEdit = () => {
       key: "ssl",
       label: "SSL / HTTPS",
       children: (
-        <DomainSSLSection
-          domainId={domain.id}
-          sslEnabled={!!domain.ssl_enabled}
-          onToggled={() =>
-            qc.invalidateQueries({ queryKey: ["one", "domains", id] })
-          }
-        />
+        <Space direction="vertical" style={{ width: "100%" }} size="large">
+          <DomainSSLSection
+            domainId={domain.id}
+            sslEnabled={!!domain.ssl_enabled}
+            onToggled={() =>
+              qc.invalidateQueries({ queryKey: ["one", "domains", id] })
+            }
+          />
+          <DomainSkipAutoSANToggle domainId={domain.id} />
+        </Space>
       ),
     },
     {
