@@ -267,6 +267,17 @@ _warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; _log_to_file "[!] $*"; }
 _err()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"; }
 _die()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"; exit 1; }
 
+# is_container returns 0 inside LXC/Docker/Podman/systemd-nspawn etc.
+# Gates kernel-LSM-touching steps (auditd, AppArmor) and host-kernel-
+# only services (systemd-timesyncd) that warn noisily in a container
+# where the host owns the resource. Defensive about
+# systemd-detect-virt being absent so the script still runs in
+# minimal environments.
+is_container() {
+  command -v systemd-detect-virt >/dev/null 2>&1 && \
+    systemd-detect-virt --container --quiet 2>/dev/null
+}
+
 # Announce where logs are going so the operator can tail -f in another
 # shell if the install stalls. Printed via _log so it's itself captured.
 if [[ -n "${LOG_FILE:-}" ]]; then
@@ -846,6 +857,7 @@ POLICYEOF
       bubblewrap debootstrap systemd-container \
       yara \
       ed inotify-tools \
+      logrotate \
       restic \
       sshpass \
       "${php_extensions[@]}" \
@@ -1125,7 +1137,14 @@ install_time_sync() {
       systemctl enable --quiet systemd-timesyncd 2>/dev/null || true
     fi
     if ! systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
-      systemctl start systemd-timesyncd 2>/dev/null || _warn "systemd-timesyncd failed to start"
+      if is_container; then
+        # Host owns the clock inside a container; the unit cannot bind
+        # to the kernel's clock-discipline syscalls and start-fail is
+        # expected. Skip silently — clock will still be host-synced.
+        :
+      else
+        systemctl start systemd-timesyncd 2>/dev/null || _warn "systemd-timesyncd failed to start"
+      fi
     fi
     timedatectl set-ntp true 2>/dev/null || true
     _ok "systemd-timesyncd enabled"
@@ -7014,8 +7033,12 @@ AUDIT_RULES
     rm -f /etc/jabali/.audit-grub-pending
   fi
 
-  systemctl enable --now auditd >/dev/null 2>&1 || \
-    _warn "auditd enable/start failed — check 'systemctl status auditd'"
+  if is_container; then
+    _log "skipping auditd enable/start (container — host kernel owns audit)"
+  else
+    systemctl enable --now auditd >/dev/null 2>&1 || \
+      _warn "auditd enable/start failed — check 'systemctl status auditd'"
+  fi
 }
 
 install_ufw() {
@@ -7379,6 +7402,9 @@ apparmor_durably_disable_jabali() {
 # profiles whose on-disk file was removed in an earlier jabali update
 # but whose in-kernel entry was never unloaded. Idempotent.
 cleanup_apparmor_legacy() {
+  if is_container || [[ -f /etc/jabali/.apparmor-disabled ]]; then
+    return 0
+  fi
   # M40.2 — drop the kratos AppArmor profile. AA 4.x on Ubuntu 24.04
   # (kernel 6.8) has a complain-mode regression where unix-stream
   # mediation returns EACCES on connect() even though the profile is
@@ -7433,6 +7459,12 @@ cleanup_apparmor_legacy() {
 
 apply_apparmor_system_profiles() {
   local first_install=${1:-0}
+  # Skip silently in containers (LXC/Docker/Podman) — the host kernel
+  # owns AppArmor, apparmor_parser -r against the container's
+  # securityfs returns EPERM, and the noise drowns out real failures.
+  if is_container || [[ -f /etc/jabali/.apparmor-disabled ]]; then
+    return 0
+  fi
   local sys_profiles=(
     /etc/apparmor.d/usr.sbin.mysqld
     /etc/apparmor.d/usr.bin.redis-server
@@ -7467,6 +7499,12 @@ apply_apparmor_profiles() {
   local src_dir="${REPO_DIR}/install/apparmor"
   if [[ ! -d "$src_dir" ]]; then
     _warn "AppArmor profile source dir missing: $src_dir"
+    return 0
+  fi
+  # Skip silently in containers (LXC/Docker/Podman) — the host kernel
+  # owns AppArmor, apparmor_parser -r against the container's
+  # securityfs returns EPERM, and the noise drowns out real failures.
+  if is_container || [[ -f /etc/jabali/.apparmor-disabled ]]; then
     return 0
   fi
 
@@ -7840,7 +7878,11 @@ install_logrotate() {
   fi
   # Validate syntax now so a broken drop-in surfaces at install time,
   # not 24 hours later on cron tick. -d = debug mode (parse only).
-  if ! logrotate -d "$dst" >/dev/null 2>&1; then
+  # Skip when the binary is absent — base apt batch installs it but
+  # this function runs on update paths that predate that addition.
+  if ! command -v logrotate >/dev/null 2>&1; then
+    _warn "logrotate binary missing — skipping parse validation"
+  elif ! logrotate -d "$dst" >/dev/null 2>&1; then
     _warn "logrotate parse failed for $dst — review syntax"
   fi
 }
