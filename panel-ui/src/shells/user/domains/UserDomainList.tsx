@@ -12,6 +12,7 @@ import {
   PauseCircleOutlined,
   PlayCircleOutlined,
   DeleteOutlined,
+  LockOutlined,
 } from "@icons";
 import { Button, Card, Dropdown, Modal, Space, Table, Tag, Typography, notification } from "antd";
 import { useState } from "react";
@@ -27,6 +28,7 @@ import { humanBytes } from "../../../utils/bytes";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { DomainSettingsButton } from "../../DomainSettingsButton";
+import { DomainDirectoryPrivacyModal } from "../../../components/DomainDirectoryPrivacyModal";
 import { DomainRedirectsButton } from "../../DomainRedirectsButton";
 import { DomainIndexButton } from "../../DomainIndexButton";
 import { UserDomainDrawer } from "./UserDomainDrawer";
@@ -130,7 +132,7 @@ export type Domain = {
   updated_at: string;
 };
 
-type ActiveModal = { domainId: string; type: "redirects" | "index" | "settings" } | null;
+type ActiveModal = { domainId: string; type: "redirects" | "index" | "settings" | "directory-privacy" } | null;
 
 export const UserDomainList = () => {
   const navigate = useNavigate();
@@ -277,6 +279,12 @@ export const UserDomainList = () => {
                         onClick: () => setActiveModal({ domainId: r.id, type: "settings" }),
                       },
                       {
+                        key: "directory-privacy",
+                        label: "Directory Privacy",
+                        icon: <LockOutlined />,
+                        onClick: () => setActiveModal({ domainId: r.id, type: "directory-privacy" }),
+                      },
+                      {
                         key: "toggle",
                         label: r.is_enabled ? "Disable" : "Enable",
                         icon: r.is_enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />,
@@ -345,6 +353,14 @@ export const UserDomainList = () => {
                   <DomainSettingsButton
                     domain={r}
                     open={true}
+                    onClose={() => setActiveModal(null)}
+                  />
+                )}
+                {activeModal?.domainId === r.id && activeModal.type === "directory-privacy" && (
+                  <DomainDirectoryPrivacyModal
+                    open={true}
+                    domainId={r.id}
+                    domainName={r.name}
                     onClose={() => setActiveModal(null)}
                   />
                 )}
