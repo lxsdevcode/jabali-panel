@@ -57,6 +57,10 @@ func (f *fakeSubs) FindAll(ctx context.Context) ([]models.WebPushSubscription, e
 	}
 	return out, nil
 }
+
+func (f *fakeSubs) FindAllAdmins(ctx context.Context) ([]models.WebPushSubscription, error) {
+	return f.FindAll(ctx)
+}
 func (f *fakeSubs) FindByEndpoint(ctx context.Context, endpoint string) (*models.WebPushSubscription, error) {
 	return nil, nil
 }

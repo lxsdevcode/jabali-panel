@@ -26,13 +26,13 @@ type WebPushSubscriptionRepository interface {
 	FindByUser(ctx context.Context, userID string) ([]models.WebPushSubscription, error)
 	FindByEndpoint(ctx context.Context, endpoint string) (*models.WebPushSubscription, error)
 
-	// FindAll returns every enrolled subscription. The webpush sender's
-	// broadcast path uses it for envelopes with no UserID (system-wide
-	// events like ssh.login or disk.full) — every admin who's opted in
-	// to push should hear about them. The set is small (one row per
-	// enrolled browser), so a full scan is cheaper than a per-admin
-	// fan-out loop.
-	FindAll(ctx context.Context) ([]models.WebPushSubscription, error)
+	// FindAllAdmins returns every enrolled subscription whose owning
+	// user has is_admin=true. The webpush sender's broadcast path
+	// (envelopes with no UserID — ssh.login, disk.full, crowdsec_spike,
+	// etc.) uses this so admin alerts never push to tenant users'
+	// browsers. The set is small (one row per enrolled browser), so a
+	// JOIN-based scan is cheaper than a per-admin fan-out loop.
+	FindAllAdmins(ctx context.Context) ([]models.WebPushSubscription, error)
 
 	// DeleteByEndpoint is called by the webpush sender when the browser
 	// push service responds 410 Gone. The endpoint URL is the globally
@@ -87,10 +87,12 @@ func (r *webPushSubscriptionRepo) FindByUser(ctx context.Context, userID string)
 	return rows, err
 }
 
-func (r *webPushSubscriptionRepo) FindAll(ctx context.Context) ([]models.WebPushSubscription, error) {
+func (r *webPushSubscriptionRepo) FindAllAdmins(ctx context.Context) ([]models.WebPushSubscription, error) {
 	var rows []models.WebPushSubscription
 	err := r.db.WithContext(ctx).
-		Order("created_at DESC").
+		Joins("JOIN users ON users.id = webpush_subscriptions.user_id").
+		Where("users.is_admin = ?", true).
+		Order("webpush_subscriptions.created_at DESC").
 		Find(&rows).Error
 	return rows, err
 }

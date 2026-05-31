@@ -94,12 +94,13 @@ func (w *WebPush) Send(ctx context.Context, channel models.NotificationChannel, 
 		subject = *settings.VAPIDSubject
 	}
 
-	// Per-user envelope → push only to that admin's enrolled browsers.
-	// Broadcast envelope (UserID empty: ssh.login, disk.full, etc.) →
-	// fan out to every enrolled subscription so any admin who's opted
-	// in hears about it. Subscription set is small (one row per
-	// enrolled browser), so a full scan is cheaper than walking
-	// admins-then-subs separately.
+	// Per-user envelope → push only to that user's enrolled browsers
+	// (admin OR tenant — caller decides who the envelope targets).
+	// Broadcast envelope (UserID empty: ssh.login, disk.full,
+	// crowdsec_spike, etc.) → fan out to every enrolled subscription
+	// whose owner is an admin. Without the admin filter, admin alerts
+	// leaked to every tenant who had enrolled push on their own
+	// /jabali-panel session.
 	var rows []models.WebPushSubscription
 	if env.UserID != "" {
 		rows, err = w.subs.FindByUser(ctx, env.UserID)
@@ -107,9 +108,9 @@ func (w *WebPush) Send(ctx context.Context, channel models.NotificationChannel, 
 			return fmt.Errorf("webpush: list subs for %s: %w", env.UserID, err)
 		}
 	} else {
-		rows, err = w.subs.FindAll(ctx)
+		rows, err = w.subs.FindAllAdmins(ctx)
 		if err != nil {
-			return fmt.Errorf("webpush: list all subs: %w", err)
+			return fmt.Errorf("webpush: list admin subs: %w", err)
 		}
 	}
 	if len(rows) == 0 {
