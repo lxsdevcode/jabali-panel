@@ -2164,4 +2164,63 @@ func (r *Reconciler) migrateBootstrapShape(ctx context.Context, zone *models.DNS
 			break // only one apex MX row, stop scanning
 		}
 	}
+
+	// ---------- backfill ns1/ns2 A records --------------------------
+	//
+	// New zones get these via BootstrapRecords. Existing zones that
+	// pre-date the fix have @ NS rows (synthesised at compile time
+	// from server_settings.ns1_name / ns2_name) but no in-zone A
+	// rows for the nameserver labels, so `host ns1.<zone>` returns
+	// NXDOMAIN. Insert when:
+	//   - server_settings.ns1_name (or ns2_name) ends with "." + zone.Name
+	//   - corresponding A row is missing
+	// Idempotent: skips when the row already exists.
+	if zone.Name != "" {
+		for _, ns := range []struct{ name, ipv4 string }{
+			{srv.NS1Name, srv.NS1IPv4},
+			{srv.NS2Name, srv.NS2IPv4},
+		} {
+			if ns.name == "" || ns.ipv4 == "" {
+				continue
+			}
+			suffix := "." + zone.Name
+			if !strings.HasSuffix(ns.name, suffix) {
+				continue
+			}
+			label := strings.TrimSuffix(ns.name, suffix)
+			if label == "" {
+				continue
+			}
+			already := false
+			for _, rec := range existing {
+				if rec.Name == label && rec.Type == "A" {
+					already = true
+					break
+				}
+			}
+			if already {
+				continue
+			}
+			now := time.Now().UTC()
+			rec := &models.DNSRecord{
+				ID:        ids.NewULID(),
+				ZoneID:    zone.ID,
+				Name:      label,
+				Type:      "A",
+				Content:   ns.ipv4,
+				TTL:       3600,
+				Managed:   true,
+				IsEnabled: true,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			if err := r.dnsRecords.Create(ctx, rec); err != nil {
+				r.log.Error("migrate bootstrap: insert ns A failed",
+					"zone", zone.Name, "label", label, "err", err)
+			} else {
+				r.log.Info("backfilled ns A record",
+					"zone", zone.Name, "name", label, "content", ns.ipv4)
+			}
+		}
+	}
 }

@@ -193,3 +193,46 @@ func TestBootstrapRecords_AllManagedTrue_ManagedByNil(t *testing.T) {
 		}
 	}
 }
+
+func TestBootstrapRecords_NSARecord_InZone(t *testing.T) {
+	srv := &models.ServerSettings{
+		PublicIPv4: "203.0.113.10",
+		NS1Name:    "ns1.example.com",
+		NS1IPv4:    "203.0.113.10",
+		NS2Name:    "ns2.example.com",
+		NS2IPv4:    "203.0.113.11",
+	}
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter())
+	ns1 := findRec(t, recs, "ns1", "A")
+	if ns1.Content != "203.0.113.10" {
+		t.Errorf("ns1 A content = %q, want 203.0.113.10", ns1.Content)
+	}
+	ns2 := findRec(t, recs, "ns2", "A")
+	if ns2.Content != "203.0.113.11" {
+		t.Errorf("ns2 A content = %q, want 203.0.113.11", ns2.Content)
+	}
+}
+
+func TestBootstrapRecords_NSARecord_OffZone_Skipped(t *testing.T) {
+	srv := &models.ServerSettings{
+		PublicIPv4: "203.0.113.10",
+		NS1Name:    "ns1.other-zone.net",
+		NS1IPv4:    "203.0.113.10",
+	}
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter())
+	for _, r := range recs {
+		if r.Name == "ns1" && r.Type == "A" {
+			t.Errorf("ns1 A leaked into zone where ns1_name lives elsewhere: %+v", r)
+		}
+	}
+}
+
+func TestBootstrapRecords_NSARecord_EmptyConfig_Noop(t *testing.T) {
+	srv := &models.ServerSettings{PublicIPv4: "203.0.113.10"}
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter())
+	for _, r := range recs {
+		if (r.Name == "ns1" || r.Name == "ns2") && r.Type == "A" {
+			t.Errorf("ns A record emitted without ns_name/ns_ipv4 config: %+v", r)
+		}
+	}
+}

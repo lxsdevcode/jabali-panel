@@ -87,7 +87,40 @@ func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew
 	out = append(out, mk("@", "TXT", BuildSPFString(srv), 0))
 
 	out = append(out, mk("_dmarc", "TXT", `"v=DMARC1; p=quarantine; sp=quarantine; adkim=r; aspf=r"`, 0))
+
+	// ns1/ns2 A records. compile.go already synthesises the NS records
+	// at the zone apex from server_settings.ns1_name / ns2_name, but
+	// without A records for those nameservers, resolvers get NXDOMAIN
+	// for the in-zone "ns1.<zone>" / "ns2.<zone>" lookups. Whenever
+	// the configured nameserver hostname IS a label inside this zone
+	// (e.g. zone "example.com", ns1_name "ns1.example.com"), seed the
+	// matching A record now. Skip when the nameserver lives in a
+	// different zone (e.g. ns1 hosted off-site) — the operator owns
+	// that record elsewhere.
+	if zoneName != "" {
+		appendNSARecord(&out, mk, zoneName, srv.NS1Name, srv.NS1IPv4)
+		appendNSARecord(&out, mk, zoneName, srv.NS2Name, srv.NS2IPv4)
+	}
+
 	return out
+}
+
+// appendNSARecord emits an A record for the nameserver hostname if the
+// hostname lives inside zoneName. Idempotent: noop on empty inputs or
+// when the nameserver is hosted elsewhere.
+func appendNSARecord(out *[]models.DNSRecord, mk func(name, typ, content string, priority int) models.DNSRecord, zoneName, nsName, nsIPv4 string) {
+	if nsName == "" || nsIPv4 == "" || zoneName == "" {
+		return
+	}
+	suffix := "." + zoneName
+	if !strings.HasSuffix(nsName, suffix) {
+		return
+	}
+	label := strings.TrimSuffix(nsName, suffix)
+	if label == "" {
+		return
+	}
+	*out = append(*out, mk(label, "A", nsIPv4, 0))
 }
 
 // BuildSPFString renders the bootstrap SPF TXT content from server
