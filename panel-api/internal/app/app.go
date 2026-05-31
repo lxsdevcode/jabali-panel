@@ -608,6 +608,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			api.RegisterSSLRoutes(v1, api.SSLHandlerConfig{
 				Domains:        deps.Domains,
 				SSLCerts:       deps.SSLCerts,
+				PanelCerts:     deps.PanelCerts,
 				ServerSettings: deps.ServerSettings,
 				Reconciler:     deps.Reconciler,
 				Config:         cfg,
