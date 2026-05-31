@@ -222,11 +222,19 @@ export const SSLManagerTable = ({
         currentQ: search,
         onSearch: (v) => setSearch(v),
       }),
-      render: (text: string) => (
-        <span style={{ fontFamily: "monospace" }}>
-          {text}
-        </span>
-      ),
+      render: (text: string, record: SSLCertificate) => {
+        const isPanelCert = record.id.startsWith("panel-cert:");
+        return (
+          <Space size={4}>
+            <span style={{ fontFamily: "monospace" }}>{text}</span>
+            {isPanelCert && (
+              <Tooltip title="Panel cert — managed via Server Settings → Panel SSL">
+                <Tag color="purple">panel</Tag>
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
     ...(showOwner
       ? [
@@ -326,6 +334,17 @@ export const SSLManagerTable = ({
       title: "Actions",
       key: "actions",
       render: (_: unknown, record: SSLCertificate) => {
+        // Panel-hostname + panel-mail certs (synthetic rows from
+        // panel_certificate) renew via their own scheduler — the
+        // per-domain renew/retry/revoke endpoints don't apply. Show a
+        // pointer instead of broken buttons.
+        if (record.id.startsWith("panel-cert:")) {
+          return (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Manage in Server Settings &rarr; Panel SSL
+            </Typography.Text>
+          );
+        }
         const isRetryable = record.status === "failed" ||
           (record.status === "pending_acme_retry" && record.next_retry_at && new Date(record.next_retry_at) < new Date());
         return (

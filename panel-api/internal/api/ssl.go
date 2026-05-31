@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -23,6 +24,7 @@ type SSLScheduler interface {
 type SSLHandlerConfig struct {
 	Domains        repository.DomainRepository
 	SSLCerts       repository.SSLCertificateRepository
+	PanelCerts     repository.PanelCertificateRepository
 	ServerSettings repository.ServerSettingsRepository
 	Reconciler     SSLScheduler
 	Config         *config.Config
@@ -343,13 +345,70 @@ func (h *sslHandler) retrySSL(c *gin.Context) {
 // listAllSSL lists all SSL certificates across all users (admin-only).
 // GET /api/v1/admin/ssl-certificates
 func (h *sslHandler) listAllSSL(c *gin.Context) {
-	certs, err := h.cfg.SSLCerts.ListAll(c.Request.Context())
+	ctx := c.Request.Context()
+	certs, err := h.cfg.SSLCerts.ListAll(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
 
+	// Panel-hostname + panel-mail certs live in panel_certificate
+	// (separate table; ADR-0066/0105 + M32) and don't appear in the
+	// ssl_certificates join above. Surface them here so the admin SSL
+	// Manager shows every cert managed by the panel in one place.
+	// Synthetic IDs are prefixed "panel-cert:" so the UI can disable
+	// per-domain Renew (panel cert renews via its own scheduler).
+	if h.cfg.PanelCerts != nil && h.cfg.Domains != nil {
+		certs = append(panelCertSyntheticRows(ctx, h.cfg), certs...)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"items": certs})
+}
+
+// panelCertSyntheticRows projects the panel_certificate rows
+// (hostname + mail kinds) into SSLCertificateWithDomain entries so
+// they render in the admin Domain Certificates table alongside
+// regular tenant certs. Returns empty on any error or missing row —
+// best-effort, never blocks the main listing.
+func panelCertSyntheticRows(ctx context.Context, cfg SSLHandlerConfig) []repository.SSLCertificateWithDomain {
+	primary, err := cfg.Domains.FindPanelPrimary(ctx)
+	if err != nil || primary == nil {
+		return nil
+	}
+	panelCerts, err := cfg.PanelCerts.ListAll(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make([]repository.SSLCertificateWithDomain, 0, len(panelCerts))
+	for _, pc := range panelCerts {
+		if pc == nil {
+			continue
+		}
+		domainName := primary.Name
+		if pc.Kind == models.PanelCertKindMail {
+			domainName = models.PanelMailHostname(primary.Name)
+		}
+		out = append(out, repository.SSLCertificateWithDomain{
+			ID:           "panel-cert:" + pc.Kind,
+			DomainID:     primary.ID,
+			DomainName:   domainName,
+			UserID:       primary.UserID,
+			UserUsername: "system",
+			Status:       pc.Status,
+			IssuedAt:     pc.IssuedAt,
+			ExpiresAt:    pc.ExpiresAt,
+			Staging:      pc.Staging,
+			LastError:    nilIfEmpty(pc.LastError),
+		})
+	}
+	return out
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // listUserSSL lists all SSL certificates for the caller's domains.
