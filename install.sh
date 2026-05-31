@@ -4049,6 +4049,45 @@ EOF
   JABALI_SEED_PASS="$admin_pass"
 }
 
+# bootstrap_tenant_env appends JABALI_BOOTSTRAP_TENANT_* to panel.env
+# when the operator set them in the install environment. Pattern matches
+# seed_admin_env so panel-api reads both via os.Getenv on first boot.
+#
+# Marker prevents re-write on jabali update — same idempotency model as
+# the admin seed.
+bootstrap_tenant_env() {
+  local _marker="/etc/jabali/.tenant-seeded"
+  if grep -q '^JABALI_BOOTSTRAP_TENANT_EMAIL=' "$ENV_FILE" 2>/dev/null \
+     || [[ -f "$_marker" ]]; then
+    return
+  fi
+  local tenant_email="${JABALI_BOOTSTRAP_TENANT_EMAIL:-}"
+  local tenant_domain="${JABALI_BOOTSTRAP_TENANT_DOMAIN:-}"
+  if [[ -z "$tenant_email" ]]; then
+    return
+  fi
+  local tenant_pass="${JABALI_BOOTSTRAP_TENANT_PASSWORD:-}"
+  if [[ -z "$tenant_pass" ]]; then
+    tenant_pass="$(openssl rand -base64 18)"
+    _log "tenant bootstrap: generated random password for $tenant_email (panel log will print it on first boot)"
+  fi
+  _log "seeding tenant bootstrap: user=$tenant_email domain=${tenant_domain:-<none>}"
+  cat >>"$ENV_FILE" <<EOF
+
+# Tenant bootstrap (GH#120 — consumed once on first boot, safe to leave).
+JABALI_BOOTSTRAP_TENANT_EMAIL=$tenant_email
+JABALI_BOOTSTRAP_TENANT_PASSWORD=$tenant_pass
+EOF
+  if [[ -n "$tenant_domain" ]]; then
+    echo "JABALI_BOOTSTRAP_TENANT_DOMAIN=$tenant_domain" >>"$ENV_FILE"
+  fi
+  mkdir -p "$(dirname "$_marker")" 2>/dev/null || true
+  : > "$_marker" 2>/dev/null || true
+  JABALI_TENANT_SEED_EMAIL="$tenant_email"
+  JABALI_TENANT_SEED_PASS="$tenant_pass"
+  JABALI_TENANT_SEED_DOMAIN="$tenant_domain"
+}
+
 start_and_verify_agent() {
   _log "starting $AGENT_SERVICE_NAME"
   systemctl restart "$AGENT_SERVICE_NAME"
@@ -10231,6 +10270,7 @@ main() {
   bootstrap_panel_acme_webroot
   install_jabali_panel_cert_hook
   seed_admin_env
+  bootstrap_tenant_env
   install_sso_key
   install_sso_reaper_timer
   install_migration_secrets_reaper

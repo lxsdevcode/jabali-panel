@@ -471,6 +471,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 				"kratos_identity_id", res.KratosIdentityID)
 		}
 
+		// Tenant bootstrap (GH#120) — auto-create a non-admin user +
+		// primary domain when JABALI_BOOTSTRAP_TENANT_EMAIL is set.
+		// No-op when the env var is unset, when the user already
+		// exists, or when the domain already exists. Failures log
+		// at error level but don't abort panel startup; the operator
+		// can re-run install.sh after fixing the upstream issue.
+		bootstrapTenantFromEnv(log)
+
 		// Merge-seed server_settings from config.toml [server] block on
 		// every boot. Operator edits via the admin API win — once a field
 		// has a non-empty value in the DB, config won't overwrite it. But
