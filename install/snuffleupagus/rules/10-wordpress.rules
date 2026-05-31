@@ -10,3 +10,23 @@ sp.disable_function.function("require").filename_r(".*/wp-content/plugins/.*").p
 # wp-config.php integrity: tenant PHP must never write wp-config.php.
 sp.disable_function.function("file_put_contents").filename_r("/wp-config\\.php$").drop();
 sp.disable_function.function("fwrite").filename_r("/wp-config\\.php$").drop();
+
+# WP core path exception for ini_set: wp-includes/* and wp-admin/* call
+# ini_set("memory_limit"), ini_set("display_errors"), ini_set(...) on
+# every bootstrap. Base rules drop those; allow them when the caller
+# IS WP core (vs tenant plugin/theme code that lives under
+# wp-content/plugins/ or wp-content/themes/, which stays locked down).
+#
+# Last-match-wins ordering: 10-wordpress.rules loads after 00-base.rules,
+# so these allows override the earlier drops.
+sp.disable_function.function("ini_set").param("option").value("memory_limit").filename_r(".*/wp-(includes|admin)/.*").allow();
+sp.disable_function.function("ini_set").param("option").value_r("display_errors").filename_r(".*/wp-(includes|admin)/.*").allow();
+sp.disable_function.function("ini_set").param("option").value_r("error_reporting").filename_r(".*/wp-(includes|admin)/.*").allow();
+sp.disable_function.function("ini_set").param("option").value_r("error_log").filename_r(".*/wp-(includes|admin)/.*").allow();
+
+# wp-cli driven invocations live under the user's home (e.g.
+# /home/<u>/.wp-cli/* or the global /usr/local/bin/wp). wp-cli also
+# bumps memory_limit during scripted operations. Allow when the
+# filename matches a wp-cli phar or bootstrap.
+sp.disable_function.function("ini_set").param("option").value("memory_limit").filename_r(".*/(wp-cli|wp-cli\\.phar)/.*").allow();
+sp.disable_function.function("ini_set").param("option").value("memory_limit").filename_r(".*/wp-cli\\.phar$").allow();
