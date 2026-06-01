@@ -30,14 +30,19 @@ func TestRender_HeaderAndInband(t *testing.T) {
 	mustContain(t, out, "name: crowdsecurity/jabali-appsec", "config name")
 	mustContain(t, out, "default_remediation: ban", "default remediation")
 	mustContain(t, out, "inband_rules:\n - crowdsecurity/base-config\n - crowdsecurity/vpatch-*\n - crowdsecurity/generic-*\n", "inband list in order")
-	// ADR-0102: admin API allowlist present.
+	// ADR-0102: panel-API allowlist present.
 	mustContain(t, out, `on_match:
  - filter: req.URL.Path startsWith "/api/v1/"
    apply:
     - CancelEvent()
     - CancelAlert()
     - SetRemediation("allow")
-`, "ADR-0102 panel-API allowlist (amended: whole /api/v1/)")
+ - filter: req.Host startsWith "mail." || req.Host startsWith "autoconfig."
+   apply:
+    - CancelEvent()
+    - CancelAlert()
+    - SetRemediation("allow")
+`, "ADR-0102 panel-API + M6.6 webmail-vhost allowlist")
 	if strings.Contains(out, "pre_eval:") {
 		t.Fatalf("mode=off must NOT emit pre_eval:\n%s", out)
 	}

@@ -84,9 +84,25 @@ func Render(o Opts) string {
 	// /api/v1/admin/ left the SPA's own mutations (e.g.
 	// PATCH /api/v1/dns/records/:id) WAF-blocked with an opaque 403.
 	// Exempt the whole prefix; public vhosts keep full AppSec.
+	//
+	// M6.6 follow-up (2026-06-01): the webmail vhosts (mail.* and
+	// autoconfig.*) are served exclusively by Bulwark + Stalwart,
+	// both of which auth-gate their own traffic. CRS rule 911100
+	// blocks Bulwark's PUT /api/auth/session — the SPA's session-
+	// rehydration call AFTER /api/auth/impersonate sets cookies —
+	// so every webmail SSO landed on a logged-out SPA (symptom:
+	// "SSO not working" even though the JWT was accepted and the
+	// impersonation cookies were set). JMAP batch POSTs also trip
+	// body-inspector false-positives. Exempt webmail hostnames
+	// entirely; these are dedicated vhosts with no other surface.
 	if o.AdminAllowlist {
 		b.WriteString(`on_match:
  - filter: req.URL.Path startsWith "/api/v1/"
+   apply:
+    - CancelEvent()
+    - CancelAlert()
+    - SetRemediation("allow")
+ - filter: req.Host startsWith "mail." || req.Host startsWith "autoconfig."
    apply:
     - CancelEvent()
     - CancelAlert()
