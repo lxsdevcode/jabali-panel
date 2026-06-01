@@ -9199,6 +9199,21 @@ EOF
   rm -f "$tmp"
   _ok "Bulwark impersonation env appended -> $bulwark_env"
 
+  # panel-api (user jabali) needs to read bulwark-jwt-auth.secret which
+  # is 0640 root:jabali-webmail. Add jabali as a supplementary group
+  # member; idempotent (usermod -aG is a no-op when already present).
+  # Supplementary-group changes don't apply to running processes — we
+  # restart jabali-panel so its egid set picks up jabali-webmail.
+  if id jabali >/dev/null 2>&1 && getent group jabali-webmail >/dev/null; then
+    if ! id -nG jabali | tr " " "\n" | grep -qx jabali-webmail; then
+      usermod -aG jabali-webmail jabali       || _warn "usermod -aG jabali-webmail jabali failed"
+      _ok "added jabali user to jabali-webmail group (for impersonate secret read)"
+      if systemctl is-active jabali-panel >/dev/null 2>&1; then
+        systemctl restart jabali-panel         || _warn "failed to restart jabali-panel after group membership update"
+      fi
+    fi
+  fi
+
   if systemctl is-active jabali-webmail >/dev/null 2>&1; then
     systemctl restart jabali-webmail       || _warn "failed to restart jabali-webmail after impersonation env update"
   fi

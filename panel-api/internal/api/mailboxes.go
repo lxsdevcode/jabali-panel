@@ -526,16 +526,10 @@ func (h *mailboxHandler) mintSSO(c *gin.Context) {
 		h.writeLoadErr(c, err)
 		return
 	}
-	if len(mb.PasswordEnc) == 0 {
-		// Mailbox predates migration 000056 or was created before SSOKey
-		// was wired. Surface a typed error so the UI can show a
-		// "rotate password to enable webmail SSO" hint.
-		c.JSON(http.StatusConflict, gin.H{
-			"error":  "sso_unavailable_rotate_password",
-			"detail": "Rotate the mailbox password to enable webmail SSO; password_enc is unset.",
-		})
-		return
-	}
+	// M6.6: password_enc is no longer required for SSO. The impersonate
+	// flow uses Stalwart's master-user Basic header, not the mailbox's
+	// plaintext password. The encrypted column stays on the model for
+	// future IMAP-cred display features but isn't a SSO precondition.
 
 	// 32 random bytes → base64url token (plaintext) + SHA-256 hash.
 	raw := make([]byte, 32)
