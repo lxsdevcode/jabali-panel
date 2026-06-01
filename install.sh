@@ -3457,13 +3457,25 @@ build_frontend() {
 
 build_backend() {
   _log "building panel-api + jabali-agent"
-  local version
+  local version full_sha btime
   version="$(sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" rev-parse --short HEAD)"
+  full_sha="$(sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" rev-parse HEAD)"
+  btime="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/bin"
   local tmp_panel="$REPO_DIR/bin/jabali-panel.new"
   local tmp_agent="$REPO_DIR/bin/jabali-agent.new"
   local tmp_sshshell="$REPO_DIR/bin/jabali-ssh-shell.new"
+
+  # Build-info ldflags: panel-api exposes api.Version (short SHA),
+  # api.Commit (full SHA) and api.BuildTime (RFC3339) through
+  # `jabali version` + /health. Must match panel-api/cmd/server/
+  # update.go (gitRevParseAsUser + ldflagsAPI) so the version string
+  # survives both install.sh AND every `jabali update` cycle.
+  local panel_ld="-s -w"
+  panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Version=$version"
+  panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Commit=$full_sha"
+  panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.BuildTime=$btime"
 
   # One invocation of go, three binaries — shared module, shared build cache.
   sudo -u "$SERVICE_USER" -H env \
@@ -3472,7 +3484,7 @@ build_backend() {
     GOCACHE="$REPO_DIR/.cache/go-build" \
     GOMODCACHE="$REPO_DIR/.cache/go-mod" \
     bash -c "cd '$REPO_DIR' && \
-      go build -trimpath -ldflags '-s -w -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Version=$version' -o '$tmp_panel' ./panel-api/cmd/server && \
+      go build -trimpath -ldflags '$panel_ld' -o '$tmp_panel' ./panel-api/cmd/server && \
       go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_agent' ./panel-agent/cmd/jabali-agent && \
       go build -trimpath -ldflags '-s -w' -o '$tmp_sshshell' ./panel-agent/cmd/jabali-ssh-shell"
 
