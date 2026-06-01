@@ -49,7 +49,7 @@ server {
 {{ end }}{{ if .ListenIPv6 }}  listen [{{.ListenIPv6}}]:443 ssl http2;
 {{ else }}  listen [::]:443 ssl http2;
 {{ end }}  # http2 folded into listen — legacy form, nginx>=1.9.5
-  server_name mail.{{.DomainName}} autoconfig.{{.DomainName}};
+  server_name {{ if .IsPanelPrimary }}{{.DomainName}} {{ end }}mail.{{.DomainName}} autoconfig.{{.DomainName}};
 
   ssl_certificate {{.SSLCertPath}};
   ssl_certificate_key {{.SSLKeyPath}};
@@ -134,7 +134,7 @@ server {
 {{ else }}  listen 80;
 {{ end }}{{ if .ListenIPv6 }}  listen [{{.ListenIPv6}}]:80;
 {{ else }}  listen [::]:80;
-{{ end }}  server_name mail.{{.DomainName}} autoconfig.{{.DomainName}};
+{{ end }}  server_name {{ if .IsPanelPrimary }}{{.DomainName}} {{ end }}mail.{{.DomainName}} autoconfig.{{.DomainName}};
 
   # ACME HTTP-01 webroot. Must be a location block — a server-level
   # redirect fires in nginx SERVER_REWRITE phase BEFORE FIND_CONFIG,
@@ -193,6 +193,14 @@ type webmailVhostApplyParams struct {
 	// the SPA stays same-origin on mail.<tenant-domain>. Empty value
 	// disables the rewrite (fresh install / pre-bootstrap).
 	PanelHostname string `json:"panel_hostname,omitempty"`
+	// IsPanelPrimary marks the panel-hostname mail vhost (M6.4 /
+	// ADR-0048 / DomainName == PanelHostname). For that one row the
+	// server_name list ALSO includes the bare panel hostname — Bulwark's
+	// /api/auth/impersonate proxies upstream JMAP fetches to
+	// `https://<panel-hostname>/jmap`, and without bare hostname in
+	// server_name those requests fall to nginx default + return 500.
+	// M6.6 / 2026-06-01 live-smoke regression.
+	IsPanelPrimary bool `json:"is_panel_primary,omitempty"`
 }
 
 type webmailVhostResponse struct {
