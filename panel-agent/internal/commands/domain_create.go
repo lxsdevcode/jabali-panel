@@ -31,7 +31,7 @@ type domainCreateParams struct {
 	// IsEnabled controls whether the vhost serves the tenant's docroot
 	// (true) or a branded "site disabled" placeholder (false). Pointer
 	// so omitted fields default to true (backwards compat).
-	IsEnabled    *bool  `json:"is_enabled"`
+	IsEnabled *bool `json:"is_enabled"`
 	// CacheEnabled (ADR-0108) — per-domain nginx FastCGI micro-cache
 	// opt-in. false ⇒ vhost byte-identical to the pre-0108 shape.
 	CacheEnabled bool   `json:"cache_enabled"`
@@ -168,6 +168,7 @@ server {
     {{.IPACLDirectives}}
     {{.DirectoryPrivacyDirectives}}
 
+{{ if not .RootOverridden }}
     location / {
 {{ if .HasPHP }}
         try_files $uri $uri/ /index.php?$query_string;
@@ -175,6 +176,7 @@ server {
         try_files $uri $uri/ =404;
 {{ end }}
     }
+{{ end }}
 {{ if .CacheEnabled }}
     # Long-cache static assets (immutable content; 30 days).
     location ~* \.(?:css|js|jpe?g|png|gif|ico|svg|webp|woff2?|ttf|eot)$ {
@@ -200,7 +202,7 @@ server {
         add_header Cache-Control "public, max-age=300" always;
     }
 {{ end }}
-{{ if .HasPHP }}
+{{ if and .HasPHP (not .RootOverridden) }}
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/jabali-{{.Username}}/fpm.sock;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
@@ -275,7 +277,7 @@ type vhostData struct {
 	// BuildRateLimitDirectives; interpolated verbatim. Never contains
 	// user-controllable data — both the rps value and the zone name
 	// (which embeds the ULID) are panel-controlled.
-	RateLimitDirectives  string
+	RateLimitDirectives string
 	// M24 listen IPs. Empty string = all-interfaces fallback handled by
 	// the template's explicit if/else. Plain string (validated by
 	// panel-api before reaching the agent) so the template stays simple.
@@ -296,6 +298,14 @@ type vhostData struct {
 	CacheEnabled bool
 	CacheKeyZone string
 	CacheTTL     string
+	// RootOverridden is true when CustomDirectives contain a
+	// `location /` block (any modifier — exact, prefix, regex). The
+	// template omits its own default `location /` + `location ~ \.php$`
+	// blocks in that case so the user's custom directives become the
+	// authoritative routing for the whole domain. Use case: panel UI
+	// "reverse proxy domain to upstream X" without hand-rolling a
+	// /etc/nginx/conf.d/* override that lives outside the reconciler.
+	RootOverridden bool
 }
 
 // indexDirectiveFor maps the panel's index_priority enum to the concrete
@@ -379,33 +389,34 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 	}
 
 	vhostData := vhostData{
-		Domain:             domain,
-		DocRoot:            docRoot,
-		HasPHP:             hasPHP,
-		PHPVersion:         phpVersion,
-		Username:           username,
-		IndexDirective:     indexDirectiveFor(indexPriority),
-		RedirectDirectives: redirectDirectives,
-		RuleDirectives:     ruleDirectives,
-		CustomDirectives:   customDirectives,
-		RateLimitDirectives: rateLimitDirectives,
-		IPACLDirectives:    ipACLDirectives,
+		Domain:                     domain,
+		DocRoot:                    docRoot,
+		HasPHP:                     hasPHP,
+		PHPVersion:                 phpVersion,
+		Username:                   username,
+		IndexDirective:             indexDirectiveFor(indexPriority),
+		RedirectDirectives:         redirectDirectives,
+		RuleDirectives:             ruleDirectives,
+		CustomDirectives:           customDirectives,
+		RateLimitDirectives:        rateLimitDirectives,
+		IPACLDirectives:            ipACLDirectives,
 		DirectoryPrivacyDirectives: dirPrivacyDirectives,
-		IsEnabled:          isEnabled,
-		SSLCertPath:        sslCertPath,
-		SSLKeyPath:         sslKeyPath,
-		PHPMemoryLimit:     phpMemLimit,
-		PHPUploadMaxFilesize: phpUploadMax,
-		PHPPostMaxSize:     phpPostMax,
-		PHPMaxInputVars:    phpMaxInputVars,
-		PHPMaxExecutionTime: phpMaxExecTime,
-		PHPMaxInputTime:    phpMaxInputTime,
-		PHPValueParam:      buildPHPValueParam(phpMemLimit, phpUploadMax, phpPostMax, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime),
-		ListenIPv4:         listenIPv4,
-		ListenIPv6:         listenIPv6,
-		CacheEnabled:       cacheEnabled,
-		CacheKeyZone:       "jabali_fcgi",
-		CacheTTL:           "60s",
+		IsEnabled:                  isEnabled,
+		SSLCertPath:                sslCertPath,
+		SSLKeyPath:                 sslKeyPath,
+		PHPMemoryLimit:             phpMemLimit,
+		PHPUploadMaxFilesize:       phpUploadMax,
+		PHPPostMaxSize:             phpPostMax,
+		PHPMaxInputVars:            phpMaxInputVars,
+		PHPMaxExecutionTime:        phpMaxExecTime,
+		PHPMaxInputTime:            phpMaxInputTime,
+		PHPValueParam:              buildPHPValueParam(phpMemLimit, phpUploadMax, phpPostMax, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime),
+		ListenIPv4:                 listenIPv4,
+		ListenIPv6:                 listenIPv6,
+		CacheEnabled:               cacheEnabled,
+		CacheKeyZone:               "jabali_fcgi",
+		CacheTTL:                   "60s",
+		RootOverridden:             customDirectivesOverrideRoot(customDirectives),
 	}
 
 	var vhostConfig bytes.Buffer
@@ -724,4 +735,32 @@ func validACLCIDR(s string) bool {
 		}
 	}
 	return true
+}
+
+// rootLocationRE matches a `location /` block opening for any nginx
+// modifier where the URI is exactly "/" (a single slash, not "/foo").
+// Used by writeVhost to detect when custom directives override the
+// default root location so the template can omit its own (duplicate
+// `location /` is an nginx parse error). Supports:
+//
+//	location /             { ... }   prefix match
+//	location = /           { ... }   exact match
+//	location ^~ /          { ... }   preferential prefix
+//	location ~ /           { ... }   regex (rare but legal)
+//	location ~* /          { ... }   case-insensitive regex
+//
+// Anchored to a line boundary so a comment line containing the literal
+// text doesn't fire a false positive.
+var rootLocationRE = regexp.MustCompile(`(?m)(?:^|\n)\s*location\s+(?:(?:=|\^~|~\*?)\s+)?/\s*\{`)
+
+// customDirectivesOverrideRoot reports whether s declares its own
+// `location /` block. When true, writeVhost passes RootOverridden=true
+// to the template and the default `location /` + `location ~ \.php$`
+// blocks are omitted from the rendered vhost so the operator's custom
+// routing wins. Empty string and whitespace-only strings return false.
+func customDirectivesOverrideRoot(s string) bool {
+	if strings.TrimSpace(s) == "" {
+		return false
+	}
+	return rootLocationRE.MatchString(s)
 }
