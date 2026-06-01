@@ -38,6 +38,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
 
 	// M35 migration importer registry — blank imports run each
 	// importer's init() so the source-kind → Discoverer factory
@@ -137,6 +138,24 @@ func runServe(cmd *cobra.Command, args []string) error {
 	deps.Log = log
 	deps.SSOKey = ssoKeyPtr
 	deps.Redis = redisClient
+
+	// M6.6 — load Bulwark impersonate JWT secret + construct minter.
+	// File is rendered by install.sh _install_bulwark_impersonate_secrets
+	// at 0640 root:jabali-webmail; panel-api runs as jabali so reads via
+	// fs (no group needed — file is 0640 with group jabali-webmail, but
+	// jabali user must be a supplementary member). On panels without
+	// the secret file (older installs, dev fixtures) we leave the
+	// minter nil so /sso/webmail returns 503 cleanly.
+	if secretBytes, sErr := os.ReadFile("/etc/jabali-panel/bulwark-jwt-auth.secret"); sErr == nil {
+		secretBytes = []byte(strings.TrimSpace(string(secretBytes)))
+		if m, mErr := webmailsso.New(secretBytes, ""); mErr == nil {
+			deps.WebmailSSOMinter = m
+		} else {
+			log.Warn("webmail SSO minter init failed", "err", mErr)
+		}
+	} else {
+		log.Warn("bulwark-jwt-auth.secret unreadable; webmail SSO disabled", "err", sErr)
+	}
 	if sharedDB != nil {
 		deps.DB = sharedDB
 		userRepo := repository.NewUserRepository(sharedDB)
