@@ -740,6 +740,16 @@ prompt_server_settings() {
   if ! grep -q "[[:space:]]${inp_hostname}\([[:space:]]\|$\)" /etc/hosts 2>/dev/null; then
     printf '%s\t%s\n' "$inp_ipv4" "$inp_hostname" >> /etc/hosts
   fi
+  # M6.6 — Bulwark talks to Stalwart via https://mail.<hostname>/jmap
+  # (per JMAP_SERVER_URL in bulwark.env). The per-domain mail vhost
+  # binds to ${inp_ipv4}:443 specifically (M24 listen-IP pinning), so
+  # the box must resolve mail.<hostname> + autoconfig.<hostname> to
+  # ${inp_ipv4} for the localhost-originated Bulwark HTTPS fetch to
+  # land on the right vhost. Without these lines, Bulwark fetch fails
+  # with "fetch failed" → webmail SSO 500s after the SPA loads.
+  if ! grep -q "[[:space:]]mail\.${inp_hostname}\([[:space:]]\|$\)" /etc/hosts 2>/dev/null; then
+    printf '%s\tmail.%s\tautoconfig.%s\n' "$inp_ipv4" "$inp_hostname" "$inp_hostname" >> /etc/hosts
+  fi
 
   # Export for write_config_file. Not using a file because we write to
   # /etc/jabali-panel/config.toml later in the install flow anyway.
