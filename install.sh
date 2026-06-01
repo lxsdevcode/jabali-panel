@@ -9047,6 +9047,7 @@ _install_bulwark_systemd() {
   systemctl daemon-reload
   _ok "jabali-webmail.service installed (disabled — starts on first domain.email_enable)"
   _install_bulwark_env
+  _install_bulwark_impersonate_secrets
 }
 
 # _install_bulwark_env renders install/bulwark/bulwark.env.tmpl into
@@ -9107,6 +9108,99 @@ _install_bulwark_env() {
   # start will pick up the file.
   if systemctl is-active jabali-webmail >/dev/null 2>&1; then
     systemctl restart jabali-webmail || _warn "failed to restart jabali-webmail after env update"
+  fi
+}
+
+# _install_bulwark_impersonate_secrets generates + persists the
+# BULWARK_JWT_AUTH_SECRET + BULWARK_STALWART_MASTER_PASSWORD that drive
+# the webmail SSO flow (M6.6 — GET /api/auth/impersonate). Both secrets
+# live in /etc/jabali-panel/ with 0640 root:jabali-webmail. They are
+# appended to bulwark.env (diff-aware) and the service restarted only
+# when the env contents actually change.
+#
+# Idempotent: re-runs of install.sh / jabali update keep the same
+# secrets unless the operator deletes the files. Delete + re-run = rotation.
+_install_bulwark_impersonate_secrets() {
+  local jwt_secret_file=/etc/jabali-panel/bulwark-jwt-auth.secret
+  local master_pw_file=/etc/jabali-panel/bulwark-stalwart-master.password
+  local bulwark_env=/etc/jabali-panel/bulwark.env
+
+  if [[ ! -f "$bulwark_env" ]]; then
+    _die "bulwark.env missing — _install_bulwark_env must run first"
+  fi
+
+  # Resolve hostname (same logic as _install_bulwark_env above).
+  local _bwrk_host="${JABALI_SRV_HOSTNAME:-}"
+  if [[ -z "$_bwrk_host" && -f /etc/jabali-panel/config.toml ]]; then
+    _bwrk_host="$(awk -F'[= "]+' '/^[[:space:]]*hostname[[:space:]]*=/{print $2; exit}'       /etc/jabali-panel/config.toml)"
+  fi
+  if [[ -z "$_bwrk_host" ]]; then
+    _bwrk_host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || true)"
+  fi
+  if [[ -z "$_bwrk_host" ]]; then
+    _die "cannot resolve panel hostname for Bulwark SSO secrets"
+  fi
+
+  # Generate JWT secret if absent. 64 chars base64url-safe (well above
+  # Bulwark's MIN_SECRET_LENGTH=32 from lib/impersonation/jwt.ts).
+  if [[ ! -s "$jwt_secret_file" ]]; then
+    openssl rand -base64 64 | tr -d '/+=' | head -c 64 > "$jwt_secret_file"
+    chmod 0640 "$jwt_secret_file"
+    chown root:jabali-webmail "$jwt_secret_file"
+    _ok "generated BULWARK_JWT_AUTH_SECRET -> $jwt_secret_file"
+  fi
+
+  # Stalwart master user: we re-use the existing Stalwart admin account
+  # that install_stalwart already provisioned (token at
+  # /etc/jabali-panel/stalwart-admin.token). Stalwart impersonation
+  # supports any account with Admin role — verified on .14 2026-06-01:
+  #   curl -H "Authorization: Basic $(b64 'test@dom.com%admin:<token>')" \
+  #     http://127.0.0.1:8446/.well-known/jmap  →  200 + target's JMAP session
+  # No need for a dedicated master account; one less moving piece.
+  local stalwart_token_file=/etc/jabali-panel/stalwart-admin.token
+  if [[ ! -s "$stalwart_token_file" ]]; then
+    _die "Stalwart admin token missing at $stalwart_token_file — install_stalwart must run first"
+  fi
+
+  local jwt_secret master_pw
+  jwt_secret=$(cat "$jwt_secret_file")
+  master_pw=$(cat "$stalwart_token_file")
+
+  # Rebuild bulwark.env in tmp: strip any prior M6.6 lines, append fresh.
+  # Diff via sha256; restart only on real change to avoid 60s reconciler
+  # spam when nothing changed (memory: feedback_per_tick_idempotent_loops).
+  local tmp
+  tmp=$(mktemp)
+  grep -v -E '^(BULWARK_JWT_AUTH_SECRET|BULWARK_STALWART_MASTER_USER|BULWARK_STALWART_MASTER_PASSWORD|BULWARK_JWT_AUTH_ISSUER)=' "$bulwark_env" > "$tmp" || true
+  cat >> "$tmp" <<EOF
+
+# M6.6 — webmail SSO via GET /api/auth/impersonate (Bulwark 1.7.1+).
+# Secrets backed by /etc/jabali-panel/bulwark-jwt-auth.secret +
+# /etc/jabali-panel/stalwart-admin.token (read directly — same admin
+# account install_stalwart provisioned). Delete bulwark-jwt-auth.secret
+# + re-run install.sh to rotate the JWT signing key; Stalwart admin
+# rotation is the existing 'jabali admin rotate-stalwart-token' path.
+BULWARK_JWT_AUTH_SECRET=${jwt_secret}
+BULWARK_STALWART_MASTER_USER=admin
+BULWARK_STALWART_MASTER_PASSWORD=${master_pw}
+BULWARK_JWT_AUTH_ISSUER=jabali-panel/webmail-sso
+EOF
+
+  local new_sha old_sha
+  new_sha=$(sha256sum "$tmp" | awk '{print $1}')
+  old_sha=$(sha256sum "$bulwark_env" | awk '{print $1}')
+  if [[ "$new_sha" == "$old_sha" ]]; then
+    rm -f "$tmp"
+    _ok "Bulwark impersonation env already in sync"
+    return
+  fi
+
+  install -m 0640 -o jabali-webmail -g jabali-webmail "$tmp" "$bulwark_env"
+  rm -f "$tmp"
+  _ok "Bulwark impersonation env appended -> $bulwark_env"
+
+  if systemctl is-active jabali-webmail >/dev/null 2>&1; then
+    systemctl restart jabali-webmail       || _warn "failed to restart jabali-webmail after impersonation env update"
   fi
 }
 
