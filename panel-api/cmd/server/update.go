@@ -798,13 +798,27 @@ test -x node_modules/.bin/tsc || {
 			if apiSkip && agentSkip {
 				return nil
 			}
+			// Build-info ldflags: surfaced by `jabali version` and the
+			// /health endpoint. Mirrors install.sh's build flags so
+			// the version string survives both the initial install AND
+			// every `jabali update` cycle (without these, panel-api's
+			// api.Version drops back to "dev" after the first update).
+			shortSHA, _ := gitRevParseAsUser(repoDir, serviceUser, "--short", "HEAD")
+			fullSHA, _ := gitRevParseAsUser(repoDir, serviceUser, "HEAD")
+			buildTime := time.Now().UTC().Format(time.RFC3339)
+			ldflagsAPI := "-s -w" +
+				" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Version=" + shortSHA +
+				" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Commit=" + fullSHA +
+				" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.BuildTime=" + buildTime
+			ldflagsAgent := "-s -w -X main.version=" + shortSHA
+
 			var wg sync.WaitGroup
 			var apiErr, agentErr error
 			if !apiSkip {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					apiErr = asUser(repoDir, goBin, "build", "-trimpath", "-ldflags", "-s -w",
+					apiErr = asUser(repoDir, goBin, "build", "-trimpath", "-ldflags", ldflagsAPI,
 						"-o", repoDir+"/bin/jabali-panel.new", "./panel-api/cmd/server")
 				}()
 			}
@@ -812,7 +826,7 @@ test -x node_modules/.bin/tsc || {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					agentErr = asUser(repoDir, goBin, "build", "-trimpath", "-ldflags", "-s -w",
+					agentErr = asUser(repoDir, goBin, "build", "-trimpath", "-ldflags", ldflagsAgent,
 						"-o", repoDir+"/bin/jabali-agent.new", "./panel-agent/cmd/jabali-agent")
 				}()
 			}
@@ -1160,4 +1174,18 @@ func appendGoPath(env []string) []string {
 		}
 	}
 	return append(env, "PATH="+goRoot+"/bin:/usr/bin:/bin")
+}
+
+// gitRevParseAsUser runs `git -C repoDir rev-parse <args...>` as
+// serviceUser (matches the rest of the update flow which avoids "dubious
+// ownership" by always shelling git through sudo). Returns ("unknown",
+// err) on failure so callers can ship a best-effort build-info value
+// rather than aborting the whole build.
+func gitRevParseAsUser(repoDir, serviceUser string, args ...string) (string, error) {
+	cmdArgs := append([]string{"-u", serviceUser, "git", "-C", repoDir, "rev-parse"}, args...)
+	out, err := exec.Command("sudo", cmdArgs...).Output()
+	if err != nil {
+		return "unknown", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
