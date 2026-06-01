@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/appseccfg"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -55,14 +56,33 @@ func (r *Reconciler) reconcileWebmailVhosts(ctx context.Context) {
 	}
 
 	anyEmailEnabled := false
+	webmailHosts := make([]string, 0, len(domains)*2)
 	for i := range domains {
 		d := &domains[i]
 		if d.EmailEnabled {
 			anyEmailEnabled = true
 			r.applyWebmailVhost(ctx, d)
+			// Mirror what the agent's mail vhost template emits as
+			// server_name: mail.<dom> + autoconfig.<dom>. Panel-primary
+			// also serves the bare panel hostname but that's never a
+			// public WAF-bypass target — it's the panel itself and
+			// already covered by the /api/v1/ allowlist.
+			webmailHosts = append(webmailHosts, "mail."+d.Name, "autoconfig."+d.Name)
 		} else {
 			r.removeWebmailVhost(ctx, d.Name)
 		}
+	}
+
+	// Write the AppSec webmail-allowlist state file every pass.
+	// internal/appseccfg.Render reads this file via LoadWebmailHosts
+	// to assemble the on_match block — so CRS rule 911100 doesn't
+	// 403 Bulwark's PUT /api/auth/session on the webmail vhosts.
+	// Write-on-diff returns changed=true only on real changes; the
+	// steady-state cost is a single stat + memcmp. Errors here
+	// don't fail the reconcile sweep: the AppSec config still has
+	// the previous allowlist on disk, which is the safe state.
+	if _, err := appseccfg.WriteWebmailHosts(appseccfg.WebmailHostsPath, webmailHosts); err != nil {
+		r.log.Warn("webmail reconcile: write webmail-hosts.list", "err", err)
 	}
 
 	// Ensure the Bulwark daemon itself is running whenever any tenant
