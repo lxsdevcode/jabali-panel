@@ -5,10 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -18,331 +17,302 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
 )
 
-// --- fake repos ---
+// --- fakes (M6.6 SSO landing) ---
 
-type fakeMailboxRepoSSO struct{ repository.MailboxRepository; mb *models.Mailbox }
-
-func (f *fakeMailboxRepoSSO) FindByID(_ context.Context, id string) (*models.Mailbox, error) {
-	if f.mb != nil && f.mb.ID == id {
-		return f.mb, nil
-	}
-	return nil, repository.ErrNotFound
+type ssoFakeTokenRepo struct {
+	tokens map[string]*models.MailboxSSOToken
 }
 
-type fakeDomainRepoSSO struct{ repository.DomainRepository; dom *models.Domain }
-
-func (f *fakeDomainRepoSSO) FindByID(_ context.Context, id string) (*models.Domain, error) {
-	if f.dom != nil && f.dom.ID == id {
-		return f.dom, nil
+func (f *ssoFakeTokenRepo) Create(ctx context.Context, t *models.MailboxSSOToken) error {
+	if f.tokens == nil {
+		f.tokens = map[string]*models.MailboxSSOToken{}
 	}
-	return nil, repository.ErrNotFound
-}
-
-type fakeSSOTokenRepo struct {
-	repository.MailboxSSOTokenRepository
-	tok *models.MailboxSSOToken
-	// consumed set after first consume to simulate FOR UPDATE + DELETE.
-	consumed bool
-}
-
-func (f *fakeSSOTokenRepo) ConsumeByHash(_ context.Context, hash string) (*models.MailboxSSOToken, error) {
-	if f.consumed || f.tok == nil || f.tok.TokenHash != hash {
-		return nil, repository.ErrNotFound
-	}
-	f.consumed = true
-	return f.tok, nil
-}
-
-func (f *fakeSSOTokenRepo) PeekByHash(_ context.Context, hash string) (*models.MailboxSSOToken, error) {
-	if f.consumed || f.tok == nil || f.tok.TokenHash != hash {
-		return nil, repository.ErrNotFound
-	}
-	return f.tok, nil
-}
-
-func (f *fakeSSOTokenRepo) DeleteByHash(_ context.Context, hash string) error {
-	if f.tok != nil && f.tok.TokenHash == hash {
-		f.consumed = true
-	}
+	f.tokens[t.TokenHash] = t
 	return nil
+}
+func (f *ssoFakeTokenRepo) PeekByHash(ctx context.Context, hash string) (*models.MailboxSSOToken, error) {
+	t, ok := f.tokens[hash]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return t, nil
+}
+func (f *ssoFakeTokenRepo) ConsumeByHash(ctx context.Context, hash string) (*models.MailboxSSOToken, error) {
+	t, ok := f.tokens[hash]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	delete(f.tokens, hash)
+	return t, nil
+}
+func (f *ssoFakeTokenRepo) DeleteByHash(ctx context.Context, hash string) error {
+	delete(f.tokens, hash)
+	return nil
+}
+func (f *ssoFakeTokenRepo) PurgeExpired(ctx context.Context) (int64, error) {
+	n := int64(0)
+	now := time.Now()
+	for h, t := range f.tokens {
+		if t.ExpiresAt.Before(now) {
+			delete(f.tokens, h)
+			n++
+		}
+	}
+	return n, nil
+}
+
+type ssoFakeMailboxRepo struct {
+	mbs map[string]*models.Mailbox
+}
+
+func (r *ssoFakeMailboxRepo) FindByID(ctx context.Context, id string) (*models.Mailbox, error) {
+	if mb, ok := r.mbs[id]; ok {
+		return mb, nil
+	}
+	return nil, repository.ErrNotFound
+}
+func (r *ssoFakeMailboxRepo) Create(ctx context.Context, mb *models.Mailbox) error { return nil }
+func (r *ssoFakeMailboxRepo) FindByEmail(ctx context.Context, email string) (*models.Mailbox, error) {
+	return nil, repository.ErrNotFound
+}
+func (r *ssoFakeMailboxRepo) ListByDomainID(ctx context.Context, domainID string, opts repository.ListOptions) ([]models.Mailbox, int64, error) {
+	return nil, 0, nil
+}
+func (r *ssoFakeMailboxRepo) CountByDomainID(ctx context.Context, domainID string) (int64, error) {
+	return 0, nil
+}
+func (r *ssoFakeMailboxRepo) ExistsByDomainAndLocalPart(ctx context.Context, domainID, localPart string) (bool, error) {
+	return false, nil
+}
+func (r *ssoFakeMailboxRepo) UpdatePasswordHash(ctx context.Context, id, hash string) error {
+	return nil
+}
+func (r *ssoFakeMailboxRepo) UpdatePasswordHashAndEnc(ctx context.Context, id, hash string, enc []byte) error {
+	return nil
+}
+func (r *ssoFakeMailboxRepo) UpdateQuota(ctx context.Context, id string, quotaBytes uint64) error {
+	return nil
+}
+func (r *ssoFakeMailboxRepo) UpdateDisabled(ctx context.Context, id string, disabled bool) error {
+	return nil
+}
+func (r *ssoFakeMailboxRepo) UpdateUsage(ctx context.Context, id string, usageBytes uint64, at time.Time) error {
+	return nil
+}
+func (r *ssoFakeMailboxRepo) Delete(ctx context.Context, id string) error { return nil }
+func (r *ssoFakeMailboxRepo) ListByDomainIDs(ctx context.Context, domainIDs []string) ([]models.Mailbox, error) {
+	return nil, nil
 }
 
 // --- helpers ---
 
-// newBulwarkFake returns an httptest server that mimics Bulwark's
-// POST /api/auth/session: reads the JSON body, and always returns 200
-// + two Set-Cookie headers (mirroring the real behaviour with HttpOnly
-// + Secure + SameSite=lax attributes we observed against v1.4.14).
-func newBulwarkFake(t *testing.T, wantServerURL, wantUsername string) *httptest.Server {
+func ssoNewTestMinter(t *testing.T) *webmailsso.Minter {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/auth/session" || r.Method != http.MethodPost {
-			t.Errorf("unexpected fake-bulwark hit: %s %s", r.Method, r.URL.Path)
-			http.Error(w, "bad route", http.StatusBadRequest)
-			return
-		}
-		var body struct{ ServerURL, Username, Password string }
-		// Bulwark's handler uses snake-ish JSON; our client sends
-		// {serverUrl, username, password}. Decode flexibly.
-		raw, _ := io.ReadAll(r.Body)
-		var m map[string]any
-		_ = json.Unmarshal(raw, &m)
-		if s, ok := m["serverUrl"].(string); ok {
-			body.ServerURL = s
-		}
-		if s, ok := m["username"].(string); ok {
-			body.Username = s
-		}
-		if s, ok := m["password"].(string); ok {
-			body.Password = s
-		}
-		if body.ServerURL != wantServerURL {
-			t.Errorf("bulwark received serverUrl=%q want=%q", body.ServerURL, wantServerURL)
-		}
-		if body.Username != wantUsername {
-			t.Errorf("bulwark received username=%q want=%q", body.Username, wantUsername)
-		}
-		if body.Password == "" {
-			t.Errorf("bulwark received empty password")
-		}
-		w.Header().Add("Set-Cookie", "jmap_session=SESSIONCOOKIEVALUE; Path=/; HttpOnly; Secure; SameSite=lax; Max-Age=2592000")
-		w.Header().Add("Set-Cookie", "jmap_stalwart_ctx=CTXVALUE; Path=/; HttpOnly; Secure; SameSite=lax")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
+	secret := []byte(strings.Repeat("k", webmailsso.MinSecretLength))
+	m, err := webmailsso.New(secret, "test-issuer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
-// mintToken produces (plaintextTokenURLSafe, sha256HexHash). Matches
-// the minting in mailboxHandler.mintSSO (/domains/:id/mailboxes/:id/sso).
-func mintToken(t *testing.T) (string, string) {
+func ssoMintTestToken(t *testing.T, repo *ssoFakeTokenRepo, mailboxID string, exp time.Time) string {
 	t.Helper()
 	raw := make([]byte, 32)
 	for i := range raw {
-		raw[i] = byte(i)
+		raw[i] = byte(i + 1)
 	}
-	plain := base64.RawURLEncoding.EncodeToString(raw)
-	h := sha256.Sum256(raw)
-	return plain, hex.EncodeToString(h[:])
+	hash := sha256.Sum256(raw)
+	hashHex := hex.EncodeToString(hash[:])
+	if err := repo.Create(context.Background(), &models.MailboxSSOToken{
+		ID:        "tok-1",
+		MailboxID: mailboxID,
+		TokenHash: hashHex,
+		ExpiresAt: exp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-// sealPassword encrypts a plaintext with a deterministic-ish key for
-// the test — any 32-byte value is a valid ssokey.Key.
-func sealPassword(t *testing.T, key ssokey.Key, plaintext string) []byte {
+func ssoHashHexOfToken(token string) string {
+	raw, _ := base64.RawURLEncoding.DecodeString(token)
+	h := sha256.Sum256(raw)
+	return hex.EncodeToString(h[:])
+}
+
+func ssoFakeSSOKey(t *testing.T) *ssokey.Key {
 	t.Helper()
-	env, err := key.Seal([]byte(plaintext))
-	if err != nil {
-		t.Fatalf("seal password: %v", err)
-	}
-	return env
+	var k ssokey.Key // zero-valued; new handler only nil-checks the pointer
+	return &k
 }
 
 // --- tests ---
 
-// TestWebmailSSOBridgePage_PersistsAuthStorage is the M6.2 contract
-// test: the /sso/webmail handler must return an HTML page that (a)
-// forwards Bulwark's Set-Cookie headers, and (b) writes Bulwark's
-// zustand 'auth-storage' localStorage key with a shape that matches
-// stores/auth-store.ts:partialize in Bulwark v1.4.14. A drift from
-// that shape silently breaks the post-SSO bounce — keep this test
-// in sync with any Bulwark pin bump.
-func TestWebmailSSOBridgePage_PersistsAuthStorage(t *testing.T) {
+func TestWebmailSSO_RedirectsToImpersonate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-
-	var ssoKey ssokey.Key
-	for i := range ssoKey {
-		ssoKey[i] = 0xab
-	}
-	plaintextPassword := "hunter2-the-quickening"
 
 	mb := &models.Mailbox{
-		ID:          "01TESTMBXID00000000000000",
-		DomainID:    "01TESTDOMAINID0000000000A",
-		LocalPart:   "alice",
+		ID:          "mb-1",
+		DomainID:    "dom-1",
 		EmailCached: "alice@example.com",
-		PasswordEnc: sealPassword(t, ssoKey, plaintextPassword),
 	}
-	dom := &models.Domain{ID: mb.DomainID, Name: "example.com"}
-
-	plain, hash := mintToken(t)
-	tok := &models.MailboxSSOToken{
-		ID:        "01TESTTOKEN0000000000000A",
-		MailboxID: mb.ID,
-		UserID:    "01TESTUSER0000000000000A0",
-		TokenHash: hash,
-		ExpiresAt: time.Now().Add(5 * time.Minute),
-	}
-
-	wantServerURL := "https://mail.example.com"
-	bulwark := newBulwarkFake(t, wantServerURL, mb.EmailCached)
-	defer bulwark.Close()
-
-	cfg := WebmailSSOHandlerConfig{
-		Mailboxes:      &fakeMailboxRepoSSO{mb: mb},
-		Domains:        &fakeDomainRepoSSO{dom: dom},
-		SSOKey:         &ssoKey,
-		SSOTokens:      &fakeSSOTokenRepo{tok: tok},
-		BulwarkBaseURL: bulwark.URL,
-	}
+	dom := &models.Domain{ID: "dom-1", Name: "example.com"}
+	mboxRepo := &ssoFakeMailboxRepo{mbs: map[string]*models.Mailbox{mb.ID: mb}}
+	domRepo := newMockDomainRepo()
+	domRepo.domains[dom.ID] = dom
+	tokRepo := &ssoFakeTokenRepo{}
+	token := ssoMintTestToken(t, tokRepo, mb.ID, time.Now().Add(time.Minute))
 
 	r := gin.New()
-	RegisterWebmailSSORoutes(r, cfg)
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: mboxRepo,
+		Domains:   domRepo,
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: tokRepo,
+		Minter:    ssoNewTestMinter(t),
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+plain, nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+token, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
-	// (a) 200 OK HTML, not 303.
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: got %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("code = %d; want 303 (body: %s)", w.Code, w.Body.String())
 	}
-	ct := rec.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/html") {
-		t.Errorf("content-type: got %q, want text/html", ct)
+	loc := w.Header().Get("Location")
+	if loc == "" {
+		t.Fatal("no Location header")
 	}
-
-	// (b) Set-Cookie headers forwarded from Bulwark, intact.
-	cookies := rec.Header().Values("Set-Cookie")
-	var sawSession, sawCtx bool
-	for _, c := range cookies {
-		if strings.HasPrefix(c, "jmap_session=SESSIONCOOKIEVALUE") {
-			sawSession = true
-		}
-		if strings.HasPrefix(c, "jmap_stalwart_ctx=CTXVALUE") {
-			sawCtx = true
-		}
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("invalid Location URL %q: %v", loc, err)
 	}
-	if !sawSession || !sawCtx {
-		t.Errorf("expected both Bulwark Set-Cookies forwarded; got %v", cookies)
+	if u.Scheme != "https" {
+		t.Errorf("Location scheme = %q; want https", u.Scheme)
 	}
-
-	// (c) Body contains localStorage write with the exact zustand shape
-	// stores/auth-store.ts:partialize produces for a rememberMe:true
-	// basic-auth login.
-	body := rec.Body.String()
-	if !strings.Contains(body, "localStorage.setItem('auth-storage'") {
-		t.Errorf("body missing localStorage.setItem('auth-storage', ...); body=%s", body)
+	if u.Host != "mail.example.com" {
+		t.Errorf("Location host = %q; want mail.example.com", u.Host)
 	}
-	if !strings.Contains(body, "window.location.replace('/')") {
-		t.Errorf("body missing window.location.replace('/'); body=%s", body)
+	if u.Path != "/api/auth/impersonate" {
+		t.Errorf("Location path = %q; want /api/auth/impersonate", u.Path)
 	}
-
-	// Pull the JSON blob out of the body and assert the shape. The
-	// JSON is inlined inside a template string — html/template will
-	// have double-encoded quotes, so we search for the characteristic
-	// fields rather than round-trip parsing.
-	required := []string{
-		`\"serverUrl\":\"https://mail.example.com\"`,
-		`\"username\":\"alice@example.com\"`,
-		`\"authMode\":\"basic\"`,
-		`\"isAuthenticated\":true`,
-		`\"rememberMe\":true`,
-		`\"version\":0`,
+	jwt := u.Query().Get("token")
+	if jwt == "" {
+		t.Fatal("Location missing token query param")
 	}
-	for _, want := range required {
-		if !strings.Contains(body, want) {
-			t.Errorf("body missing required JSON marker %q; body=%s", want, body)
-		}
+	if parts := strings.Split(jwt, "."); len(parts) != 3 {
+		t.Errorf("jwt segments = %d; want 3 (%q)", len(parts), jwt)
+	}
+	if _, ok := tokRepo.tokens[ssoHashHexOfToken(token)]; ok {
+		t.Error("SSO token not deleted after redirect (single-use violated)")
 	}
 }
 
-// TestWebmailSSO_InvalidTokenReturns403 locks in the existing failure
-// path — an unknown/expired/already-consumed token returns 403, with
-// no Bulwark call and no Set-Cookie leak.
-func TestWebmailSSO_InvalidTokenReturns403(t *testing.T) {
+func TestWebmailSSO_MissingToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	var ssoKey ssokey.Key
-
-	bulwark := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		t.Error("bulwark should not be called for invalid token")
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer bulwark.Close()
-
-	cfg := WebmailSSOHandlerConfig{
-		Mailboxes:      &fakeMailboxRepoSSO{},
-		Domains:        &fakeDomainRepoSSO{},
-		SSOKey:         &ssoKey,
-		SSOTokens:      &fakeSSOTokenRepo{}, // no token seeded
-		BulwarkBaseURL: bulwark.URL,
-	}
 	r := gin.New()
-	RegisterWebmailSSORoutes(r, cfg)
-
-	plain, _ := mintToken(t)
-	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+plain, nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("status: got %d, want 403", rec.Code)
-	}
-	if len(rec.Header().Values("Set-Cookie")) > 0 {
-		t.Errorf("no cookies should leak on invalid token; got %v", rec.Header().Values("Set-Cookie"))
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: &ssoFakeMailboxRepo{},
+		Domains:   newMockDomainRepo(),
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: &ssoFakeTokenRepo{},
+		Minter:    ssoNewTestMinter(t),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/sso/webmail", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("code = %d; want 400", w.Code)
 	}
 }
 
-// TestWebmailSSO_PrefetchDoesNotConsumeToken locks in the regression
-// guard against Chrome address-bar prefetch. With a real, valid token
-// + Chrome's `Sec-Purpose: prefetch` header, the handler must reply
-// 204 No Content WITHOUT calling SSOTokens.ConsumeByHash — otherwise
-// the user's actual click sees "token is invalid or expired".
-func TestWebmailSSO_PrefetchDoesNotConsumeToken(t *testing.T) {
+func TestWebmailSSO_InvalidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	var ssoKey ssokey.Key
-
-	plain, hash := mintToken(t)
-	tok := &models.MailboxSSOToken{
-		ID:        "tok-1",
-		MailboxID: "mb-1",
-		UserID:    "user-1",
-		TokenHash: hash,
-		ExpiresAt: time.Now().Add(5 * time.Minute),
-	}
-
-	bulwark := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		t.Error("bulwark should not be called on prefetch")
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer bulwark.Close()
-
-	tokenRepo := &fakeSSOTokenRepo{tok: tok}
-	cfg := WebmailSSOHandlerConfig{
-		Mailboxes:      &fakeMailboxRepoSSO{},
-		Domains:        &fakeDomainRepoSSO{},
-		SSOKey:         &ssoKey,
-		SSOTokens:      tokenRepo,
-		BulwarkBaseURL: bulwark.URL,
-	}
 	r := gin.New()
-	RegisterWebmailSSORoutes(r, cfg)
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: &ssoFakeMailboxRepo{},
+		Domains:   newMockDomainRepo(),
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: &ssoFakeTokenRepo{},
+		Minter:    ssoNewTestMinter(t),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token=!!!not-base64!!!", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("code = %d; want 400", w.Code)
+	}
+}
 
-	// Sec-Purpose: prefetch — Chrome's spec-compliant header.
-	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+plain, nil)
+func TestWebmailSSO_UnknownToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: &ssoFakeMailboxRepo{},
+		Domains:   newMockDomainRepo(),
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: &ssoFakeTokenRepo{},
+		Minter:    ssoNewTestMinter(t),
+	})
+	bogus := base64.RawURLEncoding.EncodeToString([]byte("garbage-but-base64-decodes-fine"))
+	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+bogus, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("code = %d; want 403", w.Code)
+	}
+}
+
+func TestWebmailSSO_NoMinterReturns503(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: &ssoFakeMailboxRepo{},
+		Domains:   newMockDomainRepo(),
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: &ssoFakeTokenRepo{},
+		// Minter intentionally nil.
+	})
+	bogus := base64.RawURLEncoding.EncodeToString([]byte("x"))
+	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+bogus, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("code = %d; want 503 (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestWebmailSSO_PrefetchRequestDoesNotConsumeToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tokRepo := &ssoFakeTokenRepo{}
+	mb := &models.Mailbox{ID: "mb-1", DomainID: "dom-1", EmailCached: "alice@example.com"}
+	dom := &models.Domain{ID: "dom-1", Name: "example.com"}
+	domRepo := newMockDomainRepo()
+	domRepo.domains[dom.ID] = dom
+	token := ssoMintTestToken(t, tokRepo, mb.ID, time.Now().Add(time.Minute))
+
+	r := gin.New()
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: &ssoFakeMailboxRepo{mbs: map[string]*models.Mailbox{mb.ID: mb}},
+		Domains:   domRepo,
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: tokRepo,
+		Minter:    ssoNewTestMinter(t),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+token, nil)
 	req.Header.Set("Sec-Purpose", "prefetch")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("status: got %d, want 204", rec.Code)
+	if w.Code != http.StatusNoContent {
+		t.Errorf("code = %d; want 204 for prefetch", w.Code)
 	}
-	if tokenRepo.consumed {
-		t.Errorf("prefetch must not consume the SSO token")
-	}
-	if len(rec.Header().Values("Set-Cookie")) > 0 {
-		t.Errorf("no cookies on prefetch; got %v", rec.Header().Values("Set-Cookie"))
-	}
-
-	// Legacy Purpose: prefetch (older Chrome) — same behavior.
-	req2 := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+plain, nil)
-	req2.Header.Set("Purpose", "prefetch")
-	rec2 := httptest.NewRecorder()
-	r.ServeHTTP(rec2, req2)
-	if rec2.Code != http.StatusNoContent {
-		t.Errorf("legacy Purpose header: got %d, want 204", rec2.Code)
-	}
-	if tokenRepo.consumed {
-		t.Errorf("legacy prefetch must not consume the SSO token")
+	if _, ok := tokRepo.tokens[ssoHashHexOfToken(token)]; !ok {
+		t.Error("token was consumed on prefetch — should be preserved")
 	}
 }

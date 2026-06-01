@@ -23,6 +23,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/eventsources"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webui"
 	panelui "git.linux-hosting.co.il/shukivaknin/jabali2/panel-ui"
@@ -142,6 +143,11 @@ type Deps struct {
 	QuotaMount string
 	SSO        *sso.Service
 	SSOKey     *ssokey.Key
+	// WebmailSSOMinter signs the JWT consumed by Bulwark's
+	// /api/auth/impersonate endpoint (M6.6). Nil disables /sso/webmail
+	// — handler surfaces 503 in that case. Loaded by serve.go from
+	// /etc/jabali-panel/bulwark-jwt-auth.secret at boot.
+	WebmailSSOMinter *webmailsso.Minter
 	Log        *slog.Logger
 	// Redis is the shared *redis.Client for the notification dispatcher
 	// (ADR-0056) and future WordPress object-cache (ADR-0059). Wired in
@@ -312,6 +318,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Domains:   deps.Domains,
 			SSOKey:    deps.SSOKey,
 			SSOTokens: deps.MailboxSSOTokens,
+			Minter:    deps.WebmailSSOMinter,
 			Log:       deps.Log,
 		})
 	}
