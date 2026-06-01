@@ -103,7 +103,13 @@ func (r *Reconciler) applyWebmailVhost(ctx context.Context, d *models.Domain) {
 		// doc_root is the ACME HTTP-01 webroot for renewals targeting
 		// mail.<domain>. Same path ssl.issue uses (-w domain.DocRoot)
 		// so renewal challenge files land where nginx will serve them.
-		"doc_root": d.DocRoot,
+		"doc_root":         d.DocRoot,
+		// M6.6 / 2026-06-01: panel-primary mail vhost includes bare
+		// PanelHostname in server_name so Bulwark's /api/auth/impersonate
+		// upstream JMAP fetch (https://<panel-hostname>/jmap) routes
+		// correctly. Without this, server-side fetch falls to nginx
+		// default vhost and returns 500.
+		"is_panel_primary": d.IsPanelPrimary,
 	}
 	// listen_ipv4 / listen_ipv6 — same resolution as the apex vhost
 	// (M24). When the apex vhost binds a specific IP, the mail vhost
