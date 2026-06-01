@@ -850,6 +850,13 @@ func renderAppSecGeoblockRule(mode string, countries []string) string {
 	// second hand-written copy that drifts vs install.sh). The agent
 	// uses its fixed inband set; install.sh presence-gates its own
 	// set through the same Render().
+	//
+	// Webmail allowlist: load the panel-api reconciler's state file
+	// so a geoblock toggle never wipes the webmail-vhost on_match
+	// allowlist that the panel last wrote. Missing file → nil → no
+	// webmail filter; the panel reconciler writes it within ~60s
+	// of email_enabled changing, so any gap is brief.
+	webmailHosts, _ := appseccfg.LoadWebmailHosts(appseccfg.WebmailHostsPath)
 	return appseccfg.Render(appseccfg.Opts{
 		Mode:      mode,
 		Countries: countries,
@@ -859,6 +866,7 @@ func renderAppSecGeoblockRule(mode string, countries []string) string {
 			"crowdsecurity/generic-*",
 		},
 		AdminAllowlist: true,
+		WebmailHosts:   webmailHosts,
 	})
 }
 

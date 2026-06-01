@@ -75,11 +75,22 @@ gate a 'systemctl reload crowdsec' on real diffs.`,
 			}
 			inband := detectInbandRules(appsecRulesDir)
 
+			// Webmail allowlist sourced from the panel-api
+			// reconciler's state file (one FQDN per line, written on
+			// every pass). Missing file → empty list → no on_match
+			// webmail filter; safe default until the reconciler
+			// has run at least once.
+			webmailHosts, err := appseccfg.LoadWebmailHosts(appseccfg.WebmailHostsPath)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warn: load %s: %v\n", appseccfg.WebmailHostsPath, err)
+			}
+
 			body := appseccfg.Render(appseccfg.Opts{
 				Mode:           mode,
 				Countries:      countries,
 				Inband:         inband,
 				AdminAllowlist: true,
+				WebmailHosts:   webmailHosts,
 			})
 
 			// Write-on-diff: cheap before any nginx/crowdsec reload
