@@ -143,7 +143,13 @@ server {
   # passes as -w (the apex domain DocRoot). Incident 2026-04-26:
   # jabali.site cert failed because mail.<domain>:80 redirected to
   # https where the mail vhost served 404 for /.well-known/acme.
-  location ^~ /.well-known/acme-challenge/ {
+  #
+  # Panel-primary rows (M6.4 / ADR-0048) are mail-only — no docroot,
+  # no per-domain ACME. The panel-cert reconciler (ssl.panel.issue)
+  # owns mail.<panel-hostname> cert renewal via its own pipeline.
+  # Skip the ACME location entirely when DocRoot is empty so the
+  # template doesn't emit a bare root directive that trips nginx -t.
+{{ if .DocRoot }}  location ^~ /.well-known/acme-challenge/ {
     default_type "text/plain";
     root {{.DocRoot}};
     try_files $uri =404;
@@ -152,7 +158,10 @@ server {
   location / {
     return 301 https://$host$request_uri;
   }
-}
+{{ else }}  location / {
+    return 301 https://$host$request_uri;
+  }
+{{ end }}}
 `
 
 // mailVhostSitesAvailable + mailVhostSitesEnabled are overridable for

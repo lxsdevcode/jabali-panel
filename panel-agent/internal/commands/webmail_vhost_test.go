@@ -326,3 +326,43 @@ func TestWebmailVhostApply_EmptyPanelHostnameOmitsSubFilter(t *testing.T) {
 		t.Errorf("sub_filter must NOT be emitted when PanelHostname is empty:\n%s", string(b))
 	}
 }
+
+// TestWebmailVhostApply_EmptyDocRootSkipsACMELocation verifies the
+// panel-primary (mail-only, no docroot) case. With DocRoot="" the
+// template must NOT render `root ;` — that's an invalid nginx
+// directive that fails nginx -t. Panel-primary mail certs renew via
+// the panel-cert reconciler (ssl.panel.issue), not per-domain ACME,
+// so dropping the ACME location entirely is safe. Regression test
+// for the 60s reconciler error loop on .14 (2026-06-01).
+func TestWebmailVhostApply_EmptyDocRootSkipsACMELocation(t *testing.T) {
+	avail, _ := wireMailVhostPaths(t)
+	wireNginxReload(t)
+
+	params, _ := json.Marshal(webmailVhostApplyParams{
+		DomainName:  "jabali-panel.local",
+		SSLCertPath: "/etc/jabali/tls/panel.crt",
+		SSLKeyPath:  "/etc/jabali/tls/panel.key",
+		DocRoot:     "", // panel-primary: no docroot
+	})
+	if _, err := webmailVhostApplyHandler(context.Background(), params); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(avail, "jabali-panel.local-mail.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	// MUST NOT contain the broken `root ;` directive.
+	if strings.Contains(s, "root ;") || strings.Contains(s, "root  ;") {
+		t.Errorf("vhost emitted invalid `root ;` directive:\n%s", s)
+	}
+	// MUST NOT contain the ACME challenge block when DocRoot empty.
+	if strings.Contains(s, "/.well-known/acme-challenge/") {
+		t.Errorf("vhost should skip ACME location when DocRoot empty:\n%s", s)
+	}
+	// MUST still emit the :80 → :443 redirect so plain-HTTP hits the
+	// mail vhost get bounced to TLS rather than 404.
+	if !strings.Contains(s, "return 301 https://$host$request_uri;") {
+		t.Errorf("vhost missing :80 → :443 redirect:\n%s", s)
+	}
+}
