@@ -3457,10 +3457,10 @@ build_frontend() {
 
 build_backend() {
   _log "building panel-api + jabali-agent"
-  local version full_sha build_time
+  local version full_sha btime
   version="$(sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" rev-parse --short HEAD)"
   full_sha="$(sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" rev-parse HEAD)"
-  build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  btime="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/bin"
   local tmp_panel="$REPO_DIR/bin/jabali-panel.new"
@@ -3475,7 +3475,7 @@ build_backend() {
   local panel_ld="-s -w"
   panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Version=$version"
   panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Commit=$full_sha"
-  panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.BuildTime=$build_time"
+  panel_ld+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.BuildTime=$btime"
 
   # One invocation of go, three binaries — shared module, shared build cache.
   sudo -u "$SERVICE_USER" -H env \
