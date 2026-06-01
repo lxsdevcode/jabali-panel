@@ -54,7 +54,7 @@ func TestSystemResolverSet_ValidIPv4AndIPv6(t *testing.T) {
 	if !strings.Contains(s, "[Resolve]") {
 		t.Errorf("missing [Resolve] section header in %s", s)
 	}
-	if !strings.Contains(s, "DNS=1.1.1.1 1.0.0.1 2606:4700:4700::1111") {
+	if !strings.Contains(s, "DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com") {
 		t.Errorf("missing DNS= line in %s", s)
 	}
 	if !strings.Contains(s, "Domains=example.com") {
@@ -203,7 +203,7 @@ func TestSystemResolverSet_InactiveResolvedPersistsDropInAndSkipsRestart(t *test
 	if err != nil {
 		t.Fatalf("read drop-in: %v", err)
 	}
-	if !strings.Contains(string(content), "DNS=1.1.1.1 1.0.0.1") {
+	if !strings.Contains(string(content), "DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com") {
 		t.Errorf("drop-in missing DNS= line: %s", content)
 	}
 

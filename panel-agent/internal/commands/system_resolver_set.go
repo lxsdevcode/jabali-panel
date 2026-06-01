@@ -136,17 +136,43 @@ func validateSearchDomain(d string) error {
 }
 
 // renderResolvedDropIn produces the drop-in content. systemd-resolved.conf(5)
-// specifies DNS= as a space-separated list of addresses and Domains= as a
-// space-separated list (single entry is fine). Section header [Resolve] is
-// required.
+// specifies DNS= as a space-separated list of addresses (optionally with a
+// `#server-name` suffix for DoT SAN verification) and Domains= as a
+// space-separated list. Section header [Resolve] is required.
+//
+// DoT default (2026-06): the drop-in always emits `DNSOverTLS=opportunistic`
+// so systemd-resolved attempts encrypted DNS first and falls back to plain
+// UDP only when the upstream rejects TLS. For known public resolvers
+// (Cloudflare / Google / Quad9 / etc — see dotSAN) the IP is rendered as
+// `IP#SAN` so resolved validates the upstream cert strictly. Custom
+// operator IPs are written without a SAN suffix (still TLS-attempted,
+// best-effort verification) so corporate / private DNS still works.
+//
+// Why this is the default: LXC / cloud hosts often have outbound UDP/53
+// blocked by the hypervisor or carrier firewall (incident 2026-06-01 on
+// 10.0.3.14). DoT uses TCP/853 which is universally reachable and gives
+// us encryption-in-flight for free. The recursor on the host is
+// configured separately by install.sh to forward through
+// 127.0.0.53 (the resolved stub), so every recursive query traverses
+// this DoT chain.
 func renderResolvedDropIn(resolvers []string, search string) []byte {
 	var b strings.Builder
 	b.WriteString("# Managed by jabali-panel — edits via /jabali-admin/settings → DNS.\n")
 	b.WriteString("# To revert: remove this file and `systemctl restart systemd-resolved`.\n")
 	b.WriteString("[Resolve]\n")
 	b.WriteString("DNS=")
-	b.WriteString(strings.Join(resolvers, " "))
+	for i, r := range resolvers {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(r)
+		if san := dotSuffixFor(r); san != "" {
+			b.WriteString("#")
+			b.WriteString(san)
+		}
+	}
 	b.WriteString("\n")
+	b.WriteString("DNSOverTLS=opportunistic\n")
 	if search = strings.TrimSpace(search); search != "" {
 		b.WriteString("Domains=")
 		b.WriteString(search)
