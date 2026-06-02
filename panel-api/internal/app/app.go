@@ -376,6 +376,20 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// modes, the /me/api-tokens routes are Kratos-only at the
 		// handler level.
 		api.RegisterMeAPITokensRoutes(v1, api.MeAPITokensConfig{Tokens: deps.UserAPITokens})
+
+		// DDNS-protocol shim (GH #123). Mounts /nic/update at the
+		// engine root (NOT under /api/v1 — every router firmware
+		// hardcodes that path). Basic-auth wraps the same user API
+		// token; the shim parses out the password and reuses the
+		// hash lookup the bearer middleware does. Open path, no
+		// auth middleware in front — Basic auth is the only gate.
+		api.RegisterDDNSRoutes(r, api.DDNSConfig{
+			Tokens:     deps.UserAPITokens,
+			Domains:    deps.Domains,
+			Zones:      deps.DNSZones,
+			Records:    deps.DNSRecords,
+			Reconciler: deps.Reconciler,
+		})
 		// M14 — fire one admin.login envelope per Kratos session.
 		// Redis SETNX dedupes; downgrades to no-op without Redis/queue.
 		v1.Use(middleware.TrackAdminLogin(deps.Redis, deps.NotificationQueue, deps.Log))

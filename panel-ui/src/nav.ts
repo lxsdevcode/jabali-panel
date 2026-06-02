@@ -28,6 +28,7 @@ import {
   GlobalOutlined,
   HomeOutlined,
   KeyOutlined,
+  ApiOutlined,
   MailOutlined,
   PackageOpenOutlined,
   SafetyOutlined,
@@ -255,6 +256,12 @@ export const userNav: NavItem[] = [
     label: "SSH Keys",
     icon: navIcon(KeyOutlined),
     path: "/jabali-panel/ssh-keys",
+  },
+  {
+    key: "api-tokens",
+    label: "API Tokens",
+    icon: navIcon(ApiOutlined),
+    path: "/jabali-panel/api-tokens",
   },
   {
     key: "dns",
