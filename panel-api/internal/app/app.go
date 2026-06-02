@@ -377,6 +377,13 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// handler level.
 		api.RegisterMeAPITokensRoutes(v1, api.MeAPITokensConfig{Tokens: deps.UserAPITokens})
 
+		// API docs (OpenAPI spec). Mounts at /api/v1/_meta/openapi.{json,yaml}
+		// under the engine root, NOT inside the auth-protected v1 group —
+		// the spec describes the public API surface, contains no secrets,
+		// and is served to the docs UI page without requiring login. Per-
+		// endpoint auth requirements are declared inside the spec itself.
+		api.RegisterAPIDocsRoutes(r.Group("/api/v1"))
+
 		// DDNS-protocol shim (GH #123). Mounts /nic/update at the
 		// engine root (NOT under /api/v1 — every router firmware
 		// hardcodes that path). Basic-auth wraps the same user API

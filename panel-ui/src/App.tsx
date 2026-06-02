@@ -73,6 +73,7 @@ import { UserBackupsPage } from "./shells/user/backups/UserBackupsPage";
 import { UserLogsPage } from "./shells/user/logs/UserLogsPage";
 import { UserSSHKeysPage } from "./shells/user/ssh-keys/UserSSHKeysPage";
 import { UserAPITokensPage } from "./shells/user/api-tokens/UserAPITokensPage";
+import { APIDocsPage } from "./shells/shared/APIDocsPage";
 import { UserCronList } from "./shells/user/cron/UserCronList";
 import { MailTabsPage } from "./shells/user/mail/MailTabsPage";
 import { AdminApplicationList } from "./shells/admin/applications/AdminApplicationList";
@@ -206,6 +207,7 @@ const ThemedApp = () => {
                 settings flow inline (password / TOTP / recovery
                 codes) which works for any authenticated session. */}
             <Route path="profile" element={<MyProfile />} />
+            <Route path="api-docs" element={<APIDocsPage />} />
           </Route>
 
           {/* ---------------- user shell ----------------- */}
@@ -244,6 +246,7 @@ const ThemedApp = () => {
             <Route path="applications" element={<UserApplicationList />} />
             <Route path="ssh-keys" element={<UserSSHKeysPage />} />
             <Route path="api-tokens" element={<UserAPITokensPage />} />
+            <Route path="api-docs" element={<APIDocsPage />} />
             <Route path="cron" element={<UserCronList />} />
             <Route path="backups" element={<UserBackupsPage />} />
             <Route path="mail" element={<Navigate to="/jabali-panel/mail/mailboxes" replace />} />
