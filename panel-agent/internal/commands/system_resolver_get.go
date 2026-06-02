@@ -78,8 +78,14 @@ var readResolverDropIn = func(path string) (resolvers []string, search, source s
 		switch key {
 		case "DNS":
 			for _, tok := range strings.Fields(value) {
-				if _, perr := netip.ParseAddr(tok); perr == nil {
-					resolvers = append(resolvers, tok)
+				// Strip optional `#server-name` DoT SAN suffix (DNS=
+				// 1.1.1.1#cloudflare-dns.com) before parsing.
+				ip := tok
+				if i := strings.IndexByte(ip, '#'); i >= 0 {
+					ip = ip[:i]
+				}
+				if _, perr := netip.ParseAddr(ip); perr == nil {
+					resolvers = append(resolvers, ip)
 				}
 			}
 		case "Domains":
