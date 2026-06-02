@@ -83,6 +83,14 @@ type ServerSettings struct {
 	// (see plans/m26-security-tab-runbook.md).
 	AppSecGeoblockMode      string `gorm:"column:appsec_geoblock_mode;type:varchar(10);not null;default:'off'"    json:"appsec_geoblock_mode"`
 	AppSecGeoblockCountries string `gorm:"column:appsec_geoblock_countries;type:varchar(1000);not null;default:''" json:"appsec_geoblock_countries"`
+	// CrowdsecSensitivity preset (M27 follow-up). Applied via agent's
+	// security.crowdsec.sensitivity.apply verb which writes:
+	//   /etc/crowdsec/profiles.yaml          (ban duration)
+	//   /etc/crowdsec/scenarios/jabali-*     (override scenario capacity)
+	//   /etc/crowdsec/appsec-configs/...     (anomaly threshold)
+	// Default 'balanced' matches CrowdSec/CRS upstream defaults so an
+	// admin who never visits the toggle gets pre-toggle behaviour.
+	CrowdsecSensitivity string `gorm:"column:crowdsec_sensitivity;type:varchar(16);not null;default:'balanced'" json:"crowdsec_sensitivity"`
 
 	// M27 Step 5 — captcha remediation for crowdsec-nginx-bouncer.
 	// Secret is plaintext-at-rest (convention matches kratos_admin_secret,
