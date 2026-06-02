@@ -8,7 +8,7 @@
 // mount (caller in JabaliHeader checks isAdminShell).
 
 import { useEffect, useState } from "react";
-import { Badge, Tooltip } from "antd";
+import { Badge, Button, Tooltip } from "antd";
 import { ExclamationCircleOutlined, WarningOutlined } from "@icons";
 import { useNavigate } from "react-router";
 import { apiClient } from "../apiClient";
@@ -68,24 +68,20 @@ export function ServerHealthIndicator(): JSX.Element | null {
 
   return (
     <Tooltip title={tooltip} placement="bottomRight">
-      <Badge
-        count={count}
-        size="small"
-        offset={[-2, 2]}
-        style={{ backgroundColor: color }}
+      <Button
+        type="text"
+        aria-label="Server health alerts"
+        onClick={() => navigate("/jabali-admin/server-status")}
       >
-        <Icon
-          onClick={() => navigate("/jabali-admin/server-status")}
-          style={{
-            fontSize: 22,
-            color,
-            cursor: "pointer",
-            padding: "8px 10px",
-            borderRadius: 6,
-          }}
-          aria-label="Server health alerts"
-        />
-      </Badge>
+        <Badge
+          count={count}
+          size="small"
+          overflowCount={99}
+          style={{ backgroundColor: color }}
+        >
+          <Icon style={{ fontSize: 18, color }} />
+        </Badge>
+      </Button>
     </Tooltip>
   );
 }
