@@ -180,7 +180,6 @@ export function QuickStartModal() {
         }}
       >
         {STEPS.map((step) => {
-          const Icon = step.icon;
           return (
             <Link
               key={step.number}
@@ -212,48 +211,22 @@ export function QuickStartModal() {
             >
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  float: "left",
-                  marginRight: 14,
-                  marginBottom: 6,
-                }}
-              >
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 14,
-                  background: hexAlpha(step.color, 0.18),
-                  color: step.color,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 28,
-                  flexShrink: 0,
-                }}
-              >
-                <Icon style={{ fontSize: 28 }} />
-              </div>
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
+                  width: 36,
+                  height: 36,
                   borderRadius: "50%",
                   background: step.color,
                   color: "white",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  flexShrink: 0,
+                  fontSize: 15,
+                  fontWeight: 700,
+                  float: "left",
+                  marginRight: 14,
+                  marginBottom: 4,
                 }}
               >
                 {step.number}
-              </div>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Typography.Text strong style={{ fontSize: 16, display: "block" }}>
