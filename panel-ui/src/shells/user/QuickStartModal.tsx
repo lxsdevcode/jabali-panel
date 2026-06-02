@@ -2,7 +2,7 @@
 // tenant (user) shell. Per-user localStorage dismiss; "I'll read later"
 // only closes for the session, "Never show again" persists.
 import { useEffect, useState, type ComponentType, type CSSProperties } from "react";
-import { Button, Modal, Typography } from "antd";
+import { Button, Modal, theme, Typography } from "antd";
 import {
   ApiOutlined,
   AppstoreAddOutlined,
@@ -89,6 +89,11 @@ const hexAlpha = (hex: string, alpha: number) => {
 };
 
 export function QuickStartModal() {
+  const { token } = theme.useToken();
+  const borderBase = token.colorBorderSecondary;
+  const borderHover = token.colorBorder;
+  const bgSubtle = token.colorFillTertiary;
+  const bgSubtleHover = token.colorFillSecondary;
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
 
@@ -190,23 +195,23 @@ export function QuickStartModal() {
                 padding: "14px 16px",
                 overflow: "hidden",
                 borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.08)",
-                background: "rgba(255,255,255,0.02)",
+                border: `1px solid ${borderBase}`,
+                background: bgSubtle,
                 color: "inherit",
                 textDecoration: "none",
                 transition: "background 0.15s, border-color 0.15s",
               }}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLAnchorElement).style.background =
-                  "rgba(255,255,255,0.05)";
+                  bgSubtleHover;
                 (e.currentTarget as HTMLAnchorElement).style.borderColor =
-                  "rgba(255,255,255,0.18)";
+                  borderHover;
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLAnchorElement).style.background =
-                  "rgba(255,255,255,0.02)";
+                  bgSubtle;
                 (e.currentTarget as HTMLAnchorElement).style.borderColor =
-                  "rgba(255,255,255,0.08)";
+                  borderBase;
               }}
             >
               <div
