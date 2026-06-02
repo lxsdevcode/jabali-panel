@@ -149,7 +149,7 @@ export function QuickStartModal() {
       }
       open={open}
       onCancel={close}
-      width={720}
+      width={960}
       destroyOnClose
       centered
       footer={[
@@ -171,7 +171,13 @@ export function QuickStartModal() {
         item to jump straight to it:
       </Typography.Paragraph>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+          gap: 12,
+        }}
+      >
         {STEPS.map((step) => {
           const Icon = step.icon;
           return (
