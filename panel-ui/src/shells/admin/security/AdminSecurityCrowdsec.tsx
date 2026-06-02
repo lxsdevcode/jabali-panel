@@ -34,6 +34,8 @@ import {
 } from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "../../../apiClient";
 import { useSearchParams } from "react-router";
 import {
   ApiOutlined,
@@ -474,6 +476,7 @@ export const AdminSecurityCrowdsec = () => {
           { key: "captcha", label: "Captcha", children: <CaptchaRemediationCard /> },
           { key: "profiles", label: "Per-scenario", children: <ProfilesCard /> },
           { key: "appsec", label: "Block Country", children: <AppSecGeoblockCard /> },
+          { key: "sensitivity", label: "Sensitivity", children: <SensitivityCard /> },
           { key: "blocklists", label: "Blocklists", children: <BlocklistsCard /> },
           { key: "bouncers", label: "Bouncers", children: bouncersPanel },
         ]}
@@ -1826,6 +1829,84 @@ const RecommendedHubCard = ({
           }}
         />
       </Table>
+    </Card>
+  );
+};
+
+
+// SensitivityCard — server-wide CrowdSec sensitivity preset. Writes
+// /etc/crowdsec/{scenarios,appsec-rules,profiles.d}/jabali-*.yaml via
+// the agent's security.crowdsec.sensitivity.apply verb when the admin
+// saves. Three presets collapse all three knobs (ssh-bf threshold,
+// AppSec anomaly score, ban duration) into one choice.
+const SensitivityCard = () => {
+  const qc = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["admin-settings"],
+    queryFn: async () => {
+      const r = await apiClient.get<{ crowdsec_sensitivity: string }>("/admin/settings");
+      return r.data;
+    },
+  });
+  const [level, setLevel] = useState<string>("balanced");
+  useEffect(() => {
+    if (settings.data?.crowdsec_sensitivity) setLevel(settings.data.crowdsec_sensitivity);
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: async (newLevel: string) => {
+      await apiClient.patch("/admin/settings", { crowdsec_sensitivity: newLevel });
+    },
+    onSuccess: () => {
+      message.success("Sensitivity preset applied — CrowdSec reloaded");
+      qc.invalidateQueries({ queryKey: ["admin-settings"] });
+    },
+    onError: (e: unknown) => {
+      message.error(e instanceof Error ? e.message : "Failed to apply");
+    },
+  });
+
+  return (
+    <Card size="small" title="Sensitivity preset (server-wide)" loading={settings.isLoading}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          Single dial that tunes three CrowdSec knobs at once: SSH brute-
+          force threshold, AppSec inbound-anomaly score threshold, and
+          default ban duration. Pick the posture that matches your traffic.
+        </Typography.Paragraph>
+
+        <Radio.Group value={level} onChange={(e) => setLevel(e.target.value)}>
+          <Space direction="vertical">
+            <Radio value="relaxed">
+              <Typography.Text strong>Relaxed</Typography.Text>{" "}
+              <Typography.Text type="secondary">
+                — SSH brute-force 15 fails / 60s, AppSec anomaly threshold 10, ban 30m. Good for admins doing legitimate noisy work from changing IPs.
+              </Typography.Text>
+            </Radio>
+            <Radio value="balanced">
+              <Typography.Text strong>Balanced (default)</Typography.Text>{" "}
+              <Typography.Text type="secondary">
+                — CrowdSec + CRS upstream defaults (ssh-bf 5/30s, anomaly 5, ban 4h). Recommended for most servers.
+              </Typography.Text>
+            </Radio>
+            <Radio value="strict">
+              <Typography.Text strong>Strict</Typography.Text>{" "}
+              <Typography.Text type="secondary">
+                — ssh-bf 3/30s, anomaly 5, ban 24h. For paranoid posture or known-targeted hosts.
+              </Typography.Text>
+            </Radio>
+          </Space>
+        </Radio.Group>
+
+        <Button
+          type="primary"
+          loading={save.isPending}
+          disabled={level === settings.data?.crowdsec_sensitivity}
+          onClick={() => save.mutate(level)}
+        >
+          Apply
+        </Button>
+      </Space>
     </Card>
   );
 };

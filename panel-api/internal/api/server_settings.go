@@ -126,6 +126,11 @@ type updateServerSettingsRequest struct {
 	// 60–86400 (1 min to 1 day); values outside that range are
 	// rejected with HTTP 422.
 	DefaultDNSTTL *uint32 `json:"default_dns_ttl,omitempty"`
+
+	// CrowdsecSensitivity preset. relaxed | balanced | strict.
+	// Applied via agent verb security.crowdsec.sensitivity.apply
+	// which writes scenario/profile/anomaly drop-ins.
+	CrowdsecSensitivity *string `json:"crowdsec_sensitivity,omitempty"`
 }
 
 func (h *serverSettingsHandler) update(c *gin.Context) {
@@ -159,6 +164,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevSSHPasswordAuth := current.SSHPasswordAuth
 	prevSSHUserPasswordAuth := current.SSHUserPasswordAuth
 	prevSSHSandboxMode := current.SSHSandboxMode
+	prevCrowdsecSensitivity := current.CrowdsecSensitivity
 	prevDefaultNspawnImageVersion := current.DefaultNspawnImageVersion
 
 	if req.Hostname != nil {
@@ -193,6 +199,19 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.DefaultDNSTTL != nil {
 		current.DefaultDNSTTL = *req.DefaultDNSTTL
+	}
+	if req.CrowdsecSensitivity != nil {
+		v := strings.TrimSpace(*req.CrowdsecSensitivity)
+		switch v {
+		case "relaxed", "balanced", "strict":
+			current.CrowdsecSensitivity = v
+		default:
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_crowdsec_sensitivity",
+				"message": "must be one of: relaxed, balanced, strict",
+			})
+			return
+		}
 	}
 	if req.SSHPasswordAuth != nil {
 		current.SSHPasswordAuth = *req.SSHPasswordAuth
@@ -364,6 +383,21 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 				"default_image": current.DefaultNspawnImageVersion,
 			}); err != nil {
 				h.cfg.Log.Error("agent set_ssh_sandbox_mode failed", "err", err)
+			}
+		}()
+	}
+
+	// CrowdSec sensitivity preset: re-apply when either the operator
+	// explicitly touched the field OR the persisted level diverged
+	// from what was on disk (drift after a manual edit / reset).
+	if (req.CrowdsecSensitivity != nil || current.CrowdsecSensitivity != prevCrowdsecSensitivity) && h.cfg.Agent != nil {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "security.crowdsec.sensitivity.apply", map[string]any{
+				"level": current.CrowdsecSensitivity,
+			}); err != nil {
+				h.cfg.Log.Error("agent crowdsec sensitivity apply failed", "err", err)
 			}
 		}()
 	}
