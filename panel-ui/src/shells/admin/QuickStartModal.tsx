@@ -150,6 +150,8 @@ export function QuickStartModal() {
       open={open}
       onCancel={close}
       width={960}
+      style={{ maxWidth: "calc(100vw - 32px)" }}
+      styles={{ wrapper: { padding: "16px" } }}
       destroyOnClose
       centered
       footer={[
