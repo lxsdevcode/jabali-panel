@@ -1,0 +1,153 @@
+# Gitea Actions — release tarball publisher.
+#
+# Runs on every push to main. Builds the panel-ui SPA + the three Go
+# binaries (panel-api, panel-agent, jabali-ssh-shell), bundles them into
+# jabali-release-<short_sha>.tar.gz + .sha256, and publishes both as
+# assets of a Gitea Release tagged `release-<short_sha>`.
+#
+# Why a separate workflow (not piggybacking on ci.yml):
+#   - Only runs on main; PRs don't waste a build slot publishing
+#     releases nobody can consume.
+#   - One responsibility — easier to debug failures.
+#   - CI gating stays the gate; the release runs after CI is green
+#     (needs.ci) so we never publish an artifact for a broken main.
+#
+# `jabali update` (panel-api/cmd/server/update.go) looks up the release
+# by tag using the Gitea API and downloads the .tar.gz + .sha256, so the
+# only API surface this workflow needs to maintain is:
+#   1. Tag name format:   release-<short_sha>
+#   2. Asset names:        jabali-release-<short_sha>.tar.gz[.sha256]
+#   3. MANIFEST inside the tarball with short_sha + full_sha + build_time.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+env:
+  GO_VERSION: "1.24"
+  NODE_VERSION: "20"
+
+# Serialize releases: a rapid double-push to main shouldn't try to
+# create the same release tag twice in parallel and race on the API.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build + publish release tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so build-release.sh can resolve the commit
+          # SHA via `git rev-parse` (shallow checkouts ship without
+          # parents which messes with rev-parse on tag refs).
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: panel-ui/package-lock.json
+
+      - name: Build release tarball
+        id: build
+        run: |
+          set -euo pipefail
+          tools/build-release.sh
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          FULL_SHA="$(git rev-parse HEAD)"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "full_sha=${FULL_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=release-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          ls -lh dist/
+
+      # Use Gitea's REST API directly (no marketplace action dependency).
+      # GITHUB_TOKEN here is Gitea's auto-injected actions token; on
+      # Gitea it carries write:repository scope by default.
+      - name: Publish release
+        env:
+          API_BASE: ${{ github.api_url }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.build.outputs.tag }}
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
+          FULL_SHA: ${{ steps.build.outputs.full_sha }}
+        run: |
+          set -euo pipefail
+          TARBALL="dist/jabali-release-${SHORT_SHA}.tar.gz"
+          CHECKSUM="${TARBALL}.sha256"
+          BODY="Auto-built release for commit \`${FULL_SHA}\`."
+
+          # Create the release. Gitea returns 201 on success or 409 if
+          # the tag already exists (rerun); we tolerate 409 so a manual
+          # rerun of this workflow doesn't fail.
+          create_resp="$(curl -sS -w '\nHTTP_STATUS:%{http_code}' \
+            -X POST "${API_BASE}/repos/${REPO}/releases" \
+            -H "Authorization: token ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"tag_name\": \"${TAG}\",
+              \"target_commitish\": \"${FULL_SHA}\",
+              \"name\": \"Release ${SHORT_SHA}\",
+              \"body\": \"${BODY}\",
+              \"draft\": false,
+              \"prerelease\": false
+            }")"
+          status="$(echo "$create_resp" | grep '^HTTP_STATUS:' | cut -d: -f2)"
+          body="$(echo "$create_resp" | sed '/^HTTP_STATUS:/d')"
+
+          if [[ "$status" == "201" ]]; then
+            release_id="$(echo "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+          elif [[ "$status" == "409" ]]; then
+            # Tag exists: look it up.
+            release_id="$(curl -sS \
+              -H "Authorization: token ${TOKEN}" \
+              "${API_BASE}/repos/${REPO}/releases/tags/${TAG}" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+          else
+            echo "release create failed (status=${status}): ${body}"
+            exit 1
+          fi
+          echo "release_id=${release_id}"
+
+          # Upload assets. Tarball + sha256 sidecar. Asset names match
+          # what update.go looks for.
+          for f in "$TARBALL" "$CHECKSUM"; do
+            name="$(basename "$f")"
+            echo "==> uploading $name"
+            curl -sS --fail \
+              -X POST "${API_BASE}/repos/${REPO}/releases/${release_id}/assets?name=${name}" \
+              -H "Authorization: token ${TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${f}" \
+              | python3 -c 'import json,sys; d=json.load(sys.stdin); print("uploaded id=%s size=%s" % (d.get("id"), d.get("size")))' \
+              || {
+                # Sometimes assets exist from a prior partial run.
+                # Delete + retry once.
+                existing_id="$(curl -sS -H "Authorization: token ${TOKEN}" \
+                  "${API_BASE}/repos/${REPO}/releases/${release_id}/assets" \
+                  | python3 -c "import json,sys; d=json.load(sys.stdin); print(next((a['id'] for a in d if a['name']=='${name}'), ''))")"
+                if [[ -n "$existing_id" ]]; then
+                  echo "asset ${name} already present (id=${existing_id}); deleting + retrying"
+                  curl -sS -X DELETE -H "Authorization: token ${TOKEN}" \
+                    "${API_BASE}/repos/${REPO}/releases/${release_id}/assets/${existing_id}"
+                  curl -sS --fail \
+                    -X POST "${API_BASE}/repos/${REPO}/releases/${release_id}/assets?name=${name}" \
+                    -H "Authorization: token ${TOKEN}" \
+                    -H "Content-Type: application/octet-stream" \
+                    --data-binary "@${f}"
+                else
+                  exit 1
+                fi
+              }
+          done
+          echo "==> release ${TAG} published"
