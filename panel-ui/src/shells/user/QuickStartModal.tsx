@@ -187,11 +187,9 @@ export function QuickStartModal() {
               to={step.href}
               onClick={close}
               style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "stretch",
-                gap: 12,
+                display: "block",
                 padding: "14px 16px",
+                overflow: "hidden",
                 borderRadius: 12,
                 border: "1px solid rgba(255,255,255,0.08)",
                 background: "rgba(255,255,255,0.02)",
@@ -217,7 +215,10 @@ export function QuickStartModal() {
                   display: "flex",
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 12,
+                  gap: 8,
+                  float: "left",
+                  marginRight: 14,
+                  marginBottom: 6,
                 }}
               >
               <div
