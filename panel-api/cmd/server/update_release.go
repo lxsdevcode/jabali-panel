@@ -98,20 +98,21 @@ func installFromRelease(ctx context.Context, log func(string, ...any)) (installe
 		log("release: lookup of main HEAD failed: %v", err)
 		return false, "", nil
 	}
-	shortSHA := fullSHA[:releaseShortSHALen]
-	log("release: latest main = %s (%s)", shortSHA, fullSHA)
+	log("release: latest main = %s", fullSHA)
 
 	// Pre-skip check is done by the caller (compares against
 	// lastBuiltSHA) — but the caller passed control here, so go.
 
-	// 2. Look up the release by the conventional tag.
-	rel, err := fetchReleaseByTag(ctx, base, "release-"+shortSHA)
+	// 2. Look up the release for this commit by SCANNING releases
+	//    for a target_commitish match. Earlier code did a direct
+	//    GET /releases/tags/release-<short_sha> using a truncated
+	//    7-char short SHA, but git's `--short` flag returns
+	//    whatever length is unique in the repo (8 chars here) and
+	//    drifts as the repo grows. Scanning by commit SHA is the
+	//    only stable lookup.
+	rel, shortSHA, err := findReleaseForCommit(ctx, base, fullSHA)
 	if err != nil {
-		// No release yet for this SHA. Could be a freshly-pushed
-		// commit whose .gitea/workflows/release.yml hasn't finished
-		// yet. Soft-fail so the caller can decide whether to wait or
-		// fall back to source build.
-		log("release: no release tarball published yet for %s (%v) — falling back", shortSHA, err)
+		log("release: no release tarball published yet for %s (%v) — falling back", fullSHA[:7], err)
 		return false, "", nil
 	}
 
@@ -399,4 +400,44 @@ func installBinaryAtomic(src, dst string) error {
 		}
 	}
 	return os.Rename(tmp, dst)
+}
+
+
+// findReleaseForCommit scans the repo's releases and returns the one
+// whose target_commitish (the commit the tag points at) matches the
+// given full SHA. Returns the matched release + the SHA portion of the
+// release tag (so the caller can build the tarball asset filename
+// `jabali-release-<that>.tar.gz`).
+//
+// Why a scan instead of a direct tag GET: build-release.sh names the
+// tag with `git rev-parse --short HEAD` which returns whatever length
+// git decides is currently unique — 7 on a young repo, 8 once the
+// commit count crosses a threshold, more for very large repos. Update
+// can't predict the length, so it iterates instead.
+func findReleaseForCommit(ctx context.Context, base, fullSHA string) (*releaseResponse, string, error) {
+	url := base + "/releases?limit=20"
+	body, err := httpGetJSON(ctx, url, releaseAPITimeout)
+	if err != nil {
+		return nil, "", err
+	}
+	var list []struct {
+		releaseResponse
+		TargetCommitish string `json:"target_commitish"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, "", fmt.Errorf("decode releases list: %w", err)
+	}
+	for i := range list {
+		if list[i].TargetCommitish != fullSHA {
+			continue
+		}
+		tag := list[i].TagName
+		if !strings.HasPrefix(tag, "release-") {
+			continue
+		}
+		short := tag[len("release-"):]
+		copy := list[i].releaseResponse
+		return &copy, short, nil
+	}
+	return nil, "", fmt.Errorf("no release tag points at %s", fullSHA)
 }
