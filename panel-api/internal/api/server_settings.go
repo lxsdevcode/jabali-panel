@@ -120,6 +120,12 @@ type updateServerSettingsRequest struct {
 	// retargets to a larger disk by setting + symlinking the legacy
 	// jabali-migrations / jabali-backups dirs underneath.
 	WorkingFolder *string `json:"working_folder,omitempty"`
+
+	// DefaultDNSTTL is the server-wide default for new DNS records
+	// (seconds). Operator-settable via Server Settings → DNS. Range
+	// 60–86400 (1 min to 1 day); values outside that range are
+	// rejected with HTTP 422.
+	DefaultDNSTTL *uint32 `json:"default_dns_ttl,omitempty"`
 }
 
 func (h *serverSettingsHandler) update(c *gin.Context) {
@@ -184,6 +190,9 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.SSHPort != nil {
 		current.SSHPort = *req.SSHPort
+	}
+	if req.DefaultDNSTTL != nil {
+		current.DefaultDNSTTL = *req.DefaultDNSTTL
 	}
 	if req.SSHPasswordAuth != nil {
 		current.SSHPasswordAuth = *req.SSHPasswordAuth
@@ -406,6 +415,9 @@ func validateServerSettings(s *models.ServerSettings) error {
 	// SSH port
 	if s.SSHPort < 1 || s.SSHPort > 65535 {
 		return fmt.Errorf("ssh_port: must be between 1 and 65535")
+	}
+	if s.DefaultDNSTTL != 0 && (s.DefaultDNSTTL < 60 || s.DefaultDNSTTL > 86400) {
+		return fmt.Errorf("default_dns_ttl must be 60–86400 seconds (or 0 to use built-in fallback)")
 	}
 	// Panel brand text: free-form but capped at 60 chars.
 	if len(s.PanelBrandText) > 60 {

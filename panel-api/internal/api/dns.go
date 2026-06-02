@@ -337,7 +337,7 @@ func (h *dnsHandler) createRecord(c *gin.Context) {
 		Name:   req.Name,
 		Type:   req.Type,
 		Content: req.Content,
-		TTL:    3600, // Default TTL
+		TTL:    h.defaultRecordTTL(c.Request.Context()),
 		Priority: 0,
 		Managed: false,
 		IsEnabled: true,
@@ -701,4 +701,20 @@ func checkDNSRecordConflict(ctx context.Context, records repository.DNSRecordRep
 		}
 	}
 	return nil
+}
+
+// defaultRecordTTL returns the server-wide default TTL applied to new
+// DNS records when the caller didn't pass one. Reads ServerSettings;
+// falls back to 3600 (the pre-2026-06 hardcoded value) on any read
+// error so an empty / unreachable server_settings row doesn't break
+// record creation. ADR-0140 introduced this column.
+func (h *dnsHandler) defaultRecordTTL(ctx context.Context) int {
+	if h.cfg.ServerSettings == nil {
+		return 3600
+	}
+	s, err := h.cfg.ServerSettings.Get(ctx)
+	if err != nil || s == nil || s.DefaultDNSTTL == 0 {
+		return 3600
+	}
+	return int(s.DefaultDNSTTL)
 }
