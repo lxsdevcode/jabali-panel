@@ -18,6 +18,12 @@ type ServerSettings struct {
 	NS2Name     string    `gorm:"type:varchar(253);not null;default:''" json:"ns2_name"`
 	NS2IPv4     string    `gorm:"type:varchar(45);not null;default:''"  json:"ns2_ipv4"`
 	AdminEmail  string    `gorm:"type:varchar(320);not null;default:''" json:"admin_email"`
+	// DefaultDNSTTL is the TTL (seconds) applied to newly-created DNS
+	// records when the API caller doesn't pass one. Editable via
+	// Server Settings → DNS in the admin UI. Range 60–86400 enforced
+	// at the API layer; column default 3600 matches the pre-2026-06
+	// hardcoded value so existing installs see no behaviour change.
+	DefaultDNSTTL uint32 `gorm:"column:default_dns_ttl;type:int unsigned;not null;default:3600" json:"default_dns_ttl"`
 	// DefaultPHPVersion is the PHP version new user pools are seeded with
 	// (reconciler default-pool path) and the version the admin UI pre-selects.
 	// Admin changes it via POST /admin/php/versions/:version/default; agent

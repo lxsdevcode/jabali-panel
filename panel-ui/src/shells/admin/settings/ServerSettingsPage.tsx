@@ -66,6 +66,7 @@ type ServerSettings = {
   ns2_name: string;
   ns2_ipv4: string;
   admin_email: string;
+  default_dns_ttl: number;
   timezone: string;
   ssh_port: number;
   ssh_password_auth: boolean;
@@ -559,6 +560,35 @@ const DNSSettingsTab = () => {
           <Col xs={24} md={12}>
             <Form.Item label="ns2 IPv4" name="ns2_ipv4">
               <Input placeholder="" />
+            </Form.Item>
+          </Col>
+        </Row>
+      </Card>
+
+      <Card title="DNS Record Defaults" style={{ marginBottom: 16 }}>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          Default TTL (in seconds) applied to newly-created DNS records
+          when the API caller does not specify one. Range 60–86400 (1
+          minute to 1 day). The hardcoded fallback before this setting
+          was 3600 (1 hour).
+        </Typography.Paragraph>
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <Form.Item
+              label="Default record TTL (seconds)"
+              name="default_dns_ttl"
+              rules={[
+                { required: true, message: "Required" },
+                { type: "number", min: 60, max: 86400, message: "Must be 60–86400" },
+              ]}
+            >
+              <InputNumber
+                min={60}
+                max={86400}
+                step={60}
+                style={{ width: "100%" }}
+                placeholder="3600"
+              />
             </Form.Item>
           </Col>
         </Row>
