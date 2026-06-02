@@ -45,7 +45,14 @@ const renderDomainCell = (name: string, docRoot: string) => (
   <div>
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
       <GlobalOutlined />
-      <span>{name}</span>
+      <Typography.Link
+        href={`https://${name}/`}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Open https://${name}/ in a new tab`}
+      >
+        {name}
+      </Typography.Link>
     </div>
     <Typography.Text type="secondary">{stripHomePrefix(docRoot)}</Typography.Text>
   </div>
