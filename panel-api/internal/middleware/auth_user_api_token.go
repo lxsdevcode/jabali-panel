@@ -74,10 +74,11 @@ func extractBearer(c *gin.Context) string {
 	return tok
 }
 
-// hashUserAPIToken is the canonical hash function. Plaintext token
+// HashUserAPIToken is the canonical hash function. Plaintext token
 // (prefix included) → sha256 → lowercase hex. The repo's secret_hash
-// column stores the same encoding.
-func hashUserAPIToken(plaintext string) string {
+// column stores the same encoding. Exported so the DDNS shim (api/
+// ddns.go) can reuse it without importing the whole middleware.
+func HashUserAPIToken(plaintext string) string {
 	sum := sha256.Sum256([]byte(plaintext))
 	return hex.EncodeToString(sum[:])
 }
@@ -115,7 +116,7 @@ func authenticateUserAPIToken(c *gin.Context, tokens repository.UserAPITokenRepo
 		return
 	}
 
-	hash := hashUserAPIToken(plaintext)
+	hash := HashUserAPIToken(plaintext)
 	tok, err := tokens.FindByHash(c.Request.Context(), hash)
 	if err != nil {
 		// Indistinguishable response shape for "no such token" vs

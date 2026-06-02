@@ -8,7 +8,7 @@ import (
 
 func TestHashUserAPIToken_Deterministic(t *testing.T) {
 	plain := "jat_abc123"
-	got := hashUserAPIToken(plain)
+	got := HashUserAPIToken(plain)
 	want := sha256.Sum256([]byte(plain))
 	if got != hex.EncodeToString(want[:]) {
 		t.Errorf("hashUserAPIToken = %q, want %q", got, hex.EncodeToString(want[:]))
