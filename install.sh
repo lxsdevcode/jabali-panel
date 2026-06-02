@@ -6089,14 +6089,16 @@ install_crowdsec_appsec() {
   fi
   # 6. sshd journalctl acquisition — feeds sshd log events from journald.
   #    Debian 13: sshd logs to journald only (no /var/log/auth.log).
-  #    Use SYSLOG_IDENTIFIER=sshd (not _SYSTEMD_UNIT) because Debian 13
-  #    socket-activates OpenSSH: each accepted connection runs as
-  #    ssh@<fd>.service, not ssh.service — so unit-name filters miss 92%
-  #    of brute-force attempts. SYSLOG_IDENTIFIER matches all sshd log
-  #    entries regardless of the unit name. type: syslog so
-  #    crowdsecurity/sshd parser fires.
+  #    Debian 13 ships OpenSSH 9.x in split mode: the listener logs as
+  #    SYSLOG_IDENTIFIER=sshd, but per-connection workers log as
+  #    SYSLOG_IDENTIFIER=sshd-session (where failed-password, invalid-user
+  #    and preauth events live). Without sshd-session in the filter,
+  #    CrowdSec sees only the listener's bind/exit lines (~2-5% of events)
+  #    and misses ~95-98% of brute-force attempts. journalctl OR-combines
+  #    repeated identifier filters at the same field, so listing both
+  #    captures full coverage. type: syslog so crowdsecurity/sshd parser fires.
   local sshd_acquis_file="$acquis_dir/jabali-sshd.yaml"
-  local desired_sshd_acquis=$'# Managed by jabali install.sh — M26 SSH brute-force detection.\n# Debian 13: sshd is socket-activated; per-connection units are\n# ssh@<fd>.service, not ssh.service. SYSLOG_IDENTIFIER=sshd matches\n# all sshd log lines regardless of unit name.\nsource: journalctl\njournalctl_filter:\n  - "SYSLOG_IDENTIFIER=sshd"\nlabels:\n  type: syslog\n'
+  local desired_sshd_acquis=$'# Managed by jabali install.sh — M26 SSH brute-force detection.\n# Debian 13 OpenSSH split mode: listener = sshd, per-connection worker\n# = sshd-session (where Failed/Invalid/preauth events live). Repeated\n# SYSLOG_IDENTIFIER= entries are OR-combined by journalctl, so both\n# identifiers must be listed to catch every brute-force attempt.\nsource: journalctl\njournalctl_filter:\n  - "SYSLOG_IDENTIFIER=sshd"\n  - "SYSLOG_IDENTIFIER=sshd-session"\nlabels:\n  type: syslog\n'
   if [[ ! -f "$sshd_acquis_file" ]] || ! cmp -s <(printf '%s' "$desired_sshd_acquis") "$sshd_acquis_file"; then
     _log "writing $sshd_acquis_file"
     local tmp3
@@ -10126,25 +10128,31 @@ provision_new_software() {
     fi
   fi
 
-  # CrowdSec sshd acquis: migrate old _SYSTEMD_UNIT filter to
-  # SYSLOG_IDENTIFIER=sshd. Debian 13 socket-activates OpenSSH so
-  # per-connection units are ssh@<fd>.service, not ssh.service — the
-  # old filter missed 92% of brute-force log lines. The install_crowdsec_appsec
-  # call in main() writes the correct filter on fresh installs; this block
-  # patches existing hosts on jabali update.
+  # CrowdSec sshd acquis: migrate stale filters to the dual-identifier
+  # filter (SYSLOG_IDENTIFIER=sshd + sshd-session). Triggers on either:
+  #   - legacy _SYSTEMD_UNIT=ssh filter (pre-M26 unit-name match), OR
+  #   - sshd-only filter missing sshd-session (early-M26: Debian 13 OpenSSH
+  #     split mode logs per-connection workers as sshd-session, so a
+  #     sshd-only filter misses ~95-98% of brute-force log lines).
+  # The install_crowdsec_appsec call in main() writes the correct filter
+  # on fresh installs; this block patches existing hosts on jabali update.
   local _sshd_acquis="/etc/crowdsec/acquis.d/jabali-sshd.yaml"
-  if [[ -f "$_sshd_acquis" ]] && grep -q "_SYSTEMD_UNIT=ssh" "$_sshd_acquis"; then
-    _log "crowdsec: updating sshd acquis filter (SYSLOG_IDENTIFIER=sshd)"
+  if [[ -f "$_sshd_acquis" ]] && \
+     { grep -q "_SYSTEMD_UNIT=ssh" "$_sshd_acquis" || \
+       ! grep -q "SYSLOG_IDENTIFIER=sshd-session" "$_sshd_acquis"; }; then
+    _log "crowdsec: updating sshd acquis filter (sshd + sshd-session)"
     local _tmp_acquis
     _tmp_acquis="$(mktemp --tmpdir jabali-sshd-acquis.XXXXXX)"
     cat >"$_tmp_acquis" <<'EOF'
 # Managed by jabali install.sh — M26 SSH brute-force detection.
-# Debian 13: sshd is socket-activated; per-connection units are
-# ssh@<fd>.service, not ssh.service. SYSLOG_IDENTIFIER=sshd matches
-# all sshd log lines regardless of unit name.
+# Debian 13 OpenSSH split mode: listener = sshd, per-connection worker
+# = sshd-session (where Failed/Invalid/preauth events live). Repeated
+# SYSLOG_IDENTIFIER= entries are OR-combined by journalctl, so both
+# identifiers must be listed to catch every brute-force attempt.
 source: journalctl
 journalctl_filter:
   - "SYSLOG_IDENTIFIER=sshd"
+  - "SYSLOG_IDENTIFIER=sshd-session"
 labels:
   type: syslog
 EOF
