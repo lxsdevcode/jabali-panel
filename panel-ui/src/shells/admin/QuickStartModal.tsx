@@ -2,7 +2,7 @@
 // admin shell. Per-admin localStorage dismiss; "I'll read later" only
 // closes for the session, "Never show again" persists.
 import { useEffect, useState, type ComponentType, type CSSProperties } from "react";
-import { Button, Grid, Modal, Typography } from "antd";
+import { Button, Modal, Typography } from "antd";
 import {
   AppstoreAddOutlined,
   CheckOutlined,
@@ -11,7 +11,6 @@ import {
   GlobalOutlined,
   InboxOutlined,
   QuestionCircleOutlined,
-  RightOutlined,
   SafetyOutlined,
   TeamOutlined,
 } from "@icons";
@@ -90,8 +89,6 @@ const hexAlpha = (hex: string, alpha: number) => {
 };
 
 export function QuickStartModal() {
-  const screens = Grid.useBreakpoint();
-  const stacked = !screens.sm;
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
 
@@ -191,9 +188,9 @@ export function QuickStartModal() {
               onClick={close}
               style={{
                 display: "flex",
-                flexDirection: stacked ? "column" : "row",
-                alignItems: stacked ? "stretch" : "center",
-                gap: stacked ? 10 : 16,
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: 12,
                 padding: "14px 16px",
                 borderRadius: 12,
                 border: "1px solid rgba(255,255,255,0.08)",
@@ -217,7 +214,7 @@ export function QuickStartModal() {
             >
               <div
                 style={{
-                  display: stacked ? "flex" : "contents",
+                  display: "flex",
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 12,
@@ -265,7 +262,7 @@ export function QuickStartModal() {
                   {step.desc}
                 </Typography.Text>
               </div>
-              {!stacked && <RightOutlined style={{ color: "rgba(255,255,255,0.35)", fontSize: 14 }} />}
+              
             </Link>
           );
         })}
