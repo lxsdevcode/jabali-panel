@@ -12,6 +12,7 @@ import { JabaliFooter } from "../components/JabaliFooter";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { selectedNavKey, userNav } from "../nav";
 import { useThemeMode } from "../theme/ThemeModeContext";
+import { QuickStartModal } from "./user/QuickStartModal";
 
 const { Sider, Content } = Layout;
 
@@ -134,6 +135,7 @@ export function UserLayout() {
             }}
           >
             <Outlet />
+            <QuickStartModal />
           </Content>
           <JabaliFooter />
         </Layout>
