@@ -66,6 +66,8 @@ func newUpdateCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolP("force", "f", false,
 		"Run the full rebuild/restart cycle even when git pull found no new commits")
+	cmd.Flags().Bool("from-source", false,
+		"Build binaries on this host instead of downloading the release tarball from Gitea Releases. Default is to download the tarball (90s update vs 5-10min source build). Use --from-source when offline, on a private fork, or to test uncommitted changes.")
 	return cmd
 }
 
@@ -106,6 +108,16 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	force, _ := cmd.Flags().GetBool("force")
+	fromSource, _ := cmd.Flags().GetBool("from-source")
+	// Set to true by the release-tarball step when binaries were
+	// downloaded + installed from Gitea Releases. Each downstream
+	// build step (npm ci, vite, go build, install binaries) skips
+	// itself when this is set. Source-build is the fallback when
+	// fromSource=true, no release published yet, or release fetch
+	// failed.
+	var installedFromRelease bool
+	var releaseSHA string
+	_ = releaseSHA // currently unused; reserved for future logging
 
 	// gitHead captures HEAD as a string. Runs via `sudo -u <serviceUser>`
 	// because the repo is owned by the jabali user; git 2.35+ refuses to
@@ -663,7 +675,36 @@ fi
 					"[ -f /etc/jabali/ssh-sandbox-mode ] || { echo bubblewrap > /etc/jabali/ssh-sandbox-mode; chmod 0644 /etc/jabali/ssh-sandbox-mode; }; "+
 					"[ -f /etc/jabali/default-nspawn-image ] || { echo debian-12-v1 > /etc/jabali/default-nspawn-image; chmod 0644 /etc/jabali/default-nspawn-image; }")
 		}},
+		{"install from release tarball (or fall back to source)", func() error {
+			if fromSource {
+				fmt.Println("  (skipped: --from-source flag)")
+				return nil
+			}
+			ctx := cmd.Context()
+			installed, sha, err := installFromRelease(ctx, func(format string, args ...any) {
+				fmt.Printf("  "+format+"\n", args...)
+			})
+			if err != nil {
+				// Hard failure (sha256 mismatch, bad MANIFEST, disk
+				// write error). Do NOT fall back to source build —
+				// these indicate corruption or a systemic problem
+				// the operator needs to see.
+				return fmt.Errorf("release install failed (use --from-source to fall back to git+build): %w", err)
+			}
+			installedFromRelease = installed
+			releaseSHA = sha
+			if installed {
+				fmt.Println("  binaries installed from release tarball — skipping rebuild")
+			} else {
+				fmt.Println("  no release tarball available — falling back to source build")
+			}
+			return nil
+		}},
 		{"npm ci", func() error {
+			if installedFromRelease {
+				fmt.Println("  (skipped: binaries from release tarball)")
+				return nil
+			}
 			// Skip when package-lock.json + package.json unchanged AND
 			// node_modules/.bin/tsc still present.
 			want := compositeSHA("panel-ui/package-lock.json", "panel-ui/package.json")
@@ -715,6 +756,10 @@ test -x node_modules/.bin/tsc || {
 			return nil
 		}},
 		{"build frontend", func() error {
+			if installedFromRelease {
+				fmt.Println("  (skipped: binaries from release tarball)")
+				return nil
+			}
 			// Skip when every input to vite (src + public + index.html
 			// + vite.config + tsconfigs + lockfile) is unchanged AND
 			// dist/index.html still present.
@@ -781,6 +826,10 @@ test -x node_modules/.bin/tsc || {
 			return buildErr
 		}},
 		{"build panel-api + panel-agent (parallel)", func() error {
+			if installedFromRelease {
+				fmt.Println("  (skipped: binaries from release tarball)")
+				return nil
+			}
 			// Both Go binaries are independent: same go module + cache,
 			// no shared output. Run concurrently — on a 2-vCPU VPS this
 			// halves wall-clock from ~60s → ~30s for a cold rebuild.
@@ -848,6 +897,10 @@ test -x node_modules/.bin/tsc || {
 			return nil
 		}},
 		{"install binaries", func() error {
+			if installedFromRelease {
+				fmt.Println("  (skipped: binaries already installed from release tarball)")
+				return nil
+			}
 			// Skip per-binary when its .new file is absent — the parallel
 			// build step short-circuited that side because its inputs
 			// hadn't changed. The currently-installed binary stays.
