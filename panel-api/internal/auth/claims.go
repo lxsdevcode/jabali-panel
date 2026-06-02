@@ -14,4 +14,40 @@ type AccessClaims struct {
 	UserID  string
 	Email   string
 	IsAdmin bool
+	// Source identifies which middleware authenticated this request.
+	// Empty defaults to SourceKratos (the historical browser-cookie
+	// path) for backwards compatibility — old middleware that pre-
+	// dates the user-API-token feature leaves Source unset.
+	Source AuthSource
+}
+
+// AuthSource is the kind of credential that produced the claims.
+// Handlers that want to gate behaviour on it (e.g. audit-tag API-
+// driven mutations, or reject token-auth on a admin-cookie-only
+// route) read claims.Source.
+type AuthSource int
+
+const (
+	// SourceKratos is the browser-cookie path (RequireKratosSession).
+	// Zero value so unset == Kratos preserves pre-M51 semantics.
+	SourceKratos AuthSource = iota
+	// SourceUserAPIToken is a per-user Bearer jat_… token
+	// (RequireUserAuth → authenticateUserAPIToken).
+	SourceUserAPIToken
+	// SourceAutomationHMAC is an admin-scoped HMAC-signed automation
+	// API request (M44, RequireAutomationHMAC).
+	SourceAutomationHMAC
+)
+
+// String renders the source for audit logs. Stable strings — never
+// change without a migration of audit rows.
+func (s AuthSource) String() string {
+	switch s {
+	case SourceUserAPIToken:
+		return "user_api_token"
+	case SourceAutomationHMAC:
+		return "automation_hmac"
+	default:
+		return "kratos"
+	}
 }

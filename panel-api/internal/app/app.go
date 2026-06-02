@@ -75,6 +75,10 @@ type Deps struct {
 	MigrationJobs             repository.MigrationJobRepository
 	MigrationSizeCache        repository.MigrationAccountSizeCacheRepository
 	AutomationTokens          repository.AutomationTokenRepository
+	// UserAPITokens — M51 per-user Bearer token persistence. Used
+	// by the auth middleware (token validation) AND the user-
+	// facing /me/api-tokens management endpoints.
+	UserAPITokens             repository.UserAPITokenRepository
 	PHPPools                  repository.PHPPoolRepository
 	PHPPoolIniOverrides       repository.PHPPoolIniOverrideRepository
 	WordPressInstalls         repository.WordPressInstallRepository
@@ -361,7 +365,17 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			})
 		}
 
-		v1 := r.Group("/api/v1", authMiddleware)
+		// M51: chain bearer-token auth in front of the Kratos cookie
+		// path. Token-authed callers populate claims the same way Kratos
+		// does, so every ownership check downstream Just Works.
+		combinedAuth := middleware.RequireUserAuth(deps.UserAPITokens, deps.Users, authMiddleware)
+		v1 := r.Group("/api/v1", combinedAuth)
+		// Register the user-facing token management endpoints. These
+		// reject token-auth callers themselves (you can't mint new
+		// tokens from a token), so even though v1 accepts both auth
+		// modes, the /me/api-tokens routes are Kratos-only at the
+		// handler level.
+		api.RegisterMeAPITokensRoutes(v1, api.MeAPITokensConfig{Tokens: deps.UserAPITokens})
 		// M14 — fire one admin.login envelope per Kratos session.
 		// Redis SETNX dedupes; downgrades to no-op without Redis/queue.
 		v1.Use(middleware.TrackAdminLogin(deps.Redis, deps.NotificationQueue, deps.Log))
