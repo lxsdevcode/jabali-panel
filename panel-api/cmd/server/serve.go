@@ -307,6 +307,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		deps.MigrationJobs = repository.NewMigrationJobRepository(sharedDB)
 		deps.MigrationSizeCache = repository.NewMigrationAccountSizeCacheRepository(sharedDB)
 		deps.AutomationTokens = repository.NewAutomationTokenRepository(sharedDB)
+		deps.UserAPITokens = repository.NewUserAPITokenRepository(sharedDB)
 		deps.Databases = databaseRepo
 		deps.DatabaseUsers = databaseUserRepo
 		deps.DatabaseUserGrants = databaseUserGrantRepo
