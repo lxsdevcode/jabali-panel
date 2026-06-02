@@ -38,6 +38,7 @@ import { useAuth } from "../auth/AuthContext";
 import { adminNav, userNav } from "../nav";
 import { JabaliTitle } from "./JabaliTitle";
 import { NotificationBell } from "./NotificationBell";
+import { ServerHealthIndicator } from "./ServerHealthIndicator";
 import { ThemeToggle } from "./ThemeToggle";
 
 const { Header } = Layout;
@@ -395,6 +396,7 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
       )}
 
       <Space size={4}>
+        {isAdminShell && <ServerHealthIndicator />}
         <NotificationBell />
         <ThemeToggle />
         <Dropdown menu={{ items: userMenu }} placement="bottomRight">

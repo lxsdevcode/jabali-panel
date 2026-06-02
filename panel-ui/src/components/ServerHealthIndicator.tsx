@@ -1,0 +1,91 @@
+// ServerHealthIndicator — admin-only header badge that surfaces the
+// worst-level alert from /admin/server-status. Click navigates to the
+// full Server Status page. Hidden when status is "ok" (no exclamation
+// in the chrome for the steady state).
+//
+// Polls every 30s on a setInterval — same cadence as NotificationBell.
+// Endpoint is admin-gated; on the user shell this component MUST NOT
+// mount (caller in JabaliHeader checks isAdminShell).
+
+import { useEffect, useState } from "react";
+import { Badge, Tooltip } from "antd";
+import { ExclamationCircleOutlined, WarningOutlined } from "@icons";
+import { useNavigate } from "react-router";
+import { apiClient } from "../apiClient";
+
+interface Alert {
+  level: "warning" | "critical";
+  kind: string;
+  message?: string;
+}
+
+interface ServerStatusPayload {
+  alerts?: Alert[];
+}
+
+// poll cadence — matches NotificationBell. Keep <60s so an operator
+// who just fixed a disk doesn't stare at a stale red badge.
+const POLL_MS = 30_000;
+
+export function ServerHealthIndicator(): JSX.Element | null {
+  const [worst, setWorst] = useState<"ok" | "warning" | "critical">("ok");
+  const [count, setCount] = useState(0);
+  const [tooltip, setTooltip] = useState("");
+  const navigate = useNavigate();
+
+  const refresh = async () => {
+    try {
+      const resp = await apiClient.get<ServerStatusPayload>("/admin/server-status");
+      const alerts = resp.data.alerts ?? [];
+      if (alerts.length === 0) {
+        setWorst("ok");
+        setCount(0);
+        setTooltip("");
+        return;
+      }
+      const hasCritical = alerts.some((a) => a.level === "critical");
+      setWorst(hasCritical ? "critical" : "warning");
+      setCount(alerts.length);
+      // Show up to 3 alert messages in the tooltip; collapse the rest.
+      const head = alerts.slice(0, 3).map((a) => `[${a.level}] ${a.kind}${a.message ? ": " + a.message : ""}`);
+      const tail = alerts.length > 3 ? `\n+${alerts.length - 3} more` : "";
+      setTooltip(head.join("\n") + tail);
+    } catch {
+      // Network blip — leave previous state intact rather than blink.
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    const id = window.setInterval(refresh, POLL_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  if (worst === "ok") return null;
+
+  const Icon = worst === "critical" ? ExclamationCircleOutlined : WarningOutlined;
+  const color = worst === "critical" ? "#ff4d4f" : "#faad14";
+
+  return (
+    <Tooltip title={tooltip} placement="bottomRight">
+      <Badge
+        count={count}
+        size="small"
+        offset={[-2, 2]}
+        style={{ backgroundColor: color }}
+      >
+        <Icon
+          onClick={() => navigate("/jabali-admin/server-status")}
+          style={{
+            fontSize: 22,
+            color,
+            cursor: "pointer",
+            padding: "8px 10px",
+            borderRadius: 6,
+          }}
+          aria-label="Server health alerts"
+        />
+      </Badge>
+    </Tooltip>
+  );
+}
