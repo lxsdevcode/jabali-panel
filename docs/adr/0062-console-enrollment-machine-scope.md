@@ -1,8 +1,20 @@
 # ADR-0062: CrowdSec Console enrollment — enroll-only, operator manages disenroll
 
-**Status:** Accepted — 2026-04-24
+**Status:** SUPERSEDED — 2026-06-03 by ADR-0113 (drop CrowdSec Console entirely)
+**Accepted:** 2026-04-24
 **Amended:** 2026-04-25 — exposed `cscli console status/enable/disable` for share preferences (see Amendment section)
-**Related:** ADR-0002 (DB as truth for config), ADR-0053 (CrowdSec over fail2ban)
+**Related:** ADR-0002 (DB as truth for config), ADR-0053 (CrowdSec over fail2ban), ADR-0113 (drop console)
+
+> **2026-06-03 supersession note:** jabali no longer integrates with
+> CrowdSec Console at all. The community-tier 500-alerts/month
+> account cap was unusable on any host taking real traffic (mx+puzzle
+> alone projected ~8.4k/month → 90%+ silently dropped at upload).
+> Per-host `/jabali-admin/security` tabs already render every panel
+> that mattered (alerts list, decisions, blocklists, bouncers, plus
+> the new Alerts-over-time chart). install.sh now disenrolls + disables
+> forwarding on every `jabali update`. CAPI community blocklist pull
+> is a separate endpoint and remains enabled (~21k IPs/day, no quota).
+> See ADR-0113 for the removal rationale and operator migration notes.
 
 ## Context
 
