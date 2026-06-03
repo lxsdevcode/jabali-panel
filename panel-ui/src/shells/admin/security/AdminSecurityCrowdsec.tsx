@@ -1537,10 +1537,7 @@ const EngineIdentityCard = () => {
     },
   });
   const hostname = status.data?.hostname ?? settings.data?.hostname ?? "—";
-  const os = status.data?.os_pretty ?? "—";
   const version = status.data?.version ?? "—";
-  const ip = settings.data?.public_ipv4 ?? "—";
-  const machineId = status.data?.machine_id ?? "—";
   const startedAt = status.data?.started_at;
   const lastHeartbeat = status.data?.last_heartbeat;
   const healthy =
@@ -1571,37 +1568,7 @@ const EngineIdentityCard = () => {
         </Space>
 
         <Row gutter={[16, 8]}>
-          <Col xs={12} md={8} lg={6}>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              OS
-            </Typography.Text>
-            <div style={{ fontSize: 13 }}>{os}</div>
-          </Col>
-          <Col xs={12} md={8} lg={6}>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              Public IP
-            </Typography.Text>
-            <div style={{ fontSize: 13, fontFamily: "monospace" }}>{ip}</div>
-          </Col>
-          <Col xs={12} md={8} lg={6}>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              Machine ID
-            </Typography.Text>
-            <Tooltip title={machineId}>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontFamily: "monospace",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {machineId.length > 16 ? `${machineId.slice(0, 16)}…` : machineId}
-              </div>
-            </Tooltip>
-          </Col>
-          <Col xs={12} md={8} lg={6}>
+          <Col xs={24} md={12} lg={8}>
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
               Last heartbeat
             </Typography.Text>
@@ -1610,7 +1577,7 @@ const EngineIdentityCard = () => {
             </div>
           </Col>
           {startedAt && (
-            <Col xs={24} md={16} lg={12}>
+            <Col xs={24} md={12} lg={16}>
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                 Daemon uptime since
               </Typography.Text>
