@@ -6272,7 +6272,15 @@ CACHE_EXPIRATION=1
 BOUNCING_ON_TYPE=ban,captcha
 FALLBACK_REMEDIATION=ban
 REQUEST_TIMEOUT=3000
-UPDATE_FREQUENCY=10
+# UPDATE_FREQUENCY is in seconds. Default 10s = 6 LAPI polls/min;
+# with CAPI loaded (~30k decisions on production hosts) each poll
+# does a full SQLite scan-and-diff. Sustained ~6-8% crowdsec CPU at
+# idle on puzzle 2026-06-03 (84k pread64/5s) was traced to this
+# coupled with the firewall bouncer's identical 10s default. 60s
+# is the upstream-recommended production value and matches the
+# firewall bouncer override below — keeps mean response delay at
+# ~30s while cutting LAPI load by 6x.
+UPDATE_FREQUENCY=60
 ENABLE_INTERNAL=false
 MODE=live
 EXCLUDE_LOCATION=
@@ -9933,6 +9941,40 @@ ensure_crowdsec_nginx_bouncer_lapi_url() {
   fi
 }
 
+# ensure_crowdsec_bouncer_poll_frequency — bump both bouncer
+# update_frequency values to 60s on existing hosts. Default 10s burns
+# steady CPU on the LAPI process once CAPI has ~30k decisions loaded
+# (each poll = full SQLite scan-and-diff). Symptoms: sustained 6-10%
+# crowdsec CPU at idle, 80k+ pread64/sec, 90+ open fds on
+# crowdsec.db. Fresh installs land 60s from install_crowdsec_bouncer
+# / install_crowdsec_nginx_bouncer; this heals hosts that took the
+# old defaults.
+ensure_crowdsec_bouncer_poll_frequency() {
+  local dirty=0
+  local fw=/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+  if [[ -f "$fw" ]] && grep -qE '^update_frequency:[[:space:]]+10s?$' "$fw"; then
+    _log "patching firewall-bouncer update_frequency 10s -> 60s"
+    sed -i 's|^update_frequency:[[:space:]]\+10s\?$|update_frequency: 60s|' "$fw"
+    systemctl restart crowdsec-firewall-bouncer 2>/dev/null || \
+      _warn "restart crowdsec-firewall-bouncer failed; check journalctl"
+    dirty=1
+  fi
+  local ng=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
+  if [[ -f "$ng" ]] && grep -qE '^UPDATE_FREQUENCY=10$' "$ng"; then
+    _log "patching nginx-bouncer UPDATE_FREQUENCY 10 -> 60"
+    sed -i 's|^UPDATE_FREQUENCY=10$|UPDATE_FREQUENCY=60|' "$ng"
+    if nginx -t >/dev/null 2>&1; then
+      systemctl reload nginx 2>/dev/null || \
+        _warn "nginx reload failed after bouncer poll-freq heal"
+    else
+      _warn "nginx -t failed after bouncer poll-freq heal — check config"
+    fi
+    dirty=1
+  fi
+  [[ $dirty -eq 1 ]] && _ok "crowdsec bouncers: poll frequency lowered to 60s"
+  return 0
+}
+
 
 # Heal the /etc/jabali-panel directory mode on every `jabali update`.
 #
@@ -10190,6 +10232,12 @@ EOF
   # bouncer heartbeats to console).
   if declare -f ensure_crowdsec_nginx_bouncer_lapi_url >/dev/null 2>&1; then
     ensure_crowdsec_nginx_bouncer_lapi_url
+  fi
+
+  # crowdsec bouncer poll-frequency heal (10s default -> 60s; cuts
+  # sustained LAPI CPU when CAPI has many decisions loaded).
+  if declare -f ensure_crowdsec_bouncer_poll_frequency >/dev/null 2>&1; then
+    ensure_crowdsec_bouncer_poll_frequency
   fi
 
   # Kratos↔MariaDB unix socket (M25.1) — ensure jabali user is in
