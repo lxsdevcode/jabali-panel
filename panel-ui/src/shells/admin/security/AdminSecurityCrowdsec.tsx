@@ -240,6 +240,7 @@ export const AdminSecurityCrowdsec = () => {
     "captcha",
     "profiles",
     "appsec",
+    "sensitivity",
     "blocklists",
     "bouncers",
     "hub",
