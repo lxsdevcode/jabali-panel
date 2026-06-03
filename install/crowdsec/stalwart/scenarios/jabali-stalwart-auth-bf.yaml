@@ -1,0 +1,34 @@
+# Managed by jabali install.sh — adapted from
+# https://github.com/bu5hm4nn/crowdsec-stalwart scenarios/stalwart-auth-bf.yaml
+# MIT-licensed; see install/crowdsec/stalwart/LICENSE and UPSTREAM.md.
+# Capacity / leakspeed / blackhole are overwritten at runtime by the
+# panel-agent's security.crowdsec.sensitivity.apply verb when the
+# operator picks relaxed/strict in the Sensitivity card (PR #181).
+# Stalwart Authentication Brute Force Detection
+# Detects brute force attacks across SMTP, IMAP, ManageSieve, and HTTP protocols
+
+type: leaky
+name: jabali/stalwart-auth-bf
+description: "Detect authentication brute force attempts on Stalwart mail server"
+
+# Match authentication failures and errors
+filter: evt.Parsed.event in ["auth.failed", "auth.error", "auth.too-many-attempts"]
+
+# Group by source IP to track per-attacker
+groupby: evt.Meta.source_ip
+
+# Leaky bucket: 5 events in ~50 seconds triggers ban
+# Adjust based on your threat model
+leakspeed: "10s"
+capacity: 5
+
+# Silence after triggering to reduce alert spam
+blackhole: "5m"
+
+# Ban duration (can be overridden by profiles)
+labels:
+  service: stalwart
+  type: bruteforce
+  remediation: true
+  confidence: 3
+  spoofable: 0

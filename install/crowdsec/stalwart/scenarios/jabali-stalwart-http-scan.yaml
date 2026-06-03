@@ -1,0 +1,43 @@
+# Managed by jabali install.sh — adapted from
+# https://github.com/bu5hm4nn/crowdsec-stalwart scenarios/stalwart-http-scan.yaml
+# MIT-licensed; see install/crowdsec/stalwart/LICENSE and UPSTREAM.md.
+# Capacity / leakspeed / blackhole are overwritten at runtime by the
+# panel-agent's security.crowdsec.sensitivity.apply verb when the
+# operator picks relaxed/strict in the Sensitivity card (PR #181).
+# Stalwart HTTP Vulnerability Scanning Detection
+# Detects web vulnerability scanners probing the HTTP interface
+# (WebAdmin, JMAP, ACME)
+
+type: leaky
+name: jabali/stalwart-http-scan
+description: "Detect HTTP vulnerability scanning on Stalwart web interface"
+
+# Match HTTP scanning indicators:
+# - HTTP 404 errors on common scan paths
+# - HTTP errors in general
+# Note: Stalwart's built-in scan detection logs these, but we also
+# catch any HTTP error patterns
+filter: |
+  evt.Parsed.event in ["http.error", "http.request-url"] &&
+  (
+    evt.Parsed.details contains "404" ||
+    evt.Parsed.details contains "not found" ||
+    evt.Parsed.path matches "(?i)(\\.php|\\.asp|\\.cgi|wp-|wordpress|joomla|drupal|admin|\\.env|config|backup)"
+  )
+
+# Group by source IP
+groupby: evt.Meta.source_ip
+
+# 10 scan attempts in ~100 seconds
+# Higher threshold since 404s can happen legitimately
+leakspeed: "10s"
+capacity: 10
+
+blackhole: "5m"
+
+labels:
+  service: stalwart
+  type: vuln_scan
+  remediation: true
+  confidence: 2
+  spoofable: 1

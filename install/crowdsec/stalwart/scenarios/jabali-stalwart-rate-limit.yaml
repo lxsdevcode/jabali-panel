@@ -1,0 +1,43 @@
+# Managed by jabali install.sh — adapted from
+# https://github.com/bu5hm4nn/crowdsec-stalwart scenarios/stalwart-rate-limit.yaml
+# MIT-licensed; see install/crowdsec/stalwart/LICENSE and UPSTREAM.md.
+# Capacity / leakspeed / blackhole are overwritten at runtime by the
+# panel-agent's security.crowdsec.sensitivity.apply verb when the
+# operator picks relaxed/strict in the Sensitivity card (PR #181).
+# Stalwart Rate Limit Abuse Detection
+# Detects clients hitting rate limits repeatedly
+
+type: leaky
+name: jabali/stalwart-rate-limit
+description: "Detect rate limit abuse on Stalwart mail server"
+
+# Match rate limit events:
+# - limit.concurrent-connection: Too many concurrent connections
+# - limit.too-many-requests: Request rate exceeded
+# - limit.quota: Quota exceeded
+# - auth.too-many-attempts: Too many auth attempts
+filter: |
+  evt.Parsed.event in [
+    "limit.concurrent-connection",
+    "limit.too-many-requests",
+    "limit.quota",
+    "limit.tenant-quota",
+    "auth.too-many-attempts"
+  ]
+
+# Group by source IP
+groupby: evt.Meta.source_ip
+
+# 3 rate limit events in ~3 minutes
+# Rate limits may be hit by legitimate users occasionally
+leakspeed: "60s"
+capacity: 3
+
+blackhole: "15m"
+
+labels:
+  service: stalwart
+  type: rate_limit
+  remediation: true
+  confidence: 2
+  spoofable: 1

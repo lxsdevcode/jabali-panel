@@ -6384,6 +6384,45 @@ EOF
 # default and the UI no longer surfaces it.
 #
 
+install_crowdsec_jabali_stalwart_scenarios() {
+  # Drop the vendored bu5hm4nn parser + 5 scenarios + acquis into
+  # the CrowdSec config tree so mail-bf / scan / rate-limit /
+  # user-enum / http-scan events fire IP bans via the firewall
+  # bouncer. See install/crowdsec/stalwart/UPSTREAM.md for the
+  # provenance and the changes vs. upstream.
+  local src="${REPO_DIR}/install/crowdsec/stalwart"
+  if [[ ! -d "$src" ]]; then
+    _warn "install/crowdsec/stalwart not present in repo — skipping Stalwart CrowdSec wiring"
+    return 0
+  fi
+
+  install -d -m 0755 /etc/crowdsec/parsers/s01-parse
+  install -d -m 0755 /etc/crowdsec/scenarios
+  install -d -m 0755 /etc/crowdsec/acquis.d
+
+  local changed=0 f base dst
+  for f in "$src"/parsers/s01-parse/jabali-stalwart-*.yaml \
+           "$src"/scenarios/jabali-stalwart-*.yaml \
+           "$src"/acquis.d/jabali-stalwart*.yaml; do
+    [[ -e "$f" ]] || continue
+    base="$(basename "$f")"
+    case "$f" in
+      */parsers/*)  dst="/etc/crowdsec/parsers/s01-parse/$base" ;;
+      */scenarios/*) dst="/etc/crowdsec/scenarios/$base" ;;
+      */acquis.d/*) dst="/etc/crowdsec/acquis.d/$base" ;;
+    esac
+    if [[ ! -f "$dst" ]] || ! cmp -s "$f" "$dst"; then
+      install -m 0644 -o root -g root "$f" "$dst"
+      changed=1
+      _log "wrote $dst"
+    fi
+  done
+
+  if (( changed )); then
+    systemctl reload crowdsec 2>/dev/null || systemctl restart crowdsec 2>/dev/null || true
+  fi
+}
+
 install_crowdsec_jabali_scenarios() {
   # Seed jabali-owned CrowdSec scenarios that target the panel itself.
   # Three rules:
@@ -10674,6 +10713,7 @@ main() {
   install_crowdsec_nginx_bouncer
   install_crowdsec_profiles
   install_crowdsec_jabali_scenarios
+  install_crowdsec_jabali_stalwart_scenarios
   install_crowdsec_blocklists
   cleanup_modsecurity
   install_malware_stack

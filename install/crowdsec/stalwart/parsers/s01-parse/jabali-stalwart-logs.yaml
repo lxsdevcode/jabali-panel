@@ -1,0 +1,72 @@
+# Managed by jabali install.sh — adapted from
+# https://github.com/bu5hm4nn/crowdsec-stalwart parsers/s01-parse/stalwart-logs.yaml
+# MIT-licensed; see install/crowdsec/stalwart/LICENSE and UPSTREAM.md.
+#
+# Changes vs. upstream:
+#   - Renamed `stalwart-logs` -> `jabali/stalwart-logs` so it cohabits
+#     cleanly with any hub-installed CrowdSec parser of the same name.
+#   - Switched the source filter from `evt.Parsed.program == 'stalwart'`
+#     (assumes file-tail through a syslog stage) to
+#     `evt.Line.Labels.type == 'stalwart'` so this works with the
+#     journalctl acquisition path jabali uses (Stalwart writes
+#     structured lines to stdout, systemd captures them, CrowdSec
+#     reads them via the journal acquis below).
+#   - Grok now applies to Line.Raw directly — no intermediate syslog
+#     stage required.
+#   - Protocol-mapping reflects the listenerId names jabali sets in
+#     its Stalwart apply plan (smtp-25, smtp-submissions-465,
+#     smtp-submission-587, imaps, internal-loopback) — not the bu5hm4nn
+#     upstream sample names ("smtp", "submission", "submissions").
+
+name: jabali/stalwart-logs
+description: "Parse jabali-stalwart structured logs from journalctl"
+
+filter: "evt.Line.Labels.type == 'stalwart'"
+onsuccess: next_stage
+nodes:
+  - grok:
+      pattern: '^%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:log_level} %{DATA:message} \(%{DATA:event}\) listenerId = "?%{DATA:listenerId}"?, localPort = %{INT:localPort}, remoteIp = "?%{IP:remoteIp}"?, remotePort = %{INT:remotePort}(?:, %{GREEDYDATA:extra})?$'
+      apply_on: Line.Raw
+
+statics:
+  - meta: service
+    value: stalwart
+
+  - meta: source_ip
+    expression: evt.Parsed.remoteIp
+
+  - meta: log_type
+    expression: evt.Parsed.event
+
+  - meta: log_level
+    expression: evt.Parsed.log_level
+
+  - meta: listener_id
+    expression: evt.Parsed.listenerId
+
+  - meta: account_name
+    expression: evt.Parsed.accountName
+
+  - meta: domain
+    expression: evt.Parsed.domain
+
+  - parsed: remote_port
+    expression: evt.Parsed.remotePort
+
+  - parsed: local_port
+    expression: evt.Parsed.localPort
+
+  # Map jabali listenerId names to a stable protocol token the
+  # scenarios can filter on. jabali ships these listener IDs out of
+  # its Stalwart apply plan; matching them up explicitly is more
+  # readable than a regex.
+  - meta: protocol
+    expression: |
+      evt.Parsed.listenerId in ["smtp-25", "smtp-submissions-465", "smtp-submission-587"] ? "smtp" :
+      evt.Parsed.listenerId in ["imaps", "imap", "imaptls"] ? "imap" :
+      evt.Parsed.listenerId == "internal-loopback" ? "http" :
+      evt.Parsed.listenerId == "sieve" ? "managesieve" :
+      "unknown"
+
+  - target: evt.StrTime
+    expression: evt.Parsed.timestamp

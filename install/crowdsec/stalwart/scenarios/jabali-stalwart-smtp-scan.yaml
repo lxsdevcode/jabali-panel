@@ -1,0 +1,35 @@
+# Managed by jabali install.sh — adapted from
+# https://github.com/bu5hm4nn/crowdsec-stalwart scenarios/stalwart-smtp-scan.yaml
+# MIT-licensed; see install/crowdsec/stalwart/LICENSE and UPSTREAM.md.
+# Capacity / leakspeed / blackhole are overwritten at runtime by the
+# panel-agent's security.crowdsec.sensitivity.apply verb when the
+# operator picks relaxed/strict in the Sensitivity card (PR #181).
+# Stalwart SMTP Scanning Detection
+# Detects SMTP probing, scanners, and bots attempting invalid commands
+# Also catches auth attempts on port 25 (which shouldn't allow auth)
+
+type: leaky
+name: jabali/stalwart-smtp-scan
+description: "Detect SMTP scanning and probing on Stalwart mail server"
+
+# Match SMTP scanning indicators:
+# - smtp.invalid-ehlo: Invalid EHLO/HELO commands (often bots/scanners)
+# - smtp.auth-not-allowed: Auth attempt on port 25 (shouldn't happen)
+filter: evt.Parsed.event in ["smtp.invalid-ehlo", "smtp.auth-not-allowed"]
+
+# Group by source IP
+groupby: evt.Meta.source_ip
+
+# 5 scanning events in ~2.5 minutes
+# More lenient than auth brute force since some scanners are slow
+leakspeed: "30s"
+capacity: 5
+
+blackhole: "10m"
+
+labels:
+  service: stalwart
+  type: scan
+  remediation: true
+  confidence: 2
+  spoofable: 1

@@ -1,0 +1,15 @@
+# Managed by jabali install.sh.
+# Source Stalwart structured logs from systemd-journald. The Stalwart
+# Stdout tracer (seeded by install/stalwart/apply-plan.json.tmpl) writes
+# bu5hm4nn-compatible key=value lines to stdout; systemd captures them
+# under the jabali-stalwart.service unit; CrowdSec tails them here.
+#
+# Why journalctl rather than the bu5hm4nn upstream `filenames:` path:
+# Stalwart 0.16 Log tracer silently no-ops even with AppArmor widened
+# (see PR #177 / PR #178 commit messages) — Stdout + journal is the
+# only ingest path actually shown to emit structured lines.
+source: journalctl
+journalctl_filter:
+  - "_SYSTEMD_UNIT=jabali-stalwart.service"
+labels:
+  type: stalwart

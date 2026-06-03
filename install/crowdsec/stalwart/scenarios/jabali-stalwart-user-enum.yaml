@@ -1,0 +1,37 @@
+# Managed by jabali install.sh — adapted from
+# https://github.com/bu5hm4nn/crowdsec-stalwart scenarios/stalwart-user-enum.yaml
+# MIT-licensed; see install/crowdsec/stalwart/LICENSE and UPSTREAM.md.
+# Capacity / leakspeed / blackhole are overwritten at runtime by the
+# panel-agent's security.crowdsec.sensitivity.apply verb when the
+# operator picks relaxed/strict in the Sensitivity card (PR #181).
+# Stalwart User Enumeration Detection
+# Detects credential stuffing / user enumeration attacks
+# An attacker trying many different usernames from the same IP
+
+type: leaky
+name: jabali/stalwart-user-enum
+description: "Detect user enumeration attacks on Stalwart mail server"
+
+# Match authentication failures only
+filter: evt.Parsed.event == "auth.failed"
+
+# Group by source IP
+groupby: evt.Meta.source_ip
+
+# Distinct filter: only count unique usernames
+# This means the bucket only fills when different usernames are tried
+distinct: evt.Meta.account_name
+
+# 5 different usernames in ~50 seconds = enumeration
+leakspeed: "10s"
+capacity: 5
+
+# Longer silence period since enumeration is more targeted
+blackhole: "10m"
+
+labels:
+  service: stalwart
+  type: user_enumeration
+  remediation: true
+  confidence: 3
+  spoofable: 0
