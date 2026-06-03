@@ -253,6 +253,27 @@ func RegisterSecurityCrowdSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterfac
 	// signal path (scenario hit → maybe decision → maybe expired).
 	g.GET("/alerts", agentPassthrough(cli, "security.crowdsec.alerts.list", nil, csCallTimeout))
 
+	// Bucketed alert counts for the engine-dashboard "Alerts over time"
+	// chart. ?since=24h|7d|30d (default 7d).
+	g.GET("/alerts/timeseries", func(c *gin.Context) {
+		since := c.DefaultQuery("since", "7d")
+		switch since {
+		case "24h", "7d", "30d":
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "since must be 24h|7d|30d"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), csCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "security.crowdsec.alerts.timeseries", map[string]any{"since": since})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json", raw)
+	})
+
 	g.GET("/alerts/:id", func(c *gin.Context) {
 		id, err := strconv.Atoi(c.Param("id"))
 		if err != nil || id <= 0 {

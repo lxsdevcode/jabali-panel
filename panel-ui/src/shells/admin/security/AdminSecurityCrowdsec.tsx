@@ -53,6 +53,7 @@ import {
 import { RowActionButton } from "../../../components/RowActionButton";
 import { ISO3166_COUNTRIES } from "../../../data/iso3166";
 import { CrowdsecTestIPCard } from "./CrowdsecTestIPCard";
+import { Sparkline } from "../../../components/Sparkline";
 
 import {
   useAddCrowdsecAllowlist,
@@ -347,6 +348,7 @@ export const AdminSecurityCrowdsec = () => {
         message="What is CrowdSec?"
         description="Behaviour-based intrusion-prevention. Tails server logs (nginx, sshd, panel, mail), matches them against scenarios (brute-force, scanners, web exploits, credential stuffing), and emits IP decisions. Bouncers enforce them at the firewall (UFW), at nginx (AppSec WAF with OWASP CRS rules + optional captcha challenge), and against a crowdsourced blocklist of IPs flagged by the wider community in the last hours."
       />
+      <AlertsOverTimeCard />
       <CrowdsecTestIPCard />
     </Space>
   );
@@ -1834,6 +1836,71 @@ const RecommendedHubCard = ({
   );
 };
 
+
+// AlertsOverTimeCard — engine-dashboard chart matching CrowdSec
+// Console's "Alerts over time" panel. Reads from
+// /admin/security/crowdsec/alerts/timeseries which the agent
+// bucket-counts (hour buckets for 24h window, day buckets for 7d/30d).
+// Uses inline-SVG Sparkline (zero chart-lib dep).
+const AlertsOverTimeCard = () => {
+  const [since, setSince] = useState<"24h" | "7d" | "30d">("7d");
+  const q = useQuery({
+    queryKey: ["cs-alerts-timeseries", since],
+    queryFn: async () => {
+      const r = await apiClient.get<{
+        buckets: { ts: string; count: number }[];
+        bucket_size: string;
+        since: string;
+      }>(`/admin/security/crowdsec/alerts/timeseries?since=${since}`);
+      return r.data;
+    },
+    refetchInterval: 60_000,
+  });
+  const points = (q.data?.buckets ?? []).map((b) => ({ x: b.ts, y: b.count }));
+  const total = points.reduce((acc, p) => acc + p.y, 0);
+  const max = points.reduce((acc, p) => (p.y > acc ? p.y : acc), 0);
+  return (
+    <Card
+      size="small"
+      title={
+        <Space>
+          <ThunderboltOutlined />
+          <span>Alerts over time</span>
+        </Space>
+      }
+      extra={
+        <Radio.Group
+          size="small"
+          value={since}
+          onChange={(e) => setSince(e.target.value)}
+          optionType="button"
+        >
+          <Radio.Button value="24h">24h</Radio.Button>
+          <Radio.Button value="7d">7d</Radio.Button>
+          <Radio.Button value="30d">30d</Radio.Button>
+        </Radio.Group>
+      }
+      loading={q.isLoading}
+    >
+      <Space direction="vertical" size="small" style={{ width: "100%" }}>
+        <Space size="large">
+          <Typography.Text type="secondary">
+            Total: <Typography.Text strong>{total}</Typography.Text>
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            Peak / bucket: <Typography.Text strong>{max}</Typography.Text>
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            Bucket: {q.data?.bucket_size ?? "—"}
+          </Typography.Text>
+        </Space>
+        <div style={{ width: "100%", overflowX: "auto" }}>
+          <Sparkline data={points} width={920} height={160} filled />
+        </div>
+      </Space>
+    </Card>
+  );
+};
 
 // SensitivityCard — server-wide CrowdSec sensitivity preset. Writes
 // /etc/crowdsec/{scenarios,appsec-rules,profiles.d}/jabali-*.yaml via
