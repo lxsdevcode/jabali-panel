@@ -189,7 +189,6 @@ export const AdminSecurityCrowdsec = () => {
   const metrics = useCrowdsecMetrics();
   const [scope, setScope] = useState<CrowdsecScope | "all">("all");
   const decisions = useCrowdsecDecisions(scope === "all" ? undefined : scope);
-  const bouncers = useCrowdsecBouncers();
   const hub = useCrowdsecHub();
   const addDecision = useAddCrowdsecDecision();
   const deleteDecision = useDeleteCrowdsecDecision();
@@ -234,7 +233,6 @@ export const AdminSecurityCrowdsec = () => {
     "appsec",
     "sensitivity",
     "blocklists",
-    "bouncers",
     "hub",
   ] as const;
   type SubTab = (typeof subTabs)[number];
@@ -253,6 +251,7 @@ export const AdminSecurityCrowdsec = () => {
   const overviewPanel = (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <EngineIdentityCard />
+      <RemediationComponentsCard />
       {metrics.isLoading ? (
         <Typography.Text type="secondary">Loading…</Typography.Text>
       ) : (
@@ -405,49 +404,6 @@ export const AdminSecurityCrowdsec = () => {
     </Card>
   );
 
-  const bouncersPanel = (
-    <Card size="small" title="Bouncers">
-      <Table
-        rowKey="name"
-        dataSource={bouncers.data ?? []}
-        loading={bouncers.isLoading}
-        pagination={false}
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No bouncers registered" /> }}
-        scroll={{ x: "max-content" }}
-      >
-        <Table.Column dataIndex="name" title="Name" key="name" />
-        <Table.Column dataIndex="type" title="Type" key="type" />
-        <Table.Column
-          dataIndex="last_pull"
-          title="Last pull"
-          key="last_pull"
-          render={(s: string, row: { name: string; type: string }) => {
-            if (s) return fmtTime(s);
-            const isAppSecOnly =
-              row.type === "" ||
-              row.name.toLowerCase().includes("nginx");
-            if (isAppSecOnly) {
-              return (
-                <Tooltip title="AppSec-only bouncer (Lua HTTP). Doesn't poll LAPI for L3/L4 decisions — those are handled by cs-firewall-bouncer. Every nginx request is forwarded to the AppSec engine on 127.0.0.1:7422 instead.">
-                  <Tag color="blue">AppSec-only</Tag>
-                </Tooltip>
-              );
-            }
-            return "—";
-          }}
-        />
-        <Table.Column
-          dataIndex="revoked"
-          title="Status"
-          key="revoked"
-          render={(revoked: boolean) =>
-            revoked ? <Tag color="red">revoked</Tag> : <Tag color="green">active</Tag>
-          }
-        />
-      </Table>
-    </Card>
-  );
-
   const hubPanel = <RecommendedHubCard hub={hub} />;
 
   return (
@@ -473,7 +429,6 @@ export const AdminSecurityCrowdsec = () => {
           { key: "appsec", label: "Block Country", children: <AppSecGeoblockCard /> },
           { key: "sensitivity", label: "Sensitivity", children: <SensitivityCard /> },
           { key: "blocklists", label: "Blocklists", children: <BlocklistsCard /> },
-          { key: "bouncers", label: "Bouncers", children: bouncersPanel },
         ]}
       />
 
@@ -1577,6 +1532,144 @@ const RecommendedHubCard = ({
   );
 };
 
+
+// RemediationComponentsCard — rich per-bouncer panel for the engine
+// Overview tab. Merges the standalone Bouncers tab into Overview to
+// mirror CrowdSec Console's "Remediation components" block: one row
+// per bouncer with type icon, name, version (when surfaced by cscli),
+// status freshness colour-coded by last_pull age, and a one-line
+// description of what the bouncer enforces.
+//
+// Reads from /admin/security/crowdsec/bouncers via useCrowdsecBouncers.
+// firewall = nft set drops (L3/L4); nginx = AppSec HTTP body inspect
+// (L7). AppSec-only bouncers never call /v1/decisions/stream so they
+// have no last_pull — those render with a Tag instead of a timestamp.
+const bouncerTypeMeta = (b: { name: string; type: string }) => {
+  const lower = (b.name + " " + b.type).toLowerCase();
+  if (lower.includes("nginx") || lower.includes("appsec")) {
+    return {
+      kind: "appsec" as const,
+      label: "nginx + AppSec",
+      icon: <SafetyOutlined />,
+      detail:
+        "Inspects every HTTP request body via 127.0.0.1:7422 (CRS + vpatch rules). Returns 403 on match; doesn't pull /v1/decisions/stream because L7 decisions live in-process.",
+    };
+  }
+  if (lower.includes("firewall") || lower.includes("nft")) {
+    return {
+      kind: "firewall" as const,
+      label: "nftables firewall",
+      icon: <ThunderboltOutlined />,
+      detail:
+        "Pulls /v1/decisions/stream every 60s and writes IP bans into the crowdsec / crowdsec6 nft sets. Drops at PREROUTING priority -10 (before INPUT).",
+    };
+  }
+  return {
+    kind: "other" as const,
+    label: b.type || "remediation",
+    icon: <ApiOutlined />,
+    detail: "Custom bouncer registered via `cscli bouncers add`.",
+  };
+};
+
+const lastPullStatus = (lastPull: string | undefined, kind: string) => {
+  if (kind === "appsec") {
+    return { tint: "#1677ff", text: "L7 inline", explain: "AppSec bouncers don't poll — every nginx request is forwarded to the engine inline." };
+  }
+  if (!lastPull) {
+    return { tint: "#cf1322", text: "never", explain: "No successful pull recorded since registration. Check api_url + api_key in bouncer config." };
+  }
+  const ageMs = Date.now() - new Date(lastPull).getTime();
+  if (ageMs < 5 * 60_000) return { tint: "#52c41a", text: "healthy", explain: "Last LAPI pull within 5 min — bouncer is keeping the firewall set fresh." };
+  if (ageMs < 60 * 60_000) return { tint: "#faad14", text: "lagging", explain: "Pulled >5min ago. Expected within `update_frequency` (60s default after PR #155)." };
+  return { tint: "#cf1322", text: "stale", explain: "Pulled >1h ago. Bouncer may be down or LAPI unreachable." };
+};
+
+const RemediationComponentsCard = () => {
+  const bouncers = useCrowdsecBouncers();
+  const rows = bouncers.data ?? [];
+  return (
+    <Card
+      size="small"
+      title={
+        <Space>
+          <SafetyOutlined />
+          <span>Remediation components</span>
+        </Space>
+      }
+      loading={bouncers.isLoading}
+      extra={
+        <Typography.Text type="secondary">
+          {rows.length} {rows.length === 1 ? "bouncer" : "bouncers"}
+        </Typography.Text>
+      }
+    >
+      {rows.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="No bouncers registered (cscli bouncers add)"
+        />
+      ) : (
+        <Row gutter={[12, 12]}>
+          {rows.map((b) => {
+            const meta = bouncerTypeMeta(b);
+            const status = lastPullStatus(b.last_pull, meta.kind);
+            return (
+              <Col xs={24} md={12} key={b.name}>
+                <Card
+                  size="small"
+                  style={{
+                    borderLeft: `3px solid ${status.tint}`,
+                  }}
+                  styles={{ body: { padding: 12 } }}
+                >
+                  <Space
+                    align="start"
+                    style={{ width: "100%", justifyContent: "space-between" }}
+                  >
+                    <Space align="start">
+                      <span style={{ fontSize: 20, color: status.tint }}>
+                        {meta.icon}
+                      </span>
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text strong style={{ fontSize: 13 }}>
+                          {b.name}
+                        </Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                          {meta.label}
+                        </Typography.Text>
+                      </Space>
+                    </Space>
+                    <Space direction="vertical" size={0} align="end">
+                      {b.revoked ? (
+                        <Tag color="red">revoked</Tag>
+                      ) : (
+                        <Tooltip title={status.explain}>
+                          <Tag color={status.tint === "#52c41a" ? "green" : status.tint === "#faad14" ? "orange" : status.tint === "#1677ff" ? "blue" : "red"}>
+                            {status.text}
+                          </Tag>
+                        </Tooltip>
+                      )}
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        {b.last_pull ? fmtTime(b.last_pull) : "—"}
+                      </Typography.Text>
+                    </Space>
+                  </Space>
+                  <Typography.Paragraph
+                    type="secondary"
+                    style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}
+                  >
+                    {meta.detail}
+                  </Typography.Paragraph>
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
+      )}
+    </Card>
+  );
+};
 
 // EngineIdentityCard — engine-fingerprint header for the CrowdSec
 // Overview tab. Mirrors the "Security engine «hostname»" identity
