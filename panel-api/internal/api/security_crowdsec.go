@@ -291,58 +291,12 @@ func RegisterSecurityCrowdSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterfac
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	})
 
-	// M27 Step 4 — Console (ADR-0062). cscli surface exposed:
-	// enroll / status / enable / disable (one option at a time).
-	// Disenroll is managed in app.crowdsec.net (no cscli verb).
-	g.GET("/console/status", agentPassthrough(cli, "security.crowdsec.console.status", nil, csCallTimeout))
-	g.GET("/console/enrollment", agentPassthrough(cli, "security.crowdsec.console.enrollment", nil, csCallTimeout))
-	g.POST("/console/disenroll", agentPassthrough(cli, "security.crowdsec.console.disenroll", nil, csCallTimeout))
-
-	g.POST("/console/options/:option/enable", func(c *gin.Context) {
-		opt := c.Param("option")
-		ctx, cancel := context.WithTimeout(c.Request.Context(), csCallTimeout)
-		defer cancel()
-		raw, err := cli.Call(ctx, "security.crowdsec.console.enable", map[string]any{"option": opt})
-		if err != nil {
-			status, ebody := translateAgentError(err)
-			c.JSON(status, ebody)
-			return
-		}
-		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
-	})
-
-	g.POST("/console/options/:option/disable", func(c *gin.Context) {
-		opt := c.Param("option")
-		ctx, cancel := context.WithTimeout(c.Request.Context(), csCallTimeout)
-		defer cancel()
-		raw, err := cli.Call(ctx, "security.crowdsec.console.disable", map[string]any{"option": opt})
-		if err != nil {
-			status, ebody := translateAgentError(err)
-			c.JSON(status, ebody)
-			return
-		}
-		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
-	})
-
-	g.POST("/console/enroll", func(c *gin.Context) {
-		var body struct {
-			Key  string `json:"key"`
-			Name string `json:"name"`
-		}
-		if err := c.ShouldBindJSON(&body); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid_json"})
-			return
-		}
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-		defer cancel()
-		raw, err := cli.Call(ctx, "security.crowdsec.console.enroll", body)
-		if err != nil {
-			status, ebody := translateAgentError(err)
-			c.JSON(status, ebody)
-			return
-		}
-		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
-	})
+	// CrowdSec Console — removed 2026-06-03. Engine no longer integrates
+	// with app.crowdsec.net (community-tier 500-alerts/month cap was
+	// unusable); per-host /jabali-admin/security tabs replace it.
+	// install.sh now disenrolls + disables forwarding on every
+	// jabali update. CAPI community blocklist pull is independent and
+	// still works.
 
 	// M27 Step 5 — captcha remediation. DB is truth for the toggle +
 	// creds (secret NEVER returned). Agent rewrites the four bouncer-

@@ -6359,16 +6359,24 @@ EOF
   systemctl reload crowdsec 2>/dev/null || true
 }
 
-# install_crowdsec_blocklists — REMOVED 2026-05-14.
+# install_crowdsec_blocklists — REMOVED 2026-05-14, scope re-narrowed
+# 2026-06-03 after the console drop.
 #
-# Replaced by CrowdSec's first-party blocklist catalog at
-# https://app.crowdsec.net/blocklists/ — operator enrolls the engine
-# via `cscli console enroll` then subscribes to lists in the web UI.
-# Central catalog covers Firehol (level1/2/proxies/xroxy/botscout)
-# + CrowdSec-curated lists + community feeds; updates sync to every
-# enrolled engine automatically. No local URL-fetcher needed.
+# Originally this function fetched ~6 Firehol blocklists into local
+# files for nft import. It was removed when CrowdSec Console started
+# offering a managed blocklist catalog. With the console itself now
+# dropped (alert quota was unusable), jabali relies on a single
+# CAPI-served list:
 #
-# This function now ONLY tears down the legacy
+#   crowdsecurity/community-blocklist — ~21k IPs/day, free, no
+#   enrollment, pulled via the same CAPI cred that authenticates
+#   blocklist downloads.
+#
+# Operators who want the richer console-managed catalog can re-enroll
+# manually (`cscli console enroll <key>`), but that path is no longer
+# default and the UI no longer surfaces it.
+#
+# This function ONLY tears down the legacy
 # jabali-firehol-blocklists.{timer,service} on hosts that ran an
 # earlier install.sh.
 install_crowdsec_blocklists() {
@@ -10260,22 +10268,30 @@ EOF
     systemctl restart jabali-kratos 2>/dev/null || true
   fi
 
-  # CrowdSec console enrollment marker. Hosts that enrolled before
-  # the marker code existed (any release < 2026-05-15) have a valid
-  # CAPI registration but no /etc/jabali/.cs-console-enrolled — UI
-  # then shows the enroll form even though `cscli capi status` says
-  # OK. Detect that gap and seed the marker so the UI flips to
-  # "Enrolled" on next refresh, no operator action needed.
-  if command -v cscli >/dev/null 2>&1 \
-      && [[ -f /etc/crowdsec/online_api_credentials.yaml ]] \
-      && [[ ! -f /etc/jabali/.cs-console-enrolled ]]; then
-    if cscli capi status >/dev/null 2>&1; then
-      install -d -m 0755 /etc/jabali
-      printf 'enrolled_at: %s\nseeded_by: install.sh\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        > /etc/jabali/.cs-console-enrolled
-      chmod 0644 /etc/jabali/.cs-console-enrolled
-      _log "seeded /etc/jabali/.cs-console-enrolled (CAPI OK, marker missing)"
+  # CrowdSec Console — jabali no longer integrates with the cloud
+  # dashboard (app.crowdsec.net). Community tier caps at 500 alerts/
+  # month for the whole account which is unusable on any host that
+  # takes real internet traffic, and the per-host /jabali-admin/
+  # security tabs already replicate every console panel that mattered
+  # (Alerts, Decisions, Blocklists, Bouncers, Alerts-over-time chart).
+  # Heal previously-enrolled hosts on every jabali update:
+  #   1. Disable all alert-forwarding flags (custom/tainted/manual/context)
+  #   2. Disenroll the engine from the cloud
+  #   3. Remove the legacy marker file
+  # CAPI (community blocklist pull from api.crowdsec.net) is a separate
+  # endpoint and stays enabled — that's where the 21k-IP daily list
+  # comes from and it has no per-engine quota.
+  if command -v cscli >/dev/null 2>&1; then
+    if cscli console status -o json 2>/dev/null | grep -q '"activated":[[:space:]]*true'; then
+      _log "crowdsec: disabling all console alert-forwarding flags"
+      cscli console disable -a 2>/dev/null || true
     fi
+    if [[ -f /etc/jabali/.cs-console-enrolled ]] \
+        || cscli console status -o json 2>/dev/null | grep -q '"enrolled"'; then
+      _log "crowdsec: disenrolling engine from app.crowdsec.net"
+      cscli console disenroll --force 2>/dev/null || true
+    fi
+    rm -f /etc/jabali/.cs-console-enrolled
   fi
 
   # OnFailure notifier template + helper script — same logic.

@@ -25,7 +25,6 @@ import {
   Row,
   Select,
   Space,
-  Switch,
   Table,
   Tabs,
   Tag,
@@ -47,7 +46,6 @@ import {
   ThunderboltOutlined,
   WarningOutlined,
   DeleteOutlined,
-  QuestionCircleOutlined,
   ReloadOutlined,
 } from "@icons";
 import { RowActionButton } from "../../../components/RowActionButton";
@@ -71,15 +69,10 @@ import {
   useRemoveCrowdsecHubItem,
   useCrowdsecMetrics,
   useCrowdsecCaptcha,
-  useCrowdsecConsoleEnrollment,
-  useCrowdsecConsoleStatus,
-  useDisenrollCrowdsecConsole,
   useCrowdsecProfiles,
   useCrowdsecStatus,
   useDeleteCrowdsecDecision,
-  useEnrollCrowdsecConsole,
   useRemoveCrowdsecAllowlist,
-  useToggleCrowdsecConsoleOption,
   useUpdateAppSecGeoblock,
   useUpdateCrowdsecCaptcha,
   useUpdateCrowdsecProfiles,
@@ -87,7 +80,6 @@ import {
   type CrowdsecAlert,
   type CrowdsecAllowlistEntry,
   type CrowdsecCaptchaProvider,
-  type CrowdsecConsoleOption,
   type CrowdsecDecision,
   type CrowdsecProfileOverride,
   type CrowdsecScenarioItem,
@@ -237,7 +229,6 @@ export const AdminSecurityCrowdsec = () => {
     "decisions",
     "allowlist",
     "alerts",
-    "console",
     "captcha",
     "profiles",
     "appsec",
@@ -475,7 +466,6 @@ export const AdminSecurityCrowdsec = () => {
           { key: "decisions", label: "Active decisions", children: decisionsPanel },
           { key: "allowlist", label: "Allowlist", children: <AllowlistsCard /> },
           { key: "alerts", label: "Alerts", children: <AlertsCard /> },
-          { key: "console", label: "Console", children: <ConsoleCard /> },
           { key: "captcha", label: "Captcha", children: <CaptchaRemediationCard /> },
           { key: "profiles", label: "Per-scenario", children: <ProfilesCard /> },
           { key: "appsec", label: "Block Country", children: <AppSecGeoblockCard /> },
@@ -1097,257 +1087,6 @@ const AlertsCard = () => {
   );
 };
 
-// ConsoleCard — CrowdSec Console enrollment (M27 Step 4, ADR-0062).
-// One-shot enroll form; no status polling, no disenroll. See ADR for
-// why — cscli has no disenroll verb and enrollment state isn't
-// distinguishable from config files.
-type ConsoleFormValues = {
-  key: string;
-  name?: string;
-};
-
-const OPTION_LABEL: Record<string, string> = {
-  custom: "Custom scenarios",
-  manual: "Manual decisions",
-  tainted: "Tainted scenarios",
-  context: "Context with alerts",
-  console_management: "Console-managed decisions",
-};
-
-const OPTION_TOOLTIP: Record<string, string> = {
-  custom:
-    "Your own detection scenarios not from the CrowdSec Hub. Sharing helps CrowdSec improve detection, but exposes your private rule logic to the Console.",
-  manual:
-    "Bans and unbans you added by hand (e.g. via cscli decisions add). Forwarding makes them visible in the Console dashboard.",
-  tainted:
-    "Hub scenarios you have locally modified. CrowdSec marks these 'tainted' because they differ from the official version. Enable only if your modified logic is not sensitive.",
-  context:
-    "Extra metadata attached to each alert — such as HTTP paths, User-Agent strings, or POST body fragments. Useful for threat analysis but may contain PII; enable only if acceptable under your privacy policy.",
-  console_management:
-    "Allow the Console to push block and captcha decisions to this engine remotely. Required for centralised blocklist management from app.crowdsec.net.",
-};
-
-const ConsoleCard = () => {
-  const enroll = useEnrollCrowdsecConsole();
-  const disenroll = useDisenrollCrowdsecConsole();
-  const enrollmentQ = useCrowdsecConsoleEnrollment();
-  const statusQ = useCrowdsecConsoleStatus();
-  const toggle = useToggleCrowdsecConsoleOption();
-  const [form] = Form.useForm<ConsoleFormValues>();
-  const [submittedAt, setSubmittedAt] = useState<number | null>(null);
-
-  const isEnrolled = enrollmentQ.data?.enrolled === true;
-
-  const onSubmit = async (values: ConsoleFormValues) => {
-    try {
-      await enroll.mutateAsync(values);
-      setSubmittedAt(Date.now());
-      form.resetFields();
-      message.success("Enrollment sent — accept this instance at app.crowdsec.net");
-    } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Enrollment failed");
-    }
-  };
-
-  const onDisenroll = async () => {
-    try {
-      await disenroll.mutateAsync();
-      message.success("Disenrolled — you can enroll with a new key now");
-    } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Disenroll failed");
-    }
-  };
-
-  const onToggleOption = async (opt: CrowdsecConsoleOption, enabled: boolean) => {
-    try {
-      await toggle.mutateAsync({ option: opt.name, enabled });
-      message.success(`${enabled ? "Enabled" : "Disabled"} ${OPTION_LABEL[opt.name] ?? opt.name}`);
-    } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Toggle failed");
-    }
-  };
-
-  return (
-    <Card
-      size="small"
-      title="CrowdSec Console (optional)"
-      extra={
-        <Typography.Link
-          href={isEnrolled ? "https://app.crowdsec.net/security-engines" : "https://app.crowdsec.net/security-engines?distribution=linux"}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {isEnrolled ? "Manage at app.crowdsec.net" : "Get enrollment key"}
-        </Typography.Link>
-      }
-    >
-      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        {isEnrolled ? (
-          <>
-            <Alert
-              type="success"
-              showIcon
-              message={
-                <>
-                  Enrolled as <Typography.Text code>{enrollmentQ.data?.login}</Typography.Text>
-                  {enrollmentQ.data?.capi_ok === false && (
-                    <Tag color="orange" style={{ marginLeft: 8 }}>
-                      CAPI auth failing
-                    </Tag>
-                  )}
-                </>
-              }
-              description={
-                <>
-                  This engine is registered with the CrowdSec Console. CTI community blocklist
-                  pulls, hosted dashboards, and remote management are active. Use{" "}
-                  <strong>Disenroll</strong> below to drop the registration so you can re-enroll
-                  with a different key.
-                </>
-              }
-            />
-            <Space>
-              <Popconfirm
-                title="Disenroll this instance?"
-                description="Removes /etc/crowdsec/online_api_credentials.yaml and reloads crowdsec. Community blocklist pulls + Console dashboards stop until you enroll again."
-                okText="Disenroll"
-                okButtonProps={{ danger: true }}
-                cancelText="Cancel"
-                onConfirm={onDisenroll}
-              >
-                <Button danger loading={disenroll.isPending}>
-                  Disenroll
-                </Button>
-              </Popconfirm>
-            </Space>
-          </>
-        ) : (
-          <>
-            <Alert
-              type="info"
-              showIcon
-              message="Enroll this instance to receive CTI community blocklists and a hosted dashboard."
-              description={
-                <>
-                  Open{" "}
-                  <Typography.Link
-                    href="https://app.crowdsec.net/security-engines?distribution=linux"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    app.crowdsec.net/security-engines
-                  </Typography.Link>
-                  , copy the <Typography.Text code>cscli console enroll &lt;key&gt;</Typography.Text>{" "}
-                  command, paste the key below, then accept the pending instance in the Console.
-                  Share settings and disenroll are managed in the Console web UI.
-                </>
-              }
-            />
-
-            {submittedAt !== null && (
-              <Alert
-                type="success"
-                showIcon
-                message="Enrollment command sent"
-                description="Visit app.crowdsec.net and accept this instance. It can take up to a minute to appear."
-              />
-            )}
-
-            <Form<ConsoleFormValues> form={form} layout="vertical" onFinish={onSubmit}>
-              <Form.Item
-                name="key"
-                label="Enrollment key"
-                rules={[
-                  { required: true, message: "Key required" },
-                  { pattern: /^[A-Za-z0-9-]{16,128}$/, message: "16-128 alnum + dash chars" },
-                ]}
-              >
-                <Input.Password
-                  placeholder="cskf-xxxxxxxxxxxxxxxxxxxx"
-                  autoComplete="off"
-                  visibilityToggle={false}
-                />
-              </Form.Item>
-              <Form.Item
-                name="name"
-                label="Instance name (optional)"
-                tooltip="Display name in the Console dashboard. Defaults to the server hostname."
-              >
-                <Input placeholder={`e.g. jabali-prod-${new Date().getFullYear()}`} maxLength={64} />
-              </Form.Item>
-              <Space>
-                <Popconfirm
-                  title="Enroll this instance?"
-                  description="Scenario fires, decisions, and alerts will be shared with CrowdSec Console per your sharing settings."
-                  okText="Enroll"
-                  cancelText="Cancel"
-                  onConfirm={() => form.submit()}
-                >
-                  <Button type="primary" loading={enroll.isPending}>
-                    Enroll
-                  </Button>
-                </Popconfirm>
-              </Space>
-            </Form>
-          </>
-        )}
-
-        <Typography.Title level={5} style={{ marginTop: 16, marginBottom: 8 }}>
-          Share preferences
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-          Controls which data the instance forwards to Console. Takes effect only after enrollment
-          is accepted at app.crowdsec.net.
-        </Typography.Paragraph>
-        <Table<CrowdsecConsoleOption>
-          rowKey="name"
-          dataSource={statusQ.data ?? []}
-          loading={statusQ.isLoading}
-          pagination={false}
-          size="small"
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Console options unavailable" /> }}
-          scroll={{ x: "max-content" }}
-        >
-          <Table.Column<CrowdsecConsoleOption>
-            dataIndex="name"
-            title="Option"
-            key="name"
-            render={(n: string) => (
-              <Space size={6}>
-                {OPTION_LABEL[n] ?? n}
-                {OPTION_TOOLTIP[n] && (
-                  <Tooltip title={OPTION_TOOLTIP[n]}>
-                    <span style={{ color: "var(--ant-color-text-secondary)", cursor: "help" }}>
-                      <QuestionCircleOutlined />
-                    </span>
-                  </Tooltip>
-                )}
-              </Space>
-            )}
-          />
-          <Table.Column<CrowdsecConsoleOption>
-            dataIndex="description"
-            title="Description"
-            key="description"
-          />
-          <Table.Column<CrowdsecConsoleOption>
-            dataIndex="enabled"
-            title="Enabled"
-            key="enabled"
-            width={120}
-            render={(enabled: boolean, row) => (
-              <Switch
-                checked={enabled}
-                loading={toggle.isPending}
-                onChange={(checked) => onToggleOption(row, checked)}
-              />
-            )}
-          />
-        </Table>
-      </Space>
-    </Card>
-  );
-};
 
 // CaptchaRemediationCard — hCaptcha / reCAPTCHA / Turnstile credentials
 // for crowdsec-nginx-bouncer (M27 Step 5). Secret is write-only —
@@ -1613,7 +1352,7 @@ const ProfilesCard = () => {
 // RecommendedHubCard — curated picker of well-known free CrowdSec Hub
 // items. Each entry maps to `cscli <type> install <name>`. Catalog is
 // hand-maintained because cscli has no "free vs premium" filter and the
-// upstream Console catalog (Premium/Enterprise blocklists) requires a
+// upstream catalog (Premium/Enterprise blocklists) requires a
 // signed-in account; everything below works on a fresh install with no
 // enrollment.
 type RecommendedItem = {
@@ -1760,10 +1499,10 @@ const RecommendedHubCard = ({
         message="One-click install of upstream CrowdSec Hub items"
         description={
           <>
-            Curated free items from the public Hub — no Console enrollment required. Install runs{" "}
+            Curated free items from the public Hub. Install runs{" "}
             <Typography.Text code>cscli &lt;type&gt; install &lt;name&gt;</Typography.Text> and reloads
             crowdsec. Premium/Enterprise blocklists (firehol, dshield, etc.) need an account and are
-            managed in the Console web UI after enrollment.
+            managed via cscli on the host.
           </>
         }
       />
