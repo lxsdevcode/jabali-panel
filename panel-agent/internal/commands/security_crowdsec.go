@@ -67,9 +67,15 @@ func runCscliJSON(ctx context.Context, args ...string) ([]byte, error) {
 // ---- security.crowdsec.status ----------------------------------------------
 
 type csStatusResponse struct {
-	Running       bool   `json:"running"`
-	LapiReachable bool   `json:"lapi_reachable"`
-	Version       string `json:"version,omitempty"`
+	Running         bool   `json:"running"`
+	LapiReachable   bool   `json:"lapi_reachable"`
+	Version         string `json:"version,omitempty"`
+	Hostname        string `json:"hostname,omitempty"`
+	OSPretty        string `json:"os_pretty,omitempty"`
+	StartedAt       string `json:"started_at,omitempty"`
+	MachineID       string `json:"machine_id,omitempty"`
+	LastHeartbeat   string `json:"last_heartbeat,omitempty"`
+	CAPIReachable   bool   `json:"capi_reachable"`
 }
 
 func csStatusHandler(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -81,6 +87,10 @@ func csStatusHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 	if out, err := exec.CommandContext(ctx, "cscli", "lapi", "status").CombinedOutput(); err == nil {
 		resp.LapiReachable = strings.Contains(string(out), "successfully interact with Local API")
 	}
+	// CAPI status check — separate verb, may fail when offline. Best-effort.
+	if err := exec.CommandContext(ctx, "cscli", "capi", "status").Run(); err == nil {
+		resp.CAPIReachable = true
+	}
 	if out, err := exec.CommandContext(ctx, "cscli", "version").Output(); err == nil {
 		// First non-empty line typically holds "version: vX.Y.Z" or similar.
 		for _, line := range strings.Split(string(out), "\n") {
@@ -90,6 +100,42 @@ func csStatusHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 				resp.Version = strings.TrimPrefix(resp.Version, "Version:")
 				break
 			}
+		}
+	}
+	if name, err := os.Hostname(); err == nil {
+		resp.Hostname = name
+	}
+	// /etc/os-release PRETTY_NAME — best-effort, debian/ubuntu format.
+	if b, err := os.ReadFile("/etc/os-release"); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(line, "PRETTY_NAME=") {
+				v := strings.TrimPrefix(line, "PRETTY_NAME=")
+				resp.OSPretty = strings.Trim(v, `"`)
+				break
+			}
+		}
+	}
+	// crowdsec.service ActiveEnterTimestamp → daemon start time
+	if out, err := exec.CommandContext(ctx, "systemctl", "show",
+		"crowdsec.service", "--property=ActiveEnterTimestamp",
+		"--value").Output(); err == nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			// Convert "Tue 2026-06-03 02:50:53 IDT" to RFC3339 if possible.
+			// systemd timestamps are operator-friendly, not parseable;
+			// pass through as-is and let the UI format.
+			resp.StartedAt = s
+		}
+	}
+	// First locally-registered machine = this engine's LAPI ID +
+	// last_heartbeat. cscli machines list -o json returns an array.
+	if out, err := runCscliJSON(ctx, "machines", "list"); err == nil {
+		var machines []struct {
+			MachineID     string `json:"machineId"`
+			LastHeartbeat string `json:"last_heartbeat"`
+		}
+		if jerr := json.Unmarshal(out, &machines); jerr == nil && len(machines) > 0 {
+			resp.MachineID = machines[0].MachineID
+			resp.LastHeartbeat = machines[0].LastHeartbeat
 		}
 	}
 	return resp, nil

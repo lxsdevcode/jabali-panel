@@ -252,6 +252,7 @@ export const AdminSecurityCrowdsec = () => {
 
   const overviewPanel = (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <EngineIdentityCard />
       {metrics.isLoading ? (
         <Typography.Text type="secondary">Loading…</Typography.Text>
       ) : (
@@ -1576,6 +1577,110 @@ const RecommendedHubCard = ({
   );
 };
 
+
+// EngineIdentityCard — engine-fingerprint header for the CrowdSec
+// Overview tab. Mirrors the "Security engine «hostname»" identity
+// block from the CrowdSec Console screenshot: hostname, OS, IP,
+// machine ID, last activity. Reads from /admin/security/crowdsec/
+// status (extended PR #160 with hostname/os/started/machine_id/
+// last_heartbeat fields) and server-settings public IP.
+const EngineIdentityCard = () => {
+  const status = useCrowdsecStatus();
+  const settings = useQuery({
+    queryKey: ["admin-settings-public-ip"],
+    queryFn: async () => {
+      const r = await apiClient.get<{ public_ipv4?: string; hostname?: string }>(
+        "/admin/settings",
+      );
+      return r.data;
+    },
+  });
+  const hostname = status.data?.hostname ?? settings.data?.hostname ?? "—";
+  const os = status.data?.os_pretty ?? "—";
+  const version = status.data?.version ?? "—";
+  const ip = settings.data?.public_ipv4 ?? "—";
+  const machineId = status.data?.machine_id ?? "—";
+  const startedAt = status.data?.started_at;
+  const lastHeartbeat = status.data?.last_heartbeat;
+  const healthy =
+    !!status.data?.running && !!status.data?.lapi_reachable;
+
+  return (
+    <Card size="small" loading={status.isLoading}>
+      <Space direction="vertical" size="small" style={{ width: "100%" }}>
+        <Space size="middle" wrap>
+          <SafetyOutlined style={{ fontSize: 28, color: healthy ? "#52c41a" : "#cf1322" }} />
+          <Space direction="vertical" size={0}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              Security engine «{hostname}»
+            </Typography.Title>
+            <Space size="small">
+              {version !== "—" && <Tag color="blue">{version}</Tag>}
+              <Tag color={status.data?.running ? "green" : "red"}>
+                {status.data?.running ? "running" : "down"}
+              </Tag>
+              <Tag color={status.data?.lapi_reachable ? "green" : "red"}>
+                LAPI {status.data?.lapi_reachable ? "ok" : "down"}
+              </Tag>
+              <Tag color={status.data?.capi_reachable ? "green" : "default"}>
+                CAPI {status.data?.capi_reachable ? "ok" : "offline"}
+              </Tag>
+            </Space>
+          </Space>
+        </Space>
+
+        <Row gutter={[16, 8]}>
+          <Col xs={12} md={8} lg={6}>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              OS
+            </Typography.Text>
+            <div style={{ fontSize: 13 }}>{os}</div>
+          </Col>
+          <Col xs={12} md={8} lg={6}>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              Public IP
+            </Typography.Text>
+            <div style={{ fontSize: 13, fontFamily: "monospace" }}>{ip}</div>
+          </Col>
+          <Col xs={12} md={8} lg={6}>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              Machine ID
+            </Typography.Text>
+            <Tooltip title={machineId}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {machineId.length > 16 ? `${machineId.slice(0, 16)}…` : machineId}
+              </div>
+            </Tooltip>
+          </Col>
+          <Col xs={12} md={8} lg={6}>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              Last heartbeat
+            </Typography.Text>
+            <div style={{ fontSize: 13 }}>
+              {lastHeartbeat ? fmtTime(lastHeartbeat) : "—"}
+            </div>
+          </Col>
+          {startedAt && (
+            <Col xs={24} md={16} lg={12}>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Daemon uptime since
+              </Typography.Text>
+              <div style={{ fontSize: 13 }}>{startedAt}</div>
+            </Col>
+          )}
+        </Row>
+      </Space>
+    </Card>
+  );
+};
 
 // TopSourcesCard — top N source IPs (or country/AS for non-IP scopes)
 // by alert count over a 24h/7d/30d window. Mirrors the "Top attackers"

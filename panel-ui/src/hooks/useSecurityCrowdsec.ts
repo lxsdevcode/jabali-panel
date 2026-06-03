@@ -10,6 +10,12 @@ export type CrowdsecStatus = {
   running: boolean;
   lapi_reachable: boolean;
   version?: string;
+  hostname?: string;
+  os_pretty?: string;
+  started_at?: string;
+  machine_id?: string;
+  last_heartbeat?: string;
+  capi_reachable?: boolean;
 };
 
 export type CrowdsecDecision = {
