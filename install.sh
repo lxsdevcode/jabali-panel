@@ -10274,22 +10274,18 @@ EOF
   # takes real internet traffic, and the per-host /jabali-admin/
   # security tabs already replicate every console panel that mattered
   # (Alerts, Decisions, Blocklists, Bouncers, Alerts-over-time chart).
-  # Heal previously-enrolled hosts on every jabali update:
-  #   1. Disable all alert-forwarding flags (custom/tainted/manual/context)
-  #   2. Disenroll the engine from the cloud
-  #   3. Remove the legacy marker file
-  # CAPI (community blocklist pull from api.crowdsec.net) is a separate
-  # endpoint and stays enabled — that's where the 21k-IP daily list
-  # comes from and it has no per-engine quota.
+  #
+  # cscli v1.7.8 has no `disenroll` verb — `disable -a` turns off all
+  # five forwarding flags (custom/tainted/manual/context/console_
+  # management), which is the only thing that actually pushes data to
+  # the cloud. The engine stays bound (online_api_credentials.yaml
+  # remains so CAPI blocklist pull keeps working) but no alert leaves
+  # the host. Idempotent — safe to re-run every jabali update.
   if command -v cscli >/dev/null 2>&1; then
     if cscli console status -o json 2>/dev/null | grep -q '"activated":[[:space:]]*true'; then
       _log "crowdsec: disabling all console alert-forwarding flags"
       cscli console disable -a 2>/dev/null || true
-    fi
-    if [[ -f /etc/jabali/.cs-console-enrolled ]] \
-        || cscli console status -o json 2>/dev/null | grep -q '"enrolled"'; then
-      _log "crowdsec: disenrolling engine from app.crowdsec.net"
-      cscli console disenroll --force 2>/dev/null || true
+      systemctl reload crowdsec 2>/dev/null || true
     fi
     rm -f /etc/jabali/.cs-console-enrolled
   fi

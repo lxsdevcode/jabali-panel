@@ -56,8 +56,11 @@ Remove CrowdSec Console integration from jabali entirely.
 Specifically:
 
 1. **install.sh** — on every `jabali update`, run
-   `cscli console disable -a` and `cscli console disenroll --force`
-   if the engine is enrolled. Remove the legacy
+   `cscli console disable -a` if any forwarding flag is still active.
+   cscli v1.7.8 has no `disenroll` verb; `disable -a` is the full off-
+   switch (no alert ever leaves the host once all five flags are off,
+   even though `online_api_credentials.yaml` stays put so CAPI
+   blocklist pull keeps working). Remove the legacy
    `/etc/jabali/.cs-console-enrolled` marker.
 2. **Agent** — delete the six `security.crowdsec.console.*` verbs
    (`enroll`, `status`, `enrollment`, `disenroll`, `enable`,
@@ -87,14 +90,16 @@ Specifically:
 ### Operator migration
 
 `jabali update` is idempotent: the heal runs once on the next
-upgrade and the engine ends in a clean disenrolled state. No
+upgrade and the engine ends with all forwarding flags off. No
 operator action required. The Console account at
 [app.crowdsec.net](https://app.crowdsec.net) still exists and the
-operator can manually re-enroll if they want, but the UI no longer
-surfaces it and install.sh will re-disenroll on the next update.
+operator can manually re-enable forwarding flags via cscli if they want, but
+the UI no longer surfaces this and install.sh will re-disable them
+on the next update.
 
 Hosts that subscribed to **console-managed blocklists** (Firehol
-LEVEL1/2, etc.) lose those subscriptions on disenroll. Only the
+LEVEL1/2, etc.) stop receiving those blocklists once forwarding +
+management flags are off. Only the
 free `crowdsecurity/community-blocklist` (CAPI-served) continues to
 populate the nftables drop sets. Operators wanting richer blocklists
 can either re-enroll manually (off the jabali-supported path) or
