@@ -6383,6 +6383,120 @@ EOF
 # manually (`cscli console enroll <key>`), but that path is no longer
 # default and the UI no longer surfaces it.
 #
+
+install_crowdsec_jabali_scenarios() {
+  # Seed jabali-owned CrowdSec scenarios that target the panel itself.
+  # Three rules:
+  #
+  #   jabali-panel-login-bf.yaml      Kratos /self-service/login POST 4xx
+  #   jabali-panel-recovery-bf.yaml   Kratos /self-service/recovery POST 4xx
+  #   jabali-panel-whoami-probe.yaml  /sessions/whoami unauth bursts
+  #
+  # Thresholds match the 'balanced' sensitivity preset (5/60s login,
+  # 3/300s recovery, 20/60s whoami). The agent's
+  # security.crowdsec.sensitivity.apply verb overwrites these files
+  # with relaxed/strict tunings when the operator picks a different
+  # preset in the UI. We seed at balanced here so a fresh host has
+  # protection from minute zero even if the admin never visits the
+  # CrowdSec settings tab.
+  #
+  # Why not install via cscli hub: these scenarios are jabali-specific
+  # (Kratos URI paths, panel session contract) and the upstream
+  # CrowdSec hub has no equivalent. Drop-in scenarios under
+  # /etc/crowdsec/scenarios/ are picked up by crowdsec's startup scan
+  # exactly like hub scenarios.
+
+  local dir=/etc/crowdsec/scenarios
+  install -d -m 0755 "$dir"
+
+  local changed=0
+
+  _write_scenario() {
+    local path="$1" body="$2"
+    if [[ ! -f "$path" ]] || ! cmp -s <(printf '%s' "$body") "$path"; then
+      local tmp
+      tmp="$(mktemp --tmpdir jabali-cs-scenario.XXXXXX)"
+      printf '%s' "$body" >"$tmp"
+      install -m 0644 -o root -g root "$tmp" "$path"
+      rm -f "$tmp"
+      changed=1
+      _log "wrote $path"
+    fi
+  }
+
+  _write_scenario "$dir/jabali-panel-login-bf.yaml" "$(cat <<'EOF'
+# Managed by jabali install.sh — Security → CrowdSec → Sensitivity tunes
+# capacity/blackhole via security.crowdsec.sensitivity.apply.
+type: leaky
+name: jabali/panel-login-bf
+description: "Brute-force on the jabali panel login (Kratos /self-service/login)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path contains '/self-service/login' &&
+  evt.Meta.http_verb == 'POST' &&
+  evt.Meta.http_status in ['400','401','403','422']
+distinct: evt.Meta.source_ip
+leakspeed: 60s
+capacity: 5
+groupby: evt.Meta.source_ip
+blackhole: 4h
+labels:
+  service: jabali-panel
+  type: bruteforce
+  remediation: true
+EOF
+)"
+
+  _write_scenario "$dir/jabali-panel-recovery-bf.yaml" "$(cat <<'EOF'
+# Managed by jabali install.sh.
+type: leaky
+name: jabali/panel-recovery-bf
+description: "Brute-force on the jabali panel recovery flow (Kratos /self-service/recovery)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path contains '/self-service/recovery' &&
+  evt.Meta.http_verb == 'POST' &&
+  evt.Meta.http_status in ['400','401','403','422']
+distinct: evt.Meta.source_ip
+leakspeed: 300s
+capacity: 3
+groupby: evt.Meta.source_ip
+blackhole: 4h
+labels:
+  service: jabali-panel
+  type: bruteforce
+  remediation: true
+EOF
+)"
+
+  _write_scenario "$dir/jabali-panel-whoami-probe.yaml" "$(cat <<'EOF'
+# Managed by jabali install.sh.
+type: leaky
+name: jabali/panel-whoami-probe
+description: "Unauth whoami burst (session probing on Kratos /sessions/whoami)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path contains '/sessions/whoami' &&
+  evt.Meta.http_status == '401'
+distinct: evt.Meta.source_ip
+leakspeed: 60s
+capacity: 20
+groupby: evt.Meta.source_ip
+blackhole: 4h
+labels:
+  service: jabali-panel
+  type: probing
+  remediation: true
+EOF
+)"
+
+  unset -f _write_scenario
+
+  if (( changed )); then
+    systemctl reload crowdsec 2>/dev/null || systemctl restart crowdsec 2>/dev/null || true
+  fi
+}
+
 # This function ONLY tears down the legacy
 # jabali-firehol-blocklists.{timer,service} on hosts that ran an
 # earlier install.sh.
@@ -10512,6 +10626,7 @@ main() {
   install_crowdsec_appsec
   install_crowdsec_nginx_bouncer
   install_crowdsec_profiles
+  install_crowdsec_jabali_scenarios
   install_crowdsec_blocklists
   cleanup_modsecurity
   install_malware_stack

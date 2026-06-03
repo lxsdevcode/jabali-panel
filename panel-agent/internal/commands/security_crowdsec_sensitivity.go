@@ -1,20 +1,30 @@
 package commands
 
-// security.crowdsec.sensitivity.apply — write three config files that
-// implement the three sensitivity presets the panel UI exposes:
+// security.crowdsec.sensitivity.apply — write the jabali-owned
+// CrowdSec config files that implement the three sensitivity presets
+// the panel UI exposes:
 //
-//   relaxed  — SSH brute-force 15 fails / 60s, ban 30m, anomaly 10
-//   balanced — CrowdSec + CRS defaults (5/30s, 4h, 5)
-//   strict   — 3/30s, 24h, 5
+//   relaxed  — SSH-bf 15/60s ban 30m; panel-login 15/60s; recovery 10/300s;
+//              whoami 50/60s; AppSec anomaly 10; profile ban 30m.
+//   balanced — SSH-bf upstream default (5/30s 4h); panel-login 5/60s;
+//              recovery 3/300s; whoami 20/60s; AppSec/profile upstream.
+//   strict   — SSH-bf 3/30s ban 24h; panel-login 3/60s; recovery 1/300s;
+//              whoami 10/60s; anomaly stays at 5; profile ban 24h.
 //
-// Each preset writes (or removes) three jabali-owned files:
+// Per-preset files touched:
 //
-//   /etc/crowdsec/scenarios/jabali-ssh-bf.yaml    (custom scenario)
-//   /etc/crowdsec/appsec-rules/jabali-anomaly.yaml (anomaly threshold)
-//   /etc/crowdsec/profiles.d/jabali-ban-duration.yaml (ban window)
+//   /etc/crowdsec/scenarios/jabali-ssh-bf.yaml           SSH brute-force
+//   /etc/crowdsec/scenarios/jabali-panel-login-bf.yaml   Kratos /self-service/login
+//   /etc/crowdsec/scenarios/jabali-panel-recovery-bf.yaml  Kratos /self-service/recovery
+//   /etc/crowdsec/scenarios/jabali-panel-whoami-probe.yaml /sessions/whoami unauth burst
+//   /etc/crowdsec/appsec-rules/jabali-anomaly.yaml       CRS anomaly threshold
+//   /etc/crowdsec/profiles.d/jabali-ban-duration.yaml    default ban duration
 //
-// Balanced means "stop overriding": we remove all three jabali files
-// so CrowdSec falls back to upstream defaults. The agent never edits
+// The panel scenarios are always written (every preset) because there
+// is no upstream hub equivalent to fall back on — install.sh seeds
+// them at the balanced thresholds on fresh hosts. The SSH-bf, anomaly,
+// and profile drop-ins are still removed for balanced so CrowdSec
+// falls back to the upstream defaults. The agent never edits
 // hub-installed files directly — drop-ins only.
 
 import (
@@ -29,9 +39,12 @@ import (
 )
 
 const (
-	sensSSHBfPath   = "/etc/crowdsec/scenarios/jabali-ssh-bf.yaml"
-	sensAnomalyPath = "/etc/crowdsec/appsec-rules/jabali-anomaly-threshold.yaml"
-	sensProfilePath = "/etc/crowdsec/profiles.d/jabali-ban-duration.yaml"
+	sensSSHBfPath          = "/etc/crowdsec/scenarios/jabali-ssh-bf.yaml"
+	sensAnomalyPath        = "/etc/crowdsec/appsec-rules/jabali-anomaly-threshold.yaml"
+	sensProfilePath        = "/etc/crowdsec/profiles.d/jabali-ban-duration.yaml"
+	sensPanelLoginBfPath   = "/etc/crowdsec/scenarios/jabali-panel-login-bf.yaml"
+	sensPanelRecoveryBf    = "/etc/crowdsec/scenarios/jabali-panel-recovery-bf.yaml"
+	sensPanelWhoamiProbe   = "/etc/crowdsec/scenarios/jabali-panel-whoami-probe.yaml"
 )
 
 type sensitivityApplyParams struct {
@@ -55,7 +68,7 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 	}
 
 	// Always remove first; preset writers below opt-back-in.
-	for _, path := range []string{sensSSHBfPath, sensAnomalyPath, sensProfilePath} {
+	for _, path := range []string{sensSSHBfPath, sensAnomalyPath, sensProfilePath, sensPanelLoginBfPath, sensPanelRecoveryBf, sensPanelWhoamiProbe} {
 		_ = os.Remove(path)
 	}
 
@@ -70,6 +83,15 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		if err := writeSensitivityFile(sensProfilePath, profileYAML("30m")); err != nil {
 			return nil, csInternal("write profile", err)
 		}
+		if err := writeSensitivityFile(sensPanelLoginBfPath, panelLoginBfYAML(15, "60s", "30m")); err != nil {
+			return nil, csInternal("write panel-login-bf", err)
+		}
+		if err := writeSensitivityFile(sensPanelRecoveryBf, panelRecoveryBfYAML(10, "300s", "1h")); err != nil {
+			return nil, csInternal("write panel-recovery-bf", err)
+		}
+		if err := writeSensitivityFile(sensPanelWhoamiProbe, panelWhoamiProbeYAML(50, "60s", "30m")); err != nil {
+			return nil, csInternal("write panel-whoami-probe", err)
+		}
 	case "strict":
 		if err := writeSensitivityFile(sensSSHBfPath, sshBfYAML(3, "30s", "24h")); err != nil {
 			return nil, csInternal("write ssh-bf scenario", err)
@@ -78,8 +100,30 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 			return nil, csInternal("write profile", err)
 		}
 		// anomaly threshold stays at upstream default 5 for strict.
+		if err := writeSensitivityFile(sensPanelLoginBfPath, panelLoginBfYAML(3, "60s", "24h")); err != nil {
+			return nil, csInternal("write panel-login-bf", err)
+		}
+		if err := writeSensitivityFile(sensPanelRecoveryBf, panelRecoveryBfYAML(1, "300s", "24h")); err != nil {
+			return nil, csInternal("write panel-recovery-bf", err)
+		}
+		if err := writeSensitivityFile(sensPanelWhoamiProbe, panelWhoamiProbeYAML(10, "60s", "24h")); err != nil {
+			return nil, csInternal("write panel-whoami-probe", err)
+		}
 	case "balanced":
-		// All overrides removed above; nothing to write.
+		// SSH-bf, anomaly, profile fall back to upstream defaults
+		// (cleanup loop above removed any prior jabali drop-in). Panel
+		// scenarios have no upstream equivalent, so balanced still
+		// writes them â just at the conservative threshold matching
+		// what install.sh seeds on fresh hosts.
+		if err := writeSensitivityFile(sensPanelLoginBfPath, panelLoginBfYAML(5, "60s", "4h")); err != nil {
+			return nil, csInternal("write panel-login-bf", err)
+		}
+		if err := writeSensitivityFile(sensPanelRecoveryBf, panelRecoveryBfYAML(3, "300s", "4h")); err != nil {
+			return nil, csInternal("write panel-recovery-bf", err)
+		}
+		if err := writeSensitivityFile(sensPanelWhoamiProbe, panelWhoamiProbeYAML(20, "60s", "4h")); err != nil {
+			return nil, csInternal("write panel-whoami-probe", err)
+		}
 	}
 
 	// Reload crowdsec so the new scenario / drop-in profile take effect.
@@ -165,6 +209,85 @@ decisions:
     duration: %s
 on_success: break
 `, duration)
+}
+
+// panelLoginBfYAML â burst of POST hits to the Kratos login submit
+// endpoint returning 4xx. The SPA mounts Kratos at /.ory so the real
+// path observed in the panel access log is /.ory/self-service/login.
+// Matching .Path with `contains` keeps the rule resilient to Kratos's
+// flow-id query strings (?flow=<id>) and the legacy non-prefixed path.
+func panelLoginBfYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/panel-login-bf
+description: "Brute-force on the jabali panel login (Kratos /self-service/login)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path contains '/self-service/login' &&
+  evt.Meta.http_verb == 'POST' &&
+  evt.Meta.http_status in ['400','401','403','422']
+distinct: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+groupby: evt.Meta.source_ip
+blackhole: %s
+labels:
+  service: jabali-panel
+  type: bruteforce
+  remediation: true
+`, leakspeed, capacity, blackhole)
+}
+
+// panelRecoveryBfYAML â password-recovery flow abuse. Submitting a
+// recovery code (POST /self-service/recovery) repeatedly with a wrong
+// code is a way to brute-force the OTP. Recovery codes have lower
+// entropy than passwords so the threshold is tighter than login-bf.
+func panelRecoveryBfYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/panel-recovery-bf
+description: "Brute-force on the jabali panel recovery flow (Kratos /self-service/recovery)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path contains '/self-service/recovery' &&
+  evt.Meta.http_verb == 'POST' &&
+  evt.Meta.http_status in ['400','401','403','422']
+distinct: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+groupby: evt.Meta.source_ip
+blackhole: %s
+labels:
+  service: jabali-panel
+  type: bruteforce
+  remediation: true
+`, leakspeed, capacity, blackhole)
+}
+
+// panelWhoamiProbeYAML â unauth bursts on /sessions/whoami. The SPA
+// polls whoami once per app load to bootstrap the session; bursts of
+// 401s from one IP are session-token guessing or unauthenticated
+// probing. Threshold is higher than login-bf because legitimate
+// page reloads from a logged-out browser still hit this path.
+func panelWhoamiProbeYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/panel-whoami-probe
+description: "Unauth whoami burst (session probing on Kratos /sessions/whoami)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path contains '/sessions/whoami' &&
+  evt.Meta.http_status == '401'
+distinct: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+groupby: evt.Meta.source_ip
+blackhole: %s
+labels:
+  service: jabali-panel
+  type: probing
+  remediation: true
+`, leakspeed, capacity, blackhole)
 }
 
 func init() {
