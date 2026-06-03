@@ -228,10 +228,9 @@ export const AdminSecurityCrowdsec = () => {
     "decisions",
     "allowlist",
     "alerts",
-    "captcha",
     "profiles",
     "appsec",
-    "sensitivity",
+    "settings",
     "blocklists",
     "hub",
   ] as const;
@@ -424,10 +423,9 @@ export const AdminSecurityCrowdsec = () => {
           { key: "decisions", label: "Active decisions", children: decisionsPanel },
           { key: "allowlist", label: "Allowlist", children: <AllowlistsCard /> },
           { key: "alerts", label: "Alerts", children: <AlertsCard /> },
-          { key: "captcha", label: "Captcha", children: <CaptchaRemediationCard /> },
           { key: "profiles", label: "Per-scenario", children: <ProfilesCard /> },
           { key: "appsec", label: "Block Country", children: <AppSecGeoblockCard /> },
-          { key: "sensitivity", label: "Sensitivity", children: <SensitivityCard /> },
+          { key: "settings", label: "Settings", children: <SettingsPanel /> },
           { key: "blocklists", label: "Blocklists", children: <BlocklistsCard /> },
         ]}
       />
@@ -1964,6 +1962,19 @@ const AlertsOverTimeCard = () => {
     </Card>
   );
 };
+
+// SettingsPanel — operator-facing CrowdSec configuration tab.
+// Bundles the sensitivity preset (server-wide ssh-bf + AppSec anomaly
+// + ban-duration knobs) and the captcha-remediation credentials into
+// one place so operators don't hunt across sub-tabs for "what knobs
+// can I twist". Other CrowdSec sub-tabs are observability / per-
+// scenario overrides, which belong elsewhere.
+const SettingsPanel = () => (
+  <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <SensitivityCard />
+    <CaptchaRemediationCard />
+  </Space>
+);
 
 // SensitivityCard — server-wide CrowdSec sensitivity preset. Writes
 // /etc/crowdsec/{scenarios,appsec-rules,profiles.d}/jabali-*.yaml via
