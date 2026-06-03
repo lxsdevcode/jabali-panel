@@ -88,6 +88,36 @@ func TestDNSBLProbe_Branches(t *testing.T) {
 			},
 			true, "",
 		},
+		{
+			"Spamhaus open-resolver sentinel 127.255.255.254 → NOT listed",
+			&fakeResolver{
+				hostAnswers: []string{"127.255.255.254"},
+				txtAnswers:  []string{"Error: open resolver; https://check.spamhaus.org/..."},
+			},
+			false, "",
+		},
+		{
+			"Spamhaus typo sentinel 127.255.255.252 → NOT listed",
+			&fakeResolver{
+				hostAnswers: []string{"127.255.255.252"},
+			},
+			false, "",
+		},
+		{
+			"Spamhaus rate-limit sentinel 127.255.255.255 → NOT listed",
+			&fakeResolver{
+				hostAnswers: []string{"127.255.255.255"},
+			},
+			false, "",
+		},
+		{
+			"mixed: real listing code wins over sentinel",
+			&fakeResolver{
+				hostAnswers: []string{"127.255.255.254", "127.0.0.4"},
+				txtAnswers:  []string{"real listing reason"},
+			},
+			true, "real listing reason",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
