@@ -191,12 +191,18 @@ describe("DomainMailboxesSection — quota progress bar", () => {
 
     // AntD's Progress applies `ant-progress-status-exception` when the
     // status prop is "exception"; that's our signal the operator will
-    // see the red-warning styling.
-    await waitFor(() => {
-      const progressEl = document.querySelector(".ant-progress");
-      expect(progressEl).not.toBeNull();
-      expect(progressEl?.className).toContain("ant-progress-status-exception");
-    });
+    // see the red-warning styling. waitFor's default 1s timeout is too
+    // short on the Gitea VPS runner (CI environment is slower than the
+    // dev box) — bump to 5s so async row-data + Progress rendering
+    // finishes before the first assertion.
+    await waitFor(
+      () => {
+        const progressEl = document.querySelector(".ant-progress");
+        expect(progressEl).not.toBeNull();
+        expect(progressEl?.className).toContain("ant-progress-status-exception");
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("renders normal-status progress bar below the 90% threshold", async () => {
@@ -213,11 +219,14 @@ describe("DomainMailboxesSection — quota progress bar", () => {
     });
     renderSection();
 
-    await waitFor(() => {
-      const progressEl = document.querySelector(".ant-progress");
-      expect(progressEl).not.toBeNull();
-      expect(progressEl?.className).not.toContain("ant-progress-status-exception");
-    });
+    await waitFor(
+      () => {
+        const progressEl = document.querySelector(".ant-progress");
+        expect(progressEl).not.toBeNull();
+        expect(progressEl?.className).not.toContain("ant-progress-status-exception");
+      },
+      { timeout: 5000 },
+    );
   });
 });
 
