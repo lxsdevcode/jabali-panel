@@ -8267,6 +8267,10 @@ install_stalwart() {
   # mixed-owner tree from a previous install attempt).
   install -d -m 0750 -o jabali-mail -g jabali-mail /var/lib/stalwart
   install -d -m 0750 -o jabali-mail -g jabali-mail /etc/stalwart
+  # ADR-0115 — Stalwart Log tracer writes mail-bf-relevant events here so
+  # CrowdSec can tail them. AppArmor profile must grant /var/log/stalwart/
+  # rw separately (install/apparmor/usr.local.bin.stalwart-mail).
+  install -d -m 0750 -o jabali-mail -g jabali-mail /var/log/stalwart
   install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /etc/jabali-panel/dkim
   chown -R jabali-mail:jabali-mail /var/lib/stalwart 2>/dev/null || true
   chown -R jabali-mail:jabali-mail /etc/stalwart 2>/dev/null || true

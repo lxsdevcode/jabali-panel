@@ -43,6 +43,15 @@ profile stalwart-mail /opt/stalwart/stalwart {
   /var/lib/stalwart/            rw,
   /var/lib/stalwart/**          rwk,
 
+  # ADR-0115 — Stalwart Log tracer writes plaintext key-value logs to
+  # /var/log/stalwart/ so the jabali CrowdSec parser
+  # (install/crowdsec/stalwart/) can tail them for mail-bf detection.
+  # Without these rules the tracer silently EPERMs and the file never
+  # appears (Stalwart traps the error gracefully). The trailing **
+  # covers daily-rotated suffixes (stalwart.2026-06-04.log etc.).
+  /var/log/stalwart/            rw,
+  /var/log/stalwart/**          rw,
+
   /etc/letsencrypt/live/        r,
   /etc/letsencrypt/live/**      r,
   /etc/letsencrypt/archive/     r,
