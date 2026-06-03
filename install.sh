@@ -6282,7 +6282,14 @@ REQUEST_TIMEOUT=3000
 # ~30s while cutting LAPI load by 6x.
 UPDATE_FREQUENCY=60
 ENABLE_INTERNAL=false
-MODE=live
+# MODE — see panel Server-Settings -> CrowdSec -> Settings tab. Default
+# 'stream' = bouncer caches all decisions in nginx Lua shared_dict and
+# polls LAPI every UPDATE_FREQUENCY (60s). Cuts crowdsec CPU ~23% -> ~10%
+# on small VMs by killing the per-request SQLite hit. Up-to-60s L7 ban
+# lag, symmetric with firewall bouncer. Operator can flip to 'live' from
+# the UI for instant-block scenarios; agent's
+# security.crowdsec.bouncer.mode.apply rewrites this line in-place.
+MODE=stream
 EXCLUDE_LOCATION=
 BAN_TEMPLATE_PATH=/var/lib/crowdsec/lua/templates/ban.html
 REDIRECT_LOCATION=

@@ -1851,6 +1851,7 @@ const AlertsOverTimeCard = () => {
 const SettingsPanel = () => (
   <Space direction="vertical" size="large" style={{ width: "100%" }}>
     <SensitivityCard />
+    <BouncerModeCard />
   </Space>
 );
 
@@ -1936,6 +1937,86 @@ const SensitivityCard = () => {
           loading={save.isPending}
           disabled={level === settings.data?.crowdsec_sensitivity}
           onClick={() => save.mutate(level)}
+        >
+          Apply
+        </Button>
+      </Space>
+    </Card>
+  );
+};
+
+// BouncerModeCard — server-wide nginx-bouncer MODE toggle. Writes
+// /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf via the agent's
+// security.crowdsec.bouncer.mode.apply verb. Two postures:
+//
+//   live   per-request LAPI lookup; instant ban. Constant SQLite cgo
+//          load (~23% one core on a small VM with CAPI loaded).
+//   stream bouncer caches all decisions in Lua shared_dict, polls
+//          LAPI every 60s. ~10% sustained CPU. Up-to-60s L7 ban lag;
+//          firewall bouncer is also 60s so net L3 exposure is the
+//          same.
+const BouncerModeCard = () => {
+  const qc = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["admin-settings"],
+    queryFn: async () => {
+      const r = await apiClient.get<{ crowdsec_bouncer_mode: string }>("/admin/settings");
+      return r.data;
+    },
+  });
+  const [mode, setMode] = useState<string>("stream");
+  useEffect(() => {
+    if (settings.data?.crowdsec_bouncer_mode) setMode(settings.data.crowdsec_bouncer_mode);
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: async (newMode: string) => {
+      await apiClient.patch("/admin/settings", { crowdsec_bouncer_mode: newMode });
+    },
+    onSuccess: () => {
+      message.success("Bouncer mode applied — nginx reloaded");
+      qc.invalidateQueries({ queryKey: ["admin-settings"] });
+    },
+    onError: (e: unknown) => {
+      message.error(e instanceof Error ? e.message : "Failed to apply");
+    },
+  });
+
+  return (
+    <Card size="small" title="Bouncer mode (server-wide)" loading={settings.isLoading}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          How the nginx bouncer evaluates each request. Stream mode caches
+          decisions in nginx memory and polls CrowdSec every 60 seconds —
+          drastically lower CPU but newly-issued L7 bans take up to a minute
+          to apply. Live mode hits the local CrowdSec API per request — instant
+          but ~2x the CPU on busy hosts.
+        </Typography.Paragraph>
+
+        <Radio.Group value={mode} onChange={(e) => setMode(e.target.value)}>
+          <Space direction="vertical">
+            <Radio value="stream">
+              <Typography.Text strong>Stream (default)</Typography.Text>{" "}
+              <Typography.Text type="secondary">
+                — bouncer caches decisions, polls LAPI every 60s. ~10% CrowdSec CPU.
+                Up-to-60s lag for new L7 bans. Recommended for almost every host.
+              </Typography.Text>
+            </Radio>
+            <Radio value="live">
+              <Typography.Text strong>Live</Typography.Text>{" "}
+              <Typography.Text type="secondary">
+                — per-request LAPI lookup. Instant block. ~23% CrowdSec CPU on a
+                small VM with CAPI loaded. Use only when the 60s lag is unacceptable.
+              </Typography.Text>
+            </Radio>
+          </Space>
+        </Radio.Group>
+
+        <Button
+          type="primary"
+          loading={save.isPending}
+          disabled={mode === settings.data?.crowdsec_bouncer_mode}
+          onClick={() => save.mutate(mode)}
         >
           Apply
         </Button>

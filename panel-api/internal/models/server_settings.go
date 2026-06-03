@@ -92,6 +92,14 @@ type ServerSettings struct {
 	// admin who never visits the toggle gets pre-toggle behaviour.
 	CrowdsecSensitivity string `gorm:"column:crowdsec_sensitivity;type:varchar(16);not null;default:'balanced'" json:"crowdsec_sensitivity"`
 
+	// CrowdsecBouncerMode — server-wide nginx-bouncer MODE. Two values:
+	//   live   per-request LAPI lookup; instant block but ~23% CPU
+	//   stream in-process Lua cache, 60s poll; ~10% CPU, up-to-60s
+	//          new-ban lag (L7 only; firewall bouncer already 60s)
+	// Applied by the agent via security.crowdsec.bouncer.mode.apply.
+	// Default 'stream' matches the install.sh shipped default.
+	CrowdsecBouncerMode string `gorm:"column:crowdsec_bouncer_mode;type:varchar(16);not null;default:'stream'" json:"crowdsec_bouncer_mode"`
+
 	// M27 Step 5 — captcha remediation for crowdsec-nginx-bouncer.
 	// Secret is plaintext-at-rest (convention matches kratos_admin_secret,
 	// vapid_private_key, smtp_relay_password) but WRITE-ONLY at the API

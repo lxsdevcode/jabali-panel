@@ -131,6 +131,11 @@ type updateServerSettingsRequest struct {
 	// Applied via agent verb security.crowdsec.sensitivity.apply
 	// which writes scenario/profile/anomaly drop-ins.
 	CrowdsecSensitivity *string `json:"crowdsec_sensitivity,omitempty"`
+
+	// CrowdsecBouncerMode preset. live | stream. Applied via agent verb
+	// security.crowdsec.bouncer.mode.apply which rewrites MODE= in the
+	// nginx-bouncer conf + reloads nginx.
+	CrowdsecBouncerMode *string `json:"crowdsec_bouncer_mode,omitempty"`
 }
 
 func (h *serverSettingsHandler) update(c *gin.Context) {
@@ -165,6 +170,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevSSHUserPasswordAuth := current.SSHUserPasswordAuth
 	prevSSHSandboxMode := current.SSHSandboxMode
 	prevCrowdsecSensitivity := current.CrowdsecSensitivity
+	prevCrowdsecBouncerMode := current.CrowdsecBouncerMode
 	prevDefaultNspawnImageVersion := current.DefaultNspawnImageVersion
 
 	if req.Hostname != nil {
@@ -209,6 +215,19 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
 				"error":   "invalid_crowdsec_sensitivity",
 				"message": "must be one of: relaxed, balanced, strict",
+			})
+			return
+		}
+	}
+	if req.CrowdsecBouncerMode != nil {
+		v := strings.TrimSpace(*req.CrowdsecBouncerMode)
+		switch v {
+		case "live", "stream":
+			current.CrowdsecBouncerMode = v
+		default:
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_crowdsec_bouncer_mode",
+				"message": "must be one of: live, stream",
 			})
 			return
 		}
@@ -398,6 +417,21 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 				"level": current.CrowdsecSensitivity,
 			}); err != nil {
 				h.cfg.Log.Error("agent crowdsec sensitivity apply failed", "err", err)
+			}
+		}()
+	}
+
+	// CrowdSec nginx-bouncer mode: rewrite MODE= + reload nginx when the
+	// operator flipped the preset (or the persisted value diverged from
+	// what's on disk after a manual edit).
+	if (req.CrowdsecBouncerMode != nil || current.CrowdsecBouncerMode != prevCrowdsecBouncerMode) && h.cfg.Agent != nil {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "security.crowdsec.bouncer.mode.apply", map[string]any{
+				"mode": current.CrowdsecBouncerMode,
+			}); err != nil {
+				h.cfg.Log.Error("agent crowdsec bouncer mode apply failed", "err", err)
 			}
 		}()
 	}
