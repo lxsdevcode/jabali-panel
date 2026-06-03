@@ -257,14 +257,13 @@ func synthesizeAlerts(results map[string]json.RawMessage, errMap map[string]stri
 
 	for name, msg := range errMap {
 		if name == "nginx" {
-			// Invalid nginx config = whole-vhost outage on the box
-			// (reloads rejected, stale config served). Dedicated
-			// critical, not the generic agent-warning. Self-heal:
-			// `jabali repair --auto` (nginx-config-invalid detector).
+			// nginx unit isn't "active" — either crashed, masked, or
+			// stuck reloading. Whole-vhost outage on the box. Self-heal
+			// path: `jabali repair --auto` (nginx-service-down detector).
 			alerts = append(alerts, ServerStatusAlert{
 				Level:  "critical",
 				Kind:   "nginx",
-				Detail: "nginx config invalid — reloads rejected; run `jabali repair --auto`: " + msg,
+				Detail: "nginx service not running — run `jabali repair --auto`: " + msg,
 			})
 			continue
 		}
