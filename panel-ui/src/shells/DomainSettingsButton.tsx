@@ -81,38 +81,118 @@ export type DomainSettingsTarget = {
   nginx_rules?: NginxRule[] | null;
 };
 
-// Raw Directives editor component
+// compileRules mirrors panel-api/internal/nginxrules/Compile (Go) so the
+// Raw Directives tab can show a live preview of what the Rule Builder
+// will emit on the backend. Keep the two implementations byte-identical;
+// drift means the operator sees one thing in the UI and another in nginx.
+const compileRules = (rules: NginxRule[]): string => {
+  if (!rules || rules.length === 0) return "";
+  const quote = (v: string): string => `"${v.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+  const quoteLoc = (v: string): string =>
+    /[\s"'\\]/.test(v) ? quote(v) : v;
+  const out: string[] = [];
+  for (const r of rules) {
+    switch (r.type) {
+      case "custom_header": {
+        const always = r.always ? " always" : "";
+        out.push(`    add_header ${r.name} ${quote(r.value)}${always};`);
+        break;
+      }
+      case "rewrite": {
+        const flag = r.flag || "last";
+        out.push(`    rewrite ${r.pattern} ${quote(r.replacement)} ${flag};`);
+        break;
+      }
+      case "proxy_pass": {
+        out.push(`    location ${quoteLoc(r.path)} {`);
+        out.push(`        proxy_pass ${r.target};`);
+        out.push("        proxy_set_header Host $host;");
+        out.push("        proxy_set_header X-Real-IP $remote_addr;");
+        out.push("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;");
+        out.push("        proxy_set_header X-Forwarded-Proto $scheme;");
+        out.push("    }");
+        break;
+      }
+      case "ip_access": {
+        out.push(`    location ${quoteLoc(r.path)} {`);
+        if (r.mode === "deny_list") {
+          for (const ip of r.ips) out.push(`        deny ${ip};`);
+          out.push("        allow all;");
+        } else {
+          for (const ip of r.ips) out.push(`        allow ${ip};`);
+          out.push("        deny all;");
+        }
+        out.push("    }");
+        break;
+      }
+      case "php_setting": {
+        out.push(`    fastcgi_param PHP_VALUE ${quote(`${r.name}=${r.value}`)};`);
+        break;
+      }
+      case "max_upload_size": {
+        out.push(`    client_max_body_size ${r.size};`);
+        break;
+      }
+    }
+  }
+  return out.join("\n");
+};
+
+// Raw Directives editor component. Shows two stacked sections:
+//   1. Read-only preview of the directives compiled from the Rule Builder
+//      tab (regenerates on every render).
+//   2. Editable textarea for raw operator-authored directives that get
+//      appended after the compiled rules in the vhost.
 const RawDirectivesEditor = ({
   value,
   onChange,
+  rules,
 }: {
   value: string;
   onChange: (v: string) => void;
-}) => (
-  <div>
-    <div style={{ marginBottom: 12 }}>
-      <Typography.Text strong>Raw directives</Typography.Text>
-    </div>
-    <Input.TextArea
-      rows={14}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={`# Example:
+  rules: NginxRule[];
+}) => {
+  const compiled = compileRules(rules);
+  return (
+    <div>
+      {compiled && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 8 }}>
+            <Typography.Text strong>From Rule Builder (read-only)</Typography.Text>
+          </div>
+          <Input.TextArea
+            rows={Math.min(12, Math.max(3, compiled.split("\n").length))}
+            value={compiled}
+            readOnly
+            style={{ fontFamily: "monospace", background: "rgba(0,0,0,0.03)" }}
+          />
+          <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>
+            Edit these on the Rule Builder tab. They are auto-prepended to the raw directives below in the vhost.
+          </Typography.Text>
+        </div>
+      )}
+      <div style={{ marginBottom: 8 }}>
+        <Typography.Text strong>Raw directives</Typography.Text>
+      </div>
+      <Input.TextArea
+        rows={compiled ? 8 : 14}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={`# Example:
 rewrite ^/old$ /new permanent;
 add_header X-Frame-Options "DENY" always;`}
-      style={{
-        fontFamily: "monospace",
-      }}
-    />
-    <Typography.Text
-      type="secondary"
-      style={{ display: "block", marginTop: 8 }}
-    >
-      Restricted to safe directives (rewrite, add_header, proxy_pass, etc.).
-      Dangerous directives are blocked.
-    </Typography.Text>
-  </div>
-);
+        style={{ fontFamily: "monospace" }}
+      />
+      <Typography.Text
+        type="secondary"
+        style={{ display: "block", marginTop: 8 }}
+      >
+        Restricted to safe directives (rewrite, add_header, proxy_pass, etc.).
+        Dangerous directives are blocked.
+      </Typography.Text>
+    </div>
+  );
+};
 
 // Type-specific form renderers
 const renderCustomHeaderBody = (
@@ -785,6 +865,7 @@ export const DomainSettingsButton = ({
                 <RawDirectivesEditor
                   value={directivesValue}
                   onChange={setDirectivesValue}
+                  rules={rules}
                 />
               ),
             },

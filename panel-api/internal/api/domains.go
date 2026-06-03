@@ -676,6 +676,14 @@ func (h *domainHandler) update(c *gin.Context) {
 		domain.NginxCustomDirectives = req.NginxCustomDirectives
 	}
 
+	if req.NginxRules != nil {
+		if err := validateNginxRules(*req.NginxRules); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		domain.NginxRules = *req.NginxRules
+	}
+
 	if req.RedirectAllTo != nil {
 		trimmed := strings.TrimSpace(*req.RedirectAllTo)
 		if trimmed == "" {
