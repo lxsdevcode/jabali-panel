@@ -274,6 +274,36 @@ func RegisterSecurityCrowdSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterfac
 		c.Data(http.StatusOK, "application/json", raw)
 	})
 
+	// Top source IPs by alert count over a rolling window. Engine
+	// dashboard "Top sources" card. ?since=24h|7d|30d&limit=1..50.
+	g.GET("/alerts/top-sources", func(c *gin.Context) {
+		since := c.DefaultQuery("since", "24h")
+		switch since {
+		case "24h", "7d", "30d":
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "since must be 24h|7d|30d"})
+			return
+		}
+		limit := 10
+		if s := c.Query("limit"); s != "" {
+			if v, err := strconv.Atoi(s); err == nil && v > 0 && v <= 50 {
+				limit = v
+			}
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), csCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "security.crowdsec.alerts.top_sources", map[string]any{
+			"since": since,
+			"limit": limit,
+		})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json", raw)
+	})
+
 	g.GET("/alerts/:id", func(c *gin.Context) {
 		id, err := strconv.Atoi(c.Param("id"))
 		if err != nil || id <= 0 {
