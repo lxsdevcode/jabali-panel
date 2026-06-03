@@ -427,3 +427,7 @@ Jabali Panel is proudly supported by:
     <img src="docs/sponsors/cloudblast-light.png" alt="CloudBlast" height="42">
   </picture>
 </a>
+
+<a href="https://reeva.me">
+  <img src="docs/sponsors/reeva.png" alt="Reeva" height="42">
+</a>

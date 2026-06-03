@@ -32,7 +32,7 @@ server {
   # is set per-location (nginx fully replaces proxy_set_header when a
   # lower level defines any) so neither Bulwark nor Stalwart can gzip
   # the body — sub_filter silently no-ops on gzipped payloads.
-  sub_filter_types application/json text/html;
+  sub_filter_types application/json;
   sub_filter_once off;
   sub_filter "${PANEL_HOSTNAME}" $host;
 
