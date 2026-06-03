@@ -1054,6 +1054,85 @@ func csAlertsListHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 	return map[string]any{"items": items}, nil
 }
 
+// csAlertsTimeseriesHandler returns bucketed alert counts over a
+// rolling window. UI renders this as the "Alerts over time" chart on
+// the Security → CrowdSec engine dashboard. Bucket size is fixed per
+// window (hour for 24h, day for 7d/30d) so the response stays compact
+// regardless of alert volume.
+type csAlertsTimeseriesParams struct {
+	Since string `json:"since"` // "24h" | "7d" | "30d"
+}
+
+func csAlertsTimeseriesHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p csAlertsTimeseriesParams
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &p)
+	}
+	if p.Since == "" {
+		p.Since = "7d"
+	}
+	switch p.Since {
+	case "24h", "7d", "30d":
+	default:
+		return nil, csInvalidArg("since must be 24h|7d|30d")
+	}
+
+	out, err := runCscliJSON(ctx, "alerts", "list", "--since", p.Since, "--limit", "0")
+	if err != nil {
+		return nil, csInternal("cscli alerts list timeseries", err)
+	}
+	var raw []rawAlertEntry
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, csInternal("parse alerts json", err)
+	}
+
+	bucketSize := time.Hour
+	pointsHint := 24
+	if p.Since == "7d" {
+		bucketSize = 24 * time.Hour
+		pointsHint = 7
+	} else if p.Since == "30d" {
+		bucketSize = 24 * time.Hour
+		pointsHint = 30
+	}
+
+	buckets := make(map[time.Time]int, pointsHint)
+	for _, a := range raw {
+		ts, err := time.Parse(time.RFC3339, a.StartAt)
+		if err != nil {
+			continue
+		}
+		buckets[ts.UTC().Truncate(bucketSize)]++
+	}
+
+	now := time.Now().UTC().Truncate(bucketSize)
+	for i := 0; i < pointsHint; i++ {
+		t := now.Add(-time.Duration(pointsHint-1-i) * bucketSize)
+		if _, ok := buckets[t]; !ok {
+			buckets[t] = 0
+		}
+	}
+
+	keys := make([]time.Time, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
+
+	points := make([]map[string]any, 0, len(keys))
+	for _, k := range keys {
+		points = append(points, map[string]any{
+			"ts":    k.Format(time.RFC3339),
+			"count": buckets[k],
+		})
+	}
+	return map[string]any{
+		"buckets":     points,
+		"bucket_size": bucketSize.String(),
+		"since":       p.Since,
+	}, nil
+}
+
 type csAlertsInspectParams struct {
 	ID int `json:"id"`
 }
@@ -1643,6 +1722,7 @@ func init() {
 	Default.Register("security.crowdsec.allowlists.remove", csAllowlistsRemoveHandler)
 	Default.Register("security.crowdsec.alerts.list", csAlertsListHandler)
 	Default.Register("security.crowdsec.alerts.inspect", csAlertsInspectHandler)
+	Default.Register("security.crowdsec.alerts.timeseries", csAlertsTimeseriesHandler)
 	Default.Register("security.crowdsec.console.enroll", csConsoleEnrollHandler)
 	Default.Register("security.crowdsec.console.status", csConsoleStatusHandler)
 	Default.Register("security.crowdsec.console.enrollment", csConsoleEnrollmentHandler)
