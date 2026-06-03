@@ -339,6 +339,7 @@ export const AdminSecurityCrowdsec = () => {
         message="What is CrowdSec?"
         description="Behaviour-based intrusion-prevention. Tails server logs (nginx, sshd, panel, mail), matches them against scenarios (brute-force, scanners, web exploits, credential stuffing), and emits IP decisions. Bouncers enforce them at the firewall (UFW), at nginx (AppSec WAF with OWASP CRS rules + optional captcha challenge), and against a crowdsourced blocklist of IPs flagged by the wider community in the last hours."
       />
+      <TopSourcesCard />
       <AlertsOverTimeCard />
       <CrowdsecTestIPCard />
     </Space>
@@ -1575,6 +1576,131 @@ const RecommendedHubCard = ({
   );
 };
 
+
+// TopSourcesCard — top N source IPs (or country/AS for non-IP scopes)
+// by alert count over a 24h/7d/30d window. Mirrors the "Top attackers"
+// view from CrowdSec Console. Reads from /admin/security/crowdsec/
+// alerts/top-sources which the agent aggregates server-side so the
+// payload is bounded regardless of alert volume.
+type TopSourceRow = {
+  value: string;
+  scope: string;
+  count: number;
+  scenarios: string[];
+};
+
+const TopSourcesCard = () => {
+  const [since, setSince] = useState<"24h" | "7d" | "30d">("24h");
+  const q = useQuery({
+    queryKey: ["cs-alerts-top-sources", since],
+    queryFn: async () => {
+      const r = await apiClient.get<{
+        items: TopSourceRow[];
+        since: string;
+        limit: number;
+      }>(`/admin/security/crowdsec/alerts/top-sources?since=${since}&limit=10`);
+      return r.data;
+    },
+    refetchInterval: 60_000,
+  });
+  const rows = q.data?.items ?? [];
+  const maxCount = rows.reduce((acc, r) => (r.count > acc ? r.count : acc), 0);
+
+  return (
+    <Card
+      size="small"
+      title={
+        <Space>
+          <SafetyOutlined />
+          <span>Top source IPs</span>
+        </Space>
+      }
+      extra={
+        <Radio.Group
+          size="small"
+          value={since}
+          onChange={(e) => setSince(e.target.value)}
+          optionType="button"
+        >
+          <Radio.Button value="24h">24h</Radio.Button>
+          <Radio.Button value="7d">7d</Radio.Button>
+          <Radio.Button value="30d">30d</Radio.Button>
+        </Radio.Group>
+      }
+      loading={q.isLoading}
+    >
+      {rows.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={`No alerts in last ${since}`}
+        />
+      ) : (
+        <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          {rows.map((r, i) => {
+            const pct = maxCount > 0 ? Math.round((r.count / maxCount) * 100) : 0;
+            return (
+              <div key={`${r.scope}:${r.value}`}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                  }}
+                >
+                  <Typography.Text type="secondary" style={{ width: 24 }}>
+                    #{i + 1}
+                  </Typography.Text>
+                  <Typography.Text
+                    strong
+                    style={{ flex: "1 1 auto", fontFamily: "monospace" }}
+                    copyable={{ text: r.value }}
+                  >
+                    {r.value}
+                  </Typography.Text>
+                  <Tag style={{ marginRight: 0 }}>{r.scope}</Tag>
+                  <Tooltip
+                    title={
+                      r.scenarios.length > 0 ? (
+                        <ul style={{ paddingLeft: 16, margin: 0 }}>
+                          {r.scenarios.map((sc) => (
+                            <li key={sc}>{sc}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        "no scenario context"
+                      )
+                    }
+                  >
+                    <Tag color="blue">{r.count}</Tag>
+                  </Tooltip>
+                </div>
+                <div
+                  style={{
+                    height: 4,
+                    background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.06))",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                    marginLeft: 32,
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${pct}%`,
+                      background: "var(--ant-color-primary, #1677ff)",
+                      transition: "width 200ms ease",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </Space>
+      )}
+    </Card>
+  );
+};
 
 // AlertsOverTimeCard — engine-dashboard chart matching CrowdSec
 // Console's "Alerts over time" panel. Reads from

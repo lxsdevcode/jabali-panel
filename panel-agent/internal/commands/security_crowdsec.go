@@ -1059,6 +1059,106 @@ func csAlertsListHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 // the Security → CrowdSec engine dashboard. Bucket size is fixed per
 // window (hour for 24h, day for 7d/30d) so the response stays compact
 // regardless of alert volume.
+// csAlertsTopSourcesHandler returns the top-N source IPs (or country/
+// AS for non-IP scopes) by alert count over a rolling window. UI uses
+// this on the engine-dashboard "Top sources" card. Like timeseries,
+// this leans on cscli alerts list + server-side aggregation so the
+// payload stays compact.
+type csAlertsTopSourcesParams struct {
+	Since string `json:"since"` // "24h" | "7d" | "30d"
+	Limit int    `json:"limit"` // 1..50, default 10
+}
+
+func csAlertsTopSourcesHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p csAlertsTopSourcesParams
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &p)
+	}
+	if p.Since == "" {
+		p.Since = "24h"
+	}
+	switch p.Since {
+	case "24h", "7d", "30d":
+	default:
+		return nil, csInvalidArg("since must be 24h|7d|30d")
+	}
+	if p.Limit <= 0 {
+		p.Limit = 10
+	}
+	if p.Limit > 50 {
+		p.Limit = 50
+	}
+
+	out, err := runCscliJSON(ctx, "alerts", "list", "--since", p.Since, "--limit", "0")
+	if err != nil {
+		return nil, csInternal("cscli alerts list top-sources", err)
+	}
+	var raw []rawAlertEntry
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, csInternal("parse alerts json", err)
+	}
+
+	type agg struct {
+		Value     string
+		Scope     string
+		Count     int
+		Scenarios map[string]struct{}
+	}
+	byKey := make(map[string]*agg, 64)
+	for _, a := range raw {
+		key := a.Source.Scope + ":" + a.Source.Value
+		if a.Source.Value == "" {
+			key = a.Source.Scope + ":" + a.Source.IP
+		}
+		if e, ok := byKey[key]; ok {
+			e.Count++
+			if a.Scenario != "" {
+				e.Scenarios[a.Scenario] = struct{}{}
+			}
+			continue
+		}
+		val := a.Source.Value
+		if val == "" {
+			val = a.Source.IP
+		}
+		byKey[key] = &agg{
+			Value:     val,
+			Scope:     a.Source.Scope,
+			Count:     1,
+			Scenarios: map[string]struct{}{a.Scenario: {}},
+		}
+	}
+
+	flat := make([]*agg, 0, len(byKey))
+	for _, e := range byKey {
+		flat = append(flat, e)
+	}
+	sort.Slice(flat, func(i, j int) bool {
+		if flat[i].Count != flat[j].Count {
+			return flat[i].Count > flat[j].Count
+		}
+		return flat[i].Value < flat[j].Value
+	})
+	if len(flat) > p.Limit {
+		flat = flat[:p.Limit]
+	}
+	items := make([]map[string]any, 0, len(flat))
+	for _, e := range flat {
+		scenarios := make([]string, 0, len(e.Scenarios))
+		for s := range e.Scenarios {
+			scenarios = append(scenarios, s)
+		}
+		sort.Strings(scenarios)
+		items = append(items, map[string]any{
+			"value":     e.Value,
+			"scope":     e.Scope,
+			"count":     e.Count,
+			"scenarios": scenarios,
+		})
+	}
+	return map[string]any{"items": items, "since": p.Since, "limit": p.Limit}, nil
+}
+
 type csAlertsTimeseriesParams struct {
 	Since string `json:"since"` // "24h" | "7d" | "30d"
 }
@@ -1474,6 +1574,7 @@ func init() {
 	Default.Register("security.crowdsec.alerts.list", csAlertsListHandler)
 	Default.Register("security.crowdsec.alerts.inspect", csAlertsInspectHandler)
 	Default.Register("security.crowdsec.alerts.timeseries", csAlertsTimeseriesHandler)
+	Default.Register("security.crowdsec.alerts.top_sources", csAlertsTopSourcesHandler)
 	Default.Register("security.crowdsec.captcha.apply", csCaptchaApplyHandler)
 	Default.Register("security.crowdsec.scenarios.list", csScenariosListHandler)
 	Default.Register("security.crowdsec.profiles.get", csProfilesGetHandler)
