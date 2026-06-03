@@ -45,6 +45,8 @@ const (
 	sensPanelLoginBfPath   = "/etc/crowdsec/scenarios/jabali-panel-login-bf.yaml"
 	sensPanelRecoveryBf    = "/etc/crowdsec/scenarios/jabali-panel-recovery-bf.yaml"
 	sensPanelWhoamiProbe   = "/etc/crowdsec/scenarios/jabali-panel-whoami-probe.yaml"
+	sensWebmailBfPath      = "/etc/crowdsec/scenarios/jabali-webmail-bf.yaml"
+	sensAPITokenBfPath     = "/etc/crowdsec/scenarios/jabali-api-token-bf.yaml"
 )
 
 type sensitivityApplyParams struct {
@@ -68,7 +70,7 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 	}
 
 	// Always remove first; preset writers below opt-back-in.
-	for _, path := range []string{sensSSHBfPath, sensAnomalyPath, sensProfilePath, sensPanelLoginBfPath, sensPanelRecoveryBf, sensPanelWhoamiProbe} {
+	for _, path := range []string{sensSSHBfPath, sensAnomalyPath, sensProfilePath, sensPanelLoginBfPath, sensPanelRecoveryBf, sensPanelWhoamiProbe, sensWebmailBfPath, sensAPITokenBfPath} {
 		_ = os.Remove(path)
 	}
 
@@ -92,6 +94,12 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		if err := writeSensitivityFile(sensPanelWhoamiProbe, panelWhoamiProbeYAML(50, "60s", "30m")); err != nil {
 			return nil, csInternal("write panel-whoami-probe", err)
 		}
+		if err := writeSensitivityFile(sensWebmailBfPath, webmailBfYAML(15, "60s", "30m")); err != nil {
+			return nil, csInternal("write webmail-bf", err)
+		}
+		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(80, "60s", "30m")); err != nil {
+			return nil, csInternal("write api-token-bf", err)
+		}
 	case "strict":
 		if err := writeSensitivityFile(sensSSHBfPath, sshBfYAML(3, "30s", "24h")); err != nil {
 			return nil, csInternal("write ssh-bf scenario", err)
@@ -109,6 +117,12 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		if err := writeSensitivityFile(sensPanelWhoamiProbe, panelWhoamiProbeYAML(10, "60s", "24h")); err != nil {
 			return nil, csInternal("write panel-whoami-probe", err)
 		}
+		if err := writeSensitivityFile(sensWebmailBfPath, webmailBfYAML(3, "60s", "24h")); err != nil {
+			return nil, csInternal("write webmail-bf", err)
+		}
+		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(30, "60s", "24h")); err != nil {
+			return nil, csInternal("write api-token-bf", err)
+		}
 	case "balanced":
 		// SSH-bf, anomaly, profile fall back to upstream defaults
 		// (cleanup loop above removed any prior jabali drop-in). Panel
@@ -123,6 +137,12 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		}
 		if err := writeSensitivityFile(sensPanelWhoamiProbe, panelWhoamiProbeYAML(20, "60s", "4h")); err != nil {
 			return nil, csInternal("write panel-whoami-probe", err)
+		}
+		if err := writeSensitivityFile(sensWebmailBfPath, webmailBfYAML(5, "60s", "4h")); err != nil {
+			return nil, csInternal("write webmail-bf", err)
+		}
+		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(50, "60s", "4h")); err != nil {
+			return nil, csInternal("write api-token-bf", err)
 		}
 	}
 
@@ -286,6 +306,64 @@ blackhole: %s
 labels:
   service: jabali-panel
   type: probing
+  remediation: true
+`, leakspeed, capacity, blackhole)
+}
+
+// webmailBfYAML â burst of POST hits to the Bulwark webmail login
+// endpoint returning 4xx. Bulwark mounts auth at /webmail/auth on
+// the panel vhost. Bulwark returns 401 on bad creds, 415 on missing
+// payload (scanners often probe without bodies); both are caught
+// by the 400â499 range filter.
+func webmailBfYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/webmail-bf
+description: "Brute-force on the jabali webmail login (Bulwark POST /webmail/auth)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path startsWith '/webmail/auth' &&
+  evt.Meta.http_verb == 'POST' &&
+  evt.Meta.http_status startsWith '4'
+distinct: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+groupby: evt.Meta.source_ip
+blackhole: %s
+labels:
+  service: jabali-webmail
+  type: bruteforce
+  remediation: true
+`, leakspeed, capacity, blackhole)
+}
+
+// apiTokenBfYAML â burst of 401s on /api/v1/* indicates either
+// invalid bearer token replay (M51 user API tokens are unguessable
+// ULIDs so this is replay/scanning, not brute-force) or generic
+// surface probing without auth. Threshold is intentionally high
+// because the SPA can legitimately hit 401 once or twice on a cold
+// page load before redirecting to login; bursts of 50+/60s are not
+// legitimate. We DO NOT match on /api/v1/admin specifically because
+// admin endpoints return 404 (not 401) for non-existent paths to
+// reduce surface enumeration â the 401 path catches the rest of
+// the API surface evenly.
+func apiTokenBfYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/api-token-bf
+description: "Burst of unauthorized API hits (panel-api /api/v1/* 401)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path startsWith '/api/v1/' &&
+  evt.Meta.http_status == '401'
+distinct: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+groupby: evt.Meta.source_ip
+blackhole: %s
+labels:
+  service: jabali-panel
+  type: bruteforce
   remediation: true
 `, leakspeed, capacity, blackhole)
 }

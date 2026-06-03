@@ -6490,6 +6490,49 @@ labels:
 EOF
 )"
 
+  _write_scenario "$dir/jabali-webmail-bf.yaml" "$(cat <<'EOF'
+# Managed by jabali install.sh.
+type: leaky
+name: jabali/webmail-bf
+description: "Brute-force on the jabali webmail login (Bulwark POST /webmail/auth)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path startsWith '/webmail/auth' &&
+  evt.Meta.http_verb == 'POST' &&
+  evt.Meta.http_status startsWith '4'
+distinct: evt.Meta.source_ip
+leakspeed: 60s
+capacity: 5
+groupby: evt.Meta.source_ip
+blackhole: 4h
+labels:
+  service: jabali-webmail
+  type: bruteforce
+  remediation: true
+EOF
+)"
+
+  _write_scenario "$dir/jabali-api-token-bf.yaml" "$(cat <<'EOF'
+# Managed by jabali install.sh.
+type: leaky
+name: jabali/api-token-bf
+description: "Burst of unauthorized API hits (panel-api /api/v1/* 401)"
+filter: |
+  evt.Meta.log_type == 'http_access-log' &&
+  evt.Meta.http_path startsWith '/api/v1/' &&
+  evt.Meta.http_status == '401'
+distinct: evt.Meta.source_ip
+leakspeed: 60s
+capacity: 50
+groupby: evt.Meta.source_ip
+blackhole: 4h
+labels:
+  service: jabali-panel
+  type: bruteforce
+  remediation: true
+EOF
+)"
+
   unset -f _write_scenario
 
   if (( changed )); then
