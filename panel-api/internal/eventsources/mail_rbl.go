@@ -166,8 +166,21 @@ func reverseDNSBLQuery(ipv4, rbl string) string {
 }
 
 // dnsblProbe does the A-then-TXT lookup. listed=true when A resolves
-// to anything; detail is the first TXT record if any (best-effort —
-// some RBLs return only an A code).
+// to a real list code (127.0.0.0/24); detail is the first TXT record
+// if any. Sentinels in 127.255.255.0/24 are NOT listings — they're
+// operational signals that the query was refused or unanswerable:
+//
+//   127.255.255.252 — query syntax / typing error
+//   127.255.255.254 — query came via a public/open resolver (Spamhaus
+//                     blocks Cloudflare 1.1.1.1, Google 8.8.8.8 etc.
+//                     to protect their free-tier infrastructure)
+//   127.255.255.255 — daily query limit exceeded
+//
+// Treating any of these as a "listing" produced false-positive paging
+// every 4h on puzzle 2026-06-03 because systemd-resolved forwards via
+// DoT to Cloudflare DNS. Filter them and return not-listed; the
+// periodic re-probe corrects when the resolver cycles or a different
+// upstream answers.
 func dnsblProbe(parentCtx context.Context, host string) (listed bool, detail string) {
 	ctx, cancel := context.WithTimeout(parentCtx, mailRBLQueryTimeout)
 	defer cancel()
@@ -180,7 +193,15 @@ func dnsblProbe(parentCtx context.Context, host string) (listed bool, detail str
 		// query-error rate is a follow-up.
 		return false, ""
 	}
-	if len(addrs) == 0 {
+	realCode := false
+	for _, a := range addrs {
+		if isRBLSentinel(a) {
+			continue
+		}
+		realCode = true
+		break
+	}
+	if !realCode {
 		return false, ""
 	}
 	// TXT detail: best-effort, separate timeout window.
@@ -190,6 +211,13 @@ func dnsblProbe(parentCtx context.Context, host string) (listed bool, detail str
 		return true, txts[0]
 	}
 	return true, ""
+}
+
+// isRBLSentinel reports whether an A-record answer is one of the
+// DNSBL operational sentinels rather than a real listing code. The
+// 127.255.255.0/24 convention is shared by Spamhaus / SORBS / Surbl.
+func isRBLSentinel(addr string) bool {
+	return strings.HasPrefix(addr, "127.255.255.")
 }
 
 func isIPv4(s string) bool {
