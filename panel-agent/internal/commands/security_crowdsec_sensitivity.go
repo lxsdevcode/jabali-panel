@@ -162,7 +162,7 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		// SSH-bf, anomaly, profile fall back to upstream defaults
 		// (cleanup loop above removed any prior jabali drop-in). Panel
 		// scenarios have no upstream equivalent, so balanced still
-		// writes them â just at the conservative threshold matching
+		// writes them — just at the conservative threshold matching
 		// what install.sh seeds on fresh hosts.
 		if err := writeSensitivityFile(sensPanelLoginBfPath, panelLoginBfYAML(5, "60s", "4h")); err != nil {
 			return nil, csInternal("write panel-login-bf", err)
@@ -281,13 +281,13 @@ on_success: break
 `, duration)
 }
 
-// panelLoginBfYAML â burst of POST hits to the Kratos login submit
+// panelLoginBfYAML — burst of POST hits to the Kratos login submit
 // endpoint returning 4xx. The SPA mounts Kratos at /.ory so the real
 // path observed in the panel access log is /.ory/self-service/login.
 // Matching .Path with `contains` keeps the rule resilient to Kratos's
 // flow-id query strings (?flow=<id>) and the legacy non-prefixed path.
 func panelLoginBfYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/panel-login-bf
 description: "Brute-force on the jabali panel login (Kratos /self-service/login)"
@@ -308,12 +308,12 @@ labels:
 `, leakspeed, capacity, blackhole)
 }
 
-// panelRecoveryBfYAML â password-recovery flow abuse. Submitting a
+// panelRecoveryBfYAML — password-recovery flow abuse. Submitting a
 // recovery code (POST /self-service/recovery) repeatedly with a wrong
 // code is a way to brute-force the OTP. Recovery codes have lower
 // entropy than passwords so the threshold is tighter than login-bf.
 func panelRecoveryBfYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/panel-recovery-bf
 description: "Brute-force on the jabali panel recovery flow (Kratos /self-service/recovery)"
@@ -334,13 +334,13 @@ labels:
 `, leakspeed, capacity, blackhole)
 }
 
-// panelWhoamiProbeYAML â unauth bursts on /sessions/whoami. The SPA
+// panelWhoamiProbeYAML — unauth bursts on /sessions/whoami. The SPA
 // polls whoami once per app load to bootstrap the session; bursts of
 // 401s from one IP are session-token guessing or unauthenticated
 // probing. Threshold is higher than login-bf because legitimate
 // page reloads from a logged-out browser still hit this path.
 func panelWhoamiProbeYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/panel-whoami-probe
 description: "Unauth whoami burst (session probing on Kratos /sessions/whoami)"
@@ -360,13 +360,13 @@ labels:
 `, leakspeed, capacity, blackhole)
 }
 
-// webmailBfYAML â burst of POST hits to the Bulwark webmail login
+// webmailBfYAML — burst of POST hits to the Bulwark webmail login
 // endpoint returning 4xx. Bulwark mounts auth at /webmail/auth on
 // the panel vhost. Bulwark returns 401 on bad creds, 415 on missing
 // payload (scanners often probe without bodies); both are caught
 // by the 400â499 range filter.
 func webmailBfYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/webmail-bf
 description: "Brute-force on the jabali webmail login (Bulwark POST /webmail/auth)"
@@ -387,7 +387,7 @@ labels:
 `, leakspeed, capacity, blackhole)
 }
 
-// apiTokenBfYAML â burst of 401s on /api/v1/* indicates either
+// apiTokenBfYAML — burst of 401s on /api/v1/* indicates either
 // invalid bearer token replay (M51 user API tokens are unguessable
 // ULIDs so this is replay/scanning, not brute-force) or generic
 // surface probing without auth. Threshold is intentionally high
@@ -395,10 +395,10 @@ labels:
 // page load before redirecting to login; bursts of 50+/60s are not
 // legitimate. We DO NOT match on /api/v1/admin specifically because
 // admin endpoints return 404 (not 401) for non-existent paths to
-// reduce surface enumeration â the 401 path catches the rest of
+// reduce surface enumeration — the 401 path catches the rest of
 // the API surface evenly.
 func apiTokenBfYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/api-token-bf
 description: "Burst of unauthorized API hits (panel-api /api/v1/* 401)"
@@ -427,7 +427,7 @@ labels:
 // per-preset capacities + blackhole windows.
 
 func stalwartAuthBfYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/stalwart-auth-bf
 description: "Detect authentication brute force attempts on Stalwart mail server"
@@ -446,7 +446,7 @@ labels:
 }
 
 func stalwartUserEnumYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/stalwart-user-enum
 description: "Detect user enumeration attempts on Stalwart mail server"
@@ -466,7 +466,7 @@ labels:
 }
 
 func stalwartSMTPScanYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/stalwart-smtp-scan
 description: "Detect SMTP scanning and probing on Stalwart mail server"
@@ -485,7 +485,7 @@ labels:
 }
 
 func stalwartRateLimitYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/stalwart-rate-limit
 description: "Detect rate-limit abuse on Stalwart mail server"
@@ -504,7 +504,7 @@ labels:
 }
 
 func stalwartHTTPScanYAML(capacity int, leakspeed, blackhole string) string {
-	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+	return fmt.Sprintf(`# Managed by jabali — Security → CrowdSec → Sensitivity. Do not hand-edit.
 type: leaky
 name: jabali/stalwart-http-scan
 description: "Detect HTTP vulnerability scanning on Stalwart admin/management endpoints"

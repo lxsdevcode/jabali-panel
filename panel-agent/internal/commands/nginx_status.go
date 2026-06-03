@@ -1,6 +1,6 @@
 package commands
 
-// nginx.status â cheap nginx health check for the Server Status
+// nginx.status — cheap nginx health check for the Server Status
 // dashboard poller. Returns whether the systemd service is active and
 // its main PID. Unlike nginx.test, this does NOT shell out to
 // `nginx -t` and does NOT compile any config; it just asks systemd
@@ -13,10 +13,10 @@ package commands
 //   with the CrowdSec AppSec acquis loaded across many vhosts, takes
 //   ~19s at >60% CPU because Coraza compiles the full CRS rule set
 //   per-vhost during parse. The dashboard does not need a syntactic
-//   verdict on the live config â it needs âis nginx running and
+//   verdict on the live config — it needs âis nginx running and
 //   serving trafficâ. systemctl is-active answers that for free.
 //
-// nginx.test still exists and is still the gate for nginx.reload â
+// nginx.test still exists and is still the gate for nginx.reload —
 // it is correct + necessary there because a broken config silently
 // keeps the old worker running on SIGHUP, and we want a hard reject
 // at the reload boundary instead of a stale-config surprise.
@@ -75,7 +75,7 @@ func readNginxSystemdState(ctx context.Context) string {
 }
 
 // readNginxMainPID asks systemd for nginx.service MainPID. Returns 0
-// when the service is inactive or the lookup fails â callers should
+// when the service is inactive or the lookup fails — callers should
 // treat 0 as "no live worker", not as an error.
 func readNginxMainPID(ctx context.Context) int {
 	cmd := exec.CommandContext(ctx, "systemctl", "show", "-p", "MainPID", "--value", "nginx")
