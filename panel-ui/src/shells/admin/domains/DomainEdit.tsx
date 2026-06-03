@@ -8,7 +8,6 @@ import {
   Button,
   Card,
   Form,
-  Input,
   Space,
   Spin,
   Switch,
@@ -27,6 +26,7 @@ import { DomainIPACLSection } from "./DomainIPACLSection";
 import { DomainDirectoryPrivacySection } from "./DomainDirectoryPrivacySection";
 import { DomainListenIPSection } from "./DomainListenIPSection";
 import { DomainMailboxesSection } from "./DomainMailboxesSection";
+import { DomainSettingsButton } from "../../DomainSettingsButton";
 import { DomainSSLSection } from "./DomainSSLSection";
 import { DomainSkipAutoSANToggle } from "./DomainSkipAutoSANToggle";
 import { DomainCacheSection } from "./DomainCacheSection";
@@ -35,7 +35,6 @@ import { DomainDeliverabilitySection } from "./DomainDeliverabilitySection";
 
 export type DomainEditInput = {
   is_enabled?: boolean;
-  nginx_custom_directives?: string;
 };
 
 export const DomainEdit = () => {
@@ -56,7 +55,6 @@ export const DomainEdit = () => {
     if (domain) {
       form.setFieldsValue({
         is_enabled: domain.is_enabled,
-        nginx_custom_directives: domain.nginx_custom_directives,
       });
     }
   }, [domain, form]);
@@ -113,12 +111,8 @@ export const DomainEdit = () => {
         <Typography.Text>Enabled</Typography.Text>
       </div>
 
-      <Form.Item
-        label="Nginx Custom Directives"
-        name="nginx_custom_directives"
-        tooltip="Additional nginx configuration for this domain"
-      >
-        <Input.TextArea rows={6} />
+      <Form.Item label="Nginx Custom Directives" tooltip="Rule Builder + Raw Directives editor — opens a modal that saves independently of this form.">
+        <DomainSettingsButton domain={domain} />
       </Form.Item>
 
       <Form.Item>
