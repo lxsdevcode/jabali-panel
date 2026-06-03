@@ -158,7 +158,7 @@ export const AdminSecurityCrowdsec = () => {
     "decisions",
     "allowlist",
     "alerts",
-    "profiles",
+    "captcha",
     "appsec",
     "settings",
     "blocklists",
@@ -272,7 +272,7 @@ export const AdminSecurityCrowdsec = () => {
           { key: "decisions", label: "Active decisions", children: decisionsPanel },
           { key: "allowlist", label: "Allowlist", children: <AllowlistsCard /> },
           { key: "alerts", label: "Alerts", children: <AlertsCard /> },
-          { key: "profiles", label: "Per-scenario", children: <ProfilesCard /> },
+          { key: "captcha", label: "Captcha", children: <CaptchaPanel /> },
           { key: "appsec", label: "Block Country", children: <AppSecGeoblockCard /> },
           { key: "settings", label: "Settings", children: <SettingsPanel /> },
           { key: "blocklists", label: "Blocklists", children: <BlocklistsCard /> },
@@ -1845,14 +1845,25 @@ const AlertsOverTimeCard = () => {
 
 // SettingsPanel — operator-facing CrowdSec configuration tab.
 // Bundles the sensitivity preset (server-wide ssh-bf + AppSec anomaly
-// + ban-duration knobs) and the captcha-remediation credentials into
-// one place so operators don't hunt across sub-tabs for "what knobs
-// can I twist". Other CrowdSec sub-tabs are observability / per-
-// scenario overrides, which belong elsewhere.
+// + ban-duration knobs). Captcha config moved to its own tab
+// (co-located with per-scenario picker) because the two are
+// procedurally linked.
 const SettingsPanel = () => (
   <Space direction="vertical" size="large" style={{ width: "100%" }}>
     <SensitivityCard />
+  </Space>
+);
+
+// CaptchaPanel — stacks the captcha credentials card on top of the
+// per-scenario remediation override picker. Co-located because the
+// per-scenario "Captcha" action is grey-disabled until the
+// credentials card has a provider + site/secret key configured;
+// keeping them on separate tabs forced operators to bounce between
+// Settings and Per-scenario when wiring captcha for the first time.
+const CaptchaPanel = () => (
+  <Space direction="vertical" size="large" style={{ width: "100%" }}>
     <CaptchaRemediationCard />
+    <ProfilesCard />
   </Space>
 );
 
