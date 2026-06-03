@@ -2498,15 +2498,27 @@ install_pdns_recursor() {
     # resolver reachable on the LXC bridge).
     _rec_recurse_upstream="$DNS_FORWARDER"
   else
-    # Default since 2026-06: chain through the systemd-resolved stub
-    # at 127.0.0.53. The stub holds the operator-configurable upstream
-    # list in /etc/systemd/resolved.conf.d/jabali.conf and does DoT
-    # (DNSOverTLS=opportunistic) so outbound queries traverse TCP/853
-    # — reachable on hosts where the carrier blocks UDP/53 egress.
-    # Before this change recursor.conf hardcoded 1.1.1.1;9.9.9.9 over
-    # UDP, which silently broke every recursive query on
-    # UDP/53-blocked LXC images (incident 2026-06-01 on 10.0.3.14).
-    _rec_recurse_upstream="127.0.0.53"
+    # Default: forward direct to public DNS over UDP/853.
+    #
+    # An earlier attempt (2026-06-01) routed recursor through the
+    # resolved stub at 127.0.0.53 to get DoT/853 for free on
+    # UDP/53-blocked LXC carriers. That works only when resolved's
+    # upstream is a real public resolver. On every standard install
+    # the zz-jabali-recursor.conf drop-in below resets resolved's
+    # DNS to 127.0.0.1 (= the recursor), so chaining recursor back
+    # into 127.0.0.53 closes a fatal loop:
+    #
+    #   client -> resolved (127.0.0.53)
+    #     -> upstream=127.0.0.1 (recursor)
+    #       -> forward-zones-recurse=.=127.0.0.53 (resolved)
+    #         -> ... timeout -> Probe 1 dies -> installer aborts
+    #
+    # Caught on a fresh Debian 13 host (GH-126, 2026-06-03).
+    #
+    # For carriers that genuinely block UDP/53 egress, the escape
+    # hatch stays the JABALI_DNS_FORWARDER env var (see ADR-0047):
+    # operator points it at a reachable TCP-capable resolver.
+    _rec_recurse_upstream="1.1.1.1;9.9.9.9"
   fi
   cat > "$rec_conf_new" <<RECCONF
 # Managed by jabali-panel install.sh (M6.3). Hand edits will be overwritten
