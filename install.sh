@@ -9983,6 +9983,69 @@ ensure_crowdsec_bouncer_poll_frequency() {
   return 0
 }
 
+# install_cloudflare_realip — drop /etc/nginx/conf.d/jabali-cloudflare-realip.conf
+# so nginx rewrites $remote_addr from the CF-Connecting-IP header when the
+# request arrives from a Cloudflare proxy range. Without it, every
+# Cloudflare-fronted hit is logged + banned + counted against the proxy
+# IP (172.6x.x.x, 162.158.x.x, etc) instead of the real client, which
+# defeats CrowdSec scenario matching for any site behind CF.
+#
+# Idempotent: fetches the current CF IPv4 + IPv6 ranges from
+# https://www.cloudflare.com/ips-v4 / ips-v6 (60s timeout, ~1KB each),
+# falls back to a hard-coded 2026-Q2 snapshot if both fetches fail.
+# Write-on-diff via cmp; nginx -t + reload only when the file changed.
+#
+# Safe on hosts NOT behind Cloudflare: real_ip_header CF-Connecting-IP
+# only fires when set_real_ip_from matches the proxy, so direct hits
+# (any IP outside the CF ranges) pass through unchanged.
+install_cloudflare_realip() {
+  local cf_v4 cf_v6
+  cf_v4="$(curl -fsSL --max-time 10 https://www.cloudflare.com/ips-v4 2>/dev/null || true)"
+  cf_v6="$(curl -fsSL --max-time 10 https://www.cloudflare.com/ips-v6 2>/dev/null || true)"
+
+  # Hard-coded fallback — current as of 2026-Q2. Used if both fetches
+  # failed (offline install / CF outage). Operator can re-run
+  # `jabali update` later to pull the live list.
+  if [[ -z "$cf_v4" ]]; then
+    cf_v4=$'173.245.48.0/20\n103.21.244.0/22\n103.22.200.0/22\n103.31.4.0/22\n141.101.64.0/18\n108.162.192.0/18\n190.93.240.0/20\n188.114.96.0/20\n197.234.240.0/22\n198.41.128.0/17\n162.158.0.0/15\n104.16.0.0/13\n104.24.0.0/14\n172.64.0.0/13\n131.0.72.0/22'
+    _warn "cloudflare ips-v4 fetch failed; using 2026-Q2 fallback ranges"
+  fi
+  if [[ -z "$cf_v6" ]]; then
+    cf_v6=$'2400:cb00::/32\n2606:4700::/32\n2803:f800::/32\n2405:b500::/32\n2405:8100::/32\n2a06:98c0::/29\n2c0f:f248::/32'
+    _warn "cloudflare ips-v6 fetch failed; using 2026-Q2 fallback ranges"
+  fi
+
+  local conf_file=/etc/nginx/conf.d/jabali-cloudflare-realip.conf
+  local tmp
+  tmp="$(mktemp --tmpdir jabali-cf-realip.XXXXXX)"
+  {
+    printf '# Managed by jabali install.sh — Cloudflare real-IP rewrite.\n'
+    printf '# Refreshed on every `jabali update` (CF ranges change ~yearly).\n'
+    printf '# Safe on hosts NOT behind Cloudflare: real_ip_header only fires\n'
+    printf '# when the request source matches a set_real_ip_from prefix.\n'
+    while IFS= read -r cidr; do
+      [[ -n "$cidr" ]] && printf 'set_real_ip_from %s;\n' "$cidr"
+    done <<<"$cf_v4"
+    while IFS= read -r cidr; do
+      [[ -n "$cidr" ]] && printf 'set_real_ip_from %s;\n' "$cidr"
+    done <<<"$cf_v6"
+    printf 'real_ip_header CF-Connecting-IP;\n'
+    printf 'real_ip_recursive on;\n'
+  } >"$tmp"
+
+  if [[ ! -f "$conf_file" ]] || ! cmp -s "$tmp" "$conf_file"; then
+    _log "writing $conf_file (Cloudflare real-IP rewrite)"
+    install -m 0644 -o root -g root "$tmp" "$conf_file"
+    if nginx -t >/dev/null 2>&1; then
+      systemctl reload nginx 2>/dev/null || _warn "nginx reload failed after cloudflare-realip update"
+      _ok "nginx Cloudflare real-IP rewrite installed/refreshed"
+    else
+      _warn "nginx -t failed after cloudflare-realip write — check $conf_file"
+    fi
+  fi
+  rm -f "$tmp"
+}
+
 
 # Heal the /etc/jabali-panel directory mode on every `jabali update`.
 #
@@ -10246,6 +10309,15 @@ EOF
   # sustained LAPI CPU when CAPI has many decisions loaded).
   if declare -f ensure_crowdsec_bouncer_poll_frequency >/dev/null 2>&1; then
     ensure_crowdsec_bouncer_poll_frequency
+  fi
+
+  # Cloudflare real-IP rewrite. Without this, every CF-fronted hit logs
+  # the proxy IP (172.6x.x.x, etc) as the client — breaks per-IP rate
+  # limits, CrowdSec scenario matching, geoblock decisions, and the
+  # CrowdSec Top sources card. Fetches current CF ranges (with fallback
+  # to a Q2-2026 snapshot if offline).
+  if declare -f install_cloudflare_realip >/dev/null 2>&1; then
+    install_cloudflare_realip
   fi
 
   # Kratos↔MariaDB unix socket (M25.1) — ensure jabali user is in
