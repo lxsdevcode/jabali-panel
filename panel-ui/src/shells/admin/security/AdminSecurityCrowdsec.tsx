@@ -31,20 +31,15 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import type { ReactNode } from "react";
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
 import { useSearchParams } from "react-router";
 import {
   ApiOutlined,
-  AppstoreOutlined,
-  BellOutlined,
-  CheckCircleOutlined,
-  FileTextOutlined,
   SafetyOutlined,
   ThunderboltOutlined,
-  WarningOutlined,
   DeleteOutlined,
   ReloadOutlined,
 } from "@icons";
@@ -120,73 +115,8 @@ type AddDecisionFormValues = {
 
 const fmtTime = (s?: string): string => (s ? new Date(s).toLocaleString() : "—");
 
-// MetricTile renders one CrowdSec metric as an icon-led panel inside a
-// responsive grid Col. Tint is the icon background only — text stays
-// theme-default so light/dark themes both render correctly. `value`
-// accepts a number (formatted via toLocaleString at 22px) OR a ReactNode
-// (rendered raw at 16px so chips/tags fit the same tile shape).
-function MetricTile({
-  icon,
-  tint,
-  label,
-  value,
-  hint,
-}: {
-  icon: ReactNode;
-  tint: string;
-  label: string;
-  value: number | ReactNode;
-  hint: string;
-}) {
-  const isNumber = typeof value === "number";
-  return (
-    <Col flex="1 1 200px" style={{ minWidth: 180 }}>
-      <Tooltip title={hint}>
-        <Card
-          size="small"
-          hoverable
-          styles={{ body: { padding: 12 } }}
-          style={{ height: "100%" }}
-        >
-          <Space size={12} align="center" style={{ width: "100%" }}>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 8,
-                background: `${tint}22`,
-                color: tint,
-                fontSize: 22,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              {icon}
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-                {label}
-              </Typography.Text>
-              {isNumber ? (
-                <Typography.Text strong style={{ fontSize: 22, lineHeight: 1.1 }}>
-                  {(value as number).toLocaleString()}
-                </Typography.Text>
-              ) : (
-                <div style={{ fontSize: 14, lineHeight: 1.2 }}>{value}</div>
-              )}
-            </div>
-          </Space>
-        </Card>
-      </Tooltip>
-    </Col>
-  );
-}
 
 export const AdminSecurityCrowdsec = () => {
-  const status = useCrowdsecStatus();
-  const metrics = useCrowdsecMetrics();
   const [scope, setScope] = useState<CrowdsecScope | "all">("all");
   const decisions = useCrowdsecDecisions(scope === "all" ? undefined : scope);
   const hub = useCrowdsecHub();
@@ -251,87 +181,6 @@ export const AdminSecurityCrowdsec = () => {
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <EngineIdentityCard />
       <RemediationComponentsCard />
-      {metrics.isLoading ? (
-        <Typography.Text type="secondary">Loading…</Typography.Text>
-      ) : (
-        <Row gutter={[12, 12]}>
-          <MetricTile
-            icon={<CheckCircleOutlined />}
-            tint={status.data?.running ? "#52c41a" : "#cf1322"}
-            label="Service"
-            value={
-              status.data?.running ? (
-                <Tag color="green">running</Tag>
-              ) : (
-                <Tag color="red">down</Tag>
-              )
-            }
-            hint="crowdsec.service systemd unit state"
-          />
-          <MetricTile
-            icon={<ApiOutlined />}
-            tint={status.data?.lapi_reachable ? "#52c41a" : "#cf1322"}
-            label="LAPI"
-            value={
-              status.data?.lapi_reachable ? (
-                <Tag color="green">reachable</Tag>
-              ) : (
-                <Tag color="red">unreachable</Tag>
-              )
-            }
-            hint="Local API socket reachable from panel-agent"
-          />
-          <MetricTile
-            icon={<FileTextOutlined />}
-            tint="#1677ff"
-            label="Parsed events"
-            value={metrics.data?.parsed ?? 0}
-            hint="Log lines CrowdSec successfully parsed"
-          />
-          <MetricTile
-            icon={<WarningOutlined />}
-            tint="#faad14"
-            label="Unparsed"
-            value={metrics.data?.unparsed ?? 0}
-            hint="Lines no parser matched (gaps in coverage)"
-          />
-          <MetricTile
-            icon={<ThunderboltOutlined />}
-            tint="#722ed1"
-            label="Buckets fired"
-            value={metrics.data?.buckets ?? 0}
-            hint="Scenario thresholds tripped (suspicious patterns)"
-          />
-          <MetricTile
-            icon={<SafetyOutlined />}
-            tint="#cf1322"
-            label="Active decisions"
-            value={metrics.data?.decisions_active ?? 0}
-            hint="IPs currently banned / under captcha"
-          />
-          <MetricTile
-            icon={<BellOutlined />}
-            tint="#13c2c2"
-            label="Total alerts"
-            value={metrics.data?.alerts_total ?? 0}
-            hint="All-time alerts since CrowdSec started"
-          />
-          {status.data?.version && (
-            <MetricTile
-              icon={<AppstoreOutlined />}
-              tint="#1677ff"
-              label="Version"
-              value={
-                <Typography.Text code style={{ fontSize: 12 }}>
-                  {status.data.version}
-                </Typography.Text>
-              }
-              hint="Installed CrowdSec engine version"
-            />
-          )}
-        </Row>
-      )}
-
       <Alert
         type="info"
         showIcon
@@ -1677,6 +1526,7 @@ const RemediationComponentsCard = () => {
 // last_heartbeat fields) and server-settings public IP.
 const EngineIdentityCard = () => {
   const status = useCrowdsecStatus();
+  const metrics = useCrowdsecMetrics();
   const settings = useQuery({
     queryKey: ["admin-settings-public-ip"],
     queryFn: async () => {
@@ -1767,6 +1617,69 @@ const EngineIdentityCard = () => {
               <div style={{ fontSize: 13 }}>{startedAt}</div>
             </Col>
           )}
+        </Row>
+
+        <Row gutter={[16, 8]} style={{ marginTop: 4 }}>
+          <Col xs={12} md={8} lg={4}>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              Parsed events
+            </Typography.Text>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>
+              {(metrics.data?.parsed ?? 0).toLocaleString()}
+            </div>
+          </Col>
+          <Col xs={12} md={8} lg={4}>
+            <Tooltip title="Lines no parser matched (gaps in coverage)">
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Unparsed
+              </Typography.Text>
+            </Tooltip>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: (metrics.data?.unparsed ?? 0) > 0 ? "#faad14" : undefined,
+              }}
+            >
+              {(metrics.data?.unparsed ?? 0).toLocaleString()}
+            </div>
+          </Col>
+          <Col xs={12} md={8} lg={4}>
+            <Tooltip title="Scenario thresholds tripped (suspicious patterns matched)">
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Buckets fired
+              </Typography.Text>
+            </Tooltip>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#722ed1" }}>
+              {(metrics.data?.buckets ?? 0).toLocaleString()}
+            </div>
+          </Col>
+          <Col xs={12} md={8} lg={4}>
+            <Tooltip title="IPs currently banned / under captcha">
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Active decisions
+              </Typography.Text>
+            </Tooltip>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: (metrics.data?.decisions_active ?? 0) > 0 ? "#cf1322" : undefined,
+              }}
+            >
+              {(metrics.data?.decisions_active ?? 0).toLocaleString()}
+            </div>
+          </Col>
+          <Col xs={12} md={8} lg={4}>
+            <Tooltip title="All-time alerts since CrowdSec started">
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Total alerts
+              </Typography.Text>
+            </Tooltip>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#13c2c2" }}>
+              {(metrics.data?.alerts_total ?? 0).toLocaleString()}
+            </div>
+          </Col>
         </Row>
       </Space>
     </Card>
