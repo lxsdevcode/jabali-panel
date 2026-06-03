@@ -25,7 +25,13 @@ filter: "evt.Line.Labels.type == 'stalwart'"
 onsuccess: next_stage
 nodes:
   - grok:
-      pattern: '^%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:log_level} %{DATA:message} \(%{DATA:event}\) listenerId = "?%{DATA:listenerId}"?, localPort = %{INT:localPort}, remoteIp = "?%{IP:remoteIp}"?, remotePort = %{INT:remotePort}(?:, %{GREEDYDATA:extra})?$'
+      # Optional syslog-style prefix: journal source (jabali-stalwart
+      # acquis -> systemd journalctl) hands lines like
+      #   `Jun 03 23:29:26 puzzle.example stalwart[1234]: <message>`
+      # to the parser; file-source / cscli explain hand the structured
+      # message directly. The `(?:[A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+:\s+)?`
+      # head eats the optional prefix so the regex matches both shapes.
+      pattern: '^(?:[A-Z][a-z]{2}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\S+\s+\S+:\s+)?%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:log_level} %{DATA:message} \(%{DATA:event}\) listenerId = "?%{DATA:listenerId}"?, localPort = %{INT:localPort}, remoteIp = "?%{IP:remoteIp}"?, remotePort = %{INT:remotePort}(?:, %{GREEDYDATA:extra})?$'
       apply_on: Line.Raw
 
 statics:
