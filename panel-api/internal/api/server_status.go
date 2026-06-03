@@ -48,8 +48,9 @@ func RegisterAdminServerStatusRoutes(g *gin.RouterGroup, cfg AdminServerStatusHa
 type adminServerStatusHandler struct{ cfg AdminServerStatusHandlerConfig }
 
 const (
-	subCallTimeout = 5 * time.Second
-	maxInFlight    = 8
+	subCallTimeout   = 5 * time.Second
+	nginxTestTimeout = 45 * time.Second
+	maxInFlight      = 8
 )
 
 // ServerStatusEnvelope is the shape returned to /admin/server-status. Sub-
@@ -111,9 +112,9 @@ func (h *adminServerStatusHandler) get(c *gin.Context) {
 		errMap  = map[string]string{}
 	)
 
-	call := func(name, cmd string, params any) {
+	call := func(name, cmd string, params any, timeout time.Duration) {
 		g.Go(func() error {
-			subCtx, cancel := context.WithTimeout(gctx, subCallTimeout)
+			subCtx, cancel := context.WithTimeout(gctx, timeout)
 			defer cancel()
 			raw, err := h.cfg.Agent.Call(subCtx, cmd, params)
 			mu.Lock()
@@ -131,14 +132,18 @@ func (h *adminServerStatusHandler) get(c *gin.Context) {
 		})
 	}
 
-	call("host", "system.info", nil)
-	call("cpu", "system.cpu_usage", nil)
-	call("network", "system.network", nil)
-	call("processes", "system.processes", nil)
-	call("services", "system.service_details", nil)
-	call("user_slices", "system.user_slices", nil)
-	call("software", "system.software", nil)
-	call("nginx", "nginx.test", nil)
+	call("host", "system.info", nil, subCallTimeout)
+	call("cpu", "system.cpu_usage", nil, subCallTimeout)
+	call("network", "system.network", nil, subCallTimeout)
+	call("processes", "system.processes", nil, subCallTimeout)
+	call("services", "system.service_details", nil, subCallTimeout)
+	call("user_slices", "system.user_slices", nil, subCallTimeout)
+	call("software", "system.software", nil, subCallTimeout)
+	// nginx.test runs `nginx -t` which can take 15-30s on hosts with many
+	// vhosts + AppSec rule compile (CRS + vpatch = 200+ rules). Bumped from
+	// the 5s default so the health check doesn't false-alarm with
+	// "i/o timeout" on every server-status refresh.
+	call("nginx", "nginx.test", nil, nginxTestTimeout)
 
 	// M31.1 — Redis queue depths run in parallel with the agent calls.
 	// Three XLEN/XPending pipelines, each with its own short timeout so
