@@ -6401,17 +6401,31 @@ install_crowdsec_jabali_stalwart_scenarios() {
   install -d -m 0755 /etc/crowdsec/acquis.d
 
   local changed=0 f base dst
+  # parser + acquis: write-on-diff (jabali-owned, never touched at runtime).
   for f in "$src"/parsers/s01-parse/jabali-stalwart-*.yaml \
-           "$src"/scenarios/jabali-stalwart-*.yaml \
            "$src"/acquis.d/jabali-stalwart*.yaml; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f")"
     case "$f" in
-      */parsers/*)  dst="/etc/crowdsec/parsers/s01-parse/$base" ;;
-      */scenarios/*) dst="/etc/crowdsec/scenarios/$base" ;;
+      */parsers/*) dst="/etc/crowdsec/parsers/s01-parse/$base" ;;
       */acquis.d/*) dst="/etc/crowdsec/acquis.d/$base" ;;
     esac
     if [[ ! -f "$dst" ]] || ! cmp -s "$f" "$dst"; then
+      install -m 0644 -o root -g root "$f" "$dst"
+      changed=1
+      _log "wrote $dst"
+    fi
+  done
+  # scenarios: SEED-ONLY. The panel-agent's
+  # security.crowdsec.sensitivity.apply verb rewrites these at runtime
+  # to apply relaxed/strict thresholds; write-on-diff here would clobber
+  # the operator's preset on every `jabali update`. Create only when
+  # missing.
+  for f in "$src"/scenarios/jabali-stalwart-*.yaml; do
+    [[ -e "$f" ]] || continue
+    base="$(basename "$f")"
+    dst="/etc/crowdsec/scenarios/$base"
+    if [[ ! -f "$dst" ]]; then
       install -m 0644 -o root -g root "$f" "$dst"
       changed=1
       _log "wrote $dst"
@@ -6451,8 +6465,13 @@ install_crowdsec_jabali_scenarios() {
   local changed=0
 
   _write_scenario() {
+    # Seed-only: the panel-agent's security.crowdsec.sensitivity.apply
+    # verb is the runtime owner of these files (rewrites them with
+    # per-preset capacities). install.sh must not clobber an operator-
+    # tuned preset on every `jabali update`, so this helper only
+    # writes the file when it doesn't already exist.
     local path="$1" body="$2"
-    if [[ ! -f "$path" ]] || ! cmp -s <(printf '%s' "$body") "$path"; then
+    if [[ ! -f "$path" ]]; then
       local tmp
       tmp="$(mktemp --tmpdir jabali-cs-scenario.XXXXXX)"
       printf '%s' "$body" >"$tmp"

@@ -47,6 +47,11 @@ const (
 	sensPanelWhoamiProbe   = "/etc/crowdsec/scenarios/jabali-panel-whoami-probe.yaml"
 	sensWebmailBfPath      = "/etc/crowdsec/scenarios/jabali-webmail-bf.yaml"
 	sensAPITokenBfPath     = "/etc/crowdsec/scenarios/jabali-api-token-bf.yaml"
+	sensStalwartAuthBf     = "/etc/crowdsec/scenarios/jabali-stalwart-auth-bf.yaml"
+	sensStalwartUserEnum   = "/etc/crowdsec/scenarios/jabali-stalwart-user-enum.yaml"
+	sensStalwartSMTPScan   = "/etc/crowdsec/scenarios/jabali-stalwart-smtp-scan.yaml"
+	sensStalwartRateLimit  = "/etc/crowdsec/scenarios/jabali-stalwart-rate-limit.yaml"
+	sensStalwartHTTPScan   = "/etc/crowdsec/scenarios/jabali-stalwart-http-scan.yaml"
 )
 
 type sensitivityApplyParams struct {
@@ -70,7 +75,7 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 	}
 
 	// Always remove first; preset writers below opt-back-in.
-	for _, path := range []string{sensSSHBfPath, sensAnomalyPath, sensProfilePath, sensPanelLoginBfPath, sensPanelRecoveryBf, sensPanelWhoamiProbe, sensWebmailBfPath, sensAPITokenBfPath} {
+	for _, path := range []string{sensSSHBfPath, sensAnomalyPath, sensProfilePath, sensPanelLoginBfPath, sensPanelRecoveryBf, sensPanelWhoamiProbe, sensWebmailBfPath, sensAPITokenBfPath, sensStalwartAuthBf, sensStalwartUserEnum, sensStalwartSMTPScan, sensStalwartRateLimit, sensStalwartHTTPScan} {
 		_ = os.Remove(path)
 	}
 
@@ -100,6 +105,21 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(80, "60s", "30m")); err != nil {
 			return nil, csInternal("write api-token-bf", err)
 		}
+		if err := writeSensitivityFile(sensStalwartAuthBf, stalwartAuthBfYAML(15, "60s", "30m")); err != nil {
+			return nil, csInternal("write stalwart-auth-bf", err)
+		}
+		if err := writeSensitivityFile(sensStalwartUserEnum, stalwartUserEnumYAML(8, "60s", "30m")); err != nil {
+			return nil, csInternal("write stalwart-user-enum", err)
+		}
+		if err := writeSensitivityFile(sensStalwartSMTPScan, stalwartSMTPScanYAML(15, "60s", "30m")); err != nil {
+			return nil, csInternal("write stalwart-smtp-scan", err)
+		}
+		if err := writeSensitivityFile(sensStalwartRateLimit, stalwartRateLimitYAML(8, "60s", "30m")); err != nil {
+			return nil, csInternal("write stalwart-rate-limit", err)
+		}
+		if err := writeSensitivityFile(sensStalwartHTTPScan, stalwartHTTPScanYAML(20, "60s", "30m")); err != nil {
+			return nil, csInternal("write stalwart-http-scan", err)
+		}
 	case "strict":
 		if err := writeSensitivityFile(sensSSHBfPath, sshBfYAML(3, "30s", "24h")); err != nil {
 			return nil, csInternal("write ssh-bf scenario", err)
@@ -123,6 +143,21 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(30, "60s", "24h")); err != nil {
 			return nil, csInternal("write api-token-bf", err)
 		}
+		if err := writeSensitivityFile(sensStalwartAuthBf, stalwartAuthBfYAML(3, "60s", "24h")); err != nil {
+			return nil, csInternal("write stalwart-auth-bf", err)
+		}
+		if err := writeSensitivityFile(sensStalwartUserEnum, stalwartUserEnumYAML(1, "60s", "24h")); err != nil {
+			return nil, csInternal("write stalwart-user-enum", err)
+		}
+		if err := writeSensitivityFile(sensStalwartSMTPScan, stalwartSMTPScanYAML(3, "60s", "24h")); err != nil {
+			return nil, csInternal("write stalwart-smtp-scan", err)
+		}
+		if err := writeSensitivityFile(sensStalwartRateLimit, stalwartRateLimitYAML(1, "60s", "24h")); err != nil {
+			return nil, csInternal("write stalwart-rate-limit", err)
+		}
+		if err := writeSensitivityFile(sensStalwartHTTPScan, stalwartHTTPScanYAML(5, "60s", "24h")); err != nil {
+			return nil, csInternal("write stalwart-http-scan", err)
+		}
 	case "balanced":
 		// SSH-bf, anomaly, profile fall back to upstream defaults
 		// (cleanup loop above removed any prior jabali drop-in). Panel
@@ -143,6 +178,21 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		}
 		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(50, "60s", "4h")); err != nil {
 			return nil, csInternal("write api-token-bf", err)
+		}
+		if err := writeSensitivityFile(sensStalwartAuthBf, stalwartAuthBfYAML(5, "60s", "4h")); err != nil {
+			return nil, csInternal("write stalwart-auth-bf", err)
+		}
+		if err := writeSensitivityFile(sensStalwartUserEnum, stalwartUserEnumYAML(3, "60s", "4h")); err != nil {
+			return nil, csInternal("write stalwart-user-enum", err)
+		}
+		if err := writeSensitivityFile(sensStalwartSMTPScan, stalwartSMTPScanYAML(5, "60s", "4h")); err != nil {
+			return nil, csInternal("write stalwart-smtp-scan", err)
+		}
+		if err := writeSensitivityFile(sensStalwartRateLimit, stalwartRateLimitYAML(3, "60s", "4h")); err != nil {
+			return nil, csInternal("write stalwart-rate-limit", err)
+		}
+		if err := writeSensitivityFile(sensStalwartHTTPScan, stalwartHTTPScanYAML(10, "60s", "4h")); err != nil {
+			return nil, csInternal("write stalwart-http-scan", err)
 		}
 	}
 
@@ -365,6 +415,110 @@ labels:
   service: jabali-panel
   type: bruteforce
   remediation: true
+`, leakspeed, capacity, blackhole)
+}
+
+// ---- Stalwart mail-bf scenario YAML builders (ADR-0115) ----
+//
+// These five scenarios are vendored from bu5hm4nn/crowdsec-stalwart
+// (install/crowdsec/stalwart/scenarios/) and shipped at balanced
+// thresholds by install_crowdsec_jabali_stalwart_scenarios(). The
+// sensitivity preset writer below overwrites them in-place with
+// per-preset capacities + blackhole windows.
+
+func stalwartAuthBfYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/stalwart-auth-bf
+description: "Detect authentication brute force attempts on Stalwart mail server"
+filter: evt.Parsed.event in ["auth.failed", "auth.error", "auth.too-many-attempts"]
+groupby: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+blackhole: %s
+labels:
+  service: stalwart
+  type: bruteforce
+  remediation: true
+  confidence: 3
+  spoofable: 0
+`, leakspeed, capacity, blackhole)
+}
+
+func stalwartUserEnumYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/stalwart-user-enum
+description: "Detect user enumeration attempts on Stalwart mail server"
+filter: evt.Parsed.event == "auth.failed" && evt.Meta.account_name != ""
+groupby: evt.Meta.source_ip
+distinct: evt.Meta.account_name
+leakspeed: %q
+capacity: %d
+blackhole: %s
+labels:
+  service: stalwart
+  type: enum
+  remediation: true
+  confidence: 2
+  spoofable: 1
+`, leakspeed, capacity, blackhole)
+}
+
+func stalwartSMTPScanYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/stalwart-smtp-scan
+description: "Detect SMTP scanning and probing on Stalwart mail server"
+filter: evt.Parsed.event in ["smtp.invalid-ehlo", "smtp.auth-not-allowed"]
+groupby: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+blackhole: %s
+labels:
+  service: stalwart
+  type: scan
+  remediation: true
+  confidence: 2
+  spoofable: 1
+`, leakspeed, capacity, blackhole)
+}
+
+func stalwartRateLimitYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/stalwart-rate-limit
+description: "Detect rate-limit abuse on Stalwart mail server"
+filter: evt.Parsed.event in ["limit.rate-limit-exceeded", "limit.too-many-requests", "limit.concurrency-limit-reached"]
+groupby: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+blackhole: %s
+labels:
+  service: stalwart
+  type: abuse
+  remediation: true
+  confidence: 3
+  spoofable: 0
+`, leakspeed, capacity, blackhole)
+}
+
+func stalwartHTTPScanYAML(capacity int, leakspeed, blackhole string) string {
+	return fmt.Sprintf(`# Managed by jabali â Security â CrowdSec â Sensitivity. Do not hand-edit.
+type: leaky
+name: jabali/stalwart-http-scan
+description: "Detect HTTP vulnerability scanning on Stalwart admin/management endpoints"
+filter: evt.Parsed.event in ["http.error", "http.not-found", "http.forbidden"]
+groupby: evt.Meta.source_ip
+leakspeed: %q
+capacity: %d
+blackhole: %s
+labels:
+  service: stalwart
+  type: scan
+  remediation: true
+  confidence: 2
+  spoofable: 1
 `, leakspeed, capacity, blackhole)
 }
 
