@@ -4,7 +4,6 @@ import (
 	"strings"
 	"sync"
 	"context"
-	"net"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnscompile"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnsverify"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/nginxrules"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
@@ -1493,6 +1493,21 @@ func sanHostnamesForDomain(d *models.Domain) []string {
 // each drop so the operator can see which SAN is missing DNS. Resolves
 // in parallel with a short per-host timeout so a slow recursor doesn't
 // stall every cert issue.
+// resolvableSANs filters SANs to those that resolve to PUBLIC DNS A/AAAA
+// records — i.e. what Let's Encrypt's challenge validator will see when
+// it queries the authoritative nameservers. The default resolver
+// (/etc/resolv.conf -> 127.0.0.1 local pdns-recursor -> local pdns-auth)
+// would return jabali's local PDNS view, which is misleading when the
+// tenant delegates DNS to a foreign registrar and the registrar has no
+// record for mail.<tenant>. LE would then 'acme:error:dns' on the
+// challenge and the whole cert (including the valid apex name) fails.
+//
+// Caught 2026-06-04 on puzzle.linux-hosting.net: tenant domains
+// (dailycrosswordpuzzlesolutions.com, crosswordpuzzleanswers.net, …)
+// had no public DNS for mail.<tenant> or autoconfig.<tenant>, but the
+// local PDNS happily returned puzzle's IP. resolvableSANs let those
+// SANs through, certbot asked LE for them, LE failed with DNS error,
+// the apex name was tarred by the same brush. 127+ retries each.
 func (r *Reconciler) resolvableSANs(ctx context.Context, names []string) []string {
 	if len(names) == 0 {
 		return nil
@@ -1501,14 +1516,13 @@ func (r *Reconciler) resolvableSANs(ctx context.Context, names []string) []strin
 		name string
 		ok   bool
 	}
-	resolver := net.DefaultResolver
 	resCh := make(chan result, len(names))
 	for _, n := range names {
 		go func(name string) {
-			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			lookupCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
 			defer cancel()
-			addrs, err := resolver.LookupHost(lookupCtx, name)
-			resCh <- result{name: name, ok: err == nil && len(addrs) > 0}
+			addrs := dnsverify.LookupHostExternal(lookupCtx, name)
+			resCh <- result{name: name, ok: len(addrs) > 0}
 		}(n)
 	}
 	keep := make([]string, 0, len(names))
@@ -1517,7 +1531,7 @@ func (r *Reconciler) resolvableSANs(ctx context.Context, names []string) []strin
 		if res.ok {
 			keep = append(keep, res.name)
 		} else {
-			r.log.Warn("ssl: skipping SAN with no DNS A/AAAA records", "san", res.name)
+			r.log.Warn("ssl: skipping SAN — public DNS has no A/AAAA records (LE would fail)", "san", res.name)
 		}
 	}
 	return keep
@@ -1744,11 +1758,39 @@ func (r *Reconciler) fallbackToSelfSignAndRetry(ctx context.Context, domain *mod
 	}
 
 	newRetryCount := cert.RetryCount + 1
+
+	// Hard cap. Past acmeMaxRetries the cert row goes to status=failed
+	// so the reconciler stops hammering LE (which rate-limits at
+	// 5 failures per hostname per hour, 50 certs per registered domain
+	// per week — see https://letsencrypt.org/docs/rate-limits/). The
+	// operator unblocks issuance with a "Retry" button in the SSL UI
+	// (resets retry_count and flips status back to pending).
+	//
+	// Caught 2026-06-04 on puzzle: a single hostname accumulated 127
+	// attempts because the prior comment ("After 20 failures, status=
+	// failed") never landed as code.
+	if newRetryCount >= acmeMaxRetries {
+		failMsg := lastError + " (capped at " + fmt.Sprintf("%d", acmeMaxRetries) + " attempts — manual retry required)"
+		_ = r.sslCerts.UpdateAfterACMEFailureCapped(ctx, cert.ID, failMsg, newRetryCount, fallbackCertPath, fallbackKeyPath, fallbackExpiresAt)
+		r.log.Warn("ssl: acme retry cap reached, marking failed", "domain", domain.Name, "retry_count", newRetryCount, "err", lastError)
+		return
+	}
+
 	delay := acmeRetryDelay(newRetryCount)
 	nextRetry := time.Now().UTC().Add(delay)
 	_ = r.sslCerts.UpdateAfterACMEFailure(ctx, cert.ID, lastError, nextRetry, newRetryCount, fallbackCertPath, fallbackKeyPath, fallbackExpiresAt)
 	r.log.Warn("ssl: acme unavailable, retrying with backoff", "domain", domain.Name, "retry_count", newRetryCount, "delay", delay.String(), "next_retry_at", nextRetry.Format(time.RFC3339), "err", lastError)
 }
+
+// acmeMaxRetries is the cap on consecutive ACME failures before the
+// reconciler stops attempting issuance. Set so a hostname that's
+// genuinely misconfigured (DNS not pointing here, port 80 blocked,
+// etc.) stops burning LE rate limits, but a transient ACME outage or
+// a sub-hour config flip still gets through. acmeRetryDelay sums to:
+//     attempts 1..4: 5m + 15m + 45m + 2h ~= 3h
+//     attempts 5..20: 3h × 16 = 48h
+// Total window ~= 51h. Past 20 = stop.
+const acmeMaxRetries = 20
 
 // sslRenewForDomain runs an ACME renewal and updates the cert row on success.
 //

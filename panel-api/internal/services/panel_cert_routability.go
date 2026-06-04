@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnsverify"
 )
 
 // RoutabilityResult tells the caller why the panel hostname does (or
@@ -107,7 +108,7 @@ func (p *PanelCertRoutability) Check(ctx context.Context, hostname, publicIPv4 s
 	// keeps the gate robust on hosts where install.sh hasn't been
 	// re-run since the strip landed.
 	if onlyLoopback(addrs) {
-		if extAddrs := resolveViaExternal(ctx, host); len(extAddrs) > 0 {
+		if extAddrs := dnsverify.LookupHostExternal(ctx, host); len(extAddrs) > 0 {
 			addrs = extAddrs
 		}
 	}
@@ -166,43 +167,3 @@ func onlyLoopback(addrs []string) bool {
 	return true
 }
 
-// externalResolvers is the ordered list of public resolvers the
-// shadow-guard retries against when /etc/hosts returns only
-// loopback. Cloudflare, Quad9, Google. Each is tried over UDP then
-// TCP so carriers that block outbound UDP/53 still succeed.
-var externalResolvers = []string{"1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"}
-
-// resolveViaExternal walks externalResolvers (UDP then TCP per host)
-// and returns the first non-empty LookupHost result. Returns nil if
-// every attempt fails, letting the caller fall back to the
-// already-known (loopback) addrs and emit a clear UI error.
-//
-// Each attempt has a tight per-resolver timeout so a single
-// unreachable resolver can't stall the reconciler tick.
-func resolveViaExternal(ctx context.Context, host string) []string {
-	for _, addr := range externalResolvers {
-		for _, proto := range []string{"udp", "tcp"} {
-			r := newDirectResolver(addr, proto)
-			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			out, err := r.LookupHost(lookupCtx, host)
-			cancel()
-			if err == nil && len(out) > 0 {
-				return out
-			}
-		}
-	}
-	return nil
-}
-
-// newDirectResolver returns a pure-Go resolver that bypasses
-// /etc/hosts by dialing the given DNS server:port over the given
-// transport ("udp" or "tcp") directly.
-func newDirectResolver(serverAddr, proto string) *net.Resolver {
-	return &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			d := &net.Dialer{Timeout: 3 * time.Second}
-			return d.DialContext(ctx, proto, serverAddr)
-		},
-	}
-}
