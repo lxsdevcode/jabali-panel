@@ -416,7 +416,18 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		CacheEnabled:               cacheEnabled,
 		CacheKeyZone:               "jabali_fcgi",
 		CacheTTL:                   "60s",
-		RootOverridden:             customDirectivesOverrideRoot(customDirectives),
+		// RootOverridden tracks whether ANY user-controlled directive
+		// block declares `location /`. Both raw `customDirectives`
+		// (admin Raw Directives tab) and `ruleDirectives` (compiled
+		// from nginx_rules; Rule Builder proxy_pass with path=`/` is
+		// the common case) can collide with the template's default
+		// `location /`. Without checking both, a Rule Builder
+		// proxy_pass to `/` renders TWO `location /` blocks ->
+		// nginx -t emerg "duplicate location /" -> vhost rollback ->
+		// tenant domain falls through to a sibling vhost (the first
+		// specific-IP listener, usually a mail vhost). Caught
+		// 2026-06-04 on vpsjournal.com/yacht.vpsjournal.com.
+		RootOverridden:             directivesOverrideRoot(customDirectives, ruleDirectives),
 	}
 
 	var vhostConfig bytes.Buffer
@@ -763,4 +774,20 @@ func customDirectivesOverrideRoot(s string) bool {
 		return false
 	}
 	return rootLocationRE.MatchString(s)
+}
+
+// directivesOverrideRoot reports whether any of the supplied directive
+// blocks declares its own `location /`. Used by writeVhost to combine
+// the raw custom-directives textarea AND the compiled nginx_rules
+// (Rule Builder) into a single override signal. Either source can
+// produce a `location /` block (rule type=proxy_pass + path="/" is the
+// common Rule Builder case), and missing either source means a silent
+// "duplicate location /" emerg the next time nginx -t runs.
+func directivesOverrideRoot(blocks ...string) bool {
+	for _, b := range blocks {
+		if customDirectivesOverrideRoot(b) {
+			return true
+		}
+	}
+	return false
 }
