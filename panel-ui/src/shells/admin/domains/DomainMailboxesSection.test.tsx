@@ -160,10 +160,17 @@ describe("DomainMailboxesSection — create modal reveal-once flow", () => {
     // "saved it now" framing + the password text (revealed via the
     // eye toggle would be masked, so assert on presence in the DOM
     // input's value attribute via a looser query).
-    await waitFor(() =>
-      expect(
-        screen.getByText(/This password will never be shown again\./i),
-      ).toBeInTheDocument(),
+    //
+    // Modal reveal involves: mutation success -> setState -> Modal
+    // mount -> Modal animation -> text render. Gitea CI runner
+    // crossed the default 1s waitFor in run #3089 (2026-06-04);
+    // bumped to 5s to match the sibling progress test from PR #182.
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/This password will never be shown again\./i),
+        ).toBeInTheDocument(),
+      { timeout: 5000 },
     );
     // The input holds the plaintext password (masked or not; value is
     // the source of truth in the DOM).

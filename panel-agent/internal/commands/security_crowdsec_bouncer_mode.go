@@ -113,20 +113,35 @@ func bouncerModeApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
 
-	// nginx reads the bouncer conf on init (via lua_shared_dict +
-	// require). A reload re-evaluates the Lua block which re-reads
-	// the conf. Test first so we don't blow up an unrelated vhost
-	// error into a 502 storm.
+	// nginx-lua gotcha: `init_by_lua_block` runs ONCE per nginx
+	// master start, NOT on `nginx -s reload`. The crowdsec bouncer
+	// loads MODE into `runtime.conf` via cs.init() inside
+	// init_by_lua_block at /etc/nginx/conf.d/crowdsec_nginx.conf:6.
+	// Reload re-forks workers from the existing master so Lua
+	// globals (incl. runtime.conf["MODE"]) are preserved — workers
+	// still see the OLD mode regardless of what's on disk.
+	//
+	// Use restart, not reload, so the master re-execs and
+	// init_by_lua re-runs against the updated bouncer conf.
+	// Downside: ~100ms of "connection refused" during the
+	// restart window. Acceptable trade-off — a mode flip is a
+	// manual operator action, not a hot-path event. Alternative
+	// (per-request file read in lua) would require patching the
+	// upstream crowdsec-nginx-bouncer; out of scope here.
+	//
+	// Caught 2026-06-04 on puzzle.linux-hosting.net: agent wrote
+	// MODE=live to disk + reloaded nginx + DB persisted live + UI
+	// said "applied" — but bouncer kept running in stream mode.
 	if out, err := exec.CommandContext(ctx, "nginx", "-t").CombinedOutput(); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: "nginx -t failed after writing " + bouncerConfPath + ": " + strings.TrimSpace(string(out)),
 		}
 	}
-	if out, err := exec.CommandContext(ctx, "systemctl", "reload", "nginx").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "systemctl", "restart", "nginx").CombinedOutput(); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
-			Message: "systemctl reload nginx failed: " + strings.TrimSpace(string(out)),
+			Message: "systemctl restart nginx failed: " + strings.TrimSpace(string(out)),
 		}
 	}
 
