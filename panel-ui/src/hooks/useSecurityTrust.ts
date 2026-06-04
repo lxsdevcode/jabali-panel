@@ -25,3 +25,18 @@ export function useTrustTest() {
     },
   });
 }
+
+// useUnbanIP — DELETE /admin/security/crowdsec/decisions?ip=...
+// Drops every active CrowdSec decision targeting the IP/CIDR.
+// Used by the Test IP card when the crowdsec layer returns deny.
+export function useUnbanIP() {
+  return useMutation({
+    mutationFn: async (ip: string): Promise<{ deleted: true }> => {
+      const { data } = await apiClient.delete<{ deleted: true }>(
+        `/admin/security/crowdsec/decisions`,
+        { params: { ip } },
+      );
+      return data;
+    },
+  });
+}
