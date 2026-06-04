@@ -4428,8 +4428,9 @@ server {
 }
 
 server {
-    listen 443 ssl default_server http2;
-    listen [::]:443 ssl default_server http2;
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
     server_name _;
 
     ssl_certificate     ${tls_cert};

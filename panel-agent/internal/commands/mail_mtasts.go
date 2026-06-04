@@ -215,8 +215,9 @@ func renderMTAStsVhost(domain, docRoot, certPath, keyPath string) string {
 	return fmt.Sprintf(`# Managed by jabali agent — mail.mtasts.apply (ADR-0109)
 # DO NOT HAND-EDIT — every reconciler pass overwrites.
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name mta-sts.%s;
 
     ssl_certificate %s;
