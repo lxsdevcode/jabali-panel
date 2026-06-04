@@ -158,12 +158,17 @@ export function MyProfile() {
   };
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto" }}>
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Typography.Title level={2} style={{ margin: 0 }}>
-          My profile
-        </Typography.Title>
-
+    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <Typography.Title level={2} style={{ margin: "0 0 16px" }}>
+        My profile
+      </Typography.Title>
+      <div
+        style={{
+          columnWidth: 480,
+          columnGap: 16,
+        }}
+      >
+        <div style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}>
         <Card title="Account" loading={!me}>
           {me && (
             <Descriptions column={1}>
@@ -174,7 +179,9 @@ export function MyProfile() {
             </Descriptions>
           )}
         </Card>
+        </div>
 
+        <div style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}>
         <Card
           title="Security"
           extra={
@@ -216,9 +223,14 @@ export function MyProfile() {
             <SettingsFlowForms flow={flow} onSubmit={onSubmit} />
           )}
         </Card>
+        </div>
 
-        {me && <MyProfileUsageCard userId={me.id} />}
-      </Space>
+        {me && (
+          <div style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}>
+            <MyProfileUsageCard userId={me.id} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
