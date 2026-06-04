@@ -44,6 +44,7 @@ type SSLCertificateRepository interface {
 	ListByUserID(ctx context.Context, userID string) ([]SSLCertificateWithDomain, error)
 	UpdateSelfSigned(ctx context.Context, id string, certPath, keyPath string, expiresAt time.Time) error
 	UpdateAfterACMEFailure(ctx context.Context, id string, lastError string, nextRetryAt time.Time, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error
+	UpdateAfterACMEFailureCapped(ctx context.Context, id string, lastError string, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error
 	MarkFailed(ctx context.Context, id string, lastError string) error
 	ListDueForACMERetry(ctx context.Context, now time.Time, limit int) ([]models.SSLCertificate, error)
 }
@@ -226,6 +227,36 @@ func (r *sslCertificateRepo) UpdateAfterACMEFailure(ctx context.Context, id stri
 		"status":          models.SSLStatusPendingACMERetry,
 		"last_error":      lastError,
 		"next_retry_at":   nextRetryAt,
+		"retry_count":     retryCount,
+		"last_attempt_at": time.Now(),
+		"updated_at":      time.Now(),
+	}
+	if fallbackCertPath != nil {
+		updates["cert_path"] = *fallbackCertPath
+	}
+	if fallbackKeyPath != nil {
+		updates["key_path"] = *fallbackKeyPath
+	}
+	if fallbackExpiresAt != nil {
+		updates["expires_at"] = *fallbackExpiresAt
+	}
+	return r.db.WithContext(ctx).Model(&models.SSLCertificate{}).Where("id = ?", id).
+		Updates(updates).Error
+}
+
+// UpdateAfterACMEFailureCapped sets status='failed' (no further retries),
+// records the last error + retry_count, AND writes fallback cert paths
+// when the first failure happened to seed a self-signed cert. Used by
+// the reconciler when retry_count hits the acmeMaxRetries cap.
+//
+// Differs from MarkFailed in that it preserves the retry_count + the
+// fallback cert paths so the UI can still show the self-signed cert
+// the tenant is currently serving.
+func (r *sslCertificateRepo) UpdateAfterACMEFailureCapped(ctx context.Context, id string, lastError string, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error {
+	updates := map[string]interface{}{
+		"status":          models.SSLStatusFailed,
+		"last_error":      lastError,
+		"next_retry_at":   nil,
 		"retry_count":     retryCount,
 		"last_attempt_at": time.Now(),
 		"updated_at":      time.Now(),

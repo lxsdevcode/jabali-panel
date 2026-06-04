@@ -103,6 +103,11 @@ func (m *MockSSLCertificateRepository) UpdateAfterACMEFailure(ctx context.Contex
 	return args.Error(0)
 }
 
+
+func (m *MockSSLCertificateRepository) UpdateAfterACMEFailureCapped(ctx context.Context, id string, lastError string, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error {
+	return nil
+}
+
 func (m *MockSSLCertificateRepository) MarkFailed(ctx context.Context, id string, lastError string) error {
 	args := m.Called(ctx, id, lastError)
 	return args.Error(0)

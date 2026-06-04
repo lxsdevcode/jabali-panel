@@ -54,6 +54,9 @@ func (f *fakeSSLCertRepo) UpdateSelfSigned(context.Context, string, string, stri
 func (f *fakeSSLCertRepo) UpdateAfterACMEFailure(context.Context, string, string, time.Time, int, *string, *string, *time.Time) error {
 	return nil
 }
+func (f *fakeSSLCertRepo) UpdateAfterACMEFailureCapped(context.Context, string, string, int, *string, *string, *time.Time) error {
+	return nil
+}
 func (f *fakeSSLCertRepo) MarkFailed(context.Context, string, string) error { return nil }
 func (f *fakeSSLCertRepo) ListDueForACMERetry(context.Context, time.Time, int) ([]models.SSLCertificate, error) {
 	return nil, nil
