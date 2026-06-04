@@ -405,6 +405,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		v1.Use(middleware.AuditRecord(deps.AuditRecorder))
 		api.RegisterMeRoutes(v1, api.MeHandlerConfig{
 			Users:          deps.Users,
+			Packages:       deps.Packages,
 			ServerSettings: deps.ServerSettings,
 		})
 

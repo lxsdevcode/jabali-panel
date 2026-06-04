@@ -11,18 +11,20 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
-// MeHandlerConfig carries the repos the /me/* sub-routes need. The bare
-// /me endpoint still uses only JWT claims, so passing empty repos is
-// fine for tests that only exercise it.
+// MeHandlerConfig carries the repos the /me/* sub-routes need. Bare
+// /me now also calls Users / Packages when set so the panel's My
+// Profile page can render username + package without a second
+// request; either repo nil falls back to the claims-only payload.
 type MeHandlerConfig struct {
 	Users          repository.UserRepository
+	Packages       repository.PackageRepository
 	ServerSettings repository.ServerSettingsRepository
 }
 
 // RegisterMeRoutes wires GET /api/v1/me and GET /api/v1/me/ssh-connection.
 // The group passed here must already have RequireAuth applied.
 func RegisterMeRoutes(g *gin.RouterGroup, cfg MeHandlerConfig) {
-	g.GET("/me", meHandler)
+	g.GET("/me", meHandlerWithConfig(cfg))
 	if cfg.Users != nil && cfg.ServerSettings != nil {
 		h := &meExtHandler{cfg: cfg}
 		g.GET("/me/ssh-connection", h.sshConnection)
@@ -54,6 +56,8 @@ func (h *meExtHandler) serverCapabilities(c *gin.Context) {
 	})
 }
 
+// meHandler is the bare claims-only fallback the test suite uses
+// when MeHandlerConfig is empty.
 func meHandler(c *gin.Context) {
 	claims := ginctx.Claims(c)
 	if claims == nil {
@@ -66,6 +70,48 @@ func meHandler(c *gin.Context) {
 		"email":    claims.Email,
 		"is_admin": claims.IsAdmin,
 	})
+}
+
+// meHandlerWithConfig returns the claims payload PLUS the user row's
+// username, hosting-package id, and hosting-package name when the
+// optional Users / Packages repos are wired. Missing repos or
+// not-found rows degrade gracefully — the panel UI handles every
+// optional field as nullable.
+func meHandlerWithConfig(cfg MeHandlerConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims := ginctx.Claims(c)
+		if claims == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+			return
+		}
+		resp := gin.H{
+			"id":       claims.UserID,
+			"email":    claims.Email,
+			"is_admin": claims.IsAdmin,
+		}
+		if cfg.Users == nil {
+			c.JSON(http.StatusOK, resp)
+			return
+		}
+		user, err := cfg.Users.FindByID(c.Request.Context(), claims.UserID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusOK, resp)
+			return
+		}
+		if user.Username != nil && *user.Username != "" {
+			resp["username"] = *user.Username
+		}
+		resp["created_at"] = user.CreatedAt
+		if user.PackageID != nil && *user.PackageID != "" {
+			resp["package_id"] = *user.PackageID
+			if cfg.Packages != nil {
+				if pkg, perr := cfg.Packages.FindByID(c.Request.Context(), *user.PackageID); perr == nil && pkg != nil {
+					resp["package_name"] = pkg.Name
+				}
+			}
+		}
+		c.JSON(http.StatusOK, resp)
+	}
 }
 
 type meExtHandler struct{ cfg MeHandlerConfig }

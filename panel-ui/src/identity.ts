@@ -21,12 +21,20 @@ export type Identity = {
   id: string;
   email: string;
   isAdmin: boolean;
+  username?: string;
+  createdAt?: string;
+  packageId?: string;
+  packageName?: string;
 };
 
 type MeResponse = {
   id: string;
   email: string;
   is_admin: boolean;
+  username?: string;
+  created_at?: string;
+  package_id?: string;
+  package_name?: string;
 };
 
 let cached: Identity | null = null;
@@ -53,6 +61,10 @@ export async function getIdentity(): Promise<Identity | null> {
         id: data.id,
         email: data.email ?? "",
         isAdmin: data.is_admin === true,
+        username: data.username,
+        createdAt: data.created_at,
+        packageId: data.package_id,
+        packageName: data.package_name,
       };
       return cached;
     } catch {

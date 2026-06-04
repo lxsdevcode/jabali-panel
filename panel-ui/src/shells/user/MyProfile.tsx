@@ -173,9 +173,29 @@ export function MyProfile() {
           {me && (
             <Descriptions column={1}>
               <Descriptions.Item label="Email">{me.email}</Descriptions.Item>
+              {me.username && (
+                <Descriptions.Item label="Username">
+                  <Typography.Text code>{me.username}</Typography.Text>
+                </Descriptions.Item>
+              )}
               <Descriptions.Item label="User ID">
                 <Typography.Text code>{me.id}</Typography.Text>
               </Descriptions.Item>
+              <Descriptions.Item label="Hosting package">
+                {me.packageName ? (
+                  me.packageName
+                ) : (
+                  <Typography.Text type="secondary">No package</Typography.Text>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Role">
+                {me.isAdmin ? "Administrator" : "Tenant"}
+              </Descriptions.Item>
+              {me.createdAt && (
+                <Descriptions.Item label="Member since">
+                  {new Date(me.createdAt).toLocaleDateString()}
+                </Descriptions.Item>
+              )}
             </Descriptions>
           )}
         </Card>
