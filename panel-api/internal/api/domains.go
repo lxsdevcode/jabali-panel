@@ -668,20 +668,37 @@ func (h *domainHandler) update(c *gin.Context) {
 		domain.IsEnabled = *req.IsEnabled
 	}
 
-	if req.NginxCustomDirectives != nil {
-		if msg := validateNginxDirectives(*req.NginxCustomDirectives); msg != "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
-			return
+	// Nginx Custom Directives (raw textarea) AND Rule Builder
+	// (typed JSON rules) are admin-only. The threat model: a tenant
+	// with nginx_custom_directives can SSRF localhost services
+	// (panel-api, Bulwark, Stalwart admin, PHP-FPM sockets of other
+	// tenants), disclose files via `root /etc/jabali-panel/`,
+	// suppress CrowdSec via `access_log off;`, or redefine an
+	// auth_basic-protected location to drop the auth. nginx -t
+	// only catches syntax — none of those is a syntax error.
+	// proxy_pass targets in the Rule Builder are likewise unsafe
+	// without a target allowlist. Gate the entire surface here so
+	// the UI's tab-hiding can't be the only line of defense.
+	//
+	// Tenants posting these fields get them silently dropped (rather
+	// than 403'd) so they can still PATCH unrelated fields like
+	// is_enabled. Admin role bypasses the gate.
+	if claims.IsAdmin {
+		if req.NginxCustomDirectives != nil {
+			if msg := validateNginxDirectives(*req.NginxCustomDirectives); msg != "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+				return
+			}
+			domain.NginxCustomDirectives = req.NginxCustomDirectives
 		}
-		domain.NginxCustomDirectives = req.NginxCustomDirectives
-	}
 
-	if req.NginxRules != nil {
-		if err := validateNginxRules(*req.NginxRules); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+		if req.NginxRules != nil {
+			if err := validateNginxRules(*req.NginxRules); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			domain.NginxRules = *req.NginxRules
 		}
-		domain.NginxRules = *req.NginxRules
 	}
 
 	if req.RedirectAllTo != nil {
