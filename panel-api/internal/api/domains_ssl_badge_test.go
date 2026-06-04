@@ -67,6 +67,9 @@ func (m *mockSSLCertsForBadge) UpdateSelfSigned(context.Context, string, string,
 func (m *mockSSLCertsForBadge) UpdateAfterACMEFailure(context.Context, string, string, time.Time, int, *string, *string, *time.Time) error {
 	return nil
 }
+func (m *mockSSLCertsForBadge) UpdateAfterACMEFailureCapped(context.Context, string, string, int, *string, *string, *time.Time) error {
+	return nil
+}
 func (m *mockSSLCertsForBadge) MarkFailed(context.Context, string, string) error { return nil }
 func (m *mockSSLCertsForBadge) ListDueForACMERetry(context.Context, time.Time, int) ([]models.SSLCertificate, error) {
 	return nil, nil
