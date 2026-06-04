@@ -8,7 +8,6 @@ import {
   MoreOutlined,
   SwapOutlined,
   FileTextOutlined,
-  SettingOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   DeleteOutlined,
@@ -27,7 +26,6 @@ import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { humanBytes } from "../../../utils/bytes";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
-import { DomainSettingsButton } from "../../DomainSettingsButton";
 import { DomainDirectoryPrivacyModal } from "../../../components/DomainDirectoryPrivacyModal";
 import { DomainRedirectsButton } from "../../DomainRedirectsButton";
 import { DomainIndexButton } from "../../DomainIndexButton";
@@ -139,7 +137,7 @@ export type Domain = {
   updated_at: string;
 };
 
-type ActiveModal = { domainId: string; type: "redirects" | "index" | "settings" | "directory-privacy" } | null;
+type ActiveModal = { domainId: string; type: "redirects" | "index" | "directory-privacy" } | null;
 
 export const UserDomainList = () => {
   const navigate = useNavigate();
@@ -280,12 +278,6 @@ export const UserDomainList = () => {
                         onClick: () => setActiveModal({ domainId: r.id, type: "index" }),
                       },
                       {
-                        key: "settings",
-                        label: "Nginx Directives",
-                        icon: <SettingOutlined />,
-                        onClick: () => setActiveModal({ domainId: r.id, type: "settings" }),
-                      },
-                      {
                         key: "directory-privacy",
                         label: "Directory Privacy",
                         icon: <LockOutlined />,
@@ -351,13 +343,6 @@ export const UserDomainList = () => {
                 )}
                 {activeModal?.domainId === r.id && activeModal.type === "index" && (
                   <DomainIndexButton
-                    domain={r}
-                    open={true}
-                    onClose={() => setActiveModal(null)}
-                  />
-                )}
-                {activeModal?.domainId === r.id && activeModal.type === "settings" && (
-                  <DomainSettingsButton
                     domain={r}
                     open={true}
                     onClose={() => setActiveModal(null)}
