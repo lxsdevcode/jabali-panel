@@ -93,14 +93,21 @@ func (p *PanelCertRoutability) Check(ctx context.Context, hostname, publicIPv4 s
 	// /etc/hosts shadow guard: if every result is loopback (Debian
 	// seeds `127.0.1.1 <hostname>` on first boot and never strips it),
 	// the default resolver is misleading us — public DNS likely
-	// resolves elsewhere. Retry once against a public DNS resolver
-	// that bypasses /etc/hosts entirely. install.sh now strips the
-	// stale line on every run, but this guard catches operators who
-	// edit /etc/hosts by hand AND keeps the gate robust on hosts
-	// where install.sh hasn't been re-run since the strip landed.
+	// resolves elsewhere. Retry against external public DNS resolvers
+	// that bypass /etc/hosts entirely. We cycle through three popular
+	// resolvers (Cloudflare, Quad9, Google) over UDP first then TCP
+	// so a carrier that blocks outbound UDP/53 (some LXC providers
+	// do) still gets a real answer over TCP/53. First non-empty
+	// response wins; on total failure we keep the loopback addrs so
+	// the caller surfaces a clear "dns points elsewhere" message
+	// instead of a generic resolver error.
+	//
+	// install.sh strips the stale 127.0.1.1 line on every run, but
+	// this guard catches operators who edit /etc/hosts by hand AND
+	// keeps the gate robust on hosts where install.sh hasn't been
+	// re-run since the strip landed.
 	if onlyLoopback(addrs) {
-		ext := newExternalResolver()
-		if extAddrs, extErr := ext.LookupHost(ctx, host); extErr == nil && len(extAddrs) > 0 {
+		if extAddrs := resolveViaExternal(ctx, host); len(extAddrs) > 0 {
 			addrs = extAddrs
 		}
 	}
@@ -159,16 +166,43 @@ func onlyLoopback(addrs []string) bool {
 	return true
 }
 
-// newExternalResolver returns a pure-Go resolver that bypasses
-// /etc/hosts by dialing a public DNS server directly. Uses
-// Cloudflare 1.1.1.1 with a tight 3s timeout so a flaky upstream
-// can't stall the panel-cert reconciler tick.
-func newExternalResolver() *net.Resolver {
+// externalResolvers is the ordered list of public resolvers the
+// shadow-guard retries against when /etc/hosts returns only
+// loopback. Cloudflare, Quad9, Google. Each is tried over UDP then
+// TCP so carriers that block outbound UDP/53 still succeed.
+var externalResolvers = []string{"1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"}
+
+// resolveViaExternal walks externalResolvers (UDP then TCP per host)
+// and returns the first non-empty LookupHost result. Returns nil if
+// every attempt fails, letting the caller fall back to the
+// already-known (loopback) addrs and emit a clear UI error.
+//
+// Each attempt has a tight per-resolver timeout so a single
+// unreachable resolver can't stall the reconciler tick.
+func resolveViaExternal(ctx context.Context, host string) []string {
+	for _, addr := range externalResolvers {
+		for _, proto := range []string{"udp", "tcp"} {
+			r := newDirectResolver(addr, proto)
+			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			out, err := r.LookupHost(lookupCtx, host)
+			cancel()
+			if err == nil && len(out) > 0 {
+				return out
+			}
+		}
+	}
+	return nil
+}
+
+// newDirectResolver returns a pure-Go resolver that bypasses
+// /etc/hosts by dialing the given DNS server:port over the given
+// transport ("udp" or "tcp") directly.
+func newDirectResolver(serverAddr, proto string) *net.Resolver {
 	return &net.Resolver{
 		PreferGo: true,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			d := &net.Dialer{Timeout: 3 * time.Second}
-			return d.DialContext(ctx, "udp", "1.1.1.1:53")
+			return d.DialContext(ctx, proto, serverAddr)
 		},
 	}
 }

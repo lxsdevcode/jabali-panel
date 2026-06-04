@@ -590,19 +590,30 @@ prompt_server_settings() {
       hostnamectl set-hostname "$JABALI_HOSTNAME" 2>/dev/null || \
         _warn "hostnamectl set-hostname failed (container without CAP_SYS_ADMIN?) — /etc/hostname may be stale"
     fi
-    # Strip any existing `127.0.1.1 <hostname>` line. Debian seeds this
-    # on first boot via `hostnamectl`, but on a public VPS it shadows
-    # real DNS — net.LookupHost respects /etc/hosts before DNS, and the
-    # M32 panel-cert routability gate compares the lookup result against
-    # public_ipv4. With 127.0.1.1 in the way, the check sees loopback
-    # and refuses to attempt LE issuance ("dns points elsewhere"). Take
-    # the loopback resolution loss — `hostname -f` falls back to DNS
-    # which is what the operator needs anyway. Incident 2026-04-26 on
-    # mx.jabali-panel.com.
-    if [[ -f /etc/hosts ]]; then
-      sed -i "/^127\.0\.1\.1[[:space:]].*[[:space:]]\?${JABALI_HOSTNAME}\([[:space:]]\|$\)/d" /etc/hosts
-      sed -i "/^127\.0\.1\.1[[:space:]]\+${JABALI_HOSTNAME}[[:space:]]*$/d" /etc/hosts
-    fi
+  fi
+
+  # Strip every `127.0.1.1 ...` line in /etc/hosts. Debian seeds this
+  # on first boot via `hostnamectl`, but on a public VPS it shadows
+  # real DNS -- net.LookupHost respects /etc/hosts before DNS, and the
+  # M32 panel-cert routability gate compares the lookup result against
+  # public_ipv4. With 127.0.1.1 in the way, the check sees loopback
+  # and refuses to attempt LE issuance ("dns points elsewhere"). Take
+  # the loopback resolution loss -- `hostname -f` falls back to DNS
+  # which is what the operator needs anyway.
+  #
+  # Runs UNCONDITIONALLY (not gated on --hostname / JABALI_HOSTNAME):
+  # operators who pre-set the system hostname and ran install.sh
+  # without --hostname were still bitten. Incident 2026-04-26 on
+  # mx.jabali-panel.com (gated strip shipped); revisited 2026-06-04
+  # on vpsjournal.com fresh install (gated strip missed because
+  # JABALI_HOSTNAME was unset).
+  #
+  # Blanket-strip every 127.0.1.1 line: that prefix has no legitimate
+  # use beyond hostname shadow (127.0.0.1 covers localhost). The
+  # matching public-IP entry for hostname + mail/autoconfig
+  # subdomain gets added later in the same function.
+  if [[ -f /etc/hosts ]]; then
+    sed -i '/^127\.0\.1\.1\([[:space:]]\|$\)/d' /etc/hosts
   fi
 
   if [[ -f "$config_file" ]] && grep -q '^[[:space:]]*hostname[[:space:]]*=' "$config_file"; then
