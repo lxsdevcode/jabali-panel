@@ -202,16 +202,7 @@ export function MyProfile() {
         </div>
 
         <div style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}>
-        <Card
-          title="Security"
-          extra={
-            flow && (
-              <Button type="text" onClick={closeFlow}>
-                Done
-              </Button>
-            )
-          }
-        >
+        <Card title="Security">
           {!flowID && (
             // The first useEffect above kicked window.location to the
             // Kratos browser flow — show a spinner during the round-trip.
