@@ -44,9 +44,17 @@ func Compile(d *models.Domain) string {
 					"        proxy_set_header Host $host;\n"+
 					"        proxy_set_header X-Real-IP $remote_addr;\n"+
 					"        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"+
-					"        proxy_set_header X-Forwarded-Proto $scheme;\n"+
-					"    }\n",
+					"        proxy_set_header X-Forwarded-Proto $scheme;\n",
 				quoteNginxLocation(r.Path), r.Target)
+			if r.Websocket != nil && *r.Websocket {
+				b.WriteString("        proxy_http_version 1.1;\n")
+				b.WriteString("        proxy_set_header Upgrade $http_upgrade;\n")
+				b.WriteString("        proxy_set_header Connection \"upgrade\";\n")
+			}
+			if r.ReadTimeout != "" {
+				fmt.Fprintf(&b, "        proxy_read_timeout %s;\n", r.ReadTimeout)
+			}
+			b.WriteString("    }\n")
 
 		case "ip_access":
 			b.WriteString("    location ")

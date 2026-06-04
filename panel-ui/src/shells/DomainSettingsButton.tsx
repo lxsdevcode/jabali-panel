@@ -60,7 +60,13 @@ export type NginxRule =
       replacement: string;
       flag?: "last" | "break" | "redirect" | "permanent";
     }
-  | { type: "proxy_pass"; path: string; target: string }
+  | {
+      type: "proxy_pass";
+      path: string;
+      target: string;
+      websocket?: boolean;
+      read_timeout?: string;
+    }
   | {
       type: "ip_access";
       path: string;
@@ -110,6 +116,14 @@ const compileRules = (rules: NginxRule[]): string => {
         out.push("        proxy_set_header X-Real-IP $remote_addr;");
         out.push("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;");
         out.push("        proxy_set_header X-Forwarded-Proto $scheme;");
+        if (r.websocket) {
+          out.push("        proxy_http_version 1.1;");
+          out.push("        proxy_set_header Upgrade $http_upgrade;");
+          out.push('        proxy_set_header Connection "upgrade";');
+        }
+        if (r.read_timeout) {
+          out.push(`        proxy_read_timeout ${r.read_timeout};`);
+        }
         out.push("    }");
         break;
       }
@@ -328,6 +342,33 @@ const renderProxyPassBody = (
         />
         <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>
           Upstream service URL
+        </Typography.Text>
+      </Col>
+    </Row>
+    <Row gutter={16}>
+      <Col span={12}>
+        <div style={{ marginBottom: 8 }}>
+          <Typography.Text>WebSocket support</Typography.Text>
+        </div>
+        <Switch
+          checked={!!rule.websocket}
+          onChange={(v) => onUpdate("websocket", v)}
+        />
+        <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>
+          Adds proxy_http_version 1.1 + Upgrade/Connection headers
+        </Typography.Text>
+      </Col>
+      <Col span={12}>
+        <div style={{ marginBottom: 8 }}>
+          <Typography.Text>Read timeout</Typography.Text>
+        </div>
+        <Input
+          placeholder="86400s"
+          value={rule.read_timeout ?? ""}
+          onChange={(e) => onUpdate("read_timeout", e.target.value)}
+        />
+        <Typography.Text type="secondary" style={{ display: "block", marginTop: 4 }}>
+          nginx duration (e.g. 60s, 24h). Empty = nginx default (60s).
         </Typography.Text>
       </Col>
     </Row>

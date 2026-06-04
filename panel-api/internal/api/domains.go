@@ -1206,6 +1206,9 @@ func validateNginxRules(rules models.NginxRules) error {
 			if !strings.HasPrefix(r.Target, "http://") && !strings.HasPrefix(r.Target, "https://") {
 				return fmt.Errorf("rule %d: target must be an http(s) URL", i)
 			}
+			if r.ReadTimeout != "" && !isNginxDuration(r.ReadTimeout) {
+				return fmt.Errorf("rule %d: read_timeout must be an nginx duration (e.g. \"60s\", \"24h\")", i)
+			}
 		case "ip_access":
 			if r.Path == "" {
 				return fmt.Errorf("rule %d: path required", i)
@@ -1226,7 +1229,7 @@ func validateNginxRules(rules models.NginxRules) error {
 			}
 		}
 		// Forbid control characters everywhere to prevent newline injection into vhost
-		allText := r.Name + r.Value + r.Pattern + r.Replacement + r.Target + r.Path + r.Size
+		allText := r.Name + r.Value + r.Pattern + r.Replacement + r.Target + r.Path + r.Size + r.ReadTimeout
 		for _, c := range allText {
 			if c < 32 && c != '\t' {
 				return fmt.Errorf("rule %d: contains invalid control chars", i)
@@ -1340,4 +1343,26 @@ func (h *domainHandler) bandwidth(c *gin.Context) {
 		"requests_total": reqsTotal,
 		"daily":          daily,
 	})
+}
+
+// isNginxDuration accepts nginx's standard duration shape: a positive
+// integer followed by one of `ms s m h d` (or none = seconds). Used to
+// validate proxy_read_timeout on the rule-builder proxy_pass entry
+// without pulling in nginx's full grammar.
+func isNginxDuration(v string) bool {
+	if v == "" {
+		return false
+	}
+	i := 0
+	for i < len(v) && v[i] >= '0' && v[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return false
+	}
+	switch v[i:] {
+	case "", "ms", "s", "m", "h", "d":
+		return true
+	}
+	return false
 }

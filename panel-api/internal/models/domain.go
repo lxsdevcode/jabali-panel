@@ -76,6 +76,14 @@ type NginxRule struct {
 
 	// proxy_pass
 	Target string `json:"target,omitempty"`
+	// proxy_pass: when true, emit the three WebSocket upgrade headers
+	// (`proxy_http_version 1.1`, `Upgrade $http_upgrade`,
+	// `Connection "upgrade"`). Off by default.
+	Websocket *bool `json:"websocket,omitempty"`
+	// proxy_pass: read-timeout for the upstream response. Accepts the
+	// usual nginx duration suffixes (e.g. "60s", "86400s", "24h").
+	// Empty leaves nginx's default (60s).
+	ReadTimeout string `json:"read_timeout,omitempty"`
 
 	// proxy_pass, ip_access
 	Path string `json:"path,omitempty"`
