@@ -63,8 +63,8 @@ func TestRenderMTAStsVhost(t *testing.T) {
 	)
 	required := []string{
 		"server_name mta-sts.example.com",
-		"listen 443 ssl",
-		"listen [::]:443 ssl",
+		"listen 443 ssl http2",
+		"listen [::]:443 ssl http2",
 		"ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem",
 		"location = /.well-known/mta-sts.txt",
 		"root /var/www/jabali-mta-sts/example.com",

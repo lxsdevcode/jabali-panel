@@ -149,12 +149,11 @@ const vhostTemplate = `server {
 }
 
 server {
-{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl;
-{{ else }}    listen 443 ssl;
-{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl;
-{{ else }}    listen [::]:443 ssl;
-{{ end }}    http2 on;
-    # http2 folded into the listen directive — legacy form
+{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl http2;
+{{ else }}    listen 443 ssl http2;
+{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl http2;
+{{ else }}    listen [::]:443 ssl http2;
+{{ end }}    # http2 folded into the listen directive — legacy form
     # works on nginx >= 1.9.5. The separate http2-on directive (1.25+)
     # caused transient emerg + cascade during the in-place vhost
     # migrate on mixed hosts; reverted 2026-05-16.
