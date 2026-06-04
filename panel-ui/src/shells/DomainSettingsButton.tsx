@@ -916,3 +916,101 @@ export const DomainSettingsButton = ({
     </>
   );
 };
+
+// DomainNginxSection — inline, tab-friendly variant of DomainSettingsButton.
+// Renders the same Rule Builder + Raw Directives editor but in-place (no
+// Modal wrapper), with a single Save button. Used by DomainEdit's "Nginx"
+// tab so operators can see the editor as a peer of General / SSL / Caching
+// instead of as a button-launched modal.
+export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget }) => {
+  const [directivesValue, setDirectivesValue] = useState(
+    domain.nginx_custom_directives ?? "",
+  );
+  const [rules, setRules] = useState<NginxRule[]>(domain.nginx_rules ?? []);
+  const [isSaving, setIsSaving] = useState(false);
+  const qc = useQueryClient();
+
+  // Re-sync from prop when the domain reloads (e.g. after a save
+  // round-trip invalidates the one-domain query upstream).
+  useEffect(() => {
+    setDirectivesValue(domain.nginx_custom_directives ?? "");
+    setRules(domain.nginx_rules ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain.id, domain.nginx_custom_directives, JSON.stringify(domain.nginx_rules)]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await apiClient.patch(`/domains/${domain.id}`, {
+        nginx_custom_directives: directivesValue,
+        nginx_rules: rules,
+      });
+      notification.success({ message: "Nginx config saved" });
+      qc.invalidateQueries({ queryKey: ["list", "domains"] });
+      qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
+    } catch (err) {
+      const e = err as {
+        response?: { data?: { detail?: string } };
+        message?: string;
+      };
+      notification.error({
+        message: "Failed to save",
+        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <Alert
+        type="warning"
+        icon={<WarningOutlined />}
+        message="Use with caution"
+        description="Incorrect directives can break your website. Changes are tested with nginx before applying, but you are responsible for ensuring your configuration is correct."
+        showIcon
+        style={{ marginBottom: 16 }}
+      />
+      <Tabs
+        defaultActiveKey="builder"
+        items={[
+          {
+            key: "builder",
+            label: (
+              <span>
+                <ToolOutlined /> Rule Builder
+              </span>
+            ),
+            children: <RuleBuilder rules={rules} onRulesChange={setRules} />,
+          },
+          {
+            key: "raw",
+            label: (
+              <span>
+                <CodeOutlined /> Raw Directives
+              </span>
+            ),
+            children: (
+              <RawDirectivesEditor
+                value={directivesValue}
+                onChange={setDirectivesValue}
+                rules={rules}
+              />
+            ),
+          },
+        ]}
+      />
+      <div style={{ marginTop: 16 }}>
+        <Button
+          type="primary"
+          icon={<CheckOutlined />}
+          onClick={handleSave}
+          loading={isSaving}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+};

@@ -26,7 +26,7 @@ import { DomainIPACLSection } from "./DomainIPACLSection";
 import { DomainDirectoryPrivacySection } from "./DomainDirectoryPrivacySection";
 import { DomainListenIPSection } from "./DomainListenIPSection";
 import { DomainMailboxesSection } from "./DomainMailboxesSection";
-import { DomainSettingsButton } from "../../DomainSettingsButton";
+import { DomainNginxSection } from "../../DomainSettingsButton";
 import { DomainSSLSection } from "./DomainSSLSection";
 import { DomainSkipAutoSANToggle } from "./DomainSkipAutoSANToggle";
 import { DomainCacheSection } from "./DomainCacheSection";
@@ -111,10 +111,6 @@ export const DomainEdit = () => {
         <Typography.Text>Enabled</Typography.Text>
       </div>
 
-      <Form.Item label="Nginx Custom Directives" tooltip="Rule Builder + Raw Directives editor — opens a modal that saves independently of this form.">
-        <DomainSettingsButton domain={domain} />
-      </Form.Item>
-
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={updateMutation.isPending}>
           Save
@@ -164,6 +160,12 @@ export const DomainEdit = () => {
         listenIPv6={domain.listen_ipv6 ?? null}
       />
     ),
+  };
+
+  const nginxTab = {
+    key: "nginx",
+    label: "Nginx",
+    children: <DomainNginxSection domain={domain} />,
   };
 
   const securityTab = {
@@ -222,6 +224,7 @@ export const DomainEdit = () => {
         sslTab,
         cacheTab,
         networkTab,
+        nginxTab,
         securityTab,
         emailTab,
       ];
