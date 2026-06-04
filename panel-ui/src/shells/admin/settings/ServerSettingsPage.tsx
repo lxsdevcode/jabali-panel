@@ -159,6 +159,11 @@ const GeneralSettingsTab = () => {
         ssh_password_auth: values.ssh_password_auth || false,
         ssh_user_password_auth: values.ssh_user_password_auth || false,
         ssh_sandbox_mode: values.ssh_sandbox_mode || "bubblewrap",
+        // Root Terminal toggle lives on General (next to SSH/identity)
+        // rather than Storage — moved 2026-06-04 because operators kept
+        // missing it under the Storage tab where it logically didn't
+        // fit. Storage tab no longer PATCHes this field.
+        root_terminal_enabled: values.root_terminal_enabled || false,
         // Omit when blank so the server keeps its current value — never
         // clobber the row with a hardcoded UI fallback.
         ...(values.default_nspawn_image_version
@@ -408,6 +413,34 @@ const GeneralSettingsTab = () => {
       </Card>
 
       <PanelSSLCard />
+      <Card title="Root Terminal (M45)" style={{ marginBottom: 16 }}>
+        <Row gutter={16}>
+          <Col xs={24}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <Form.Item name="root_terminal_enabled" valuePropName="checked" noStyle>
+                  <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
+                </Form.Item>
+                <Typography.Text>Enable in-panel root shell</Typography.Text>
+              </div>
+              <Typography.Text type="secondary">
+                Exposes a true unrestricted root terminal (uid 0) in the admin panel.
+                Off by default. One-shot IP+admin-bound token; every byte of every
+                session is recorded to /var/log/jabali/terminal/&lt;id&gt;.cast and a
+                critical notification is sent on open. Only enable if you accept an
+                authenticated-admin RCE surface.
+              </Typography.Text>
+              <Alert
+                style={{ marginTop: 12 }}
+                type="warning"
+                showIcon
+                message="This is the highest-risk feature in the panel. Leave off unless actively needed."
+              />
+            </div>
+          </Col>
+        </Row>
+      </Card>
+
 
       <Space>
         <Button
@@ -642,7 +675,6 @@ const StorageSettingsTab = () => {
     setSaving(true);
     try {
       const resp = await apiClient.patch<ServerSettings>("/admin/settings", {
-        root_terminal_enabled: values.root_terminal_enabled || false,
         disk_quota_enabled: values.disk_quota_enabled || false,
         bandwidth_quota_enforce_enabled: values.bandwidth_quota_enforce_enabled || false,
         upload_max_size_mb: values.upload_max_size_mb || 1024,
@@ -726,34 +758,6 @@ const StorageSettingsTab = () => {
                 </>
               }
             />
-          </Col>
-        </Row>
-      </Card>
-
-      <Card title="Root Terminal (M45)" style={{ marginBottom: 16 }}>
-        <Row gutter={16}>
-          <Col xs={24}>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <Form.Item name="root_terminal_enabled" valuePropName="checked" noStyle>
-                  <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
-                </Form.Item>
-                <Typography.Text>Enable in-panel root shell</Typography.Text>
-              </div>
-              <Typography.Text type="secondary">
-                Exposes a true unrestricted root terminal (uid 0) in the admin panel.
-                Off by default. One-shot IP+admin-bound token; every byte of every
-                session is recorded to /var/log/jabali/terminal/&lt;id&gt;.cast and a
-                critical notification is sent on open. Only enable if you accept an
-                authenticated-admin RCE surface.
-              </Typography.Text>
-              <Alert
-                style={{ marginTop: 12 }}
-                type="warning"
-                showIcon
-                message="This is the highest-risk feature in the panel. Leave off unless actively needed."
-              />
-            </div>
           </Col>
         </Row>
       </Card>

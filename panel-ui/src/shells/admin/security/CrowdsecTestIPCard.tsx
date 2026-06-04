@@ -2,15 +2,34 @@
 // the CrowdSec tab from the deleted M43 Trust sub-tab. POSTs to
 // /admin/security/trust/test (route preserved; renaming would break
 // the endpoint without value).
-import { Alert, Button, Card, Form, Input, Space, Table, Tag, Typography } from "antd";
+//
+// When the crowdsec layer returns "deny" on the operator's own IP
+// (common after they fat-finger an SSH password and trip ssh-bf),
+// the table renders an inline Unban button that DELETEs every
+// active decision for that IP/CIDR. Lets the operator self-recover
+// without dropping to a shell.
+import { Alert, App, Button, Card, Form, Input, Popconfirm, Space, Table, Tag, Typography } from "antd";
 
-import { useTrustTest, type TrustTestResponse } from "../../../hooks/useSecurityTrust";
+import { useTrustTest, useUnbanIP, type TrustTestResponse, type TrustVerdict } from "../../../hooks/useSecurityTrust";
 
 export const CrowdsecTestIPCard = () => {
   const trustTest = useTrustTest();
+  const unbanIP = useUnbanIP();
+  const { message } = App.useApp();
   const [form] = Form.useForm<{ ip: string }>();
   const lastResult: TrustTestResponse | undefined = trustTest.data;
   const onTest = ({ ip }: { ip: string }) => trustTest.mutate(ip.trim());
+  const handleUnban = (ip: string) => {
+    unbanIP.mutate(ip, {
+      onSuccess: () => {
+        message.success(`Unbanned ${ip}`);
+        // Re-test so the table reflects the fresh state.
+        trustTest.mutate(ip);
+      },
+      onError: (err) =>
+        message.error(err instanceof Error ? err.message : "Unban failed"),
+    });
+  };
 
   return (
     <Card size="small" title="Test IP — would this IP be blocked?">
@@ -54,6 +73,25 @@ export const CrowdsecTestIPCard = () => {
               ),
             },
             { title: "Detail", dataIndex: "detail" },
+            {
+              title: "",
+              dataIndex: "action",
+              width: 120,
+              render: (_: unknown, row: TrustVerdict) =>
+                row.layer === "crowdsec" && row.outcome === "deny" ? (
+                  <Popconfirm
+                    title={`Unban ${lastResult.ip}?`}
+                    description="Drops every active CrowdSec decision targeting this IP."
+                    okText="Unban"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => handleUnban(lastResult.ip)}
+                  >
+                    <Button size="small" danger loading={unbanIP.isPending}>
+                      Unban
+                    </Button>
+                  </Popconfirm>
+                ) : null,
+            },
           ]}
           footer={() => (
             <Space>

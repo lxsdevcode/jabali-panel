@@ -138,3 +138,73 @@ func mustRenderVhost(t *testing.T, vd vhostData) string {
 func tmplParse(s string) (*templ.Template, error) {
 	return templ.New("vhost").Parse(s)
 }
+
+func TestDirectivesOverrideRoot_RuleBuilderProxyPassRoot(t *testing.T) {
+	// Regression for 2026-06-04 vpsjournal.com bug: Rule Builder
+	// proxy_pass with path=`/` populates `ruleDirectives` (compiled
+	// nginx_rules), NOT `customDirectives`. Pre-fix, RootOverridden
+	// only checked customDirectives, so the rule's `location /`
+	// collided with the template's default `location /` -> nginx -t
+	// emerg "duplicate location /" -> vhost rolled back ->
+	// tenant fell through to a sibling vhost.
+	rule := `    location / {
+        proxy_pass http://127.0.0.1:4569;
+        proxy_set_header Host $host;
+    }`
+	if !directivesOverrideRoot("", rule) {
+		t.Errorf("ruleDirectives with `location /` must trigger RootOverridden")
+	}
+	// Custom only, no rule.
+	if !directivesOverrideRoot("location / { return 200; }", "") {
+		t.Errorf("customDirectives with `location /` must trigger RootOverridden")
+	}
+	// Both empty.
+	if directivesOverrideRoot("", "") {
+		t.Errorf("two empty inputs must not trigger RootOverridden")
+	}
+	// Neither has root.
+	if directivesOverrideRoot("location /api { return 200; }", "    location /healthz { return 200; }") {
+		t.Errorf("subpath-only directives must not trigger RootOverridden")
+	}
+}
+
+func TestVhost_RuleBuilderRootProxyDoesNotDuplicateLocation(t *testing.T) {
+	// End-to-end: render the vhost with a proxy_pass root rule via
+	// the ruleDirectives slot. The rendered config must contain
+	// exactly one `location /` block. Previously the template's
+	// default block AND the rule's block both rendered.
+	ruleBlock := `    location / {
+        proxy_pass http://127.0.0.1:4569;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }`
+	tmpl := mustRenderVhost(t, vhostData{
+		Domain:         "yacht.test",
+		DocRoot:        "/home/u/yacht",
+		HasPHP:         false,
+		Username:       "u",
+		IndexDirective: "index index.html;",
+		IsEnabled:      true,
+		SSLCertPath:    "/etc/ssl/x.crt",
+		SSLKeyPath:     "/etc/ssl/x.key",
+		ListenIPv4:     "1.2.3.4",
+		RuleDirectives: ruleBlock,
+		RootOverridden: directivesOverrideRoot("", ruleBlock),
+	})
+	// Count `location /` block openings inside server { ssl } context
+	// only (ignore the redirect-from-80 server block which legitimately
+	// has its own `location /` for 301-to-https). Easier check: total
+	// `location /` openings should equal 2 — one in the HTTP redirect
+	// block + one from the rule. Pre-fix this was 3 (extra template
+	// default emitted the duplicate).
+	const want = 2
+	got := strings.Count(tmpl, "location / {")
+	if got != want {
+		t.Errorf("expected %d `location /` blocks, got %d:\n%s", want, got, tmpl)
+	}
+	if !strings.Contains(tmpl, "proxy_pass http://127.0.0.1:4569") {
+		t.Errorf("rule's proxy_pass missing:\n%s", tmpl)
+	}
+}

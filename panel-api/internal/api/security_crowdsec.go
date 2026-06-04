@@ -125,6 +125,35 @@ func RegisterSecurityCrowdSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterfac
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	})
 
+	// DELETE /decisions?ip=1.2.3.4  -> unban every active decision
+	// targeting that IP/CIDR. Useful when the Test IP card shows the
+	// operator's own egress as banned (typically the case after they
+	// fat-fingered an SSH password and tripped ssh-bf). The agent
+	// handler accepts an IP or CIDR; we validate shape here and let
+	// the agent do the cscli call.
+	g.DELETE("/decisions", func(c *gin.Context) {
+		ip := strings.TrimSpace(c.Query("ip"))
+		if ip == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "ip required"})
+			return
+		}
+		// Cheap shape check; the agent re-validates with net.ParseIP /
+		// ParseCIDR before invoking cscli.
+		if len(ip) > 64 || !ipOrCIDRShape(ip) {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid ip"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), csCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "security.crowdsec.decisions.delete", map[string]any{"ip": ip})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
+
 	g.GET("/bouncers", agentPassthrough(cli, "security.crowdsec.bouncers.list", nil, csCallTimeout))
 	g.GET("/blocklists", agentPassthrough(cli, "security.crowdsec.blocklists.list", nil, 30*time.Second))
 	g.POST("/blocklists/refresh", agentPassthrough(cli, "security.crowdsec.blocklists.refresh", nil, 60*time.Second))
@@ -637,4 +666,15 @@ func agentPassthrough(cli agent.AgentInterface, command string, params any, time
 		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	}
+}
+
+// ipOrCIDRShape is a cheap pre-validator for the DELETE /decisions
+// IP query param. It allows v4/v6 IPs with an optional /N suffix
+// using only the character set IP/CIDR notation can produce. The
+// agent handler does the strict net.ParseIP / net.ParseCIDR
+// validation before invoking cscli.
+var ipOrCIDRRe = regexp.MustCompile(`^[0-9a-fA-F:.]+(/[0-9]{1,3})?$`)
+
+func ipOrCIDRShape(s string) bool {
+	return ipOrCIDRRe.MatchString(s)
 }
