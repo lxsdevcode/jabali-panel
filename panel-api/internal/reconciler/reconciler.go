@@ -16,6 +16,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnscompile"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnsverify"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/nginxrules"
@@ -60,6 +61,10 @@ type Reconciler struct {
 	// dockerApps holds reference to the docker_apps repository (M48 Phase 1).
 	// Nil-safe: when unwired the docker-app tick is a no-op.
 	dockerApps repository.DockerAppRepository
+	// dockerCatalog is the loaded M48 catalog. Used by the
+	// image-update poller to resolve a docker_apps row to its
+	// catalog entry's image_channel. Optional.
+	dockerCatalog *dockerapp.Catalog
 	// M18 — hosting packages + per-user overrides + /home mount path.
 	packages       repository.PackageRepository
 	limitOverrides repository.UserLimitOverrideRepository

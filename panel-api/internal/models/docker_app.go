@@ -28,6 +28,12 @@ type DockerApp struct {
 	Name           string    `gorm:"type:varchar(255);not null" json:"name"`
 	CatalogVersion string    `gorm:"column:catalog_version;type:varchar(64);not null" json:"catalog_version"`
 	ImageSHA       *string   `gorm:"column:image_sha;type:varchar(128);null" json:"image_sha"`
+	// AvailableDigest is the latest upstream digest the panel-api
+	// observed for this app's image_channel. Differs from ImageSHA
+	// when an update is available.
+	AvailableDigest *string    `gorm:"column:available_digest;type:varchar(128);null" json:"available_digest"`
+	// LastCheckAt gates the per-app poll cadence (~6h default).
+	LastCheckAt     *time.Time `gorm:"column:last_check_at;type:timestamp;null" json:"last_check_at"`
 	Status         string    `gorm:"type:varchar(32);not null;default:'pending'" json:"status"`
 	UpdateMode     string    `gorm:"column:update_mode;type:varchar(16);not null;default:'manual'" json:"update_mode"`
 	CPULimit       *string   `gorm:"column:cpu_limit;type:varchar(16);null" json:"cpu_limit"`

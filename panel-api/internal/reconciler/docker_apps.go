@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
@@ -64,6 +65,12 @@ func (r *Reconciler) reconcileOneDockerApp(ctx context.Context, app *models.Dock
 	case models.DockerAppStatusInstalling, models.DockerAppStatusRunning:
 		// Status-poll; the agent verb is cheap (one docker compose ps).
 		r.statusPoll(ctx, app)
+		// M48 Phase 7 follow-up: image-digest poll. Cheap (~1 HTTP
+		// HEAD via `docker manifest inspect`) but gated by
+		// last_check_at so each app gets checked at most once per
+		// dockerAppCheckInterval. When the upstream digest moves
+		// AND update_mode='auto', dispatch the update flow.
+		r.pollImageUpdate(ctx, app)
 	default:
 		// stopped / failed / deleted / updating / rolling_back are
 		// terminal-or-in-flight from this tick's perspective.
@@ -178,6 +185,86 @@ func (r *Reconciler) WithDockerApps(repo repository.DockerAppRepository) *Reconc
 	return r
 }
 
+// WithDockerCatalog wires the loaded M48 catalog so the
+// image-update poller can resolve docker_apps.slug to the catalog's
+// image_channel. Nil-safe; without it the poller no-ops.
+func (r *Reconciler) WithDockerCatalog(cat *dockerapp.Catalog) *Reconciler {
+	r.dockerCatalog = cat
+	return r
+}
+
 // compile-time guard: keep fmt imported even when only used for
 // stringification in future Phase 7 work.
 var _ = fmt.Sprintf
+
+
+// dockerAppCheckInterval is the per-app poll cadence for upstream
+// image digests. 6h is conservative; busy registries (docker hub
+// rate limits) appreciate the lower load and operators don't
+// usually need sub-day update awareness.
+const dockerAppCheckInterval = 6 * time.Hour
+
+// pollImageUpdate is the per-tick check-for-updates pass. Gated by
+// last_check_at so the reconciler can't pound the registry on every
+// tick. Sets available_digest when the upstream has moved; when
+// update_mode='auto' AND status='running' AND last_error IS NULL,
+// dispatches docker_app.update (which the agent runs with snapshot
+// + healthcheck + rollback).
+func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp) {
+	if app == nil || r.dockerCatalog == nil || r.dockerApps == nil {
+		return
+	}
+	if app.LastCheckAt != nil && time.Since(*app.LastCheckAt) < dockerAppCheckInterval {
+		return
+	}
+	entry, ok := r.dockerCatalog.Get(app.Slug)
+	if !ok {
+		return
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	raw, err := r.agent.Call(callCtx, "docker_app.check_update", map[string]any{
+		"slug":          app.Slug,
+		"image_channel": entry.ImageChannel,
+	})
+	// Always mark checked even on failure -- we don\'t want a
+	// permanently-failing registry to spin the poller hot.
+	defer func() {
+		_ = r.dockerApps.MarkChecked(context.Background(), app.ID)
+	}()
+	if err != nil {
+		r.log.Debug("dockerapp: check_update failed", "id", app.ID, "err", err)
+		return
+	}
+	var resp struct {
+		AvailableDigest string `json:"available_digest"`
+		UpdateAvailable bool   `json:"update_available"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		r.log.Warn("dockerapp: parse check_update failed", "id", app.ID, "err", err)
+		return
+	}
+	if !resp.UpdateAvailable {
+		return
+	}
+	_ = r.dockerApps.UpdateAvailableDigest(ctx, app.ID, resp.AvailableDigest)
+	r.log.Info("dockerapp: update available", "id", app.ID, "slug", app.Slug, "digest", resp.AvailableDigest)
+
+	// Auto-update gate. Manual mode just leaves the digest on the
+	// row; the UI surfaces it as "update available". Auto dispatches
+	// the same agent verb the operator would click.
+	if app.UpdateMode == models.DockerAppUpdateModeAuto && app.LastError == nil && app.Status == models.DockerAppStatusRunning {
+		r.log.Info("dockerapp: auto-update dispatching", "id", app.ID, "slug", app.Slug)
+		updateCtx, ucancel := context.WithTimeout(ctx, 6*time.Minute)
+		defer ucancel()
+		_, err := r.agent.Call(updateCtx, "docker_app.update", map[string]any{
+			"slug":                        app.Slug,
+			"healthcheck_timeout_seconds": 180,
+		})
+		if err != nil {
+			msg := firstLineString(err.Error())
+			_ = r.dockerApps.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+		}
+	}
+}
