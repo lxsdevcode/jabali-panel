@@ -75,6 +75,7 @@ import { UserSSHKeysPage } from "./shells/user/ssh-keys/UserSSHKeysPage";
 import { UserAPITokensPage } from "./shells/user/api-tokens/UserAPITokensPage";
 import { APIDocsPage } from "./shells/shared/APIDocsPage";
 import { UserCronList } from "./shells/user/cron/UserCronList";
+import { AdminCronList } from "./shells/admin/cron/AdminCronList";
 import { MailTabsPage } from "./shells/user/mail/MailTabsPage";
 import { AdminApplicationList } from "./shells/admin/applications/AdminApplicationList";
 import { LogsPage } from "./shells/admin/logs/LogsPage";
@@ -178,6 +179,7 @@ const ThemedApp = () => {
             <Route path="applications" element={<AdminApplicationList />} />
             <Route path="logs" element={<LogsPage />} />
             <Route path="audit" element={<AdminAuditList />} />
+            <Route path="cron" element={<AdminCronList />} />
             <Route path="ips">
               <Route index element={<AdminIPList />} />
               <Route path="create" element={<Navigate to="/jabali-admin/ips" replace />} />

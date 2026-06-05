@@ -71,6 +71,13 @@ func RegisterCronRoutes(g *gin.RouterGroup, cfg CronHandlerConfig) {
 	grp.DELETE("/:id", h.delete)
 	grp.POST("/:id/run-now", h.runNow)
 	grp.GET("/:id/log", h.readLog)
+
+	// Admin view across all tenants. Other admin actions (PATCH /cron/:id,
+	// DELETE /cron/:id, run-now, log) already accept any admin caller via
+	// fetchAndAuthorize's `claims.IsAdmin` bypass — no separate /admin
+	// variant needed for those.
+	admin := g.Group("/admin/cron")
+	admin.GET("", h.adminListAll)
 }
 
 type cronHandler struct{ cfg CronHandlerConfig }
@@ -227,6 +234,68 @@ func (h *cronHandler) list(c *gin.Context) {
 	out := make([]cronJobResponse, 0, len(jobs))
 	for _, j := range jobs {
 		out = append(out, toCronResponse(j))
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out})
+}
+
+// adminCronJobResponse is the admin list view — same as cronJobResponse
+// plus the owner's username so the UI can render "owner" column without
+// a second N+1 lookup. user_id stays in the payload too in case the UI
+// wants to filter / link.
+type adminCronJobResponse struct {
+	cronJobResponse
+	Username string `json:"username"`
+}
+
+// adminListAll returns every cron job on the system, with the owner's
+// username denormalised. Admin-only. Linear bulk-load of users — no
+// N+1 — because the cron table is small enough to enumerate in one
+// query and the user table is typically <1000 rows.
+func (h *cronHandler) adminListAll(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	if !claims.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	jobs, err := h.cfg.CronJobs.ListAll(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+
+	// Bulk-load usernames so the response carries the owner without
+	// extra round-trips client-side. Dedupe ids first; small N either
+	// way but keeps the query plan tight.
+	seen := make(map[string]struct{}, len(jobs))
+	ids := make([]string, 0, len(jobs))
+	for _, j := range jobs {
+		if _, dup := seen[j.UserID]; dup {
+			continue
+		}
+		seen[j.UserID] = struct{}{}
+		ids = append(ids, j.UserID)
+	}
+	usernameByID := make(map[string]string, len(ids))
+	if len(ids) > 0 && h.cfg.Users != nil {
+		users, uerr := h.cfg.Users.FindByIDs(ctx, ids)
+		if uerr == nil {
+			for _, u := range users {
+				if u.Username != nil { usernameByID[u.ID] = *u.Username }
+			}
+		}
+	}
+
+	out := make([]adminCronJobResponse, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, adminCronJobResponse{
+			cronJobResponse: toCronResponse(j),
+			Username:        usernameByID[j.UserID],
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": out})
 }
