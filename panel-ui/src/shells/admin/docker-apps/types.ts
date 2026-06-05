@@ -1,0 +1,103 @@
+// Types for the M48 docker-app marketplace UI. Mirrors the JSON
+// shapes panel-api/internal/api/docker_apps.go serialises.
+
+export interface CatalogPortSpec {
+  name: string;
+  container_port: number;
+  protocol: "tcp" | "udp";
+  default_enabled: boolean;
+  default_bind: "loopback" | "public";
+  default_reverse_proxy: boolean;
+  health_path?: string;
+}
+
+export interface CatalogVolume {
+  name: string;
+  container_path: string;
+}
+
+export interface CatalogResources {
+  cpu?: string;
+  memory?: string;
+  pids?: number;
+}
+
+export interface CatalogEnvVar {
+  name: string;
+  value?: string;
+  secret?: boolean;
+  generate?: "password32" | "password64";
+}
+
+export interface CatalogEntry {
+  slug: string;
+  name: string;
+  version: string;
+  description: string;
+  icon: string;
+  upstream?: string;
+  documentation?: string;
+  update_mode: "manual" | "auto";
+  resources: CatalogResources;
+  volumes: CatalogVolume[];
+  ports: CatalogPortSpec[];
+  env?: CatalogEnvVar[];
+}
+
+export interface InstalledPort {
+  id: string;
+  app_id: string;
+  port_name: string;
+  container_port: number;
+  bind_interface: string;
+  host_port: number;
+  protocol: "tcp" | "udp";
+  reverse_proxy: boolean;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface InstalledApp {
+  id: string;
+  slug: string;
+  name: string;
+  catalog_version: string;
+  image_sha: string | null;
+  status:
+    | "pending"
+    | "installing"
+    | "running"
+    | "stopped"
+    | "failed"
+    | "updating"
+    | "rolling_back"
+    | "deleted";
+  update_mode: "manual" | "auto";
+  cpu_limit: string | null;
+  memory_limit: string | null;
+  pids_limit: number | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  ports: InstalledPort[];
+}
+
+export interface InstallRequest {
+  slug: string;
+  name: string;
+  domain?: string;
+  update_mode?: "manual" | "auto";
+  cpu_limit?: string;
+  memory_limit?: string;
+  pids_limit?: number;
+  env?: Record<string, string>;
+  ports?: InstallPortOverride[];
+}
+
+export interface InstallPortOverride {
+  name: string;
+  enabled?: boolean;
+  bind_interface?: string;
+  host_port?: number;
+  reverse_proxy?: boolean;
+}
