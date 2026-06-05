@@ -68,13 +68,70 @@ When the admin installs an app, they pick a fully-qualified hostname (e.g. `vaul
 
 **Rejected:** auto-derived hostname like `<slug>.<panel-hostname>` — too inflexible; many operators want a separate brand domain per app.
 
+A `domains` row only attaches to ports whose `reverse_proxy=true`. Public-bind ports (UDP, raw-TCP like Gitea SSH) don't get a vhost; they show up in the UI as plain `host:port` endpoints with a copy-button.
+
 ---
 
-## Decision 5 — Port allocation: dynamic pool 10000–19999
+## Decision 5 — Port model: admin-controlled per app, multi-port, with sensible defaults
 
-A `docker_app_ports` table seeded with the range 10000..19999. Install grabs the lowest free row, stamps `app_id`. Delete frees it (`app_id = NULL`).
+Each app in the catalog declares ALL the container ports it can expose, with a per-port default publish policy. The admin install drawer renders one row per declared port, each row editable:
 
-**Why:** keeps app upstream binds on `127.0.0.1` (never exposed externally) without needing port-config gymnastics. 10k ports is two orders of magnitude more than realistic app counts per host. Range starts at 10000 to dodge common service ports.
+| Field | Default (catalog) | Admin override at install + post-install |
+|---|---|---|
+| **Enabled** | catalog says yes/no | toggle (turn off ports you don't need) |
+| **Bind interface** | `loopback` (127.0.0.1 → behind nginx reverse proxy + TLS) | `loopback` \| `public` (one of the operator's managed IPs) |
+| **Bind port** | auto-allocated from pool 10000–19999 | operator can pin a specific port; collision = 400 |
+| **Protocol** | catalog declares `tcp` \| `udp` | usually fixed (matches what the container speaks); operator can drop a port entirely |
+| **Reverse-proxy** | `true` when `loopback` (nginx vhost → upstream); `false` when `public` | follows the interface choice |
+
+Multi-port is real: n8n has webhook + UI on different ports; Gitea has HTTP + SSH; some apps have prometheus metrics on a sidecar port.
+
+Tables:
+
+```sql
+CREATE TABLE docker_app_published_ports (
+  id              CHAR(26) PRIMARY KEY,
+  app_id          CHAR(26) NOT NULL,
+  port_name       VARCHAR(32) NOT NULL,            -- catalog-declared name (e.g. "http", "webhook", "ssh")
+  container_port  INT NOT NULL,
+  bind_interface  VARCHAR(32) NOT NULL DEFAULT 'loopback',   -- 'loopback' | 'public:<managed_ip_id>'
+  host_port       INT NOT NULL,                    -- allocated/pinned host port
+  protocol        VARCHAR(8) NOT NULL DEFAULT 'tcp',         -- 'tcp' | 'udp'
+  reverse_proxy   TINYINT(1) NOT NULL DEFAULT 1,
+  CONSTRAINT fk_dapp_pubport_app FOREIGN KEY (app_id) REFERENCES docker_apps(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_dapp_pubport_per_app (app_id, port_name),
+  UNIQUE KEY uniq_dapp_pubport_global (bind_interface, host_port, protocol)
+);
+```
+
+The pool table from the previous draft (`docker_app_ports`) goes away — uniqueness on `(bind_interface, host_port, protocol)` handles collision instead of pre-seeding 10k rows. Auto-allocation walks the same 10000–19999 range and picks the lowest free port for that interface+protocol.
+
+Catalog declaration in `app.yaml` (example for Gitea):
+
+```yaml
+ports:
+  - name: http
+    container_port: 3000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback        # behind nginx
+    default_reverse_proxy: true
+  - name: ssh
+    container_port: 22
+    protocol: tcp
+    default_enabled: false        # operator must opt in
+    default_bind: public          # SSH can't run behind nginx
+    default_reverse_proxy: false
+```
+
+**Why this shape:**
+
+- Reverse-proxy through nginx is the safe default; operators get TLS + CrowdSec + rate limits + Directory Privacy for free.
+- Some workloads (UDP, raw TCP like Gitea SSH, metrics scrape targets) can't sit behind nginx — needed an escape hatch.
+- One row per published port lets the admin disable individual ports without uninstalling the app.
+- Catalog defaults keep "one click install" working — defaults reflect the most common operator intent.
+
+**Why not the previous "single port" model:** it was forcing every app into the nginx funnel, and several apps in the catalog (Gitea SSH, n8n webhook) genuinely need a second port that nginx can't proxy. The pre-seeded pool table was also a wart — DB-level uniqueness is enough.
 
 ---
 

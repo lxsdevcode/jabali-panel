@@ -136,9 +136,15 @@ Security boundary: `/var/run/docker.sock` is owned by `root:docker`, mode `0660`
 
 Volume layout is per-catalog-entry — Vaultwarden uses `data/` only; Ghost uses `data/` + `db/`. Catalog metadata declares which subdirs to create.
 
-### Reverse proxy wiring (Phase 6)
+### Port + reverse-proxy wiring (Phase 6)
 
-App publishes a container port on `127.0.0.1:<allocated-port>`. Allocation is dynamic from a 10000–19999 pool tracked in `docker_app_ports`. Panel-api creates a row in `domains` with `managed_by='docker_app'` and `docker_app_id=<app id>`; reconciler sees the row and renders a tenant-style vhost that `proxy_pass`-es to the allocated upstream. LE issuance and per-domain SAN follow the same path as tenant domains — we get TLS for free.
+Catalog declares all exposable container ports. Admin install drawer renders one row per declared port; each row has an Enabled toggle + Bind (loopback/public-IP) + Port (auto-pool or pinned) + Protocol (tcp/udp) + Reverse-proxy toggle.
+
+- **Loopback + reverse_proxy=true** (the common case): port binds to `127.0.0.1:<host_port>`; a `domains` row with `managed_by='docker_app'` + `docker_app_id=<app id>` + `proxy_port=<host_port>` is created, and the reconciler renders an nginx vhost that `proxy_pass`-es to the upstream. LE issuance + per-domain SAN follow the same path as tenant domains — TLS for free.
+- **Public-IP bind** (UDP, raw-TCP like Gitea SSH): port binds to `<managed_ip>:<host_port>`; no vhost, no nginx. UI surfaces it as `host:port` with a copy-button.
+- **Loopback + reverse_proxy=false** (rare; metrics scrape targets): bound locally, no nginx, no domain — accessible only from operator console.
+
+Allocation: free port found by walking 10000..19999 and asking the DB `INSERT ... uniq_dapp_pubport_global` to fail-on-conflict, retrying with the next number. Operator-pinned ports get the same uniqueness check; collision returns 400.
 
 ### Updates + rollback (Phase 7)
 
@@ -178,7 +184,6 @@ CREATE TABLE docker_apps (
   status          VARCHAR(32) NOT NULL DEFAULT 'pending',
                                                        -- pending|installing|running|stopped|failed|updating|rolling_back|deleted
   domain_id       CHAR(26) NULL,                       -- FK domains.id when vhost is wired
-  port            INT NULL,                            -- allocated upstream port
   update_mode     VARCHAR(16) NOT NULL DEFAULT 'manual',
                                                        -- manual|notify|auto
   cpu_limit       VARCHAR(16) NULL,                    -- "0.5", "2.0" cores; NULL = catalog default
@@ -191,11 +196,20 @@ CREATE TABLE docker_apps (
   CONSTRAINT fk_docker_apps_domain FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE SET NULL
 );
 
-CREATE TABLE docker_app_ports (
-  port            INT PRIMARY KEY,                     -- 10000..19999
-  app_id          CHAR(26) NULL,                       -- NULL = free
-  reserved_at     TIMESTAMP NULL,
-  CONSTRAINT fk_docker_app_ports_app FOREIGN KEY (app_id) REFERENCES docker_apps(id) ON DELETE SET NULL
+CREATE TABLE docker_app_published_ports (
+  id              CHAR(26) PRIMARY KEY,
+  app_id          CHAR(26) NOT NULL,
+  port_name       VARCHAR(32) NOT NULL,                -- catalog-declared name ("http", "webhook", "ssh", ...)
+  container_port  INT NOT NULL,
+  bind_interface  VARCHAR(64) NOT NULL DEFAULT 'loopback',
+                                                       -- 'loopback' OR 'public:<managed_ip_id>'
+  host_port       INT NOT NULL,                        -- auto-allocated from 10000..19999 OR operator-pinned
+  protocol        VARCHAR(8) NOT NULL DEFAULT 'tcp',   -- 'tcp' | 'udp'
+  reverse_proxy   TINYINT(1) NOT NULL DEFAULT 1,
+  enabled         TINYINT(1) NOT NULL DEFAULT 1,
+  CONSTRAINT fk_dapp_pubport_app FOREIGN KEY (app_id) REFERENCES docker_apps(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_dapp_pubport_per_app (app_id, port_name),
+  UNIQUE KEY uniq_dapp_pubport_global (bind_interface, host_port, protocol)
 );
 
 CREATE TABLE docker_app_backups (
@@ -292,10 +306,18 @@ resources:
 volumes:
   - data
 
-# Where the container exposes the HTTP listener (used to allocate the upstream port).
-http:
-  container_port: 80
-  health_path: /alive
+# Ports the container can expose. The admin install drawer renders one
+# editable row per entry. Defaults pre-fill the form but everything is
+# overridable. Apps with multiple ports list them all (Gitea ssh + http,
+# n8n ui + webhook, etc).
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback            # 'loopback' | 'public'
+    default_reverse_proxy: true
+    health_path: /alive               # used by Phase 7 health-gate
 
 # Update channel: image tag we pull. operator sees a CTA when a newer SHA arrives.
 image_channel: vaultwarden/server:latest
@@ -374,7 +396,7 @@ Template variables filled by the agent at render time: `Slug`, `Name`, `Domain`,
 ### Phase 5: admin UI
 
 - `panel-ui/src/shells/admin/docker-apps/AdminDockerAppList.tsx` — Catalog tab + Installed tab.
-- Install drawer: Catalog card → click → form (name, domain, update_mode, cpu/memory overrides) → POST → poll status until `running` or `failed`.
+- Install drawer: Catalog card → click → form (name, domain, update_mode, cpu/memory overrides, **ports table** with one editable row per catalog-declared port — Enabled / Bind interface / Host port / Protocol / Reverse-proxy) → POST → poll status until `running` or `failed`.
 - Row actions: Start / Stop / Restart / Rebuild / Update / Logs (drawer) / Backup / Delete (popconfirm).
 - Admin-only extras: Exec shell (xterm.js drawer), Edit compose (Monaco editor drawer), Force recreate.
 - Nav: `/jabali-admin/docker-apps` after `applications` entry.
@@ -415,7 +437,7 @@ Template variables filled by the agent at render time: `Slug`, `Name`, `Domain`,
 | 3 | `docker_app.install` for Vaultwarden brings up the container + healthcheck reports healthy within 60s |
 | 4 | unit tests above; manual `curl -X POST /api/v1/admin/docker-apps` round-trip returns 202 + the row |
 | 5 | UI lists catalog, install drawer submits, install row appears with `pending` → `installing` → `running` transitions; logs drawer streams |
-| 6 | nginx -t green; `curl -kI https://<chosen-domain>/` returns the app's index; LE cert provisions on next reconciler tick |
+| 6 | nginx -t green for every `reverse_proxy=true` port; `curl -kI https://<chosen-domain>/` returns the app's index; LE cert provisions on next reconciler tick; public-IP-bound port (e.g. Gitea SSH on 222) reachable from the public internet on the chosen `<managed_ip>:<host_port>` |
 | 7 | update flow: artificially set `image_sha` to old digest, set mode=auto; reconciler updates + healthchecks pass; corrupt image → rollback fires |
 | 8 | `POST /:id/backup` creates restic snapshot; `POST /:id/backups/:bid/restore` round-trips |
 | 9 | Playwright passes; runbook walks an operator through install + delete |
