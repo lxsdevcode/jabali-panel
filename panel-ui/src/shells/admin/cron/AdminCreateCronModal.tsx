@@ -176,16 +176,18 @@ export const AdminCreateCronModal = ({ open, onClose, onSuccess }: Props) => {
         <Divider />
         <Form.Item label="Schedule" name="preset">
           <Radio.Group>
-            {SCHEDULE_PRESETS.map((p) => (
-              <Radio key={p.value} value={p.value} style={{ display: "block" }}>
-                {p.label}
-                {p.value !== "advanced" && (
-                  <Typography.Text code style={{ marginLeft: 8 }}>
-                    {p.value}
-                  </Typography.Text>
-                )}
-              </Radio>
-            ))}
+            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+              {SCHEDULE_PRESETS.map((p) => (
+                <Radio key={p.value} value={p.value}>
+                  {p.label}
+                  {p.value !== "advanced" && (
+                    <Typography.Text code style={{ marginLeft: 8 }}>
+                      {p.value}
+                    </Typography.Text>
+                  )}
+                </Radio>
+              ))}
+            </Space>
           </Radio.Group>
         </Form.Item>
         {preset === "advanced" && (

@@ -10925,7 +10925,10 @@ main() {
   provision_mariadb
   install_mariadb_skip_networking
   tune_mariadb_for_ram
-  install_docker_engine
+  # M48 Phase 8 (opt-in): install_docker_engine no longer runs on
+  # fresh install. Operator flips server_settings.docker_marketplace_enabled
+  # in Server Settings; panel-api dispatches docker.install which
+  # sources install.sh and runs install_docker_engine on demand.
   install_redis
   # M37 Phase 4: PostgreSQL is OPT-IN. install_postgres no longer runs on
   # fresh install. Operator flips server_settings.postgres_enabled in
