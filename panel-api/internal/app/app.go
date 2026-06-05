@@ -961,6 +961,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			api.RegisterDockerAppRoutes(v1, api.DockerAppHandlerConfig{
 				Repo:    deps.DockerApps,
 				Catalog: deps.DockerCatalog,
+				Domains: deps.Domains,
 				Agent:   deps.Agent,
 				Log:     deps.Log,
 			})
