@@ -188,6 +188,14 @@ type ServerSettings struct {
 	// PostgresMaxConnectionsPerUser is surfaced when Wave A creates
 	// per-user PG roles (mirrors MariaDB max_user_connections cap).
 	PostgresEnabled               bool   `gorm:"column:postgres_enabled;type:tinyint(1);not null;default:0" json:"postgres_enabled"`
+	// DockerMarketplaceEnabled gates the M48 docker-app marketplace.
+	// When false, the panel installs no docker engine and unmounts
+	// /admin/docker-apps; when flipped true, panel-api dispatches
+	// docker.install on the agent (sources install.sh + runs
+	// install_docker_engine). Flip false stops the daemon and masks
+	// the units; per-app data under /var/lib/jabali/docker-apps/ is
+	// left intact for a future re-enable.
+	DockerMarketplaceEnabled      bool   `gorm:"column:docker_marketplace_enabled;type:tinyint(1);not null;default:0" json:"docker_marketplace_enabled"`
 	PostgresMaxConnectionsPerUser uint16 `gorm:"column:postgres_max_connections_per_user;type:smallint unsigned;not null;default:25" json:"postgres_max_connections_per_user"`
 
 	// MigrationAllowPrivateHosts — ADR-0095 decision 8. When TRUE the

@@ -8,6 +8,7 @@ import { LeftOutlined, RightOutlined } from "@icons";
 import { Drawer, Grid, Layout, Menu, theme } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
+import { apiClient } from "../apiClient";
 import { JabaliFooter } from "../components/JabaliFooter";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { adminNav, selectedNavKey } from "../nav";
@@ -29,7 +30,21 @@ export function AdminLayout() {
   // hamburger on initial paint rather than the desktop Sider.
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
 
-  const selected = selectedNavKey(adminNav, location.pathname);
+  // M48: hide the Docker Apps nav entry until the operator opts in
+  // via Server Settings -> Apps. /me/server-capabilities is cached
+  // per-session; UI ergonomics outweigh staleness here.
+  const [dockerEnabled, setDockerEnabled] = useState<boolean>(false);
+  useEffect(() => {
+    apiClient
+      .get<{ docker_marketplace_enabled?: boolean }>("/me/server-capabilities")
+      .then((r) => setDockerEnabled(!!r.data.docker_marketplace_enabled))
+      .catch(() => setDockerEnabled(false));
+  }, []);
+  const visibleNav = dockerEnabled
+    ? adminNav
+    : adminNav.filter((n) => n.key !== "docker-apps");
+
+  const selected = selectedNavKey(visibleNav, location.pathname);
 
   // Light mode: explicit Tailwind gray-50 / gray-100 per operator request
   // so the sidebar sits a shade paler than the main card surface and the
@@ -46,7 +61,7 @@ export function AdminLayout() {
       theme={mode}
       selectedKeys={selected ? [selected] : []}
       style={{ border: "none", background: siderBg }}
-      items={adminNav.map((n) => ({
+      items={visibleNav.map((n) => ({
         key: n.key,
         icon: n.icon,
         label: n.label,

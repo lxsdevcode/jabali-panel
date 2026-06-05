@@ -42,6 +42,13 @@ import (
 type DockerAppHandlerConfig struct {
 	Repo    repository.DockerAppRepository
 	Catalog *dockerapp.Catalog
+	// ServerSettings is the gate for the M48 marketplace opt-in. When
+	// settings.docker_marketplace_enabled is false, every route in
+	// this group returns 503 docker_marketplace_disabled. The flag is
+	// flipped on the Server Settings page; the panel-api server_settings
+	// PATCH handler dispatches docker.install / docker.disable to the
+	// agent on flip.
+	ServerSettings repository.ServerSettingsRepository
 	// Domains is optional. When set, the install handler creates a
 	// `domains` row with managed_by='docker_app' for each install
 	// that has a loopback+reverse_proxy=true port, so the reconciler
@@ -60,6 +67,7 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	h := &dockerAppHandler{cfg: cfg}
 	grp := g.Group("/admin/docker-apps")
 	grp.Use(requireAdminForDockerApps)
+	grp.Use(h.requireDockerMarketplaceEnabled)
 	grp.GET("/catalog", h.listCatalog)
 	grp.GET("", h.list)
 	grp.POST("", h.install)
@@ -710,6 +718,30 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// requireDockerMarketplaceEnabled rejects every call with 503 when the
+// operator hasn't flipped server_settings.docker_marketplace_enabled
+// in Server Settings. The /admin/docker-apps/* routes stay MOUNTED
+// even with marketplace disabled so the UI can render a clear 503 +
+// "enable in Server Settings" hint instead of a generic 404.
+func (h *dockerAppHandler) requireDockerMarketplaceEnabled(c *gin.Context) {
+	if h.cfg.ServerSettings == nil {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+			"error":  "docker_marketplace_disabled",
+			"detail": "server_settings unavailable",
+		})
+		return
+	}
+	ss, err := h.cfg.ServerSettings.Get(c.Request.Context())
+	if err != nil || ss == nil || !ss.DockerMarketplaceEnabled {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+			"error":  "docker_marketplace_disabled",
+			"detail": "enable the Docker App Marketplace in Server Settings",
+		})
+		return
+	}
+	c.Next()
 }
 
 // firstLineString returns the leading line of a multi-line string.

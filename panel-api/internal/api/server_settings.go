@@ -107,6 +107,10 @@ type updateServerSettingsRequest struct {
 	// /databases POST handler from accepting engine="postgres" + the
 	// reconciler from starting the postgresql service.
 	PostgresEnabled               *bool   `json:"postgres_enabled,omitempty"`
+	// M48 docker-app marketplace opt-in. flip true -> agent installs
+	// docker via install_docker_engine; flip false -> agent stops +
+	// disables docker units (data kept).
+	DockerMarketplaceEnabled      *bool   `json:"docker_marketplace_enabled,omitempty"`
 	PostgresMaxConnectionsPerUser *uint16 `json:"postgres_max_connections_per_user,omitempty"`
 
 	// M35 SSRF override. When true, migrate.ValidateHost accepts
@@ -164,6 +168,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 
 	prevHostname := current.Hostname
 	prevPostgresEnabled := current.PostgresEnabled
+	prevDockerEnabled := current.DockerMarketplaceEnabled
 	prevTimezone := current.Timezone
 	prevSSHPort := current.SSHPort
 	prevSSHPasswordAuth := current.SSHPasswordAuth
@@ -278,6 +283,9 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	if req.PostgresEnabled != nil {
 		current.PostgresEnabled = *req.PostgresEnabled
 	}
+	if req.DockerMarketplaceEnabled != nil {
+		current.DockerMarketplaceEnabled = *req.DockerMarketplaceEnabled
+	}
 	if req.MigrationAllowPrivateHosts != nil {
 		current.MigrationAllowPrivateHosts = *req.MigrationAllowPrivateHosts
 	}
@@ -344,6 +352,26 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 					"method", method, "err", err)
 			}
 		}(current.PostgresEnabled)
+	}
+
+	// M48 docker marketplace opt-in. Mirrors the postgres pattern
+	// above: flip true -> install_docker_engine; flip false -> stop
+	// + disable units, data under /var/lib/jabali/docker-apps left
+	// intact. Background dispatch so the operator's PATCH does not
+	// block on apt-get.
+	if current.DockerMarketplaceEnabled != prevDockerEnabled && h.cfg.Agent != nil {
+		go func(target bool) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			method := "docker.disable"
+			if target {
+				method = "docker.install"
+			}
+			if _, err := h.cfg.Agent.Call(bgCtx, method, map[string]any{}); err != nil {
+				h.cfg.Log.Error("agent docker lifecycle failed",
+					"method", method, "err", err)
+			}
+		}(current.DockerMarketplaceEnabled)
 	}
 
 	// Apply timezone to the OS via agent if changed and not empty.

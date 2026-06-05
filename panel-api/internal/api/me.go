@@ -45,14 +45,15 @@ func (h *meExtHandler) serverCapabilities(c *gin.Context) {
 	settings, err := h.cfg.ServerSettings.Get(ctx)
 	if errors.Is(err, repository.ErrNotFound) {
 		// Pre-seed install — every flag defaults to false.
-		c.JSON(http.StatusOK, gin.H{"postgres_enabled": false})
+		c.JSON(http.StatusOK, gin.H{"postgres_enabled": false, "docker_marketplace_enabled": false})
 		return
 	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"postgres_enabled": settings.PostgresEnabled,
+		"postgres_enabled":           settings.PostgresEnabled,
+		"docker_marketplace_enabled": settings.DockerMarketplaceEnabled,
 	})
 }
 

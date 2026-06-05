@@ -959,11 +959,12 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// stays unmounted and any /admin/docker-apps/* request 404s.
 		if deps.DockerApps != nil && deps.Agent != nil {
 			api.RegisterDockerAppRoutes(v1, api.DockerAppHandlerConfig{
-				Repo:    deps.DockerApps,
-				Catalog: deps.DockerCatalog,
-				Domains: deps.Domains,
-				Agent:   deps.Agent,
-				Log:     deps.Log,
+				Repo:           deps.DockerApps,
+				Catalog:        deps.DockerCatalog,
+				ServerSettings: deps.ServerSettings,
+				Domains:        deps.Domains,
+				Agent:          deps.Agent,
+				Log:            deps.Log,
 			})
 		}
 

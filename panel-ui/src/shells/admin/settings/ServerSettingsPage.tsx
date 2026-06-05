@@ -10,6 +10,7 @@ import {
   SaveOutlined,
   SettingOutlined,
   WarningOutlined,
+  AppstoreOutlined,
 } from "@icons";
 import {
   Alert,
@@ -50,6 +51,7 @@ function useNotify() {
 import { apiClient } from "../../../apiClient";
 import { BrandingCard } from "./BrandingCard";
 import { DatabasesCard } from "./DatabasesCard";
+import { DockerMarketplaceCard } from "./DockerMarketplaceCard";
 import { DatabaseAdminSections } from "./DatabaseAdminSections";
 import { DNSResolversCard } from "./DNSResolversCard";
 import { EmailCard } from "./EmailCard";
@@ -846,6 +848,7 @@ type SettingsTabKey =
   | "dns"
   | "email"
   | "databases"
+  | "apps"
   | "branding";
 
 const BrandingSettingsTab = () => (
@@ -915,6 +918,15 @@ export const ServerSettingsPage = () => {
             ),
           },
           {
+            key: "apps",
+            tab: (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                <AppstoreOutlined />
+                Apps
+              </span>
+            ),
+          },
+          {
             key: "branding",
             tab: (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
@@ -937,6 +949,7 @@ export const ServerSettingsPage = () => {
             <DatabaseAdminSections />
           </>
         )}
+        {activeTab === "apps" && <DockerMarketplaceCard />}
         {activeTab === "branding" && <BrandingSettingsTab />}
       </Card>
     </div>
