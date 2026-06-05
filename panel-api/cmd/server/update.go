@@ -378,6 +378,23 @@ fi
 `
 			return run("", "bash", "-c", script)
 		}},
+		{"sync docker-app catalog", func() error {
+			// M48: rsync install/docker-apps/ -> /usr/local/share/
+			// jabali/docker-apps/, the path panel-api reads at
+			// startup (cmd/server/serve.go ~line 191).
+			// install.sh's build_backend() drops the same block, but
+			// `jabali update` doesn't go through build_backend — so
+			// without this step, existing VMs upgrade to a new
+			// catalog version and still see "0 in catalog" until
+			// they re-run install.sh by hand. Idempotent.
+			src := repoDir + "/install/docker-apps"
+			if _, err := os.Stat(src); err != nil {
+				return nil
+			}
+			return run("", "bash", "-c",
+				"install -d -m 0755 /usr/local/share/jabali/docker-apps && "+
+					"rsync -a --delete --exclude=.git "+src+"/ /usr/local/share/jabali/docker-apps/")
+		}},
 		{"reconcile crowdsec appsec config", func() error {
 			// install_crowdsec_appsec is the canonical writer of
 			// /etc/crowdsec/appsec-configs/jabali-appsec.yaml. Its

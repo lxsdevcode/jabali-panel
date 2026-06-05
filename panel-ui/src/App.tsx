@@ -20,7 +20,7 @@
 // protected page re-uses the same whoami cache.
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
-import { ConfigProvider, Empty, Spin } from "antd";
+import { App as AntdApp, ConfigProvider, Empty, Spin } from "antd";
 import type { ReactNode } from "react";
 
 import { AuthProvider, useAuth } from "./auth/AuthContext";
@@ -139,6 +139,7 @@ const ThemedApp = () => {
         {...muiConfig}
         renderEmpty={() => <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
       >
+        <AntdApp>
         <BrandingTitleApplier />
         <Routes>
           {/* ---------------- admin shell ---------------- */}
@@ -278,6 +279,7 @@ const ThemedApp = () => {
           <Route path="/" element={<LandingRedirect />} />
           <Route path="*" element={<LandingRedirect />} />
         </Routes>
+        </AntdApp>
       </ConfigProvider>
     </BrowserRouter>
   );

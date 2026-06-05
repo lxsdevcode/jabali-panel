@@ -49,31 +49,31 @@ type Entry struct {
 }
 
 type Resources struct {
-	CPU    string `yaml:"cpu,omitempty"`
-	Memory string `yaml:"memory,omitempty"`
-	PIDs   int    `yaml:"pids,omitempty"`
+	CPU    string `yaml:"cpu,omitempty" json:"cpu,omitempty"`
+	Memory string `yaml:"memory,omitempty" json:"memory,omitempty"`
+	PIDs   int    `yaml:"pids,omitempty" json:"pids,omitempty"`
 }
 
 type Volume struct {
-	Name          string `yaml:"name"`
-	ContainerPath string `yaml:"container_path"`
+	Name          string `yaml:"name" json:"name"`
+	ContainerPath string `yaml:"container_path" json:"container_path"`
 }
 
 type PortSpec struct {
-	Name                string `yaml:"name"`
-	ContainerPort       int    `yaml:"container_port"`
-	Protocol            string `yaml:"protocol"`
-	DefaultEnabled      bool   `yaml:"default_enabled"`
-	DefaultBind         string `yaml:"default_bind"`
-	DefaultReverseProxy bool   `yaml:"default_reverse_proxy"`
-	HealthPath          string `yaml:"health_path,omitempty"`
+	Name                string `yaml:"name" json:"name"`
+	ContainerPort       int    `yaml:"container_port" json:"container_port"`
+	Protocol            string `yaml:"protocol" json:"protocol"`
+	DefaultEnabled      bool   `yaml:"default_enabled" json:"default_enabled"`
+	DefaultBind         string `yaml:"default_bind" json:"default_bind"`
+	DefaultReverseProxy bool   `yaml:"default_reverse_proxy" json:"default_reverse_proxy"`
+	HealthPath          string `yaml:"health_path,omitempty" json:"health_path,omitempty"`
 }
 
 type EnvVar struct {
-	Name     string `yaml:"name"`
-	Value    string `yaml:"value,omitempty"`
-	Secret   bool   `yaml:"secret,omitempty"`
-	Generate string `yaml:"generate,omitempty"`
+	Name     string `yaml:"name" json:"name"`
+	Value    string `yaml:"value,omitempty" json:"value,omitempty"`
+	Secret   bool   `yaml:"secret,omitempty" json:"secret,omitempty"`
+	Generate string `yaml:"generate,omitempty" json:"generate,omitempty"`
 }
 
 // ComposeTemplate returns the raw compose.yml.tmpl content. The agent

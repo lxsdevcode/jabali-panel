@@ -50,7 +50,11 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
         name: p.name,
         enabled: p.default_enabled,
         bind_interface: p.default_bind,
-        host_port: 0,
+        // For public-bound ports we suggest matching the container
+        // port externally (the common case: SSH 22 -> 22, SMTP 25 ->
+        // 25, etc). For loopback ports nginx terminates so leave 0 =
+        // auto-pick a free high port at install time.
+        host_port: p.default_bind === "public" ? p.container_port : 0,
         reverse_proxy: p.default_reverse_proxy,
         container_port: p.container_port,
         protocol: p.protocol,

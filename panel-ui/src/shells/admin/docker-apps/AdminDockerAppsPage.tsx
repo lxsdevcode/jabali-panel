@@ -107,7 +107,16 @@ export const AdminDockerAppsPage = () => {
                       actions={[<Button type="link" key="install">Install</Button>]}
                     >
                       <Card.Meta
-                        avatar={<Avatar style={{ backgroundColor: "#f0f5ff" }}>{e.name[0]}</Avatar>}
+                        avatar={
+                          <Avatar
+                            shape="square"
+                            size={48}
+                            src={`/api/admin/docker-apps/catalog/${e.slug}/icon`}
+                            style={{ backgroundColor: "#f0f5ff", color: "#1f1f1f" }}
+                          >
+                            {e.name[0]}
+                          </Avatar>
+                        }
                         title={
                           <Space>
                             {e.name}
@@ -115,11 +124,7 @@ export const AdminDockerAppsPage = () => {
                           </Space>
                         }
                         description={
-                          <Tooltip title={e.description}>
-                            <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                              {e.description}
-                            </span>
-                          </Tooltip>
+                          <span style={{ whiteSpace: "pre-line" }}>{e.description}</span>
                         }
                       />
                     </Card>

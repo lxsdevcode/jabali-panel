@@ -24,6 +24,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,6 +72,7 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	grp.Use(requireAdminForDockerApps)
 	grp.Use(h.requireDockerMarketplaceEnabled)
 	grp.GET("/catalog", h.listCatalog)
+	grp.GET("/catalog/:slug/icon", h.catalogIcon)
 	grp.GET("", h.list)
 	grp.POST("", h.install)
 	grp.GET("/:id", h.get)
@@ -134,6 +137,51 @@ func (h *dockerAppHandler) listCatalog(c *gin.Context) {
 		out = append(out, catalogEntryToResponse(e))
 	}
 	c.JSON(http.StatusOK, gin.H{"items": out})
+}
+
+// catalogIcon serves the raw <slug>/icon.svg (or icon.png) bytes from
+// the loaded catalog. Sandboxed to slugs known to the catalog so a
+// crafted ?slug=../something can't escape /usr/local/share/jabali/
+// docker-apps. Content-type is sniffed from the file extension only;
+// the catalog loader already validated the file exists at parse time.
+func (h *dockerAppHandler) catalogIcon(c *gin.Context) {
+	if h.cfg.Catalog == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	slug := c.Param("slug")
+	entry, ok := h.cfg.Catalog.Get(slug)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	name := entry.Icon
+	if name == "" {
+		name = "icon.svg"
+	}
+	// Reject any path separators - icon must live directly under the
+	// entry dir, not in a subfolder.
+	if strings.ContainsAny(name, "/\\") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_icon"})
+		return
+	}
+	full := filepath.Join(entry.Dir(), name)
+	bytes, err := os.ReadFile(full)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	ctype := "image/svg+xml"
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png":
+		ctype = "image/png"
+	case ".jpg", ".jpeg":
+		ctype = "image/jpeg"
+	case ".webp":
+		ctype = "image/webp"
+	}
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Data(http.StatusOK, ctype, bytes)
 }
 
 func catalogEntryToResponse(e dockerapp.Entry) catalogEntryResponse {
@@ -232,10 +280,28 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		return
 	}
 
-	// Reject duplicate slug+name.
+	// Reject duplicate slug+name. Exception: a prior install that
+	// ended in `failed` is treated as a no-op corpse — delete it and
+	// let the caller retry transparently. Without this, the only way
+	// to recover from a failed install was via DB surgery, since the
+	// install button just kept returning 409.
 	if existing, _ := h.cfg.Repo.FindBySlugName(ctx, req.Slug, req.Name); existing != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "already_installed", "id": existing.ID})
-		return
+		if existing.Status == models.DockerAppStatusFailed {
+			// Best-effort: drop the orphaned ports + row. The agent's
+			// docker compose project may or may not exist on disk; the
+			// install verb below will re-create it idempotently.
+			ports, _ := h.cfg.Repo.ListPortsForApp(ctx, existing.ID)
+			for _, p := range ports {
+				_ = h.cfg.Repo.DeletePort(ctx, p.ID)
+			}
+			if derr := h.cfg.Repo.Delete(ctx, existing.ID); derr != nil {
+				c.JSON(http.StatusConflict, gin.H{"error": "already_installed", "id": existing.ID})
+				return
+			}
+		} else {
+			c.JSON(http.StatusConflict, gin.H{"error": "already_installed", "id": existing.ID})
+			return
+		}
 	}
 
 	// Apply defaults from the catalog when caller omits.
