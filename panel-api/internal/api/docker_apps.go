@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,6 +80,8 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	grp.POST("/:id/restart", h.lifecycle("restart"))
 	grp.POST("/:id/rebuild", h.lifecycle("rebuild"))
 	grp.POST("/:id/update", h.updateImage)
+	grp.GET("/:id/logs", h.logs)
+	grp.POST("/:id/exec", h.execCmd)
 }
 
 // requireAdminForDockerApps gates the whole route group on
@@ -716,6 +719,85 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, &detail)
 	default:
 		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// logs proxies docker_app.logs through. Query params: lines (int,
+// default 200), service (string, optional).
+func (h *dockerAppHandler) logs(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	app, err := h.cfg.Repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	params := map[string]any{"slug": app.Slug}
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			params["lines"] = n
+		}
+	}
+	if svc := c.Query("service"); svc != "" {
+		params["service"] = svc
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.logs", params)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+type execRequest struct {
+	Command string `json:"command" binding:"required"`
+	Service string `json:"service,omitempty"`
+}
+
+// execCmd is admin-only one-shot exec in the app's container. Already
+// gated by requireAdminForDockerApps; no additional auth check needed.
+func (h *dockerAppHandler) execCmd(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	app, err := h.cfg.Repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	var req execRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.exec", map[string]any{
+		"slug":    app.Slug,
+		"service": req.Service,
+		"command": req.Command,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
+		return
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 }

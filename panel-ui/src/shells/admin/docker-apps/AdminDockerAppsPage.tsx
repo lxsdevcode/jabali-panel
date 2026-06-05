@@ -10,11 +10,15 @@ import {
   ReloadOutlined,
   DeleteOutlined,
   SyncOutlined,
+  FileTextOutlined,
+  CodeOutlined,
 } from "@icons";
 
 import { deleteApp, lifecycleAction, listCatalog, listInstalled, updateApp } from "./api";
 import type { CatalogEntry, InstalledApp } from "./types";
 import { InstallDrawer } from "./InstallDrawer";
+import { LogsDrawer } from "./LogsDrawer";
+import { ExecDrawer } from "./ExecDrawer";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "default",
@@ -31,6 +35,8 @@ export const AdminDockerAppsPage = () => {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [installEntry, setInstallEntry] = useState<CatalogEntry | null>(null);
+  const [logsAppId, setLogsAppId] = useState<string | null>(null);
+  const [execAppId, setExecAppId] = useState<string | null>(null);
 
   const catalog = useQuery({
     queryKey: ["docker-apps-catalog"],
@@ -215,6 +221,22 @@ export const AdminDockerAppsPage = () => {
                         >
                           Update
                         </Button>
+                        <Button
+                          size="small"
+                          icon={<FileTextOutlined />}
+                          onClick={() => setLogsAppId(r.id)}
+                          title="Tail container logs"
+                        >
+                          Logs
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<CodeOutlined />}
+                          onClick={() => setExecAppId(r.id)}
+                          title="Run a command inside the container"
+                        >
+                          Exec
+                        </Button>
                         <Popconfirm
                           title={`Uninstall ${r.name}?`}
                           description="Volumes will be purged. This cannot be undone."
@@ -238,6 +260,16 @@ export const AdminDockerAppsPage = () => {
         open={installEntry !== null}
         entry={installEntry}
         onClose={() => setInstallEntry(null)}
+      />
+      <LogsDrawer
+        open={logsAppId !== null}
+        appId={logsAppId}
+        onClose={() => setLogsAppId(null)}
+      />
+      <ExecDrawer
+        open={execAppId !== null}
+        appId={execAppId}
+        onClose={() => setExecAppId(null)}
       />
     </div>
   );
