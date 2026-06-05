@@ -1,0 +1,41 @@
+slug: ghost
+name: Ghost
+version: "5.96.0"
+description: |
+  Modern publishing platform. SQLite by default; the operator can
+  switch to MySQL by editing the compose post-install. Single
+  container, persistent /var/lib/ghost/content.
+icon: icon.svg
+upstream: https://github.com/TryGhost/Ghost
+documentation: https://ghost.org/docs/
+
+image_channel: ghost:5-alpine
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 200
+
+volumes:
+  - name: content
+    container_path: /var/lib/ghost/content
+
+ports:
+  - name: http
+    container_port: 2368
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: NODE_ENV
+    value: "production"
+  - name: database__client
+    value: "sqlite3"
+  - name: database__connection__filename
+    value: "/var/lib/ghost/content/data/ghost.db"
+  - name: database__useNullAsDefault
+    value: "true"

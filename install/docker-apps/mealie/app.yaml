@@ -1,0 +1,38 @@
+slug: mealie
+name: Mealie
+version: "2.0.0"
+description: |
+  Self-hosted recipe manager and meal planner. Single container,
+  SQLite-backed by default.
+icon: icon.svg
+upstream: https://github.com/mealie-recipes/mealie
+documentation: https://docs.mealie.io/
+
+image_channel: ghcr.io/mealie-recipes/mealie:v2.0.0
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 200
+
+volumes:
+  - name: data
+    container_path: /app/data
+
+ports:
+  - name: http
+    container_port: 9000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/app/about
+
+env:
+  - name: ALLOW_SIGNUP
+    value: "false"
+  - name: TZ
+    value: "UTC"
+  - name: BASE_URL
+    value: ""

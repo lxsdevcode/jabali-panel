@@ -1,0 +1,46 @@
+slug: nextcloud
+name: Nextcloud
+version: "30.0.0"
+description: |
+  Self-hosted productivity platform: file sync, calendar, contacts,
+  office docs, video calls. Two services: PHP-FPM app container +
+  bundled MariaDB. Redis omitted in v1 -- add manually post-install
+  if you need it.
+icon: icon.svg
+upstream: https://github.com/nextcloud/server
+documentation: https://docs.nextcloud.com/
+
+image_channel: nextcloud:30-apache
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "1g"
+  pids: 500
+
+volumes:
+  - name: nextcloud
+    container_path: /var/www/html
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /status.php
+
+env:
+  - name: MYSQL_DATABASE
+    value: "nextcloud"
+  - name: MYSQL_USER
+    value: "nextcloud"
+  - name: MYSQL_PASSWORD
+    secret: true
+    generate: password32
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32

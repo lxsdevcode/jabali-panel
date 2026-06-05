@@ -1,0 +1,45 @@
+slug: linkwarden
+name: Linkwarden
+version: "2.8.1"
+description: |
+  Self-hosted bookmark and link manager with built-in archiving
+  (PDF, screenshot, single-page HTML). Two services: NextJS app +
+  PostgreSQL.
+icon: icon.svg
+upstream: https://github.com/linkwarden/linkwarden
+documentation: https://docs.linkwarden.app/
+
+image_channel: ghcr.io/linkwarden/linkwarden:latest
+update_mode: manual
+
+resources:
+  cpu: "1.5"
+  memory: "1g"
+  pids: 400
+
+volumes:
+  - name: app
+    container_path: /data/data
+  - name: db
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 3000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: NEXTAUTH_SECRET
+    secret: true
+    generate: password64
+  - name: NEXTAUTH_URL
+    value: ""
+  - name: POSTGRES_PASSWORD
+    secret: true
+    generate: password32
+  - name: DATABASE_URL
+    value: ""
