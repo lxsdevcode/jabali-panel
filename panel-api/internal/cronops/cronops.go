@@ -55,11 +55,12 @@ type Deps struct {
 // own argument parsing. Authorization (who may touch the job) stays
 // in the adapter; cronops owns the intake invariant only.
 type CreateInput struct {
-	UserID   string
-	Name     string
-	Schedule string
-	Command  string
-	Enabled  bool
+	UserID    string
+	Name      string
+	Schedule  string
+	Command   string
+	Enabled   bool
+	RunAsRoot bool
 }
 
 type UpdatePatch struct {
@@ -97,12 +98,14 @@ type applyParams struct {
 	Command       string   `json:"command"`
 	Schedule      string   `json:"schedule"`
 	OwnedDocroots []string `json:"owned_docroots"`
+	RunAsRoot     bool     `json:"run_as_root,omitempty"`
 }
 
 type removeParams struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	JobID    string `json:"job_id"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	JobID     string `json:"job_id"`
+	RunAsRoot bool   `json:"run_as_root,omitempty"`
 }
 
 func depsWired(d Deps) bool {
@@ -150,6 +153,7 @@ func apply(ctx context.Context, d Deps, job *models.CronJob, username string, do
 		UserID: job.UserID, Username: username, JobID: job.ID,
 		Name: job.Name, Command: job.Command, Schedule: job.Schedule,
 		OwnedDocroots: docroots,
+		RunAsRoot:     job.RunAsRoot,
 	})
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAgentFailed, err)
@@ -167,9 +171,15 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*models.CronJob, error
 	if err := cronvalidate.ValidateCronName(in.Name); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrNameInvalid, err)
 	}
-	username, err := resolveLinuxUser(ctx, d, in.UserID)
-	if err != nil {
-		return nil, err
+	// Root crons skip the per-user linger check. The agent writes a
+	// system-scoped timer; no /run/user/<uid> dir is touched.
+	username := "root"
+	if !in.RunAsRoot {
+		var err error
+		username, err = resolveLinuxUser(ctx, d, in.UserID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := cronvalidate.ValidateSchedule(in.Schedule); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrScheduleInvalid, err)
@@ -183,12 +193,13 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*models.CronJob, error
 	}
 
 	job := &models.CronJob{
-		ID:       ids.NewULID(),
-		UserID:   in.UserID,
-		Name:     in.Name,
-		Command:  in.Command,
-		Schedule: in.Schedule,
-		Enabled:  in.Enabled,
+		ID:        ids.NewULID(),
+		UserID:    in.UserID,
+		Name:      in.Name,
+		Command:   in.Command,
+		Schedule:  in.Schedule,
+		Enabled:   in.Enabled,
+		RunAsRoot: in.RunAsRoot,
 	}
 	if err := d.CronJobs.Create(ctx, job); err != nil {
 		return nil, fmt.Errorf("%w: persist: %v", ErrInternal, err)
@@ -218,13 +229,17 @@ func Update(ctx context.Context, d Deps, jobID string, patch UpdatePatch) (*mode
 		}
 		return nil, fmt.Errorf("%w: load job: %v", ErrInternal, err)
 	}
-	username, err := resolveLinuxUser(ctx, d, job.UserID)
-	if err != nil {
-		return nil, err
-	}
-	docroots, err := ownedDocroots(ctx, d, job.UserID)
-	if err != nil {
-		return nil, err
+	username := "root"
+	var docroots []string
+	if !job.RunAsRoot {
+		username, err = resolveLinuxUser(ctx, d, job.UserID)
+		if err != nil {
+			return nil, err
+		}
+		docroots, err = ownedDocroots(ctx, d, job.UserID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if patch.Name != nil {
 		if err := cronvalidate.ValidateCronName(*patch.Name); err != nil {

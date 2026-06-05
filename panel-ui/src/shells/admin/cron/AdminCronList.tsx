@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { App, Button, Card, Input, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import {
   CalendarCheckOutlined,
+  PlusSquareOutlined,
   DeleteOutlined,
   PlayCircleOutlined,
   EyeOutlined,
@@ -28,6 +29,7 @@ import {
 } from "../../../apiClient";
 import { CronLogDrawer } from "../../user/cron/CronLogDrawer";
 import { RunNowResultModal } from "../../user/cron/RunNowResultModal";
+import { AdminCreateCronModal } from "./AdminCreateCronModal";
 
 dayjs.extend(relativeTime);
 
@@ -49,6 +51,7 @@ export const AdminCronList = () => {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: listResponse = { items: [] }, isLoading, refetch } = useQuery({
     queryKey: ["admin-cron-jobs"],
@@ -124,9 +127,18 @@ export const AdminCronList = () => {
         <Typography.Title level={3} style={{ margin: 0 }}>
           <CalendarCheckOutlined /> Cron Jobs (all tenants)
         </Typography.Title>
-        <Typography.Text type="secondary">
-          {jobs.length} job{jobs.length === 1 ? "" : "s"}
-        </Typography.Text>
+        <Space>
+          <Typography.Text type="secondary">
+            {jobs.length} job{jobs.length === 1 ? "" : "s"}
+          </Typography.Text>
+          <Button
+            type="primary"
+            icon={<PlusSquareOutlined />}
+            onClick={() => setCreateOpen(true)}
+          >
+            New Cron Job
+          </Button>
+        </Space>
       </Space>
 
       <Card>
@@ -251,6 +263,15 @@ export const AdminCronList = () => {
         </Space>
       </Card>
 
+      <AdminCreateCronModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={() => {
+          setCreateOpen(false);
+          refetch();
+        }}
+      />
+
       {logJobId && (
         <CronLogDrawer
           open={logDrawerOpen}
@@ -270,13 +291,7 @@ export const AdminCronList = () => {
         }}
       />
 
-      <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0, fontSize: 12 }}>
-        Admin-create-as-user is intentionally not exposed here.{" "}
-        <Button type="link" size="small" style={{ padding: 0 }} disabled>
-          (planned)
-        </Button>{" "}
-        To add a cron job for a specific tenant, impersonate from <code>/jabali-admin/users</code> and use the user-side Cron page.
-      </Typography.Paragraph>
+
     </div>
   );
 };

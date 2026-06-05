@@ -10,6 +10,11 @@ type CronJob struct {
 	Command       string     `gorm:"type:varchar(1024);not null" json:"command"`
 	Schedule      string     `gorm:"type:varchar(100);not null" json:"schedule"`
 	Enabled       bool       `gorm:"type:tinyint(1);not null;default:1" json:"enabled"`
+	// RunAsRoot is admin-only (gated in panel-api/internal/api/cron.go).
+	// When true, the agent writes a SYSTEM-scoped systemd timer at
+	// /etc/systemd/system/jabali-cron-<id>.timer that runs the command
+	// as uid 0 -- bypassing the per-user systemd dispatch path.
+	RunAsRoot     bool       `gorm:"column:run_as_root;type:tinyint(1);not null;default:0" json:"run_as_root"`
 	LastRunAt     *time.Time `gorm:"type:timestamp;null" json:"last_run_at"`
 	LastExitCode  *int       `gorm:"type:int;null" json:"last_exit_code"`
 	LastError     *string    `gorm:"type:varchar(1024);null" json:"last_error"`
