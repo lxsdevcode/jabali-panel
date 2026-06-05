@@ -287,12 +287,21 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 	// install button just kept returning 409.
 	if existing, _ := h.cfg.Repo.FindBySlugName(ctx, req.Slug, req.Name); existing != nil {
 		if existing.Status == models.DockerAppStatusFailed {
-			// Best-effort: drop the orphaned ports + row. The agent's
+			// Best-effort: drop the orphaned ports + row + any
+			// docker_app-managed domain it left behind. The agent's
 			// docker compose project may or may not exist on disk; the
 			// install verb below will re-create it idempotently.
 			ports, _ := h.cfg.Repo.ListPortsForApp(ctx, existing.ID)
 			for _, p := range ports {
 				_ = h.cfg.Repo.DeletePort(ctx, p.ID)
+			}
+			if h.cfg.Domains != nil {
+				domList, _, _ := h.cfg.Domains.List(ctx, repository.ListOptions{})
+				for _, dom := range domList {
+					if dom.ManagedBy == models.DomainManagedByDockerApp && dom.DockerAppID != nil && *dom.DockerAppID == existing.ID {
+						_ = h.cfg.Domains.Delete(ctx, dom.ID)
+					}
+				}
 			}
 			if derr := h.cfg.Repo.Delete(ctx, existing.ID); derr != nil {
 				c.JSON(http.StatusConflict, gin.H{"error": "already_installed", "id": existing.ID})
@@ -301,6 +310,27 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		} else {
 			c.JSON(http.StatusConflict, gin.H{"error": "already_installed", "id": existing.ID})
 			return
+		}
+	}
+
+	// Defense in depth: also sweep ANY orphaned docker_app-managed
+	// domain pointing at a docker_app_id we can no longer find. This
+	// catches the scar where an earlier install died mid-flight before
+	// the failed-corpse path above could mark it; the row was deleted
+	// manually but the domain row was left behind. Without this sweep
+	// the next install retry with the same hostname 409s on the unique
+	// constraint at h.cfg.Domains.Create below.
+	if h.cfg.Domains != nil && req.Domain != "" {
+		if existingDom, _ := h.cfg.Domains.FindByName(ctx, req.Domain); existingDom != nil && existingDom.ManagedBy == models.DomainManagedByDockerApp {
+			orphan := existingDom.DockerAppID == nil
+			if !orphan {
+				if owner, _ := h.cfg.Repo.FindByID(ctx, *existingDom.DockerAppID); owner == nil {
+					orphan = true
+				}
+			}
+			if orphan {
+				_ = h.cfg.Domains.Delete(ctx, existingDom.ID)
+			}
 		}
 	}
 

@@ -100,31 +100,45 @@ export const AdminDockerAppsPage = () => {
             children: (
               <Row gutter={[16, 16]}>
                 {(catalog.data ?? []).map((e) => (
-                  <Col key={e.slug} xs={24} sm={12} md={8}>
+                  <Col key={e.slug} xs={24} sm={12} md={8} lg={6}>
                     <Card
                       hoverable
                       onClick={() => setInstallEntry(e)}
+                      styles={{ body: { padding: 16 } }}
                       actions={[<Button type="link" key="install">Install</Button>]}
                     >
                       <Card.Meta
                         avatar={
                           <Avatar
                             shape="square"
-                            size={48}
-                            src={`/api/admin/docker-apps/catalog/${e.slug}/icon`}
+                            size={40}
+                            src={`/api/v1/admin/docker-apps/catalog/${e.slug}/icon`}
                             style={{ backgroundColor: "#f0f5ff", color: "#1f1f1f" }}
                           >
                             {e.name[0]}
                           </Avatar>
                         }
                         title={
-                          <Space>
-                            {e.name}
-                            <Tag>{e.version}</Tag>
+                          <Space size={6} wrap>
+                            <span>{e.name}</span>
+                            <Tag style={{ marginInlineEnd: 0 }}>{e.version}</Tag>
                           </Space>
                         }
                         description={
-                          <span style={{ whiteSpace: "pre-line" }}>{e.description}</span>
+                          <Tooltip title={e.description} placement="bottom">
+                            <div
+                              style={{
+                                display: "-webkit-box",
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                minHeight: 60,
+                              }}
+                            >
+                              {e.description}
+                            </div>
+                          </Tooltip>
                         }
                       />
                     </Card>
