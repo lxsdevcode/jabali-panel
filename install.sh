@@ -2083,6 +2083,96 @@ ensure_mariadb_socket_acl_for_jabali() {
 # db 0 → panel-api notification dispatcher
 # db 1 → reserved for future WordPress object-cache
 #
+# install_docker_engine sets up Docker CE + docker-compose-plugin (M48
+# Phase 1, ADR-0116). Installs idempotent; skips when `docker` is
+# already present. Writes /etc/docker/daemon.json drop-in with
+# defensive defaults (journald log driver, live-restore so daemon
+# restarts dont kill running containers, sane default ulimits).
+# Creates the per-app data root at /var/lib/jabali/docker-apps and
+# adds the jabali user to the `docker` group so an operator console
+# can issue `docker` CLI without sudo.
+#
+# Why a separate function (not folded into install_base_packages):
+# Docker apt repo lives at https://download.docker.com/linux/debian
+# which we add lazily here so a no-M48 install never pulls 200MB of
+# docker-ce dependencies it will never run.
+install_docker_engine() {
+  _log "installing Docker CE + compose plugin (M48 marketplace)"
+
+  if command -v docker >/dev/null 2>&1 \
+    && docker info >/dev/null 2>&1 \
+    && [[ -d /etc/docker ]] \
+    && dpkg -s docker-compose-plugin >/dev/null 2>&1; then
+    _log "docker engine + compose plugin already installed; skipping apt"
+  else
+    # Repo + signing key (Docker official Debian repo).
+    install -d -m 0755 /etc/apt/keyrings
+    if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
+      curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+    fi
+    local debian_codename
+    debian_codename="$(. /etc/os-release; echo "${VERSION_CODENAME:-trixie}")"
+    local docker_list="/etc/apt/sources.list.d/docker.list"
+    local desired
+    desired="deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${debian_codename} stable"
+    if [[ ! -f "$docker_list" ]] || ! grep -qF "$desired" "$docker_list"; then
+      printf '%s\n' "$desired" > "$docker_list"
+      _log "wrote $docker_list"
+    fi
+    apt-get update -y -o Dir::Etc::sourcelist="$docker_list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
+
+  # /etc/docker/daemon.json drop-in. Use byte-comparison rewrite so
+  # we dont restart docker on every install.sh run.
+  install -d -m 0755 /etc/docker
+  local dropin="/etc/docker/daemon.json"
+  local desired_json
+  desired_json=$(cat <<'DOCKER_EOF'
+{
+  "live-restore": true,
+  "log-driver": "journald",
+  "default-ulimits": {
+    "nofile": { "Name": "nofile", "Soft": 8192, "Hard": 8192 }
+  }
+}
+DOCKER_EOF
+)
+  if [[ ! -f "$dropin" ]] || ! cmp -s <(printf '%s\n' "$desired_json") "$dropin"; then
+    local tmp
+    tmp="$(mktemp --tmpdir jabali-docker-daemon.XXXXXX)"
+    printf '%s\n' "$desired_json" > "$tmp"
+    install -m 0644 -o root -g root "$tmp" "$dropin"
+    rm -f "$tmp"
+    _log "wrote $dropin; restarting docker"
+    systemctl restart docker
+  else
+    _log "$dropin already current"
+  fi
+
+  # Per-app data root.
+  install -d -m 0750 -o root -g "$SERVICE_USER" /var/lib/jabali/docker-apps
+
+  # Operator console convenience: jabali user in `docker` group.
+  if id -nG "$SERVICE_USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+    _log "$SERVICE_USER already in docker group"
+  else
+    usermod -aG docker "$SERVICE_USER"
+    _log "added $SERVICE_USER to docker group (takes effect on next login)"
+  fi
+
+  # Ensure restic is present -- the per-app backup flow (Phase 8) relies
+  # on it. install_base_packages already installs restic for M30, but
+  # repeat the gate here so a fresh M48-only run does not skip it.
+  if ! command -v restic >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends restic
+  fi
+
+  _ok "docker engine ready (live-restore + journald + jabali in docker group)"
+}
+
 # Package redis-server is installed in install_base_packages' one-shot
 # apt batch; this runs post-install config only.
 install_redis() {
@@ -10835,6 +10925,7 @@ main() {
   provision_mariadb
   install_mariadb_skip_networking
   tune_mariadb_for_ram
+  install_docker_engine
   install_redis
   # M37 Phase 4: PostgreSQL is OPT-IN. install_postgres no longer runs on
   # fresh install. Operator flips server_settings.postgres_enabled in

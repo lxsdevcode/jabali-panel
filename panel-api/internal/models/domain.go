@@ -313,8 +313,29 @@ type Domain struct {
 	GhostCheckedAt *time.Time `gorm:"column:ghost_checked_at;type:datetime(0)" json:"ghost_checked_at,omitempty"`
 	GhostDetail    *string    `gorm:"column:ghost_detail;type:varchar(255)" json:"ghost_detail,omitempty"`
 
+	// M48 Phase 1 (ADR-0116 Decision 4): tag rows the docker-app
+	// subsystem auto-creates so tenant /domains handlers and the
+	// docker-app handlers don't fight over the same row.
+	//
+	// managed_by values:
+	//   tenant     — created via the existing /domains handler (default).
+	//   docker_app — created by the docker-app installer; auto-managed.
+	//
+	// DockerAppID back-references docker_apps.id when ManagedBy='docker_app'.
+	// Reconciler uses this to render a proxy_pass vhost to the app's
+	// loopback port (resolved through docker_app_published_ports for
+	// reverse_proxy=true rows).
+	ManagedBy   string  `gorm:"column:managed_by;type:varchar(32);not null;default:'tenant';index:ix_domains_managed_by" json:"managed_by"`
+	DockerAppID *string `gorm:"column:docker_app_id;type:char(26);null" json:"docker_app_id,omitempty"`
+
 	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null" json:"updated_at"`
 }
+
+// Domain.ManagedBy values.
+const (
+	DomainManagedByTenant    = "tenant"
+	DomainManagedByDockerApp = "docker_app"
+)
 
 func (Domain) TableName() string { return "domains" }

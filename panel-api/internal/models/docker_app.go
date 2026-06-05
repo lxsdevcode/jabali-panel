@@ -1,0 +1,106 @@
+package models
+
+import "time"
+
+// DockerApp represents an installed catalog app (M48). One row per
+// install. The full catalog is admin-curated and lives under
+// install/docker-apps/<slug>/ in the panel repo; `slug` references the
+// catalog entry, `catalog_version` pins the version of that entry at
+// install time so a panel upgrade that changes the catalog doesn't
+// silently re-render an existing install with new defaults.
+//
+// Lifecycle (status column):
+//
+//   pending     -> reconciler will dispatch docker_app.install
+//   installing  -> agent is rendering compose + docker compose up
+//   running     -> healthchecks green; nginx vhost wired (when applicable)
+//   stopped     -> docker compose down; volumes preserved
+//   failed      -> install/update/start failed; last_error populated
+//   updating    -> docker_app.update is in flight
+//   rolling_back -> update failed; restic restore in progress
+//   deleted     -> tombstone; rows linger for audit, reconciler ignores
+//
+// The state machine is owned by reconcileDockerApps in
+// panel-api/internal/reconciler (Phase 3).
+type DockerApp struct {
+	ID             string    `gorm:"type:char(26);primaryKey" json:"id"`
+	Slug           string    `gorm:"type:varchar(64);not null" json:"slug"`
+	Name           string    `gorm:"type:varchar(255);not null" json:"name"`
+	CatalogVersion string    `gorm:"column:catalog_version;type:varchar(64);not null" json:"catalog_version"`
+	ImageSHA       *string   `gorm:"column:image_sha;type:varchar(128);null" json:"image_sha"`
+	Status         string    `gorm:"type:varchar(32);not null;default:'pending'" json:"status"`
+	UpdateMode     string    `gorm:"column:update_mode;type:varchar(16);not null;default:'manual'" json:"update_mode"`
+	CPULimit       *string   `gorm:"column:cpu_limit;type:varchar(16);null" json:"cpu_limit"`
+	MemoryLimit    *string   `gorm:"column:memory_limit;type:varchar(16);null" json:"memory_limit"`
+	PIDsLimit      *int      `gorm:"column:pids_limit;type:int;null" json:"pids_limit"`
+	LastError      *string   `gorm:"column:last_error;type:text;null" json:"last_error"`
+	CreatedAt      time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP;onUpdate:CURRENT_TIMESTAMP" json:"updated_at"`
+}
+
+func (DockerApp) TableName() string { return "docker_apps" }
+
+// DockerAppStatus values. Centralised so callers don't sprinkle string
+// literals — typo'd statuses are silent reconciler skips.
+const (
+	DockerAppStatusPending     = "pending"
+	DockerAppStatusInstalling  = "installing"
+	DockerAppStatusRunning     = "running"
+	DockerAppStatusStopped     = "stopped"
+	DockerAppStatusFailed      = "failed"
+	DockerAppStatusUpdating    = "updating"
+	DockerAppStatusRollingBack = "rolling_back"
+	DockerAppStatusDeleted     = "deleted"
+)
+
+// DockerAppUpdateMode values.
+const (
+	DockerAppUpdateModeManual = "manual"
+	DockerAppUpdateModeAuto   = "auto"
+)
+
+// DockerAppPublishedPort is one published-port row per installed app.
+// Catalog declares the universe of exposable ports; the install drawer
+// creates one row per port the admin enables. See ADR-0116 Decision 5.
+//
+// BindInterface values:
+//
+//   loopback              -> bound to 127.0.0.1:host_port; nginx
+//                            reverse-proxy attaches when reverse_proxy=1
+//   public:<managed_ip_id> -> bound to <managed_ip address>:host_port;
+//                             reachable from the public internet, no
+//                             nginx vhost (UDP, raw-TCP like Gitea SSH)
+//
+// Uniqueness on (bind_interface, host_port, protocol) is enforced at
+// the DB level (uniq_dapp_pubport_global) so the auto-allocator can
+// rely on INSERT-fail-on-conflict instead of pre-seeding a pool table.
+type DockerAppPublishedPort struct {
+	ID             string    `gorm:"type:char(26);primaryKey" json:"id"`
+	AppID          string    `gorm:"column:app_id;type:char(26);not null" json:"app_id"`
+	PortName       string    `gorm:"column:port_name;type:varchar(32);not null" json:"port_name"`
+	ContainerPort  int       `gorm:"column:container_port;type:int;not null" json:"container_port"`
+	BindInterface  string    `gorm:"column:bind_interface;type:varchar(64);not null;default:'loopback'" json:"bind_interface"`
+	HostPort       int       `gorm:"column:host_port;type:int;not null" json:"host_port"`
+	Protocol       string    `gorm:"type:varchar(8);not null;default:'tcp'" json:"protocol"`
+	ReverseProxy   bool      `gorm:"column:reverse_proxy;type:tinyint(1);not null;default:1" json:"reverse_proxy"`
+	Enabled        bool      `gorm:"type:tinyint(1);not null;default:1" json:"enabled"`
+	CreatedAt      time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+}
+
+func (DockerAppPublishedPort) TableName() string { return "docker_app_published_ports" }
+
+// DockerAppBackup is a restic snapshot row for a docker app. Snapshots
+// take the contents of /var/lib/jabali/docker-apps/<slug> at the point
+// of capture; reason distinguishes pre-update auto-snapshots from
+// operator-triggered ones so retention policy can prune the auto rows
+// more aggressively.
+type DockerAppBackup struct {
+	ID        string    `gorm:"type:char(26);primaryKey" json:"id"`
+	AppID     string    `gorm:"column:app_id;type:char(26);not null" json:"app_id"`
+	ResticID  string    `gorm:"column:restic_id;type:varchar(128);not null" json:"restic_id"`
+	SizeBytes int64     `gorm:"column:size_bytes;type:bigint;not null" json:"size_bytes"`
+	Reason    string    `gorm:"type:varchar(32);not null;default:'manual'" json:"reason"`
+	CreatedAt time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+}
+
+func (DockerAppBackup) TableName() string { return "docker_app_backups" }
