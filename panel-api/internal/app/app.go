@@ -21,6 +21,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/eventsources"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
@@ -94,6 +95,8 @@ type Deps struct {
 	// caller knowing about the registry.
 	Apps           *apps.Registry
 	CronJobs       repository.CronJobRepository
+	DockerApps     repository.DockerAppRepository
+	DockerCatalog  *dockerapp.Catalog
 	SSHKeys        repository.SSHKeyRepository
 	LimitOverrides repository.UserLimitOverrideRepository
 	// M6.5 email feature repositories. Autoresponders/Forwarders/MailboxShares
@@ -948,6 +951,18 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:  deps.Domains,
 				Agent:    deps.Agent,
 				Log:      deps.Log,
+			})
+		}
+
+		// Docker app marketplace routes (M48). Optional; when the
+		// docker_apps repo + catalog are not wired the route group
+		// stays unmounted and any /admin/docker-apps/* request 404s.
+		if deps.DockerApps != nil && deps.Agent != nil {
+			api.RegisterDockerAppRoutes(v1, api.DockerAppHandlerConfig{
+				Repo:    deps.DockerApps,
+				Catalog: deps.DockerCatalog,
+				Agent:   deps.Agent,
+				Log:     deps.Log,
 			})
 		}
 

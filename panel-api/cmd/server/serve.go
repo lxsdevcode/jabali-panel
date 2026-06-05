@@ -34,6 +34,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications/senders"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
@@ -183,6 +184,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 		phpPoolIniOverrideRepo := repository.NewPHPPoolIniOverrideRepository(sharedDB)
 		wordpressInstallRepo := repository.NewWordPressInstallRepository(sharedDB)
 		cronJobsRepo := repository.NewCronJobRepository(sharedDB)
+		dockerAppRepo := repository.NewDockerAppRepository(sharedDB)
+		// M48: load the docker-app catalog. Failures are logged + skipped,
+		// not fatal -- the panel boots without M48 routes when the catalog
+		// is unavailable.
+		dockerCatalog, dockerCatalogErrs := dockerapp.LoadDir("/usr/local/share/jabali/docker-apps")
+		if dockerCatalog.Len() == 0 {
+			// Dev fallback: catalog might still be in the repo tree.
+			if dc2, _ := dockerapp.LoadDir("install/docker-apps"); dc2.Len() > 0 {
+				dockerCatalog = dc2
+			}
+		}
+		for _, e := range dockerCatalogErrs {
+			slog.Default().Warn("docker-app catalog entry failed to load", "err", e.Error())
+		}
 		limitOverridesRepo := repository.NewUserLimitOverrideRepository(sharedDB)
 
 		serverSettingsRepo := repository.NewServerSettingsRepository(sharedDB)
@@ -259,6 +274,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		rec.WithSSO(ssoService)
 		rec.WithSSHKeys(sshKeyRepo)
 		rec.WithCronJobs(cronJobsRepo)
+		rec.WithDockerApps(dockerAppRepo)
 		// M18 wiring — packages + overrides + /home mount path so
 		// ReconcileUserLimits and ReconcileNginxRateLimits have every
 		// dep they need. Mount path resolved below after deps are set.
@@ -400,6 +416,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		deps.PHPPoolIniOverrides = phpPoolIniOverrideRepo
 		deps.WordPressInstalls = wordpressInstallRepo
 		deps.CronJobs = cronJobsRepo
+		deps.DockerApps = dockerAppRepo
+		deps.DockerCatalog = dockerCatalog
 		deps.LimitOverrides = limitOverridesRepo
 
 		// M18: resolve the /home mount once at startup. Passed to every
