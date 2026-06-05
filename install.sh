@@ -1952,6 +1952,107 @@ install_mariadb_skip_networking() {
   ensure_mariadb_socket_acl_for_jabali
 }
 
+# tune_mariadb_for_ram writes an innodb_buffer_pool_size drop-in
+# sized to host total RAM, plus an OOMScoreAdjust drop-in so mariadbd
+# stops being the kernel OOM-killer's default victim on small VMs.
+#
+# Why: MariaDB 11.x defaults assume a dedicated DB host. On a 3.8 GB
+# VPS sharing RAM with panel-api, agent, Stalwart, Bulwark, Kratos,
+# PDNS, CrowdSec, and tenant PHP-FPM pools, the 512 MB default pool
+# walks the box into kernel memory pressure. Kernel picks the biggest
+# RSS (mariadbd) and kills it. Caught 2026-06-05 on puzzle:
+# NRestarts=2 in one morning.
+#
+# Brackets (conservative; idle pool memory is wasted on small VMs):
+#   <=2 GB  -> 96 MB pool
+#   <=4 GB  -> 192 MB pool   (puzzle class)
+#   <=8 GB  -> 384 MB pool
+#   <=16 GB -> 1024 MB pool
+#   >16 GB  -> 2048 MB pool  (hard cap; operators can hand-edit)
+#
+# OOMScoreAdjust=-500 demotes mariadbd in the OOM order without
+# making it un-killable (-1000 would).
+#
+# Idempotent: only writes when desired != on-disk; only restarts
+# when something actually changed.
+tune_mariadb_for_ram() {
+  local tuning_dropin="/etc/mysql/mariadb.conf.d/99-jabali-mariadb-tuning.cnf"
+  local oom_dropin="/etc/systemd/system/mariadb.service.d/15-jabali-oom.conf"
+  local mem_kb mem_mb pool_mb
+  mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  mem_mb=$((mem_kb / 1024))
+
+  if   [[ $mem_mb -le 2048  ]]; then pool_mb=96
+  elif [[ $mem_mb -le 4096  ]]; then pool_mb=192
+  elif [[ $mem_mb -le 8192  ]]; then pool_mb=384
+  elif [[ $mem_mb -le 16384 ]]; then pool_mb=1024
+  else                                pool_mb=2048
+  fi
+
+  _log "mariadb-tune: host=${mem_mb}MB RAM -> innodb_buffer_pool_size=${pool_mb}M"
+
+  local tuning_desired
+  tuning_desired=$(cat <<TUNING_EOF
+# Managed by jabali install.sh -- sized to ${mem_mb} MB host RAM.
+# Do NOT hand-edit; install.sh rewrites on every run.
+# See install.sh:tune_mariadb_for_ram for the sizing brackets.
+[mysqld]
+innodb_buffer_pool_size = ${pool_mb}M
+innodb_buffer_pool_size_auto_min = ${pool_mb}M
+TUNING_EOF
+)
+
+  local oom_desired
+  oom_desired=$(cat <<'OOM_EOF'
+# Managed by jabali install.sh -- keep mariadbd from being
+# the kernel OOM-killer's default victim on small VMs.
+# -500 demotes it without making it un-killable (-1000 would).
+[Service]
+OOMScoreAdjust=-500
+OOM_EOF
+)
+
+  local restart_needed=0
+  if [[ ! -f "$tuning_dropin" ]] || ! cmp -s <(printf '%s\n' "$tuning_desired") "$tuning_dropin"; then
+    local tmp
+    tmp="$(mktemp --tmpdir jabali-mariadb-tuning.XXXXXX)"
+    printf '%s\n' "$tuning_desired" >"$tmp"
+    install -m 0644 -o root -g root "$tmp" "$tuning_dropin"
+    rm -f "$tmp"
+    restart_needed=1
+    _log "mariadb-tune: wrote $tuning_dropin"
+  fi
+
+  mkdir -p /etc/systemd/system/mariadb.service.d
+  if [[ ! -f "$oom_dropin" ]] || ! cmp -s <(printf '%s\n' "$oom_desired") "$oom_dropin"; then
+    local tmp
+    tmp="$(mktemp --tmpdir jabali-mariadb-oom.XXXXXX)"
+    printf '%s\n' "$oom_desired" >"$tmp"
+    install -m 0644 -o root -g root "$tmp" "$oom_dropin"
+    rm -f "$tmp"
+    systemctl daemon-reload
+    restart_needed=1
+    _log "mariadb-tune: wrote $oom_dropin"
+  fi
+
+  if [[ $restart_needed -eq 1 ]]; then
+    systemctl restart mariadb
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      if mariadb -e 'SELECT 1' >/dev/null 2>&1; then break; fi
+      sleep 1
+    done
+    if ! mariadb -e 'SELECT 1' >/dev/null 2>&1; then
+      _die "MariaDB did not come back up after tuning drop-in; rollback: trash $tuning_dropin $oom_dropin && systemctl daemon-reload && systemctl restart mariadb"
+    fi
+    _ok "mariadb-tune: applied innodb_buffer_pool_size=${pool_mb}M + OOMScoreAdjust=-500"
+  else
+    _log "mariadb-tune: drop-ins already current, no restart"
+  fi
+}
+
+
+
 # ensure_mariadb_socket_acl_for_jabali — POSIX ACL fallback so the
 # jabali user can connect to /run/mysqld/mysqld.sock even when the
 # usermod -aG mysql route hasn't taken effect on already-running
@@ -3412,9 +3513,14 @@ ensure_swap() {
   mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
   cur_swap_kb=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
   mem_mb=$((mem_kb / 1024))
-  _log "build-swap: host has ${mem_mb}MB RAM + ${cur_swap_kb}kB swap (threshold: ≤2048MB → add 2GB swap)"
-  if [[ $mem_mb -gt 2048 ]]; then
-    _log "build-swap: ${mem_mb}MB RAM > 2GB, no swap needed"
+  # Threshold widened 2026-06-05 from 2 GB -> 4 GB. A 3.8 GB-RAM
+  # VPS (puzzle.linux-hosting.net) had no swap and the kernel
+  # OOM-killed mariadb twice (NRestarts=2 in systemd) -- mariadbd was
+  # the biggest RSS so it won the lottery. Below ~4 GB the panel +
+  # mail stack + a few tenants pushes the box into kernel pressure;
+  # swap gives a safety net before OOM fires.
+  if [[ $mem_mb -gt 4096 ]]; then
+    _log "build-swap: ${mem_mb}MB RAM > 4GB, no swap needed"
     return 0
   fi
   want_swap_kb=2097152  # 2 GB
@@ -10716,12 +10822,19 @@ main() {
   install_node
   install_go
   ensure_user_and_dirs
+  # Add swap (<=4 GB host) BEFORE any daemon starts. Without swap on
+  # a 3.8 GB box the kernel OOM-killer eats mariadbd as soon as the
+  # full daemon set loads (NRestarts=2 caught on puzzle 2026-06-05).
+  # ensure_swap is called again by build_frontend later -- both calls
+  # are idempotent.
+  ensure_swap
   # Order matters: write_env_file seeds PANEL_ADDR / PANEL_ENV / JWT_SECRET
   # hooks BEFORE provision_mariadb appends DATABASE_URL. Reversing the two
   # would leave a fresh install with only the DB URL and no server config.
   write_env_file
   provision_mariadb
   install_mariadb_skip_networking
+  tune_mariadb_for_ram
   install_redis
   # M37 Phase 4: PostgreSQL is OPT-IN. install_postgres no longer runs on
   # fresh install. Operator flips server_settings.postgres_enabled in
