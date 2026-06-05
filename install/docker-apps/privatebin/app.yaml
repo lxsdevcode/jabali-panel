@@ -1,0 +1,31 @@
+slug: privatebin
+name: PrivateBin
+version: "1.7.5"
+description: |
+  Minimalist, open-source pastebin where the server has zero
+  knowledge of pasted data. AES-256 client-side encryption. Single
+  container, filesystem storage by default.
+icon: icon.svg
+upstream: https://github.com/PrivateBin/PrivateBin
+documentation: https://github.com/PrivateBin/PrivateBin/wiki
+
+image_channel: privatebin/nginx-fpm-alpine:latest
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "128m"
+  pids: 100
+
+volumes:
+  - name: data
+    container_path: /srv/data
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /

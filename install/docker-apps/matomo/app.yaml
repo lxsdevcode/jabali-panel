@@ -1,0 +1,47 @@
+slug: matomo
+name: Matomo
+version: "5.2.1"
+description: |
+  Open-source web analytics platform. Privacy-focused, fully
+  self-hosted. Two services: PHP-FPM + nginx app container,
+  bundled MariaDB.
+icon: icon.svg
+upstream: https://github.com/matomo-org/matomo
+documentation: https://matomo.org/docs/
+
+image_channel: matomo:5-apache
+update_mode: manual
+
+resources:
+  cpu: "1.5"
+  memory: "768m"
+  pids: 300
+
+volumes:
+  - name: matomo
+    container_path: /var/www/html
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: MATOMO_DATABASE_HOST
+    value: "db"
+  - name: MATOMO_DATABASE_USERNAME
+    value: "matomo"
+  - name: MATOMO_DATABASE_PASSWORD
+    secret: true
+    generate: password32
+  - name: MATOMO_DATABASE_DBNAME
+    value: "matomo"
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32
