@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"time"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
@@ -251,6 +252,24 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 	_ = r.dockerApps.UpdateAvailableDigest(ctx, app.ID, resp.AvailableDigest)
 	r.log.Info("dockerapp: update available", "id", app.ID, "slug", app.Slug, "digest", resp.AvailableDigest)
 
+	// Fire docker_app.update_available so the operator's configured
+	// channels (email / Slack / ntfy) light up. Title carries the
+	// app's display name; body has the digest prefix.
+	if r.notificationQueue != nil {
+		body := fmt.Sprintf("A new image is available for %s (%s). New digest: %s. Update mode: %s.",
+			app.Name, app.Slug, shortDigest(resp.AvailableDigest), app.UpdateMode)
+		_, perr := r.notificationQueue.Publish(ctx, notifications.Envelope{
+			EventKind: "docker_app.update_available",
+			Severity:  "info",
+			Title:     fmt.Sprintf("Docker app update available: %s", app.Name),
+			Body:      body,
+			Deeplink:  "/jabali-admin/docker-apps",
+		})
+		if perr != nil {
+			r.log.Warn("dockerapp: publish update_available failed", "id", app.ID, "err", perr)
+		}
+	}
+
 	// Auto-update gate. Manual mode just leaves the digest on the
 	// row; the UI surfaces it as "update available". Auto dispatches
 	// the same agent verb the operator would click.
@@ -267,4 +286,18 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 			_ = r.dockerApps.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
 		}
 	}
+}
+
+
+// shortDigest trims a `sha256:abcdef...` to a 12-char view for
+// notifications and log lines.
+func shortDigest(d string) string {
+	const prefix = "sha256:"
+	if len(d) > len(prefix) {
+		d = d[len(prefix):]
+	}
+	if len(d) > 12 {
+		return d[:12]
+	}
+	return d
 }

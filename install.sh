@@ -3726,6 +3726,19 @@ build_backend() {
   install -m 0755 "$tmp_sshshell" /usr/local/bin/jabali-ssh-shell
   rm -f "$tmp_panel" "$tmp_agent" "$tmp_sshshell"
 
+  # M48: sync the docker-app catalog tree into the production path
+  # the panel-api reads at startup. Without this the marketplace
+  # page is empty until the operator manually runs install.sh again
+  # (or jabali update, which calls back into install.sh).
+  if [[ -d "$REPO_DIR/install/docker-apps" ]]; then
+    install -d -m 0755 /usr/local/share/jabali/docker-apps
+    rsync -a --delete \
+      --exclude=".git" \
+      "$REPO_DIR/install/docker-apps/" \
+      /usr/local/share/jabali/docker-apps/
+    _ok "synced docker-app catalog -> /usr/local/share/jabali/docker-apps/"
+  fi
+
   # Ergonomic alias: `jabali ...` works the same as `jabali-panel ...`.
   # The cobra root command is already named "jabali"; this just saves
   # the "-panel" typing for operators. Symlink is idempotent.

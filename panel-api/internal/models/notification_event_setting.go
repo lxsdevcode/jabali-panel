@@ -94,6 +94,13 @@ var AllNotificationEventKinds = []NotificationEventKindMeta{
 		DefaultOn:   false,
 	},
 	{
+		Kind:        "docker_app.update_available",
+		Label:       "Docker app update available",
+		Description: "Marketplace poller detected a newer upstream image digest for an installed Docker app.",
+		Severity:    "info",
+		DefaultOn:   true,
+	},
+	{
 		Kind:        "service.down",
 		Label:       "Service down or restarted",
 		Description: "A managed service unit (nginx, php-fpm, mariadb, …) failed or was restarted.",

@@ -60,6 +60,7 @@ import {
   Bell,
   Key,
   LayoutGrid,
+  LayoutPanelLeft,
   LifeBuoy,
   Link as LinkIcon,
   Loader2,
@@ -174,6 +175,7 @@ export const FolderOutlined = shim(Folder);
 export const FolderOpenOutlined = shim(FolderOpen);
 export const FolderAddOutlined = shim(FolderPlus);
 export const AppstoreOutlined = shim(LayoutGrid);
+export const LayoutPanelLeftOutlined = shim(LayoutPanelLeft);
 export const PackageOpenOutlined = shim(PackageOpen);
 export const AppstoreAddOutlined = shim(SquarePlus);
 export const KeyOutlined = shim(Key);
