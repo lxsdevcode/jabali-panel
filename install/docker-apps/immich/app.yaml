@@ -1,0 +1,52 @@
+slug: immich
+name: Immich
+version: "1.119.1"
+description: |
+  Self-hosted photo + video backup, ML-powered search. Four
+  services: web server, ML inference, PostgreSQL (pgvecto.rs
+  variant), and Redis. ML container is CPU by default; GPU
+  acceleration requires the operator to swap to the cuda /
+  openvino image post-install.
+icon: icon.svg
+upstream: https://github.com/immich-app/immich
+documentation: https://immich.app/docs
+
+image_channel: ghcr.io/immich-app/immich-server:v1.119.1
+update_mode: manual
+
+resources:
+  cpu: "3.0"
+  memory: "3g"
+  pids: 800
+
+volumes:
+  - name: upload
+    container_path: /usr/src/app/upload
+  - name: postgres
+    container_path: /var/lib/postgresql/data
+  - name: model-cache
+    container_path: /cache
+
+ports:
+  - name: http
+    container_port: 2283
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/server-info/ping
+
+env:
+  - name: IMMICH_VERSION
+    value: "v1.119.1"
+  - name: DB_PASSWORD
+    secret: true
+    generate: password32
+  - name: DB_USERNAME
+    value: "postgres"
+  - name: DB_DATABASE_NAME
+    value: "immich"
+  - name: DB_HOSTNAME
+    value: "postgres"
+  - name: REDIS_HOSTNAME
+    value: "redis"
