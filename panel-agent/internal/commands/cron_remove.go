@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -15,9 +16,10 @@ import (
 
 // cronRemoveParams is the input for cron.remove command.
 type cronRemoveParams struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	JobID    string `json:"job_id"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	JobID     string `json:"job_id"`
+	RunAsRoot bool   `json:"run_as_root,omitempty"`
 }
 
 // cronRemoveResponse is the output from cron.remove.
@@ -46,6 +48,13 @@ func cronRemoveHandler(ctx context.Context, params json.RawMessage) (any, error)
 			Code:    agentwire.CodeInvalidArgument,
 			Message: "job_id required",
 		}
+	}
+
+	// Root cron branch (admin-only at API gate): system-scoped unit
+	// lives under /etc/systemd/system/. Different path, system-level
+	// systemctl, no per-user manager check.
+	if p.RunAsRoot {
+		return removeRootCron(ctx, p)
 	}
 
 	// Resolve user's UID
@@ -131,4 +140,21 @@ func fileExists(path string) bool {
 
 func init() {
 	Default.Register("cron.remove", cronRemoveHandler)
+}
+
+
+// removeRootCron disables + removes the system-scoped systemd timer
+// for a root cron. Mirrors the per-user path's "clean up files even
+// when systemctl is unhappy" behaviour, scoped to /etc/systemd/system.
+func removeRootCron(ctx context.Context, p cronRemoveParams) (any, error) {
+	servicePath := filepath.Join("/etc/systemd/system", fmt.Sprintf("jabali-cron-%s.service", p.JobID))
+	timerPath := filepath.Join("/etc/systemd/system", fmt.Sprintf("jabali-cron-%s.timer", p.JobID))
+	if !fileExists(servicePath) && !fileExists(timerPath) {
+		return &cronRemoveResponse{NoChange: true}, nil
+	}
+	_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", fmt.Sprintf("jabali-cron-%s.timer", p.JobID)).Run()
+	_ = os.Remove(servicePath)
+	_ = os.Remove(timerPath)
+	_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+	return &cronRemoveResponse{}, nil
 }

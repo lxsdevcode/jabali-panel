@@ -94,6 +94,11 @@ type createCronRequest struct {
 	// always lands under their own UserID. Empty / omitted means
 	// "create for the caller" for both roles.
 	UserID string `json:"user_id,omitempty"`
+	// RunAsRoot is admin-only. The cron command runs as root (uid 0)
+	// via a system-scoped systemd timer, not under the owner's
+	// per-user systemd. Tenants supplying this field have it
+	// silently dropped.
+	RunAsRoot bool `json:"run_as_root,omitempty"`
 }
 
 type updateCronRequest struct {
@@ -129,9 +134,10 @@ type cronLogResponse struct {
 }
 
 type cronRemoveAgentParams struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	JobID    string `json:"job_id"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	JobID     string `json:"job_id"`
+	RunAsRoot bool   `json:"run_as_root,omitempty"`
 }
 
 type cronRunNowAgentParams struct {
@@ -326,8 +332,13 @@ func (h *cronHandler) create(c *gin.Context) {
 	if claims.IsAdmin && req.UserID != "" {
 		owner = req.UserID
 	}
+	runAsRoot := false
+	if claims.IsAdmin {
+		runAsRoot = req.RunAsRoot
+	}
 	job, err := cronops.Create(ctx, h.cronopsDeps(), cronops.CreateInput{
-		UserID:   owner,
+		UserID:    owner,
+		RunAsRoot: runAsRoot,
 		Name:     req.Name,
 		Command:  req.Command,
 		Schedule: req.Schedule,
@@ -385,7 +396,7 @@ func (h *cronHandler) delete(c *gin.Context) {
 		// Still proceed — user might have been deleted. Just skip agent call.
 		h.cfg.Log.Warn("cron delete: no linux username, skipping agent call", "user_id", job.UserID, "err", err)
 	} else {
-		if err := h.agentRemove(ctx, job.UserID, username, job.ID); err != nil {
+		if err := h.agentRemove(ctx, job.UserID, username, job.ID, job.RunAsRoot); err != nil {
 			// Per plan §6: on user_manager_unreachable still delete the row, reconciler will clean up.
 			h.cfg.Log.Warn("cron delete: agent remove failed, reconciler will clean up", "job_id", job.ID, "err", err)
 		}
@@ -470,9 +481,9 @@ func (h *cronHandler) readLog(c *gin.Context) {
 
 // ---- agent dispatch helpers ----
 
-func (h *cronHandler) agentRemove(ctx context.Context, userID, username, jobID string) error {
+func (h *cronHandler) agentRemove(ctx context.Context, userID, username, jobID string, runAsRoot bool) error {
 	_, err := h.cfg.Agent.Call(ctx, "cron.remove", cronRemoveAgentParams{
-		UserID: userID, Username: username, JobID: jobID,
+		UserID: userID, Username: username, JobID: jobID, RunAsRoot: runAsRoot,
 	})
 	return err
 }

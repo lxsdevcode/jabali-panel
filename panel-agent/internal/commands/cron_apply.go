@@ -25,6 +25,7 @@ type cronApplyParams struct {
 	Command        string   `json:"command"`
 	Schedule       string   `json:"schedule"`
 	OwnedDocroots  []string `json:"owned_docroots"`
+	RunAsRoot      bool     `json:"run_as_root,omitempty"`
 }
 
 // cronApplyResponse is the output from cron.apply.
@@ -92,6 +93,14 @@ func cronApplyHandler(ctx context.Context, params json.RawMessage) (any, error) 
 			Code:    agentwire.CodeInvalidArgument,
 			Message: fmt.Sprintf("schedule validation failed: %v", err),
 		}
+	}
+
+	// Root cron branch (admin-only at API gate). Writes a SYSTEM-scoped
+	// systemd unit at /etc/systemd/system/jabali-cron-<id>.{service,timer}
+	// that runs the command as uid 0. Returns early; the per-user code
+	// path below stays the canonical path for tenant crons.
+	if p.RunAsRoot {
+		return applyRootCron(ctx, p)
 	}
 
 	// Resolve user's UID
@@ -276,6 +285,87 @@ func systemctlUserExec(ctx context.Context, username string, runtimeDir string, 
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// applyRootCron renders + installs a SYSTEM-scoped systemd timer for
+// an admin-created root cron. The unit lives under /etc/systemd/system/
+// and runs as root (no User= directive). Idempotent: returns no_change
+// when the on-disk files already match.
+func applyRootCron(ctx context.Context, p cronApplyParams) (any, error) {
+	// Re-run validation that the user-path also enforces. We do NOT
+	// call cronvalidate.ValidateCommand with OwnedDocroots because
+	// root crons don't have a tenant docroot; the validator's
+	// purpose there is to block escaping into other tenants' dirs.
+	// Root has no such constraint by definition.
+	if err := cronvalidate.ValidateSchedule(p.Schedule); err != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: fmt.Sprintf("schedule validation failed: %v", err),
+		}
+	}
+
+	servicePath := filepath.Join("/etc/systemd/system", fmt.Sprintf("jabali-cron-%s.service", p.JobID))
+	timerPath := filepath.Join("/etc/systemd/system", fmt.Sprintf("jabali-cron-%s.timer", p.JobID))
+
+	serviceContent := buildRootCronServiceContent(p.JobID, p.Name, p.Command)
+	timerContent := buildCronTimerContent(p.JobID, p.Schedule)
+
+	if filesMatch(servicePath, []byte(serviceContent)) && filesMatch(timerPath, []byte(timerContent)) {
+		return &cronApplyResponse{ServicePath: servicePath, TimerPath: timerPath, NoChange: true}, nil
+	}
+
+	if err := writeFileAtomically(servicePath, []byte(serviceContent), 0644); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write service: %v", err)}
+	}
+	if err := writeFileAtomically(timerPath, []byte(timerContent), 0644); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write timer: %v", err)}
+	}
+
+	// system-level daemon-reload + enable.
+	if out, err := exec.CommandContext(ctx, "systemctl", "daemon-reload").CombinedOutput(); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("daemon-reload: %v: %s", err, out)}
+	}
+	if out, err := exec.CommandContext(ctx, "systemctl", "enable", "--now", fmt.Sprintf("jabali-cron-%s.timer", p.JobID)).CombinedOutput(); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("enable timer: %v: %s", err, out)}
+	}
+	return &cronApplyResponse{ServicePath: servicePath, TimerPath: timerPath}, nil
+}
+
+// buildRootCronServiceContent renders a system-scoped service that
+// runs the user-supplied command as root. We deliberately do NOT add
+// a User= directive; the unit inherits the system root context.
+//
+// Hardening:
+//   - PrivateTmp=true so a cron run can't poke at another service's
+//     /tmp state.
+//   - ProtectSystem=strict, ProtectHome=read-only: read-only views
+//     of /usr, /boot, /etc by default; writes need explicit
+//     ReadWritePaths. The operator can lift those by editing the
+//     unit (defaults are intentionally restrictive).
+//   - NoNewPrivileges=true.
+//   - StandardOutput/Error journald + the per-job logs live in
+//     /var/log/jabali/cron/root/<jobid>.log (kept in sync with
+//     the per-user layout under /var/log/jabali/cron/<user>/).
+func buildRootCronServiceContent(jobID, name, command string) string {
+	return fmt.Sprintf(`[Unit]
+Description=Jabali root cron: %s
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c %q
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+NoNewPrivileges=true
+ReadWritePaths=/var/log /var/lib /var/cache /tmp
+StandardOutput=append:/var/log/jabali/cron/root/%s.log
+StandardError=append:/var/log/jabali/cron/root/%s.log
+
+[Install]
+WantedBy=multi-user.target
+`, name, command, jobID, jobID)
 }
 
 func init() {

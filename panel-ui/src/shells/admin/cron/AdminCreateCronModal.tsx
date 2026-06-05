@@ -33,6 +33,7 @@ export const AdminCreateCronModal = ({ open, onClose, onSuccess }: Props) => {
   const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
   const [form] = Form.useForm<{
+    run_as: "root" | "tenant";
     user_id: string;
     name: string;
     command: string;
@@ -41,6 +42,7 @@ export const AdminCreateCronModal = ({ open, onClose, onSuccess }: Props) => {
   }>();
   const [saving, setSaving] = useState(false);
   const [preset, setPreset] = useState<string>("0 3 * * *");
+  const [runAs, setRunAs] = useState<"root" | "tenant">("tenant");
 
   // Fetch tenants for the user picker. 500 cap is generous; if a
   // panel has more, the picker's free-text search filters in-place.
@@ -58,7 +60,9 @@ export const AdminCreateCronModal = ({ open, onClose, onSuccess }: Props) => {
   useEffect(() => {
     if (open) {
       form.resetFields();
+      form.setFieldsValue({ run_as: "tenant", preset: "0 3 * * *" });
       setPreset("0 3 * * *");
+      setRunAs("tenant");
     }
   }, [open, form]);
 
@@ -85,7 +89,7 @@ export const AdminCreateCronModal = ({ open, onClose, onSuccess }: Props) => {
         name: values.name,
         command: values.command,
         schedule,
-        user_id: values.user_id,
+        ...(values.run_as === "tenant" ? { user_id: values.user_id } : { run_as_root: true }),
       });
       message.success("Cron job created");
       onSuccess();
@@ -126,23 +130,32 @@ export const AdminCreateCronModal = ({ open, onClose, onSuccess }: Props) => {
         initialValues={{ preset: "0 3 * * *" }}
         onValuesChange={(c) => {
           if (c.preset !== undefined) setPreset(c.preset);
+          if (c.run_as !== undefined) setRunAs(c.run_as);
         }}
       >
-        <Form.Item
-          label="Tenant"
-          name="user_id"
-          rules={[{ required: true, message: "Pick a tenant" }]}
-        >
-          <Select
-            placeholder="Choose tenant"
-            options={userOptions}
-            loading={usersQ.isLoading}
-            showSearch
-            filterOption={(input, option) =>
-              (option?.label?.toString() ?? "").toLowerCase().includes(input.toLowerCase())
-            }
-          />
+        <Form.Item label="Run as" name="run_as" initialValue="tenant">
+          <Radio.Group>
+            <Radio value="tenant">Tenant (per-user systemd)</Radio>
+            <Radio value="root">Root (system-scoped systemd)</Radio>
+          </Radio.Group>
         </Form.Item>
+        {runAs === "tenant" && (
+          <Form.Item
+            label="Tenant"
+            name="user_id"
+            rules={[{ required: true, message: "Pick a tenant" }]}
+          >
+            <Select
+              placeholder="Choose tenant"
+              options={userOptions}
+              loading={usersQ.isLoading}
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label?.toString() ?? "").toLowerCase().includes(input.toLowerCase())
+              }
+            />
+          </Form.Item>
+        )}
         <Form.Item
           label="Name"
           name="name"

@@ -279,6 +279,8 @@ export async function createCronJob(body: {
   enabled?: boolean;
   /** Admin-only override: create the cron job under a different tenant's UserID. Ignored when caller is not admin. */
   user_id?: string;
+  /** Admin-only: when true, the cron runs as root via a system-scoped systemd timer. Ignored for tenants. */
+  run_as_root?: boolean;
 }): Promise<CronJob> {
   const resp = await apiClient.post<CronJob>("/cron", body);
   return resp.data;
