@@ -29,6 +29,8 @@ type DockerAppRepository interface {
 	ListByStatus(ctx context.Context, status string) ([]*models.DockerApp, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
 	UpdateImageSHA(ctx context.Context, id, imageSHA string) error
+	UpdateAvailableDigest(ctx context.Context, id, digest string) error
+	MarkChecked(ctx context.Context, id string) error
 	Update(ctx context.Context, app *models.DockerApp) error
 	Delete(ctx context.Context, id string) error
 
@@ -126,6 +128,27 @@ func (r *dockerAppRepo) UpdateImageSHA(ctx context.Context, id, imageSHA string)
 		Updates(map[string]interface{}{
 			"image_sha":  imageSHA,
 			"updated_at": time.Now(),
+		}).Error
+}
+
+func (r *dockerAppRepo) UpdateAvailableDigest(ctx context.Context, id, digest string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.DockerApp{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"available_digest": digest,
+			"updated_at":       time.Now(),
+		}).Error
+}
+
+func (r *dockerAppRepo) MarkChecked(ctx context.Context, id string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).
+		Model(&models.DockerApp{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"last_check_at": now,
+			"updated_at":    now,
 		}).Error
 }
 

@@ -275,6 +275,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		rec.WithSSHKeys(sshKeyRepo)
 		rec.WithCronJobs(cronJobsRepo)
 		rec.WithDockerApps(dockerAppRepo)
+		rec.WithDockerCatalog(dockerCatalog)
 		// M18 wiring — packages + overrides + /home mount path so
 		// ReconcileUserLimits and ReconcileNginxRateLimits have every
 		// dep they need. Mount path resolved below after deps are set.

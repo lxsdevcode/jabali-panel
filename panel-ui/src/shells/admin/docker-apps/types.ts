@@ -63,6 +63,8 @@ export interface InstalledApp {
   name: string;
   catalog_version: string;
   image_sha: string | null;
+  available_digest: string | null;
+  last_check_at: string | null;
   status:
     | "pending"
     | "installing"
