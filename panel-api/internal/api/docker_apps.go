@@ -186,15 +186,16 @@ func (h *dockerAppHandler) list(c *gin.Context) {
 // ---- install ----------------------------------------------------------------
 
 type installRequest struct {
-	Slug       string                    `json:"slug" binding:"required"`
-	Name       string                    `json:"name" binding:"required"`
-	Domain     string                    `json:"domain,omitempty"`
-	UpdateMode string                    `json:"update_mode,omitempty"`
-	CPULimit   string                    `json:"cpu_limit,omitempty"`
-	Memory     string                    `json:"memory_limit,omitempty"`
-	PIDsLimit  *int                      `json:"pids_limit,omitempty"`
-	EnvOverride map[string]string        `json:"env,omitempty"`
-	Ports      []installPortRequest      `json:"ports,omitempty"`
+	Slug                string               `json:"slug" binding:"required"`
+	Name                string               `json:"name" binding:"required"`
+	Domain              string               `json:"domain,omitempty"`
+	UpdateMode          string               `json:"update_mode,omitempty"`
+	CPULimit            string               `json:"cpu_limit,omitempty"`
+	Memory              string               `json:"memory_limit,omitempty"`
+	PIDsLimit           *int                 `json:"pids_limit,omitempty"`
+	EnvOverride         map[string]string    `json:"env,omitempty"`
+	Ports               []installPortRequest `json:"ports,omitempty"`
+	BackupDestinationID string               `json:"backup_destination_id,omitempty"`
 }
 
 type installPortRequest struct {
@@ -280,6 +281,10 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 	}
 	if pids != nil {
 		app.PIDsLimit = pids
+	}
+	if req.BackupDestinationID != "" {
+		v := req.BackupDestinationID
+		app.BackupDestinationID = &v
 	}
 	if err := h.cfg.Repo.Create(ctx, app); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist_failed", "detail": err.Error()})
@@ -824,10 +829,11 @@ func (h *dockerAppHandler) backup(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.backup", map[string]any{
-		"slug":   app.Slug,
-		"reason": "manual",
-	})
+	bkParams := map[string]any{"slug": app.Slug, "reason": "manual"}
+	if app.BackupDestinationID != nil {
+		bkParams["destination_id"] = *app.BackupDestinationID
+	}
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.backup", bkParams)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_backup_failed", "detail": err.Error()})
 		return
@@ -854,7 +860,11 @@ func (h *dockerAppHandler) listBackups(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.list_backups", map[string]any{"slug": app.Slug})
+	lbParams := map[string]any{"slug": app.Slug}
+	if app.BackupDestinationID != nil {
+		lbParams["destination_id"] = *app.BackupDestinationID
+	}
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.list_backups", lbParams)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
 		return
@@ -882,10 +892,11 @@ func (h *dockerAppHandler) restoreBackup(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.restore", map[string]any{
-		"slug":        app.Slug,
-		"snapshot_id": bid,
-	})
+	rsParams := map[string]any{"slug": app.Slug, "snapshot_id": bid}
+	if app.BackupDestinationID != nil {
+		rsParams["destination_id"] = *app.BackupDestinationID
+	}
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.restore", rsParams)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_restore_failed", "detail": err.Error()})
 		return

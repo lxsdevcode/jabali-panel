@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,8 +30,9 @@ import (
 )
 
 type dockerAppBackupParams struct {
-	Slug   string `json:"slug"`
-	Reason string `json:"reason,omitempty"`
+	Slug          string `json:"slug"`
+	Reason        string `json:"reason,omitempty"`
+	DestinationID string `json:"destination_id,omitempty"`
 }
 
 type dockerAppBackupResponse struct {
@@ -55,8 +57,9 @@ func dockerAppBackupHandler(ctx context.Context, params json.RawMessage) (any, e
 	if _, err := os.Stat(dir); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeNotFound, Message: fmt.Sprintf("%s not found", dir)}
 	}
-	if err := requireResticEnv(); err != nil {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: err.Error()}
+	env, eerr := dockerAppResticEnvFor(p.DestinationID)
+	if eerr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: eerr.Error()}
 	}
 
 	cmd := exec.CommandContext(ctx, "restic", "backup", dir,
@@ -65,7 +68,7 @@ func dockerAppBackupHandler(ctx context.Context, params json.RawMessage) (any, e
 		"--tag", "slug:"+p.Slug,
 		"--tag", "reason:"+p.Reason,
 		"--json")
-	cmd.Env = dockerAppResticEnv()
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, &agentwire.AgentError{
@@ -94,7 +97,8 @@ func dockerAppBackupHandler(ctx context.Context, params json.RawMessage) (any, e
 }
 
 type dockerAppListBackupsParams struct {
-	Slug string `json:"slug"`
+	Slug          string `json:"slug"`
+	DestinationID string `json:"destination_id,omitempty"`
 }
 
 type dockerAppBackupRow struct {
@@ -117,15 +121,16 @@ func dockerAppListBackupsHandler(ctx context.Context, params json.RawMessage) (a
 	if err := validateSlug(p.Slug); err != nil {
 		return nil, err
 	}
-	if err := requireResticEnv(); err != nil {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: err.Error()}
+	env, eerr := dockerAppResticEnvFor(p.DestinationID)
+	if eerr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: eerr.Error()}
 	}
 
 	cmd := exec.CommandContext(ctx, "restic", "snapshots",
 		"--tag", "docker-app",
 		"--tag", "slug:"+p.Slug,
 		"--json")
-	cmd.Env = dockerAppResticEnv()
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, &agentwire.AgentError{
@@ -170,8 +175,9 @@ func dockerAppListBackupsHandler(ctx context.Context, params json.RawMessage) (a
 }
 
 type dockerAppRestoreParams struct {
-	Slug       string `json:"slug"`
-	SnapshotID string `json:"snapshot_id"`
+	Slug          string `json:"slug"`
+	SnapshotID    string `json:"snapshot_id"`
+	DestinationID string `json:"destination_id,omitempty"`
 }
 
 type dockerAppRestoreResponse struct {
@@ -204,8 +210,9 @@ func dockerAppRestoreHandler(ctx context.Context, params json.RawMessage) (any, 
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "snapshot_id is required"}
 	}
 	dir := filepath.Join(dockerAppDataRoot, p.Slug)
-	if err := requireResticEnv(); err != nil {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: err.Error()}
+	env, eerr := dockerAppResticEnvFor(p.DestinationID)
+	if eerr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: eerr.Error()}
 	}
 
 	if _, err := runDockerCompose(ctx, dir, "down"); err != nil {
@@ -216,7 +223,7 @@ func dockerAppRestoreHandler(ctx context.Context, params json.RawMessage) (any, 
 		"--target", "/",
 		"--include", dir,
 		"--json")
-	rc.Env = dockerAppResticEnv()
+	rc.Env = env
 	if out, err := rc.CombinedOutput(); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -235,13 +242,20 @@ func dockerAppRestoreHandler(ctx context.Context, params json.RawMessage) (any, 
 	return dockerAppRestoreResponse{Slug: p.Slug, SnapshotID: p.SnapshotID, Detail: "compose down -> restore -> compose up -d"}, nil
 }
 
-// requireResticEnv enforces the Phase 8.1 prerequisite: operator has
-// JABALI_RESTIC_REPO + JABALI_RESTIC_PASSWORD set on the agent's
-// service unit. Phase 8.2 will accept a backup_destinations row id
-// from the panel and look up creds at call time, removing this gate.
-func requireResticEnv() error {
+// requireResticBinary enforces the absolute baseline: restic exists.
+func requireResticBinary() error {
 	if _, err := exec.LookPath("restic"); err != nil {
 		return fmt.Errorf("restic binary not present")
+	}
+	return nil
+}
+
+// requireResticEnv enforces the Phase 8.1 fallback: JABALI_RESTIC_REPO
+// + JABALI_RESTIC_PASSWORD set on jabali-agent.service. Called only
+// when no destination_id was supplied.
+func requireResticEnv() error {
+	if err := requireResticBinary(); err != nil {
+		return err
 	}
 	if os.Getenv("JABALI_RESTIC_REPO") == "" {
 		return fmt.Errorf("JABALI_RESTIC_REPO not set on jabali-agent.service")
@@ -252,17 +266,53 @@ func requireResticEnv() error {
 	return nil
 }
 
-// resticEnv builds the process env for a restic invocation. We pass
-// the repo + password as the explicit RESTIC_* names restic looks
-// for, plus the parent env so cred-helpers (s3 / b2 / etc.) work.
-func dockerAppResticEnv() []string {
+// resticRemoteEnvDir is where M30.1 wrote per-destination env files.
+// Each file is shell-style KEY=VALUE; lines like RESTIC_REPOSITORY=...
+// + RESTIC_PASSWORD=... + cred-helper exports (AWS_*, B2_*, etc.) are
+// pre-rendered by the panel at destination-create time.
+const resticRemoteEnvDir = "/etc/jabali-panel/restic-remotes"
+
+// dockerAppResticEnvFor returns the process env restic should run
+// under. When destID is set, parses /etc/jabali-panel/restic-remotes/
+// <id>.env and layers its KEY=VALUE pairs on top of os.Environ.
+// When empty, falls back to the JABALI_RESTIC_REPO + JABALI_RESTIC_
+// PASSWORD env vars (Phase 8.1 path).
+func dockerAppResticEnvFor(destID string) ([]string, error) {
 	env := os.Environ()
-	env = append(env,
-		"RESTIC_REPOSITORY="+os.Getenv("JABALI_RESTIC_REPO"),
-		"RESTIC_PASSWORD="+os.Getenv("JABALI_RESTIC_PASSWORD"),
-	)
-	return env
+	if destID == "" {
+		if err := requireResticEnv(); err != nil {
+			return nil, err
+		}
+		env = append(env,
+			"RESTIC_REPOSITORY="+os.Getenv("JABALI_RESTIC_REPO"),
+			"RESTIC_PASSWORD="+os.Getenv("JABALI_RESTIC_PASSWORD"),
+		)
+		return env, nil
+	}
+	// destination_id path. Validate shape (ULID charset only) so we
+	// can't be tricked into reading an arbitrary file.
+	if !ulidLikeRE.MatchString(destID) {
+		return nil, fmt.Errorf("invalid destination_id %q", destID)
+	}
+	if err := requireResticBinary(); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(resticRemoteEnvDir, destID+".env")
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read destination env %s: %w", path, err)
+	}
+	for _, line := range strings.Split(string(contents), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		env = append(env, line)
+	}
+	return env, nil
 }
+
+var ulidLikeRE = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 
 // quiet build-time use to keep `strings` imported across refactors;
 // the package collectively uses it, but this file may temporarily
