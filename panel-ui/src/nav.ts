@@ -110,6 +110,12 @@ export const adminNav: NavItem[] = [
     path: "/jabali-admin/applications",
   },
   {
+    key: "docker-apps",
+    label: "Docker Apps",
+    icon: navIcon(AppstoreOutlined),
+    path: "/jabali-admin/docker-apps",
+  },
+  {
     key: "settings",
     label: "Server Settings",
     icon: navIcon(SettingOutlined),

@@ -78,6 +78,7 @@ import { UserCronList } from "./shells/user/cron/UserCronList";
 import { AdminCronList } from "./shells/admin/cron/AdminCronList";
 import { MailTabsPage } from "./shells/user/mail/MailTabsPage";
 import { AdminApplicationList } from "./shells/admin/applications/AdminApplicationList";
+import { AdminDockerAppsPage } from "./shells/admin/docker-apps/AdminDockerAppsPage";
 import { LogsPage } from "./shells/admin/logs/LogsPage";
 import { PHPVersionsPage } from "./shells/admin/php/PHPVersionsPage";
 import { PHPPoolEdit } from "./shells/admin/php-pools/PHPPoolEdit";
@@ -177,6 +178,7 @@ const ThemedApp = () => {
               <Route path="edit/:id" element={<PHPPoolEdit />} />
             </Route>
             <Route path="applications" element={<AdminApplicationList />} />
+            <Route path="docker-apps" element={<AdminDockerAppsPage />} />
             <Route path="logs" element={<LogsPage />} />
             <Route path="audit" element={<AdminAuditList />} />
             <Route path="cron" element={<AdminCronList />} />
