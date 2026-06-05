@@ -39,3 +39,28 @@ export async function updateApp(id: string): Promise<{ outcome: "updated" | "rol
   const { data } = await apiClient.post<{ outcome: "updated" | "rolled_back"; detail?: string }>(`${BASE}/${id}/update`);
   return data;
 }
+
+export interface LogsResponse {
+  slug: string;
+  logs: string;
+}
+
+export async function fetchLogs(id: string, lines = 200): Promise<LogsResponse> {
+  const { data } = await apiClient.get<LogsResponse>(`${BASE}/${id}/logs?lines=${lines}`);
+  return data;
+}
+
+export interface ExecResponse {
+  slug: string;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export async function execCmd(id: string, command: string, service?: string): Promise<ExecResponse> {
+  const { data } = await apiClient.post<ExecResponse>(`${BASE}/${id}/exec`, {
+    command,
+    ...(service ? { service } : {}),
+  });
+  return data;
+}
