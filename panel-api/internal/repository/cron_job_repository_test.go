@@ -55,9 +55,10 @@ func TestCronJobCreate_Success(t *testing.T) {
 	}
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO `cron_jobs` (`id`,`user_id`,`name`,`command`,`schedule`,`enabled`,`last_run_at`,`last_exit_code`,`last_error`,`created_at`,`updated_at`) VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING `created_at`,`updated_at`")).
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO `cron_jobs` (`id`,`user_id`,`name`,`command`,`schedule`,`enabled`,`run_as_root`,`last_run_at`,`last_exit_code`,`last_error`,`created_at`,`updated_at`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING `created_at`,`updated_at`")).
 		WithArgs(
 			job.ID, job.UserID, job.Name, job.Command, job.Schedule, job.Enabled,
+			job.RunAsRoot,
 			nil, nil, nil,
 			sqlmock.AnyArg(), sqlmock.AnyArg(),
 		).
