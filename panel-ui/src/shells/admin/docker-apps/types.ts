@@ -65,6 +65,7 @@ export interface InstalledApp {
   image_sha: string | null;
   available_digest: string | null;
   last_check_at: string | null;
+  backup_destination_id: string | null;
   status:
     | "pending"
     | "installing"
@@ -94,6 +95,7 @@ export interface InstallRequest {
   pids_limit?: number;
   env?: Record<string, string>;
   ports?: InstallPortOverride[];
+  backup_destination_id?: string;
 }
 
 export interface InstallPortOverride {

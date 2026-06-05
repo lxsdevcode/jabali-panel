@@ -34,6 +34,10 @@ type DockerApp struct {
 	AvailableDigest *string    `gorm:"column:available_digest;type:varchar(128);null" json:"available_digest"`
 	// LastCheckAt gates the per-app poll cadence (~6h default).
 	LastCheckAt     *time.Time `gorm:"column:last_check_at;type:timestamp;null" json:"last_check_at"`
+	// BackupDestinationID picks which M30 backup destination this
+	// app's snapshots land in. NULL falls back to env-var config
+	// (Phase 8.1). ON DELETE SET NULL to avoid widow rows.
+	BackupDestinationID *string  `gorm:"column:backup_destination_id;type:char(26);null" json:"backup_destination_id"`
 	Status         string    `gorm:"type:varchar(32);not null;default:'pending'" json:"status"`
 	UpdateMode     string    `gorm:"column:update_mode;type:varchar(16);not null;default:'manual'" json:"update_mode"`
 	CPULimit       *string   `gorm:"column:cpu_limit;type:varchar(16);null" json:"cpu_limit"`

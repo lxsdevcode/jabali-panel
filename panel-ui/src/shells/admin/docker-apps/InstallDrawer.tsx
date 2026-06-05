@@ -3,8 +3,10 @@
 // admin can flip Enabled / Bind / Host port / Reverse-proxy before
 // committing. See ADR-0116 Decision 5.
 import { Alert, App, Button, Drawer, Form, Input, InputNumber, Select, Space, Switch, Table, Tag, Typography } from "antd";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+
+import { apiClient } from "../../../apiClient";
 
 import { installApp } from "./api";
 import type { CatalogEntry, InstallPortOverride, InstallRequest } from "./types";
@@ -24,6 +26,15 @@ interface PortRow extends InstallPortOverride {
 export const InstallDrawer = ({ open, entry, onClose }: Props) => {
   const { message } = App.useApp();
   const qc = useQueryClient();
+  const destsQ = useQuery({
+    queryKey: ["admin-backup-destinations-for-docker-app"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data?: { id: string; name: string; kind: string }[] }>(
+        "/admin/backup-destinations?pageSize=100",
+      );
+      return data.data ?? [];
+    },
+  });
   const [form] = Form.useForm();
   const [ports, setPorts] = useState<PortRow[]>([]);
 
@@ -70,7 +81,7 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
       ),
   });
 
-  const handleFinish = (values: { slug: string; name: string; domain?: string; update_mode: "manual" | "auto"; cpu_limit: string; memory_limit: string; pids_limit?: number }) => {
+  const handleFinish = (values: { slug: string; name: string; domain?: string; update_mode: "manual" | "auto"; cpu_limit: string; memory_limit: string; pids_limit?: number; backup_destination_id?: string }) => {
     if (!entry) return;
     install.mutate({
       slug: entry.slug,
@@ -81,6 +92,9 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
       memory_limit: values.memory_limit,
       pids_limit: values.pids_limit,
       ports: ports.map(({ container_port: _cp, protocol: _proto, ...rest }) => rest),
+      ...(values.backup_destination_id
+        ? { backup_destination_id: values.backup_destination_id }
+        : {}),
     });
   };
 
@@ -234,6 +248,22 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
               <InputNumber min={1} max={65535} />
             </Form.Item>
           </Space>
+
+          <Form.Item
+            label="Backup destination"
+            name="backup_destination_id"
+            tooltip="Pick a destination from Server Settings -> Backups. Leave empty to fall back to JABALI_RESTIC_REPO env vars (Phase 8.1)."
+          >
+            <Select
+              allowClear
+              placeholder="Inherit env-var fallback"
+              options={(destsQ.data ?? []).map((d) => ({
+                value: d.id,
+                label: `${d.name} (${d.kind})`,
+              }))}
+              loading={destsQ.isLoading}
+            />
+          </Form.Item>
 
           <Typography.Title level={5} style={{ marginTop: 8 }}>
             Ports
