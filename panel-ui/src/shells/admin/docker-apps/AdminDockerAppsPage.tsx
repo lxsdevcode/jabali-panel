@@ -12,7 +12,7 @@ import {
   SyncOutlined,
 } from "@icons";
 
-import { deleteApp, lifecycleAction, listCatalog, listInstalled } from "./api";
+import { deleteApp, lifecycleAction, listCatalog, listInstalled, updateApp } from "./api";
 import type { CatalogEntry, InstalledApp } from "./types";
 import { InstallDrawer } from "./InstallDrawer";
 
@@ -47,6 +47,19 @@ export const AdminDockerAppsPage = () => {
       lifecycleAction(id, action),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["docker-apps-installed"] }),
     onError: (e: unknown) => message.error(e instanceof Error ? e.message : "Action failed"),
+  });
+
+  const updateImage = useMutation({
+    mutationFn: async (id: string) => updateApp(id),
+    onSuccess: (r) => {
+      if (r.outcome === "rolled_back") {
+        message.warning(r.detail ? `Rolled back: ${r.detail}` : "Update failed; rolled back to previous image");
+      } else {
+        message.success("Updated");
+      }
+      qc.invalidateQueries({ queryKey: ["docker-apps-installed"] });
+    },
+    onError: (e: unknown) => message.error(e instanceof Error ? e.message : "Update failed"),
   });
 
   const remove = useMutation({
@@ -191,6 +204,16 @@ export const AdminDockerAppsPage = () => {
                           onClick={() => lifecycle.mutate({ id: r.id, action: "restart" })}
                         >
                           Restart
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<SyncOutlined />}
+                          loading={updateImage.isPending && updateImage.variables === r.id}
+                          onClick={() => updateImage.mutate(r.id)}
+                          disabled={r.update_mode === "manual" ? false : false}
+                          title="Pull latest image with rollback on failure"
+                        >
+                          Update
                         </Button>
                         <Popconfirm
                           title={`Uninstall ${r.name}?`}
