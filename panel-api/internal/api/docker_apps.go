@@ -82,6 +82,9 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	grp.POST("/:id/update", h.updateImage)
 	grp.GET("/:id/logs", h.logs)
 	grp.POST("/:id/exec", h.execCmd)
+	grp.POST("/:id/backup", h.backup)
+	grp.GET("/:id/backups", h.listBackups)
+	grp.POST("/:id/backups/:bid/restore", h.restoreBackup)
 }
 
 // requireAdminForDockerApps gates the whole route group on
@@ -797,6 +800,94 @@ func (h *dockerAppHandler) execCmd(c *gin.Context) {
 	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// backup -> docker_app.backup
+func (h *dockerAppHandler) backup(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	app, err := h.cfg.Repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.backup", map[string]any{
+		"slug":   app.Slug,
+		"reason": "manual",
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_backup_failed", "detail": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// listBackups -> docker_app.list_backups
+func (h *dockerAppHandler) listBackups(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	app, err := h.cfg.Repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.list_backups", map[string]any{"slug": app.Slug})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// restoreBackup -> docker_app.restore
+func (h *dockerAppHandler) restoreBackup(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	bid := c.Param("bid")
+	app, err := h.cfg.Repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.restore", map[string]any{
+		"slug":        app.Slug,
+		"snapshot_id": bid,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_restore_failed", "detail": err.Error()})
 		return
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)

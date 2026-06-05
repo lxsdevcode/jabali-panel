@@ -64,3 +64,25 @@ export async function execCmd(id: string, command: string, service?: string): Pr
   });
   return data;
 }
+
+export interface BackupRow {
+  id: string;
+  time: string;
+  hostname?: string;
+  tags?: string[];
+}
+export interface ListBackupsResponse {
+  slug: string;
+  backups: BackupRow[];
+}
+export async function listBackups(id: string): Promise<ListBackupsResponse> {
+  const { data } = await apiClient.get<ListBackupsResponse>(`${BASE}/${id}/backups`);
+  return data;
+}
+export async function createBackup(id: string): Promise<{ snapshot_id: string; size_bytes?: number }> {
+  const { data } = await apiClient.post<{ snapshot_id: string; size_bytes?: number }>(`${BASE}/${id}/backup`);
+  return data;
+}
+export async function restoreBackup(id: string, snapshotId: string): Promise<void> {
+  await apiClient.post(`${BASE}/${id}/backups/${snapshotId}/restore`);
+}

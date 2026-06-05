@@ -12,6 +12,7 @@ import {
   SyncOutlined,
   FileTextOutlined,
   CodeOutlined,
+  SaveOutlined,
 } from "@icons";
 
 import { deleteApp, lifecycleAction, listCatalog, listInstalled, updateApp } from "./api";
@@ -19,6 +20,7 @@ import type { CatalogEntry, InstalledApp } from "./types";
 import { InstallDrawer } from "./InstallDrawer";
 import { LogsDrawer } from "./LogsDrawer";
 import { ExecDrawer } from "./ExecDrawer";
+import { BackupsDrawer } from "./BackupsDrawer";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "default",
@@ -37,6 +39,7 @@ export const AdminDockerAppsPage = () => {
   const [installEntry, setInstallEntry] = useState<CatalogEntry | null>(null);
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
+  const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
 
   const catalog = useQuery({
     queryKey: ["docker-apps-catalog"],
@@ -237,6 +240,14 @@ export const AdminDockerAppsPage = () => {
                         >
                           Exec
                         </Button>
+                        <Button
+                          size="small"
+                          icon={<SaveOutlined />}
+                          onClick={() => setBackupsAppId(r.id)}
+                          title="Manage restic snapshots for this app"
+                        >
+                          Backups
+                        </Button>
                         <Popconfirm
                           title={`Uninstall ${r.name}?`}
                           description="Volumes will be purged. This cannot be undone."
@@ -270,6 +281,11 @@ export const AdminDockerAppsPage = () => {
         open={execAppId !== null}
         appId={execAppId}
         onClose={() => setExecAppId(null)}
+      />
+      <BackupsDrawer
+        open={backupsAppId !== null}
+        appId={backupsAppId}
+        onClose={() => setBackupsAppId(null)}
       />
     </div>
   );
