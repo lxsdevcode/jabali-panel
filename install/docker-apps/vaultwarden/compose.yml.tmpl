@@ -1,0 +1,28 @@
+services:
+  vaultwarden:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      DOMAIN: "https://{{ .Domain }}"
+      WEBSOCKET_ENABLED: "true"
+{{- range $name, $val := .Env }}
+      {{ $name }}: "{{ $val }}"
+{{- end }}
+    volumes:
+      - {{ .DataRoot }}/data:/data
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/alive || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

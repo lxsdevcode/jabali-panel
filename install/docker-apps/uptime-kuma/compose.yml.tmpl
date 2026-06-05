@@ -1,0 +1,22 @@
+services:
+  uptime-kuma:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    volumes:
+      - {{ .DataRoot }}/data:/app/data
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3001/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

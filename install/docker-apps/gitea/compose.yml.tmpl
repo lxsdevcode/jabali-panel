@@ -1,0 +1,35 @@
+services:
+  gitea:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      ROOT_URL: "https://{{ .Domain }}/"
+{{- range $name, $val := .Env }}
+      {{ $name }}: "{{ $val }}"
+{{- end }}
+    volumes:
+      - {{ .DataRoot }}/data:/data
+      - {{ .DataRoot }}/config:/etc/gitea
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+{{- with index .Ports "ssh" }}
+{{- if . }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:3000/api/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
