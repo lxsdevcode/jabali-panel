@@ -253,6 +253,22 @@ export async function listCronJobs(): Promise<CronJobListResponse> {
   return resp.data;
 }
 
+export interface AdminCronJob extends CronJob {
+  username: string;
+}
+export interface AdminCronJobListResponse {
+  items: AdminCronJob[];
+}
+/**
+ * Admin: list every cron job on the system. Username is denormalised
+ * server-side so the table can show the owner without an N+1 fetch.
+ * Requires claims.IsAdmin; 403 otherwise.
+ */
+export async function listAdminCronJobs(): Promise<AdminCronJobListResponse> {
+  const resp = await apiClient.get<AdminCronJobListResponse>("/admin/cron");
+  return resp.data;
+}
+
 /**
  * Create a new cron job
  */
