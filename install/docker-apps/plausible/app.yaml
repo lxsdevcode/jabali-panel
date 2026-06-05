@@ -1,0 +1,53 @@
+slug: plausible
+name: Plausible Analytics
+version: "2.1.4"
+description: |
+  Lightweight, open-source, privacy-focused web analytics. Three
+  services in this catalog entry: the Plausible Elixir app, a
+  PostgreSQL row store, and a ClickHouse columnar event store.
+  No marketing cookies; GDPR-friendly by default.
+icon: icon.svg
+upstream: https://github.com/plausible/community-edition
+documentation: https://plausible.io/docs
+
+image_channel: ghcr.io/plausible/community-edition:v2.1.4
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 500
+
+volumes:
+  - name: postgres
+    container_path: /var/lib/postgresql/data
+  - name: clickhouse
+    container_path: /var/lib/clickhouse
+  - name: clickhouse-logs
+    container_path: /var/log/clickhouse-server
+
+ports:
+  - name: http
+    container_port: 8000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/health
+
+env:
+  - name: BASE_URL
+    value: ""
+  - name: SECRET_KEY_BASE
+    secret: true
+    generate: password64
+  - name: TOTP_VAULT_KEY
+    secret: true
+    generate: password64
+  - name: DATABASE_URL
+    value: ""
+  - name: CLICKHOUSE_DATABASE_URL
+    value: ""
+  - name: POSTGRES_PASSWORD
+    secret: true
+    generate: password32

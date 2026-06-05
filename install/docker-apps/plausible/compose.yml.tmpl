@@ -1,0 +1,69 @@
+services:
+  plausible:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - clickhouse
+    environment:
+      BASE_URL: "https://{{ .Domain }}"
+      SECRET_KEY_BASE: "{{ index .Env "SECRET_KEY_BASE" }}"
+      TOTP_VAULT_KEY: "{{ index .Env "TOTP_VAULT_KEY" }}"
+      DATABASE_URL: "postgres://postgres:{{ index .Env "POSTGRES_PASSWORD" }}@postgres:5432/plausible_db"
+      CLICKHOUSE_DATABASE_URL: "http://clickhouse:8123/plausible_events_db"
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    command: >
+      sh -c "/entrypoint.sh db createdb &&
+             /entrypoint.sh db migrate &&
+             /entrypoint.sh run"
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: jabali-app-{{ .Slug }}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "plausible_db"
+      POSTGRES_PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: jabali-app-{{ .Slug }}-clickhouse
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - {{ .DataRoot }}/clickhouse:/var/lib/clickhouse
+      - {{ .DataRoot }}/clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8123/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
