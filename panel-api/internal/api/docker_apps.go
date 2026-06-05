@@ -41,6 +41,13 @@ import (
 type DockerAppHandlerConfig struct {
 	Repo    repository.DockerAppRepository
 	Catalog *dockerapp.Catalog
+	// Domains is optional. When set, the install handler creates a
+	// `domains` row with managed_by='docker_app' for each install
+	// that has a loopback+reverse_proxy=true port, so the reconciler
+	// renders an nginx vhost that proxy_passes to the upstream port
+	// AND issues LE through the same path as tenant domains.
+	// ADR-0116 Decision 4.
+	Domains repository.DomainRepository
 	Agent   agent.AgentInterface
 	Log     *slog.Logger
 }
@@ -276,6 +283,55 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 			_ = h.cfg.Repo.Delete(ctx, app.ID)
 			c.JSON(http.StatusConflict, gin.H{"error": "port_persist_failed", "detail": err.Error()})
 			return
+		}
+	}
+
+	// M48 Phase 6: auto-create a domains row when the install supplies
+	// a hostname AND there's at least one loopback+reverse_proxy=true
+	// port. The reconciler picks the row up on its next tick and
+	// renders an nginx vhost via the existing proxy_pass nginx_rules
+	// path -- same flow as tenant Rule Builder proxy_pass entries.
+	// We tag the row with managed_by='docker_app' so the tenant /domains
+	// CRUD handler refuses to delete it (delete is owned by the
+	// docker-app handler below).
+	if h.cfg.Domains != nil && req.Domain != "" {
+		claims := ginctx.Claims(c)
+		var loopbackPort *models.DockerAppPublishedPort
+		for _, p := range resolvedPorts {
+			if p.BindInterface == "loopback" && p.ReverseProxy && p.Protocol == "tcp" {
+				loopbackPort = p
+				break
+			}
+		}
+		if loopbackPort != nil && claims != nil {
+			target := "http://127.0.0.1:" + intToStr(loopbackPort.HostPort)
+			truePtr := true
+			rules := models.NginxRules{{
+				Type:      "proxy_pass",
+				Path:      "/",
+				Target:    target,
+				Websocket: &truePtr,
+			}}
+			dom := &models.Domain{
+				ID:          ulid.Make().String(),
+				UserID:      claims.UserID,
+				Name:        req.Domain,
+				DocRoot:     "",
+				IsEnabled:   true,
+				NginxRules:  rules,
+				ManagedBy:   models.DomainManagedByDockerApp,
+				DockerAppID: &app.ID,
+			}
+			if derr := h.cfg.Domains.Create(ctx, dom); derr != nil {
+				// Non-fatal: surface in last_error so the operator can
+				// see it failed and either pick a different domain or
+				// retry. We leave the app row in place; the operator
+				// can delete it from the UI if they want a clean slate.
+				msg := "domain auto-create failed: " + firstLineString(derr.Error())
+				_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+				c.JSON(http.StatusConflict, gin.H{"error": "domain_create_failed", "detail": derr.Error(), "id": app.ID})
+				return
+			}
 		}
 	}
 
@@ -550,6 +606,20 @@ func (h *dockerAppHandler) delete(c *gin.Context) {
 			return
 		}
 	}
+
+	// M48 Phase 6: drop the auto-managed domain row (if any). The FK
+	// on docker_app_id is SET NULL, not CASCADE -- we ON_DELETE_SET_NULL
+	// at the SQL layer so an accidental docker_apps.Delete doesn't tear
+	// down domain rows blindly; the explicit cleanup belongs here.
+	if h.cfg.Domains != nil {
+		domList, _, _ := h.cfg.Domains.List(ctx, repository.ListOptions{})
+		for _, dom := range domList {
+			if dom.ManagedBy == models.DomainManagedByDockerApp && dom.DockerAppID != nil && *dom.DockerAppID == id {
+				_ = h.cfg.Domains.Delete(ctx, dom.ID)
+			}
+		}
+	}
+
 	if err := h.cfg.Repo.Delete(ctx, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist_failed"})
 		return
@@ -599,4 +669,26 @@ func firstLineString(s string) string {
 		}
 	}
 	return s
+}
+
+
+// intToStr is local to avoid pulling strconv into a hot path that
+// only uses it for one integer. Phase 6.
+func intToStr(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	digits := make([]byte, 0, 5)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(digits)
+	}
+	return string(digits)
 }
