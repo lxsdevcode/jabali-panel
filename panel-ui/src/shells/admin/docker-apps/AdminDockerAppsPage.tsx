@@ -154,7 +154,7 @@ export const AdminDockerAppsPage = () => {
                   {
                     title: "Status",
                     dataIndex: "status",
-                    width: 130,
+                    width: 170,
                     render: (s, r) => (
                       <Space size={4}>
                         <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag>
@@ -162,6 +162,11 @@ export const AdminDockerAppsPage = () => {
                         {r.last_error && (
                           <Tooltip title={r.last_error}>
                             <Tag color="red">err</Tag>
+                          </Tooltip>
+                        )}
+                        {r.available_digest && r.available_digest !== (r.image_sha ?? "") && (
+                          <Tooltip title={`Upstream digest moved to ${r.available_digest.slice(0, 19)}...`}>
+                            <Tag color="purple">update available</Tag>
                           </Tooltip>
                         )}
                       </Space>
