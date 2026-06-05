@@ -1,0 +1,38 @@
+slug: vaultwarden
+name: Vaultwarden
+version: "1.32.0"
+description: |
+  Self-hosted password manager, Bitwarden-compatible API. Rust rewrite
+  of the official Bitwarden server. Small memory footprint, single
+  container, SQLite by default.
+icon: icon.svg
+upstream: https://github.com/dani-garcia/vaultwarden
+documentation: https://github.com/dani-garcia/vaultwarden/wiki
+
+image_channel: vaultwarden/server:latest
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "256m"
+  pids: 100
+
+volumes:
+  - name: data
+    container_path: /data
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /alive
+
+env:
+  - name: SIGNUPS_ALLOWED
+    value: "false"
+  - name: ADMIN_TOKEN
+    secret: true
+    generate: password64

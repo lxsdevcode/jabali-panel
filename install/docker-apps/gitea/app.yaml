@@ -1,0 +1,46 @@
+slug: gitea
+name: Gitea
+version: "1.22.3"
+description: |
+  Lightweight self-hosted Git service. Bundled SQLite for v1; admin
+  can flip to compose-managed Postgres post-install. Two ports: HTTP
+  for the web UI (reverse-proxied) and SSH for git-over-ssh (binds
+  to a public IP, no nginx in the path).
+icon: icon.svg
+upstream: https://github.com/go-gitea/gitea
+documentation: https://docs.gitea.com/
+
+image_channel: gitea/gitea:1.22
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 500
+
+volumes:
+  - name: data
+    container_path: /data
+  - name: config
+    container_path: /etc/gitea
+
+ports:
+  - name: http
+    container_port: 3000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/healthz
+  - name: ssh
+    container_port: 22
+    protocol: tcp
+    default_enabled: false
+    default_bind: public
+    default_reverse_proxy: false
+
+env:
+  - name: USER_UID
+    value: "1000"
+  - name: USER_GID
+    value: "1000"

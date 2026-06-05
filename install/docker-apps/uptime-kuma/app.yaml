@@ -1,0 +1,31 @@
+slug: uptime-kuma
+name: Uptime Kuma
+version: "1.23.16"
+description: |
+  Self-hosted monitoring tool, single container, status pages,
+  multi-protocol probes (HTTP/HTTPS, TCP, ping, DNS, push). Minimal
+  resource footprint, runs on SQLite.
+icon: icon.svg
+upstream: https://github.com/louislam/uptime-kuma
+documentation: https://github.com/louislam/uptime-kuma/wiki
+
+image_channel: louislam/uptime-kuma:1
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "256m"
+  pids: 200
+
+volumes:
+  - name: data
+    container_path: /app/data
+
+ports:
+  - name: http
+    container_port: 3001
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
