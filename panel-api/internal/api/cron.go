@@ -89,6 +89,11 @@ type createCronRequest struct {
 	Command  string `json:"command" binding:"required"`
 	Schedule string `json:"schedule" binding:"required"`
 	Enabled  *bool  `json:"enabled"`
+	// UserID lets admins create cron jobs for any tenant. Tenants
+	// supplying this field have it silently ignored -- the job
+	// always lands under their own UserID. Empty / omitted means
+	// "create for the caller" for both roles.
+	UserID string `json:"user_id,omitempty"`
 }
 
 type updateCronRequest struct {
@@ -317,8 +322,12 @@ func (h *cronHandler) create(c *gin.Context) {
 		enabled = *req.Enabled
 	}
 	// Thin adapter over cronops (the Cron Job Intake — ADR-0083/0101).
+	owner := claims.UserID
+	if claims.IsAdmin && req.UserID != "" {
+		owner = req.UserID
+	}
 	job, err := cronops.Create(ctx, h.cronopsDeps(), cronops.CreateInput{
-		UserID:   claims.UserID,
+		UserID:   owner,
 		Name:     req.Name,
 		Command:  req.Command,
 		Schedule: req.Schedule,

@@ -277,6 +277,8 @@ export async function createCronJob(body: {
   command: string;
   schedule: string;
   enabled?: boolean;
+  /** Admin-only override: create the cron job under a different tenant's UserID. Ignored when caller is not admin. */
+  user_id?: string;
 }): Promise<CronJob> {
   const resp = await apiClient.post<CronJob>("/cron", body);
   return resp.data;
