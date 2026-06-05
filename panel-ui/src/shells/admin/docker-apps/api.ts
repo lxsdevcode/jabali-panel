@@ -34,3 +34,8 @@ export async function lifecycleAction(
 ): Promise<void> {
   await apiClient.post(`${BASE}/${id}/${action}`);
 }
+
+export async function updateApp(id: string): Promise<{ outcome: "updated" | "rolled_back"; detail?: string }> {
+  const { data } = await apiClient.post<{ outcome: "updated" | "rolled_back"; detail?: string }>(`${BASE}/${id}/update`);
+  return data;
+}

@@ -20,6 +20,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -69,6 +70,7 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	grp.POST("/:id/stop", h.lifecycle("stop"))
 	grp.POST("/:id/restart", h.lifecycle("restart"))
 	grp.POST("/:id/rebuild", h.lifecycle("rebuild"))
+	grp.POST("/:id/update", h.updateImage)
 }
 
 // requireAdminForDockerApps gates the whole route group on
@@ -656,6 +658,58 @@ func (h *dockerAppHandler) lifecycle(action string) gin.HandlerFunc {
 		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	}
+}
+
+// updateImage handles POST /:id/update. Dispatches docker_app.update
+// and applies the new status to the row based on the agent's outcome.
+func (h *dockerAppHandler) updateImage(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	app, err := h.cfg.Repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+
+	// Mark `updating` so the UI shows a spinner; restore on outcome.
+	_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusUpdating, nil)
+
+	callCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.update", map[string]any{
+		"slug":                        app.Slug,
+		"healthcheck_timeout_seconds": 180,
+	})
+	if err != nil {
+		msg := firstLineString(err.Error())
+		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_update_failed", "detail": msg})
+		return
+	}
+	// Parse the outcome to set the right terminal status.
+	var resp struct {
+		Outcome string `json:"outcome"`
+		Detail  string `json:"detail"`
+	}
+	_ = json.Unmarshal(raw, &resp)
+	switch resp.Outcome {
+	case "updated":
+		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+	case "rolled_back":
+		detail := resp.Detail
+		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, &detail)
+	default:
+		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 }
 
 // firstLineString returns the leading line of a multi-line string.
