@@ -57,6 +57,9 @@ type Reconciler struct {
 	sshKeys repository.SSHKeyRepository
 	// cronJobs holds reference to the cron jobs repository
 	cronJobs repository.CronJobRepository
+	// dockerApps holds reference to the docker_apps repository (M48 Phase 1).
+	// Nil-safe: when unwired the docker-app tick is a no-op.
+	dockerApps repository.DockerAppRepository
 	// M18 — hosting packages + per-user overrides + /home mount path.
 	packages       repository.PackageRepository
 	limitOverrides repository.UserLimitOverrideRepository
@@ -625,6 +628,9 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 
 	r.reconcileCronJobs(ctx)
 	// Reconcile cron jobs: apply enabled jobs, remove disabled jobs, cleanup orphans.
+
+	// M48 docker apps: dispatch installs + status-poll.
+	r.reconcileDockerApps(ctx)
 
 	r.reconcileSSHKeysForAllUsers(ctx)
 	// Reconcile SSH keys: sync authorized_keys files for all users.
