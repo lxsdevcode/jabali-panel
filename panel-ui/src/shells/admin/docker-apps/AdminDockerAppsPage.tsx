@@ -1,6 +1,6 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
-import { App, Avatar, Button, Card, Col, Dropdown, Empty, Modal, Row, Space, Statistic, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Dropdown, Empty, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -94,7 +94,7 @@ export const AdminDockerAppsPage = () => {
           <LayoutPanelLeftOutlined /> Docker Apps
         </Typography.Title>
         <Typography.Text type="secondary">
-          {installed.data?.length ?? 0} installed
+          {installed.data?.length ?? 0} installed • {catalog.data?.length ?? 0} in catalog
         </Typography.Text>
       </Space>
 
@@ -113,45 +113,76 @@ export const AdminDockerAppsPage = () => {
                   const runningCount = rows.filter(r => r.status === "running").length;
                   const stoppedCount = rows.filter(r => r.status === "stopped").length;
                   const updateCount = rows.filter(r => r.available_digest && r.available_digest !== r.image_sha).length;
+                  const catalogCount = (catalog.data ?? []).length;
+                  const pct = (n: number) => installedCount > 0 ? Math.round((n / installedCount) * 100) : 0;
+                  const renderStat = (
+                    iconBg: string,
+                    iconColor: string,
+                    Icon: React.ComponentType<{ style?: React.CSSProperties }>,
+                    label: string,
+                    value: number,
+                    subtitle: React.ReactNode,
+                  ) => (
+                    <Card size="small">
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 10,
+                            background: iconBg,
+                            color: iconColor,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Icon style={{ fontSize: 20 }} />
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
+                            {label}
+                          </Typography.Text>
+                          <Typography.Text strong style={{ fontSize: 22, lineHeight: 1.2, display: "block" }}>
+                            {value}
+                          </Typography.Text>
+                          <div style={{ fontSize: 11, marginTop: 2 }}>{subtitle}</div>
+                        </div>
+                      </div>
+                    </Card>
+                  );
                   return (
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                       <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic
-                            title={<Space><AppstoreOutlined />Installed Apps</Space>}
-                            value={installedCount}
-                          />
-                        </Card>
+                        {renderStat(
+                          "rgba(207, 19, 34, 0.12)", "#cf1322", AppstoreOutlined,
+                          "Installed Apps", installedCount,
+                          <Typography.Text type="secondary">{catalogCount} in catalog</Typography.Text>,
+                        )}
                       </Col>
                       <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic
-                            title={<Space><SyncOutlined />Updates</Space>}
-                            value={updateCount}
-                            valueStyle={{ color: updateCount > 0 ? "#cf1322" : undefined }}
-                            suffix={updateCount > 0 ? <Typography.Text type="warning" style={{ fontSize: 12 }}>needs attention</Typography.Text> : null}
-                          />
-                        </Card>
+                        {renderStat(
+                          "rgba(114, 46, 209, 0.12)", "#722ed1", SyncOutlined,
+                          "Updates Available", updateCount,
+                          updateCount > 0
+                            ? <Typography.Text type="warning">Needs attention</Typography.Text>
+                            : <Typography.Text type="secondary">Up to date</Typography.Text>,
+                        )}
                       </Col>
                       <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic
-                            title={<Space><PlayCircleOutlined />Running</Space>}
-                            value={runningCount}
-                            valueStyle={{ color: runningCount > 0 ? "#3f8600" : undefined }}
-                            suffix={installedCount > 0 ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {installedCount}</Typography.Text> : null}
-                          />
-                        </Card>
+                        {renderStat(
+                          "rgba(63, 134, 0, 0.12)", "#3f8600", PlayCircleOutlined,
+                          "Running", runningCount,
+                          <Typography.Text type="secondary">{pct(runningCount)}% of installed</Typography.Text>,
+                        )}
                       </Col>
                       <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic
-                            title={<Space><PauseCircleOutlined />Stopped</Space>}
-                            value={stoppedCount}
-                            valueStyle={{ color: stoppedCount > 0 ? "#d46b08" : undefined }}
-                            suffix={installedCount > 0 ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {installedCount}</Typography.Text> : null}
-                          />
-                        </Card>
+                        {renderStat(
+                          "rgba(212, 107, 8, 0.12)", "#d46b08", PauseCircleOutlined,
+                          "Stopped", stoppedCount,
+                          <Typography.Text type="secondary">{pct(stoppedCount)}% of installed</Typography.Text>,
+                        )}
                       </Col>
                     </Row>
                   );
@@ -190,16 +221,18 @@ export const AdminDockerAppsPage = () => {
                   {
                     title: "Status",
                     dataIndex: "status",
-                    width: 170,
+                    width: 180,
                     render: (s, r) => (
-                      <Space size={4}>
-                        <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag>
-                        {(s === "installing" || s === "updating" || s === "rolling_back") && <SyncOutlined spin />}
-                        {r.last_error && (
-                          <Tooltip title={r.last_error}>
-                            <Tag color="red">err</Tag>
-                          </Tooltip>
-                        )}
+                      <Space direction="vertical" size={4}>
+                        <Space size={4}>
+                          <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag>
+                          {(s === "installing" || s === "updating" || s === "rolling_back") && <SyncOutlined spin />}
+                          {r.last_error && (
+                            <Tooltip title={r.last_error}>
+                              <Tag color="red">err</Tag>
+                            </Tooltip>
+                          )}
+                        </Space>
                         {r.available_digest && r.available_digest !== (r.image_sha ?? "") && (
                           <Tooltip title={`Upstream digest moved to ${r.available_digest.slice(0, 19)}...`}>
                             <Tag color="purple">update available</Tag>
@@ -207,14 +240,6 @@ export const AdminDockerAppsPage = () => {
                         )}
                       </Space>
                     ),
-                  },
-                  {
-                    title: "Domain",
-                    dataIndex: "domain",
-                    width: 220,
-                    render: (_, r) => (r.domain
-                      ? <Tag color="blue">{r.domain}</Tag>
-                      : <Typography.Text type="secondary">—</Typography.Text>),
                   },
                   {
                     title: "Ports",
@@ -228,11 +253,22 @@ export const AdminDockerAppsPage = () => {
                   },
                   {
                     title: "Limits",
-                    width: 150,
+                    width: 220,
                     render: (_, r) => (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        cpu={r.cpu_limit ?? "-"} mem={r.memory_limit ?? "-"} pids={r.pids_limit ?? "-"}
-                      </Typography.Text>
+                      <Space size={12} wrap>
+                        <span>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>CPU: </Typography.Text>
+                          <Typography.Text strong style={{ fontSize: 12 }}>{r.cpu_limit ?? "—"}</Typography.Text>
+                        </span>
+                        <span>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>Memory: </Typography.Text>
+                          <Typography.Text strong style={{ fontSize: 12 }}>{r.memory_limit ?? "—"}</Typography.Text>
+                        </span>
+                        <span>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>PIDs: </Typography.Text>
+                          <Typography.Text strong style={{ fontSize: 12 }}>{r.pids_limit ?? "—"}</Typography.Text>
+                        </span>
+                      </Space>
                     ),
                   },
                   {
