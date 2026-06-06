@@ -533,13 +533,20 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 			"wait_healthy":                 true,
 			"healthcheck_timeout_seconds":  120,
 		})
+		// Use WithoutCancel for terminal status writes -- if the
+		// client dropped the connection mid-install (closed drawer,
+		// navigated away, network blip) we still want the row to
+		// converge to its true terminal state. Without this the row
+		// sticks at `installing` forever.
+		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer persistCancel()
 		if agentErr != nil {
 			msg := firstLineString(agentErr.Error())
-			_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusFailed, &msg)
 			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_install_failed", "detail": msg, "id": app.ID})
 			return
 		}
-		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, nil)
 	}
 
 	// Return the installed row.
@@ -967,8 +974,21 @@ func (h *dockerAppHandler) delete(c *gin.Context) {
 			"slug":          app.Slug,
 			"purge_volumes": purge,
 		}); err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_delete_failed", "detail": err.Error()})
-			return
+			// For rows already in a broken state (failed install / stuck
+			// installing), the agent may legitimately have nothing to
+			// delete on disk -- the compose dir may have never been
+			// written. Refusing the DB delete locks the operator out of
+			// the only way to remove the zombie row. Allow force=true
+			// OR a broken status to soft-delete the row anyway.
+			force := c.Query("force") == "true"
+			broken := app.Status == models.DockerAppStatusFailed ||
+				app.Status == models.DockerAppStatusInstalling ||
+				app.Status == models.DockerAppStatusPending
+			if !force && !broken {
+				c.JSON(http.StatusBadGateway, gin.H{"error": "agent_delete_failed", "detail": err.Error()})
+				return
+			}
+			// Fall through to DB cleanup.
 		}
 	}
 
@@ -1080,9 +1100,13 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 		"slug":                        app.Slug,
 		"healthcheck_timeout_seconds": 180,
 	})
+	// Same WithoutCancel guard as install: the terminal status
+	// has to land even if the client dropped the connection.
+	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer persistCancel()
 	if err != nil {
 		msg := firstLineString(err.Error())
-		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusFailed, &msg)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_update_failed", "detail": msg})
 		return
 	}
@@ -1095,18 +1119,16 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	_ = json.Unmarshal(raw, &resp)
 	switch resp.Outcome {
 	case "updated":
-		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
-		// Persist the digest we just deployed so the "update available"
-		// chip clears. The poller fills available_digest from upstream;
-		// matching image_sha makes the diff resolve to "no drift".
+		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, nil)
 		if resp.NewImage != "" {
-			_ = h.cfg.Repo.UpdateImageSHA(ctx, app.ID, resp.NewImage)
+			_ = h.cfg.Repo.UpdateImageSHA(persistCtx, app.ID, resp.NewImage)
+			_ = h.cfg.Repo.UpdateAvailableDigest(persistCtx, app.ID, resp.NewImage)
 		}
 	case "rolled_back":
 		detail := resp.Detail
-		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, &detail)
+		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, &detail)
 	default:
-		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, nil)
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 }

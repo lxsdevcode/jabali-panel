@@ -69,7 +69,7 @@ func dockerAppUpdateHandler(ctx context.Context, params json.RawMessage) (any, e
 	snapshotID, snapshotErr := resticSnapshotIfConfigured(ctx, dir, p.Slug)
 
 	// 2. Capture the current image SHA so we can rollback if needed.
-	oldImage := currentImage(ctx, dir)
+	oldImage := currentImage(ctx, p.Slug)
 
 	// 3. docker compose pull
 	if out, err := runDockerCompose(ctx, dir, "pull"); err != nil {
@@ -107,7 +107,7 @@ func dockerAppUpdateHandler(ctx context.Context, params json.RawMessage) (any, e
 		}, nil
 	}
 
-	newImage := currentImage(ctx, dir)
+	newImage := currentImage(ctx, p.Slug)
 	detail := ""
 	if snapshotErr != nil {
 		detail = fmt.Sprintf("update succeeded; pre-update snapshot was NOT taken (restic: %v)", snapshotErr)
@@ -178,26 +178,19 @@ func resticSnapshotIfConfigured(ctx context.Context, dir, slug string) (string, 
 	return "", nil
 }
 
-// currentImage reads the image SHA from `docker compose ps --format json`.
-// Returns "" when unparseable; the caller treats that as "no rollback
-// target".
-func currentImage(ctx context.Context, dir string) string {
-	out, err := runDockerCompose(ctx, dir, "ps", "--format", "json")
-	if err != nil {
-		return ""
-	}
-	for _, l := range parseComposePSJSON(out) {
-		if l.Name != "" {
-			// `docker inspect <name> --format '{{.Image}}'` is more
-			// precise; the ps format doesn't always include the
-			// digest. Best-effort.
-			ic, ierr := exec.CommandContext(ctx, "docker", "inspect", l.Name, "--format", "{{.Image}}").Output()
-			if ierr == nil {
-				return string(ic)
-			}
-		}
-	}
-	return ""
+// currentImage returns the repo digest (sha256:...) of the primary
+// container for this install. Uses the SAME helper that
+// docker_app.check_update uses to compute "available_digest", so the
+// two SHAs land in the same space and the "update available" chip
+// clears once image_sha catches up.
+//
+// The old implementation walked `docker compose ps` + `docker inspect
+// --format {{.Image}}` which returned the LOCAL IMAGE ID (config
+// hash) -- a different SHA from the repo digest stored in
+// available_digest, so the diff never resolved to "no drift" and the
+// chip stayed lit forever after a successful update.
+func currentImage(ctx context.Context, slug string) string {
+	return dockerContainerImageDigest(ctx, "jabali-app-"+slug)
 }
 
 func init() {

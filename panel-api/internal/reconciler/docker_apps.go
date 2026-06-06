@@ -55,7 +55,32 @@ func (r *Reconciler) reconcileDockerApps(ctx context.Context) {
 	}
 }
 
+// dockerAppStuckTimeout is the maximum age of a row in a
+// transient state (installing / updating) before the watchdog
+// forcibly flips it to `failed`. install path uses a 3-minute
+// agent timeout; update uses 6. 15 minutes gives ample headroom
+// for slow image pulls without leaving zombie rows forever when
+// panel-api crashed or the client disconnected mid-flight.
+const dockerAppStuckTimeout = 15 * time.Minute
+
 func (r *Reconciler) reconcileOneDockerApp(ctx context.Context, app *models.DockerApp) {
+	// Watchdog: any row stuck in a transient state past the timeout
+	// is forcibly failed so the operator can delete/retry from the
+	// UI. Without this a panel-api restart or a dropped client
+	// connection leaves the row at `installing` forever (see
+	// updateImage / install handler -- they swallow status-write
+	// errors when the request context was cancelled).
+	if (app.Status == models.DockerAppStatusInstalling || app.Status == models.DockerAppStatusUpdating) &&
+		time.Since(app.UpdatedAt) > dockerAppStuckTimeout {
+		msg := fmt.Sprintf("watchdog: stuck in %s for %s", app.Status, time.Since(app.UpdatedAt).Round(time.Second))
+		if err := r.dockerApps.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg); err != nil {
+			r.log.Warn("dockerapp: watchdog status update failed", "id", app.ID, "err", err)
+		} else {
+			r.log.Warn("dockerapp: watchdog flipped stuck row", "id", app.ID, "slug", app.Slug, "from", app.Status, "age", time.Since(app.UpdatedAt))
+		}
+		return
+	}
+
 	switch app.Status {
 	case models.DockerAppStatusPending:
 		// Install dispatch is owned by the REST handler when it
@@ -251,6 +276,13 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 		return
 	}
 	if !resp.UpdateAvailable {
+		// Converge stale state: clear available_digest if it was
+		// previously set, so the UI chip drops once upstream caught
+		// up (or once an update fully completed and upstream now
+		// matches local).
+		if app.AvailableDigest != nil && *app.AvailableDigest != "" {
+			_ = r.dockerApps.UpdateAvailableDigest(ctx, app.ID, "")
+		}
 		return
 	}
 	_ = r.dockerApps.UpdateAvailableDigest(ctx, app.ID, resp.AvailableDigest)
