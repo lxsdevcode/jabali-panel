@@ -46,6 +46,10 @@ type DockerAppRepository interface {
 	// going to happen in practice, but the caller should still surface
 	// a clean 503 rather than a 500).
 	FindFreeHostPort(ctx context.Context, bindInterface, protocol string) (int, error)
+	// HostPortInUse reports whether (bindInterface, protocol, hostPort)
+	// is already bound by ANOTHER docker_app install. excludeAppID lets
+	// the same app keep its ports during a PATCH-driven re-render.
+	HostPortInUse(ctx context.Context, bindInterface, protocol string, hostPort int, excludeAppID string) (bool, error)
 
 	// --- docker_app_backups ----------------------------------------------
 	CreateBackup(ctx context.Context, b *models.DockerAppBackup) error
@@ -244,3 +248,20 @@ func (r *dockerAppRepo) DeleteBackup(ctx context.Context, id string) error {
 // re-import the local errors here to keep the typed error contract
 // uniform across the package.
 var _ = errors.New
+
+// HostPortInUse mirrors the (bind_interface, host_port, protocol) DB
+// uniqueness so the install handler can surface a friendly error
+// instead of letting the INSERT fail with a constraint-violation
+// string the operator can't parse.
+func (r *dockerAppRepo) HostPortInUse(ctx context.Context, bindInterface, protocol string, hostPort int, excludeAppID string) (bool, error) {
+	var count int64
+	q := r.db.WithContext(ctx).Model(&models.DockerAppPublishedPort{}).
+		Where("bind_interface = ? AND protocol = ? AND host_port = ?", bindInterface, protocol, hostPort)
+	if excludeAppID != "" {
+		q = q.Where("app_id <> ?", excludeAppID)
+	}
+	if err := q.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

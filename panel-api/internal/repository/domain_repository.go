@@ -78,6 +78,16 @@ type DomainRepository interface {
 	// allowlist; enabling without a timestamp or disabling without clearing
 	// the timestamp is a bug waiting to happen.
 	UpdateDNSSECEnabled(ctx context.Context, id string, enabled bool) error
+	// AttachDockerApp wires an existing (tenant-managed) domain to a
+	// docker app: rewrites nginx_rules + sets docker_app_id in one
+	// shot. Dedicated method because docker_app_id is not in
+	// Update()'s allowlist.
+	AttachDockerApp(ctx context.Context, id string, dockerAppID string, rules models.NginxRules) error
+	// DetachDockerApp is the inverse: clears docker_app_id and (when
+	// resetRules is true) clears nginx_rules back to an empty set.
+	// Called from docker_app delete to drop the proxy_pass rule the
+	// install/attach handler injected.
+	DetachDockerApp(ctx context.Context, id string, resetRules bool) error
 	// UpdateCacheEnabled writes domains.cache_enabled (ADR-0108).
 	// Dedicated method: cache_enabled is not in Update()'s allowlist.
 	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
@@ -506,6 +516,46 @@ func (r *domainRepo) UpdateDNSSECEnabled(ctx context.Context, id string, enabled
 	res := r.db.WithContext(ctx).Model(&models.Domain{}).
 		Where("id = ?", id).
 		Updates(updates)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// AttachDockerApp updates nginx_rules + docker_app_id in one shot
+// so M48 install can attach to a tenant-owned domain without hitting
+// the domains.name UNIQUE constraint via a Create.
+func (r *domainRepo) DetachDockerApp(ctx context.Context, id string, resetRules bool) error {
+	upd := map[string]any{
+		"docker_app_id": nil,
+		"updated_at":    time.Now().UTC(),
+	}
+	if resetRules {
+		upd["nginx_rules"] = models.NginxRules{}
+	}
+	res := r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Updates(upd)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *domainRepo) AttachDockerApp(ctx context.Context, id string, dockerAppID string, rules models.NginxRules) error {
+	res := r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"nginx_rules":   rules,
+			"docker_app_id": dockerAppID,
+			"updated_at":    time.Now().UTC(),
+		})
 	if res.Error != nil {
 		return translate(res.Error)
 	}

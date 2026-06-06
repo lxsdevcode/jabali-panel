@@ -101,4 +101,138 @@ func init() {
 	Default.Register("docker.install", dockerInstallHandler)
 	Default.Register("docker.disable", dockerDisableHandler)
 	Default.Register("docker.status", dockerStatusHandler)
+	Default.Register("docker.disk_usage", dockerDiskUsageHandler)
+	Default.Register("docker.prune", dockerPruneHandler)
+}
+
+// docker.disk_usage returns the docker daemon's view of how much
+// disk the marketplace is consuming. Maps to `docker system df`.
+type dockerDiskUsageResponse struct {
+	ImagesBytes      int64 `json:"images_bytes"`
+	ContainersBytes  int64 `json:"containers_bytes"`
+	VolumesBytes     int64 `json:"volumes_bytes"`
+	BuildCacheBytes  int64 `json:"build_cache_bytes"`
+	ReclaimableBytes int64 `json:"reclaimable_bytes"`
+}
+
+func dockerDiskUsageHandler(ctx context.Context, _ json.RawMessage) (any, error) {
+	// `docker system df --format` JSON only landed in 24.x; for
+	// portability parse the plain text. Columns are stable across
+	// docker versions we care about.
+	out, err := exec.CommandContext(ctx, "docker", "system", "df").Output()
+	if err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("docker system df: %v", err)}
+	}
+	resp := dockerDiskUsageResponse{}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		// type column may be "Images" / "Containers" / "Local Volumes" /
+		// "Build Cache". Pull the SIZE + RECLAIMABLE columns -- the
+		// last two human-readable bytes.
+		switch fields[0] {
+		case "Images":
+			resp.ImagesBytes = parseHumanBytes(fields[len(fields)-3])
+			resp.ReclaimableBytes += parseHumanBytes(fields[len(fields)-2])
+		case "Containers":
+			resp.ContainersBytes = parseHumanBytes(fields[len(fields)-3])
+			resp.ReclaimableBytes += parseHumanBytes(fields[len(fields)-2])
+		case "Local":
+			// "Local Volumes"
+			if len(fields) > 1 && fields[1] == "Volumes" {
+				resp.VolumesBytes = parseHumanBytes(fields[len(fields)-3])
+				resp.ReclaimableBytes += parseHumanBytes(fields[len(fields)-2])
+			}
+		case "Build":
+			if len(fields) > 1 && fields[1] == "Cache" {
+				resp.BuildCacheBytes = parseHumanBytes(fields[len(fields)-3])
+				resp.ReclaimableBytes += parseHumanBytes(fields[len(fields)-2])
+			}
+		}
+	}
+	return resp, nil
+}
+
+// docker.prune runs `docker system prune` with the operator-chosen
+// scope. Defaults to images + dangling build cache + stopped
+// containers; volumes are opt-in because they can hold real data.
+type dockerPruneParams struct {
+	Volumes bool `json:"volumes,omitempty"`
+	All     bool `json:"all,omitempty"` // -a: also unused images, not just dangling
+}
+
+type dockerPruneResponse struct {
+	ReclaimedBytes int64  `json:"reclaimed_bytes"`
+	Raw            string `json:"raw"`
+}
+
+func dockerPruneHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p dockerPruneParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse: %v", err)}
+		}
+	}
+	args := []string{"system", "prune", "-f"}
+	if p.All {
+		args = append(args, "-a")
+	}
+	if p.Volumes {
+		args = append(args, "--volumes")
+	}
+	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+	if err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("docker system prune: %v: %s", err, strings.TrimSpace(string(out)))}
+	}
+	reclaim := int64(0)
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "Total reclaimed space:") {
+			parts := strings.Fields(line)
+			if len(parts) >= 4 {
+				reclaim = parseHumanBytes(parts[len(parts)-1] + parts[len(parts)-1])
+				// Re-parse with size+unit. parseHumanBytes splits numeric and
+				// unit suffix on its own, so feed the last two tokens joined.
+				reclaim = parseHumanBytes(strings.Join(parts[len(parts)-2:], ""))
+			}
+		}
+	}
+	return dockerPruneResponse{ReclaimedBytes: reclaim, Raw: strings.TrimSpace(string(out))}, nil
+}
+
+// parseHumanBytes turns "1.234GB" / "512.5MB" / "0B" into bytes.
+// Used only for docker's df/prune output where the format is stable.
+func parseHumanBytes(in string) int64 {
+	in = strings.TrimSpace(in)
+	if in == "" || in == "-" {
+		return 0
+	}
+	var unit string
+	var numStr string
+	for i, r := range in {
+		if (r < '0' || r > '9') && r != '.' {
+			numStr = in[:i]
+			unit = strings.ToUpper(in[i:])
+			break
+		}
+	}
+	if numStr == "" {
+		numStr = in
+	}
+	var n float64
+	fmt.Sscanf(numStr, "%f", &n)
+	switch unit {
+	case "B":
+		return int64(n)
+	case "KB":
+		return int64(n * 1000)
+	case "MB":
+		return int64(n * 1000 * 1000)
+	case "GB":
+		return int64(n * 1000 * 1000 * 1000)
+	case "TB":
+		return int64(n * 1000 * 1000 * 1000 * 1000)
+	}
+	return int64(n)
 }

@@ -184,10 +184,10 @@ export const adminNav: NavItem[] = [
     path: "/jabali-admin/automation",
   },
   {
-    key: "api-docs",
-    label: "API Docs",
-    icon: navIcon(FileTextOutlined),
-    path: "/jabali-admin/api-docs",
+    key: "api-tokens",
+    label: "API Tokens",
+    icon: navIcon(ApiOutlined),
+    path: "/jabali-admin/api-tokens",
   },
   {
     key: "migrations",
@@ -281,12 +281,6 @@ export const userNav: NavItem[] = [
     label: "API Tokens",
     icon: navIcon(ApiOutlined),
     path: "/jabali-panel/api-tokens",
-  },
-  {
-    key: "api-docs",
-    label: "API Docs",
-    icon: navIcon(FileTextOutlined),
-    path: "/jabali-panel/api-docs",
   },
   {
     key: "dns",

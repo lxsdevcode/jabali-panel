@@ -724,3 +724,10 @@ func TestListUserSSL_MultipleDomainsFiltered(t *testing.T) {
 
 	mockSSLCerts.AssertCalled(t, "ListByUserID", mock.MatchedBy(func(ctx context.Context) bool { return true }), "user-alice")
 }
+
+func (*MockDomainRepository) AttachDockerApp(context.Context, string, string, models.NginxRules) error {
+	return nil
+}
+func (*MockDomainRepository) DetachDockerApp(context.Context, string, bool) error {
+	return nil
+}

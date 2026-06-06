@@ -213,6 +213,7 @@ const ThemedApp = () => {
                 codes) which works for any authenticated session. */}
             <Route path="profile" element={<MyProfile />} />
             <Route path="api-docs" element={<APIDocsPage />} />
+            <Route path="api-tokens" element={<UserAPITokensPage />} />
           </Route>
 
           {/* ---------------- user shell ----------------- */}

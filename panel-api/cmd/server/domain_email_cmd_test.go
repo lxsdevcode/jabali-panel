@@ -499,3 +499,10 @@ func TestDisableDomainEmail_AgentFailureDoesNotMutate(t *testing.T) {
 		t.Error("email_enabled must stay true after agent failure")
 	}
 }
+
+func (*fakeDomainRepo) AttachDockerApp(context.Context, string, string, models.NginxRules) error {
+	return nil
+}
+func (*fakeDomainRepo) DetachDockerApp(context.Context, string, bool) error {
+	return nil
+}

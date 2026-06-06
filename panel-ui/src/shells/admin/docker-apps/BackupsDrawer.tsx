@@ -56,7 +56,7 @@ export const BackupsDrawer = ({ open, appId, onClose }: Props) => {
       open={open}
       onClose={onClose}
       title="Backups"
-      width={760}
+      width="min(100%, 760px)"
       destroyOnClose
       extra={
         <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>

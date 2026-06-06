@@ -28,7 +28,7 @@ export const LogsDrawer = ({ open, appId, onClose }: Props) => {
       open={open}
       onClose={onClose}
       title="Container logs"
-      width={840}
+      width="min(100%, 840px)"
       destroyOnClose
       extra={
         <Space>

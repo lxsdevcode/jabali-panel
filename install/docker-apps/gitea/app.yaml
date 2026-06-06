@@ -11,6 +11,7 @@ upstream: https://github.com/go-gitea/gitea
 documentation: https://docs.gitea.com/
 
 image_channel: gitea/gitea:1.22
+volume_owner: "1000:1000"
 update_mode: manual
 
 resources:

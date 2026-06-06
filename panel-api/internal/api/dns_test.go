@@ -1191,3 +1191,10 @@ func TestSystemRecords_NonOwnerForbidden(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, w.Code)
 }
+
+func (*mockDomainRepo) AttachDockerApp(context.Context, string, string, models.NginxRules) error {
+	return nil
+}
+func (*mockDomainRepo) DetachDockerApp(context.Context, string, bool) error {
+	return nil
+}

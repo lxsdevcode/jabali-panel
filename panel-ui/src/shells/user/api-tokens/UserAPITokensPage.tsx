@@ -22,6 +22,7 @@ import {
   Popconfirm,
   Space,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -35,6 +36,7 @@ import {
   PlusOutlined,
 } from "@ant-design/icons";
 import { apiClient } from "../../../apiClient";
+import { APIDocsPage } from "../../shared/APIDocsPage";
 
 type UserAPIToken = {
   id: string;
@@ -230,40 +232,48 @@ export function UserAPITokensPage(): JSX.Element {
     [],
   );
 
+  const tokensCard = (
+    <Card
+      title="API Tokens"
+      extra={
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setCreateOpen(true)}
+        >
+          New token
+        </Button>
+      }
+    >
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        Tokens authenticate API requests as you, scoped to resources
+        you own. Use them to script DNS records, deploy WordPress,
+        drive a DDNS updater on your router — anything the panel UI
+        lets you do. Send the token as{" "}
+        <Typography.Text code>Authorization: Bearer jat_…</Typography.Text>
+        .
+      </Typography.Paragraph>
+
+      <Table<UserAPIToken>
+        rowKey="id"
+        loading={loading}
+        dataSource={rows}
+        columns={columns}
+        pagination={false}
+        scroll={{ x: "max-content" }}
+      />
+    </Card>
+  );
+
   return (
     <>
-      <Card
-        title="API Tokens"
-        extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateOpen(true)}
-          >
-            New token
-          </Button>
-        }
-      >
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          Tokens authenticate API requests as you, scoped to resources
-          you own. Use them to script DNS records, deploy WordPress,
-          drive a DDNS updater on your router — anything the panel UI
-          lets you do. Send the token as{" "}
-          <Typography.Text code>
-            Authorization: Bearer jat_…
-          </Typography.Text>
-          .
-        </Typography.Paragraph>
-
-        <Table<UserAPIToken>
-          rowKey="id"
-          loading={loading}
-          dataSource={rows}
-          columns={columns}
-          pagination={false}
-          scroll={{ x: "max-content" }}
-        />
-      </Card>
+      <Tabs
+        defaultActiveKey="tokens"
+        items={[
+          { key: "tokens", label: "Tokens", children: tokensCard },
+          { key: "docs", label: "API Docs", children: <APIDocsPage /> },
+        ]}
+      />
 
       <Modal
         title="Create API token"

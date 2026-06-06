@@ -35,7 +35,17 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
       return data.data ?? [];
     },
   });
+  const domainsQ = useQuery({
+    queryKey: ["admin-domains-for-docker-app"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data?: { id: string; name: string }[] }>(
+        "/domains?pageSize=500",
+      );
+      return data.data ?? [];
+    },
+  });
   const [form] = Form.useForm();
+  const watchedDomain = Form.useWatch<string | undefined>("domain", form);
   const [ports, setPorts] = useState<PortRow[]>([]);
 
   useEffect(() => {
@@ -184,7 +194,7 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
         ]}
       />
     ),
-    [ports],
+    [ports, watchedDomain],
   );
 
   return (
@@ -192,7 +202,7 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
       open={open}
       onClose={onClose}
       title={entry ? `Install ${entry.name}` : "Install"}
-      width={720}
+      width="min(100%, 720px)"
       destroyOnClose
       extra={
         <Space>
@@ -229,19 +239,26 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
           <Form.Item
             label="Domain"
             name="domain"
-            tooltip="Hostname to attach to the loopback-bound port via nginx. Optional in Phase 5; required once you wire reverse-proxy (Phase 6)."
+            tooltip="Hostname to attach to the loopback-bound port via nginx. Pick from the panel's domains list -- a vhost gets auto-rendered on save."
           >
-            <Input placeholder="vault.example.com" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="Select a domain"
+              optionFilterProp="label"
+              options={(domainsQ.data ?? []).map((d) => ({ value: d.name, label: d.name }))}
+              loading={domainsQ.isLoading}
+            />
+          </Form.Item>
+          <Form.Item label="Update mode" name="update_mode">
+            <Select
+              options={[
+                { value: "manual", label: "Manual" },
+                { value: "auto", label: "Auto + rollback" },
+              ]}
+            />
           </Form.Item>
           <Space size="middle" style={{ width: "100%" }}>
-            <Form.Item label="Update mode" name="update_mode" style={{ flex: 1 }}>
-              <Select
-                options={[
-                  { value: "manual", label: "Manual" },
-                  { value: "auto", label: "Auto + rollback" },
-                ]}
-              />
-            </Form.Item>
             <Form.Item label="CPU" name="cpu_limit" style={{ flex: 1 }}>
               <Input placeholder="0.5" />
             </Form.Item>
@@ -249,7 +266,7 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
               <Input placeholder="256m" />
             </Form.Item>
             <Form.Item label="PIDs" name="pids_limit" style={{ flex: 1 }}>
-              <InputNumber min={1} max={65535} />
+              <InputNumber min={1} max={65535} style={{ width: "100%" }} />
             </Form.Item>
           </Space>
 

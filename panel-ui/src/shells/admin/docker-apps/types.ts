@@ -82,6 +82,7 @@ export interface InstalledApp {
   last_error: string | null;
   created_at: string;
   updated_at: string;
+  domain?: string;
   ports: InstalledPort[];
 }
 

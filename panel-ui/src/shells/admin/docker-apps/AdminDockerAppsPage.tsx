@@ -1,6 +1,6 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
-import { App, Avatar, Button, Card, Col, Popconfirm, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Dropdown, Modal, Row, Space, Statistic, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -13,6 +13,8 @@ import {
   FileTextOutlined,
   CodeOutlined,
   SaveOutlined,
+  EditOutlined,
+  MoreOutlined,
 } from "@icons";
 
 import { deleteApp, lifecycleAction, listCatalog, listInstalled, updateApp } from "./api";
@@ -21,6 +23,8 @@ import { InstallDrawer } from "./InstallDrawer";
 import { LogsDrawer } from "./LogsDrawer";
 import { ExecDrawer } from "./ExecDrawer";
 import { BackupsDrawer } from "./BackupsDrawer";
+import { EditDrawer } from "./EditDrawer";
+import { MaintenanceTab } from "./MaintenanceTab";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "default",
@@ -39,6 +43,7 @@ export const AdminDockerAppsPage = () => {
   const [installEntry, setInstallEntry] = useState<CatalogEntry | null>(null);
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
+  const [editApp, setEditApp] = useState<InstalledApp | null>(null);
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
 
   const catalog = useQuery({
@@ -92,65 +97,64 @@ export const AdminDockerAppsPage = () => {
       </Space>
 
       <Tabs
-        defaultActiveKey="catalog"
+        defaultActiveKey="installed"
         items={[
-          {
-            key: "catalog",
-            label: "Catalog",
-            children: (
-              <Row gutter={[16, 16]}>
-                {(catalog.data ?? []).map((e) => (
-                  <Col key={e.slug} xs={24} sm={12} md={8} lg={6}>
-                    <Card
-                      hoverable
-                      onClick={() => setInstallEntry(e)}
-                      styles={{ body: { padding: 16 } }}
-                      actions={[<Button type="link" key="install">Install</Button>]}
-                    >
-                      <Card.Meta
-                        avatar={
-                          <Avatar
-                            shape="square"
-                            size={40}
-                            src={`/api/v1/admin/docker-apps/catalog/${e.slug}/icon`}
-                            style={{ backgroundColor: "#f0f5ff", color: "#1f1f1f" }}
-                          >
-                            {e.name[0]}
-                          </Avatar>
-                        }
-                        title={
-                          <Space size={6} wrap>
-                            <span>{e.name}</span>
-                            <Tag style={{ marginInlineEnd: 0 }}>{e.version}</Tag>
-                          </Space>
-                        }
-                        description={
-                          <Tooltip title={e.description} placement="bottom">
-                            <div
-                              style={{
-                                display: "-webkit-box",
-                                WebkitLineClamp: 3,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                minHeight: 60,
-                              }}
-                            >
-                              {e.description}
-                            </div>
-                          </Tooltip>
-                        }
-                      />
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            ),
-          },
           {
             key: "installed",
             label: "Installed",
             children: (
+              <div>
+                {(() => {
+                  const rows = installed.data ?? [];
+                  const catalogCount = (catalog.data ?? []).length;
+                  const installedCount = rows.length;
+                  const runningCount = rows.filter(r => r.status === "running").length;
+                  const stoppedCount = rows.filter(r => r.status === "stopped").length;
+                  const updateCount = rows.filter(r => r.available_digest && r.available_digest !== r.image_sha).length;
+                  return (
+                    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                      <Col xs={12} sm={6}>
+                        <Card size="small">
+                          <Statistic
+                            title={<Space><AppstoreOutlined />Installed Apps</Space>}
+                            value={installedCount}
+                            suffix={<Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {catalogCount} in catalog</Typography.Text>}
+                          />
+                        </Card>
+                      </Col>
+                      <Col xs={12} sm={6}>
+                        <Card size="small">
+                          <Statistic
+                            title={<Space><SyncOutlined />Updates</Space>}
+                            value={updateCount}
+                            valueStyle={{ color: updateCount > 0 ? "#cf1322" : undefined }}
+                            suffix={updateCount > 0 ? <Typography.Text type="warning" style={{ fontSize: 12 }}>needs attention</Typography.Text> : null}
+                          />
+                        </Card>
+                      </Col>
+                      <Col xs={12} sm={6}>
+                        <Card size="small">
+                          <Statistic
+                            title={<Space><PlayCircleOutlined />Running</Space>}
+                            value={runningCount}
+                            valueStyle={{ color: runningCount > 0 ? "#3f8600" : undefined }}
+                            suffix={installedCount > 0 ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {installedCount}</Typography.Text> : null}
+                          />
+                        </Card>
+                      </Col>
+                      <Col xs={12} sm={6}>
+                        <Card size="small">
+                          <Statistic
+                            title={<Space><PauseCircleOutlined />Stopped</Space>}
+                            value={stoppedCount}
+                            valueStyle={{ color: stoppedCount > 0 ? "#d46b08" : undefined }}
+                            suffix={installedCount > 0 ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {installedCount}</Typography.Text> : null}
+                          />
+                        </Card>
+                      </Col>
+                    </Row>
+                  );
+                })()}
               <Table<InstalledApp>
                 rowKey="id"
                 size="small"
@@ -192,6 +196,14 @@ export const AdminDockerAppsPage = () => {
                     ),
                   },
                   {
+                    title: "Domain",
+                    dataIndex: "domain",
+                    width: 220,
+                    render: (_, r) => (r.domain
+                      ? <Tag color="blue">{r.domain}</Tag>
+                      : <Typography.Text type="secondary">—</Typography.Text>),
+                  },
+                  {
                     title: "Ports",
                     dataIndex: "ports",
                     render: (_, r) =>
@@ -212,82 +224,162 @@ export const AdminDockerAppsPage = () => {
                   },
                   {
                     title: "Actions",
-                    width: 240,
-                    render: (_, r) => (
-                      <Space size={4}>
-                        <Button
-                          size="small"
-                          icon={<PlayCircleOutlined />}
-                          onClick={() => lifecycle.mutate({ id: r.id, action: "start" })}
-                          disabled={r.status === "running"}
-                        >
-                          Start
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<PauseCircleOutlined />}
-                          onClick={() => lifecycle.mutate({ id: r.id, action: "stop" })}
-                          disabled={r.status !== "running"}
-                        >
-                          Stop
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<ReloadOutlined />}
-                          onClick={() => lifecycle.mutate({ id: r.id, action: "restart" })}
-                        >
-                          Restart
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<SyncOutlined />}
-                          loading={updateImage.isPending && updateImage.variables === r.id}
-                          onClick={() => updateImage.mutate(r.id)}
-                          disabled={r.update_mode === "manual" ? false : false}
-                          title="Pull latest image with rollback on failure"
-                        >
-                          Update
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<FileTextOutlined />}
-                          onClick={() => setLogsAppId(r.id)}
-                          title="Tail container logs"
-                        >
-                          Logs
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<CodeOutlined />}
-                          onClick={() => setExecAppId(r.id)}
-                          title="Run a command inside the container"
-                        >
-                          Exec
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<SaveOutlined />}
-                          onClick={() => setBackupsAppId(r.id)}
-                          title="Manage restic snapshots for this app"
-                        >
-                          Backups
-                        </Button>
-                        <Popconfirm
-                          title={`Uninstall ${r.name}?`}
-                          description="Volumes will be purged. This cannot be undone."
-                          okText="Uninstall"
-                          okButtonProps={{ danger: true }}
-                          onConfirm={() => remove.mutate(r.id)}
-                        >
-                          <Button size="small" danger icon={<DeleteOutlined />} />
-                        </Popconfirm>
-                      </Space>
-                    ),
+                    width: 180,
+                    align: "right" as const,
+                    render: (_, r) => {
+                      const running = r.status === "running";
+                      const confirmDelete = () =>
+                        Modal.confirm({
+                          title: `Uninstall ${r.name}?`,
+                          content: "Volumes will be purged. This cannot be undone.",
+                          okText: "Uninstall",
+                          okButtonProps: { danger: true },
+                          onOk: () => remove.mutate(r.id),
+                        });
+                      return (
+                        <Space size={4}>
+                          {running ? (
+                            <Tooltip title="Stop">
+                              <Button
+                                size="small"
+                                icon={<PauseCircleOutlined />}
+                                onClick={() => lifecycle.mutate({ id: r.id, action: "stop" })}
+                              />
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Start">
+                              <Button
+                                size="small"
+                                icon={<PlayCircleOutlined />}
+                                onClick={() => lifecycle.mutate({ id: r.id, action: "start" })}
+                              />
+                            </Tooltip>
+                          )}
+                          <Tooltip title="Restart">
+                            <Button
+                              size="small"
+                              icon={<ReloadOutlined />}
+                              onClick={() => lifecycle.mutate({ id: r.id, action: "restart" })}
+                            />
+                          </Tooltip>
+                          <Tooltip title={running ? "Stop the container before editing" : "Edit"}>
+                            <Button
+                              size="small"
+                              icon={<EditOutlined />}
+                              disabled={running}
+                              onClick={() => setEditApp(r)}
+                            />
+                          </Tooltip>
+                          <Dropdown
+                            trigger={["click"]}
+                            menu={{
+                              items: [
+                                {
+                                  key: "update",
+                                  icon: <SyncOutlined />,
+                                  label: "Update",
+                                  onClick: () => updateImage.mutate(r.id),
+                                },
+                                {
+                                  key: "logs",
+                                  icon: <FileTextOutlined />,
+                                  label: "Logs",
+                                  onClick: () => setLogsAppId(r.id),
+                                },
+                                {
+                                  key: "exec",
+                                  icon: <CodeOutlined />,
+                                  label: "Exec",
+                                  onClick: () => setExecAppId(r.id),
+                                },
+                                {
+                                  key: "backups",
+                                  icon: <SaveOutlined />,
+                                  label: "Backups",
+                                  onClick: () => setBackupsAppId(r.id),
+                                },
+                                { type: "divider" as const, key: "d1" },
+                                {
+                                  key: "delete",
+                                  icon: <DeleteOutlined />,
+                                  label: "Uninstall",
+                                  danger: true,
+                                  onClick: confirmDelete,
+                                },
+                              ],
+                            }}
+                          >
+                            <Button size="small" icon={<MoreOutlined />} />
+                          </Dropdown>
+                        </Space>
+                      );
+                    },
                   },
                 ]}
               />
+              </div>
             ),
           },
+          {
+            key: "catalog",
+            label: "Catalog",
+            children: (
+              <div
+                style={{
+                  columnGap: 16,
+                  // CSS shorthand: as many columns of >=320px as the
+                  // viewport fits. Works at mobile (1 col), tablet (2),
+                  // desktop (3+) without media queries.
+                  columns: "320px",
+                }}
+                className="docker-apps-catalog-masonry"
+              >
+                {(catalog.data ?? []).map((e) => (
+                  <div
+                    key={e.slug}
+                    style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}
+                  >
+                    <Card
+                      hoverable
+                      onClick={() => setInstallEntry(e)}
+                      styles={{ body: { padding: 16 } }}
+                      actions={[<Button type="link" key="install">Install</Button>]}
+                    >
+                      <Card.Meta
+                        avatar={
+                          <Avatar
+                            shape="square"
+                            size={40}
+                            src={`/api/v1/admin/docker-apps/catalog/${e.slug}/icon`}
+                            style={{ backgroundColor: "transparent", color: "#1f1f1f" }}
+                          >
+                            {e.name[0]}
+                          </Avatar>
+                        }
+                        title={
+                          <Space size={6} wrap>
+                            <span>{e.name}</span>
+                            <Tag style={{ marginInlineEnd: 0 }}>{e.version}</Tag>
+                          </Space>
+                        }
+                        description={
+                          <div style={{ whiteSpace: "pre-line" }}>
+                            {e.description}
+                          </div>
+                        }
+                      />
+                    </Card>
+                  </div>
+                ))}
+              </div>
+            ),
+          },
+          {
+            key: "maintenance",
+            label: "Maintenance",
+            children: <MaintenanceTab />,
+          }
+
         ]}
       />
 
@@ -305,6 +397,11 @@ export const AdminDockerAppsPage = () => {
         open={execAppId !== null}
         appId={execAppId}
         onClose={() => setExecAppId(null)}
+      />
+      <EditDrawer
+        open={editApp !== null}
+        app={editApp}
+        onClose={() => setEditApp(null)}
       />
       <BackupsDrawer
         open={backupsAppId !== null}

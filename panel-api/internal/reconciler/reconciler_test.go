@@ -2025,3 +2025,10 @@ func TestSANHostnamesForDomain(t *testing.T) {
 		}
 	})
 }
+
+func (*fakeDomainRepo) AttachDockerApp(context.Context, string, string, models.NginxRules) error {
+	return nil
+}
+func (*fakeDomainRepo) DetachDockerApp(context.Context, string, bool) error {
+	return nil
+}

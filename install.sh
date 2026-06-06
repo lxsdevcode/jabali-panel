@@ -55,7 +55,7 @@ export LC_ALL=C.UTF-8
 # Keep apt from prompting for debconf mid-run.
 export DEBIAN_FRONTEND=noninteractive
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # ---------- fail-loud: ERR trap -------------------------------------------
 # set -e exits on the first non-zero command. The default behavior prints
@@ -65,7 +65,36 @@ set -euo pipefail
 # script, including sub-shells. Don't use _err() yet (logger is defined
 # further down and bash loads top-to-bottom); printf inline so the trap
 # works regardless of which section triggers it.
-trap '__rc=$?; printf "\033[1;31m[jabali-install]\033[0m install.sh exited with code %d at line %d: %s\n" "$__rc" "$LINENO" "$BASH_COMMAND" >&2' ERR
+__on_err() {
+  local rc=$?
+  local cmd="$BASH_COMMAND"
+  local line="$LINENO"
+  local func="${FUNCNAME[1]:-main}"
+  printf "\033[1;31m[jabali-install]\033[0m install.sh died:\n" >&2
+  printf "    exit_code : %d\n" "$rc" >&2
+  printf "    function  : %s\n" "$func" >&2
+  printf "    line      : %d\n" "$line" >&2
+  printf "    command   : %s\n" "$cmd" >&2
+  # When the failing command was a systemctl reload/restart/start,
+  # dump journalctl + status for the unit so the operator sees the
+  # real reason without having to ask for log files.
+  if [[ "$cmd" =~ systemctl[[:space:]]+(reload|restart|start|enable)[[:space:]]+([A-Za-z0-9._@-]+) ]]; then
+    local unit="${BASH_REMATCH[2]}"
+    printf "\n[diagnostic] systemctl status %s --no-pager:\n" "$unit" >&2
+    systemctl status "$unit" --no-pager 2>&1 | sed 's/^/    /' >&2 || true
+    printf "\n[diagnostic] journalctl -u %s -n 20 --no-pager:\n" "$unit" >&2
+    journalctl -u "$unit" -n 20 --no-pager 2>&1 | sed 's/^/    /' >&2 || true
+  fi
+  # If the install logger has been initialised, point the operator
+  # at the file so the GitHub issue starts with full context.
+  if [[ -n "${LOG_FILE:-}" && -f "$LOG_FILE" ]]; then
+    printf "\nFull install log at: %s\n" "$LOG_FILE" >&2
+    printf "[diagnostic] last 30 lines of install log:\n" >&2
+    tail -n 30 "$LOG_FILE" 2>/dev/null | sed 's/^/    /' >&2 || true
+  fi
+  exit "$rc"
+}
+trap '__on_err' ERR
 
 # ---------- config (override via env) ---------------------------------------
 
@@ -90,7 +119,7 @@ REPO_DIR="${JABALI_REPO_DIR:-/opt/jabali-panel}"
 # owns /etc/resolv.conf and pdns-recursor recurses through 1.1.1.1 +
 # 9.9.9.9 via UDP.
 DNS_FORWARDER="${JABALI_DNS_FORWARDER:-}"
-GO_VERSION="${JABALI_GO_VERSION:-1.25.1}"
+GO_VERSION="${JABALI_GO_VERSION:-1.26.4}"
 GO_ROOT="${JABALI_GO_ROOT:-/usr/local/go}"
 SERVICE_USER="${JABALI_SERVICE_USER:-jabali}"
 SERVICE_NAME="${JABALI_SERVICE_NAME:-jabali-panel}"
@@ -2739,7 +2768,7 @@ allow-from=127.0.0.0/8, ::1/128
 # Reconciler-owned via panel-agent's pdns.recursor_add_zone /
 # pdns.recursor_remove_zone commands (atomic write + strict validator
 # + rec_control reload-zones + SOA post-probe + rollback-on-fail).
-# Never hand-edit on a live host; use `jabali pdns backfill --yes`
+# Never hand-edit on a live host; use 'jabali pdns backfill --yes'
 # if a stale state needs reconverging.
 forward-zones-file=/etc/powerdns/recursor.forwards
 
@@ -5511,14 +5540,42 @@ install_sftp_sshd_config() {
   # favour of socket-activated `ssh.service` only. Try the canonical
   # `ssh` first and fall through to `sshd` so both worlds work.
   _log "reloading sshd"
-  if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
-    systemctl reload ssh
-  elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then
-    systemctl reload sshd
+  # Debian 13 + Ubuntu 24.04 socket-activate sshd: ssh.socket is the
+  # listener; sshd-session is spawned PER CONNECTION and reads
+  # /etc/ssh/sshd_config (+ includes) fresh on every spawn. So when
+  # the SFTP drop-in we just installed needs to take effect, the
+  # next inbound ssh connection automatically picks it up -- a
+  # reload of the long-lived listener isn't required.
+  #
+  # Worse: `systemctl reload ssh.service` on socket-activated mode
+  # FAILS (it tries to reload a unit that has no PID, then puts the
+  # service into a 'failed' state). Set -e then kills the installer
+  # right after the "reloading sshd" log line (GH #126).
+  #
+  # Detect socket-activated mode and skip the reload block in that
+  # case. Otherwise (classic sshd.service that owns its own PID),
+  # walk the canonical reload chain.
+  if systemctl is-enabled ssh.socket >/dev/null 2>&1 \
+     || systemctl list-unit-files ssh.socket >/dev/null 2>&1; then
+    _ok "sshd is socket-activated; new config applies on next connection (no reload needed)"
   else
-    _die "neither ssh.service nor sshd.service is present — install openssh-server"
+    sshd_reloaded=0
+    if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+      if systemctl reload ssh 2>/dev/null; then sshd_reloaded=1; fi
+    fi
+    if [[ $sshd_reloaded -eq 0 ]] && systemctl list-unit-files sshd.service >/dev/null 2>&1; then
+      if systemctl reload sshd 2>/dev/null; then sshd_reloaded=1; fi
+    fi
+    if [[ $sshd_reloaded -eq 0 ]]; then
+      if pgrep -x sshd >/dev/null 2>&1; then
+        pkill -HUP -x sshd && sshd_reloaded=1
+      fi
+    fi
+    if [[ $sshd_reloaded -eq 0 ]]; then
+      _die "sshd reload failed: systemctl reload + SIGHUP both failed -- check 'systemctl status ssh' and 'sshd -t'"
+    fi
+    _ok "sshd reloaded"
   fi
-  _ok "sshd reloaded"
 }
 
 install_sso_key() {
@@ -7012,15 +7069,15 @@ install_malware_stack() {
   # YARA-X (the `yr` binary) — Rust rewrite of YARA, full module support
   # including the `hash` module that libclamav YARA can't load. maldet
   # 2.0.1+ prefers `yr` over libyara when both are present.
-  local YARAX_VERSION="1.15.0"
-  local YARAX_SHA256="90bb8898a2052781890684d8b030d62401a1226caab9fe58adf6fd7513f4a7b3"
+  local YARAX_VERSION="1.17.0"
+  local YARAX_SHA256="db83e2a56792ff7a1658f91f7f173133cabac4c209ae68aaae51a313cbfaf6b7"
   if ! command -v yr >/dev/null 2>&1 || \
      [[ "$(yr --version 2>/dev/null | awk '{print $2}')" != "$YARAX_VERSION" ]]; then
     local tmp_yrx
     tmp_yrx=$(mktemp -d -t yarax-XXXXXX)
     if (
       cd "$tmp_yrx" && \
-      curl -fsSL "https://github.com/VirusTotal/yara-x/releases/download/v${YARAX_VERSION}/yara-x-v${YARAX_VERSION}-x86_64-unknown-linux-gnu.gz" -o yrx.tar.gz && \
+      curl -fsSL "https://github.com/VirusTotal/yara-x/releases/download/v${YARAX_VERSION}/yara-x-v${YARAX_VERSION}-x86_64-unknown-linux-gnu.tar.gz" -o yrx.tar.gz && \
       echo "${YARAX_SHA256}  yrx.tar.gz" | sha256sum -c - >/dev/null && \
       tar -xzf yrx.tar.gz && \
       install -m 0755 -o root -g root yr /usr/local/bin/yr
@@ -8537,7 +8594,7 @@ install_notify_template() {
 #   /etc/jabali-panel/bulwark-session.key — Bulwark SESSION_SECRET (jabali-webmail:jabali-webmail, 0640)
 
 install_stalwart() {
-  local stalwart_version="0.16.6"
+  local stalwart_version="0.16.7"
   _log "installing Stalwart Mail Server (v${stalwart_version})"
 
   # Ensure service user + group exist. Supplementary group `jabali` lets
@@ -9243,7 +9300,7 @@ _install_stalwart_binary() {
 # speaks the v0.16 JMAP management API, used by install.sh bootstrap and
 # the reconciler. Idempotent against version reported by --version.
 _install_stalwart_cli() {
-  local cli_version="1.0.7"
+  local cli_version="1.0.8"
   local cli_binary="/usr/local/bin/stalwart-cli"
   local arch="x86_64-unknown-linux-gnu"
   local tarball="stalwart-cli-${arch}.tar.xz"
@@ -9392,7 +9449,7 @@ _install_spam_rules() {
 }
 
 install_bulwark() {
-  local bulwark_version="1.7.1"
+  local bulwark_version="1.7.3"
   local arch="linux-amd64"
   local tarball="bulwark-standalone-${bulwark_version}-${arch}.tar.gz"
   local url="https://github.com/bulwarkmail/webmail/releases/download/${bulwark_version}/${tarball}"

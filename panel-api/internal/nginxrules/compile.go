@@ -38,8 +38,14 @@ func Compile(d *models.Domain) string {
 				r.Pattern, quoteNginxString(r.Replacement), flag)
 
 		case "proxy_pass":
+			// Prepend ^~ so this location wins over regex matchers
+			// (the per-vhost static-asset block at the bottom of the
+			// template that 30d-caches *.css/*.js/etc.). Without it
+			// /assets/foo.css goes to try_files in the empty docroot
+			// instead of the upstream -- Gitea + every other proxied
+			// app's bundled assets came back 404.
 			fmt.Fprintf(&b,
-				"    location %s {\n"+
+				"    location ^~ %s {\n"+
 					"        proxy_pass %s;\n"+
 					"        proxy_set_header Host $host;\n"+
 					"        proxy_set_header X-Real-IP $remote_addr;\n"+

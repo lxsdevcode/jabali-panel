@@ -3,7 +3,9 @@
 // Intentionally thin: name + user id + optional doc root. The server
 // auto-generates doc_root when blank. Post-M21: Form.useForm +
 // useCreateMutation, no Refine wrappers.
-import { Button, Card, Form, Input, Typography, message } from "antd";
+import { Button, Card, Form, Input, Select, Typography, message } from "antd";
+import { useQuery } from "@tanstack/react-query";
+import { apiClient } from "../../../apiClient";
 import { useNavigate } from "react-router";
 
 import { useCreateMutation } from "../../../hooks/useQueries";
@@ -21,6 +23,15 @@ export const DomainCreate = () => {
   const [form] = Form.useForm<DomainCreateInput>();
   const createMutation = useCreateMutation<DomainCreated, DomainCreateInput>({
     resource: "domains",
+  });
+  const usersQ = useQuery({
+    queryKey: ["admin-users-for-domain-create"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data?: { id: string; email: string; username?: string }[] }>(
+        "/users?page_size=500&is_admin=false",
+      );
+      return data.data ?? [];
+    },
   });
 
   const handleFinish = async (values: DomainCreateInput) => {
@@ -61,11 +72,20 @@ export const DomainCreate = () => {
         </Form.Item>
 
         <Form.Item
-          label="User ID"
+          label="User"
           name="user_id"
-          rules={[{ required: true, message: "User ID is required" }]}
+          rules={[{ required: true, message: "User is required" }]}
         >
-          <Input placeholder="User ID (will be a Select later)" />
+          <Select
+            showSearch
+            placeholder="Select a user"
+            optionFilterProp="label"
+            loading={usersQ.isLoading}
+            options={(usersQ.data ?? []).map((u) => ({
+              value: u.id,
+              label: u.username ? `${u.email} (${u.username})` : u.email,
+            }))}
+          />
         </Form.Item>
 
         <Form.Item

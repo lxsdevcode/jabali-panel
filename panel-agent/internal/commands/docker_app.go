@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
@@ -53,6 +54,7 @@ type dockerAppInstallParams struct {
 	ComposeYML string            `json:"compose_yml"`           // rendered template
 	EnvFile    string            `json:"env_file,omitempty"`    // .env contents (secrets); empty = no .env
 	Volumes    []string          `json:"volumes"`               // subdirs to create under DataRoot
+	VolumeOwner string           `json:"volume_owner,omitempty"`// optional "uid:gid" applied to the data root + each volume subdir before compose-up
 	WaitHealth bool              `json:"wait_healthy,omitempty"`
 	HealthTO   int               `json:"healthcheck_timeout_seconds,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`    // free-form tags; written into a sidecar JSON for ops
@@ -103,6 +105,38 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 		vd := filepath.Join(dir, v)
 		if err := os.MkdirAll(vd, 0o750); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("mkdir %s: %v", vd, err)}
+		}
+	}
+
+	// Optional chown of the data root + each volume subdir. Required
+	// for images whose entrypoint runs as a non-root UID: docker
+	// creates the bind-mount on first run owned root:root, the
+	// container init then EACCES on its own config file (Gitea's
+	// /data/gitea/conf/app.ini is the canonical scar).
+	if p.VolumeOwner != "" {
+		uid, gid, perr := parseUIDGID(p.VolumeOwner)
+		if perr != nil {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInvalidArgument,
+				Message: fmt.Sprintf("invalid volume_owner %q: %v", p.VolumeOwner, perr),
+			}
+		}
+		if err := os.Chown(dir, uid, gid); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chown %s: %v", dir, err)}
+		}
+		for _, v := range p.Volumes {
+			vd := filepath.Join(dir, v)
+			// Walk the subtree -- nested state under a compose bind
+			// mount (gitea data/git, nextcloud var/www/html/data, ...)
+			// needs the same ownership.
+			if werr := filepath.Walk(vd, func(path string, info os.FileInfo, _ error) error {
+				if info == nil {
+					return nil
+				}
+				return os.Chown(path, uid, gid)
+			}); werr != nil {
+				return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chown %s: %v", vd, werr)}
+			}
 		}
 	}
 
@@ -159,13 +193,21 @@ type dockerAppLifecycleResponse struct {
 }
 
 func dockerAppStartHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	return runLifecycle(ctx, params, "started", "start")
+	// `up -d` instead of `start`: idempotent over the (re)create
+	// step too, so it survives the scar where a prior failed install
+	// (or a host reboot orphan) left containers with our slug names
+	// behind. `compose start` only re-runs an exact match by ID and
+	// 409s with "container name in use" on any mismatch.
+	return runLifecycle(ctx, params, "started", "up", "-d")
 }
 func dockerAppStopHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	return runLifecycle(ctx, params, "stopped", "stop")
 }
 func dockerAppRestartHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	return runLifecycle(ctx, params, "restarted", "restart")
+	// `up -d` so a restart after a stale-container scar still wins.
+	// Stopping the container directly via `restart` doesn't help if
+	// the container was created with a different config hash.
+	return runLifecycle(ctx, params, "restarted", "up", "-d")
 }
 func dockerAppRebuildHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	return runLifecycle(ctx, params, "rebuilt", "up", "-d", "--force-recreate")
@@ -430,3 +472,25 @@ func init() {
 // removed by a refactor. Keep the import so future expansion (timeouts,
 // percentile parsing) doesn't trip over a missing dependency.
 var _ = strconv.Itoa
+
+
+// parseUIDGID splits "uid:gid" into ints. Both halves must be
+// numeric; we do NOT resolve usernames to uids because the agent
+// would have to honour either the host's /etc/passwd or the image's
+// own UID convention -- ambiguous, brittle, and the catalog already
+// hardcodes the image's expected UID anyway.
+func parseUIDGID(s string) (int, int, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("expected \"uid:gid\"")
+	}
+	uid, err := strconv.Atoi(parts[0])
+	if err != nil || uid < 0 {
+		return 0, 0, fmt.Errorf("uid not a non-negative int")
+	}
+	gid, err := strconv.Atoi(parts[1])
+	if err != nil || gid < 0 {
+		return 0, 0, fmt.Errorf("gid not a non-negative int")
+	}
+	return uid, gid, nil
+}

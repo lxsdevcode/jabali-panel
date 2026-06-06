@@ -262,6 +262,7 @@ func newDockerAppInstallCmd() *cobra.Command {
 				"compose_yml":                 composeYML,
 				"env_file":                    envFile,
 				"volumes":                     volumeNames,
+				"volume_owner":                entry.VolumeOwner,
 				"wait_healthy":                true,
 				"healthcheck_timeout_seconds": 120,
 			}); err != nil {

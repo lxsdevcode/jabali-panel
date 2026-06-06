@@ -86,3 +86,23 @@ export async function createBackup(id: string): Promise<{ snapshot_id: string; s
 export async function restoreBackup(id: string, snapshotId: string): Promise<void> {
   await apiClient.post(`${BASE}/${id}/backups/${snapshotId}/restore`);
 }
+
+
+export interface PatchRequest {
+  update_mode?: "manual" | "auto";
+  cpu_limit?: string;
+  memory_limit?: string;
+  pids_limit?: number;
+  domain?: string;
+  ports?: Array<{
+    name: string;
+    enabled?: boolean;
+    bind_interface?: string;
+    host_port?: number;
+    reverse_proxy?: boolean;
+  }>;
+}
+
+export async function patchApp(id: string, body: PatchRequest): Promise<void> {
+  await apiClient.patch(`${BASE}/${id}`, body);
+}

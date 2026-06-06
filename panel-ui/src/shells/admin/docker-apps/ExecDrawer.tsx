@@ -36,7 +36,7 @@ export const ExecDrawer = ({ open, appId, onClose }: Props) => {
       open={open}
       onClose={onClose}
       title="Exec command"
-      width={720}
+      width="min(100%, 720px)"
       destroyOnClose
     >
       <Space direction="vertical" style={{ width: "100%" }} size="middle">

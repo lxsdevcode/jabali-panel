@@ -124,7 +124,7 @@ func TestCompile(t *testing.T) {
 					},
 				},
 			},
-			want:     `location /api {`,
+			want:     `location ^~ /api {`,
 			wantBool: true,
 		},
 		{
@@ -138,7 +138,7 @@ func TestCompile(t *testing.T) {
 					},
 				},
 			},
-			want:     `location "/api v1" {`,
+			want:     `location ^~ "/api v1" {`,
 			wantBool: true,
 		},
 		{

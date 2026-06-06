@@ -63,8 +63,12 @@ func (r *Reconciler) reconcileOneDockerApp(ctx context.Context, app *models.Dock
 		// The reconciler only retries when an install crash-loop left
 		// the row stuck in pending. Dispatch once per tick at most.
 		r.dispatchInstall(ctx, app)
-	case models.DockerAppStatusInstalling, models.DockerAppStatusRunning:
+	case models.DockerAppStatusInstalling, models.DockerAppStatusRunning, models.DockerAppStatusStopped:
 		// Status-poll; the agent verb is cheap (one docker compose ps).
+		// Stopped is included so the row catches up when the operator
+		// (or a host-reboot autostart) brought the container back up
+		// outside the panel -- otherwise the UI shows stale "stopped"
+		// indefinitely.
 		r.statusPoll(ctx, app)
 		// M48 Phase 7 follow-up: image-digest poll. Cheap (~1 HTTP
 		// HEAD via `docker manifest inspect`) but gated by

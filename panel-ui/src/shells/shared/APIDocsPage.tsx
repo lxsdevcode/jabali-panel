@@ -160,7 +160,7 @@ export function APIDocsPage(): JSX.Element {
         />
       </Layout.Sider>
 
-      <Layout.Content style={{ padding: "0 24px 32px" }}>
+      <Layout.Content style={{ padding: "0 16px 32px", minWidth: 0 }}>
         <Card style={{ marginBottom: 16 }}>
           <Typography.Title level={3} style={{ marginTop: 0 }}>
             {spec.info.title}{" "}
@@ -168,7 +168,7 @@ export function APIDocsPage(): JSX.Element {
           </Typography.Title>
           {spec.info.description && (
             <Typography.Paragraph>
-              <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>
+              <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                 {spec.info.description}
               </pre>
             </Typography.Paragraph>
@@ -200,11 +200,11 @@ export function APIDocsPage(): JSX.Element {
               items={ops.map(({ method, path, op }) => ({
                 key: slugify(method, path),
                 label: (
-                  <Space size="small">
+                  <Space size="small" wrap style={{ rowGap: 4 }}>
                     <Tag color={methodColor(method)} style={{ minWidth: 64, textAlign: "center" }}>
                       {method.toUpperCase()}
                     </Tag>
-                    <Typography.Text code style={{ background: "transparent" }}>
+                    <Typography.Text code style={{ background: "transparent", wordBreak: "break-all" }}>
                       {path}
                     </Typography.Text>
                     {op.summary && (

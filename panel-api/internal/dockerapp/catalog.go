@@ -38,6 +38,13 @@ type Entry struct {
 	Volumes       []Volume   `yaml:"volumes"`
 	Ports         []PortSpec `yaml:"ports"`
 	Env           []EnvVar   `yaml:"env,omitempty"`
+	// VolumeOwner is an optional "uid:gid" pair the agent applies
+	// to /var/lib/jabali/docker-apps/<slug>/<volume>/ before docker
+	// compose up runs. Empty = leave the dirs root:root. Set for
+	// images whose entrypoint runs as a non-root UID and reads from
+	// the bind-mounted volume on first launch (Gitea, Nextcloud,
+	// Linkwarden, ...) -- without this they crash-loop on EACCES.
+	VolumeOwner   string     `yaml:"volume_owner,omitempty"`
 
 	// composeTmpl is the raw text of compose.yml.tmpl alongside the
 	// app.yaml. Held in memory so the agent verb that renders the

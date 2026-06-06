@@ -119,15 +119,20 @@ func snuffleupagusIngestPass(ctx context.Context, d Deps, since time.Time) (time
 		}
 	}
 
+	// Simulated-block + log-only incidents are sp's dry-run mode --
+	// useful for tuning rules, useless as an operator notification.
+	// Only fire when an actual block landed; persisted rows stay in
+	// the DB so the Security UI can still surface them.
+	if blockCount == 0 {
+		return fetched.NextSince, len(fetched.Incidents)
+	}
+
 	dedupe := fmt.Sprintf("snuf-batch=%s", fetched.Incidents[len(fetched.Incidents)-1].Ts.Format(time.RFC3339Nano))
 	if !shouldFire(ctx, d, "snuffleupagus.incident.detected", dedupe, snuffleupagusCooldown) {
 		return fetched.NextSince, len(fetched.Incidents)
 	}
 
-	severity := "info"
-	if blockCount > 0 {
-		severity = "warning"
-	}
+	severity := "warning"
 	title := fmt.Sprintf("Snuffleupagus %d incident(s): %d blocked / %d simulated / %d logged",
 		len(fetched.Incidents), blockCount, simCount, logCount)
 	body := snuffleupagusBatchBody(fetched.Incidents)
