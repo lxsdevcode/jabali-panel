@@ -1,0 +1,16 @@
+[Unit]
+Description=Jabali CrowdSec hub refresh daily (03:15 UTC + 4h jitter)
+Documentation=https://docs.crowdsec.net/docs/next/user_guides/hub_mgmt/
+
+[Timer]
+# 03:15 UTC + RandomizedDelaySec=4h spreads the load across the
+# hub-data.crowdsec.net CDN globally. AIDE runs at 04:30 UTC; mail
+# spam-rules at 03:00; we want this somewhere quiet.
+OnCalendar=*-*-* 03:15:00 UTC
+RandomizedDelaySec=4h
+# Persistent=true catches up on a missed run after the host was off.
+Persistent=true
+Unit=jabali-crowdsec-hub-refresh.service
+
+[Install]
+WantedBy=timers.target

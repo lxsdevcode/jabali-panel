@@ -6405,10 +6405,38 @@ install_crowdsec_appsec() {
   # syslog line and emits 0/N parsed. Observed on mx.jabali-panel.local
   # 2026-05-12 (45 lines read, 0 parsed). Pulling --force ensures the
   # journald-aware parser is loaded.
-  _log "refreshing CrowdSec hub items (parsers/scenarios/collections)"
-  cscli hub update --error 2>&1 | sed 's/^/    /' || true
-  cscli hub upgrade --force 2>&1 | sed 's/^/    /' || \
-    _warn "cscli hub upgrade non-zero — operator can re-run manually"
+  # Gated on a 24h marker file the daily timer (`jabali-crowdsec-hub-
+  # refresh.timer`) also touches. install.sh re-runs that fall inside
+  # the same day skip the hub-data download (~5-15 MB across mmdb +
+  # whitelists + appsec rules), so `jabali update` stays cheap. The
+  # timer guarantees freshness; install.sh only runs the inline
+  # refresh on fresh installs OR when the timer hasn't fired yet
+  # (e.g., immediately after first boot before the 03:15 UTC slot).
+  _stamp=/var/lib/jabali/crowdsec-hub-refreshed.stamp
+  if [[ -f "$_stamp" ]] && [[ $(find "$_stamp" -mmin -1440 2>/dev/null | wc -l) -ge 1 ]]; then
+    _log "CrowdSec hub last refreshed $(stat -c %y "$_stamp" 2>/dev/null | cut -d. -f1) — skipping (daily timer covers it)"
+  else
+    _log "refreshing CrowdSec hub items (parsers/scenarios/collections)"
+    cscli hub update --error 2>&1 | sed 's/^/    /' || true
+    cscli hub upgrade --force 2>&1 | sed 's/^/    /' || \
+      _warn "cscli hub upgrade non-zero — operator can re-run manually"
+    install -d -m 0755 /var/lib/jabali
+    touch "$_stamp"
+  fi
+
+  # Install daily hub-refresh timer so future updates don't have to
+  # re-download the data files on every `jabali update`. Persistent=true
+  # catches up on missed runs (host was off during the slot).
+  local _cs_hub_svc_src="${REPO_DIR}/install/systemd/jabali-crowdsec-hub-refresh.service"
+  local _cs_hub_tmr_src="${REPO_DIR}/install/systemd/jabali-crowdsec-hub-refresh.timer"
+  if [[ -f "$_cs_hub_svc_src" && -f "$_cs_hub_tmr_src" ]]; then
+    install -m 0644 -o root -g root "$_cs_hub_svc_src" /etc/systemd/system/jabali-crowdsec-hub-refresh.service
+    install -m 0644 -o root -g root "$_cs_hub_tmr_src" /etc/systemd/system/jabali-crowdsec-hub-refresh.timer
+    systemctl daemon-reload
+    systemctl enable --now jabali-crowdsec-hub-refresh.timer >/dev/null 2>&1 || \
+      _warn "jabali-crowdsec-hub-refresh.timer enable failed — check 'journalctl -u jabali-crowdsec-hub-refresh.timer'"
+    _ok "CrowdSec hub refresh timer installed (daily 03:15 UTC + 4h jitter)"
+  fi
 
   # 3. Jabali AppSec config (ADR-0102 / ADR-0107 / ADR-0083 single-
   # source). The whole schema — header, presence-gated inband_rules,
@@ -11381,6 +11409,8 @@ EOF
     jabali-per-user-egress-load.service \
     jabali-aide-check.timer \
     jabali-aide-check.service \
+    jabali-crowdsec-hub-refresh.timer \
+    jabali-crowdsec-hub-refresh.service \
     jabali-notify@.service; do
     systemctl stop    "$svc" 2>/dev/null || true
     systemctl disable "$svc" 2>/dev/null || true

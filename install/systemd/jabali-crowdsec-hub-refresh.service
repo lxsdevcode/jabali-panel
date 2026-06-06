@@ -1,0 +1,26 @@
+[Unit]
+Description=Jabali CrowdSec hub refresh (parsers + scenarios + collections + data files)
+Documentation=https://docs.crowdsec.net/docs/next/user_guides/hub_mgmt/
+
+# Wait for crowdsec to be ready -- cscli hub upgrade --force triggers a
+# reload at the end and that needs the service responsive. Also after
+# network is online so the hub-data CDN is reachable.
+After=crowdsec.service network-online.target
+Wants=network-online.target
+# Conditional: skip when CrowdSec isn't installed. Cheap noop.
+ConditionPathExists=/usr/bin/cscli
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cscli hub update --error
+ExecStart=/usr/bin/cscli hub upgrade --force
+# Touch the stamp install.sh reads so subsequent `jabali update` runs
+# inside the next 24h skip the inline refresh.
+ExecStartPost=/bin/sh -c 'install -d -m 0755 /var/lib/jabali && touch /var/lib/jabali/crowdsec-hub-refreshed.stamp'
+
+# Don't break boot or other ops if the hub CDN is flaky.
+SuccessExitStatus=0 1
+
+# Modest resource caps -- this is a few-megabyte download + index parse.
+MemoryMax=512M
+CPUQuota=50%
