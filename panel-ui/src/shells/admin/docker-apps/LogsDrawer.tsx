@@ -10,10 +10,12 @@ import { fetchLogs } from "./api";
 interface Props {
   open: boolean;
   appId: string | null;
+  appName?: string;
+  lastError?: string | null;
   onClose: () => void;
 }
 
-export const LogsDrawer = ({ open, appId, onClose }: Props) => {
+export const LogsDrawer = ({ open, appId, appName, lastError, onClose }: Props) => {
   const [lines, setLines] = useState(500);
 
   const { data, isFetching, refetch } = useQuery({
@@ -27,7 +29,7 @@ export const LogsDrawer = ({ open, appId, onClose }: Props) => {
     <Drawer
       open={open}
       onClose={onClose}
-      title="Container logs"
+      title={appName ? `Container logs · ${appName}` : "Container logs"}
       width="min(100%, 840px)"
       destroyOnClose
       extra={
@@ -50,6 +52,13 @@ export const LogsDrawer = ({ open, appId, onClose }: Props) => {
         </Space>
       }
     >
+      {!data?.logs && lastError && (
+        <div style={{ background: "rgba(207,19,34,0.08)", border: "1px solid #cf1322", padding: 12, borderRadius: 6, marginBottom: 12, fontSize: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Container never produced logs.</div>
+          <div style={{ marginBottom: 4 }}>Recorded install / startup error:</div>
+          <code style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{lastError}</code>
+        </div>
+      )}
       <pre
         style={{
           background: "var(--ant-color-bg-elevated, #0d1117)",
