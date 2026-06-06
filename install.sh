@@ -2134,20 +2134,29 @@ install_docker_engine() {
     && dpkg -s docker-compose-plugin >/dev/null 2>&1; then
     _log "docker engine + compose plugin already installed; skipping apt"
   else
-    # Repo + signing key (Docker official Debian repo).
+    # Repo + signing key. Docker hosts separate apt repos for Debian
+    # and Ubuntu; ID from /etc/os-release picks the right tree, and
+    # VERSION_CODENAME drives the suite (trixie/bookworm/noble/jammy/
+    # ...). Falls back to debian/trixie when /etc/os-release is empty.
+    local os_id os_codename docker_distro
+    os_id="$(. /etc/os-release; echo "${ID:-debian}")"
+    os_codename="$(. /etc/os-release; echo "${VERSION_CODENAME:-trixie}")"
+    case "$os_id" in
+      ubuntu) docker_distro="ubuntu" ;;
+      debian|*) docker_distro="debian" ;;
+    esac
+
     install -d -m 0755 /etc/apt/keyrings
     if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
-      curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+      curl -fsSL "https://download.docker.com/linux/${docker_distro}/gpg" -o /etc/apt/keyrings/docker.asc
       chmod a+r /etc/apt/keyrings/docker.asc
     fi
-    local debian_codename
-    debian_codename="$(. /etc/os-release; echo "${VERSION_CODENAME:-trixie}")"
     local docker_list="/etc/apt/sources.list.d/docker.list"
     local desired
-    desired="deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${debian_codename} stable"
+    desired="deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${docker_distro} ${os_codename} stable"
     if [[ ! -f "$docker_list" ]] || ! grep -qF "$desired" "$docker_list"; then
       printf '%s\n' "$desired" > "$docker_list"
-      _log "wrote $docker_list"
+      _log "wrote $docker_list (distro=${docker_distro}, codename=${os_codename})"
     fi
     apt-get update -y -o Dir::Etc::sourcelist="$docker_list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
