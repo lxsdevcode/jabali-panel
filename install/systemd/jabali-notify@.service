@@ -1,6 +1,6 @@
 [Unit]
 Description=Jabali OnFailure notifier for %i
-# Critical services declare OnFailure=jabali-notify@%n.service in their
+# Critical services declare OnFailure=jabali-notify@%N.service in their
 # drop-ins. systemd substitutes %n→failed.unit.name; this template
 # unit's %i carries the same value (escape-encoded). The helper script
 # decodes it and POSTs a service.down envelope to the local notification

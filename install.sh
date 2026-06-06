@@ -8411,7 +8411,7 @@ install_restart_drop_ins() {
     redis-server.service
     crowdsec.service
     systemd-resolved.service
-    # Jabali daemons — OnFailure=jabali-notify@%n routes a service.down
+    # Jabali daemons — OnFailure=jabali-notify@%N routes a service.down
     # M14 envelope when StartLimit is hit. Unit files already declare
     # Restart=on-failure; the drop-in's Restart=/RestartSec= lines are
     # redundant-but-harmless. Real win: native systemd → notification
@@ -8455,7 +8455,7 @@ install_restart_drop_ins() {
 # in install.sh for rationale. Hand edits will be overwritten on the
 # next install.sh / `jabali update` run.
 #
-# OnFailure=jabali-notify@%n.service hooks the M14 notification path:
+# OnFailure=jabali-notify@%N.service hooks the M14 notification path:
 # when this unit hits StartLimit and gives up, systemd starts
 # jabali-notify@<unit-name>.service which POSTs a service.down envelope
 # to the panel-api enqueue endpoint. The notifier never blocks the
@@ -8463,7 +8463,7 @@ install_restart_drop_ins() {
 [Unit]
 StartLimitBurst=10
 StartLimitIntervalSec=60s
-OnFailure=jabali-notify@%n.service
+OnFailure=jabali-notify@%N.service
 
 [Service]
 Restart=on-failure
