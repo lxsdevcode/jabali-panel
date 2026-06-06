@@ -1,6 +1,6 @@
 slug: n8n
 name: n8n
-version: "1.65.2"
+version: "2.25.5"
 description: |
   Workflow automation tool. Build, run, and share workflows that
   connect APIs, databases, and services. Self-hosted, single

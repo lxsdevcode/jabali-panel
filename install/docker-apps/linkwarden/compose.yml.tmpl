@@ -29,7 +29,7 @@ services:
       start_period: 60s
 
   db:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: jabali-app-{{ .Slug }}-db
     restart: unless-stopped
     environment:

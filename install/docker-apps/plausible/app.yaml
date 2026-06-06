@@ -1,6 +1,6 @@
 slug: plausible
 name: Plausible Analytics
-version: "2.1.4"
+version: "3.2.1"
 description: |
   Lightweight, open-source, privacy-focused web analytics. Three
   services in this catalog entry: the Plausible Elixir app, a
@@ -10,7 +10,7 @@ icon: icon.svg
 upstream: https://github.com/plausible/community-edition
 documentation: https://plausible.io/docs
 
-image_channel: ghcr.io/plausible/community-edition:v2.1.4
+image_channel: ghcr.io/plausible/community-edition:v3.2.1
 update_mode: manual
 
 resources:

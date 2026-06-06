@@ -1,6 +1,6 @@
 slug: mealie
 name: Mealie
-version: "2.0.0"
+version: "3.19.2"
 description: |
   Self-hosted recipe manager and meal planner. Single container,
   SQLite-backed by default.
@@ -8,7 +8,7 @@ icon: icon.svg
 upstream: https://github.com/mealie-recipes/mealie
 documentation: https://docs.mealie.io/
 
-image_channel: ghcr.io/mealie-recipes/mealie:v2.0.0
+image_channel: ghcr.io/mealie-recipes/mealie:v3.19.2
 update_mode: manual
 
 resources:

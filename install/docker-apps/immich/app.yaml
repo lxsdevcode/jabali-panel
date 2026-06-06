@@ -1,6 +1,6 @@
 slug: immich
 name: Immich
-version: "1.119.1"
+version: "2.7.5"
 description: |
   Self-hosted photo + video backup, ML-powered search. Four
   services: web server, ML inference, PostgreSQL (pgvecto.rs
@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/immich-app/immich
 documentation: https://immich.app/docs
 
-image_channel: ghcr.io/immich-app/immich-server:v1.119.1
+image_channel: ghcr.io/immich-app/immich-server:v2.7.5
 update_mode: manual
 
 resources:

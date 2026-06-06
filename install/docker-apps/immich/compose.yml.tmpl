@@ -34,7 +34,7 @@ services:
       start_period: 90s
 
   immich-machine-learning:
-    image: ghcr.io/immich-app/immich-machine-learning:v1.119.1
+    image: ghcr.io/immich-app/immich-machine-learning:v2.7.5
     container_name: jabali-app-{{ .Slug }}-ml
     restart: unless-stopped
     volumes:
@@ -47,7 +47,7 @@ services:
       start_period: 60s
 
   postgres:
-    image: tensorchord/pgvecto-rs:pg16-v0.2.0
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
     container_name: jabali-app-{{ .Slug }}-postgres
     restart: unless-stopped
     environment:
@@ -64,11 +64,11 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/valkey/valkey:9-alpine
     container_name: jabali-app-{{ .Slug }}-redis
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
       interval: 30s
       timeout: 5s
       retries: 5

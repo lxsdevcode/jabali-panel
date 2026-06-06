@@ -35,7 +35,7 @@ services:
       start_period: 60s
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: jabali-app-{{ .Slug }}-postgres
     restart: unless-stopped
     environment:
@@ -51,7 +51,7 @@ services:
       start_period: 20s
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.3-alpine
+    image: clickhouse/clickhouse-server:25.3-alpine
     container_name: jabali-app-{{ .Slug }}-clickhouse
     restart: unless-stopped
     ulimits:

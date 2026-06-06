@@ -1,6 +1,6 @@
 slug: ghost
 name: Ghost
-version: "5.96.0"
+version: "6.44.1"
 description: |
   Modern publishing platform. SQLite by default; the operator can
   switch to MySQL by editing the compose post-install. Single
@@ -9,7 +9,7 @@ icon: icon.svg
 upstream: https://github.com/TryGhost/Ghost
 documentation: https://ghost.org/docs/
 
-image_channel: ghost:5-alpine
+image_channel: ghost:6-alpine
 update_mode: manual
 
 resources:

@@ -1,6 +1,6 @@
 slug: matomo
 name: Matomo
-version: "5.2.1"
+version: "5.10.1"
 description: |
   Open-source web analytics platform. Privacy-focused, fully
   self-hosted. Two services: PHP-FPM + nginx app container,

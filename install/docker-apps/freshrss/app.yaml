@@ -1,6 +1,6 @@
 slug: freshrss
 name: FreshRSS
-version: "1.24.3"
+version: "1.29.1"
 description: |
   Self-hosted RSS / Atom feed aggregator. Lightweight, extensible
   via plugins, multi-user. Single container, SQLite by default.

@@ -1,6 +1,6 @@
 slug: gitea
 name: Gitea
-version: "1.22.3"
+version: "1.26.2"
 description: |
   Lightweight self-hosted Git service. Bundled SQLite for v1; admin
   can flip to compose-managed Postgres post-install. Two ports: HTTP
@@ -10,7 +10,7 @@ icon: icon.svg
 upstream: https://github.com/go-gitea/gitea
 documentation: https://docs.gitea.com/
 
-image_channel: gitea/gitea:1.22
+image_channel: gitea/gitea:1.26
 volume_owner: "1000:1000"
 update_mode: manual
 

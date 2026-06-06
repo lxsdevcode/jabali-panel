@@ -1,6 +1,6 @@
 slug: vaultwarden
 name: Vaultwarden
-version: "1.32.0"
+version: "1.36.0"
 description: |
   Self-hosted password manager, Bitwarden-compatible API. Rust rewrite
   of the official Bitwarden server. Small memory footprint, single
