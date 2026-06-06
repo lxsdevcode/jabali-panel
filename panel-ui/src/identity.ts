@@ -22,6 +22,9 @@ export type Identity = {
   email: string;
   isAdmin: boolean;
   username?: string;
+  fullName?: string;
+  nameFirst?: string;
+  nameLast?: string;
   createdAt?: string;
   packageId?: string;
   packageName?: string;
@@ -32,6 +35,9 @@ type MeResponse = {
   email: string;
   is_admin: boolean;
   username?: string;
+  full_name?: string;
+  name_first?: string;
+  name_last?: string;
   created_at?: string;
   package_id?: string;
   package_name?: string;
@@ -62,6 +68,9 @@ export async function getIdentity(): Promise<Identity | null> {
         email: data.email ?? "",
         isAdmin: data.is_admin === true,
         username: data.username,
+        fullName: data.full_name,
+        nameFirst: data.name_first,
+        nameLast: data.name_last,
         createdAt: data.created_at,
         packageId: data.package_id,
         packageName: data.package_name,

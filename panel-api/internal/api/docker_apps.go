@@ -1088,13 +1088,20 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	}
 	// Parse the outcome to set the right terminal status.
 	var resp struct {
-		Outcome string `json:"outcome"`
-		Detail  string `json:"detail"`
+		Outcome  string `json:"outcome"`
+		Detail   string `json:"detail"`
+		NewImage string `json:"new_image"`
 	}
 	_ = json.Unmarshal(raw, &resp)
 	switch resp.Outcome {
 	case "updated":
 		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+		// Persist the digest we just deployed so the "update available"
+		// chip clears. The poller fills available_digest from upstream;
+		// matching image_sha makes the diff resolve to "no drift".
+		if resp.NewImage != "" {
+			_ = h.cfg.Repo.UpdateImageSHA(ctx, app.ID, resp.NewImage)
+		}
 	case "rolled_back":
 		detail := resp.Detail
 		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, &detail)

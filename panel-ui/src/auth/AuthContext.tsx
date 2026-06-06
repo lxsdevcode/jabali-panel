@@ -29,12 +29,14 @@ export type MeUser = {
   id: string;
   email: string;
   isAdmin: boolean;
+  fullName?: string;
 };
 
 type MeResponse = {
   id: string;
   email: string;
   is_admin: boolean;
+  full_name?: string;
 };
 
 type AuthState = {
@@ -55,6 +57,7 @@ async function fetchMe(): Promise<MeUser | null> {
       id: data.id,
       email: data.email ?? "",
       isAdmin: data.is_admin === true,
+      fullName: data.full_name,
     };
   } catch {
     // 401 (no session) and transient 5xx both collapse to null. Consumers

@@ -402,9 +402,17 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
         <Dropdown menu={{ items: userMenu }} placement="bottomRight">
           <Button
             type="text"
+            style={{ height: "auto", paddingTop: 4, paddingBottom: 4 }}
             icon={<GravatarAvatar email={email} />}
           >
-            {isWide ? <>&nbsp;{email || "…"}</> : null}
+            {isWide ? (
+              <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2, marginLeft: 8 }}>
+                <span>{email || "…"}</span>
+                {user?.fullName && (
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>{user.fullName}</span>
+                )}
+              </span>
+            ) : null}
           </Button>
         </Dropdown>
       </Space>

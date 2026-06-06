@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -101,6 +102,11 @@ func meHandlerWithConfig(cfg MeHandlerConfig) gin.HandlerFunc {
 		}
 		if user.Username != nil && *user.Username != "" {
 			resp["username"] = *user.Username
+		}
+		resp["name_first"] = user.NameFirst
+		resp["name_last"] = user.NameLast
+		if full := strings.TrimSpace(strings.TrimSpace(user.NameFirst) + " " + strings.TrimSpace(user.NameLast)); full != "" {
+			resp["full_name"] = full
 		}
 		resp["created_at"] = user.CreatedAt
 		if user.PackageID != nil && *user.PackageID != "" {

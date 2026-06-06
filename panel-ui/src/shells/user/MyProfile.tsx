@@ -173,6 +173,9 @@ export function MyProfile() {
           {me && (
             <Descriptions column={1}>
               <Descriptions.Item label="Email">{me.email}</Descriptions.Item>
+              {me.fullName && (
+                <Descriptions.Item label="Full name">{me.fullName}</Descriptions.Item>
+              )}
               {me.username && (
                 <Descriptions.Item label="Username">
                   <Typography.Text code>{me.username}</Typography.Text>
