@@ -30,6 +30,7 @@ import {
   Empty,
   notification,
   Tooltip,
+  Grid,
 } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router";
 
@@ -164,6 +165,8 @@ export const DNSRecordsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { open } = useNotification();
+  const screens = Grid.useBreakpoint();
+  const isCompact = !screens.md;
 
   // Back-link target: DNS list in the same shell we're currently in.
   // Admin path prefix is /jabali-admin; user path prefix is /jabali-panel.
@@ -541,7 +544,7 @@ export const DNSRecordsPage = () => {
                 title: "Name",
                 dataIndex: "name",
                 key: "name",
-                width: 200,
+                width: isCompact ? 110 : 200,
                 ellipsis: true,
                 render: (text: string) => text || "@",
               },
@@ -593,7 +596,7 @@ export const DNSRecordsPage = () => {
               {
                 title: "Actions",
                 key: "actions",
-                width: 180,
+                width: isCompact ? 100 : 180,
                 fixed: "right" as const,
                 render: (_: unknown, record: DNSRecord) => {
                   const readonly = isRecordReadOnly(record);
@@ -602,21 +605,25 @@ export const DNSRecordsPage = () => {
                     return (
                       <Space>
                         <LockOutlined />
-                        <Typography.Text type="secondary">
-                          Managed
-                        </Typography.Text>
+                        {!isCompact && (
+                          <Typography.Text type="secondary">
+                            Managed
+                          </Typography.Text>
+                        )}
                       </Space>
                     );
                   }
 
                   return (
-                    <Space>
-                      <RowActionButton
-                        icon={<EditOutlined />}
-                        onClick={() => openEditDrawer(record)}
-                      >
-                        Edit
-                      </RowActionButton>
+                    <Space size={isCompact ? 4 : "small"}>
+                      <Tooltip title={isCompact ? "Edit" : undefined}>
+                        <RowActionButton
+                          icon={<EditOutlined />}
+                          onClick={() => openEditDrawer(record)}
+                        >
+                          {isCompact ? null : "Edit"}
+                        </RowActionButton>
+                      </Tooltip>
                       <Popconfirm
                         title="Delete record?"
                         description="This action cannot be undone."
@@ -624,13 +631,15 @@ export const DNSRecordsPage = () => {
                         okText="Delete"
                         okButtonProps={{ danger: true }}
                       >
-                        <RowActionButton
-                          danger
-                          icon={<DeleteOutlined />}
-                          loading={deletingRecordId === record.id}
-                        >
-                          Delete
-                        </RowActionButton>
+                        <Tooltip title={isCompact ? "Delete" : undefined}>
+                          <RowActionButton
+                            danger
+                            icon={<DeleteOutlined />}
+                            loading={deletingRecordId === record.id}
+                          >
+                            {isCompact ? null : "Delete"}
+                          </RowActionButton>
+                        </Tooltip>
                       </Popconfirm>
                     </Space>
                   );

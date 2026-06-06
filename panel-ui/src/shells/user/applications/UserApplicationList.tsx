@@ -292,14 +292,14 @@ export const UserApplicationList = () => {
         <Typography.Title level={3} style={{ margin: 0 }}>
           <AppstoreOutlined /> Applications
         </Typography.Title>
-        <Space>
+        <Space wrap size={[8, 8]}>
           <Tooltip title="Detect WordPress, Joomla, Drupal, and Magento installs on disk that aren't yet tracked by the panel.">
             <Button
               icon={<SearchOutlined />}
               loading={scanning}
               onClick={handleScan}
             >
-              Scan for Applications
+              Scan
             </Button>
           </Tooltip>
           <Button
@@ -307,7 +307,7 @@ export const UserApplicationList = () => {
             icon={<PlusSquareOutlined />}
             onClick={() => setInstallOpen(true)}
           >
-            Install application
+            Install
           </Button>
         </Space>
       </Space>

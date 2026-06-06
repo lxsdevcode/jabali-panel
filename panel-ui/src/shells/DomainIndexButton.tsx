@@ -135,9 +135,14 @@ export const DomainIndexButton = ({
             <Radio
               key={opt.value}
               value={opt.value}
-              style={{ display: "block", padding: "8px 0" }}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                padding: "8px 0",
+                whiteSpace: "normal",
+              }}
             >
-              {opt.label}
+              <span style={{ display: "inline-block", lineHeight: 1.4 }}>{opt.label}</span>
             </Radio>
           ))}
         </Radio.Group>

@@ -21,6 +21,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Grid,
   notification,
 } from "antd";
 import { LinkOutlined, DownloadOutlined, LockOutlined } from "@ant-design/icons";
@@ -76,6 +77,8 @@ function slugify(method: string, path: string): string {
 export function APIDocsPage(): JSX.Element {
   const [spec, setSpec] = useState<OpenAPISpec | null>(null);
   const [loading, setLoading] = useState(true);
+  const screens = Grid.useBreakpoint();
+  const showSider = !!screens.lg;
 
   useEffect(() => {
     (async () => {
@@ -142,23 +145,23 @@ export function APIDocsPage(): JSX.Element {
 
   return (
     <Layout style={{ background: "transparent" }}>
-      <Layout.Sider
-        width={240}
-        theme="light"
-        style={{ background: "transparent", paddingTop: 8 }}
-        breakpoint="lg"
-        collapsedWidth={0}
-      >
-        <Anchor
-          affix
-          targetOffset={64}
-          items={Array.from(grouped.keys()).map((tag) => ({
-            key: tag,
-            href: `#tag-${slugify("", tag)}`,
-            title: tag,
-          }))}
-        />
-      </Layout.Sider>
+      {showSider && (
+        <Layout.Sider
+          width={240}
+          theme="light"
+          style={{ background: "transparent", paddingTop: 8 }}
+        >
+          <Anchor
+            affix
+            targetOffset={64}
+            items={Array.from(grouped.keys()).map((tag) => ({
+              key: tag,
+              href: `#tag-${slugify("", tag)}`,
+              title: tag,
+            }))}
+          />
+        </Layout.Sider>
+      )}
 
       <Layout.Content style={{ padding: "0 16px 32px", minWidth: 0 }}>
         <Card style={{ marginBottom: 16 }}>
