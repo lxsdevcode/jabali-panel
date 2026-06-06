@@ -49,7 +49,28 @@ export function DockerMarketplaceCard() {
     setBusyLabel("Installing Docker — this may take a few minutes…");
     try {
       await persistFlag(true);
-      message.success("Docker install dispatched. Marketplace will be ready in ~1-3 min.");
+      // Backend dispatches `docker.install` as fire-and-forget so the
+      // PATCH does not block. Poll docker.status every 4s until the
+      // engine is installed AND the daemon is active, then drop the
+      // spinner. Cap at 5 minutes; the docker.install agent verb has
+      // its own 10-min ceiling.
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          const { data } = await apiClient.get<{ installed?: boolean; active?: boolean }>(
+            "/admin/docker-apps/engine/status",
+          );
+          if (data?.installed && data?.active) {
+            message.success("Docker engine installed + active. Marketplace is live.");
+            return;
+          }
+        } catch {
+          // transient -- agent may be unreachable mid-install. Keep polling.
+        }
+        setBusyLabel("Installing Docker — still in progress…");
+      }
+      message.warning("Install poll timed out; check Server Status -> Docker for live state.");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Failed to enable");
     } finally {

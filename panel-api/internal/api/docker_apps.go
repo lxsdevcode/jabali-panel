@@ -75,6 +75,7 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	grp.GET("/catalog", h.listCatalog)
 	grp.GET("/maintenance/disk-usage", h.maintenanceDiskUsage)
 	grp.POST("/maintenance/prune", h.maintenancePrune)
+	grp.GET("/engine/status", h.engineStatus)
 	grp.GET("/catalog/:slug/icon", h.catalogIcon)
 	grp.GET("", h.list)
 	grp.POST("", h.install)
@@ -1414,6 +1415,28 @@ func (h *dockerAppHandler) maintenancePrune(c *gin.Context) {
 		"volumes": req.Volumes,
 		"all":     req.All,
 	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// engineStatus proxies docker.status from the agent so the UI can
+// poll whether Docker CE finished installing after a marketplace-
+// enable toggle. The PATCH /admin/settings dispatch is background-
+// async (so the operator's PATCH doesn't block on apt-get); the UI
+// needs an out-of-band way to confirm the engine is up before it
+// drops its spinner.
+func (h *dockerAppHandler) engineStatus(c *gin.Context) {
+	ctx := c.Request.Context()
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker.status", map[string]any{})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
 		return
