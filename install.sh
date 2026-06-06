@@ -6167,6 +6167,65 @@ install_crowdsec() {
   else
     _warn "$fw_bouncer_conf missing after package install — firewall bouncer may need manual key setup"
   fi
+
+  # ---- dpkg post-invoke heal hook ----
+  # The crowdsec-firewall-bouncer-nftables package postinst rewrites
+  # api_url back to 127.0.0.1:8080 (its built-in default) on every apt
+  # upgrade. install.sh fixes it during `jabali update`, but apt runs
+  # outside `jabali update` (unattended-upgrades, manual `apt upgrade`)
+  # leave the bouncer crash-looping with "bouncer stream halted" until
+  # the next install.sh run. Install a dpkg Post-Invoke hook so the
+  # heal runs after every apt/dpkg operation.
+  install_crowdsec_bouncer_apt_heal_hook
+}
+
+# install_crowdsec_bouncer_apt_heal_hook — write the heal script +
+# apt Post-Invoke wiring. Idempotent; safe to call on every install.
+install_crowdsec_bouncer_apt_heal_hook() {
+  local script=/usr/local/sbin/jabali-crowdsec-bouncer-apt-heal
+  local apt_conf=/etc/apt/apt.conf.d/99jabali-crowdsec-bouncer-heal
+  install -d -m 0755 /usr/local/sbin
+  cat >"$script" <<'JABALI_BOUNCER_HEAL_EOF'
+#!/bin/bash
+# jabali-crowdsec-bouncer-apt-heal: re-pin crowdsec bouncer api_url after apt
+# operations that may have reset it (package postinst rewrites 8080).
+# Idempotent. Cheap. Never blocks apt.
+set -u
+fw=/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+ngx=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf
+changed_fw=0
+changed_ngx=0
+if [[ -f "$fw" ]] && grep -qE '^api_url:[[:space:]]+http://127\.0\.0\.1:8080/?$' "$fw"; then
+  sed -i 's|^api_url:[[:space:]]\+http://127\.0\.0\.1:8080/\?|api_url: http://127.0.0.1:8081/|' "$fw"
+  changed_fw=1
+fi
+if [[ -f "$ngx" ]] && grep -qE '^API_URL=[[:space:]]*$' "$ngx"; then
+  sed -i 's|^API_URL=[[:space:]]*$|API_URL=http://127.0.0.1:8081/|' "$ngx"
+  changed_ngx=1
+fi
+if [[ "$changed_fw" == 1 ]]; then
+  systemctl restart crowdsec-firewall-bouncer.service 2>/dev/null || true
+fi
+if [[ "$changed_ngx" == 1 ]]; then
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx 2>/dev/null || true
+  fi
+fi
+exit 0
+JABALI_BOUNCER_HEAL_EOF
+  chmod 0755 "$script"
+
+  install -d -m 0755 /etc/apt/apt.conf.d
+  cat >"$apt_conf" <<JABALI_APT_HOOK_EOF
+// Installed by jabali install.sh. Runs after every apt/dpkg operation
+// to re-pin crowdsec bouncer api_url that the bouncer package postinst
+// resets to its built-in default (127.0.0.1:8080) — clashes with our
+// Stalwart admin pin. See install_crowdsec_bouncer_apt_heal_hook in
+// install.sh. Idempotent + non-blocking.
+DPkg::Post-Invoke { "[ -x $script ] && $script || true"; };
+JABALI_APT_HOOK_EOF
+  chmod 0644 "$apt_conf"
+  _ok "crowdsec bouncer apt-heal hook installed ($script + $apt_conf)"
 }
 
 install_crowdsec_appsec() {
