@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   AppstoreOutlined,
+  LayoutPanelLeftOutlined,
   PlayCircleOutlined,
   PauseCircleOutlined,
   ReloadOutlined,
@@ -90,7 +91,7 @@ export const AdminDockerAppsPage = () => {
     <div>
       <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
-          <AppstoreOutlined /> Docker Apps
+          <LayoutPanelLeftOutlined /> Docker Apps
         </Typography.Title>
         <Typography.Text type="secondary">
           {installed.data?.length ?? 0} installed - {catalog.data?.length ?? 0} in catalog
@@ -401,6 +402,7 @@ export const AdminDockerAppsPage = () => {
         open={installEntry !== null}
         entry={installEntry}
         onClose={() => setInstallEntry(null)}
+        onInstalled={() => setActiveTab("installed")}
       />
       <LogsDrawer
         open={logsAppId !== null}

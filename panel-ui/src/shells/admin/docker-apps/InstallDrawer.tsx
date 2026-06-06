@@ -15,6 +15,7 @@ interface Props {
   open: boolean;
   entry: CatalogEntry | null;
   onClose: () => void;
+  onInstalled?: () => void;
 }
 
 interface PortRow extends InstallPortOverride {
@@ -23,7 +24,7 @@ interface PortRow extends InstallPortOverride {
   protocol: "tcp" | "udp";
 }
 
-export const InstallDrawer = ({ open, entry, onClose }: Props) => {
+export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const destsQ = useQuery({
@@ -86,6 +87,7 @@ export const InstallDrawer = ({ open, entry, onClose }: Props) => {
       message.success("Install dispatched");
       qc.invalidateQueries({ queryKey: ["docker-apps-installed"] });
       onClose();
+      onInstalled?.();
     },
     onError: (e: unknown) =>
       message.error(
