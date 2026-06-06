@@ -22,9 +22,12 @@
 
 set -euo pipefail
 
-CERT_PATH="/etc/jabali/tls/panel-mail.crt"
-KEY_PATH="/etc/jabali/tls/panel-mail.key"
-CERT_NAME="jabali-panel-mail"
+# Caller can override the cert/key/name trio via env vars so the M6.6
+# per-domain mail TLS path can re-use this same script for tenant
+# domains. Default is the M6.4 panel-hostname mail cert.
+CERT_PATH="${JABALI_STALWART_CERT_PATH:-/etc/jabali/tls/panel-mail.crt}"
+KEY_PATH="${JABALI_STALWART_KEY_PATH:-/etc/jabali/tls/panel-mail.key}"
+CERT_NAME="${JABALI_STALWART_CERT_NAME:-jabali-panel-mail}"
 STW_URL="${STALWART_URL:-http://127.0.0.1:8446}"
 STW_ENV="/etc/jabali-panel/stalwart.env"
 STW_CLI="/usr/local/bin/stalwart-cli"

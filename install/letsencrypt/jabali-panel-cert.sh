@@ -40,7 +40,17 @@ fi
 kind="${JABALI_PANEL_CERT_KIND:-}"
 if [[ -z "$kind" ]]; then
   case "$(basename "$src")" in
-    mail.*) kind="mail" ;;
+    mail.*)
+      # mail-domain lineages also start with `mail.` -- disambiguate
+      # via the env var ssl.mail.issue sets. Absent the var, fall back
+      # to legacy 'mail' kind so existing panel-mail renewals don't
+      # silently flip to the per-domain branch.
+      if [[ -n "${JABALI_MAIL_DOMAIN_ID:-}" ]]; then
+        kind="mail-domain"
+      else
+        kind="mail"
+      fi
+      ;;
     *)      kind="hostname" ;;
   esac
 fi
@@ -66,6 +76,28 @@ case "$kind" in
         echo "jabali-panel-cert.sh: jabali-stalwart-push-cert non-zero (continuing)" >&2
     fi
     ;;
+  mail-domain)
+    # M6.6: per-tenant-domain mail cert. JABALI_MAIL_DOMAIN_ID is
+    # the panel's domain row ULID; ssl.mail.issue sets it so the
+    # cert lands in Stalwart's x:Certificate registry under a name
+    # the reconciler can find by domain id. The cert itself stays
+    # under the lineage dir (/etc/letsencrypt/live/mail.<d>/); we
+    # do NOT copy it to /etc/jabali/tls -- only the panel-hostname
+    # mail cert lives there. Stalwart reads each per-domain cert
+    # directly from its lineage path via the push-cert subprocess.
+    if [[ -z "${JABALI_MAIL_DOMAIN_ID:-}" ]]; then
+      echo "jabali-panel-cert.sh: mail-domain kind requires JABALI_MAIL_DOMAIN_ID" >&2
+      exit 1
+    fi
+    if [[ -x /usr/local/bin/jabali-stalwart-push-cert ]]; then
+      JABALI_STALWART_CERT_NAME="domain-${JABALI_MAIL_DOMAIN_ID}" \
+      JABALI_STALWART_CERT_PATH="$src/fullchain.pem" \
+      JABALI_STALWART_KEY_PATH="$src/privkey.pem" \
+        /usr/local/bin/jabali-stalwart-push-cert || \
+        echo "jabali-panel-cert.sh: mail-domain push-cert non-zero (continuing)" >&2
+    fi
+    ;;
+
   *)
     install -m 0640 -o root -g jabali "$src/fullchain.pem" "$dst_dir/panel.crt"
     install -m 0640 -o root -g jabali "$src/privkey.pem"   "$dst_dir/panel.key"

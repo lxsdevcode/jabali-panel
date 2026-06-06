@@ -95,6 +95,8 @@ type Reconciler struct {
 	// service it drives ssl.panel.issue from ReconcileAll.
 	panelCerts          repository.PanelCertificateRepository
 	panelCertRoutability *services.PanelCertRoutability
+	// M6.6 — per-domain mail TLS. Nil = phase skipped.
+	mailCerts repository.MailCertificateRepository
 	// M34 — per-user PHP-FPM egress firewall. Renders
 	// /etc/nftables.d/jabali-per-user-egress.nft from user_egress_policies
 	// every tick, then reads + resets per-user counters into
@@ -127,6 +129,13 @@ type Reconciler struct {
 // service. Wire both together — the reconciler skips the hook entirely
 // when either is nil so existing test fixtures don't need new
 // constructors.
+// WithMailCertificates wires the M6.6 per-domain mail TLS repo.
+// Nil = phase is a no-op (test fixtures).
+func (r *Reconciler) WithMailCertificates(repo repository.MailCertificateRepository) *Reconciler {
+	r.mailCerts = repo
+	return r
+}
+
 func (r *Reconciler) WithPanelCertificate(repo repository.PanelCertificateRepository, rout *services.PanelCertRoutability) *Reconciler {
 	r.panelCerts = repo
 	r.panelCertRoutability = rout
@@ -395,6 +404,10 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// before the rest of the loop touches the agent. Cheap noop when
 	// use_le=0 or routability gate fails.
 	r.reconcilePanelCertificate(ctx)
+
+	// M6.6 — per-domain mail TLS. Sits next to panel-cert so the
+	// two cert flows share the same admin email/public IP context.
+	r.reconcileMailCertificates(ctx)
 
 	// M34: per-user PHP-FPM egress firewall. Cheap noop when the repo
 	// isn't wired (test fixtures) or when there are zero policies.

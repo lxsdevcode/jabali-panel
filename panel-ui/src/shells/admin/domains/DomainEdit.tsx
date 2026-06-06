@@ -31,6 +31,7 @@ import { DomainSSLSection } from "./DomainSSLSection";
 import { DomainSkipAutoSANToggle } from "./DomainSkipAutoSANToggle";
 import { DomainCacheSection } from "./DomainCacheSection";
 import { DomainMTASTSSection } from "./DomainMTASTSSection";
+import { DomainMailTLSSection } from "./DomainMailTLSSection";
 import { DomainDeliverabilitySection } from "./DomainDeliverabilitySection";
 
 export type DomainEditInput = {
@@ -204,6 +205,10 @@ export const DomainEdit = () => {
         <div>
           <Typography.Title level={5}>Mailboxes</Typography.Title>
           <DomainMailboxesSection domainId={domain.id} />
+        </div>
+        <div>
+          <Typography.Title level={5}>Mail TLS</Typography.Title>
+          <DomainMailTLSSection domainId={domain.id} />
         </div>
         <div>
           <Typography.Title level={5}>MTA-STS</Typography.Title>

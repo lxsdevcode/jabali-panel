@@ -347,6 +347,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		deps.PanelCerts = panelCertRepo
 		rec.WithPanelCertificate(panelCertRepo, services.NewPanelCertRoutability())
 
+		// M6.6 — per-domain mail TLS (ADR-0091). Reconciler walks the
+		// mail_certificate table each tick and dispatches ssl.mail.issue
+		// / renew through the agent. Deps.MailCerts also drives the REST
+		// handler for opt-in / opt-out + status read.
+		mailCertRepo := repository.NewMailCertificateRepository(sharedDB)
+		rec.WithMailCertificates(mailCertRepo)
+		deps.MailCerts = mailCertRepo
+
 		// M33 (ADR-0072): malware detection repos. Five repos wired
 		// together — RegisterSecurityMalwareRoutes activates only when
 		// all five are non-nil. Idempotent EnsureDefault on first /settings

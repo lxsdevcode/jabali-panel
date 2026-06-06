@@ -72,6 +72,8 @@ type Deps struct {
 	StalwartAdminThrottle api.ThrottleDispatcher
 	BWDaily                   repository.BWDailyRepository
 	DomainIPACLs              repository.DomainIPACLRepository
+	// M6.6 — per-domain mail TLS rows.
+	MailCerts                 repository.MailCertificateRepository
 	DomainDirectoryPrivacy    repository.DomainDirectoryPrivacyRepository
 	MigrationJobs             repository.MigrationJobRepository
 	MigrationSizeCache        repository.MigrationAccountSizeCacheRepository
@@ -489,6 +491,19 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			api.RegisterDomainIPACLRoutes(v1, api.DomainIPACLHandlerConfig{
 				Domains:   deps.Domains,
 				ACLs:      deps.DomainIPACLs,
+				Reconcile: schedule,
+			})
+		}
+		// M6.6 — per-domain mail TLS opt-in + status.
+		if deps.Domains != nil && deps.MailCerts != nil {
+			var schedule func(string)
+			if deps.Reconciler != nil {
+				rec := deps.Reconciler
+				schedule = func(id string) { rec.Schedule(id) }
+			}
+			api.RegisterDomainMailCertificateRoutes(v1, api.DomainMailCertHandlerConfig{
+				Domains:   deps.Domains,
+				MailCerts: deps.MailCerts,
 				Reconcile: schedule,
 			})
 		}

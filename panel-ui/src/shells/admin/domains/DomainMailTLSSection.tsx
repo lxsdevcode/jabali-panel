@@ -1,0 +1,190 @@
+// DomainMailTLSSection — M6.6 per-domain mail TLS.
+//
+// Renders the status chip + DNS A-record preview table + opt-in
+// toggle + re-issue button for one domain. Styling mirrors
+// DomainSSLSection so the two cert flows feel like siblings in the
+// domain detail page.
+//
+// Wire path:
+//   GET    /api/v1/domains/:id/mail-certificate
+//   POST   /api/v1/domains/:id/mail-certificate/enable
+//   POST   /api/v1/domains/:id/mail-certificate/disable
+//   POST   /api/v1/domains/:id/mail-certificate/reissue
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Button, Skeleton, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
+import { ReloadOutlined } from "@icons";
+
+import { apiClient } from "../../../apiClient";
+
+type MailCertStatus =
+  | "not_opted_in"
+  | "pending"
+  | "dns_missing"
+  | "issuing"
+  | "issued"
+  | "failed"
+  | "disabled";
+
+interface MailCertResponse {
+  status: MailCertStatus;
+  lineage_path?: string;
+  last_error?: string | null;
+  attempt_count: number;
+  issued_at?: string;
+  expires_at?: string;
+  next_retry_at?: string;
+  sans: string[];
+}
+
+const STATUS_COLORS: Record<MailCertStatus, string> = {
+  not_opted_in: "default",
+  pending: "default",
+  dns_missing: "gold",
+  issuing: "processing",
+  issued: "green",
+  failed: "red",
+  disabled: "default",
+};
+
+const STATUS_LABELS: Record<MailCertStatus, string> = {
+  not_opted_in: "Not opted in",
+  pending: "Pending",
+  dns_missing: "DNS missing",
+  issuing: "Issuing",
+  issued: "Issued",
+  failed: "Failed",
+  disabled: "Disabled",
+};
+
+interface Props {
+  domainId: string;
+}
+
+export const DomainMailTLSSection = ({ domainId }: Props) => {
+  const [cert, setCert] = useState<MailCertResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get<MailCertResponse>(`/domains/${domainId}/mail-certificate`);
+      setCert(res.data);
+    } catch {
+      message.error("Failed to load mail TLS status");
+    } finally {
+      setLoading(false);
+    }
+  }, [domainId]);
+
+  useEffect(() => {
+    void fetchStatus();
+  }, [fetchStatus]);
+
+  const handleToggle = async (next: boolean) => {
+    setBusy(true);
+    try {
+      if (next) {
+        await apiClient.post(`/domains/${domainId}/mail-certificate/enable`);
+        message.success("Mail TLS enabled — reconciler will request a Let's Encrypt cert shortly");
+      } else {
+        await apiClient.post(`/domains/${domainId}/mail-certificate/disable`);
+        message.success("Mail TLS disabled");
+      }
+      await fetchStatus();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      message.error(detail ?? "Toggle failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReissue = async () => {
+    setBusy(true);
+    try {
+      await apiClient.post(`/domains/${domainId}/mail-certificate/reissue`);
+      message.success("Re-issue queued — reconciler will retry on the next tick");
+      await fetchStatus();
+    } catch {
+      message.error("Re-issue failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return <Skeleton active />;
+  }
+  if (!cert) {
+    return null;
+  }
+
+  const optedIn = cert.status !== "not_opted_in" && cert.status !== "disabled";
+  const expires = cert.expires_at ? new Date(cert.expires_at) : null;
+  const daysUntilExpiry = expires ? Math.round((expires.getTime() - Date.now()) / 86_400_000) : null;
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 12 }} align="center">
+        <Switch
+          checked={optedIn}
+          loading={busy}
+          onChange={handleToggle}
+        />
+        <Typography.Text strong>Per-domain mail TLS</Typography.Text>
+        <Tag color={STATUS_COLORS[cert.status]}>{STATUS_LABELS[cert.status]}</Tag>
+        {cert.status === "issued" && daysUntilExpiry !== null && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            expires in {daysUntilExpiry}d
+          </Typography.Text>
+        )}
+      </Space>
+
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        Issues a Let's Encrypt certificate covering the four mail-related hostnames
+        below so mail clients can connect to <code>mail.&lt;your-domain&gt;</code> with a
+        trusted certificate. Without this, clients have to connect via the panel
+        hostname instead.
+      </Typography.Paragraph>
+
+      {cert.last_error && cert.status !== "issued" && (
+        <Alert
+          type={cert.status === "dns_missing" ? "warning" : "error"}
+          message={cert.last_error}
+          showIcon
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      <Table
+        size="small"
+        rowKey="hostname"
+        pagination={false}
+        dataSource={cert.sans.map((h) => ({ hostname: h }))}
+        columns={[
+          {
+            title: "DNS A record required",
+            dataIndex: "hostname",
+            render: (h: string) => <code>{h}</code>,
+          },
+          {
+            title: "Target",
+            render: () => (
+              <Typography.Text type="secondary">point at panel public IP</Typography.Text>
+            ),
+          },
+        ]}
+        style={{ marginBottom: 12 }}
+      />
+
+      {(cert.status === "failed" || cert.status === "dns_missing" || cert.status === "issued") && (
+        <Tooltip title="Clears backoff and dispatches ssl.mail.issue on the next reconciler tick">
+          <Button icon={<ReloadOutlined />} loading={busy} onClick={handleReissue}>
+            Re-issue
+          </Button>
+        </Tooltip>
+      )}
+    </div>
+  );
+};
