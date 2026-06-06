@@ -4,8 +4,6 @@ services:
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     environment:
-      USER_UID: "1000"
-      USER_GID: "1000"
       ROOT_URL: "https://{{ .Domain }}/"
 {{- range $name, $val := .Env }}
       {{ $name }}: "{{ $val }}"
@@ -18,7 +16,7 @@ services:
       - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
 {{- end }}
 {{- with index .Ports "ssh" }}
-{{- if . }}
+{{- if gt .HostPort 0 }}
       - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
 {{- end }}
 {{- end }}

@@ -6,12 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"text/tabwriter"
 	"time"
 
+	"strings"
+
+	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
@@ -42,6 +47,7 @@ func newDockerAppCmd() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newDockerAppCatalogCmd(),
+		newDockerAppInstallCmd(),
 		newDockerAppListCmd(),
 		newDockerAppStatusCmd(),
 		newDockerAppLifecycleCmd("start", "Start a stopped install"),
@@ -81,6 +87,225 @@ func newDockerAppCatalogCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit JSON instead of a table")
 	return cmd
 }
+
+// newDockerAppInstallCmd mints a docker_app row + ports + dispatches
+// docker_app.install to the agent. Mirrors panel-api/internal/api/
+// docker_apps.go install() but with two intentional simplifications:
+//
+//   1. No automatic domains-row creation. The CLI doesn't know which
+//      user owns the row; the operator can wire a domain via
+//      `jabali domain ...` after the install settles.
+//   2. Catalog default ports only. Fine-grained per-port overrides
+//      (host_port, bind, reverse_proxy) belong in the install drawer
+//      — adding flags here would balloon UX without much win.
+//
+// Resource limits, update-mode, and env overrides ARE wired so a
+// scripted ops install can pin the install to specific values.
+func newDockerAppInstallCmd() *cobra.Command {
+	var (
+		name        string
+		updateMode  string
+		cpuLimit    string
+		memoryLimit string
+		pidsLimit   int
+		envPairs    []string
+	)
+	cmd := &cobra.Command{
+		Use:     "install <slug>",
+		Short:   "Install a catalog entry (creates the docker_apps row + dispatches the agent)",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDBAndAgent,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			slug := args[0]
+			if !nameRE.MatchString(name) {
+				return fmt.Errorf("invalid --name %q (must match ^[a-z0-9-]{1,32}$)", name)
+			}
+			if updateMode == "" {
+				updateMode = models.DockerAppUpdateModeManual
+			}
+			if updateMode != models.DockerAppUpdateModeManual && updateMode != models.DockerAppUpdateModeAuto {
+				return fmt.Errorf("invalid --update-mode %q (manual|auto)", updateMode)
+			}
+
+			cat, err := loadDockerCatalogForCLI()
+			if err != nil {
+				return err
+			}
+			entry, ok := cat.Get(slug)
+			if !ok {
+				return fmt.Errorf("slug %q not in catalog", slug)
+			}
+
+			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+			defer cancel()
+			repo := dockerAppRepoFromDB()
+
+			if existing, _ := repo.FindBySlugName(ctx, slug, name); existing != nil {
+				return fmt.Errorf("already installed: id=%s status=%s", existing.ID, existing.Status)
+			}
+
+			// Apply catalog defaults when caller omitted limits.
+			cpu := cpuLimit
+			if cpu == "" && entry.Resources.CPU != "" {
+				cpu = entry.Resources.CPU
+			}
+			mem := memoryLimit
+			if mem == "" && entry.Resources.Memory != "" {
+				mem = entry.Resources.Memory
+			}
+			pids := pidsLimit
+			if pids == 0 && entry.Resources.PIDs > 0 {
+				pids = entry.Resources.PIDs
+			}
+
+			app := &models.DockerApp{
+				ID:              ulid.Make().String(),
+				Slug:            slug,
+				Name:            name,
+				CatalogVersion:  entry.Version,
+				Status:          models.DockerAppStatusPending,
+				UpdateMode:      updateMode,
+				CPULimit:        nilIfEmpty(cpu),
+				MemoryLimit:     nilIfEmpty(mem),
+			}
+			if pids > 0 {
+				p := pids
+				app.PIDsLimit = &p
+			}
+			if err := repo.Create(ctx, app); err != nil {
+				return fmt.Errorf("persist docker_apps row: %w", err)
+			}
+
+			// Resolve catalog-default ports + persist them.
+			rows := make([]*models.DockerAppPublishedPort, 0, len(entry.Ports))
+			runtime := make(map[string]dockerapp.RuntimePort, len(entry.Ports))
+			for _, p := range entry.Ports {
+				if !p.DefaultEnabled {
+					continue
+				}
+				bind := p.DefaultBind
+				if bind == "" {
+					bind = "loopback"
+				}
+				host, err := repo.FindFreeHostPort(ctx, bind, p.Protocol)
+				if err != nil {
+					_ = repo.Delete(ctx, app.ID)
+					return fmt.Errorf("allocate host port for %q: %w", p.Name, err)
+				}
+				row := &models.DockerAppPublishedPort{
+					ID:            ulid.Make().String(),
+					AppID:         app.ID,
+					PortName:      p.Name,
+					ContainerPort: p.ContainerPort,
+					BindInterface: bind,
+					HostPort:      host,
+					Protocol:      p.Protocol,
+					ReverseProxy:  p.DefaultReverseProxy,
+					Enabled:       true,
+				}
+				if err := repo.CreatePort(ctx, row); err != nil {
+					_ = repo.Delete(ctx, app.ID)
+					return fmt.Errorf("persist port row %q: %w", p.Name, err)
+				}
+				rows = append(rows, row)
+				rip := "127.0.0.1"
+				if bind == "public" {
+					rip = "0.0.0.0"
+				}
+				runtime[p.Name] = dockerapp.RuntimePort{
+					HostPort:      host,
+					ContainerPort: p.ContainerPort,
+					BindInterface: rip,
+					Protocol:      p.Protocol,
+				}
+			}
+
+			envOverride := make(map[string]string, len(envPairs))
+			for _, kv := range envPairs {
+				k, v, ok := strings.Cut(kv, "=")
+				if !ok || k == "" {
+					return fmt.Errorf("--env %q must be KEY=VALUE", kv)
+				}
+				envOverride[k] = v
+			}
+			envMap, err := dockerapp.MaterialiseEnv(entry, envOverride)
+			if err != nil {
+				_ = repo.Delete(ctx, app.ID)
+				return fmt.Errorf("materialise env: %w", err)
+			}
+
+			dataRoot := "/var/lib/jabali/docker-apps/" + entry.Slug
+			composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
+				Slug:         entry.Slug,
+				Name:         name,
+				ImageChannel: entry.ImageChannel,
+				DataRoot:     dataRoot,
+				CPULimit:     cpu,
+				MemoryLimit:  mem,
+				PIDsLimit:    pids,
+				Ports:        runtime,
+				Env:          envMap,
+			})
+			if err != nil {
+				_ = repo.Delete(ctx, app.ID)
+				return fmt.Errorf("render compose: %w", err)
+			}
+
+			envFile := buildEnvFileForCLI(envMap)
+			volumeNames := make([]string, 0, len(entry.Volumes))
+			for _, v := range entry.Volumes {
+				volumeNames = append(volumeNames, v.Name)
+			}
+			_ = repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusInstalling, nil)
+			if _, err := sharedAgent.Call(ctx, "docker_app.install", map[string]any{
+				"slug":                        entry.Slug,
+				"compose_yml":                 composeYML,
+				"env_file":                    envFile,
+				"volumes":                     volumeNames,
+				"wait_healthy":                true,
+				"healthcheck_timeout_seconds": 120,
+			}); err != nil {
+				msg := firstLine(err.Error())
+				_ = repo.UpdateStatus(context.Background(), app.ID, models.DockerAppStatusFailed, &msg)
+				return fmt.Errorf("agent install: %s", msg)
+			}
+			_ = repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+			fmt.Printf("ok: installed %s (%s) status=running\n", name, app.ID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "install name (lowercase, ^[a-z0-9-]{1,32}$)")
+	cmd.Flags().StringVar(&updateMode, "update-mode", "manual", "manual|auto")
+	cmd.Flags().StringVar(&cpuLimit, "cpu", "", "cgroup CPU limit (e.g. 1.0). Catalog default when omitted.")
+	cmd.Flags().StringVar(&memoryLimit, "memory", "", "memory limit (e.g. 512m). Catalog default when omitted.")
+	cmd.Flags().IntVar(&pidsLimit, "pids", 0, "pids cgroup limit. Catalog default when omitted.")
+	cmd.Flags().StringArrayVar(&envPairs, "env", nil, "KEY=VALUE override (repeatable)")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func buildEnvFileForCLI(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for k, v := range env {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(v)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+var nameRE = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
 func newDockerAppListCmd() *cobra.Command {
 	var jsonOut bool
