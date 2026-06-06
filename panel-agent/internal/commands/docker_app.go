@@ -34,7 +34,15 @@ const dockerAppDataRoot = "/var/lib/jabali/docker-apps"
 // dockerAppSlugRE matches ADR-0116 Decision 5's slug rule. The regex
 // is anchored AND charset-restricted so a malicious slug cannot
 // escape filesystem ops (no ../, no quoting tricks).
-var dockerAppSlugRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
+//
+// Length cap of 52 chars (1 leading letter + up to 51 trailing) keeps
+// the resulting docker container hostname (jabali-app-<slug>) under
+// the RFC 1123 DNS label limit of 63 chars -- the implicit container
+// hostname must be a valid DNS label or compose refuses to start.
+// Prior cap of 32 chars dated from the single-install era; M48
+// multi-install derives slugs as "<catalog>-<install_name>" which
+// can run longer.
+var dockerAppSlugRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,51}$`)
 
 // validateSlug returns an InvalidArgument error if the slug fails
 // the catalog-charset constraint.

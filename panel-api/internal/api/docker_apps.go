@@ -295,6 +295,13 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_name", "detail": "must match ^[a-z0-9-]{1,32}$"})
 		return
 	}
+	// Derived instance slug must fit the agent's slug regex (RFC 1123
+	// DNS label budget after the jabali-app- prefix). 52 chars total.
+	instanceSlug := req.Slug + "-" + req.Name
+	if len(instanceSlug) > 52 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name_too_long", "detail": fmt.Sprintf("catalog slug + name exceeds 52 chars (got %d)", len(instanceSlug))})
+		return
+	}
 
 	// Reject duplicate slug+name. Exception: a prior install that
 	// ended in `failed` is treated as a no-op corpse — delete it and
@@ -380,6 +387,7 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 	app := &models.DockerApp{
 		ID:             ulid.Make().String(),
 		Slug:           req.Slug,
+		InstanceSlug:   instanceSlug,
 		Name:           req.Name,
 		CatalogVersion: entry.Version,
 		Status:         models.DockerAppStatusPending,
@@ -493,10 +501,13 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		return
 	}
 
-	// Render the compose template.
-	dataRoot := "/var/lib/jabali/docker-apps/" + entry.Slug
+	// Render the compose template. Slug = instanceSlug so the
+	// rendered compose.yml has per-install paths + container names;
+	// without this two installs of the same catalog entry collide
+	// on dir + container name.
+	dataRoot := "/var/lib/jabali/docker-apps/" + instanceSlug
 	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-		Slug:         entry.Slug,
+		Slug:         instanceSlug,
 		Name:         req.Name,
 		Domain:       req.Domain,
 		ImageChannel: entry.ImageChannel,
@@ -525,7 +536,7 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		}
 		envFile := buildEnvFile(envMap)
 		_, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", map[string]any{
-			"slug":                         entry.Slug,
+			"slug":                         instanceSlug,
 			"compose_yml":                  composeYML,
 			"env_file":                     envFile,
 			"volumes":                      volumeNames,
@@ -898,7 +909,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "env_materialise_failed", "detail": err.Error()})
 			return
 		}
-		dataRoot := "/var/lib/jabali/docker-apps/" + entry.Slug
+		dataRoot := "/var/lib/jabali/docker-apps/" + app.InstanceSlug
 		cpu := ""
 		if app.CPULimit != nil {
 			cpu = *app.CPULimit
@@ -912,7 +923,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			pids = *app.PIDsLimit
 		}
 		composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-			Slug:         entry.Slug,
+			Slug:         app.InstanceSlug,
 			Name:         app.Name,
 			Domain:       newDomain,
 			ImageChannel: entry.ImageChannel,
@@ -936,7 +947,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			}
 			envFile := buildEnvFile(envMap)
 			if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", map[string]any{
-				"slug":                        entry.Slug,
+				"slug":                        app.InstanceSlug,
 				"compose_yml":                 composeYML,
 				"env_file":                    envFile,
 				"volumes":                     volumeNames,
@@ -971,7 +982,7 @@ func (h *dockerAppHandler) delete(c *gin.Context) {
 		callCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
 		if _, err := h.cfg.Agent.Call(callCtx, "docker_app.delete", map[string]any{
-			"slug":          app.Slug,
+			"slug":          app.InstanceSlug,
 			"purge_volumes": purge,
 		}); err != nil {
 			// For rows already in a broken state (failed install / stuck
@@ -1045,7 +1056,7 @@ func (h *dockerAppHandler) lifecycle(action string) gin.HandlerFunc {
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		raw, err := h.cfg.Agent.Call(callCtx, verb, map[string]any{"slug": app.Slug})
+		raw, err := h.cfg.Agent.Call(callCtx, verb, map[string]any{"slug": app.InstanceSlug})
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
 			return
@@ -1097,7 +1108,7 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	callCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
 	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.update", map[string]any{
-		"slug":                        app.Slug,
+		"slug":                        app.InstanceSlug,
 		"healthcheck_timeout_seconds": 180,
 	})
 	// Same WithoutCancel guard as install: the terminal status
@@ -1151,7 +1162,7 @@ func (h *dockerAppHandler) logs(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
 		return
 	}
-	params := map[string]any{"slug": app.Slug}
+	params := map[string]any{"slug": app.InstanceSlug}
 	if l := c.Query("lines"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
 			params["lines"] = n
@@ -1201,7 +1212,7 @@ func (h *dockerAppHandler) execCmd(c *gin.Context) {
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.exec", map[string]any{
-		"slug":    app.Slug,
+		"slug":    app.InstanceSlug,
 		"service": req.Service,
 		"command": req.Command,
 	})
@@ -1231,7 +1242,7 @@ func (h *dockerAppHandler) backup(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	bkParams := map[string]any{"slug": app.Slug, "reason": "manual"}
+	bkParams := map[string]any{"slug": app.InstanceSlug, "reason": "manual"}
 	if app.BackupDestinationID != nil {
 		bkParams["destination_id"] = *app.BackupDestinationID
 	}
@@ -1262,7 +1273,7 @@ func (h *dockerAppHandler) listBackups(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	lbParams := map[string]any{"slug": app.Slug}
+	lbParams := map[string]any{"slug": app.InstanceSlug}
 	if app.BackupDestinationID != nil {
 		lbParams["destination_id"] = *app.BackupDestinationID
 	}
@@ -1294,7 +1305,7 @@ func (h *dockerAppHandler) restoreBackup(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	rsParams := map[string]any{"slug": app.Slug, "snapshot_id": bid}
+	rsParams := map[string]any{"slug": app.InstanceSlug, "snapshot_id": bid}
 	if app.BackupDestinationID != nil {
 		rsParams["destination_id"] = *app.BackupDestinationID
 	}

@@ -25,6 +25,15 @@ import "time"
 type DockerApp struct {
 	ID             string    `gorm:"type:char(26);primaryKey" json:"id"`
 	Slug           string    `gorm:"type:varchar(64);not null" json:"slug"`
+	// InstanceSlug is the per-install identity used by the agent
+	// for the on-disk directory (/var/lib/jabali/docker-apps/<x>/),
+	// the docker container name (jabali-app-<x>) and restic tags
+	// (slug:<x>). `Slug` stays the catalog reference (template
+	// resolution); InstanceSlug is what makes multi-install of the
+	// same catalog entry work without colliding paths/containers.
+	// Backfilled to equal `Slug` on existing rows; new installs set
+	// it to "<slug>-<name>".
+	InstanceSlug   string    `gorm:"column:instance_slug;type:varchar(64);not null" json:"instance_slug"`
 	Name           string    `gorm:"type:varchar(255);not null" json:"name"`
 	CatalogVersion string    `gorm:"column:catalog_version;type:varchar(64);not null" json:"catalog_version"`
 	ImageSHA       *string   `gorm:"column:image_sha;type:varchar(128);null" json:"image_sha"`

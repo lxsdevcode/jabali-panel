@@ -224,17 +224,24 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
             style={{ marginBottom: 16 }}
             showIcon
           />
-          <Form.Item label="Slug" name="slug">
-            <Input disabled />
-          </Form.Item>
           <Form.Item
             label="Install name"
             name="name"
             rules={[
               { required: true, message: "Name is required" },
               { pattern: /^[a-z0-9-]{1,32}$/, message: "Lowercase letters, digits, dashes; up to 32 chars" },
+              {
+                validator: (_, value: string) => {
+                  if (!value || !entry) return Promise.resolve();
+                  const combined = `${entry.slug}-${value}`.length;
+                  if (combined > 52) {
+                    return Promise.reject(new Error(`Catalog slug + name exceeds 52 chars (got ${combined}). Pick a shorter name.`));
+                  }
+                  return Promise.resolve();
+                },
+              },
             ]}
-            tooltip="Per-install identifier. Used as the docker compose project name and the data root."
+            tooltip="Per-install identifier. Combined with the catalog slug to form a unique data root + container name, so the same catalog app can be installed multiple times side-by-side."
           >
             <Input placeholder="e.g. vault-prod" />
           </Form.Item>

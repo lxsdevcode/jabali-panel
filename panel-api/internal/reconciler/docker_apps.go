@@ -133,7 +133,7 @@ func (r *Reconciler) dispatchInstall(ctx context.Context, app *models.DockerApp)
 	// compose.yml from disk and brings it up. The full install
 	// payload is set by the REST handler on first dispatch.
 	raw, err := r.agent.Call(callCtx, "docker_app.install", map[string]any{
-		"slug":          app.Slug,
+		"slug":          app.InstanceSlug,
 		"compose_yml":   "RECOVERY",                       // sentinel: agent recovery path reads compose.yml from disk
 		"volumes":       []string{},
 		"wait_healthy":  false,
@@ -155,7 +155,7 @@ func (r *Reconciler) dispatchInstall(ctx context.Context, app *models.DockerApp)
 func (r *Reconciler) statusPoll(ctx context.Context, app *models.DockerApp) {
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	raw, err := r.agent.Call(callCtx, "docker_app.status", map[string]any{"slug": app.Slug})
+	raw, err := r.agent.Call(callCtx, "docker_app.status", map[string]any{"slug": app.InstanceSlug})
 	if err != nil {
 		// Don't mark failed — could be a transient agent socket
 		// blip. Log + leave the row alone.
@@ -255,7 +255,7 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	raw, err := r.agent.Call(callCtx, "docker_app.check_update", map[string]any{
-		"slug":          app.Slug,
+		"slug":          app.InstanceSlug,
 		"image_channel": entry.ImageChannel,
 	})
 	// Always mark checked even on failure -- we don\'t want a
@@ -314,7 +314,7 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 		updateCtx, ucancel := context.WithTimeout(ctx, 6*time.Minute)
 		defer ucancel()
 		_, err := r.agent.Call(updateCtx, "docker_app.update", map[string]any{
-			"slug":                        app.Slug,
+			"slug":                        app.InstanceSlug,
 			"healthcheck_timeout_seconds": 180,
 		})
 		if err != nil {
