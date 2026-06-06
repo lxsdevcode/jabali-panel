@@ -405,6 +405,8 @@ export const AdminDockerAppsPage = () => {
       <LogsDrawer
         open={logsAppId !== null}
         appId={logsAppId}
+        appName={(installed.data ?? []).find((a) => a.id === logsAppId)?.name}
+        lastError={(installed.data ?? []).find((a) => a.id === logsAppId)?.last_error}
         onClose={() => setLogsAppId(null)}
       />
       <ExecDrawer

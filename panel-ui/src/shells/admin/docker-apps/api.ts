@@ -19,7 +19,10 @@ export async function listInstalled(): Promise<InstalledApp[]> {
 }
 
 export async function installApp(req: InstallRequest): Promise<InstalledApp> {
-  const { data } = await apiClient.post<InstalledApp>(BASE, req);
+  // Override the 15s default: install pulls a fresh image + starts the
+  // compose project + (optionally) waits for healthcheck. 10 min ceiling
+  // matches the backend agent's docker_app.install timeout.
+  const { data } = await apiClient.post<InstalledApp>(BASE, req, { timeout: 10 * 60 * 1000 });
   return data;
 }
 
@@ -36,7 +39,7 @@ export async function lifecycleAction(
 }
 
 export async function updateApp(id: string): Promise<{ outcome: "updated" | "rolled_back"; detail?: string }> {
-  const { data } = await apiClient.post<{ outcome: "updated" | "rolled_back"; detail?: string }>(`${BASE}/${id}/update`);
+  const { data } = await apiClient.post<{ outcome: "updated" | "rolled_back"; detail?: string }>(`${BASE}/${id}/update`, undefined, { timeout: 10 * 60 * 1000 });
   return data;
 }
 
