@@ -8606,6 +8606,25 @@ install_stalwart() {
   local stalwart_version="0.16.7"
   _log "installing Stalwart Mail Server (v${stalwart_version})"
 
+  # Purge any preinstalled MTA that would conflict with Stalwart on
+  # port 25 (postfix, exim4, sendmail). Proxmox's Debian LXC template
+  # ships postfix; Hetzner and OVH bare-metal Debian / Ubuntu commonly
+  # ship exim4-base. Stalwart binds :25 directly; an MTA already
+  # listening there silently steals every inbound mail until Stalwart
+  # fails the bind on next restart. GH #129.
+  for mta in postfix sendmail-bin exim4 exim4-base exim4-config exim4-daemon-light nullmailer; do
+    if dpkg -s "$mta" >/dev/null 2>&1; then
+      _log "purging conflicting MTA: $mta"
+      systemctl stop "$mta" 2>/dev/null || true
+      systemctl disable "$mta" 2>/dev/null || true
+      DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq "$mta" >/dev/null 2>&1 ||         _warn "could not purge $mta -- check manually"
+    fi
+  done
+  # Apt may leave config dirs after a purge if other packages depend on
+  # them. /etc/postfix is safe to remove since Stalwart writes its own
+  # /etc/stalwart and /var/lib/stalwart.
+  rm -rf /etc/postfix /etc/exim4 /etc/sendmail 2>/dev/null || true
+
   # Ensure service user + group exist. Supplementary group `jabali` lets
   # Stalwart read /etc/jabali-panel/stalwart-admin.token (0640 jabali:jabali-mail).
   if ! getent passwd jabali-mail >/dev/null 2>&1; then
