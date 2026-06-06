@@ -1,6 +1,6 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
-import { App, Avatar, Button, Card, Col, Dropdown, Modal, Row, Space, Statistic, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Dropdown, Empty, Modal, Row, Space, Statistic, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -44,6 +44,7 @@ export const AdminDockerAppsPage = () => {
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
   const [editApp, setEditApp] = useState<InstalledApp | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("installed");
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
 
   const catalog = useQuery({
@@ -97,7 +98,8 @@ export const AdminDockerAppsPage = () => {
       </Space>
 
       <Tabs
-        defaultActiveKey="installed"
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           {
             key: "installed",
@@ -161,6 +163,18 @@ export const AdminDockerAppsPage = () => {
                 loading={installed.isLoading}
                 dataSource={installed.data ?? []}
                 pagination={{ pageSize: 25 }}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No installed apps yet"
+                    >
+                      <Button type="primary" onClick={() => setActiveTab("catalog")}>
+                        Browse Catalog
+                      </Button>
+                    </Empty>
+                  ),
+                }}
                 columns={[
                   {
                     title: "Name",
