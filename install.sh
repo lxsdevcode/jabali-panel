@@ -5585,6 +5585,55 @@ install_sftp_sshd_config() {
     fi
     _ok "sshd reloaded"
   fi
+
+  # GH #133: prior install runs (especially the buggy reload path
+  # that ran `systemctl reload ssh` on socket-activated hosts) could
+  # leave ssh.service in 'failed' or 'inactive'. The new SFTP drop-in
+  # is irrelevant if sshd isn't listening at all -- the operator can't
+  # even log back in to fix it. So always re-assert sshd reachability
+  # before returning. Order: prefer ssh.socket (Debian 13 / Ubuntu
+  # 24.04 socket-activation), fall back to ssh.service then
+  # sshd.service. Idempotent on a healthy host.
+  ensure_sshd_running
+}
+
+# ensure_sshd_running — start whichever sshd unit this host uses if
+# it isn't already active. Defensive against earlier install runs
+# leaving the unit in a 'failed' state (GH #133).
+ensure_sshd_running() {
+  local started=0
+  if systemctl list-unit-files ssh.socket >/dev/null 2>&1; then
+    if ! systemctl is-active --quiet ssh.socket; then
+      _log "ssh.socket is not active -- starting"
+      systemctl reset-failed ssh.socket 2>/dev/null || true
+      systemctl start ssh.socket 2>/dev/null && started=1 ||         _warn "systemctl start ssh.socket failed -- check 'systemctl status ssh.socket'"
+    else
+      started=1
+    fi
+  fi
+  if [[ $started -eq 0 ]] && systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+    if ! systemctl is-active --quiet ssh.service; then
+      _log "ssh.service is not active -- starting"
+      systemctl reset-failed ssh.service 2>/dev/null || true
+      systemctl start ssh.service 2>/dev/null && started=1 ||         _warn "systemctl start ssh.service failed -- check 'systemctl status ssh.service'"
+    else
+      started=1
+    fi
+  fi
+  if [[ $started -eq 0 ]] && systemctl list-unit-files sshd.service >/dev/null 2>&1; then
+    if ! systemctl is-active --quiet sshd.service; then
+      _log "sshd.service is not active -- starting"
+      systemctl reset-failed sshd.service 2>/dev/null || true
+      systemctl start sshd.service 2>/dev/null && started=1 ||         _warn "systemctl start sshd.service failed -- check 'systemctl status sshd.service'"
+    else
+      started=1
+    fi
+  fi
+  if [[ $started -eq 0 ]]; then
+    _warn "no active sshd unit found after install -- you may be locked out next reboot; check 'systemctl status ssh' / 'ssh.socket' / 'sshd'"
+  else
+    _ok "sshd is reachable"
+  fi
 }
 
 install_sso_key() {
