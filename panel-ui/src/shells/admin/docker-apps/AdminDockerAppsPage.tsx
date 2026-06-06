@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   AppstoreOutlined,
-  LayoutPanelLeftOutlined,
+  ContainerOutlined,
+  ExportOutlined,
   PlayCircleOutlined,
   PauseCircleOutlined,
   ReloadOutlined,
@@ -91,7 +92,7 @@ export const AdminDockerAppsPage = () => {
     <div>
       <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
-          <LayoutPanelLeftOutlined /> Docker Apps
+          <ContainerOutlined /> Docker Apps
         </Typography.Title>
         <Typography.Text type="secondary">
           {installed.data?.length ?? 0} installed • {catalog.data?.length ?? 0} in catalog
@@ -215,6 +216,16 @@ export const AdminDockerAppsPage = () => {
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {r.slug} @ {r.catalog_version}
                         </Typography.Text>
+                        {r.domain && (
+                          <Typography.Link
+                            href={`https://${r.domain}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12 }}
+                          >
+                            {r.domain}
+                          </Typography.Link>
+                        )}
                       </Space>
                     ),
                   },
@@ -244,18 +255,36 @@ export const AdminDockerAppsPage = () => {
                   {
                     title: "Ports",
                     dataIndex: "ports",
-                    render: (_, r) =>
-                      (r.ports ?? []).map((p) => (
-                        <Tag key={p.id} style={{ marginRight: 4 }}>
-                          {p.port_name}: {p.bind_interface}:{p.host_port}/{p.protocol}
-                        </Tag>
-                      )),
+                    width: 320,
+                    render: (_, r) => (
+                      <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                        {(r.ports ?? []).map((p) => {
+                          const bindLabel = p.bind_interface === "loopback" || p.bind_interface === "127.0.0.1" ? "loopback" : "public";
+                          const linkHost = p.bind_interface === "loopback" || p.bind_interface === "127.0.0.1" ? "127.0.0.1" : window.location.hostname;
+                          const proto = p.protocol === "tcp" ? "http" : p.protocol;
+                          const href = `${proto === "http" ? "http" : "https"}://${linkHost}:${p.host_port}`;
+                          return (
+                            <Space key={p.id} size={6} style={{ width: "100%" }}>
+                              <Tag style={{ margin: 0, minWidth: 48, textAlign: "center" }}>{p.port_name}</Tag>
+                              <Tag style={{ margin: 0 }}>
+                                <Space size={4}>
+                                  <span>{bindLabel}:{p.host_port}/{p.protocol}</span>
+                                  <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", display: "inline-flex" }}>
+                                    <ExportOutlined style={{ fontSize: 12 }} />
+                                  </a>
+                                </Space>
+                              </Tag>
+                            </Space>
+                          );
+                        })}
+                      </Space>
+                    ),
                   },
                   {
                     title: "Limits",
-                    width: 220,
+                    width: 160,
                     render: (_, r) => (
-                      <Space size={12} wrap>
+                      <Space direction="vertical" size={2}>
                         <span>
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>CPU: </Typography.Text>
                           <Typography.Text strong style={{ fontSize: 12 }}>{r.cpu_limit ?? "—"}</Typography.Text>

@@ -52,6 +52,7 @@ import {
   FolderPlus,
   Globe,
   Grip,
+  Container,
   HardDrive,
   HardDriveDownload,
   HardDriveUpload,
@@ -176,6 +177,7 @@ export const FolderOpenOutlined = shim(FolderOpen);
 export const FolderAddOutlined = shim(FolderPlus);
 export const AppstoreOutlined = shim(LayoutGrid);
 export const LayoutPanelLeftOutlined = shim(LayoutPanelLeft);
+export const ContainerOutlined = shim(Container);
 export const PackageOpenOutlined = shim(PackageOpen);
 export const AppstoreAddOutlined = shim(SquarePlus);
 export const KeyOutlined = shim(Key);

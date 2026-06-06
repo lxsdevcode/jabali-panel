@@ -38,7 +38,7 @@ import {
   ShieldCheckOutlined,
   SwapOutlined,
   TeamOutlined,
-  LayoutPanelLeftOutlined
+  ContainerOutlined
 } from "@icons";
 import { createElement } from "react";
 import type { ComponentType } from "react";
@@ -113,7 +113,7 @@ export const adminNav: NavItem[] = [
   {
     key: "docker-apps",
     label: "Docker Apps",
-    icon: navIcon(LayoutPanelLeftOutlined),
+    icon: navIcon(ContainerOutlined),
     path: "/jabali-admin/docker-apps",
   },
   {
