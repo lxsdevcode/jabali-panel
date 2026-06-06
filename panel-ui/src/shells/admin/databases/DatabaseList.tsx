@@ -8,6 +8,7 @@ import type { SorterResult } from "antd/es/table/interface";
 import { columnSearchProps } from "../../../components/columnSearch";
 import { RowDeleteButton } from "../../../components/RowDeleteButton";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 
@@ -91,6 +92,15 @@ export const DatabaseList = () => {
             total: query.total,
           }}
           onChange={handleTableChange}
+          locale={{
+            emptyText: (
+              <EmptyWithCTA
+                description="No databases yet"
+                ctaLabel="Create database"
+                onCta={() => navigate("/jabali-admin/databases/create")}
+              />
+            ),
+          }}
         >
           <Table.Column<Database>
             dataIndex="name"

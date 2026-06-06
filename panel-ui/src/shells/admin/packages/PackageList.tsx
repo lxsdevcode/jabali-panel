@@ -11,6 +11,7 @@ import type { SorterResult } from "antd/es/table/interface";
 
 import { RowDeleteButton } from "../../../components/RowDeleteButton";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 
@@ -98,6 +99,15 @@ export const PackageList = () => {
             total: query.total,
           }}
           onChange={handleTableChange}
+          locale={{
+            emptyText: (
+              <EmptyWithCTA
+                description="No hosting packages yet"
+                ctaLabel="Create package"
+                onCta={() => navigate("/jabali-admin/packages/create")}
+              />
+            ),
+          }}
         >
           <Table.Column
             dataIndex="name"

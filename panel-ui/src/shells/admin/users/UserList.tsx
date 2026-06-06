@@ -15,6 +15,7 @@ import { RowActionButton } from "../../../components/RowActionButton";
 import type { SorterResult } from "antd/es/table/interface";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useListQuery } from "../../../hooks/useQueries";
 import { useSelectQuery } from "../../../hooks/useSelectQuery";
 import { useTableURL } from "../../../hooks/useTableURL";
@@ -116,6 +117,7 @@ type UsersTableProps = {
   searchPlaceholder: string;
   showDiskUsageColumn: boolean;
   onEdit: (id: string) => void;
+  onCreate: () => void;
 };
 
 function UsersShellTable({
@@ -123,6 +125,7 @@ function UsersShellTable({
   searchPlaceholder,
   showDiskUsageColumn,
   onEdit,
+  onCreate,
 }: UsersTableProps) {
   const [suspendFilter, setSuspendFilter] = useState<"all" | "active" | "suspended">(
     "all",
@@ -205,6 +208,15 @@ function UsersShellTable({
         total: query.total,
       }}
       onChange={handleTableChange}
+      locale={{
+        emptyText: (
+          <EmptyWithCTA
+            description={isAdmin ? "No administrators yet" : "No users yet"}
+            ctaLabel={isAdmin ? "Create administrator" : "Create user"}
+            onCta={onCreate}
+          />
+        ),
+      }}
     >
       <Table.Column<User>
         dataIndex="email"
@@ -432,6 +444,7 @@ export const UserList = () => {
             searchPlaceholder="Search by email, username, or name"
             showDiskUsageColumn
             onEdit={openEdit}
+            onCreate={openCreate}
           />
         ) : (
           <UsersShellTable
@@ -439,6 +452,7 @@ export const UserList = () => {
             searchPlaceholder="Search by email or name"
             showDiskUsageColumn={false}
             onEdit={openEdit}
+            onCreate={openCreate}
           />
         )}
       </Card>

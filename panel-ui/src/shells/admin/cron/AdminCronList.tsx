@@ -30,6 +30,7 @@ import {
 import { CronLogDrawer } from "../../user/cron/CronLogDrawer";
 import { RunNowResultModal } from "../../user/cron/RunNowResultModal";
 import { AdminCreateCronModal } from "./AdminCreateCronModal";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 
 dayjs.extend(relativeTime);
 
@@ -157,6 +158,15 @@ export const AdminCronList = () => {
             dataSource={filteredJobs}
             pagination={{ pageSize: 25, showSizeChanger: true }}
             scroll={{ x: "max-content" }}
+            locale={{
+              emptyText: (
+                <EmptyWithCTA
+                  description="No cron jobs yet"
+                  ctaLabel="Create cron job"
+                  onCta={() => setCreateOpen(true)}
+                />
+              ),
+            }}
             columns={[
               {
                 title: "Owner",

@@ -24,6 +24,7 @@ import { columnSearchProps } from "../../../components/columnSearch";
 import { RowActionButton } from "../../../components/RowActionButton";
 import { humanBytes } from "../../../utils/bytes";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { DomainSettingsButton } from "../../DomainSettingsButton";
@@ -212,6 +213,15 @@ export const DomainList = () => {
             total: query.total,
           }}
           onChange={handleTableChange}
+          locale={{
+            emptyText: (
+              <EmptyWithCTA
+                description="No domains yet"
+                ctaLabel="Create domain"
+                onCta={() => navigate("create")}
+              />
+            ),
+          }}
         >
           <Table.Column<Domain>
             dataIndex="name"
@@ -280,28 +290,60 @@ export const DomainList = () => {
                     items: [
                       {
                         key: "redirects",
-                        icon: <SwapOutlined />,
-                        label: "Redirects",
-                        onClick: () => setActiveModal({ domain: r, type: "redirects" }),
+                        label: (
+                          <Button
+                            variant="filled"
+                            color="primary"
+                            icon={<SwapOutlined />}
+                            block
+                            onClick={() => setActiveModal({ domain: r, type: "redirects" })}
+                          >
+                            Redirects
+                          </Button>
+                        ),
                       },
                       {
                         key: "index",
-                        icon: <FileTextOutlined />,
-                        label: "Index Files",
-                        onClick: () => setActiveModal({ domain: r, type: "index" }),
+                        label: (
+                          <Button
+                            variant="filled"
+                            color="primary"
+                            icon={<FileTextOutlined />}
+                            block
+                            onClick={() => setActiveModal({ domain: r, type: "index" })}
+                          >
+                            Index Files
+                          </Button>
+                        ),
                       },
                       {
                         key: "settings",
-                        icon: <SettingOutlined />,
-                        label: "Nginx Settings",
-                        onClick: () => setActiveModal({ domain: r, type: "settings" }),
+                        label: (
+                          <Button
+                            variant="filled"
+                            color="primary"
+                            icon={<SettingOutlined />}
+                            block
+                            onClick={() => setActiveModal({ domain: r, type: "settings" })}
+                          >
+                            Nginx Settings
+                          </Button>
+                        ),
                       },
                       {
                         key: "toggle",
-                        icon: r.is_enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />,
-                        label: r.is_enabled ? "Disable" : "Enable",
-                        disabled: togglingId === r.id,
-                        onClick: () => handleToggle(r),
+                        label: (
+                          <Button
+                            variant="filled"
+                            color={r.is_enabled ? "danger" : "primary"}
+                            icon={r.is_enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                            block
+                            disabled={togglingId === r.id}
+                            onClick={() => handleToggle(r)}
+                          >
+                            {r.is_enabled ? "Disable" : "Enable"}
+                          </Button>
+                        ),
                       },
                       ...(r.is_panel_primary
                         ? []
@@ -309,18 +351,26 @@ export const DomainList = () => {
                             { type: "divider" as const },
                             {
                               key: "delete",
-                              icon: <DeleteOutlined />,
-                              label: "Delete",
-                              danger: true,
-                              onClick: () =>
-                                Modal.confirm({
-                                  title: `Delete domain "${r.name}"?`,
-                                  okText: "Delete",
-                                  okButtonProps: { danger: true },
-                                  onOk: async () => {
-                                    await deleteMutation.mutateAsync({ id: r.id });
-                                  },
-                                }),
+                              label: (
+                                <Button
+                                  variant="filled"
+                                  color="danger"
+                                  icon={<DeleteOutlined />}
+                                  block
+                                  onClick={() =>
+                                    Modal.confirm({
+                                      title: `Delete domain "${r.name}"?`,
+                                      okText: "Delete",
+                                      okButtonProps: { danger: true },
+                                      onOk: async () => {
+                                        await deleteMutation.mutateAsync({ id: r.id });
+                                      },
+                                    })
+                                  }
+                                >
+                                  Delete
+                                </Button>
+                              ),
                             },
                           ]),
                     ],

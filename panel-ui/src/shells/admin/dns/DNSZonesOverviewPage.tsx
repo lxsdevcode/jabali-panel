@@ -4,7 +4,7 @@
 // label, controlled activeTabKey, panel-attached strip. Both tabs
 // view the same `domains` list so the badge total matches on both.
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Empty, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Spin, Table, Tag, Typography } from "antd";
 import { ServerOutlined } from "@icons";
 import { useNavigate } from "react-router";
 
@@ -12,6 +12,7 @@ import { apiClient } from "../../../apiClient";
 import { columnSearchProps } from "../../../components/columnSearch";
 import { DNSSECTable } from "../../../components/dnssec/DNSSECTable";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useTableURL } from "../../../hooks/useTableURL";
 
 interface Domain {
@@ -86,7 +87,7 @@ const ZonesTab = () => {
       {query.isLoading ? (
         <Spin />
       ) : query.items.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No domains found" />
+        <EmptyWithCTA description="No DNS zones yet — create a domain to manage its DNS" ctaLabel="Create domain" onCta={() => navigate("/jabali-admin/domains/create")} />
       ) : (
         <SearchableTableStringQ<Domain>
           rowKey="id"

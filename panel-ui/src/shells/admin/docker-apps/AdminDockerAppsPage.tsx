@@ -94,7 +94,7 @@ export const AdminDockerAppsPage = () => {
           <LayoutPanelLeftOutlined /> Docker Apps
         </Typography.Title>
         <Typography.Text type="secondary">
-          {installed.data?.length ?? 0} installed - {catalog.data?.length ?? 0} in catalog
+          {installed.data?.length ?? 0} installed
         </Typography.Text>
       </Space>
 
@@ -109,7 +109,6 @@ export const AdminDockerAppsPage = () => {
               <div>
                 {(() => {
                   const rows = installed.data ?? [];
-                  const catalogCount = (catalog.data ?? []).length;
                   const installedCount = rows.length;
                   const runningCount = rows.filter(r => r.status === "running").length;
                   const stoppedCount = rows.filter(r => r.status === "stopped").length;
@@ -121,7 +120,6 @@ export const AdminDockerAppsPage = () => {
                           <Statistic
                             title={<Space><AppstoreOutlined />Installed Apps</Space>}
                             value={installedCount}
-                            suffix={<Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {catalogCount} in catalog</Typography.Text>}
                           />
                         </Card>
                       </Col>

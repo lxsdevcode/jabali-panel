@@ -9,6 +9,7 @@ import { RowActionButton } from "../../../components/RowActionButton";
 import { useState } from "react";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
+import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { AdminIPDrawer } from "./AdminIPDrawer";
@@ -120,6 +121,15 @@ export const AdminIPList = () => {
             current: query.params.page,
             pageSize: query.params.pageSize,
             total: query.total,
+          }}
+          locale={{
+            emptyText: (
+              <EmptyWithCTA
+                description="No managed IPs yet"
+                ctaLabel="Add IP"
+                onCta={openCreate}
+              />
+            ),
           }}
         >
           <Table.Column
