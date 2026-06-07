@@ -1,0 +1,70 @@
+services:
+  owncloud:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    environment:
+      OWNCLOUD_DOMAIN: "{{ if .Domain }}{{ .Domain }}{{ else }}localhost{{ end }}"
+      OWNCLOUD_TRUSTED_DOMAINS: "{{ if .Domain }}{{ .Domain }},localhost{{ else }}localhost{{ end }}"
+      OWNCLOUD_DB_TYPE: "mysql"
+      OWNCLOUD_DB_NAME: "owncloud"
+      OWNCLOUD_DB_USERNAME: "owncloud"
+      OWNCLOUD_DB_PASSWORD: "{{ index .Env "MARIADB_PASSWORD" }}"
+      OWNCLOUD_DB_HOST: "db"
+      OWNCLOUD_REDIS_ENABLED: "true"
+      OWNCLOUD_REDIS_HOST: "redis"
+      OWNCLOUD_ADMIN_USERNAME: "{{ index .Env "OWNCLOUD_ADMIN_USERNAME" }}"
+      OWNCLOUD_ADMIN_PASSWORD: "{{ index .Env "OWNCLOUD_ADMIN_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/files:/mnt/data
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8080/status.php || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  db:
+    image: mariadb:11
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: "{{ index .Env "MARIADB_ROOT_PASSWORD" }}"
+      MARIADB_DATABASE: "owncloud"
+      MARIADB_USER: "owncloud"
+      MARIADB_PASSWORD: "{{ index .Env "MARIADB_PASSWORD" }}"
+    command: ["--max-allowed-packet=128M", "--innodb-log-file-size=64M"]
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: jabali-app-{{ .Slug }}-redis
+    restart: unless-stopped
+    command: ["--databases", "1", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - {{ .DataRoot }}/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

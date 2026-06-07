@@ -1,0 +1,67 @@
+services:
+  paperless-ngx:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - db
+      - broker
+    environment:
+      PAPERLESS_REDIS: "redis://broker:6379"
+      PAPERLESS_DBHOST: "db"
+      PAPERLESS_DBNAME: "paperless"
+      PAPERLESS_DBUSER: "paperless"
+      PAPERLESS_DBPASS: "{{ index .Env "POSTGRES_PASSWORD" }}"
+      PAPERLESS_SECRET_KEY: "{{ index .Env "PAPERLESS_SECRET_KEY" }}"
+      PAPERLESS_ADMIN_USER: "jabali"
+      PAPERLESS_ADMIN_PASSWORD: "{{ index .Env "PAPERLESS_ADMIN_PASSWORD" }}"
+      PAPERLESS_URL: "{{ if .Domain }}https://{{ .Domain }}{{ end }}"
+      PAPERLESS_PORT: "8000"
+      PAPERLESS_TIME_ZONE: "UTC"
+      PAPERLESS_OCR_LANGUAGE: "eng"
+    volumes:
+      - {{ .DataRoot }}/data:/usr/src/paperless/data
+      - {{ .DataRoot }}/media:/usr/src/paperless/media
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  broker:
+    image: redis:7-alpine
+    container_name: jabali-app-{{ .Slug }}-broker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  db:
+    image: postgres:17-alpine
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+      POSTGRES_USER: "paperless"
+      POSTGRES_DB: "paperless"
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperless"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

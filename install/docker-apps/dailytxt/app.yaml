@@ -1,0 +1,38 @@
+slug: dailytxt
+name: DailyTxt
+version: "2.6.1"
+description: |
+  Self-hosted, end-to-end encrypted diary application. Plain text +
+  attachments, fully encrypted client-side. Single container with
+  file-system storage.
+icon: icon.svg
+upstream: https://github.com/PhiTux/DailyTxt
+documentation: https://github.com/PhiTux/DailyTxt#readme
+
+image_channel: phitux/dailytxt:2.6.1
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "256m"
+  pids: 200
+
+volumes:
+  - name: data
+    container_path: /app/data
+
+ports:
+  - name: http
+    container_port: 8765
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: SECRET_KEY
+    secret: true
+    generate: password64
+  - name: ALLOW_REGISTRATION
+    value: "True"

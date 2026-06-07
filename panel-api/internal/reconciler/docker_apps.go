@@ -323,7 +323,7 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 		defer ucancel()
 		_, err := r.agent.Call(updateCtx, "docker_app.update", map[string]any{
 			"slug":                        app.InstanceSlug,
-			"healthcheck_timeout_seconds": 180,
+			"healthcheck_timeout_seconds": 300,
 		})
 		if err != nil {
 			msg := firstLineString(err.Error())

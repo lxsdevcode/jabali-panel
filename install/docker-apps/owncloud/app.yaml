@@ -1,0 +1,49 @@
+slug: owncloud
+name: ownCloud
+version: "10.16.3"
+description: |
+  Self-hosted file sync and share platform. Three services: ownCloud
+  server (PHP), MariaDB, and Redis for transactional file locking.
+  Use for cross-device file sync, calendar/contacts, and team
+  collaboration.
+icon: icon.svg
+upstream: https://github.com/owncloud/core
+documentation: https://doc.owncloud.com/server/10.16/
+
+image_channel: owncloud/server:10.16.3
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "1g"
+  pids: 600
+
+volumes:
+  - name: files
+    container_path: /mnt/data
+  - name: db
+    container_path: /var/lib/mysql
+  - name: redis
+    container_path: /data
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /status.php
+
+env:
+  - name: OWNCLOUD_ADMIN_USERNAME
+    value: "jabali"
+  - name: OWNCLOUD_ADMIN_PASSWORD
+    secret: true
+    generate: password32
+  - name: MARIADB_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  - name: MARIADB_PASSWORD
+    secret: true
+    generate: password32

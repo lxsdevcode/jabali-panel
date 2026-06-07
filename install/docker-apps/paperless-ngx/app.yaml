@@ -1,0 +1,47 @@
+slug: paperless-ngx
+name: Paperless-ngx
+version: "2.20.15"
+description: |
+  Self-hosted document management — scan + tag + full-text search.
+  Four services: web (gunicorn), broker (Redis), database (PostgreSQL),
+  and the bundled OCR worker. Default admin: jabali / password set
+  at install time.
+icon: icon.svg
+upstream: https://github.com/paperless-ngx/paperless-ngx
+documentation: https://docs.paperless-ngx.com/
+
+image_channel: paperlessngx/paperless-ngx:2.20.15
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "1g"
+  pids: 600
+
+volumes:
+  - name: data
+    container_path: /usr/src/paperless/data
+  - name: media
+    container_path: /usr/src/paperless/media
+  - name: db
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 8000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: PAPERLESS_SECRET_KEY
+    secret: true
+    generate: password64
+  - name: PAPERLESS_ADMIN_PASSWORD
+    secret: true
+    generate: password32
+  - name: POSTGRES_PASSWORD
+    secret: true
+    generate: password32

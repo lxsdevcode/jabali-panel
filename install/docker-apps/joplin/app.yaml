@@ -1,0 +1,38 @@
+slug: joplin
+name: Joplin Server
+version: "3.7.1"
+description: |
+  Self-hosted sync server for Joplin (open-source note app with
+  end-to-end encryption, Markdown, Web Clipper). Two services:
+  Node.js server + PostgreSQL.
+icon: icon.svg
+upstream: https://github.com/laurent22/joplin
+documentation: https://joplinapp.org/help/install/joplin_server
+
+image_channel: joplin/server:3.7.1
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "768m"
+  pids: 400
+
+volumes:
+  - name: db
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 22300
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/ping
+
+env:
+  - name: APP_BASE_URL
+    value: ""
+  - name: POSTGRES_PASSWORD
+    secret: true
+    generate: password32

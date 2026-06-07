@@ -1109,7 +1109,7 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	defer cancel()
 	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.update", map[string]any{
 		"slug":                        app.InstanceSlug,
-		"healthcheck_timeout_seconds": 180,
+		"healthcheck_timeout_seconds": 300,
 	})
 	// Same WithoutCancel guard as install: the terminal status
 	// has to land even if the client dropped the connection.

@@ -1,0 +1,31 @@
+slug: memos
+name: Memos
+version: "0.29.1"
+description: |
+  Self-hosted, open-source note-taking platform. Lightweight, single
+  container with SQLite by default. Markdown editor, tagging,
+  daily review, multi-user support.
+icon: icon.svg
+upstream: https://github.com/usememos/memos
+documentation: https://www.usememos.com/docs
+
+image_channel: neosmemo/memos:0.29.1
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "256m"
+  pids: 200
+
+volumes:
+  - name: data
+    container_path: /var/opt/memos
+
+ports:
+  - name: http
+    container_port: 5230
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /healthz
