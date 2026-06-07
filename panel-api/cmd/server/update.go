@@ -851,7 +851,16 @@ test -x node_modules/.bin/tsc || {
 			// no shared output. Run concurrently — on a 2-vCPU VPS this
 			// halves wall-clock from ~60s → ~30s for a cold rebuild.
 			// Per-binary skip checks identical to the npm/vite ones.
-			apiInputs := compositeSHA("panel-api", "agentwire", "go.mod", "go.sum")
+			// panel-ui/dist/index.html is the artifact vite emits — its
+			// content includes the hashed script + style tag names. Hashing
+			// it makes panel-api rebuild whenever the SPA bundle changes,
+			// so the //go:embed all:dist in panel-ui/embed.go picks up the
+			// fresh assets. Without this, a UI-only change rebuilds dist
+			// but leaves the binary embedding the previous bundle hashes,
+			// nginx serves the cached HTML pointing at a stale /assets/
+			// index-XXX.js that the embedded FS still has, and the browser
+			// keeps rendering the old UI even after `jabali update`.
+			apiInputs := compositeSHA("panel-api", "agentwire", "go.mod", "go.sum", "panel-ui/dist/index.html")
 			agentInputs := compositeSHA("panel-agent", "agentwire", "go.mod", "go.sum")
 			apiSkip := artifactUnchanged("panel-api-bin", apiInputs, defaultPanelBinPath)
 			agentSkip := artifactUnchanged("panel-agent-bin", agentInputs, defaultAgentBinPath)
