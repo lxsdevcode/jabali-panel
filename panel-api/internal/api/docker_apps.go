@@ -542,7 +542,7 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 			"volumes":                      volumeNames,
 			"volume_owner":                 entry.VolumeOwner,
 			"wait_healthy":                 true,
-			"healthcheck_timeout_seconds":  120,
+			"healthcheck_timeout_seconds":  300,
 		})
 		// Use WithoutCancel for terminal status writes -- if the
 		// client dropped the connection mid-install (closed drawer,

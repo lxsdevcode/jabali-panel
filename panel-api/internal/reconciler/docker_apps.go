@@ -192,7 +192,15 @@ func (r *Reconciler) statusPoll(ctx context.Context, app *models.DockerApp) {
 	if target == app.Status {
 		return
 	}
-	if err := r.dockerApps.UpdateStatus(ctx, app.ID, target, nil); err != nil {
+	// Clear last_error when transitioning to a healthy terminal state.
+	// Without this, a transient first-install healthcheck timeout leaves
+	// the err chip lit forever even after the container becomes ready.
+	var errArg *string
+	if target == models.DockerAppStatusRunning && app.LastError != nil && *app.LastError != "" {
+		empty := ""
+		errArg = &empty
+	}
+	if err := r.dockerApps.UpdateStatus(ctx, app.ID, target, errArg); err != nil {
 		r.log.Warn("dockerapp: status update failed", "id", app.ID, "from", app.Status, "to", target, "err", err)
 	}
 }

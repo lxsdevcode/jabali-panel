@@ -193,7 +193,10 @@ export const AdminDockerAppsPage = () => {
                 size="small"
                 loading={installed.isLoading}
                 dataSource={installed.data ?? []}
-                pagination={{ pageSize: 25 }}
+                pagination={{
+                  pageSize: 25,
+                  showTotal: (total, range) => `Showing ${range[0]} to ${range[1]} of ${total} results`,
+                }}
                 locale={{
                   emptyText: (
                     <Empty
@@ -211,21 +214,31 @@ export const AdminDockerAppsPage = () => {
                     title: "Name",
                     dataIndex: "name",
                     render: (n, r) => (
-                      <Space direction="vertical" size={0}>
-                        <Typography.Text strong>{n}</Typography.Text>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                          {r.slug} @ {r.catalog_version}
-                        </Typography.Text>
-                        {r.domain && (
-                          <Typography.Link
-                            href={`https://${r.domain}/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ fontSize: 12 }}
-                          >
-                            {r.domain}
-                          </Typography.Link>
-                        )}
+                      <Space size={12} align="start">
+                        <Avatar
+                          shape="square"
+                          size={40}
+                          src={`/api/v1/admin/docker-apps/catalog/${r.slug}/icon`}
+                          style={{ background: "rgba(255,255,255,0.04)" }}
+                        >
+                          {r.slug.slice(0, 2).toUpperCase()}
+                        </Avatar>
+                        <Space direction="vertical" size={0}>
+                          <Typography.Text strong>{n}</Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {r.slug} @ {r.catalog_version}
+                          </Typography.Text>
+                          {r.domain && (
+                            <Typography.Link
+                              href={`https://${r.domain}/`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ fontSize: 12 }}
+                            >
+                              {r.domain}
+                            </Typography.Link>
+                          )}
+                        </Space>
                       </Space>
                     ),
                   },
@@ -282,9 +295,9 @@ export const AdminDockerAppsPage = () => {
                   },
                   {
                     title: "Limits",
-                    width: 160,
+                    width: 280,
                     render: (_, r) => (
-                      <Space direction="vertical" size={2}>
+                      <Space size={16} wrap>
                         <span>
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>CPU: </Typography.Text>
                           <Typography.Text strong style={{ fontSize: 12 }}>{r.cpu_limit ?? "—"}</Typography.Text>
