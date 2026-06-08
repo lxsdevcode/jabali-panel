@@ -176,6 +176,21 @@ server {
         try_files $uri $uri/ =404;
 {{ end }}
     }
+
+    # Branded error pages (M28 page templates). error_page fires ONLY on
+    # NATIVE nginx errors: a missing static file (try_files =404), a denied
+    # directory (403), or an upstream 50x. fastcgi_intercept_errors is
+    # deliberately OFF, so a real app (WordPress, etc.) keeps its own 404
+    # — its index.php runs and owns the response. A no-app PHP domain hits
+    # the index.php existence guard below, which yields a
+    # native 404 that lands here. Files are converged from the editable
+    # page_template rows into /var/www/jabali-errors by the reconciler.
+    error_page 404 /jabali-err-404.html;
+    error_page 403 /jabali-err-403.html;
+    error_page 500 502 503 504 /jabali-err-500.html;
+    location = /jabali-err-404.html { internal; root /var/www/jabali-errors; }
+    location = /jabali-err-403.html { internal; root /var/www/jabali-errors; }
+    location = /jabali-err-500.html { internal; root /var/www/jabali-errors; }
 {{ end }}
 {{ if .CacheEnabled }}
     # Long-cache static assets (immutable content; 30 days).
@@ -203,6 +218,34 @@ server {
     }
 {{ end }}
 {{ if and .HasPHP (not .RootOverridden) }}
+    # Front-controller with an existence guard: when index.php is absent
+    # (domain has no app installed) try_files yields a native 404 instead
+    # of PHP-FPM's bare "File not found", so the branded error_page shows.
+    # When it exists the app runs and owns its own error pages.
+    location = /index.php {
+        try_files $uri =404;
+        fastcgi_pass unix:/run/php/jabali-{{.Username}}/fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+{{ if .PHPValueParam }}
+        fastcgi_param PHP_VALUE "{{.PHPValueParam}}";
+{{ end }}
+{{ if .CacheEnabled }}
+        set $jabali_skip 0;
+        if ($request_method = POST) { set $jabali_skip 1; }
+        if ($query_string != "") { set $jabali_skip 1; }
+        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
+        if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|woocommerce_items_in_cart|woocommerce_cart_hash|edd_items_in_cart|PHPSESSID") { set $jabali_skip 1; }
+        fastcgi_cache {{.CacheKeyZone}};
+        fastcgi_cache_key "$scheme$request_method$host$request_uri";
+        fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
+        fastcgi_cache_bypass $jabali_skip;
+        fastcgi_no_cache $jabali_skip;
+        fastcgi_cache_use_stale error timeout updating http_500 http_503;
+        fastcgi_cache_lock on;
+        add_header X-Jabali-Cache $upstream_cache_status always;
+{{ end }}
+    }
     location ~ \.php$ {
         fastcgi_pass unix:/run/php/jabali-{{.Username}}/fpm.sock;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
@@ -427,7 +470,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		// tenant domain falls through to a sibling vhost (the first
 		// specific-IP listener, usually a mail vhost). Caught
 		// 2026-06-04 on vpsjournal.com/yacht.vpsjournal.com.
-		RootOverridden:             directivesOverrideRoot(customDirectives, ruleDirectives),
+		RootOverridden: directivesOverrideRoot(customDirectives, ruleDirectives),
 	}
 
 	var vhostConfig bytes.Buffer

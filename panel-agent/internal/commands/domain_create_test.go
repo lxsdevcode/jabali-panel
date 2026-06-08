@@ -203,12 +203,12 @@ func TestDomainCreateHandler_IsEnabledTrue(t *testing.T) {
 	// Verify the template renders with the enabled config
 	tmpl, _ := template.New("vhost").Parse(vhostTemplate)
 	vd := vhostData{
-		Domain:      params.Domain,
-		DocRoot:     params.DocRoot,
-		HasPHP:      true,
-		PHPVersion:  params.PHPVersion,
-		Username:    params.Username,
-		IsEnabled:   true,
+		Domain:     params.Domain,
+		DocRoot:    params.DocRoot,
+		HasPHP:     true,
+		PHPVersion: params.PHPVersion,
+		Username:   params.Username,
+		IsEnabled:  true,
 	}
 	var buf bytes.Buffer
 	_ = tmpl.Execute(&buf, vd)
@@ -238,11 +238,11 @@ func TestDomainCreateHandler_IsEnabledFalse(t *testing.T) {
 	// Verify the template renders with the disabled config
 	tmpl, _ := template.New("vhost").Parse(vhostTemplate)
 	vd := vhostData{
-		Domain:      params.Domain,
-		DocRoot:     params.DocRoot,
-		PHPVersion:  params.PHPVersion,
-		Username:    params.Username,
-		IsEnabled:   false,
+		Domain:     params.Domain,
+		DocRoot:    params.DocRoot,
+		PHPVersion: params.PHPVersion,
+		Username:   params.Username,
+		IsEnabled:  false,
 	}
 	var buf bytes.Buffer
 	_ = tmpl.Execute(&buf, vd)
@@ -277,12 +277,12 @@ func TestDomainCreateHandler_IsEnabledNil(t *testing.T) {
 
 	// Verify the template defaults to enabled
 	vd := vhostData{
-		Domain:      params.Domain,
-		DocRoot:     params.DocRoot,
-		HasPHP:      true,
-		PHPVersion:  params.PHPVersion,
-		Username:    params.Username,
-		IsEnabled:   true, // Default
+		Domain:     params.Domain,
+		DocRoot:    params.DocRoot,
+		HasPHP:     true,
+		PHPVersion: params.PHPVersion,
+		Username:   params.Username,
+		IsEnabled:  true, // Default
 	}
 	tmpl, _ := template.New("vhost").Parse(vhostTemplate)
 	var buf bytes.Buffer
@@ -625,19 +625,19 @@ func TestBuildPHPValueParam(t *testing.T) {
 // fastcgi_param PHP_VALUE when overrides are present.
 func TestVhostTemplate_PHPValueParamPresent(t *testing.T) {
 	params := domainCreateParams{
-		Username:           "testuser",
-		Domain:             "example.com",
-		DocRoot:            "/home/testuser/public_html/example.com",
-		HasPHP:             true,
-		PHPVersion:         "8.3",
-		PHPMemoryLimit:     "512M",
+		Username:             "testuser",
+		Domain:               "example.com",
+		DocRoot:              "/home/testuser/public_html/example.com",
+		HasPHP:               true,
+		PHPVersion:           "8.3",
+		PHPMemoryLimit:       "512M",
 		PHPUploadMaxFilesize: "100M",
-		PHPPostMaxSize:     "100M",
-		PHPMaxInputVars:    5000,
-		PHPMaxExecutionTime: 300,
-		PHPMaxInputTime:    60,
-		IndexPriority:      "html_first",
-		IsEnabled:          ptrBool(true),
+		PHPPostMaxSize:       "100M",
+		PHPMaxInputVars:      5000,
+		PHPMaxExecutionTime:  300,
+		PHPMaxInputTime:      60,
+		IndexPriority:        "html_first",
+		IsEnabled:            ptrBool(true),
 	}
 
 	paramsJSON, _ := json.Marshal(params)
@@ -662,19 +662,19 @@ func TestVhostTemplate_PHPValueParamPresent(t *testing.T) {
 // PHP_VALUE is not emitted when all overrides are empty.
 func TestVhostTemplate_PHPValueParamAbsentWhenEmpty(t *testing.T) {
 	params := domainCreateParams{
-		Username:           "testuser",
-		Domain:             "example.com",
-		DocRoot:            "/home/testuser/public_html/example.com",
-		HasPHP:             true,
-		PHPVersion:         "8.3",
-		PHPMemoryLimit:     "",
+		Username:             "testuser",
+		Domain:               "example.com",
+		DocRoot:              "/home/testuser/public_html/example.com",
+		HasPHP:               true,
+		PHPVersion:           "8.3",
+		PHPMemoryLimit:       "",
 		PHPUploadMaxFilesize: "",
-		PHPPostMaxSize:     "",
-		PHPMaxInputVars:    0,
-		PHPMaxExecutionTime: 0,
-		PHPMaxInputTime:    0,
-		IndexPriority:      "html_first",
-		IsEnabled:          ptrBool(true),
+		PHPPostMaxSize:       "",
+		PHPMaxInputVars:      0,
+		PHPMaxExecutionTime:  0,
+		PHPMaxInputTime:      0,
+		IndexPriority:        "html_first",
+		IsEnabled:            ptrBool(true),
 	}
 
 	paramsJSON, _ := json.Marshal(params)
@@ -724,5 +724,48 @@ func TestBuildPHPValueParam_InjectionAttempts(t *testing.T) {
 			// This test just verifies buildPHPValueParam passes through
 			// what the API has already validated.
 		})
+	}
+}
+
+// TestVhostBrandedErrorPages asserts the branded error_page wiring: native
+// errors route to /var/www/jabali-errors via internal locations, and a
+// PHP domain gets the index.php existence guard so a no-app domain yields
+// a native 404 (branded) while a real app keeps its own. RootOverridden
+// (reverse-proxy) domains opt out entirely.
+func TestVhostBrandedErrorPages(t *testing.T) {
+	t.Parallel()
+	tmpl, _ := template.New("vhost").Parse(vhostTemplate)
+	render := func(vd vhostData) string {
+		var buf bytes.Buffer
+		_ = tmpl.Execute(&buf, vd)
+		return buf.String()
+	}
+
+	php := render(vhostData{Domain: "example.com", DocRoot: "/home/u/d", HasPHP: true, Username: "u", IsEnabled: true})
+	for _, want := range []string{
+		"error_page 404 /jabali-err-404.html;",
+		"error_page 403 /jabali-err-403.html;",
+		"error_page 500 502 503 504 /jabali-err-500.html;",
+		"location = /jabali-err-404.html { internal; root /var/www/jabali-errors; }",
+		"location = /index.php {",
+		"try_files $uri =404;",
+	} {
+		if !strings.Contains(php, want) {
+			t.Errorf("php vhost missing %q", want)
+		}
+	}
+
+	static := render(vhostData{Domain: "static.com", DocRoot: "/home/u/s", HasPHP: false, Username: "u", IsEnabled: true})
+	if !strings.Contains(static, "error_page 404 /jabali-err-404.html;") {
+		t.Errorf("static vhost must still wire error_page")
+	}
+	if strings.Contains(static, "location = /index.php {") {
+		t.Errorf("static vhost must not emit the index.php guard")
+	}
+
+	// Reverse-proxy / RootOverridden: opts out of jabali error pages.
+	rp := render(vhostData{Domain: "rp.com", DocRoot: "/home/u/r", HasPHP: true, Username: "u", IsEnabled: true, RootOverridden: true})
+	if strings.Contains(rp, "jabali-err-404.html") {
+		t.Errorf("RootOverridden vhost must not wire jabali error pages")
 	}
 }
