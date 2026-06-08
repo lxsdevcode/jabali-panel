@@ -1,0 +1,63 @@
+services:
+  zitadel:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    # start-from-init runs the (idempotent) init + setup steps then the
+    # server in one command — no separate init job container needed.
+    command: start-from-init --masterkeyFromEnv --tlsMode external
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ZITADEL_MASTERKEY: "{{ index .Env "MASTERKEY" }}"
+      # TLS is terminated at the nginx vhost; the container serves plain
+      # HTTP. ExternalSecure=true keeps the issuer + cookies on https.
+      ZITADEL_EXTERNALDOMAIN: "{{ .Domain }}"
+      ZITADEL_EXTERNALPORT: "443"
+      ZITADEL_EXTERNALSECURE: "true"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_PORT: "8080"
+      # Database — ZITADEL connects as the admin role to create the
+      # zitadel role + database on first init, then runs as the zitadel
+      # role. Both share the generated POSTGRES_PASSWORD.
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      # First-instance admin. The "Aa1!" suffix guarantees the value
+      # meets the default password policy regardless of the random base.
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "{{ index .Env "ADMIN_PASSWORD" }}Aa1!"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "true"
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: jabali-app-{{ .Slug }}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+      POSTGRES_DB: postgres
+    volumes:
+      - {{ .DataRoot }}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

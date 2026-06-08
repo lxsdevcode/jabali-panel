@@ -1,0 +1,47 @@
+slug: zitadel
+name: ZITADEL
+version: "4.15.0"
+description: >-
+  Self-hosted identity & access management: a complete OIDC/OAuth2/SAML provider with login UI, passkeys, MFA, and multi-tenant orgs. Two services: the ZITADEL Go server and a PostgreSQL event store. Any OIDC/SAML app can use it for login. TLS terminates at the nginx vhost (container runs plain HTTP, ExternalSecure=true); Console + OIDC work over HTTP/1.1. First login: admin@zitadel.<your-domain> with the generated ADMIN_PASSWORD (+suffix Aa1!) from the .env; change required on first sign-in.
+icon: icon.svg
+upstream: https://github.com/zitadel/zitadel
+documentation: https://zitadel.com/docs
+
+image_channel: ghcr.io/zitadel/zitadel:v4.15.0
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "1g"
+  pids: 200
+
+volumes:
+  - name: postgres
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /debug/healthz
+
+env:
+  # Encrypts secrets at rest in the event store. MUST be exactly 32
+  # chars — password32 (base64url of 24 bytes) renders to exactly 32.
+  - name: MASTERKEY
+    secret: true
+    generate: password32
+  # Shared by the Postgres superuser and the zitadel DB role.
+  - name: POSTGRES_PASSWORD
+    secret: true
+    generate: password32
+  # Base entropy for the first-instance admin. The compose template
+  # appends a fixed "Aa1!" so the value always satisfies ZITADEL's
+  # default password policy (upper/lower/number/symbol); the admin is
+  # forced to change it on first login.
+  - name: ADMIN_PASSWORD
+    secret: true
+    generate: password32
