@@ -109,3 +109,34 @@ export interface PatchRequest {
 export async function patchApp(id: string, body: PatchRequest): Promise<void> {
   await apiClient.patch(`${BASE}/${id}`, body);
 }
+
+// ---- environment (view / edit / regenerate) -------------------------------
+
+export interface EnvVar {
+  name: string;
+  value: string;
+  secret: boolean;
+  generated: boolean;
+}
+
+export async function getEnv(id: string): Promise<EnvVar[]> {
+  const { data } = await apiClient.get<{ env: EnvVar[] }>(`${BASE}/${id}/env`);
+  return data.env || [];
+}
+
+export async function putEnv(id: string, env: Record<string, string>): Promise<void> {
+  // Re-renders the compose + recreates the container — allow a few minutes.
+  await apiClient.put(`${BASE}/${id}/env`, { env }, { timeout: 5 * 60 * 1000 });
+}
+
+export async function regenerateEnv(
+  id: string,
+  key: string,
+): Promise<{ key: string; value: string }> {
+  const { data } = await apiClient.post<{ key: string; value: string }>(
+    `${BASE}/${id}/env/regenerate`,
+    { key },
+    { timeout: 5 * 60 * 1000 },
+  );
+  return data;
+}
