@@ -23,7 +23,7 @@ volumes:
 
 ports:
   - name: http
-    container_port: 8765
+    container_port: 80
     protocol: tcp
     default_enabled: true
     default_bind: loopback
