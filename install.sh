@@ -4786,7 +4786,7 @@ server {
 
 # GH#135: dedicated :443 vhost for the panel hostname itself. Without a
 # server{} of its own the hostname falls to the default block above,
-# whose `location / { return 444; }` closes the connection with no body —
+# whose default return-444 location closes the connection with no body --
 # browsers show ERR_HTTP2_PROTOCOL_ERROR / "Secure Connection Failed"
 # even though the LE cert is correct. Serve a real, admin-replaceable
 # landing page from /var/www/${JABALI_SRV_HOSTNAME} (static index.html or
