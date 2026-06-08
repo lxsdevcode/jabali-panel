@@ -186,19 +186,26 @@ func dockerPruneHandler(ctx context.Context, params json.RawMessage) (any, error
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("docker system prune: %v: %s", err, strings.TrimSpace(string(out)))}
 	}
-	reclaim := int64(0)
-	for _, line := range strings.Split(string(out), "\n") {
+	reclaim := parseReclaimedSpace(string(out))
+	return dockerPruneResponse{ReclaimedBytes: reclaim, Raw: strings.TrimSpace(string(out))}, nil
+}
+
+// parseReclaimedSpace pulls the byte count out of docker's
+// "Total reclaimed space: 3.53GB" trailer. The value is everything after the
+// colon (e.g. "3.53GB", or "3.53 GB" on some docker builds); spaces are
+// stripped so parseHumanBytes sees a single size token. Returns 0 when the
+// line is absent. The previous code joined the last two whitespace fields
+// ("space:" + "3.53GB" -> "space:3.53GB"), which parseHumanBytes can't read,
+// so every prune reported "Reclaimed 0 B" even when it freed gigabytes.
+func parseReclaimedSpace(out string) int64 {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "Total reclaimed space:") {
-			parts := strings.Fields(line)
-			if len(parts) >= 4 {
-				reclaim = parseHumanBytes(parts[len(parts)-1] + parts[len(parts)-1])
-				// Re-parse with size+unit. parseHumanBytes splits numeric and
-				// unit suffix on its own, so feed the last two tokens joined.
-				reclaim = parseHumanBytes(strings.Join(parts[len(parts)-2:], ""))
-			}
+			val := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+			return parseHumanBytes(strings.ReplaceAll(val, " ", ""))
 		}
 	}
-	return dockerPruneResponse{ReclaimedBytes: reclaim, Raw: strings.TrimSpace(string(out))}, nil
+	return 0
 }
 
 // parseHumanBytes turns "1.234GB" / "512.5MB" / "0B" into bytes.
