@@ -20,11 +20,12 @@ resources:
   memory: "1g"
   pids: 300
 
-# Odoo's container process is uid 101 and writes the filestore under
-# /var/lib/odoo. The install-time chown sets BOTH volume subdirs to 101:101;
+# Odoo's container process is uid 100, gid 101 (the image's /var/lib/odoo is
+# owned 100:101). The install-time chown sets BOTH volume subdirs to 100:101;
 # Postgres's own root entrypoint re-chowns its PGDATA on first init, so the
-# shared owner is safe for the db volume.
-volume_owner: "101:101"
+# shared owner is safe for the db volume. (101:101 EACCESed on
+# /var/lib/odoo/sessions — caught in the live VM smoke.)
+volume_owner: "100:101"
 
 volumes:
   - name: odoo-data
