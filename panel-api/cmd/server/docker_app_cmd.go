@@ -496,7 +496,22 @@ func newDockerAppUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			raw, err := sharedAgent.Call(ctx, "docker_app.update", map[string]any{"slug": app.Slug})
+			// Re-render the compose from the current catalog template so a
+			// catalog fix / version bump reaches this install (the agent
+			// otherwise reuses the stale on-disk compose). Secrets preserved
+			// via the install's existing .env. Best-effort: on any failure
+			// fall back to the on-disk compose so update never hard-blocks.
+			updateParams := map[string]any{
+				"slug":                        app.InstanceSlug,
+				"healthcheck_timeout_seconds": 300,
+			}
+			if composeYML, envFile, rerr := rerenderInstallForCLI(ctx, repo, app); rerr != nil {
+				fmt.Fprintf(os.Stderr, "warning: re-render skipped (%v); using on-disk compose\n", rerr)
+			} else {
+				updateParams["compose_yml"] = composeYML
+				updateParams["env_file"] = envFile
+			}
+			raw, err := sharedAgent.Call(ctx, "docker_app.update", updateParams)
 			if err != nil {
 				return err
 			}
@@ -602,4 +617,87 @@ func firstLine(s string) string {
 		}
 	}
 	return s
+}
+
+// rerenderInstallForCLI re-renders an install's compose from the current
+// catalog template, preserving its domain/ports/limits/secrets. Mirrors
+// api.(*dockerAppHandler).renderInstallCompose for the CLI update path.
+// Returns the rendered compose + merged env file (never log either).
+func rerenderInstallForCLI(ctx context.Context, repo repository.DockerAppRepository, app *models.DockerApp) (string, string, error) {
+	cat, err := loadDockerCatalogForCLI()
+	if err != nil {
+		return "", "", fmt.Errorf("load catalog: %w", err)
+	}
+	entry, ok := cat.Get(app.Slug)
+	if !ok {
+		return "", "", fmt.Errorf("catalog entry %q not found", app.Slug)
+	}
+	// Existing secrets from the install's .env (read back over the agent).
+	existingEnv := map[string]string{}
+	if raw, rerr := sharedAgent.Call(ctx, "docker_app.read_env", map[string]any{"slug": app.InstanceSlug}); rerr == nil {
+		var resp struct {
+			Env map[string]string `json:"env"`
+		}
+		if json.Unmarshal(raw, &resp) == nil && resp.Env != nil {
+			existingEnv = resp.Env
+		}
+	} else {
+		return "", "", fmt.Errorf("read env: %w", rerr)
+	}
+	envMap, err := dockerapp.MaterialiseEnv(entry, existingEnv)
+	if err != nil {
+		return "", "", fmt.Errorf("materialise env: %w", err)
+	}
+	ports, _ := repo.ListPortsForApp(ctx, app.ID)
+	runtime := make(map[string]dockerapp.RuntimePort, len(ports))
+	for _, p := range ports {
+		bind := "127.0.0.1"
+		switch {
+		case p.BindInterface == "public":
+			bind = "0.0.0.0"
+		case p.BindInterface != "" && p.BindInterface != "loopback":
+			bind = p.BindInterface
+		}
+		runtime[p.PortName] = dockerapp.RuntimePort{
+			HostPort:      p.HostPort,
+			ContainerPort: p.ContainerPort,
+			BindInterface: bind,
+			Protocol:      p.Protocol,
+		}
+	}
+	domain := ""
+	if dl, _, derr := domainRepoFromDB().List(ctx, repository.ListOptions{}); derr == nil {
+		for _, d := range dl {
+			if d.DockerAppID != nil && *d.DockerAppID == app.ID {
+				domain = d.Name
+				break
+			}
+		}
+	}
+	cpu, mem, pids := "", "", 0
+	if app.CPULimit != nil {
+		cpu = *app.CPULimit
+	}
+	if app.MemoryLimit != nil {
+		mem = *app.MemoryLimit
+	}
+	if app.PIDsLimit != nil {
+		pids = *app.PIDsLimit
+	}
+	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
+		Slug:         app.InstanceSlug,
+		Name:         app.Name,
+		Domain:       domain,
+		ImageChannel: entry.ImageChannel,
+		DataRoot:     "/var/lib/jabali/docker-apps/" + app.InstanceSlug,
+		CPULimit:     cpu,
+		MemoryLimit:  mem,
+		PIDsLimit:    pids,
+		Ports:        runtime,
+		Env:          envMap,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("render: %w", err)
+	}
+	return composeYML, buildEnvFileForCLI(envMap), nil
 }
