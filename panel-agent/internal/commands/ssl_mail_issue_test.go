@@ -66,7 +66,7 @@ func TestScanMailSANDNS_AllNonResolvableNoneMatch(t *testing.T) {
 		"autodiscover.this-domain-cannot-exist-jabali-test.invalid",
 		"mta-sts.this-domain-cannot-exist-jabali-test.invalid",
 	}
-	dns := scanMailSANDNS(context.Background(), sans, "203.0.113.42")
+	dns := scanMailSANDNS(context.Background(), sans, "203.0.113.42", nil)
 	require.Len(t, dns, len(sans))
 	for _, h := range sans {
 		assert.False(t, dns[h].Matches, "%s must not match the canary IP", h)
@@ -108,4 +108,51 @@ func TestSelectEffectiveSANs_PartialMatchKeepsOrder(t *testing.T) {
 	}
 	got := selectEffectiveSANs(all, dns)
 	assert.Equal(t, []string{"mail.example.com", "autodiscover.example.com"}, got)
+}
+
+// TestScanMailSANDNS_PublicVsLocal asserts the scan reflects PUBLIC DNS:
+// a SAN that resolves to publicIP only via a stub "public" answer is kept;
+// one that publicly NXDOMAINs (queried, empty) is dropped even though the
+// box would have resolved it locally (GH #132); and when public resolvers
+// are unreachable (queried=false) it falls back to the box resolver.
+func TestScanMailSANDNS_PublicVsLocal(t *testing.T) {
+	const ip = "203.0.113.42"
+	sans := mailSANHostnames("example.com") // mail., autoconfig., autodiscover., mta-sts.
+	stub := func(_ context.Context, host string) ([]string, bool) {
+		switch host {
+		case "mail.example.com":
+			return []string{ip}, true // public points at us -> keep
+		case "autoconfig.example.com":
+			return []string{ip}, true // delegated tenant: public also at us -> keep
+		case "autodiscover.example.com":
+			return nil, true // public NXDOMAIN -> drop (the GH#132 case)
+		default: // mta-sts.example.com
+			return []string{"198.51.100.9"}, true // elsewhere -> drop
+		}
+	}
+	dns := scanMailSANDNS(context.Background(), sans, ip, stub)
+	if !dns["mail.example.com"].Matches {
+		t.Errorf("mail.<d> must match (public points at us)")
+	}
+	if !dns["autoconfig.example.com"].Matches {
+		t.Errorf("autoconfig must match when public resolves to us (don't over-drop delegated tenants)")
+	}
+	if dns["autodiscover.example.com"].Matches {
+		t.Errorf("autodiscover must NOT match on public NXDOMAIN (GH#132)")
+	}
+	if dns["mta-sts.example.com"].Matches {
+		t.Errorf("mta-sts pointing elsewhere must NOT match")
+	}
+
+	// selectEffectiveSANs then keeps mail + autoconfig, drops the rest.
+	eff := selectEffectiveSANs(sans, dns)
+	want := map[string]bool{"mail.example.com": true, "autoconfig.example.com": true}
+	if len(eff) != 2 {
+		t.Fatalf("effective SANs: got %v, want exactly mail+autoconfig", eff)
+	}
+	for _, h := range eff {
+		if !want[h] {
+			t.Errorf("unexpected SAN kept: %s", h)
+		}
+	}
 }

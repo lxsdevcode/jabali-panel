@@ -17,7 +17,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnscompile"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnsverify"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dnsverify"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/nginxrules"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
