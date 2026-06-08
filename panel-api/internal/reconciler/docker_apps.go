@@ -33,6 +33,10 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
+// dockerAppSizeInterval gates the du(1) data-size refresh so it runs on a
+// slow cadence rather than every status tick (which is otherwise cheap).
+const dockerAppSizeInterval = 15 * time.Minute
+
 // reconcileDockerApps is called once per reconciler tick (the same
 // cadence as domain reconciliation). The signature matches sibling
 // tick functions; the docker-app repo is optional so a deploy without
@@ -155,7 +159,13 @@ func (r *Reconciler) dispatchInstall(ctx context.Context, app *models.DockerApp)
 func (r *Reconciler) statusPoll(ctx context.Context, app *models.DockerApp) {
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	raw, err := r.agent.Call(callCtx, "docker_app.status", map[string]any{"slug": app.InstanceSlug})
+	// Refresh the on-disk data size at most every dockerAppSizeInterval —
+	// du(1) walks the tree, so it must not run on every cheap status tick.
+	wantSize := app.SizeCheckedAt == nil || time.Now().Sub(*app.SizeCheckedAt) >= dockerAppSizeInterval
+	raw, err := r.agent.Call(callCtx, "docker_app.status", map[string]any{
+		"slug":      app.InstanceSlug,
+		"with_size": wantSize,
+	})
 	if err != nil {
 		// Don't mark failed — could be a transient agent socket
 		// blip. Log + leave the row alone.
@@ -163,14 +173,24 @@ func (r *Reconciler) statusPoll(ctx context.Context, app *models.DockerApp) {
 		return
 	}
 	var resp struct {
-		Slug    string `json:"slug"`
-		Present bool   `json:"present"`
-		Running bool   `json:"running"`
-		Health  string `json:"health"`
+		Slug      string `json:"slug"`
+		Present   bool   `json:"present"`
+		Running   bool   `json:"running"`
+		Health    string `json:"health"`
+		DataBytes int64  `json:"data_bytes"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		r.log.Warn("dockerapp: parse status failed", "id", app.ID, "err", err)
 		return
+	}
+
+	// Persist the size when we asked for it and got a real value. >0 guards
+	// against a du failure (agent returns 0 best-effort) clobbering a prior
+	// reading; a real install dir is always >0 (it holds compose.yml + .env).
+	if wantSize && resp.Present && resp.DataBytes > 0 {
+		if err := r.dockerApps.UpdateDataSize(ctx, app.ID, resp.DataBytes); err != nil {
+			r.log.Warn("dockerapp: data-size update failed", "id", app.ID, "err", err)
+		}
 	}
 
 	target := app.Status

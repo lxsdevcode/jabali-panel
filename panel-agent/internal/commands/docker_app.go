@@ -277,6 +277,10 @@ func dockerAppDeleteHandler(ctx context.Context, params json.RawMessage) (any, e
 // used by the reconciler to converge state.
 type dockerAppStatusParams struct {
 	Slug string `json:"slug"`
+	// WithSize triggers a du(1) of the install data dir. Gated by the
+	// caller because it walks the tree — the reconciler only sets it on a
+	// slow cadence, never on every status tick.
+	WithSize bool `json:"with_size,omitempty"`
 }
 
 type dockerAppStatusResponse struct {
@@ -284,6 +288,7 @@ type dockerAppStatusResponse struct {
 	Present bool               `json:"present"`     // compose.yml exists on disk
 	Running bool               `json:"running"`     // at least one service is in 'running' state
 	Health  string             `json:"health"`      // "healthy" | "unhealthy" | "starting" | "none"
+	DataBytes int64            `json:"data_bytes,omitempty"` // du of the install dir; only when with_size
 	Lines   []dockerAppPsLine  `json:"lines,omitempty"`
 }
 
@@ -332,7 +337,32 @@ func dockerAppStatusHandler(ctx context.Context, params json.RawMessage) (any, e
 			resp.Health = l.Health
 		}
 	}
+	if p.WithSize {
+		// Best-effort: a du failure must not fail the status call.
+		if n, derr := dirSizeBytes(ctx, dir); derr == nil {
+			resp.DataBytes = n
+		}
+	}
 	return resp, nil
+}
+
+// dirSizeBytes returns the apparent on-disk size of dir in bytes via
+// du(1). One exec, no per-file fork; bounded by the tree walk. Returns
+// an error the caller can ignore (size is advisory, never load-bearing).
+func dirSizeBytes(ctx context.Context, dir string) (int64, error) {
+	out, err := exec.CommandContext(ctx, "du", "-sb", dir).Output()
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("du: empty output")
+	}
+	n, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("du: parse %q: %w", fields[0], err)
+	}
+	return n, nil
 }
 
 // --- helpers -----------------------------------------------------------------

@@ -53,6 +53,8 @@ type DockerApp struct {
 	MemoryLimit    *string   `gorm:"column:memory_limit;type:varchar(16);null" json:"memory_limit"`
 	PIDsLimit      *int      `gorm:"column:pids_limit;type:int;null" json:"pids_limit"`
 	LastError      *string   `gorm:"column:last_error;type:text;null" json:"last_error"`
+	DataBytes      int64      `gorm:"column:data_bytes;type:bigint;not null;default:0" json:"data_bytes"`
+	SizeCheckedAt  *time.Time `gorm:"column:size_checked_at;type:timestamp;null" json:"size_checked_at"`
 	CreatedAt      time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt      time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP;onUpdate:CURRENT_TIMESTAMP" json:"updated_at"`
 }

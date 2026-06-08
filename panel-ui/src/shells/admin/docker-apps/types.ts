@@ -79,6 +79,8 @@ export interface InstalledApp {
   cpu_limit: string | null;
   memory_limit: string | null;
   pids_limit: number | null;
+  data_bytes: number;
+  size_checked_at: string | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;

@@ -28,6 +28,7 @@ type DockerAppRepository interface {
 	ListAll(ctx context.Context) ([]*models.DockerApp, error)
 	ListByStatus(ctx context.Context, status string) ([]*models.DockerApp, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
+	UpdateDataSize(ctx context.Context, id string, dataBytes int64) error
 	UpdateImageSHA(ctx context.Context, id, imageSHA string) error
 	UpdateAvailableDigest(ctx context.Context, id, digest string) error
 	MarkChecked(ctx context.Context, id string) error
@@ -123,6 +124,19 @@ func (r *dockerAppRepo) UpdateStatus(ctx context.Context, id, status string, las
 		Model(&models.DockerApp{}).
 		Where("id = ?", id).
 		Updates(updates).Error
+}
+
+func (r *dockerAppRepo) UpdateDataSize(ctx context.Context, id string, dataBytes int64) error {
+	// size is advisory; bump size_checked_at so the reconciler gates the
+	// next du(1). Deliberately does NOT touch updated_at — a size refresh
+	// is not a meaningful state change for watchdogs / "needs attention".
+	return r.db.WithContext(ctx).
+		Model(&models.DockerApp{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"data_bytes":      dataBytes,
+			"size_checked_at": time.Now(),
+		}).Error
 }
 
 func (r *dockerAppRepo) UpdateImageSHA(ctx context.Context, id, imageSHA string) error {

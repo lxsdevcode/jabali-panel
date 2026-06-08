@@ -2,6 +2,7 @@
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
 import { App, Avatar, Button, Card, Col, Dropdown, Empty, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { humanBytes } from "../../../utils/bytes";
 import { useState } from "react";
 import {
   AppstoreOutlined,
@@ -308,6 +309,24 @@ export const AdminDockerAppsPage = () => {
                           <Typography.Text strong style={{ fontSize: 12 }}>{r.pids_limit ?? "—"}</Typography.Text>
                         </span>
                       </Space>
+                    ),
+                  },
+                  {
+                    title: "Disk",
+                    dataIndex: "data_bytes",
+                    width: 110,
+                    render: (_, r) => (
+                      <Tooltip
+                        title={
+                          r.size_checked_at
+                            ? `Persistent data on disk · checked ${new Date(r.size_checked_at).toLocaleString()}`
+                            : "Persistent data size — not measured yet"
+                        }
+                      >
+                        <Typography.Text strong style={{ fontSize: 12 }}>
+                          {r.data_bytes > 0 ? humanBytes(r.data_bytes) : "—"}
+                        </Typography.Text>
+                      </Tooltip>
                     ),
                   },
                   {
