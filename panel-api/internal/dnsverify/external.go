@@ -22,6 +22,7 @@ package dnsverify
 
 import (
 	"context"
+	"errors"
 	"net"
 	"time"
 )
@@ -35,18 +36,44 @@ var externalResolvers = []string{"1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"}
 // every attempt fails. Each attempt has a tight per-resolver timeout
 // so a single unreachable resolver can't stall a reconciler tick.
 func LookupHostExternal(ctx context.Context, host string) []string {
+	addrs, _ := LookupHostExternalResult(ctx, host)
+	return addrs
+}
+
+// LookupHostExternalResult is like LookupHostExternal but also reports
+// whether any external resolver gave a DEFINITIVE answer — records, or an
+// authoritative NXDOMAIN / NODATA. queried=false means every resolver was
+// unreachable (timeout / blocked outbound :53): the result is INCONCLUSIVE
+// and callers must NOT treat an empty addrs as "the world can't see this
+// name". This lets the panel-cert gate distinguish "public DNS has no
+// record" (park with a clear reason) from "we couldn't reach public DNS"
+// (fall back to the local view rather than wrongly blocking issuance).
+func LookupHostExternalResult(ctx context.Context, host string) (addrs []string, queried bool) {
 	for _, addr := range externalResolvers {
 		for _, proto := range []string{"udp", "tcp"} {
 			r := newDirectResolver(addr, proto)
 			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			out, err := r.LookupHost(lookupCtx, host)
 			cancel()
-			if err == nil && len(out) > 0 {
-				return out
+			if err == nil {
+				if len(out) > 0 {
+					return out, true
+				}
+				// Resolver answered with no addresses (NODATA) — the
+				// name exists but has no A/AAAA. Definitive empty.
+				return nil, true
 			}
+			var derr *net.DNSError
+			if errors.As(err, &derr) && derr.IsNotFound {
+				// Authoritative NXDOMAIN from a public resolver — the
+				// world genuinely has no record for this name.
+				return nil, true
+			}
+			// Timeout / connection error: this resolver is unreachable,
+			// try the next transport / resolver before giving up.
 		}
 	}
-	return nil
+	return nil, false
 }
 
 // newDirectResolver returns a pure-Go resolver that bypasses
