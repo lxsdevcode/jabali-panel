@@ -10,6 +10,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/userops"
 )
 
 // Mirrors the HTTP-handler ops in internal/api/{users,domains}.go — list
@@ -82,6 +83,20 @@ func deleteUserDirect(ctx context.Context, userID string, purgeHome bool) error 
 	domains := domainRepoFromDB()
 	if owned, _, err := domains.ListByUserID(ctx, userID, repository.ListOptions{Limit: 500}); err == nil {
 		for _, d := range owned {
+			// Purge the domain's Stalwart accounts BEFORE the row delete
+			// FK-cascades the mailbox rows away — same call the HTTP
+			// handler makes. Without this, jabali user delete left the
+			// Stalwart account behind -> re-migrating the same address hit
+			// {"type":"primaryKeyViolation","properties":["email"]}.
+			// sharedAgent is *agent.Client (concrete); nil-guard at the
+			// call site, not inside the helper (a nil *agent.Client boxed
+			// into AgentCaller is a non-nil interface and would panic).
+			if sharedAgent != nil {
+				if err := userops.PurgeDomainMail(ctx, sharedAgent, d.Name); err != nil {
+					slog.Warn("cli delete: stalwart domain purge failed",
+						"user_id", userID, "domain", d.Name, "err", err)
+				}
+			}
 			if err := domains.Delete(ctx, d.ID); err != nil {
 				slog.Warn("cli delete: cascade domain failed",
 					"user_id", userID, "domain_id", d.ID, "err", err)

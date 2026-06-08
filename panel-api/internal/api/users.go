@@ -516,12 +516,7 @@ func (h *userHandler) delete(c *gin.Context) {
 				// here logs + continues (orphan is recoverable; a blocked
 				// user delete is worse).
 				if h.cfg.Agent != nil {
-					mctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
-					_, delErr := h.cfg.Agent.Call(mctx, "mail.domain.purge_accounts", map[string]any{
-						"domain": name,
-					})
-					cancel()
-					if delErr != nil {
+					if delErr := userops.PurgeDomainMail(c.Request.Context(), h.cfg.Agent, name); delErr != nil {
 						slog.Warn("cascade delete: stalwart domain purge failed",
 							"user_id", id, "domain", name, "err", delErr)
 					}
