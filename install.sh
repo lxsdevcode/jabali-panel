@@ -4731,6 +4731,18 @@ server {
 server {
     listen 443 ssl default_server http2;
     listen [::]:443 ssl default_server http2;
+    # GH#135: mirror the \${JABALI_SRV_IPV4}:80 binding above onto :443.
+    # Per-domain vhosts bind `listen \${IPv4}:443 ssl` (M24), moving them
+    # into nginx's specific-IP listener pool. The wildcard `listen 443 ssl
+    # default_server` is NEVER consulted for an IP+port that already has a
+    # specific-IP listener — so without this explicit line an unknown SNI
+    # on the public IP (the panel hostname itself, which has no tenant
+    # vhost) falls to the alphabetically-first tenant vhost and is served
+    # that tenant's self-signed cert instead of the panel's LE cert at
+    # \${tls_cert}. Same incident class as 2026-04-26 (then fixed for :80
+    # only); the panel hostname showed a 123123.com cert warning on
+    # https://<hostname>/ while :8443 served valid LE.
+    listen ${JABALI_SRV_IPV4}:443 ssl default_server http2;
     server_name _;
 
     ssl_certificate     ${tls_cert};
