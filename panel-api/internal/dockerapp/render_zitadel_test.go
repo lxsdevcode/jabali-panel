@@ -47,6 +47,7 @@ func TestRender_ZitadelIdP(t *testing.T) {
 		`ZITADEL_EXTERNALDOMAIN: "id.example.com"`,
 		`ZITADEL_EXTERNALSECURE: "true"`,
 		`ZITADEL_TLS_ENABLED: "false"`,
+		`ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "false"`,
 		`ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: "pgsecret"`,
 		// admin password carries the policy-guaranteeing suffix
 		`ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "baseadminpwAa1!"`,

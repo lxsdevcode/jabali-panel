@@ -18,6 +18,12 @@ services:
       ZITADEL_EXTERNALSECURE: "true"
       ZITADEL_TLS_ENABLED: "false"
       ZITADEL_PORT: "8080"
+      # Use the built-in v1 login (/ui/login), served by this single
+      # container. v4 otherwise defaults the Console to "login v2"
+      # (/ui/v2/login), a SEPARATE zitadel-login container needing a PAT +
+      # a path-split reverse proxy the catalog can't express -> the login
+      # page 404s. Verified: with this false, authorize -> /ui/login.
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "false"
       # Database — ZITADEL connects as the admin role to create the
       # zitadel role + database on first init, then runs as the zitadel
       # role. Both share the generated POSTGRES_PASSWORD.
