@@ -345,6 +345,45 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			}
 			return nil
 		}},
+		{"self-heal panel-hostname vhost + landing (GH#135)", func() error {
+			// jabali update never re-renders the server-scope nginx vhosts
+			// (only fresh installs run install_nginx_default_vhost), so the
+			// GH#135 fix — the panel hostname's own :443 vhost + landing
+			// page — never reaches existing installs. This lives in PRELUDE
+			// (not buildSteps) so it runs on EVERY update, including the
+			// fast-path "already up to date" no-op; buildSteps is skipped
+			// when last-built-sha == HEAD.
+			//
+			// Detect-gated two ways: (1) no-op when the landing vhost is
+			// already present (avoids re-render + nginx reload on every
+			// converged update); (2) SKIP rather than render empty vars
+			// when hostname/IP can't be derived, since
+			// install_nginx_default_vhost _die's on a failed nginx -t.
+			// IPv4 is read back from the live `listen <ip>:80
+			// default_server` line install.sh already rendered.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			script := `set -e
+CONF=/etc/nginx/sites-available/jabali-default.conf
+HN="$(hostname -f)"
+if [ -n "$HN" ] && grep -Fq "server_name $HN;" "$CONF" 2>/dev/null; then
+  exit 0
+fi
+IP="$(grep -oE 'listen [0-9.]+:80 default_server' "$CONF" 2>/dev/null | grep -oE '[0-9.]+' | head -1)"
+if [ -z "$HN" ] || [ -z "$IP" ]; then
+  echo "  (skip: could not derive hostname/IP for default-vhost re-render)"
+  exit 0
+fi
+echo "  re-rendering default vhost for $HN ($IP) — panel-hostname landing was missing"
+export JABALI_SRV_HOSTNAME="$HN" JABALI_SRV_IPV4="$IP"
+source ` + installSh + ` && install_nginx_default_vhost`
+			if err := run("", "bash", "-c", script); err != nil {
+				fmt.Printf("  (default vhost re-render failed: %v -- continuing)\n", err)
+			}
+			return nil
+		}},
 	}
 
 	// Build/apply steps — run only when HEAD moved OR --force was passed.
@@ -1185,35 +1224,6 @@ test -x node_modules/.bin/tsc || {
 			if broken, detail, derr := detectNginxConfigInvalid(repairCtx{}); derr == nil && broken {
 				fmt.Printf("  nginx-config-invalid: %s -- folding http2\n", detail)
 				return fixNginxConfigInvalid(repairCtx{})
-			}
-			return nil
-		}},
-		{"re-render default vhost + panel-hostname landing (GH#135)", func() error {
-			// jabali update mirrors install.sh halves but does NOT
-			// re-render the server-scope nginx vhosts (see the http2
-			// self-heal note above), so fixes to the default vhost or the
-			// panel-hostname :443 landing page never reach existing
-			// installs. Re-run the idempotent renderer with the hostname +
-			// public IPv4 derived from the live host. Detect-gated: if
-			// either can't be derived we SKIP rather than render empty vars
-			// (install_nginx_default_vhost _die's on a failed nginx -t).
-			// install.sh's BASH_SOURCE guard means sourcing only defines
-			// the function. Failure is logged, never blocks the update.
-			installSh := repoDir + "/install.sh"
-			if _, err := os.Stat(installSh); err != nil {
-				return nil
-			}
-			script := `set -e
-HN="$(hostname -f)"
-IP="$(grep -oE 'listen [0-9.]+:80 default_server' /etc/nginx/sites-available/jabali-default.conf | grep -oE '[0-9.]+' | head -1)"
-if [ -z "$HN" ] || [ -z "$IP" ]; then
-  echo "  (skip: could not derive hostname/IP for default-vhost re-render)"
-  exit 0
-fi
-export JABALI_SRV_HOSTNAME="$HN" JABALI_SRV_IPV4="$IP"
-source ` + installSh + ` && install_nginx_default_vhost`
-			if err := run("", "bash", "-c", script); err != nil {
-				fmt.Printf("  (default vhost re-render failed: %v -- continuing)\n", err)
 			}
 			return nil
 		}},
