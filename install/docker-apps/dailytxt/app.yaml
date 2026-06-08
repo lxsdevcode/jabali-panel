@@ -31,8 +31,11 @@ ports:
     health_path: /
 
 env:
-  - name: SECRET_KEY
+  - name: SECRET_TOKEN
     secret: true
     generate: password64
   - name: ALLOW_REGISTRATION
     value: "true"
+  - name: ADMIN_PASSWORD
+    secret: true
+    generate: password32
