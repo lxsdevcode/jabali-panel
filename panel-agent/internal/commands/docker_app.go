@@ -337,6 +337,17 @@ func dockerAppStatusHandler(ctx context.Context, params json.RawMessage) (any, e
 			resp.Health = l.Health
 		}
 	}
+	// The in-container docker healthcheck is unreliable across the catalog
+	// (missing tool / wrong port), so when the app publishes a loopback port,
+	// the host-side HTTP probe is the source of truth for health — a serving
+	// app reads "healthy" even if its docker healthcheck is red.
+	if ports := probeLoopbackPorts(dir); len(ports) > 0 && resp.Running {
+		if httpServing(ctx, ports) {
+			resp.Health = "healthy"
+		} else if resp.Health == "none" || resp.Health == "" {
+			resp.Health = "unhealthy"
+		}
+	}
 	if p.WithSize {
 		// Best-effort: a du failure must not fail the status call.
 		if n, derr := dirSizeBytes(ctx, dir); derr == nil {
@@ -411,6 +422,13 @@ func writeAtomicDockerApp(dst string, data []byte, mode os.FileMode) error {
 // service reports `healthy`, or until the timeout elapses. Returns
 // the resolved status string and the container ID (if known).
 func waitHealthy(ctx context.Context, dir, slug string, timeout time.Duration) (string, string) {
+	// Prefer a host-side HTTP probe of the app's published port over the
+	// in-container docker healthcheck: the latter depends on a tool the image
+	// may not ship (wget) and on a port that may be mis-set in the catalog,
+	// which silently wedged installs at "installing". The HTTP probe asks the
+	// app directly. Docker-health is the fallback for installs that publish no
+	// loopback HTTP port.
+	ports := probeLoopbackPorts(dir)
 	deadline := time.Now().Add(timeout)
 	for {
 		select {
@@ -418,18 +436,30 @@ func waitHealthy(ctx context.Context, dir, slug string, timeout time.Duration) (
 			return "starting", ""
 		default:
 		}
-		out, err := runDockerCompose(ctx, dir, "ps", "--format", "json")
-		if err == nil {
-			for _, l := range parseComposePSJSON(out) {
-				if l.Health == "healthy" {
-					return "running", l.Name
-				}
-				if l.Health == "unhealthy" {
-					return "unhealthy", l.Name
+		if len(ports) > 0 {
+			if httpServing(ctx, ports) {
+				return "running", ""
+			}
+		} else {
+			out, err := runDockerCompose(ctx, dir, "ps", "--format", "json")
+			if err == nil {
+				for _, l := range parseComposePSJSON(out) {
+					if l.Health == "healthy" {
+						return "running", l.Name
+					}
+					if l.Health == "unhealthy" {
+						return "unhealthy", l.Name
+					}
 				}
 			}
 		}
 		if time.Now().After(deadline) {
+			if len(ports) > 0 {
+				// App never answered an HTTP request on its published port —
+				// not serving (image broken, or the catalog container_port is
+				// wrong). Fail fast with a clear state instead of hanging.
+				return "unhealthy", ""
+			}
 			return "starting", ""
 		}
 		time.Sleep(2 * time.Second)
