@@ -9,7 +9,7 @@ icon: icon.svg
 upstream: https://github.com/linkwarden/linkwarden
 documentation: https://docs.linkwarden.app/
 
-image_channel: ghcr.io/linkwarden/linkwarden:latest
+image_channel: ghcr.io/linkwarden/linkwarden:v2.14.1
 update_mode: manual
 
 resources:

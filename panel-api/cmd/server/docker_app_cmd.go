@@ -163,6 +163,7 @@ func newDockerAppInstallCmd() *cobra.Command {
 				Slug:            slug,
 				Name:            name,
 				CatalogVersion:  entry.Version,
+				InstanceSlug:    entry.Slug,
 				Status:          models.DockerAppStatusPending,
 				UpdateMode:      updateMode,
 				CPULimit:        nilIfEmpty(cpu),
@@ -502,7 +503,7 @@ func newDockerAppUpdateCmd() *cobra.Command {
 			// via the install's existing .env. Best-effort: on any failure
 			// fall back to the on-disk compose so update never hard-blocks.
 			updateParams := map[string]any{
-				"slug":                        app.InstanceSlug,
+				"slug":                        app.EffectiveSlug(),
 				"healthcheck_timeout_seconds": 300,
 			}
 			if composeYML, envFile, rerr := rerenderInstallForCLI(ctx, repo, app); rerr != nil {
@@ -514,6 +515,18 @@ func newDockerAppUpdateCmd() *cobra.Command {
 			raw, err := sharedAgent.Call(ctx, "docker_app.update", updateParams)
 			if err != nil {
 				return err
+			}
+			// On a successful update the install was re-rendered from the
+			// current catalog, so refresh the stored version label.
+			var outc struct {
+				Outcome string `json:"outcome"`
+			}
+			if json.Unmarshal(raw, &outc) == nil && outc.Outcome == "updated" {
+				if cat, cerr := loadDockerCatalogForCLI(); cerr == nil {
+					if entry, ok := cat.Get(app.Slug); ok && entry.Version != "" {
+						_ = repo.UpdateCatalogVersion(ctx, app.ID, entry.Version)
+					}
+				}
 			}
 			os.Stdout.Write(raw)
 			os.Stdout.Write([]byte{'\n'})
@@ -634,7 +647,7 @@ func rerenderInstallForCLI(ctx context.Context, repo repository.DockerAppReposit
 	}
 	// Existing secrets from the install's .env (read back over the agent).
 	existingEnv := map[string]string{}
-	if raw, rerr := sharedAgent.Call(ctx, "docker_app.read_env", map[string]any{"slug": app.InstanceSlug}); rerr == nil {
+	if raw, rerr := sharedAgent.Call(ctx, "docker_app.read_env", map[string]any{"slug": app.EffectiveSlug()}); rerr == nil {
 		var resp struct {
 			Env map[string]string `json:"env"`
 		}
@@ -685,11 +698,11 @@ func rerenderInstallForCLI(ctx context.Context, repo repository.DockerAppReposit
 		pids = *app.PIDsLimit
 	}
 	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-		Slug:         app.InstanceSlug,
+		Slug:         app.EffectiveSlug(),
 		Name:         app.Name,
 		Domain:       domain,
 		ImageChannel: entry.ImageChannel,
-		DataRoot:     "/var/lib/jabali/docker-apps/" + app.InstanceSlug,
+		DataRoot:     "/var/lib/jabali/docker-apps/" + app.EffectiveSlug(),
 		CPULimit:     cpu,
 		MemoryLimit:  mem,
 		PIDsLimit:    pids,

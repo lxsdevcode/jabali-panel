@@ -59,6 +59,18 @@ type DockerApp struct {
 	UpdatedAt      time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP;onUpdate:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
+// EffectiveSlug is the on-disk / agent identifier for this install:
+// instance_slug when set (UI installs + post-000160 rows), else the
+// catalog slug (legacy CLI installs left instance_slug empty). Use this
+// anywhere a slug is passed to the agent or used to build a data path.
+func (a *DockerApp) EffectiveSlug() string {
+	if a.InstanceSlug != "" {
+		return a.InstanceSlug
+	}
+	return a.Slug
+}
+
+
 func (DockerApp) TableName() string { return "docker_apps" }
 
 // DockerAppStatus values. Centralised so callers don't sprinkle string

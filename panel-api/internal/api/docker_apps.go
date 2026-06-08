@@ -742,7 +742,7 @@ func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models
 	if !ok {
 		return "", "", fmt.Errorf("catalog entry %q not found", app.Slug)
 	}
-	existingEnv, err := h.readInstallEnv(ctx, app.InstanceSlug)
+	existingEnv, err := h.readInstallEnv(ctx, app.EffectiveSlug())
 	if err != nil {
 		return "", "", fmt.Errorf("read env: %w", err)
 	}
@@ -773,11 +773,11 @@ func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models
 		pids = *app.PIDsLimit
 	}
 	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-		Slug:         app.InstanceSlug,
+		Slug:         app.EffectiveSlug(),
 		Name:         app.Name,
 		Domain:       domain,
 		ImageChannel: entry.ImageChannel,
-		DataRoot:     "/var/lib/jabali/docker-apps/" + app.InstanceSlug,
+		DataRoot:     "/var/lib/jabali/docker-apps/" + app.EffectiveSlug(),
 		CPULimit:     cpu,
 		MemoryLimit:  mem,
 		PIDsLimit:    pids,
@@ -1010,7 +1010,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 		// would regenerate DB passwords / masterkeys and break stateful
 		// services. Best-effort: a read failure falls back to fresh (old
 		// behaviour) but is logged.
-		existingEnv, envErr := h.readInstallEnv(ctx, app.InstanceSlug)
+		existingEnv, envErr := h.readInstallEnv(ctx, app.EffectiveSlug())
 		if envErr != nil {
 			slog.Warn("docker-app edit: read env failed, secrets may regenerate", "id", app.ID, "err", envErr)
 		}
@@ -1019,7 +1019,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "env_materialise_failed", "detail": err.Error()})
 			return
 		}
-		dataRoot := "/var/lib/jabali/docker-apps/" + app.InstanceSlug
+		dataRoot := "/var/lib/jabali/docker-apps/" + app.EffectiveSlug()
 		cpu := ""
 		if app.CPULimit != nil {
 			cpu = *app.CPULimit
@@ -1033,7 +1033,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			pids = *app.PIDsLimit
 		}
 		composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-			Slug:         app.InstanceSlug,
+			Slug:         app.EffectiveSlug(),
 			Name:         app.Name,
 			Domain:       newDomain,
 			ImageChannel: entry.ImageChannel,
@@ -1057,7 +1057,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			}
 			envFile := buildEnvFile(envMap)
 			if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", map[string]any{
-				"slug":                        app.InstanceSlug,
+				"slug":                        app.EffectiveSlug(),
 				"compose_yml":                 composeYML,
 				"env_file":                    envFile,
 				"volumes":                     volumeNames,
@@ -1092,7 +1092,7 @@ func (h *dockerAppHandler) delete(c *gin.Context) {
 		callCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
 		if _, err := h.cfg.Agent.Call(callCtx, "docker_app.delete", map[string]any{
-			"slug":          app.InstanceSlug,
+			"slug":          app.EffectiveSlug(),
 			"purge_volumes": purge,
 		}); err != nil {
 			// For rows already in a broken state (failed install / stuck
@@ -1166,7 +1166,7 @@ func (h *dockerAppHandler) lifecycle(action string) gin.HandlerFunc {
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		raw, err := h.cfg.Agent.Call(callCtx, verb, map[string]any{"slug": app.InstanceSlug})
+		raw, err := h.cfg.Agent.Call(callCtx, verb, map[string]any{"slug": app.EffectiveSlug()})
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
 			return
@@ -1222,7 +1222,7 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	// install — update otherwise reused the stale on-disk compose.yml.
 	// Secrets are preserved via the install's existing .env.
 	updateParams := map[string]any{
-		"slug":                        app.InstanceSlug,
+		"slug":                        app.EffectiveSlug(),
 		"healthcheck_timeout_seconds": 300,
 	}
 	domain := h.installDomain(ctx, app.ID)
@@ -1262,6 +1262,14 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 			_ = h.cfg.Repo.UpdateImageSHA(persistCtx, app.ID, resp.NewImage)
 			_ = h.cfg.Repo.UpdateAvailableDigest(persistCtx, app.ID, resp.NewImage)
 		}
+		// The install was just re-rendered from the current catalog, so the
+		// version label should track the catalog instead of freezing at the
+		// install-time value (the "shows 2.8.1 but running 2.14.1" report).
+		if h.cfg.Catalog != nil {
+			if entry, ok := h.cfg.Catalog.Get(app.Slug); ok && entry.Version != "" {
+				_ = h.cfg.Repo.UpdateCatalogVersion(persistCtx, app.ID, entry.Version)
+			}
+		}
 	case "rolled_back":
 		detail := resp.Detail
 		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, &detail)
@@ -1289,7 +1297,7 @@ func (h *dockerAppHandler) logs(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
 		return
 	}
-	params := map[string]any{"slug": app.InstanceSlug}
+	params := map[string]any{"slug": app.EffectiveSlug()}
 	if l := c.Query("lines"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
 			params["lines"] = n
@@ -1339,7 +1347,7 @@ func (h *dockerAppHandler) execCmd(c *gin.Context) {
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.exec", map[string]any{
-		"slug":    app.InstanceSlug,
+		"slug":    app.EffectiveSlug(),
 		"service": req.Service,
 		"command": req.Command,
 	})
@@ -1369,7 +1377,7 @@ func (h *dockerAppHandler) backup(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	bkParams := map[string]any{"slug": app.InstanceSlug, "reason": "manual"}
+	bkParams := map[string]any{"slug": app.EffectiveSlug(), "reason": "manual"}
 	if app.BackupDestinationID != nil {
 		bkParams["destination_id"] = *app.BackupDestinationID
 	}
@@ -1400,7 +1408,7 @@ func (h *dockerAppHandler) listBackups(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	lbParams := map[string]any{"slug": app.InstanceSlug}
+	lbParams := map[string]any{"slug": app.EffectiveSlug()}
 	if app.BackupDestinationID != nil {
 		lbParams["destination_id"] = *app.BackupDestinationID
 	}
@@ -1432,7 +1440,7 @@ func (h *dockerAppHandler) restoreBackup(c *gin.Context) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	rsParams := map[string]any{"slug": app.InstanceSlug, "snapshot_id": bid}
+	rsParams := map[string]any{"slug": app.EffectiveSlug(), "snapshot_id": bid}
 	if app.BackupDestinationID != nil {
 		rsParams["destination_id"] = *app.BackupDestinationID
 	}

@@ -137,7 +137,7 @@ func (r *Reconciler) dispatchInstall(ctx context.Context, app *models.DockerApp)
 	// compose.yml from disk and brings it up. The full install
 	// payload is set by the REST handler on first dispatch.
 	raw, err := r.agent.Call(callCtx, "docker_app.install", map[string]any{
-		"slug":          app.InstanceSlug,
+		"slug":          app.EffectiveSlug(),
 		"compose_yml":   "RECOVERY",                       // sentinel: agent recovery path reads compose.yml from disk
 		"volumes":       []string{},
 		"wait_healthy":  false,
@@ -163,7 +163,7 @@ func (r *Reconciler) statusPoll(ctx context.Context, app *models.DockerApp) {
 	// du(1) walks the tree, so it must not run on every cheap status tick.
 	wantSize := app.SizeCheckedAt == nil || time.Now().Sub(*app.SizeCheckedAt) >= dockerAppSizeInterval
 	raw, err := r.agent.Call(callCtx, "docker_app.status", map[string]any{
-		"slug":      app.InstanceSlug,
+		"slug":      app.EffectiveSlug(),
 		"with_size": wantSize,
 	})
 	if err != nil {
@@ -283,7 +283,7 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	raw, err := r.agent.Call(callCtx, "docker_app.check_update", map[string]any{
-		"slug":          app.InstanceSlug,
+		"slug":          app.EffectiveSlug(),
 		"image_channel": entry.ImageChannel,
 	})
 	// Always mark checked even on failure -- we don\'t want a
@@ -342,7 +342,7 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 		updateCtx, ucancel := context.WithTimeout(ctx, 6*time.Minute)
 		defer ucancel()
 		_, err := r.agent.Call(updateCtx, "docker_app.update", map[string]any{
-			"slug":                        app.InstanceSlug,
+			"slug":                        app.EffectiveSlug(),
 			"healthcheck_timeout_seconds": 300,
 		})
 		if err != nil {

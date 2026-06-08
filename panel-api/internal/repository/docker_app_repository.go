@@ -30,6 +30,7 @@ type DockerAppRepository interface {
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
 	UpdateDataSize(ctx context.Context, id string, dataBytes int64) error
 	UpdateImageSHA(ctx context.Context, id, imageSHA string) error
+	UpdateCatalogVersion(ctx context.Context, id, version string) error
 	UpdateAvailableDigest(ctx context.Context, id, digest string) error
 	MarkChecked(ctx context.Context, id string) error
 	Update(ctx context.Context, app *models.DockerApp) error
@@ -149,6 +150,16 @@ func (r *dockerAppRepo) UpdateImageSHA(ctx context.Context, id, imageSHA string)
 		}).Error
 }
 
+
+// UpdateCatalogVersion refreshes the stored catalog_version after an update
+// re-renders the install from the current catalog template, so the UI
+// label tracks the catalog instead of freezing at the install-time value.
+func (r *dockerAppRepo) UpdateCatalogVersion(ctx context.Context, id, version string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.DockerApp{}).
+		Where("id = ?", id).
+		Update("catalog_version", version).Error
+}
 func (r *dockerAppRepo) UpdateAvailableDigest(ctx context.Context, id, digest string) error {
 	return r.db.WithContext(ctx).
 		Model(&models.DockerApp{}).
