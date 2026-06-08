@@ -4846,38 +4846,18 @@ VHOSTEOF
   chmod 0755 "$hostname_docroot"
   if [[ ! -e "${hostname_docroot}/index.html" && ! -e "${hostname_docroot}/index.php" ]]; then
     _log "writing default landing page to ${hostname_docroot}/index.html"
-    cat > "${hostname_docroot}/index.html" << LANDINGEOF
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${JABALI_SRV_HOSTNAME}</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center;
-         justify-content: center; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-         background: #0f1115; color: #e6e8eb; }
-  .card { text-align: center; padding: 3rem 2.5rem; max-width: 32rem; }
-  h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 .5rem; }
-  p { color: #9aa0a6; line-height: 1.6; margin: .25rem 0; }
-  code { background: rgba(255,255,255,.08); padding: .15rem .4rem; border-radius: 4px; }
-  a.btn { display: inline-block; margin-top: 1.5rem; padding: .6rem 1.4rem;
-          background: #3b82f6; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 500; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h1>${JABALI_SRV_HOSTNAME}</h1>
-    <p>This server is running Jabali Panel.</p>
-    <p>The control panel is served on port <code>8443</code>.</p>
-    <p>Replace this page by dropping your own <code>index.html</code> or
-       <code>index.php</code> in <code>/var/www/${JABALI_SRV_HOSTNAME}</code>.</p>
-    <a class="btn" href="https://${JABALI_SRV_HOSTNAME}:8443/">Open control panel</a>
-  </div>
-</body>
-</html>
-LANDINGEOF
+    # Render the branded landing template (install/templates/hostname-landing.html),
+    # substituting the panel hostname. Shipped as a file rather than an inline
+    # heredoc so the markup (logo SVG + styling) stays maintainable. Falls back
+    # to a minimal page if the template is missing (e.g. partial checkout).
+    local landing_tmpl="${REPO_DIR}/install/templates/hostname-landing.html"
+    if [[ -f "$landing_tmpl" ]]; then
+      sed "s/__JABALI_HOSTNAME__/${JABALI_SRV_HOSTNAME}/g" "$landing_tmpl" > "${hostname_docroot}/index.html"
+    else
+      _warn "landing template missing at $landing_tmpl; writing minimal fallback"
+      printf '<!doctype html><meta charset="utf-8"><title>%s</title><h1>%s</h1><p>Control panel on port 8443. <a href="https://%s:8443/">Open control panel</a></p>\n' \
+        "${JABALI_SRV_HOSTNAME}" "${JABALI_SRV_HOSTNAME}" "${JABALI_SRV_HOSTNAME}" > "${hostname_docroot}/index.html"
+    fi
     chown www-data:www-data "${hostname_docroot}/index.html"
     chmod 0644 "${hostname_docroot}/index.html"
     _ok "default landing page written"
