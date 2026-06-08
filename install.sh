@@ -1820,6 +1820,10 @@ install_disabled_page() {
 
   # Create the directory with proper permissions
   install -d -m 0755 /var/www/jabali-disabled
+  # GH error pages: shared docroot for the branded 404/403/500 pages
+  # (vhost error_page -> /var/www/jabali-errors). Files are converged from
+  # the editable page_template rows by the reconciler within one tick.
+  install -d -m 0755 /var/www/jabali-errors
 
   # Write the disabled page HTML, idempotent via install(1)
   install -m 0644 /dev/stdin /var/www/jabali-disabled/index.html <<'EOF'

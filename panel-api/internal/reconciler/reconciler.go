@@ -90,6 +90,10 @@ type Reconciler struct {
 	// so a fresh docroot gets the customised welcome page rather than
 	// the agent's baked-in default.
 	pageTemplates repository.PageTemplateRepository
+	// errorPagesHash caches the last content hash synced to
+	// /var/www/jabali-errors so the per-tick reconcile only calls the
+	// agent when an admin actually edits an error template.
+	errorPagesHash string
 	// M32 — singleton panel-cert row. When nil the panel-cert hook
 	// short-circuits (lab installs, tests). When wired with a routability
 	// service it drives ssl.panel.issue from ReconcileAll.
@@ -404,6 +408,11 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// before the rest of the loop touches the agent. Cheap noop when
 	// use_le=0 or routability gate fails.
 	r.reconcilePanelCertificate(ctx)
+
+	// Converge the shared branded error pages (404/403/500) from the
+	// editable page_template rows into /var/www/jabali-errors. Hash-gated:
+	// a noop on every tick until an admin edits a template.
+	r.reconcileErrorPages(ctx)
 
 	// M6.6 — per-domain mail TLS. Sits next to panel-cert so the
 	// two cert flows share the same admin email/public IP context.
