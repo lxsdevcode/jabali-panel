@@ -41,6 +41,12 @@ services:
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "{{ index .Env "ADMIN_PASSWORD" }}Aa1!"
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "true"
+      # Mark the bootstrap admin's email verified so the first login skips
+      # the "Activate User / verify e-mail with code" step — there is no SMTP
+      # configured, so a code would never arrive and the admin would be
+      # locked out. Login then goes straight to the change-password prompt.
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: "admin@{{ .Domain }}"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
     ports:
 {{- with index .Ports "http" }}
       - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
