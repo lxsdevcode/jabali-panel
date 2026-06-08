@@ -4783,9 +4783,105 @@ server {
         return 444;
     }
 }
+
+# GH#135: dedicated :443 vhost for the panel hostname itself. Without a
+# server{} of its own the hostname falls to the default block above,
+# whose `location / { return 444; }` closes the connection with no body —
+# browsers show ERR_HTTP2_PROTOCOL_ERROR / "Secure Connection Failed"
+# even though the LE cert is correct. Serve a real, admin-replaceable
+# landing page from /var/www/${JABALI_SRV_HOSTNAME} (static index.html or
+# the admin's own index.php). The panel UI itself stays on :8443.
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    listen ${JABALI_SRV_IPV4}:443 ssl http2;
+    server_name ${JABALI_SRV_HOSTNAME};
+
+    ssl_certificate     ${tls_cert};
+    ssl_certificate_key ${tls_key};
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    root  /var/www/${JABALI_SRV_HOSTNAME};
+    index index.php index.html;
+
+    access_log /var/log/nginx/jabali-hostname.access.log;
+    error_log  /var/log/nginx/jabali-hostname.error.log;
+
+    # Parity with the default block: phpMyAdmin + webmail stay reachable
+    # on the panel hostname for admin use.
+    include /etc/nginx/sites-available/includes/phpmyadmin.conf;
+    location = /webmail  { return 301 https://mail.${JABALI_SRV_HOSTNAME}/; }
+    location = /webmail/ { return 301 https://mail.${JABALI_SRV_HOSTNAME}/; }
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    # Admin-supplied index.php (optional). Runs in the shared pma FPM pool
+    # (www-data) — the same admin-context pool phpMyAdmin uses.
+    location ~ \.php\$ {
+        try_files \$uri =404;
+        fastcgi_pass unix:/run/php/jabali-pma/fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$request_filename;
+    }
+
+    # Never serve dotfiles (ACME for the hostname is handled on :80).
+    location ~ /\.(?!well-known) { deny all; }
+}
 VHOSTEOF
 
   _ok "default vhost config written"
+
+  # GH#135: docroot for the panel-hostname landing page served by the
+  # dedicated vhost above. Created idempotently; the default index.html is
+  # written ONLY when the admin hasn't already dropped their own
+  # index.html / index.php — never clobbers admin content.
+  local hostname_docroot="/var/www/${JABALI_SRV_HOSTNAME}"
+  mkdir -p "$hostname_docroot"
+  chown www-data:www-data "$hostname_docroot"
+  chmod 0755 "$hostname_docroot"
+  if [[ ! -e "${hostname_docroot}/index.html" && ! -e "${hostname_docroot}/index.php" ]]; then
+    _log "writing default landing page to ${hostname_docroot}/index.html"
+    cat > "${hostname_docroot}/index.html" << LANDINGEOF
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${JABALI_SRV_HOSTNAME}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center;
+         justify-content: center; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: #0f1115; color: #e6e8eb; }
+  .card { text-align: center; padding: 3rem 2.5rem; max-width: 32rem; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 .5rem; }
+  p { color: #9aa0a6; line-height: 1.6; margin: .25rem 0; }
+  code { background: rgba(255,255,255,.08); padding: .15rem .4rem; border-radius: 4px; }
+  a.btn { display: inline-block; margin-top: 1.5rem; padding: .6rem 1.4rem;
+          background: #3b82f6; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 500; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>${JABALI_SRV_HOSTNAME}</h1>
+    <p>This server is running Jabali Panel.</p>
+    <p>The control panel is served on port <code>8443</code>.</p>
+    <p>Replace this page by dropping your own <code>index.html</code> or
+       <code>index.php</code> in <code>/var/www/${JABALI_SRV_HOSTNAME}</code>.</p>
+    <a class="btn" href="https://${JABALI_SRV_HOSTNAME}:8443/">Open control panel</a>
+  </div>
+</body>
+</html>
+LANDINGEOF
+    chown www-data:www-data "${hostname_docroot}/index.html"
+    chmod 0644 "${hostname_docroot}/index.html"
+    _ok "default landing page written"
+  fi
 
   # Debian's default nginx.conf includes both `sites-enabled/*` and (since
   # our install_nginx step) `sites-enabled/*.conf`, so we must ensure the
