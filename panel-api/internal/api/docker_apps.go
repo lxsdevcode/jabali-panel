@@ -3,16 +3,16 @@
 //
 // Routes:
 //
-//   GET    /admin/docker-apps/catalog              list catalog entries
-//   GET    /admin/docker-apps                      list installed apps
-//   POST   /admin/docker-apps                      install a catalog app
-//   GET    /admin/docker-apps/:id                  get one (with ports)
-//   PATCH  /admin/docker-apps/:id                  update install-time settings
-//   DELETE /admin/docker-apps/:id                  uninstall (?keep_volumes=1)
-//   POST   /admin/docker-apps/:id/start            start
-//   POST   /admin/docker-apps/:id/stop             stop
-//   POST   /admin/docker-apps/:id/restart          restart
-//   POST   /admin/docker-apps/:id/rebuild          force-recreate
+//	GET    /admin/docker-apps/catalog              list catalog entries
+//	GET    /admin/docker-apps                      list installed apps
+//	POST   /admin/docker-apps                      install a catalog app
+//	GET    /admin/docker-apps/:id                  get one (with ports)
+//	PATCH  /admin/docker-apps/:id                  update install-time settings
+//	DELETE /admin/docker-apps/:id                  uninstall (?keep_volumes=1)
+//	POST   /admin/docker-apps/:id/start            start
+//	POST   /admin/docker-apps/:id/stop             stop
+//	POST   /admin/docker-apps/:id/restart          restart
+//	POST   /admin/docker-apps/:id/rebuild          force-recreate
 //
 // Phase 4 ships READ + CRUD + lifecycle. Logs, exec, backup,
 // update/rollback, compose-download all queue for later phases.
@@ -87,6 +87,9 @@ func RegisterDockerAppRoutes(g *gin.RouterGroup, cfg DockerAppHandlerConfig) {
 	grp.POST("/:id/restart", h.lifecycle("restart"))
 	grp.POST("/:id/rebuild", h.lifecycle("rebuild"))
 	grp.POST("/:id/update", h.updateImage)
+	grp.GET("/:id/env", h.getEnv)
+	grp.PUT("/:id/env", h.putEnv)
+	grp.POST("/:id/env/regenerate", h.regenerateEnv)
 	grp.GET("/:id/logs", h.logs)
 	grp.POST("/:id/exec", h.execCmd)
 	grp.POST("/:id/backup", h.backup)
@@ -109,23 +112,23 @@ func requireAdminForDockerApps(c *gin.Context) {
 // ---- catalog -----------------------------------------------------------------
 
 type catalogEntryResponse struct {
-	Slug          string                   `json:"slug"`
-	Name          string                   `json:"name"`
-	Version       string                   `json:"version"`
-	Description   string                   `json:"description"`
-	Icon          string                   `json:"icon"`
-	Upstream      string                   `json:"upstream,omitempty"`
-	Documentation string                   `json:"documentation,omitempty"`
-	UpdateMode    string                   `json:"update_mode"`
-	Resources     dockerapp.Resources      `json:"resources"`
-	Volumes       []dockerapp.Volume       `json:"volumes"`
-	Ports         []dockerapp.PortSpec     `json:"ports"`
-	Env           []catalogEnvVarResponse  `json:"env,omitempty"`
+	Slug          string                  `json:"slug"`
+	Name          string                  `json:"name"`
+	Version       string                  `json:"version"`
+	Description   string                  `json:"description"`
+	Icon          string                  `json:"icon"`
+	Upstream      string                  `json:"upstream,omitempty"`
+	Documentation string                  `json:"documentation,omitempty"`
+	UpdateMode    string                  `json:"update_mode"`
+	Resources     dockerapp.Resources     `json:"resources"`
+	Volumes       []dockerapp.Volume      `json:"volumes"`
+	Ports         []dockerapp.PortSpec    `json:"ports"`
+	Env           []catalogEnvVarResponse `json:"env,omitempty"`
 }
 
 type catalogEnvVarResponse struct {
 	Name     string `json:"name"`
-	Value    string `json:"value,omitempty"`     // omitted when Secret=true
+	Value    string `json:"value,omitempty"` // omitted when Secret=true
 	Secret   bool   `json:"secret,omitempty"`
 	Generate string `json:"generate,omitempty"`
 }
@@ -536,13 +539,13 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		}
 		envFile := buildEnvFile(envMap)
 		_, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", map[string]any{
-			"slug":                         instanceSlug,
-			"compose_yml":                  composeYML,
-			"env_file":                     envFile,
-			"volumes":                      volumeNames,
-			"volume_owner":                 entry.VolumeOwner,
-			"wait_healthy":                 true,
-			"healthcheck_timeout_seconds":  300,
+			"slug":                        instanceSlug,
+			"compose_yml":                 composeYML,
+			"env_file":                    envFile,
+			"volumes":                     volumeNames,
+			"volume_owner":                entry.VolumeOwner,
+			"wait_healthy":                true,
+			"healthcheck_timeout_seconds": 300,
 		})
 		// Use WithoutCancel for terminal status writes -- if the
 		// client dropped the connection mid-install (closed drawer,
@@ -734,7 +737,7 @@ func (h *dockerAppHandler) installDomain(ctx context.Context, appID string) stri
 // (via the on-disk .env). Used by update so catalog fixes + version bumps
 // reach existing installs. Returns the rendered compose + merged env file —
 // neither must be logged.
-func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models.DockerApp, domain string) (string, string, error) {
+func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models.DockerApp, domain string, overrideEnv map[string]string) (string, string, error) {
 	if h.cfg.Catalog == nil {
 		return "", "", fmt.Errorf("catalog unavailable")
 	}
@@ -742,9 +745,13 @@ func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models
 	if !ok {
 		return "", "", fmt.Errorf("catalog entry %q not found", app.Slug)
 	}
-	existingEnv, err := h.readInstallEnv(ctx, app.EffectiveSlug())
-	if err != nil {
-		return "", "", fmt.Errorf("read env: %w", err)
+	existingEnv := overrideEnv
+	if existingEnv == nil {
+		var err error
+		existingEnv, err = h.readInstallEnv(ctx, app.EffectiveSlug())
+		if err != nil {
+			return "", "", fmt.Errorf("read env: %w", err)
+		}
 	}
 	// existingEnv as overrides → secrets preserved; only genuinely-new
 	// catalog keys get freshly generated.
@@ -990,7 +997,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 								Name:        newDomain,
 								DocRoot:     "",
 								IsEnabled:   true,
-					SSLEnabled:  true,
+								SSLEnabled:  true,
 								NginxRules:  rules,
 								ManagedBy:   models.DomainManagedByDockerApp,
 								DockerAppID: &app.ID,
@@ -1226,7 +1233,7 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 		"healthcheck_timeout_seconds": 300,
 	}
 	domain := h.installDomain(ctx, app.ID)
-	if composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, domain); rerr != nil {
+	if composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, domain, nil); rerr != nil {
 		// Fall back to the on-disk compose so a transient read-env failure
 		// or missing catalog entry never blocks the update. Log it — a
 		// silent no-rerender reads as "catalog fix propagated" when it
@@ -1488,7 +1495,6 @@ func firstLineString(s string) string {
 	}
 	return s
 }
-
 
 // intToStr is local to avoid pulling strconv into a hot path that
 // only uses it for one integer. Phase 6.
