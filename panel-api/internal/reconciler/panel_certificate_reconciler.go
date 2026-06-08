@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 )
 
 // reconcilePanelCertificate is M32's reconciler hook. Post ADR-0105 it
@@ -85,7 +86,7 @@ func (r *Reconciler) reconcileOnePanelCert(ctx context.Context, kind string, row
 		return
 	}
 
-	gate, err := r.panelCertRoutability.Check(ctx, name, publicIPv4)
+	gate, err := r.panelCertRoutability.Check(ctx, name, publicIPv4, kind == models.PanelCertKindMail)
 	if err != nil {
 		r.log.Warn("panel-cert routability check errored", "kind", kind, "name", name, "error", err)
 		return
@@ -128,7 +129,11 @@ func (r *Reconciler) reconcileOnePanelCert(ctx context.Context, kind string, row
 	})
 	if agentErr != nil {
 		r.log.Warn("panel-cert ssl.panel.issue failed", "kind", kind, "name", name, "error", agentErr)
-		_ = r.panelCerts.MarkPendingRetryKind(ctx, kind, agentErr.Error(), 3*time.Hour)
+		failReason := agentErr.Error()
+		if kind == models.PanelCertKindMail {
+			failReason = services.HumanizePanelCertError(name, failReason)
+		}
+		_ = r.panelCerts.MarkPendingRetryKind(ctx, kind, failReason, 3*time.Hour)
 		return
 	}
 

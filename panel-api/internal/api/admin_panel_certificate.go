@@ -86,7 +86,10 @@ func (h *adminPanelCertHandler) get(c *gin.Context) {
 	certs := make([]panelCertGetResponse, 0, len(rows))
 	for _, row := range rows {
 		res := panelCertGetResponse{PanelCertificate: row}
-		rr, _ := h.cfg.Routability.Check(ctx, row.Hostname, settings.PublicIPv4)
+		// Display-only: local check (no external DNS per card open). The
+		// authoritative public-resolvability gate runs at issue/reconcile
+		// time; its reason surfaces via status + last_error.
+		rr, _ := h.cfg.Routability.Check(ctx, row.Hostname, settings.PublicIPv4, false)
 		res.Routable = rr.Routable
 		res.RoutableReason = rr.Reason
 		certs = append(certs, res)
@@ -185,7 +188,7 @@ func (h *adminPanelCertHandler) issue(c *gin.Context) {
 	}
 	// Per-kind routability: mail checks mail.<hostname>. A failure
 	// here parks ONLY this kind — the other cert is untouched.
-	rr, _ := h.cfg.Routability.Check(ctx, row.Hostname, settings.PublicIPv4)
+	rr, _ := h.cfg.Routability.Check(ctx, row.Hostname, settings.PublicIPv4, kind == models.PanelCertKindMail)
 	if !rr.Routable {
 		_ = h.cfg.PanelCerts.MarkPendingRetryKind(ctx, kind, "not routable: "+rr.Reason, 3*time.Hour)
 		c.JSON(http.StatusFailedDependency, gin.H{"error": "not_routable", "details": rr.Reason})
@@ -212,8 +215,12 @@ func (h *adminPanelCertHandler) issue(c *gin.Context) {
 		"cert_pem_path":   row.CertPEMPath,
 	})
 	if agentErr != nil {
-		_ = h.cfg.PanelCerts.MarkPendingRetryKind(ctx, kind, agentErr.Error(), 3*time.Hour)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "issue_failed", "details": agentErr.Error()})
+		failReason := agentErr.Error()
+		if kind == models.PanelCertKindMail {
+			failReason = services.HumanizePanelCertError(row.Hostname, failReason)
+		}
+		_ = h.cfg.PanelCerts.MarkPendingRetryKind(ctx, kind, failReason, 3*time.Hour)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "issue_failed", "details": failReason})
 		return
 	}
 	var resp struct {

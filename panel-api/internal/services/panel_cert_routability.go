@@ -39,12 +39,21 @@ type Resolver interface {
 // surfaces the real LE error in last_error if validation fails.
 type PanelCertRoutability struct {
 	Resolver Resolver
+	// PublicLookup resolves a name via external public resolvers and
+	// reports whether any gave a definitive answer (see
+	// dnsverify.LookupHostExternalResult). Used only on the
+	// requirePublic path. Defaults to dnsverify.LookupHostExternalResult;
+	// tests inject a stub.
+	PublicLookup func(ctx context.Context, host string) (addrs []string, queried bool)
 }
 
 // NewPanelCertRoutability wires the production resolver
 // (net.DefaultResolver). Pass a stubbed Resolver for tests.
 func NewPanelCertRoutability() *PanelCertRoutability {
-	return &PanelCertRoutability{Resolver: net.DefaultResolver}
+	return &PanelCertRoutability{
+		Resolver:     net.DefaultResolver,
+		PublicLookup: dnsverify.LookupHostExternalResult,
+	}
 }
 
 // Check runs the gate. hostname is the panel's canonical FQDN
@@ -65,7 +74,7 @@ func NewPanelCertRoutability() *PanelCertRoutability {
 //     reason "dns points elsewhere (got X.X.X.X, want Y.Y.Y.Y)".
 //
 // Otherwise routable.
-func (p *PanelCertRoutability) Check(ctx context.Context, hostname, publicIPv4 string) (RoutabilityResult, error) {
+func (p *PanelCertRoutability) Check(ctx context.Context, hostname, publicIPv4 string, requirePublic bool) (RoutabilityResult, error) {
 	host := strings.TrimSpace(strings.ToLower(hostname))
 	if host == "" {
 		return RoutabilityResult{Routable: false, Reason: "missing hostname"}, nil
@@ -130,7 +139,10 @@ func (p *PanelCertRoutability) Check(ctx context.Context, hostname, publicIPv4 s
 		}
 		ipv4Got = append(ipv4Got, ip.String())
 		if ip.String() == want {
-			return RoutabilityResult{Routable: true}, nil
+			if !requirePublic {
+				return RoutabilityResult{Routable: true}, nil
+			}
+			return p.verifyPublic(ctx, host, want), nil
 		}
 	}
 
@@ -141,6 +153,67 @@ func (p *PanelCertRoutability) Check(ctx context.Context, hostname, publicIPv4 s
 		Routable: false,
 		Reason:   fmt.Sprintf("dns points elsewhere (got %s, want %s)", strings.Join(ipv4Got, ","), want),
 	}, nil
+}
+
+// verifyPublic confirms that external public resolvers also see `host`
+// resolving to `want`. The local resolver already matched (the box
+// answers from its own authoritative PDNS even for a domain whose
+// nameservers aren't delegated here), which says nothing about what the
+// Let's Encrypt validator will see. Decision table:
+//
+//	public shows want            -> routable (the world agrees).
+//	public reachable, !want/none -> NOT routable, actionable reason
+//	                                (this is the silent self-signed case:
+//	                                mail.<hostname> never delegated).
+//	public unreachable (egress)  -> routable; we can't prove the negative,
+//	                                so fall back to the local view and let
+//	                                certbot be the judge (its error is then
+//	                                humanized by HumanizePanelCertError).
+func (p *PanelCertRoutability) verifyPublic(ctx context.Context, host, want string) RoutabilityResult {
+	lookup := p.PublicLookup
+	if lookup == nil {
+		lookup = dnsverify.LookupHostExternalResult
+	}
+	extAddrs, queried := lookup(ctx, host)
+	if !queried {
+		return RoutabilityResult{Routable: true}
+	}
+	for _, a := range extAddrs {
+		if a == want {
+			return RoutabilityResult{Routable: true}
+		}
+	}
+	got := "no public A record (NXDOMAIN)"
+	if len(extAddrs) > 0 {
+		got = "public DNS -> " + strings.Join(extAddrs, ",")
+	}
+	return RoutabilityResult{
+		Routable: false,
+		Reason: fmt.Sprintf(
+			"%s resolves locally to %s but %s; delegate this domain's nameservers to this server (ns1/ns2) or add a public A record for %s",
+			host, want, got, host),
+	}
+}
+
+// HumanizePanelCertError rewrites a raw certbot / Let's Encrypt error into
+// an operator-actionable message when it signals the public-DNS gap that
+// silently keeps mail.<hostname> on a self-signed cert. Non-DNS errors
+// (rate limit, port 80 unreachable, etc.) pass through unchanged. Used as
+// the backstop for the case verifyPublic returned inconclusive (egress
+// blocked) but certbot then failed against the real authoritative NS.
+func HumanizePanelCertError(name, raw string) string {
+	low := strings.ToLower(raw)
+	for _, marker := range []string{
+		"dns problem", "nxdomain", "no valid a records",
+		"acme:error:dns", "servfail", "no a record",
+	} {
+		if strings.Contains(low, marker) {
+			return fmt.Sprintf(
+				"%s is not resolvable from public DNS (certbot: %s); delegate this domain's nameservers to this server (ns1/ns2) or add a public A record for %s",
+				name, raw, name)
+		}
+	}
+	return raw
 }
 
 // ErrNoResolver is returned by helpers that need a resolver and got
@@ -166,4 +239,3 @@ func onlyLoopback(addrs []string) bool {
 	}
 	return true
 }
-
