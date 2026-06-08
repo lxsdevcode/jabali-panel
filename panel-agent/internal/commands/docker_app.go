@@ -498,6 +498,7 @@ func splitLines(s string) []string {
 // Register all docker_app verbs at init time.
 func init() {
 	Default.Register("docker_app.install", dockerAppInstallHandler)
+	Default.Register("docker_app.read_env", dockerAppReadEnvHandler)
 	Default.Register("docker_app.start", dockerAppStartHandler)
 	Default.Register("docker_app.stop", dockerAppStopHandler)
 	Default.Register("docker_app.restart", dockerAppRestartHandler)

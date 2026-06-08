@@ -688,6 +688,108 @@ func bindInterfaceForRuntime(s string) string {
 // shape. Secret values get NO additional escaping; values must be
 // alphanumeric/safe — catalog-declared secrets use base64url and
 // operator overrides are validated by the schema.
+// readInstallEnv fetches an install's on-disk .env (KEY=VALUE) from the agent
+// so a re-render preserves the install's generated secrets (DB passwords,
+// MASTERKEY, JWT secrets) instead of minting new ones. Empty map when the
+// install has no .env. The response carries secrets — never log it.
+func (h *dockerAppHandler) readInstallEnv(ctx context.Context, instanceSlug string) (map[string]string, error) {
+	if h.cfg.Agent == nil {
+		return nil, fmt.Errorf("agent unavailable")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.read_env", map[string]any{"slug": instanceSlug})
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Env == nil {
+		resp.Env = map[string]string{}
+	}
+	return resp.Env, nil
+}
+
+// installDomain returns the docker_app-managed hostname bound to this install,
+// or "" if none.
+func (h *dockerAppHandler) installDomain(ctx context.Context, appID string) string {
+	if h.cfg.Domains == nil {
+		return ""
+	}
+	domList, _, _ := h.cfg.Domains.List(ctx, repository.ListOptions{})
+	for _, d := range domList {
+		if d.DockerAppID != nil && *d.DockerAppID == appID {
+			return d.Name
+		}
+	}
+	return ""
+}
+
+// renderInstallCompose re-renders an install's compose.yml from the CURRENT
+// catalog template, preserving its domain, ports, limits and existing secrets
+// (via the on-disk .env). Used by update so catalog fixes + version bumps
+// reach existing installs. Returns the rendered compose + merged env file —
+// neither must be logged.
+func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models.DockerApp, domain string) (string, string, error) {
+	if h.cfg.Catalog == nil {
+		return "", "", fmt.Errorf("catalog unavailable")
+	}
+	entry, ok := h.cfg.Catalog.Get(app.Slug)
+	if !ok {
+		return "", "", fmt.Errorf("catalog entry %q not found", app.Slug)
+	}
+	existingEnv, err := h.readInstallEnv(ctx, app.InstanceSlug)
+	if err != nil {
+		return "", "", fmt.Errorf("read env: %w", err)
+	}
+	// existingEnv as overrides → secrets preserved; only genuinely-new
+	// catalog keys get freshly generated.
+	envMap, err := dockerapp.MaterialiseEnv(entry, existingEnv)
+	if err != nil {
+		return "", "", fmt.Errorf("materialise env: %w", err)
+	}
+	current, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
+	runtimePorts := make(map[string]dockerapp.RuntimePort, len(current))
+	for _, p := range current {
+		runtimePorts[p.PortName] = dockerapp.RuntimePort{
+			HostPort:      p.HostPort,
+			ContainerPort: p.ContainerPort,
+			BindInterface: bindInterfaceForRuntime(p.BindInterface),
+			Protocol:      p.Protocol,
+		}
+	}
+	cpu, mem, pids := "", "", 0
+	if app.CPULimit != nil {
+		cpu = *app.CPULimit
+	}
+	if app.MemoryLimit != nil {
+		mem = *app.MemoryLimit
+	}
+	if app.PIDsLimit != nil {
+		pids = *app.PIDsLimit
+	}
+	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
+		Slug:         app.InstanceSlug,
+		Name:         app.Name,
+		Domain:       domain,
+		ImageChannel: entry.ImageChannel,
+		DataRoot:     "/var/lib/jabali/docker-apps/" + app.InstanceSlug,
+		CPULimit:     cpu,
+		MemoryLimit:  mem,
+		PIDsLimit:    pids,
+		Ports:        runtimePorts,
+		Env:          envMap,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("render: %w", err)
+	}
+	return composeYML, buildEnvFile(envMap), nil
+}
+
 func buildEnvFile(env map[string]string) string {
 	if len(env) == 0 {
 		return ""
@@ -904,7 +1006,15 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 		}
 
 		// --- re-render compose + re-dispatch ---
-		envMap, err := dockerapp.MaterialiseEnv(entry, nil)
+		// Preserve the install's existing secrets — MaterialiseEnv(entry, nil)
+		// would regenerate DB passwords / masterkeys and break stateful
+		// services. Best-effort: a read failure falls back to fresh (old
+		// behaviour) but is logged.
+		existingEnv, envErr := h.readInstallEnv(ctx, app.InstanceSlug)
+		if envErr != nil {
+			slog.Warn("docker-app edit: read env failed, secrets may regenerate", "id", app.ID, "err", envErr)
+		}
+		envMap, err := dockerapp.MaterialiseEnv(entry, existingEnv)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "env_materialise_failed", "detail": err.Error()})
 			return
@@ -1107,10 +1217,27 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 
 	callCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.update", map[string]any{
+	// Re-render the compose from the CURRENT catalog template so catalog
+	// fixes (e.g. a corrected healthcheck) and version bumps reach this
+	// install — update otherwise reused the stale on-disk compose.yml.
+	// Secrets are preserved via the install's existing .env.
+	updateParams := map[string]any{
 		"slug":                        app.InstanceSlug,
 		"healthcheck_timeout_seconds": 300,
-	})
+	}
+	domain := h.installDomain(ctx, app.ID)
+	if composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, domain); rerr != nil {
+		// Fall back to the on-disk compose so a transient read-env failure
+		// or missing catalog entry never blocks the update. Log it — a
+		// silent no-rerender reads as "catalog fix propagated" when it
+		// didn't.
+		slog.Warn("docker-app update: re-render skipped, using on-disk compose",
+			"id", app.ID, "slug", app.Slug, "err", rerr)
+	} else {
+		updateParams["compose_yml"] = composeYML
+		updateParams["env_file"] = envFile
+	}
+	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.update", updateParams)
 	// Same WithoutCancel guard as install: the terminal status
 	// has to land even if the client dropped the connection.
 	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

@@ -34,6 +34,13 @@ import (
 type dockerAppUpdateParams struct {
 	Slug              string `json:"slug"`
 	HealthcheckTOSecs int    `json:"healthcheck_timeout_seconds,omitempty"`
+	// ComposeYML / EnvFile re-render the install from the current catalog
+	// template before the pull. Empty = keep the on-disk files (back-compat
+	// + the path taken when panel-api can't read the env back). Written
+	// atomically BEFORE pull so a catalog fix (e.g. a healthcheck) reaches
+	// existing installs on update.
+	ComposeYML string `json:"compose_yml,omitempty"`
+	EnvFile    string `json:"env_file,omitempty"`
 }
 
 type dockerAppUpdateResponse struct {
@@ -56,6 +63,21 @@ func dockerAppUpdateHandler(ctx context.Context, params json.RawMessage) (any, e
 	dir := filepath.Join(dockerAppDataRoot, p.Slug)
 	if _, err := os.Stat(filepath.Join(dir, "compose.yml")); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeNotFound, Message: fmt.Sprintf("%s/compose.yml not found", dir)}
+	}
+
+	// Re-render from the catalog: write the fresh compose.yml (+ .env) the
+	// panel rendered from the CURRENT template, so catalog fixes + version
+	// bumps reach this install. Atomic tmp+rename; .env stays 0600. Empty
+	// params keep the existing files (back-compat).
+	if p.ComposeYML != "" {
+		if err := writeAtomicDockerApp(filepath.Join(dir, "compose.yml"), []byte(p.ComposeYML), 0o640); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write compose.yml: %v", err)}
+		}
+	}
+	if p.EnvFile != "" {
+		if err := writeAtomicDockerApp(filepath.Join(dir, ".env"), []byte(p.EnvFile), 0o600); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write .env: %v", err)}
+		}
 	}
 
 	timeout := time.Duration(p.HealthcheckTOSecs) * time.Second
