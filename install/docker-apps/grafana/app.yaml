@@ -1,0 +1,43 @@
+slug: grafana
+name: Grafana
+version: "13.0.2"
+description: >-
+  Open-source observability and dashboards: query, visualize, and alert on
+  metrics, logs, and traces from Prometheus, Loki, SQL, and dozens of data
+  sources. Single container with an embedded SQLite store. First login is
+  admin / the generated GF_SECURITY_ADMIN_PASSWORD from the install .env —
+  change it on first sign-in. Served at the domain root behind the panel's
+  TLS vhost.
+icon: icon.svg
+upstream: https://github.com/grafana/grafana
+documentation: https://grafana.com/docs/grafana/latest/
+
+image_channel: grafana/grafana-oss:13.0.2
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 200
+
+# Grafana's container process is uid 472; the bind-mounted data dir must be
+# owned by it or the first launch EACCESes on grafana.db.
+volume_owner: "472:472"
+
+volumes:
+  - name: data
+    container_path: /var/lib/grafana
+
+ports:
+  - name: http
+    container_port: 3000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/health
+
+env:
+  - name: ADMIN_PASSWORD
+    secret: true
+    generate: password32

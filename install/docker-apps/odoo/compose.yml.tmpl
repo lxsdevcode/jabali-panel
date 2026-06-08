@@ -1,0 +1,46 @@
+services:
+  odoo:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # --proxy-mode makes Odoo trust X-Forwarded-Proto/Host from the nginx
+    # vhost so it derives https URLs + CSRF tokens correctly.
+    command: odoo --proxy-mode
+    environment:
+      HOST: postgres
+      PORT: "5432"
+      USER: odoo
+      PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/odoo-data:/var/lib/odoo
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: jabali-app-{{ .Slug }}-postgres
+    restart: unless-stopped
+    environment:
+      # Odoo connects as a superuser so it can create/drop its own
+      # databases from the database manager.
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: "{{ index .Env "POSTGRES_PASSWORD" }}"
+      POSTGRES_DB: postgres
+    volumes:
+      - {{ .DataRoot }}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

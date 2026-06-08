@@ -1,0 +1,25 @@
+services:
+  onlyoffice:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      # Request signing — required for any integrator (Nextcloud, etc.) to
+      # talk to this server. JWT_ENABLED defaults true; pin it explicitly.
+      JWT_ENABLED: "true"
+      JWT_SECRET: "{{ index .Env "JWT_SECRET" }}"
+      JWT_HEADER: "Authorization"
+    volumes:
+      - {{ .DataRoot }}/data:/var/www/onlyoffice/Data
+      - {{ .DataRoot }}/lib:/var/lib/onlyoffice
+      - {{ .DataRoot }}/db:/var/lib/postgresql
+      - {{ .DataRoot }}/logs:/var/log/onlyoffice
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}

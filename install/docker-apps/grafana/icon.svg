@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Grafana">
+  <rect width="32" height="32" rx="6" fill="#181b1f"/>
+  <path d="M16 5l9 4.8v7.2c0 5.4-3.7 8.7-9 10-5.3-1.3-9-4.6-9-10V9.8z" fill="none" stroke="#f46800" stroke-width="2"/>
+  <circle cx="16" cy="14.5" r="3.2" fill="#f46800"/>
+  <path d="M16 17.7v6" stroke="#f46800" stroke-width="2"/>
+</svg>

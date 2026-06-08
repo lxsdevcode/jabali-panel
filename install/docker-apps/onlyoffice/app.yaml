@@ -1,0 +1,46 @@
+slug: onlyoffice
+name: ONLYOFFICE Docs
+version: "9.4.0"
+description: >-
+  ONLYOFFICE Document Server: online editors for documents, spreadsheets, and
+  presentations (OOXML-native), used standalone or as the editing backend for
+  Nextcloud, Seafile, and others. Single container bundling its own datastore.
+  JWT request-signing is enabled with a generated secret (JWT_SECRET in the
+  install .env) — set the same secret in any app that connects to it.
+icon: icon.svg
+upstream: https://github.com/ONLYOFFICE/DocumentServer
+documentation: https://helpcenter.onlyoffice.com/installation/docs-developer-index.aspx
+
+image_channel: onlyoffice/documentserver:9.4.0
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 500
+
+# The documentserver image bundles its own postgres/rabbitmq/redis and runs
+# its entrypoint as root, chowning its data dirs on start — no volume_owner.
+volumes:
+  - name: data
+    container_path: /var/www/onlyoffice/Data
+  - name: lib
+    container_path: /var/lib/onlyoffice
+  - name: db
+    container_path: /var/lib/postgresql
+  - name: logs
+    container_path: /var/log/onlyoffice
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /healthcheck
+
+env:
+  - name: JWT_SECRET
+    secret: true
+    generate: password64

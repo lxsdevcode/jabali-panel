@@ -1,0 +1,24 @@
+services:
+  grafana:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      # Tells Grafana its public URL so generated links + OAuth redirects
+      # are correct behind the TLS-terminating nginx vhost.
+      GF_SERVER_ROOT_URL: "https://{{ .Domain }}"
+      GF_SERVER_DOMAIN: "{{ .Domain }}"
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ index .Env "ADMIN_PASSWORD" }}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - {{ .DataRoot }}/data:/var/lib/grafana
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}

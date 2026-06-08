@@ -1,0 +1,47 @@
+slug: odoo
+name: Odoo
+version: "18.0"
+description: >-
+  Open-source ERP and business suite: CRM, accounting, inventory, sales,
+  projects, and a website builder from one platform. Two services here: the
+  Odoo server and a PostgreSQL store; the server runs with --proxy-mode behind
+  the panel's TLS vhost. On first visit you create the database and admin user.
+  Note: the database-manager master password defaults to 'admin' — change it
+  immediately from the database manager.
+icon: icon.svg
+upstream: https://github.com/odoo/odoo
+documentation: https://www.odoo.com/documentation/18.0/
+
+image_channel: odoo:18.0
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "1g"
+  pids: 300
+
+# Odoo's container process is uid 101 and writes the filestore under
+# /var/lib/odoo. The install-time chown sets BOTH volume subdirs to 101:101;
+# Postgres's own root entrypoint re-chowns its PGDATA on first init, so the
+# shared owner is safe for the db volume.
+volume_owner: "101:101"
+
+volumes:
+  - name: odoo-data
+    container_path: /var/lib/odoo
+  - name: postgres
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 8069
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /web/health
+
+env:
+  - name: POSTGRES_PASSWORD
+    secret: true
+    generate: password32
