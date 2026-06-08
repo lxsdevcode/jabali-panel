@@ -35,4 +35,4 @@ env:
     secret: true
     generate: password64
   - name: ALLOW_REGISTRATION
-    value: "True"
+    value: "true"
