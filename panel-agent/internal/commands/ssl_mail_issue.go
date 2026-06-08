@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dnsverify"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/certbot"
 )
 
@@ -42,13 +43,13 @@ func mailSANHostnames(domain string) []string {
 }
 
 type sslMailIssueParams struct {
-	DomainID   string `json:"domain_id"`
-	Domain     string `json:"domain"`
-	Email      string `json:"email"`
-	Webroot    string `json:"webroot"`
-	Staging    bool   `json:"staging"`
-	PublicIP   string `json:"public_ip"`            // required for DNS check; reconciler resolves this from server_settings
-	SkipDNS    bool   `json:"skip_dns,omitempty"`   // operator override; never set in production
+	DomainID string `json:"domain_id"`
+	Domain   string `json:"domain"`
+	Email    string `json:"email"`
+	Webroot  string `json:"webroot"`
+	Staging  bool   `json:"staging"`
+	PublicIP string `json:"public_ip"`          // required for DNS check; reconciler resolves this from server_settings
+	SkipDNS  bool   `json:"skip_dns,omitempty"` // operator override; never set in production
 }
 
 // sslMailIssueOutcome is one of:
@@ -88,21 +89,47 @@ type dnsScan struct {
 // the ENTIRE certbot order, which previously parked the whole cert
 // in dns_missing and left Stalwart on its self-signed default
 // (GH #132). Returns the per-hostname result map.
-func scanMailSANDNS(ctx context.Context, sans []string, publicIP string) map[string]dnsScan {
-	resolver := &net.Resolver{PreferGo: true}
+// sanPublicLookup resolves a host via public resolvers, reporting whether
+// any resolver gave a definitive answer (see
+// dnsverify.LookupHostExternalResult). Injected so tests can stub DNS.
+type sanPublicLookup func(ctx context.Context, host string) (addrs []string, queried bool)
+
+func scanMailSANDNS(ctx context.Context, sans []string, publicIP string, publicLookup sanPublicLookup) map[string]dnsScan {
+	if publicLookup == nil {
+		publicLookup = dnsverify.LookupHostExternalResult
+	}
+	boxResolver := &net.Resolver{PreferGo: true}
 	out := make(map[string]dnsScan, len(sans))
 	for _, h := range sans {
 		row := dnsScan{Hostname: h}
-		// 5s budget per lookup; reconciler tick has more, this just
+		// 6s budget per lookup; reconciler tick has more, this just
 		// prevents a single dead nameserver from stalling the verb.
-		lookupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		addrs, err := resolver.LookupHost(lookupCtx, h)
-		cancel()
-		if err != nil {
-			row.Error = err.Error()
-			out[h] = row
-			continue
+		lookupCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		// Resolve as the Let's Encrypt validator will — via PUBLIC
+		// resolvers, NOT the box. The box's local PDNS is authoritative
+		// for every zone hosted here, so a name like
+		// autoconfig.<tenant> (a local CNAME -> mail.<tenant> -> our IP)
+		// resolves to publicIP locally even when the tenant's real
+		// nameservers have no such record. The old box-resolver scan
+		// then kept it as a SAN, and certbot's HTTP-01 order failed
+		// with NXDOMAIN for the whole cert -> Stalwart fell back to the
+		// shared self-signed/default cert (GH #132). LookupHostExternalResult
+		// returns queried=false only when EVERY public resolver was
+		// unreachable (blocked egress); in that case we fall back to the
+		// box so an isolated host still issues rather than dropping
+		// every SAN.
+		addrs, queried := publicLookup(lookupCtx, h)
+		if !queried {
+			var err error
+			addrs, err = boxResolver.LookupHost(lookupCtx, h)
+			if err != nil {
+				row.Error = err.Error()
+				cancel()
+				out[h] = row
+				continue
+			}
 		}
+		cancel()
 		row.Addresses = addrs
 		if publicIP != "" {
 			for _, a := range addrs {
@@ -172,7 +199,7 @@ func sslMailIssueHandler(ctx context.Context, params json.RawMessage) (any, erro
 				Message: "public_ip is required for DNS pre-check (or set skip_dns)",
 			}
 		}
-		dns := scanMailSANDNS(ctx, allSANs, p.PublicIP)
+		dns := scanMailSANDNS(ctx, allSANs, p.PublicIP, nil)
 		// Only mail.<d> (allSANs[0]) is mandatory — it is the live
 		// mail endpoint the cert protects. If it doesn't resolve to
 		// us there is nothing to issue for, so park in dns_missing.

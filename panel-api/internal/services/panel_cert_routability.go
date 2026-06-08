@@ -11,7 +11,7 @@ import (
 	"net"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnsverify"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dnsverify"
 )
 
 // RoutabilityResult tells the caller why the panel hostname does (or
