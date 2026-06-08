@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,8 +15,9 @@ import (
 // the duration of a test. State is a per-unit map keyed by the bare
 // service name (no ".service" suffix).
 type fakeServiceState struct {
-	active    string // "active" | "inactive" | "failed"
-	loadState string // "loaded" | "masked" | "not-found"
+	active       string // "active" | "inactive" | "failed"
+	loadState    string // "loaded" | "masked" | "not-found"
+	socketActive string // is-active <name>.socket (socket-activated units, GH#133)
 }
 
 func installFakeSystemctl(t *testing.T, state map[string]fakeServiceState) {
@@ -36,6 +38,14 @@ func installFakeSystemctl(t *testing.T, state map[string]fakeServiceState) {
 				return "not-found", nil
 			}
 			return s.loadState, nil
+		}
+		// systemctl is-active <name>.socket (socket-activated units)
+		if args[0] == "is-active" && len(args) >= 2 && strings.HasSuffix(args[1], ".socket") {
+			name := strings.TrimSuffix(args[1], ".socket")
+			if s, ok := state[name]; ok && s.socketActive == "active" {
+				return "active", nil
+			}
+			return "inactive", errors.New("exit status 3")
 		}
 		// systemctl is-active <name>.service
 		if args[0] == "is-active" && len(args) >= 2 {
@@ -130,4 +140,26 @@ func TestIsServiceNameChar(t *testing.T) {
 	for _, c := range ";&|$`'\"()/\\ " {
 		assert.False(t, isServiceNameChar(c), "should reject %c", c)
 	}
+}
+
+// TestProbeService_SocketActivatedSSH covers GH#133: on Ubuntu 24.04 /
+// Debian 13 SSH runs via ssh.socket, so ssh.service reads "inactive" while
+// the listener is up. probeService must report it active when the .socket
+// is active, so the dashboard doesn't show a working SSH as "stopped".
+func TestProbeService_SocketActivatedSSH(t *testing.T) {
+	installFakeSystemctl(t, map[string]fakeServiceState{
+		"ssh": {active: "inactive", loadState: "loaded", socketActive: "active"},
+	})
+	got := probeService(context.Background(), "ssh")
+	assert.Equal(t, "active", got.Active, "ssh.service inactive + ssh.socket active must report active")
+}
+
+// TestProbeService_NoSocketStaysInactive guards against false positives:
+// a genuinely-down service with no active socket stays inactive.
+func TestProbeService_NoSocketStaysInactive(t *testing.T) {
+	installFakeSystemctl(t, map[string]fakeServiceState{
+		"nginx": {active: "inactive", loadState: "loaded"},
+	})
+	got := probeService(context.Background(), "nginx")
+	assert.Equal(t, "inactive", got.Active, "no active socket -> stays inactive")
 }

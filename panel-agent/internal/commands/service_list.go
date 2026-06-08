@@ -66,7 +66,7 @@ var BaseAllowedServices = []string{
 // jabali doesn't require but may co-exist with (e.g. postgresql installed by
 // another app) are hidden when inactive to avoid confusing operators.
 var optionalServices = map[string]bool{
-	"postgresql":   true,
+	"postgresql":     true,
 	"jabali-webmail": true,
 }
 
@@ -147,6 +147,16 @@ func probeService(ctx context.Context, name string) ServiceStatus {
 		}
 	}
 	state := strings.TrimSpace(out)
+	// Socket-activated units (ssh.socket on Ubuntu 24.04 / Debian 13+)
+	// leave the .service "inactive" until a connection arrives, even
+	// though the listener is up and the service is fully functional. If
+	// the matching .socket is active, report the service as active so a
+	// working SSH isn't shown as "stopped" on the dashboard (GH#133).
+	if state != "active" {
+		if sockOut, _ := systemctlRunner(ctx, "is-active", name+".socket"); strings.TrimSpace(sockOut) == "active" {
+			state = "active"
+		}
+	}
 	switch state {
 	case "active", "inactive", "failed", "activating", "deactivating":
 		return ServiceStatus{Name: name, Active: state, LoadState: loadState, Enabled: enabled}
