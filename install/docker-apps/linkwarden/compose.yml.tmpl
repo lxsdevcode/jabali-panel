@@ -22,7 +22,10 @@ services:
           cpus: "{{ .CPULimit }}"
           memory: {{ .MemoryLimit }}
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3000/ || exit 1"]
+      # linkwarden's image ships curl, not wget (wget --spider returned
+      # "wget: not found" -> container stuck unhealthy -> updates failed the
+      # 5m healthcheck-converge watchdog. curl is present at /usr/bin/curl.
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
