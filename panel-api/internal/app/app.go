@@ -17,15 +17,16 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/audit"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/eventsources"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/eventsources"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webui"
 	panelui "git.linux-hosting.co.il/shukivaknin/jabali2/panel-ui"
 )
@@ -61,30 +62,30 @@ type Deps struct {
 	// MailRBLStates (M47 Wave 5) backs the curated-RBL eventsource
 	// that probes the server's outbound IPv4 against a free RBL
 	// baseline and fires mail.rbl.{listed,cleared} on transitions.
-	MailRBLStates            repository.MailRBLStateRepository
+	MailRBLStates repository.MailRBLStateRepository
 	// M47 Wave 4/6/8 ingest sources.
-	StalwartAdmin            eventsources.StalwartQueryClient
-	DMARCAggregate           repository.DMARCAggregateRepository
-	TLSRPTAggregate          repository.TLSRPTAggregateRepository
-	ARFReports               repository.ARFReportRepository
+	StalwartAdmin   eventsources.StalwartQueryClient
+	DMARCAggregate  repository.DMARCAggregateRepository
+	TLSRPTAggregate repository.TLSRPTAggregateRepository
+	ARFReports      repository.ARFReportRepository
 	// M47 Wave 3 outbound throttle config.
-	MailOutboundPolicies repository.MailOutboundPolicyRepository
+	MailOutboundPolicies  repository.MailOutboundPolicyRepository
 	StalwartAdminThrottle api.ThrottleDispatcher
-	BWDaily                   repository.BWDailyRepository
-	DomainIPACLs              repository.DomainIPACLRepository
+	BWDaily               repository.BWDailyRepository
+	DomainIPACLs          repository.DomainIPACLRepository
 	// M6.6 — per-domain mail TLS rows.
-	MailCerts                 repository.MailCertificateRepository
-	DomainDirectoryPrivacy    repository.DomainDirectoryPrivacyRepository
-	MigrationJobs             repository.MigrationJobRepository
-	MigrationSizeCache        repository.MigrationAccountSizeCacheRepository
-	AutomationTokens          repository.AutomationTokenRepository
+	MailCerts              repository.MailCertificateRepository
+	DomainDirectoryPrivacy repository.DomainDirectoryPrivacyRepository
+	MigrationJobs          repository.MigrationJobRepository
+	MigrationSizeCache     repository.MigrationAccountSizeCacheRepository
+	AutomationTokens       repository.AutomationTokenRepository
 	// UserAPITokens — M51 per-user Bearer token persistence. Used
 	// by the auth middleware (token validation) AND the user-
 	// facing /me/api-tokens management endpoints.
-	UserAPITokens             repository.UserAPITokenRepository
-	PHPPools                  repository.PHPPoolRepository
-	PHPPoolIniOverrides       repository.PHPPoolIniOverrideRepository
-	WordPressInstalls         repository.WordPressInstallRepository
+	UserAPITokens       repository.UserAPITokenRepository
+	PHPPools            repository.PHPPoolRepository
+	PHPPoolIniOverrides repository.PHPPoolIniOverrideRepository
+	WordPressInstalls   repository.WordPressInstallRepository
 	// ManagedIPs is the M24 IP-pool repo. NewWithDeps registers
 	// /admin/ips + /user/ips + /internal/agent/managed-ips when set;
 	// nil keeps the routes off (lets existing test harnesses pass).
@@ -164,7 +165,7 @@ type Deps struct {
 	// — handler surfaces 503 in that case. Loaded by serve.go from
 	// /etc/jabali-panel/bulwark-jwt-auth.secret at boot.
 	WebmailSSOMinter *webmailsso.Minter
-	Log        *slog.Logger
+	Log              *slog.Logger
 	// Redis is the shared *redis.Client for the notification dispatcher
 	// (ADR-0056) and future WordPress object-cache (ADR-0059). Wired in
 	// serve.go against cfg.Redis.URL; nil when Redis is disabled (tests,
@@ -623,6 +624,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			State:      deps.UpdateState,
 			History:    deps.UpdateHistory,
 			Autoupdate: deps.UpdateAutoupdate,
+			Changelog:  services.NewChangelogService(),
 		})
 		// Admin: Support diagnostic report (M29, ADR-0064).
 		api.RegisterAdminSupportRoutes(v1, api.AdminSupportHandlerConfig{
