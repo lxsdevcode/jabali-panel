@@ -87,10 +87,14 @@ export const SystemUpdatesPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onCheckNow = () => {
-    jabali.mutate();
-    apt.mutate();
-    void state.refetch();
+  const onCheckNow = async () => {
+    try {
+      await Promise.all([jabali.mutateAsync(), apt.mutateAsync()]);
+      await state.refetch();
+      message.success("Checked for updates");
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : "check failed");
+    }
   };
 
   return (
@@ -249,11 +253,12 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
                 <Text type="secondary" style={{ whiteSpace: "nowrap" }}>Last Checked</Text>
                 <Button
                   size="small"
+                  type="primary"
                   icon={<ReloadOutlined />}
                   loading={checking}
                   onClick={onCheckNow}
                 >
-                  Check now
+                  {checking ? "Checking…" : "Check now"}
                 </Button>
               </div>
               <div style={{ margin: "4px 0" }}>
