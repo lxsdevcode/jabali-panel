@@ -169,7 +169,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
   return (
     <Row gutter={[16, 16]}>
       <Col xs={24} sm={12} xl={6}>
-        <Card>
+        <Card style={{ height: "100%" }}>
           <div style={cardBody}>
             <span style={iconBox("#e6f0ff", "#2563eb")}>
               <CodeOutlined />
@@ -193,7 +193,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       </Col>
 
       <Col xs={24} sm={12} xl={6}>
-        <Card>
+        <Card style={{ height: "100%" }}>
           <div style={cardBody}>
             <span style={iconBox("#f3edff", "#7c3aed")}>
               <AppstoreOutlined />
@@ -217,7 +217,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       </Col>
 
       <Col xs={24} sm={12} xl={6}>
-        <Card>
+        <Card style={{ height: "100%" }}>
           <div style={cardBody}>
             <span style={iconBox("#ffeaea", "#dc2626")}>
               <SafetyOutlined />
@@ -239,30 +239,30 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       </Col>
 
       <Col xs={24} sm={12} xl={6}>
-        <Card>
-          <div style={{ ...cardBody, justifyContent: "space-between" }}>
-            <div style={{ display: "flex", gap: 14 }}>
-              <span style={iconBox("#e7f7ee", "#16a34a")}>
-                <ClockCircleOutlined />
-              </span>
-              <div>
-                <Text type="secondary">Last Checked</Text>
-                <div style={{ margin: "4px 0" }}>
-                  <Text strong style={{ fontSize: 18 }}>{timeAgo(lastChecked)}</Text>
-                </div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {lastChecked ? dayjs(lastChecked).format("MMM D, YYYY HH:mm") : "—"}
-                </Text>
+        <Card style={{ height: "100%" }}>
+          <div style={cardBody}>
+            <span style={iconBox("#e7f7ee", "#16a34a")}>
+              <ClockCircleOutlined />
+            </span>
+            <div style={{ flex: "auto", minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <Text type="secondary" style={{ whiteSpace: "nowrap" }}>Last Checked</Text>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  loading={checking}
+                  onClick={onCheckNow}
+                >
+                  Check now
+                </Button>
               </div>
+              <div style={{ margin: "4px 0" }}>
+                <Text strong style={{ fontSize: 18 }}>{timeAgo(lastChecked)}</Text>
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {lastChecked ? dayjs(lastChecked).format("MMM D, YYYY HH:mm") : "—"}
+              </Text>
             </div>
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              loading={checking}
-              onClick={onCheckNow}
-            >
-              Check now
-            </Button>
           </div>
         </Card>
       </Col>
