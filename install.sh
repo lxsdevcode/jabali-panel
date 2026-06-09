@@ -4554,6 +4554,33 @@ seed_last_built_sha() {
 
 # ---------- nginx WebSocket upgrade map ----
 
+install_nginx_ssl_hardening() {
+  # OpenSSL 3.5 enabled post-quantum hybrid key exchange (X25519MLKEM768,
+  # group 0x11ec) by DEFAULT for TLS 1.3. Cloudflare's origin pull (and
+  # some other middleboxes/older clients) don't support it: the TLS 1.3
+  # key_share negotiation fails with illegal_parameter and the connection
+  # is reset — surfaced to visitors of a CF-proxied site as error 525,
+  # even though the origin, cert, DNS and firewall are all fine (two
+  # OpenSSL-3.5 peers negotiate PQ happily, so it's invisible from a
+  # browser/curl and only breaks the CF<->origin hop). Pin the TLS 1.3
+  # groups to classical curves so every vhost stays compatible.
+  _log "writing nginx TLS curve hardening (disable OpenSSL 3.5 PQ groups)"
+  local dst="/etc/nginx/conf.d/jabali-ssl-curves.conf"
+  cat > "$dst" <<'CURVEEOF'
+# Managed by jabali. Pin TLS 1.3 groups to classical curves: OpenSSL 3.5's
+# default post-quantum group (X25519MLKEM768) breaks Cloudflare-fronted
+# origins (error 525) and some legacy clients. http{} scope -> all vhosts.
+ssl_ecdh_curve X25519:prime256v1:secp384r1;
+CURVEEOF
+  chmod 0644 "$dst"
+  if ! nginx -t 2>&1 | grep -q "successful"; then
+    nginx -t 2>&1 >&2 || true
+    _die "nginx configuration test failed (ssl curves)"
+  fi
+  systemctl reload nginx || systemctl restart nginx
+  _ok "nginx TLS curve hardening installed: $dst"
+}
+
 install_nginx_websocket_map() {
   _log "installing nginx WebSocket upgrade map snippet"
 
@@ -11439,6 +11466,7 @@ main() {
   # $connection_upgrade, since nginx -t will fail otherwise.
   install_nginx_websocket_map
   install_nginx_fastcgi_cache
+  install_nginx_ssl_hardening
   # M25 Step 4: install the nginx vhost on :8443 that terminates TLS and
   # proxies to the panel-api Unix socket. Runs AFTER install_nginx_default_vhost
   # so the http{} context (defined by Debian's stock nginx.conf) and the

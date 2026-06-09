@@ -345,6 +345,22 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			}
 			return nil
 		}},
+		{"sync nginx TLS curve hardening (CF 525 / OpenSSL 3.5 PQ)", func() error {
+			// OpenSSL 3.5 made X25519MLKEM768 a default TLS 1.3 group;
+			// Cloudflare's origin pull can't negotiate it -> error 525 on
+			// every CF-fronted site. install_nginx_ssl_hardening drops a
+			// conf.d snippet pinning classical curves. PRELUDE so it lands
+			// on every update incl. the fast path. Idempotent.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			if err := run("", "bash", "-c",
+				"source "+installSh+" && install_nginx_ssl_hardening"); err != nil {
+				fmt.Printf("  (install_nginx_ssl_hardening failed: %v -- continuing)\n", err)
+			}
+			return nil
+		}},
 		{"self-heal panel-hostname vhost + landing (GH#135)", func() error {
 			// jabali update never re-renders the server-scope nginx vhosts
 			// (only fresh installs run install_nginx_default_vhost), so the
