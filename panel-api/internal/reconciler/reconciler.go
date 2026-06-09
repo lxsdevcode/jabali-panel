@@ -106,6 +106,10 @@ type Reconciler struct {
 	// M53 Updates Center: auto-update desired-state repo. Nil disables the
 	// autoupdate converge tick.
 	updateAutoupdate repository.UpdateAutoupdateConfigRepository
+	// M53.1 Updates Center: update_state repo + last poll time for the
+	// periodic background check. Nil disables the poll tick.
+	updateState    repository.UpdateStateRepository
+	lastUpdatePoll time.Time
 	// M6.6 — per-domain mail TLS. Nil = phase skipped.
 	mailCerts repository.MailCertificateRepository
 	// M34 — per-user PHP-FPM egress firewall. Renders
@@ -164,6 +168,13 @@ func (r *Reconciler) WithUpdateRunHistory(repo repository.UpdateHistoryRepositor
 // autoupdate reconciler converges it onto the host (ADR-0118).
 func (r *Reconciler) WithUpdateAutoupdate(repo repository.UpdateAutoupdateConfigRepository) *Reconciler {
 	r.updateAutoupdate = repo
+	return r
+}
+
+// WithUpdateState injects the M53.1 update_state repo so the periodic poll
+// tick can refresh the Updates page snapshot + notify on new security updates.
+func (r *Reconciler) WithUpdateState(repo repository.UpdateStateRepository) *Reconciler {
+	r.updateState = repo
 	return r
 }
 
@@ -431,6 +442,7 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	r.reconcilePanelCertificate(ctx)
 	r.reconcileUpdateRuns(ctx)
 	r.reconcileAutoupdate(ctx)
+	r.reconcileUpdatePoll(ctx)
 
 	// Converge the shared branded error pages (404/403/500) from the
 	// editable page_template rows into /var/www/jabali-errors. Hash-gated:
