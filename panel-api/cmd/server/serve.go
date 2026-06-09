@@ -203,6 +203,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		serverSettingsRepo := repository.NewServerSettingsRepository(sharedDB)
 		pageTemplateRepo := repository.NewPageTemplateRepository(sharedDB)
 		notificationEventSettingRepo := repository.NewNotificationEventSettingRepository(sharedDB)
+		// M53 Updates Center singletons + history (ADR-0118).
+		updateStateRepo := repository.NewUpdateStateRepository(sharedDB)
+		updateHistoryRepo := repository.NewUpdateHistoryRepository(sharedDB)
+		updateAutoupdateRepo := repository.NewUpdateAutoupdateConfigRepository(sharedDB)
+		deps.UpdateState = updateStateRepo
+		deps.UpdateHistory = updateHistoryRepo
+		deps.UpdateAutoupdate = updateAutoupdateRepo
 
 		// SSO service for phpMyAdmin
 		ssoService := sso.NewService(
@@ -346,6 +353,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		panelCertRepo := repository.NewPanelCertificateRepository(sharedDB)
 		deps.PanelCerts = panelCertRepo
 		rec.WithPanelCertificate(panelCertRepo, services.NewPanelCertRoutability())
+		rec.WithUpdateRunHistory(updateHistoryRepo)
+		rec.WithUpdateAutoupdate(updateAutoupdateRepo)
 
 		// M6.6 — per-domain mail TLS (ADR-0091). Reconciler walks the
 		// mail_certificate table each tick and dispatches ssl.mail.issue
@@ -640,6 +649,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 				} else if seeded > 0 {
 					log.Info("seeded default page_templates", "count", seeded)
 				}
+			}
+
+			// M53 first-boot seed: singleton update_state + auto-update
+			// config rows. Migration 000163 creates the tables only; the
+			// id=1 rows live here per feedback_migration_data_seed_ordering.
+			if _, err := updateStateRepo.EnsureDefault(seedCtx); err != nil {
+				log.Error("failed to seed update_state row", "err", err)
+			}
+			if _, err := updateAutoupdateRepo.EnsureDefault(seedCtx); err != nil {
+				log.Error("failed to seed update_autoupdate_config row", "err", err)
 			}
 
 			// M14.1 first-boot seed: per-event-kind enable toggles.

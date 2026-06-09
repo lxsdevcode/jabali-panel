@@ -965,6 +965,7 @@ POLICYEOF
       yara \
       ed inotify-tools \
       logrotate \
+      unattended-upgrades \
       restic \
       sshpass \
       "${php_extensions[@]}" \

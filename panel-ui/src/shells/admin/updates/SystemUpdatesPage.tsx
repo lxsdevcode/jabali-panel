@@ -12,14 +12,33 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
+  Col,
   Empty,
+  Row,
   Space,
+  Statistic,
+  Switch,
   Table,
+  Tag,
+  TimePicker,
+  Timeline,
+  Tooltip,
   Typography,
   message,
 } from "antd";
+import dayjs from "dayjs";
 
-import { DownloadOutlined, ReloadOutlined, LoadingOutlined } from "@icons";
+import {
+  ClockCircleOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
+  LoadingOutlined,
+  ReloadOutlined,
+  SafetyOutlined,
+  SettingOutlined,
+  SyncOutlined,
+} from "@icons";
 
 import { JobLogTail } from "../../../components/JobLogTail";
 import {
@@ -27,11 +46,18 @@ import {
   useAptRun,
   useAptStatus,
   useAptStop,
+  useAutoupdateConfig,
+  useChangelog,
   useJabaliCheck,
   useJabaliRun,
   useJabaliStatus,
   useJabaliStop,
+  useUpdateAutoupdate,
+  useUpdateHistory,
+  useUpdateState,
   type AptPackage,
+  type AutoupdateConfig,
+  type UpdateHistoryRow,
 } from "../../../hooks/useSystemUpdates";
 
 export const SystemUpdatesPage = () => (
@@ -40,11 +66,55 @@ export const SystemUpdatesPage = () => (
       <DownloadOutlined /> Updates
     </Typography.Title>
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <UpdateStatsRow />
       <JabaliUpdateCard />
       <AptUpdateCard />
+      <AutomaticUpdatesCard />
+      <RecentHistoryCard />
+      <ChangelogCard />
     </Space>
   </div>
 );
+
+// UpdateStatsRow — three at-a-glance cards from the persisted update_state
+// snapshot (no agent call needed on page load).
+function UpdateStatsRow() {
+  const { data } = useUpdateState();
+  const security = data?.apt_security ?? 0;
+  return (
+    <Row gutter={[16, 16]}>
+      <Col xs={24} sm={8}>
+        <Card>
+          <Statistic
+            title="Panel commits behind"
+            value={data?.jabali_behind ?? 0}
+            prefix={<DownloadOutlined />}
+            valueStyle={{ color: (data?.jabali_behind ?? 0) > 0 ? "#d46b08" : undefined }}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={8}>
+        <Card>
+          <Statistic
+            title="OS packages upgradable"
+            value={data?.apt_total ?? 0}
+            prefix={<SyncOutlined />}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={8}>
+        <Card>
+          <Statistic
+            title="Security updates"
+            value={security}
+            prefix={<SafetyOutlined />}
+            valueStyle={{ color: security > 0 ? "#cf1322" : "#3f8600" }}
+          />
+        </Card>
+      </Col>
+    </Row>
+  );
+}
 
 function JabaliUpdateCard() {
   const [since, setSince] = useState<string | null>(null);
@@ -205,6 +275,7 @@ function JabaliUpdateCard() {
 
 function AptUpdateCard() {
   const [since, setSince] = useState<string | null>(null);
+  const [securityOnly, setSecurityOnly] = useState(false);
   const check = useAptCheck();
   const run = useAptRun();
   const stop = useAptStop();
@@ -278,21 +349,41 @@ function AptUpdateCard() {
       {result && result.total > 0 && !running && !finished ? (
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Alert
-            type="warning"
+            type={(result.security_total ?? 0) > 0 ? "error" : "warning"}
             showIcon
-            message={`${result.total} package${result.total === 1 ? "" : "s"} can be upgraded`}
+            message={`${result.total} package${result.total === 1 ? "" : "s"} can be upgraded${
+              (result.security_total ?? 0) > 0 ? ` — ${result.security_total} security` : ""
+            }`}
             description="dist-upgrade may pull in libc / openssh / mariadb. Take a snapshot first."
           />
+          {(result.security_total ?? 0) > 0 ? (
+            <Checkbox
+              checked={securityOnly}
+              onChange={(e) => setSecurityOnly(e.target.checked)}
+            >
+              Security updates only
+            </Checkbox>
+          ) : null}
           <Table<AptPackage>
             rowKey="name"
             size="small"
-            dataSource={result.packages}
+            dataSource={
+              securityOnly ? result.packages.filter((p) => p.security) : result.packages
+            }
             pagination={false}
             scroll={{ x: "max-content" }}
             columns={[
               { title: "Package", dataIndex: "name" },
               { title: "Current", dataIndex: "current" },
               { title: "New", dataIndex: "new" },
+              { title: "Source", dataIndex: "source", responsive: ["md"] },
+              {
+                title: "Severity",
+                dataIndex: "security",
+                width: 110,
+                render: (sec: boolean) =>
+                  sec ? <Tag color="red">security</Tag> : <Tag>normal</Tag>,
+              },
             ]}
           />
           <Button
@@ -353,6 +444,202 @@ function AptUpdateCard() {
           exitCode={status.data.exit_code}
         />
       ) : null}
+    </Card>
+  );
+}
+
+// AutomaticUpdatesCard — toggle + schedule unattended apt security upgrades
+// and (opt-in, default off) jabali self-update. Saves the desired state; the
+// autoupdate reconciler converges it onto the host.
+function AutomaticUpdatesCard() {
+  const { data, isLoading } = useAutoupdateConfig();
+  const save = useUpdateAutoupdate();
+  const [draft, setDraft] = useState<AutoupdateConfig | null>(null);
+  const cfg = draft ?? data ?? null;
+
+  const dirty =
+    draft !== null && data !== undefined && JSON.stringify(draft) !== JSON.stringify(data);
+
+  const patch = (p: Partial<AutoupdateConfig>) => {
+    if (!cfg) return;
+    setDraft({ ...cfg, ...p });
+  };
+
+  const onSave = async () => {
+    if (!cfg) return;
+    try {
+      await save.mutateAsync(cfg);
+      setDraft(null);
+      message.success("Automatic updates saved");
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : "save failed");
+    }
+  };
+
+  return (
+    <Card title={<span><SettingOutlined /> Automatic Updates</span>}>
+      {isLoading || !cfg ? (
+        <Typography.Text type="secondary">Loading…</Typography.Text>
+      ) : (
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Row align="middle" gutter={[12, 12]}>
+            <Col flex="auto">
+              <Space direction="vertical" size={0}>
+                <Typography.Text strong>OS security updates</Typography.Text>
+                <Typography.Text type="secondary">
+                  Apply Debian security patches automatically via
+                  unattended-upgrades.
+                </Typography.Text>
+              </Space>
+            </Col>
+            <Col>
+              <Switch
+                checked={cfg.apt_enabled}
+                onChange={(v) => patch({ apt_enabled: v })}
+              />
+            </Col>
+            <Col>
+              <TimePicker
+                format="HH:mm"
+                minuteStep={15}
+                allowClear={false}
+                disabled={!cfg.apt_enabled}
+                value={dayjs(cfg.apt_time, "HH:mm")}
+                onChange={(d) => patch({ apt_time: d ? d.format("HH:mm") : cfg.apt_time })}
+              />
+            </Col>
+          </Row>
+
+          <Row align="middle" gutter={[12, 12]}>
+            <Col flex="auto">
+              <Space direction="vertical" size={0}>
+                <Typography.Text strong>
+                  Jabali panel self-update{" "}
+                  <Tooltip title="A bad self-update can take the panel offline. Leave off unless you actively want hands-off panel upgrades.">
+                    <Tag color="orange">advanced</Tag>
+                  </Tooltip>
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  Run <code>jabali update</code> automatically on a schedule.
+                </Typography.Text>
+              </Space>
+            </Col>
+            <Col>
+              <Switch
+                checked={cfg.jabali_enabled}
+                onChange={(v) => patch({ jabali_enabled: v })}
+              />
+            </Col>
+            <Col>
+              <TimePicker
+                format="HH:mm"
+                minuteStep={15}
+                allowClear={false}
+                disabled={!cfg.jabali_enabled}
+                value={dayjs(cfg.jabali_time, "HH:mm")}
+                onChange={(d) =>
+                  patch({ jabali_time: d ? d.format("HH:mm") : cfg.jabali_time })
+                }
+              />
+            </Col>
+          </Row>
+
+          <Button
+            type="primary"
+            onClick={onSave}
+            disabled={!dirty}
+            loading={save.isPending}
+          >
+            Save
+          </Button>
+        </Space>
+      )}
+    </Card>
+  );
+}
+
+const historyStatusTag = (status: string) => {
+  if (status === "success") return <Tag color="green">success</Tag>;
+  if (status === "failed") return <Tag color="red">failed</Tag>;
+  return <Tag color="processing">running</Tag>;
+};
+
+// RecentHistoryCard — the persisted update_history log (runs only). Survives
+// page reloads because panel-api logs the row and the run reconciler marks it
+// finished, regardless of whether this page was open.
+function RecentHistoryCard() {
+  const { data, isLoading } = useUpdateHistory(20);
+  const rows = data?.items ?? [];
+  return (
+    <Card title={<span><ClockCircleOutlined /> Recent History</span>}>
+      {isLoading ? (
+        <Typography.Text type="secondary">Loading…</Typography.Text>
+      ) : rows.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No update runs yet" />
+      ) : (
+        <Table<UpdateHistoryRow>
+          rowKey="id"
+          size="small"
+          dataSource={rows}
+          pagination={false}
+          scroll={{ x: "max-content" }}
+          columns={[
+            {
+              title: "When",
+              dataIndex: "started_at",
+              render: (t: string) => dayjs(t).format("YYYY-MM-DD HH:mm"),
+            },
+            {
+              title: "Target",
+              dataIndex: "kind",
+              render: (k: string) => (k === "jabali" ? "Jabali panel" : "OS packages"),
+            },
+            { title: "Action", dataIndex: "action" },
+            { title: "Status", dataIndex: "status", render: historyStatusTag },
+            { title: "Summary", dataIndex: "summary" },
+          ]}
+        />
+      )}
+    </Card>
+  );
+}
+
+// ChangelogCard — release notes from the public GitHub mirror. Empty until the
+// first release is cut.
+function ChangelogCard() {
+  const { data, isLoading } = useChangelog();
+  const items = data?.items ?? [];
+  return (
+    <Card title={<span><FileTextOutlined /> Changelog</span>}>
+      {isLoading ? (
+        <Typography.Text type="secondary">Loading…</Typography.Text>
+      ) : items.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No releases yet" />
+      ) : (
+        <Timeline
+          items={items.map((e) => ({
+            children: (
+              <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                <Typography.Text strong>
+                  {e.name || e.tag}{" "}
+                  <Typography.Text type="secondary">
+                    {e.published_at ? dayjs(e.published_at).format("YYYY-MM-DD") : ""}
+                  </Typography.Text>
+                </Typography.Text>
+                {e.body ? (
+                  <Typography.Paragraph
+                    type="secondary"
+                    ellipsis={{ rows: 4, expandable: true, symbol: "more" }}
+                    style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}
+                  >
+                    {e.body}
+                  </Typography.Paragraph>
+                ) : null}
+              </Space>
+            ),
+          }))}
+        />
+      )}
     </Card>
   );
 }

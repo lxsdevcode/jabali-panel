@@ -35,6 +35,25 @@ func TestParseAptUpgradable(t *testing.T) {
 	if pkgs[2].Source != "stable-security" {
 		t.Errorf("pkgs[2].Source = %q, want stable-security", pkgs[2].Source)
 	}
+	if pkgs[0].Security {
+		t.Errorf("pkgs[0] (curl/stable) Security = true, want false")
+	}
+	if !pkgs[2].Security {
+		t.Errorf("pkgs[2] (openssl/stable-security) Security = false, want true")
+	}
+}
+
+func TestParseAptUpgradable_SecurityCount(t *testing.T) {
+	pkgs := parseAptUpgradable(aptListUpgradableSample)
+	n := 0
+	for _, p := range pkgs {
+		if p.Security {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("security count = %d, want 1", n)
+	}
 }
 
 func TestParseAptUpgradable_Empty(t *testing.T) {

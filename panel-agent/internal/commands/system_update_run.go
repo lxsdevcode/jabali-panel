@@ -39,7 +39,9 @@ func systemUpdateRunHandler(ctx context.Context, _ json.RawMessage) (any, error)
 	cmd := exec.CommandContext(ctx, "systemd-run",
 		"--unit="+updateUnitName,
 		"--no-block",
-		"--collect", // auto-clear unit state once it exits
+		// No --collect: a *failed* oneshot lingers in "failed" state so the
+		// M50 run reconciler can read it as failed; a *successful* one is
+		// GC'd to inactive (= success). reset-failed at the next run clears it.
 		"/usr/local/bin/jabali", "update", "-f",
 	)
 	out, err := cmd.CombinedOutput()
