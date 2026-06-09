@@ -4,23 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // AdminUpdatesHandlerConfig holds dependencies for the system-updates endpoints.
+//
+// M29 shipped this as a thin proxy (Agent only). M53 (ADR-0118) makes it
+// stateful: check results are persisted to update_state for instant page
+// loads, runs are logged to update_history, and the run reconciler marks
+// running rows finished. State/History nil -> falls back to M29 proxy
+// behaviour (no persistence, /state + /history return 503).
 type AdminUpdatesHandlerConfig struct {
-	Agent agent.AgentInterface
+	Agent      agent.AgentInterface
+	State      repository.UpdateStateRepository
+	History    repository.UpdateHistoryRepository
+	Autoupdate repository.UpdateAutoupdateConfigRepository
 }
 
-// RegisterAdminUpdatesRoutes mounts the eight system-update endpoints. All
-// state lives in systemd transient units on the host, so this layer is a
-// thin proxy: agent commands do the work, panel-api just enforces auth +
-// shape. M29.
+const (
+	jabaliUpdateUnit = "jabali-update-oneshot.service"
+	aptUpdateUnit    = "jabali-apt-oneshot.service"
+)
+
+// RegisterAdminUpdatesRoutes mounts the update endpoints. M29 proxy routes
+// plus M53 /state, /history, /autoupdate.
 func RegisterAdminUpdatesRoutes(g *gin.RouterGroup, cfg AdminUpdatesHandlerConfig) {
 	if cfg.Agent == nil {
 		return
@@ -36,18 +51,30 @@ func RegisterAdminUpdatesRoutes(g *gin.RouterGroup, cfg AdminUpdatesHandlerConfi
 	grp.POST("/apt/run", h.aptRun)
 	grp.GET("/apt/status", h.aptStatus)
 	grp.DELETE("/apt", h.aptStop)
+	// M53 stateful additions.
+	grp.GET("/state", h.state)
+	grp.GET("/history", h.history)
+	grp.GET("/autoupdate", h.autoupdateGet)
+	grp.PUT("/autoupdate", h.autoupdatePut)
 }
 
 type adminUpdatesHandler struct{ cfg AdminUpdatesHandlerConfig }
 
-func (h *adminUpdatesHandler) callAgent(c *gin.Context, cmd string, params any, timeout time.Duration) {
+// callAgentRaw proxies to the agent and returns the raw bytes so callers can
+// decode a typed view for persistence without a second agent round-trip.
+func (h *adminUpdatesHandler) callAgentRaw(c *gin.Context, cmd string, params any, timeout time.Duration) (json.RawMessage, bool) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 	raw, err := h.cfg.Agent.Call(ctx, cmd, params)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "details": err.Error()})
-		return
+		return nil, false
 	}
+	return raw, true
+}
+
+// writeAgentJSON parses raw agent output and writes it to the client.
+func writeAgentJSON(c *gin.Context, raw json.RawMessage) {
 	var data any
 	if err := json.Unmarshal(raw, &data); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_parse"})
@@ -56,16 +83,44 @@ func (h *adminUpdatesHandler) callAgent(c *gin.Context, cmd string, params any, 
 	c.JSON(http.StatusOK, data)
 }
 
-// `jabali update -f` itself is async (transient unit). The check call is
-// synchronous (git fetch) — generous timeout because the upstream may be
-// slow. 60 s covers any reasonable network blip.
+func (h *adminUpdatesHandler) callAgent(c *gin.Context, cmd string, params any, timeout time.Duration) {
+	raw, ok := h.callAgentRaw(c, cmd, params, timeout)
+	if !ok {
+		return
+	}
+	writeAgentJSON(c, raw)
+}
+
+// --- jabali ----------------------------------------------------------------
+
+// jabaliCheckResult mirrors the agent's system.update_check wire shape.
+type jabaliCheckResult struct {
+	CurrentSHA  string `json:"current_sha"`
+	BehindCount int    `json:"behind_count"`
+}
+
 func (h *adminUpdatesHandler) jabaliCheck(c *gin.Context) {
-	h.callAgent(c, "system.update_check", nil, 60*time.Second)
+	raw, ok := h.callAgentRaw(c, "system.update_check", nil, 60*time.Second)
+	if !ok {
+		return
+	}
+	if h.cfg.State != nil {
+		var r jabaliCheckResult
+		if json.Unmarshal(raw, &r) == nil {
+			// Persistence failures must not fail the check response.
+			_ = h.cfg.State.UpsertJabali(c.Request.Context(), r.BehindCount, r.CurrentSHA, time.Now())
+		}
+	}
+	writeAgentJSON(c, raw)
 }
 
 func (h *adminUpdatesHandler) jabaliRun(c *gin.Context) {
-	// systemd-run --no-block returns immediately; 10 s timeout is plenty.
-	h.callAgent(c, "system.update_run", map[string]any{}, 10*time.Second)
+	raw, ok := h.callAgentRaw(c, "system.update_run", map[string]any{}, 10*time.Second)
+	if !ok {
+		return
+	}
+	h.logRun(c.Request.Context(), models.UpdateKindJabali, jabaliUpdateUnit, 0)
+	writeAgentJSON(c, raw)
 }
 
 func (h *adminUpdatesHandler) jabaliStatus(c *gin.Context) {
@@ -73,16 +128,44 @@ func (h *adminUpdatesHandler) jabaliStatus(c *gin.Context) {
 }
 
 func (h *adminUpdatesHandler) jabaliStop(c *gin.Context) {
-	h.callAgent(c, "system.unit_stop", map[string]any{"unit": "jabali-update-oneshot.service"}, 10*time.Second)
+	h.callAgent(c, "system.unit_stop", map[string]any{"unit": jabaliUpdateUnit}, 10*time.Second)
+}
+
+// --- apt -------------------------------------------------------------------
+
+// aptCheckResult mirrors the agent's system.apt_check wire shape.
+type aptCheckResult struct {
+	Total         int `json:"total"`
+	SecurityTotal int `json:"security_total"`
 }
 
 func (h *adminUpdatesHandler) aptCheck(c *gin.Context) {
-	// `apt-get update` over slow mirrors can take 60+ seconds.
-	h.callAgent(c, "system.apt_check", nil, 120*time.Second)
+	raw, ok := h.callAgentRaw(c, "system.apt_check", nil, 120*time.Second)
+	if !ok {
+		return
+	}
+	if h.cfg.State != nil {
+		var r aptCheckResult
+		if json.Unmarshal(raw, &r) == nil {
+			_ = h.cfg.State.UpsertApt(c.Request.Context(), r.Total, r.SecurityTotal, time.Now())
+		}
+	}
+	writeAgentJSON(c, raw)
 }
 
 func (h *adminUpdatesHandler) aptRun(c *gin.Context) {
-	h.callAgent(c, "system.apt_run", map[string]any{}, 10*time.Second)
+	raw, ok := h.callAgentRaw(c, "system.apt_run", map[string]any{}, 10*time.Second)
+	if !ok {
+		return
+	}
+	sec := 0
+	if h.cfg.State != nil {
+		if st, err := h.cfg.State.Get(c.Request.Context()); err == nil {
+			sec = st.AptSecurity
+		}
+	}
+	h.logRun(c.Request.Context(), models.UpdateKindApt, aptUpdateUnit, sec)
+	writeAgentJSON(c, raw)
 }
 
 func (h *adminUpdatesHandler) aptStatus(c *gin.Context) {
@@ -90,5 +173,119 @@ func (h *adminUpdatesHandler) aptStatus(c *gin.Context) {
 }
 
 func (h *adminUpdatesHandler) aptStop(c *gin.Context) {
-	h.callAgent(c, "system.unit_stop", map[string]any{"unit": "jabali-apt-oneshot.service"}, 10*time.Second)
+	h.callAgent(c, "system.unit_stop", map[string]any{"unit": aptUpdateUnit}, 10*time.Second)
+}
+
+// logRun records a run-started history row (status=running). The run
+// reconciler marks it finished once the transient unit terminates, so the
+// row is durable even if no UI is polling. Best-effort.
+func (h *adminUpdatesHandler) logRun(ctx context.Context, kind, unit string, securityCount int) {
+	if h.cfg.History == nil {
+		return
+	}
+	_ = h.cfg.History.Insert(ctx, &models.UpdateHistory{
+		Kind:          kind,
+		Action:        models.UpdateActionRun,
+		Status:        models.UpdateStatusRunning,
+		SecurityCount: securityCount,
+		Unit:          unit,
+		StartedAt:     time.Now(),
+	})
+}
+
+// --- M53 state + history ---------------------------------------------------
+
+func (h *adminUpdatesHandler) state(c *gin.Context) {
+	if h.cfg.State == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "state_unavailable"})
+		return
+	}
+	st, err := h.cfg.State.EnsureDefault(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "state_read"})
+		return
+	}
+	c.JSON(http.StatusOK, st)
+}
+
+func (h *adminUpdatesHandler) history(c *gin.Context) {
+	if h.cfg.History == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "history_unavailable"})
+		return
+	}
+	limit := 20
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	rows, err := h.cfg.History.List(c.Request.Context(), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "history_read"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": rows, "total": len(rows)})
+}
+
+// --- M53 auto-update config (DB-as-truth; reconciler converges to host) -----
+
+func (h *adminUpdatesHandler) autoupdateGet(c *gin.Context) {
+	if h.cfg.Autoupdate == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "autoupdate_unavailable"})
+		return
+	}
+	cfg, err := h.cfg.Autoupdate.EnsureDefault(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "autoupdate_read"})
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+type autoupdatePutBody struct {
+	AptEnabled    bool   `json:"apt_enabled"`
+	AptTime       string `json:"apt_time"`
+	JabaliEnabled bool   `json:"jabali_enabled"`
+	JabaliTime    string `json:"jabali_time"`
+}
+
+// timeHHMM validates a 24h HH:MM string. Rejecting non-conforming input at the
+// REST boundary keeps a malformed value from ever reaching the systemd
+// OnCalendar render in the agent.
+func timeHHMM(s string) bool {
+	if len(s) != 5 || s[2] != ':' {
+		return false
+	}
+	hh, err1 := strconv.Atoi(s[0:2])
+	mm, err2 := strconv.Atoi(s[3:5])
+	return err1 == nil && err2 == nil && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59
+}
+
+func (h *adminUpdatesHandler) autoupdatePut(c *gin.Context) {
+	if h.cfg.Autoupdate == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "autoupdate_unavailable"})
+		return
+	}
+	var body autoupdatePutBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	if !timeHHMM(body.AptTime) || !timeHHMM(body.JabaliTime) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_time", "details": "apt_time/jabali_time must be HH:MM (24h)"})
+		return
+	}
+	cfg := &models.UpdateAutoupdateConfig{
+		AptEnabled:    body.AptEnabled,
+		AptTime:       body.AptTime,
+		JabaliEnabled: body.JabaliEnabled,
+		JabaliTime:    body.JabaliTime,
+	}
+	if err := h.cfg.Autoupdate.Upsert(c.Request.Context(), cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "autoupdate_save"})
+		return
+	}
+	// The autoupdate reconciler converges this onto the host on its next tick.
+	saved, _ := h.cfg.Autoupdate.Get(c.Request.Context())
+	c.JSON(http.StatusOK, saved)
 }

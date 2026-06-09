@@ -112,6 +112,13 @@ type Deps struct {
 	// registers /admin/panel-certificate when set; nil keeps the routes
 	// off (lab installs / older test wiring).
 	PanelCerts repository.PanelCertificateRepository
+	// M53 Updates Center (ADR-0118). UpdateState + UpdateHistory drive the
+	// stateful Updates page; UpdateAutoupdate is the auto-update desired
+	// state the autoupdate reconciler converges. Nil keeps the M29 thin
+	// proxy behaviour (no persistence, no /state /history endpoints).
+	UpdateState      repository.UpdateStateRepository
+	UpdateHistory    repository.UpdateHistoryRepository
+	UpdateAutoupdate repository.UpdateAutoupdateConfigRepository
 	// M33 malware detection repos (ADR-0072). All five are wired
 	// together — nil on any disables RegisterSecurityMalwareRoutes.
 	// M30 backup-restore (ADR-0075). Nil disables the /admin/backups
@@ -612,7 +619,10 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		})
 		// Admin: System Updates (M29). Thin proxy to agent's system.* commands.
 		api.RegisterAdminUpdatesRoutes(v1, api.AdminUpdatesHandlerConfig{
-			Agent: deps.Agent,
+			Agent:      deps.Agent,
+			State:      deps.UpdateState,
+			History:    deps.UpdateHistory,
+			Autoupdate: deps.UpdateAutoupdate,
 		})
 		// Admin: Support diagnostic report (M29, ADR-0064).
 		api.RegisterAdminSupportRoutes(v1, api.AdminSupportHandlerConfig{

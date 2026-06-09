@@ -14,8 +14,9 @@ import (
 
 // systemAptCheckResponse is the wire shape for system.apt_check.
 type systemAptCheckResponse struct {
-	Packages []aptUpgradablePackage `json:"packages"`
-	Total    int                    `json:"total"`
+	Packages      []aptUpgradablePackage `json:"packages"`
+	Total         int                    `json:"total"`
+	SecurityTotal int                    `json:"security_total"`
 }
 
 type aptUpgradablePackage struct {
@@ -23,6 +24,9 @@ type aptUpgradablePackage struct {
 	Current string `json:"current"`
 	New     string `json:"new"`
 	Source  string `json:"source"`
+	// Security is true when the upgrade candidate comes from a *-security
+	// suite (e.g. "stable-security"). Coarse severity, zero extra apt calls.
+	Security bool `json:"security"`
 }
 
 // systemAptCheckHandler runs `apt-get update` then `apt list --upgradable`
@@ -43,7 +47,13 @@ func systemAptCheckHandler(ctx context.Context, _ json.RawMessage) (any, error) 
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("apt list: %v", err)}
 	}
 	pkgs := parseAptUpgradable(string(out))
-	return systemAptCheckResponse{Packages: pkgs, Total: len(pkgs)}, nil
+	sec := 0
+	for _, p := range pkgs {
+		if p.Security {
+			sec++
+		}
+	}
+	return systemAptCheckResponse{Packages: pkgs, Total: len(pkgs), SecurityTotal: sec}, nil
 }
 
 func runApt(ctx context.Context, args ...string) error {
@@ -87,10 +97,11 @@ func parseAptUpgradable(out string) []aptUpgradablePackage {
 			continue
 		}
 		pkgs = append(pkgs, aptUpgradablePackage{
-			Name:    m[1],
-			Source:  m[2],
-			New:     m[3],
-			Current: m[5],
+			Name:     m[1],
+			Source:   m[2],
+			New:      m[3],
+			Current:  m[5],
+			Security: strings.Contains(strings.ToLower(m[2]), "security"),
 		})
 	}
 	return pkgs

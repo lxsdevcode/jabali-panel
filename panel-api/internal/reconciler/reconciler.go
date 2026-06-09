@@ -99,6 +99,10 @@ type Reconciler struct {
 	// service it drives ssl.panel.issue from ReconcileAll.
 	panelCerts          repository.PanelCertificateRepository
 	panelCertRoutability *services.PanelCertRoutability
+
+	// M53 Updates Center: update_history repo. When nil the run reconciler
+	// is a no-op (test fixtures / installs without the M53 wiring).
+	updateRunHistory repository.UpdateHistoryRepository
 	// M6.6 — per-domain mail TLS. Nil = phase skipped.
 	mailCerts repository.MailCertificateRepository
 	// M34 — per-user PHP-FPM egress firewall. Renders
@@ -143,6 +147,13 @@ func (r *Reconciler) WithMailCertificates(repo repository.MailCertificateReposit
 func (r *Reconciler) WithPanelCertificate(repo repository.PanelCertificateRepository, rout *services.PanelCertRoutability) *Reconciler {
 	r.panelCerts = repo
 	r.panelCertRoutability = rout
+	return r
+}
+
+// WithUpdateRunHistory injects the M53 update_history repo so the run
+// reconciler can flip running rows to their terminal status (ADR-0118).
+func (r *Reconciler) WithUpdateRunHistory(repo repository.UpdateHistoryRepository) *Reconciler {
+	r.updateRunHistory = repo
 	return r
 }
 
@@ -408,6 +419,7 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// before the rest of the loop touches the agent. Cheap noop when
 	// use_le=0 or routability gate fails.
 	r.reconcilePanelCertificate(ctx)
+	r.reconcileUpdateRuns(ctx)
 
 	// Converge the shared branded error pages (404/403/500) from the
 	// editable page_template rows into /var/www/jabali-errors. Hash-gated:

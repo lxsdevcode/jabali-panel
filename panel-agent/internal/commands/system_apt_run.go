@@ -27,7 +27,8 @@ func systemAptRunHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 	cmd := exec.CommandContext(ctx, "systemd-run",
 		"--unit="+aptUnitName,
 		"--no-block",
-		"--collect",
+		// No --collect: failed unit lingers (reconciler reads it as failed),
+		// success is GC'd to inactive. reset-failed at next run clears it.
 		"--setenv=DEBIAN_FRONTEND=noninteractive",
 		"--setenv=LC_ALL=C",
 		"apt-get",
