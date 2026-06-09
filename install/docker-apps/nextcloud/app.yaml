@@ -44,3 +44,8 @@ env:
   - name: MYSQL_ROOT_PASSWORD
     secret: true
     generate: password32
+  - name: NEXTCLOUD_ADMIN_USER
+    value: "jabali"
+  - name: NEXTCLOUD_ADMIN_PASSWORD
+    secret: true
+    generate: password32

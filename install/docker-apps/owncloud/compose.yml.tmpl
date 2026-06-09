@@ -14,6 +14,7 @@ services:
       OWNCLOUD_DB_USERNAME: "owncloud"
       OWNCLOUD_DB_PASSWORD: "{{ index .Env "MARIADB_PASSWORD" }}"
       OWNCLOUD_DB_HOST: "db"
+      OWNCLOUD_MYSQL_UTF8MB4: "true"
       OWNCLOUD_REDIS_ENABLED: "true"
       OWNCLOUD_REDIS_HOST: "redis"
       OWNCLOUD_ADMIN_USERNAME: "{{ index .Env "OWNCLOUD_ADMIN_USERNAME" }}"
