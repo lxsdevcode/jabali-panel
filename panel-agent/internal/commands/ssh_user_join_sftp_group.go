@@ -18,9 +18,9 @@ type sshUserJoinSFTPGroupParams struct {
 
 // sshUserJoinSFTPGroupResponse is the output shape for ssh.user.join_sftp_group.
 type sshUserJoinSFTPGroupResponse struct {
-	Username string `json:"username"`
-	Joined   bool   `json:"joined,omitempty"`
-	AlreadyMember bool `json:"already_member,omitempty"`
+	Username      string `json:"username"`
+	Joined        bool   `json:"joined,omitempty"`
+	AlreadyMember bool   `json:"already_member,omitempty"`
 }
 
 const sftpGroupName = "jabali-sftp"
@@ -32,6 +32,16 @@ func sshUserJoinSFTPGroupHandler(ctx context.Context, params json.RawMessage) (a
 			Code:    agentwire.CodeInvalidArgument,
 			Message: fmt.Sprintf("failed to parse params: %v", err),
 		}
+	}
+
+	// Never let a uid-0 / root account join jabali-sftp. sshd's
+	// `Match Group jabali-sftp` block applies ForceCommand internal-sftp +
+	// ChrootDirectory /home/%u; a root login then chroots into a
+	// nonexistent /home/root, the session can't be set up, and the
+	// connection resets right after authentication — host SSH is bricked
+	// with no shell. Guarded here so no caller (however buggy) can do it.
+	if gerr := refuseRootSFTP(ctx, p.Username); gerr != nil {
+		return nil, gerr
 	}
 
 	// Check if user is already a member of jabali-sftp group
@@ -91,6 +101,25 @@ func isUserInGroup(ctx context.Context, username, groupName string) (bool, *agen
 	}
 
 	return false, nil
+}
+
+// refuseRootSFTP rejects empty, "root", or any uid-0 username from joining
+// jabali-sftp (see the call site for why this bricks SSH).
+func refuseRootSFTP(ctx context.Context, username string) *agentwire.AgentError {
+	if username == "" {
+		return &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "username required"}
+	}
+	if username == "root" {
+		return &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "refusing to add root to " + sftpGroupName + " (would brick host SSH)"}
+	}
+	out, err := exec.CommandContext(ctx, "id", "-u", username).Output()
+	if err != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("failed to resolve uid for %q: %v", username, err)}
+	}
+	if strings.TrimSpace(string(out)) == "0" {
+		return &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "refusing to add a uid-0 account to " + sftpGroupName + " (would brick host SSH)"}
+	}
+	return nil
 }
 
 func init() {
