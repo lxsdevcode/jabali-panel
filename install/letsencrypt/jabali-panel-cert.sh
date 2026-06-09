@@ -47,11 +47,30 @@ if [[ -z "$kind" ]]; then
       # silently flip to the per-domain branch.
       if [[ -n "${JABALI_MAIL_DOMAIN_ID:-}" ]]; then
         kind="mail-domain"
-      else
+      elif [[ "$(basename "$src")" == "mail.${cn}" ]]; then
         kind="mail"
+      else
+        # mail.<tenant> renewed by certbot's unattended timer (no
+        # JABALI_MAIL_DOMAIN_ID). NOT the panel mail cert -- the per-domain
+        # mail reconciler owns it. Do nothing rather than clobber
+        # panel-mail.crt with a random tenant's mail cert.
+        exit 0
       fi
       ;;
-    *)      kind="hostname" ;;
+    *)
+      # Only the panel hostname's own lineage feeds /etc/jabali/tls/panel.*.
+      # Any other lineage here is a TENANT domain renewed by certbot's
+      # unattended timer -- its nginx vhost references the LE lineage
+      # directly, so this hook must NOT touch it. Copying it to panel.crt
+      # made the panel (:8443), Stalwart and Bulwark serve a random
+      # tenant's certificate (incident: puzzle.linux-hosting.net panel
+      # served freecrosswordpuzzleanswers.com after that domain renewed).
+      if [[ "$(basename "$src")" == "$cn" ]]; then
+        kind="hostname"
+      else
+        exit 0
+      fi
+      ;;
   esac
 fi
 

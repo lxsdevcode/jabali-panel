@@ -345,6 +345,21 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			}
 			return nil
 		}},
+		{"sync panel-cert deploy-hook (clobber fix)", func() error {
+			// The LE deploy-hook used to copy ANY renewed lineage to
+			// /etc/jabali/tls/panel.crt (default kind=hostname), so a
+			// tenant-domain renewal made the panel + Stalwart serve that
+			// tenant's cert. Re-deploy the fixed hook. PRELUDE + idempotent.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			if err := run("", "bash", "-c",
+				"source "+installSh+" && install_jabali_panel_cert_hook"); err != nil {
+				fmt.Printf("  (install_jabali_panel_cert_hook failed: %v -- continuing)\n", err)
+			}
+			return nil
+		}},
 		{"sync nginx TLS curve hardening (CF 525 / OpenSSL 3.5 PQ)", func() error {
 			// OpenSSL 3.5 made X25519MLKEM768 a default TLS 1.3 group;
 			// Cloudflare's origin pull can't negotiate it -> error 525 on
