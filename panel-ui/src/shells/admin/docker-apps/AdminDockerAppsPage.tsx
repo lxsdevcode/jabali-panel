@@ -14,7 +14,6 @@ import {
   DeleteOutlined,
   SyncOutlined,
   FileTextOutlined,
-  KeyOutlined,
   CodeOutlined,
   SaveOutlined,
   EditOutlined,
@@ -28,7 +27,6 @@ import { LogsDrawer } from "./LogsDrawer";
 import { ExecDrawer } from "./ExecDrawer";
 import { BackupsDrawer } from "./BackupsDrawer";
 import { EditDrawer } from "./EditDrawer";
-import { EnvDrawer } from "./EnvDrawer";
 import { MaintenanceTab } from "./MaintenanceTab";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -49,7 +47,6 @@ export const AdminDockerAppsPage = () => {
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
   const [editApp, setEditApp] = useState<InstalledApp | null>(null);
-  const [envApp, setEnvApp] = useState<InstalledApp | null>(null);
   const [activeTab, setActiveTab] = useState<string>("installed");
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
 
@@ -380,13 +377,6 @@ export const AdminDockerAppsPage = () => {
                               onClick={() => setEditApp(r)}
                             />
                           </Tooltip>
-                          <Tooltip title="Environment / credentials">
-                            <Button
-                              size="small"
-                              icon={<KeyOutlined />}
-                              onClick={() => setEnvApp(r)}
-                            />
-                          </Tooltip>
                           <Dropdown
                             trigger={["click"]}
                             menu={{
@@ -517,11 +507,6 @@ export const AdminDockerAppsPage = () => {
         open={execAppId !== null}
         appId={execAppId}
         onClose={() => setExecAppId(null)}
-      />
-      <EnvDrawer
-        open={envApp !== null}
-        app={envApp}
-        onClose={() => setEnvApp(null)}
       />
       <EditDrawer
         open={editApp !== null}

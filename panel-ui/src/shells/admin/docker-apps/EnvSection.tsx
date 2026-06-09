@@ -1,50 +1,46 @@
-// EnvDrawer — view / edit / regenerate an installed docker-app's environment.
-//
-// The catalog generates per-install secrets (admin passwords, DB passwords,
-// tokens) into the container's .env but never surfaced them, so an operator
-// couldn't find an app's admin credential. This drawer reveals the env,
-// lets you edit a value, and regenerate a generated secret. Saving or
-// regenerating re-renders the compose and recreates the container (brief
-// downtime), so we warn before applying.
-import { Alert, App, Button, Drawer, Input, Popconfirm, Space, Table, Tooltip, Typography } from "antd";
+// EnvSection — environment / credentials editor embedded in the Edit drawer
+// (no standalone page). Lists every env var of an installed app, reveals
+// secrets, lets you edit a value, and regenerate a generated secret. Apply
+// re-renders the compose and recreates the container, so it has its own
+// action independent of the ports/limits Save above it.
+import { App, Button, Input, Popconfirm, Space, Table, Tooltip, Typography } from "antd";
 import { CopyOutlined, EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { getEnv, putEnv, regenerateEnv, type EnvVar } from "./api";
-import type { InstalledApp } from "./types";
 
 interface Props {
-  open: boolean;
-  app: InstalledApp | null;
-  onClose: () => void;
+  appId: string;
+  /** Re-fetch when the drawer opens so stale secrets aren't shown. */
+  active: boolean;
 }
 
-export const EnvDrawer = ({ open, app, onClose }: Props) => {
+export const EnvSection = ({ appId, active }: Props) => {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
 
   const envQ = useQuery({
-    queryKey: ["docker-app-env", app?.id],
-    queryFn: () => getEnv(app!.id),
-    enabled: open && !!app,
+    queryKey: ["docker-app-env", appId],
+    queryFn: () => getEnv(appId),
+    enabled: active && !!appId,
   });
 
   useEffect(() => {
-    if (open) {
+    if (active) {
       setEdits({});
       setRevealed({});
     }
-  }, [open, app?.id]);
+  }, [active, appId]);
 
   const save = useMutation({
-    mutationFn: () => putEnv(app!.id, edits),
+    mutationFn: () => putEnv(appId, edits),
     onSuccess: () => {
       message.success("Environment saved — container recreated");
       setEdits({});
-      void qc.invalidateQueries({ queryKey: ["docker-app-env", app?.id] });
+      void qc.invalidateQueries({ queryKey: ["docker-app-env", appId] });
       void qc.invalidateQueries({ queryKey: ["admin-docker-apps"] });
     },
     onError: (e: unknown) =>
@@ -52,11 +48,11 @@ export const EnvDrawer = ({ open, app, onClose }: Props) => {
   });
 
   const regen = useMutation({
-    mutationFn: (key: string) => regenerateEnv(app!.id, key),
+    mutationFn: (key: string) => regenerateEnv(appId, key),
     onSuccess: (res) => {
       message.success(`Regenerated ${res.key}`);
       setRevealed((s) => ({ ...s, [res.key]: true }));
-      void qc.invalidateQueries({ queryKey: ["docker-app-env", app?.id] });
+      void qc.invalidateQueries({ queryKey: ["docker-app-env", appId] });
       void qc.invalidateQueries({ queryKey: ["admin-docker-apps"] });
     },
     onError: (e: unknown) =>
@@ -72,35 +68,27 @@ export const EnvDrawer = ({ open, app, onClose }: Props) => {
   const dirty = Object.keys(edits).length > 0;
 
   return (
-    <Drawer
-      title={`Environment — ${app?.name ?? ""}`}
-      width={720}
-      open={open}
-      onClose={onClose}
-      destroyOnClose
-      extra={
-        <Space>
-          <Button onClick={onClose}>Close</Button>
-          <Popconfirm
-            title="Recreate the container?"
-            description="Saving applies the new values by recreating the container (brief downtime)."
-            okText="Save & recreate"
-            disabled={!dirty}
-            onConfirm={() => save.mutate()}
-          >
-            <Button type="primary" disabled={!dirty} loading={save.isPending}>
-              Save ({Object.keys(edits).length})
-            </Button>
-          </Popconfirm>
-        </Space>
-      }
-    >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="Editing a value or regenerating a secret recreates the container to apply it."
-      />
+    <div>
+      <Space align="center" style={{ justifyContent: "space-between", width: "100%", marginBottom: 8 }}>
+        <Typography.Title level={5} style={{ margin: 0 }}>
+          Environment
+        </Typography.Title>
+        <Popconfirm
+          title="Recreate the container?"
+          description="Saving applies the new values by recreating the container (brief downtime)."
+          okText="Save & recreate"
+          disabled={!dirty}
+          onConfirm={() => save.mutate()}
+        >
+          <Button size="small" type="primary" disabled={!dirty} loading={save.isPending}>
+            Save environment ({Object.keys(edits).length})
+          </Button>
+        </Popconfirm>
+      </Space>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        App credentials live here — reveal a secret to read it, edit a value, or regenerate a
+        generated secret. Saving or regenerating recreates the container to apply.
+      </Typography.Paragraph>
       <Table<EnvVar>
         size="small"
         rowKey="name"
@@ -167,6 +155,6 @@ export const EnvDrawer = ({ open, app, onClose }: Props) => {
           },
         ]}
       />
-    </Drawer>
+    </div>
   );
 };

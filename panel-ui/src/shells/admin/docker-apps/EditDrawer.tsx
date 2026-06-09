@@ -3,13 +3,14 @@
 // the wire-level knobs (domain + per-port enabled/bind/host_port/
 // reverse_proxy). Backend gates port + domain edits on `status =
 // stopped` and re-renders the compose + re-dispatches the agent.
-import { Alert, App, Drawer, Form, Input, InputNumber, Select, Space, Switch, Table, Typography } from "antd";
+import { Alert, App, Divider, Drawer, Form, Input, InputNumber, Select, Space, Switch, Table, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
 
 import { listCatalog, patchApp } from "./api";
+import { EnvSection } from "./EnvSection";
 import type { CatalogEntry, InstallPortOverride, InstalledApp } from "./types";
 
 interface Props {
@@ -269,6 +270,12 @@ export const EditDrawer = ({ open, app, onClose }: Props) => {
         </Typography.Paragraph>
         {portsTable}
       </Form>
+      {app && (
+        <>
+          <Divider />
+          <EnvSection appId={app.id} active={open} />
+        </>
+      )}
     </Drawer>
   );
 };
