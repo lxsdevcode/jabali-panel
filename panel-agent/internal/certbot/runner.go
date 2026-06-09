@@ -84,6 +84,12 @@ func (r *Runner) Issue(domain, webroot, email string, staging bool, extraHostnam
 		"--agree-tos",
 		"--non-interactive",
 		"--keep-until-expiring",
+		// RSA, not certbot's ECDSA default: an ECDSA-only origin cert
+		// breaks Cloudflare-fronted (and other RSA-only) clients —
+		// CF's origin pull negotiates an RSA cipher suite, finds no
+		// shared cipher with an EC cert, and fails the TLS handshake
+		// (error 525). RSA is universally compatible.
+		"--key-type", "rsa",
 	)
 
 	// Expand-if-needed: when the existing cert's SAN set doesn't cover
@@ -177,6 +183,8 @@ func (r *Runner) Renew(domain string, force bool) (*Result, error) {
 		"--cert-name", domain,
 		"--non-interactive",
 		"--no-random-sleep-on-renew",
+		// Flip any existing ECDSA lineage to RSA on renewal (see Issue).
+		"--key-type", "rsa",
 	}
 
 	if force {
