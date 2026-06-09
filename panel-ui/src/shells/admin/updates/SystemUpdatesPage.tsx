@@ -31,7 +31,6 @@ import {
   ClockCircleOutlined,
   CodeOutlined,
   DownloadOutlined,
-  FileTextOutlined,
   LoadingOutlined,
   ReloadOutlined,
   SafetyOutlined,
@@ -45,7 +44,6 @@ import {
   useAptStatus,
   useAptStop,
   useAutoupdateConfig,
-  useChangelog,
   useJabaliCheck,
   useJabaliRun,
   useJabaliStatus,
@@ -60,7 +58,7 @@ import {
   type UpdateHistoryRow,
 } from "../../../hooks/useSystemUpdates";
 
-const { Text, Title, Paragraph } = Typography;
+const { Text, Title } = Typography;
 
 function timeAgo(iso?: string): string {
   if (!iso) return "Never";
@@ -126,7 +124,6 @@ export const SystemUpdatesPage = () => {
             <RecentHistoryCard />
           </Col>
         </Row>
-        <ChangelogCard />
       </Space>
     </div>
   );
@@ -283,7 +280,6 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
   const run = useJabaliRun();
   const stop = useJabaliStop();
   const status = useJabaliStatus(since);
-  const changelog = useChangelog();
 
   const result = check.data;
   const behind = result?.behind_count ?? 0;
@@ -291,7 +287,7 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
   const finished =
     since !== null && status.data !== undefined && !running && status.data.exit_code !== undefined;
   const succeeded = finished && status.data?.exit_code === 0;
-  const latest = changelog.data?.items?.[0];
+  const commits = result?.recent_commits ?? [];
 
   const onRun = async () => {
     try {
@@ -349,20 +345,6 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
         </Col>
       </Row>
 
-      {latest ? (
-        <div style={{ marginTop: 16 }}>
-          <Text strong>What's new in {latest.name || latest.tag}</Text>
-          <Paragraph
-            type="secondary"
-            ellipsis={{ rows: 3, expandable: false }}
-            style={{ marginTop: 4, marginBottom: 4, whiteSpace: "pre-wrap" }}
-          >
-            {latest.body}
-          </Paragraph>
-          <a href="#changelog">View full changelog →</a>
-        </div>
-      ) : null}
-
       {running ? (
         <Alert
           style={{ marginTop: 16 }}
@@ -408,6 +390,23 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
           Update now
         </Button>
       </Space>
+
+      {commits.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>Recent changes</Text>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {commits.map((c) => (
+              <li key={c.sha} style={{ marginBottom: 4 }}>
+                <Text>{c.subject}</Text>{" "}
+                <Text type="secondary" code style={{ fontSize: 11 }}>{c.sha}</Text>{" "}
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {c.date ? dayjs(c.date).format("MMM D") : ""}
+                </Text>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -690,46 +689,6 @@ function RecentHistoryCard() {
                   {r.kind === "jabali" ? "Jabali panel" : "System packages"} {r.action}
                   {r.summary ? ` — ${r.summary}` : ""}
                 </Text>
-              </Space>
-            ),
-          }))}
-        />
-      )}
-    </Card>
-  );
-}
-
-// --- Changelog -------------------------------------------------------------
-
-function ChangelogCard() {
-  const { data, isLoading } = useChangelog();
-  const items = data?.items ?? [];
-  return (
-    <Card id="changelog" title={<Space><FileTextOutlined /><span>Changelog</span></Space>}>
-      {isLoading ? (
-        <div style={{ textAlign: "center", padding: 24 }}><Spin /></div>
-      ) : items.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No releases yet" />
-      ) : (
-        <Timeline
-          items={items.map((e) => ({
-            children: (
-              <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                <Text strong>
-                  {e.name || e.tag}{" "}
-                  <Text type="secondary">
-                    {e.published_at ? dayjs(e.published_at).format("MMM D, YYYY") : ""}
-                  </Text>
-                </Text>
-                {e.body ? (
-                  <Paragraph
-                    type="secondary"
-                    ellipsis={{ rows: 4, expandable: true, symbol: "more" }}
-                    style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}
-                  >
-                    {e.body}
-                  </Paragraph>
-                ) : null}
               </Space>
             ),
           }))}

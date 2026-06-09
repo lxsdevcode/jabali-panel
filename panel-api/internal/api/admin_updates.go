@@ -13,7 +13,6 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 )
 
 // AdminUpdatesHandlerConfig holds dependencies for the system-updates endpoints.
@@ -28,7 +27,6 @@ type AdminUpdatesHandlerConfig struct {
 	State      repository.UpdateStateRepository
 	History    repository.UpdateHistoryRepository
 	Autoupdate repository.UpdateAutoupdateConfigRepository
-	Changelog  *services.ChangelogService
 }
 
 const (
@@ -58,7 +56,6 @@ func RegisterAdminUpdatesRoutes(g *gin.RouterGroup, cfg AdminUpdatesHandlerConfi
 	grp.GET("/history", h.history)
 	grp.GET("/autoupdate", h.autoupdateGet)
 	grp.PUT("/autoupdate", h.autoupdatePut)
-	grp.GET("/changelog", h.changelog)
 }
 
 type adminUpdatesHandler struct{ cfg AdminUpdatesHandlerConfig }
@@ -291,19 +288,4 @@ func (h *adminUpdatesHandler) autoupdatePut(c *gin.Context) {
 	// The autoupdate reconciler converges this onto the host on its next tick.
 	saved, _ := h.cfg.Autoupdate.Get(c.Request.Context())
 	c.JSON(http.StatusOK, saved)
-}
-
-// --- M53 changelog ---------------------------------------------------------
-
-func (h *adminUpdatesHandler) changelog(c *gin.Context) {
-	if h.cfg.Changelog == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "changelog_unavailable"})
-		return
-	}
-	entries, cachedAt, err := h.cfg.Changelog.Get(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "changelog_fetch", "details": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": entries, "total": len(entries), "cached_at": cachedAt})
 }
