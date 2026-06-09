@@ -14,9 +14,10 @@ import (
 
 // systemAptCheckResponse is the wire shape for system.apt_check.
 type systemAptCheckResponse struct {
-	Packages      []aptUpgradablePackage `json:"packages"`
-	Total         int                    `json:"total"`
-	SecurityTotal int                    `json:"security_total"`
+	Packages       []aptUpgradablePackage `json:"packages"`
+	Total          int                    `json:"total"`
+	SecurityTotal  int                    `json:"security_total"`
+	InstalledTotal int                    `json:"installed_total"`
 }
 
 type aptUpgradablePackage struct {
@@ -53,7 +54,28 @@ func systemAptCheckHandler(ctx context.Context, _ json.RawMessage) (any, error) 
 			sec++
 		}
 	}
-	return systemAptCheckResponse{Packages: pkgs, Total: len(pkgs), SecurityTotal: sec}, nil
+	return systemAptCheckResponse{
+		Packages:       pkgs,
+		Total:          len(pkgs),
+		SecurityTotal:  sec,
+		InstalledTotal: countInstalledPackages(ctx),
+	}, nil
+}
+
+// countInstalledPackages returns the number of installed dpkg packages, for
+// the "X of N packages" stat. Best-effort: 0 on error (the UI just omits it).
+func countInstalledPackages(ctx context.Context) int {
+	out, err := exec.CommandContext(ctx, "dpkg-query", "-f", "${db:Status-Abbrev}\n", "-W").Output()
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "ii") {
+			n++
+		}
+	}
+	return n
 }
 
 func runApt(ctx context.Context, args ...string) error {
