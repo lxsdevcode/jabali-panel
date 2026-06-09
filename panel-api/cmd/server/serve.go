@@ -355,6 +355,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		rec.WithPanelCertificate(panelCertRepo, services.NewPanelCertRoutability())
 		rec.WithUpdateRunHistory(updateHistoryRepo)
 		rec.WithUpdateAutoupdate(updateAutoupdateRepo)
+		rec.WithUpdateState(updateStateRepo)
 
 		// M6.6 — per-domain mail TLS (ADR-0091). Reconciler walks the
 		// mail_certificate table each tick and dispatches ssl.mail.issue

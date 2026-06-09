@@ -27,6 +27,7 @@ export interface AptCheckResult {
   packages: AptPackage[];
   total: number;
   security_total?: number;
+  installed_total?: number;
 }
 
 export interface RunResult {

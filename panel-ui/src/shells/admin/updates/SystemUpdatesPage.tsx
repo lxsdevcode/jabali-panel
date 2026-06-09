@@ -1,13 +1,10 @@
-// SystemUpdatesPage — admin self-update page (M29).
+// SystemUpdatesPage — admin Updates Center (M53, ADR-0118).
 //
-// Two stacked cards:
-//   1. Jabali Panel: Check for updates → if behind, "Update Jabali panel"
-//      button kicks off `system.update_run`. Status + log tail polled
-//      every 2 s while the unit is active.
-//   2. System Packages: Check for updates → runs apt-get update + parses
-//      apt list --upgradable. Renders a 3-col table; "Apply updates"
-//      button starts dist-upgrade as a transient unit.
-import { useState } from "react";
+// Layout mirrors the product mockup: a row of 4 stat cards, then a 2-up grid
+// of Jabali Panel + System Packages, then Automatic Updates + Recent History,
+// then the Changelog. Data auto-loads on mount (jabali + apt checks fire once)
+// so the page shows real numbers immediately instead of empty placeholders.
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   Alert,
   Button,
@@ -17,7 +14,7 @@ import {
   Empty,
   Row,
   Space,
-  Statistic,
+  Spin,
   Switch,
   Table,
   Tag,
@@ -30,14 +27,15 @@ import {
 import dayjs from "dayjs";
 
 import {
+  AppstoreOutlined,
   ClockCircleOutlined,
+  CodeOutlined,
   DownloadOutlined,
   FileTextOutlined,
   LoadingOutlined,
   ReloadOutlined,
   SafetyOutlined,
   SettingOutlined,
-  SyncOutlined,
 } from "@icons";
 
 import { JobLogTail } from "../../../components/JobLogTail";
@@ -55,91 +53,245 @@ import {
   useUpdateAutoupdate,
   useUpdateHistory,
   useUpdateState,
+  type AptCheckResult,
   type AptPackage,
   type AutoupdateConfig,
+  type JabaliCheckResult,
   type UpdateHistoryRow,
 } from "../../../hooks/useSystemUpdates";
 
-export const SystemUpdatesPage = () => (
-  <div>
-    <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 16 }}>
-      <DownloadOutlined /> Updates
-    </Typography.Title>
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <UpdateStatsRow />
-      <JabaliUpdateCard />
-      <AptUpdateCard />
-      <AutomaticUpdatesCard />
-      <RecentHistoryCard />
-      <ChangelogCard />
-    </Space>
-  </div>
-);
+const { Text, Title, Paragraph } = Typography;
 
-// UpdateStatsRow — three at-a-glance cards from the persisted update_state
-// snapshot (no agent call needed on page load).
-function UpdateStatsRow() {
-  const { data } = useUpdateState();
-  const security = data?.apt_security ?? 0;
+function timeAgo(iso?: string): string {
+  if (!iso) return "Never";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "Never";
+  const s = Math.floor((Date.now() - then) / 1000);
+  if (s < 60) return "Just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
+const sha8 = (s?: string) => (s ? s.substring(0, 8) : "—");
+
+export const SystemUpdatesPage = () => {
+  const state = useUpdateState();
+  const jabali = useJabaliCheck();
+  const apt = useAptCheck();
+
+  // Auto-load once on mount so cards/tables show data without a manual click.
+  useEffect(() => {
+    jabali.mutate();
+    apt.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onCheckNow = async () => {
+    try {
+      await Promise.all([jabali.mutateAsync(), apt.mutateAsync()]);
+      await state.refetch();
+      message.success("Checked for updates");
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : "check failed");
+    }
+  };
+
+  return (
+    <div>
+      <Title level={3} style={{ marginTop: 0, marginBottom: 16 }}>
+        <DownloadOutlined /> Updates
+      </Title>
+      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <StatCards
+          state={state.data}
+          jabali={jabali.data}
+          apt={apt.data}
+          checking={jabali.isPending || apt.isPending}
+          onCheckNow={onCheckNow}
+        />
+        <Row gutter={[16, 16]}>
+          <Col xs={24} xl={12}>
+            <JabaliPanelCard check={jabali} />
+          </Col>
+          <Col xs={24} xl={12}>
+            <SystemPackagesCard check={apt} />
+          </Col>
+        </Row>
+        <Row gutter={[16, 16]}>
+          <Col xs={24} xl={12}>
+            <AutomaticUpdatesCard />
+          </Col>
+          <Col xs={24} xl={12}>
+            <RecentHistoryCard />
+          </Col>
+        </Row>
+        <ChangelogCard />
+      </Space>
+    </div>
+  );
+};
+
+// --- stat cards ------------------------------------------------------------
+
+type StatCardsProps = {
+  state?: {
+    jabali_behind: number;
+    jabali_current_sha?: string;
+    apt_total: number;
+    apt_security: number;
+    apt_checked_at?: string;
+    jabali_checked_at?: string;
+  };
+  jabali?: JabaliCheckResult;
+  apt?: AptCheckResult;
+  checking: boolean;
+  onCheckNow: () => void;
+};
+
+function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps) {
+  const behind = jabali?.behind_count ?? state?.jabali_behind ?? 0;
+  const aptTotal = apt?.total ?? state?.apt_total ?? 0;
+  const aptSecurity = apt?.security_total ?? state?.apt_security ?? 0;
+  const installed = apt?.installed_total;
+  const lastChecked = state?.apt_checked_at ?? state?.jabali_checked_at;
+
+  const cardBody: CSSProperties = { display: "flex", gap: 14, alignItems: "flex-start" };
+  const iconBox = (bg: string, color: string): CSSProperties => ({
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    background: bg,
+    color,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 20,
+    flex: "none",
+  });
+
   return (
     <Row gutter={[16, 16]}>
-      <Col xs={24} sm={8}>
-        <Card>
-          <Statistic
-            title="Panel commits behind"
-            value={data?.jabali_behind ?? 0}
-            prefix={<DownloadOutlined />}
-            valueStyle={{ color: (data?.jabali_behind ?? 0) > 0 ? "#d46b08" : undefined }}
-          />
+      <Col xs={24} sm={12} xl={6}>
+        <Card style={{ height: "100%" }}>
+          <div style={cardBody}>
+            <span style={iconBox("#e6f0ff", "#2563eb")}>
+              <CodeOutlined />
+            </span>
+            <div>
+              <Text type="secondary">Panel Version</Text>
+              <div style={{ margin: "4px 0" }}>
+                <Text strong style={{ fontSize: 20 }}>{sha8(jabali?.current_sha ?? state?.jabali_current_sha)}</Text>{" "}
+                {behind === 0 ? (
+                  <Tag color="green">Up to date</Tag>
+                ) : (
+                  <Tag color="orange">{behind} behind</Tag>
+                )}
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Latest: {sha8(jabali?.remote_sha)}
+              </Text>
+            </div>
+          </div>
         </Card>
       </Col>
-      <Col xs={24} sm={8}>
-        <Card>
-          <Statistic
-            title="OS packages upgradable"
-            value={data?.apt_total ?? 0}
-            prefix={<SyncOutlined />}
-          />
+
+      <Col xs={24} sm={12} xl={6}>
+        <Card style={{ height: "100%" }}>
+          <div style={cardBody}>
+            <span style={iconBox("#f3edff", "#7c3aed")}>
+              <AppstoreOutlined />
+            </span>
+            <div>
+              <Text type="secondary">System Packages</Text>
+              <div style={{ margin: "4px 0" }}>
+                <Text strong style={{ fontSize: 20 }}>{aptTotal}</Text>{" "}
+                {aptTotal > 0 ? (
+                  <Tag color="orange">Updates available</Tag>
+                ) : (
+                  <Tag color="green">Up to date</Tag>
+                )}
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {installed ? `of ${installed} packages` : "installed packages"}
+              </Text>
+            </div>
+          </div>
         </Card>
       </Col>
-      <Col xs={24} sm={8}>
-        <Card>
-          <Statistic
-            title="Security updates"
-            value={security}
-            prefix={<SafetyOutlined />}
-            valueStyle={{ color: security > 0 ? "#cf1322" : "#3f8600" }}
-          />
+
+      <Col xs={24} sm={12} xl={6}>
+        <Card style={{ height: "100%" }}>
+          <div style={cardBody}>
+            <span style={iconBox("#ffeaea", "#dc2626")}>
+              <SafetyOutlined />
+            </span>
+            <div>
+              <Text type="secondary">Security Updates</Text>
+              <div style={{ margin: "4px 0" }}>
+                <Text strong style={{ fontSize: 20, color: aptSecurity > 0 ? "#cf1322" : undefined }}>
+                  {aptSecurity}
+                </Text>{" "}
+                {aptSecurity > 0 ? <Tag color="red">Critical</Tag> : <Tag color="green">Clear</Tag>}
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {aptSecurity > 0 ? "Important security fixes" : "No security updates"}
+              </Text>
+            </div>
+          </div>
+        </Card>
+      </Col>
+
+      <Col xs={24} sm={12} xl={6}>
+        <Card style={{ height: "100%" }}>
+          <div style={cardBody}>
+            <span style={iconBox("#e7f7ee", "#16a34a")}>
+              <ClockCircleOutlined />
+            </span>
+            <div style={{ flex: "auto", minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <Text type="secondary" style={{ whiteSpace: "nowrap" }}>Last Checked</Text>
+                <Tooltip title="Check for updates">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    loading={checking}
+                    onClick={onCheckNow}
+                    aria-label="Check for updates"
+                  />
+                </Tooltip>
+              </div>
+              <div style={{ margin: "4px 0" }}>
+                <Text strong style={{ fontSize: 18 }}>{timeAgo(lastChecked)}</Text>
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {lastChecked ? dayjs(lastChecked).format("MMM D, YYYY HH:mm") : "—"}
+              </Text>
+            </div>
+          </div>
         </Card>
       </Col>
     </Row>
   );
 }
 
-function JabaliUpdateCard() {
+// --- Jabali Panel card -----------------------------------------------------
+
+function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }) {
   const [since, setSince] = useState<string | null>(null);
-  const check = useJabaliCheck();
   const run = useJabaliRun();
   const stop = useJabaliStop();
   const status = useJabaliStatus(since);
+  const changelog = useChangelog();
 
   const result = check.data;
-  const running =
-    status.data?.status === "active" || status.data?.status === "activating";
+  const behind = result?.behind_count ?? 0;
+  const running = status.data?.status === "active" || status.data?.status === "activating";
   const finished =
-    since !== null &&
-    status.data !== undefined &&
-    !running &&
-    status.data.exit_code !== undefined;
+    since !== null && status.data !== undefined && !running && status.data.exit_code !== undefined;
   const succeeded = finished && status.data?.exit_code === 0;
-
-  const onCheck = async () => {
-    try {
-      await check.mutateAsync();
-    } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "check failed");
-    }
-  };
+  const latest = changelog.data?.items?.[0];
 
   const onRun = async () => {
     try {
@@ -150,7 +302,6 @@ function JabaliUpdateCard() {
       message.error(e instanceof Error ? e.message : "run failed");
     }
   };
-
   const onStop = async () => {
     try {
       await stop.mutateAsync();
@@ -162,103 +313,76 @@ function JabaliUpdateCard() {
 
   return (
     <Card
-      title="Jabali Panel"
-      extra={
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={onCheck}
-          loading={check.isPending}
-          disabled={running}
-        >
-          Check for updates
-        </Button>
+      style={{ height: "100%" }}
+      title={
+        <Space>
+          <CodeOutlined />
+          <span>Jabali Panel</span>
+          {check.isPending ? (
+            <Tag>checking…</Tag>
+          ) : behind === 0 ? (
+            <Tag color="green">Up to date</Tag>
+          ) : (
+            <Tag color="orange">{behind} behind</Tag>
+          )}
+        </Space>
       }
     >
-      {!result && !running && !finished ? (
-        <Typography.Text type="secondary">
-          Click "Check for updates" to compare your installation against the
-          latest release on origin/main.
-        </Typography.Text>
-      ) : null}
+      <Row gutter={16}>
+        <Col span={12}>
+          <Text type="secondary">Current Version</Text>
+          <div>
+            <Text strong code style={{ fontSize: 16 }}>{sha8(result?.current_sha)}</Text>
+          </div>
+          {result?.branch ? (
+            <Text type="secondary" style={{ fontSize: 12 }}>branch {result.branch}</Text>
+          ) : null}
+        </Col>
+        <Col span={12}>
+          <Text type="secondary">Latest Version</Text>
+          <div>
+            <Text strong code style={{ fontSize: 16 }}>{sha8(result?.remote_sha)}</Text>
+          </div>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {behind === 0 ? "No updates available" : `${behind} commit${behind === 1 ? "" : "s"} behind`}
+          </Text>
+        </Col>
+      </Row>
 
-      {result && result.behind_count === 0 && !running && !finished ? (
-        <Alert
-          type="success"
-          showIcon
-          message="Up to date"
-          description={
-            <span>
-              Current commit{" "}
-              <Typography.Text code>{result.current_sha.substring(0, 12)}</Typography.Text>{" "}
-              matches origin/main.
-            </span>
-          }
-        />
-      ) : null}
-
-      {result && result.behind_count > 0 && !running && !finished ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={`${result.behind_count} commit${result.behind_count === 1 ? "" : "s"} behind`}
-          description={
-            <Space direction="vertical">
-              <span>
-                Local <Typography.Text code>{result.current_sha.substring(0, 12)}</Typography.Text>{" "}
-                → remote <Typography.Text code>{result.remote_sha.substring(0, 12)}</Typography.Text>.
-              </span>
-              <Button
-                type="primary"
-                icon={<DownloadOutlined />}
-                onClick={onRun}
-                loading={run.isPending}
-              >
-                Update Jabali panel
-              </Button>
-            </Space>
-          }
-        />
+      {latest ? (
+        <div style={{ marginTop: 16 }}>
+          <Text strong>What's new in {latest.name || latest.tag}</Text>
+          <Paragraph
+            type="secondary"
+            ellipsis={{ rows: 3, expandable: false }}
+            style={{ marginTop: 4, marginBottom: 4, whiteSpace: "pre-wrap" }}
+          >
+            {latest.body}
+          </Paragraph>
+          <a href="#changelog">View full changelog →</a>
+        </div>
       ) : null}
 
       {running ? (
         <Alert
+          style={{ marginTop: 16 }}
           type="info"
           icon={<LoadingOutlined />}
           showIcon
           message="Update in progress"
           description={
-            <Space>
-              <Button danger size="small" loading={stop.isPending} onClick={onStop}>
-                Stop
-              </Button>
-            </Space>
+            <Button danger size="small" loading={stop.isPending} onClick={onStop}>
+              Stop
+            </Button>
           }
         />
-      ) : null}
-
-      {finished ? (
+      ) : finished ? (
         <Alert
+          style={{ marginTop: 16 }}
           type={succeeded ? "success" : "error"}
           showIcon
-          message={succeeded ? "Update completed successfully" : "Update failed"}
-          description={
-            <Space direction="vertical">
-              <span>
-                Exit code {status.data?.exit_code}. Re-run "Check for updates" to
-                refresh status.
-              </span>
-              <Button
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={() => {
-                  setSince(null);
-                  void check.mutateAsync().catch(() => {});
-                }}
-              >
-                Dismiss
-              </Button>
-            </Space>
-          }
+          message={succeeded ? "Update completed" : "Update failed"}
+          description={`Exit code ${status.data?.exit_code}.`}
         />
       ) : null}
 
@@ -269,35 +393,38 @@ function JabaliUpdateCard() {
           exitCode={status.data.exit_code}
         />
       ) : null}
+
+      <Space style={{ marginTop: 16 }}>
+        <Button icon={<ReloadOutlined />} loading={check.isPending} onClick={() => check.mutate()}>
+          Check for updates
+        </Button>
+        <Button
+          type="primary"
+          icon={<DownloadOutlined />}
+          loading={run.isPending}
+          disabled={running || behind === 0}
+          onClick={onRun}
+        >
+          Update now
+        </Button>
+      </Space>
     </Card>
   );
 }
 
-function AptUpdateCard() {
+// --- System Packages card --------------------------------------------------
+
+function SystemPackagesCard({ check }: { check: ReturnType<typeof useAptCheck> }) {
   const [since, setSince] = useState<string | null>(null);
   const [securityOnly, setSecurityOnly] = useState(false);
-  const check = useAptCheck();
   const run = useAptRun();
   const stop = useAptStop();
   const status = useAptStatus(since);
 
   const result = check.data;
-  const running =
-    status.data?.status === "active" || status.data?.status === "activating";
+  const running = status.data?.status === "active" || status.data?.status === "activating";
   const finished =
-    since !== null &&
-    status.data !== undefined &&
-    !running &&
-    status.data.exit_code !== undefined;
-  const succeeded = finished && status.data?.exit_code === 0;
-
-  const onCheck = async () => {
-    try {
-      await check.mutateAsync();
-    } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "check failed");
-    }
-  };
+    since !== null && status.data !== undefined && !running && status.data.exit_code !== undefined;
 
   const onRun = async () => {
     try {
@@ -308,7 +435,6 @@ function AptUpdateCard() {
       message.error(e instanceof Error ? e.message : "run failed");
     }
   };
-
   const onStop = async () => {
     try {
       await stop.mutateAsync();
@@ -318,87 +444,74 @@ function AptUpdateCard() {
     }
   };
 
+  const rows = result
+    ? securityOnly
+      ? result.packages.filter((p) => p.security)
+      : result.packages
+    : [];
+
   return (
     <Card
-      title="System Packages"
+      style={{ height: "100%" }}
+      title={
+        <Space>
+          <AppstoreOutlined />
+          <span>System Packages</span>
+        </Space>
+      }
       extra={
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={onCheck}
-          loading={check.isPending}
-          disabled={running}
-        >
-          Check for updates
-        </Button>
+        result ? (
+          <Space size={4}>
+            {result.total > 0 ? <Tag color="orange">{result.total} updates available</Tag> : null}
+            {(result.security_total ?? 0) > 0 ? (
+              <Tag color="red">{result.security_total} critical</Tag>
+            ) : null}
+          </Space>
+        ) : null
       }
     >
-      {!result && !running && !finished ? (
-        <Typography.Text type="secondary">
-          Click "Check for updates" to run <code>apt-get update</code> and list
-          all upgradable system packages.
-        </Typography.Text>
+      {result?.installed_total ? (
+        <Text type="secondary">{result.installed_total} packages installed</Text>
       ) : null}
 
-      {result && result.total === 0 && !running && !finished ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="System is up to date"
-        />
-      ) : null}
-
-      {result && result.total > 0 && !running && !finished ? (
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          <Alert
-            type={(result.security_total ?? 0) > 0 ? "error" : "warning"}
-            showIcon
-            message={`${result.total} package${result.total === 1 ? "" : "s"} can be upgraded${
-              (result.security_total ?? 0) > 0 ? ` — ${result.security_total} security` : ""
-            }`}
-            description="dist-upgrade may pull in libc / openssh / mariadb. Take a snapshot first."
-          />
+      {check.isPending && !result ? (
+        <div style={{ textAlign: "center", padding: 24 }}>
+          <Spin />
+        </div>
+      ) : result && result.total === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="System is up to date" />
+      ) : result ? (
+        <Space direction="vertical" size={12} style={{ width: "100%", marginTop: 8 }}>
           {(result.security_total ?? 0) > 0 ? (
-            <Checkbox
-              checked={securityOnly}
-              onChange={(e) => setSecurityOnly(e.target.checked)}
-            >
+            <Checkbox checked={securityOnly} onChange={(e) => setSecurityOnly(e.target.checked)}>
               Security updates only
             </Checkbox>
           ) : null}
           <Table<AptPackage>
             rowKey="name"
             size="small"
-            dataSource={
-              securityOnly ? result.packages.filter((p) => p.security) : result.packages
-            }
-            pagination={false}
+            dataSource={rows}
+            pagination={rows.length > 8 ? { pageSize: 8, size: "small" } : false}
             scroll={{ x: "max-content" }}
             columns={[
               { title: "Package", dataIndex: "name" },
-              { title: "Current", dataIndex: "current" },
-              { title: "New", dataIndex: "new" },
-              { title: "Source", dataIndex: "source", responsive: ["md"] },
+              { title: "Current Version", dataIndex: "current" },
+              { title: "Latest Version", dataIndex: "new" },
               {
-                title: "Severity",
+                title: "Type",
                 dataIndex: "security",
-                width: 110,
+                width: 100,
                 render: (sec: boolean) =>
-                  sec ? <Tag color="red">security</Tag> : <Tag>normal</Tag>,
+                  sec ? <Tag color="red">Security</Tag> : <Tag color="orange">Update</Tag>,
               },
             ]}
           />
-          <Button
-            type="primary"
-            icon={<DownloadOutlined />}
-            onClick={onRun}
-            loading={run.isPending}
-          >
-            Apply updates
-          </Button>
         </Space>
       ) : null}
 
       {running ? (
         <Alert
+          style={{ marginTop: 12 }}
           type="info"
           icon={<LoadingOutlined />}
           showIcon
@@ -410,33 +523,6 @@ function AptUpdateCard() {
           }
         />
       ) : null}
-
-      {finished ? (
-        <Alert
-          type={succeeded ? "success" : "error"}
-          showIcon
-          message={succeeded ? "Apt upgrade completed successfully" : "Apt upgrade failed"}
-          description={
-            <Space direction="vertical">
-              <span>
-                Exit code {status.data?.exit_code}. Re-run "Check for updates" to
-                refresh upgradable list.
-              </span>
-              <Button
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={() => {
-                  setSince(null);
-                  void check.mutateAsync().catch(() => {});
-                }}
-              >
-                Dismiss
-              </Button>
-            </Space>
-          }
-        />
-      ) : null}
-
       {since && status.data ? (
         <JobLogTail
           status={status.data.status}
@@ -444,27 +530,40 @@ function AptUpdateCard() {
           exitCode={status.data.exit_code}
         />
       ) : null}
+
+      <Space style={{ marginTop: 12 }}>
+        <Button icon={<ReloadOutlined />} loading={check.isPending} onClick={() => check.mutate()}>
+          Check for updates
+        </Button>
+        {result && result.total > 0 ? (
+          <Button
+            type="primary"
+            icon={<DownloadOutlined />}
+            loading={run.isPending}
+            disabled={running || finished}
+            onClick={onRun}
+          >
+            Apply updates
+          </Button>
+        ) : null}
+      </Space>
     </Card>
   );
 }
 
-// AutomaticUpdatesCard — toggle + schedule unattended apt security upgrades
-// and (opt-in, default off) jabali self-update. Saves the desired state; the
-// autoupdate reconciler converges it onto the host.
+// --- Automatic Updates -----------------------------------------------------
+
 function AutomaticUpdatesCard() {
   const { data, isLoading } = useAutoupdateConfig();
   const save = useUpdateAutoupdate();
   const [draft, setDraft] = useState<AutoupdateConfig | null>(null);
   const cfg = draft ?? data ?? null;
-
-  const dirty =
-    draft !== null && data !== undefined && JSON.stringify(draft) !== JSON.stringify(data);
+  const dirty = draft !== null && data !== undefined && JSON.stringify(draft) !== JSON.stringify(data);
 
   const patch = (p: Partial<AutoupdateConfig>) => {
     if (!cfg) return;
     setDraft({ ...cfg, ...p });
   };
-
   const onSave = async () => {
     if (!cfg) return;
     try {
@@ -477,26 +576,27 @@ function AutomaticUpdatesCard() {
   };
 
   return (
-    <Card title={<span><SettingOutlined /> Automatic Updates</span>}>
+    <Card
+      style={{ height: "100%" }}
+      title={
+        <Space>
+          <SettingOutlined />
+          <span>Automatic Updates</span>
+        </Space>
+      }
+    >
       {isLoading || !cfg ? (
-        <Typography.Text type="secondary">Loading…</Typography.Text>
+        <div style={{ textAlign: "center", padding: 24 }}><Spin /></div>
       ) : (
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
           <Row align="middle" gutter={[12, 12]}>
             <Col flex="auto">
-              <Space direction="vertical" size={0}>
-                <Typography.Text strong>OS security updates</Typography.Text>
-                <Typography.Text type="secondary">
-                  Apply Debian security patches automatically via
-                  unattended-upgrades.
-                </Typography.Text>
-              </Space>
-            </Col>
-            <Col>
-              <Switch
-                checked={cfg.apt_enabled}
-                onChange={(v) => patch({ apt_enabled: v })}
-              />
+              <Text strong>OS security updates</Text>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Apply Debian security patches automatically via unattended-upgrades.
+                </Text>
+              </div>
             </Col>
             <Col>
               <TimePicker
@@ -508,27 +608,24 @@ function AutomaticUpdatesCard() {
                 onChange={(d) => patch({ apt_time: d ? d.format("HH:mm") : cfg.apt_time })}
               />
             </Col>
+            <Col>
+              <Switch checked={cfg.apt_enabled} onChange={(v) => patch({ apt_enabled: v })} />
+            </Col>
           </Row>
 
           <Row align="middle" gutter={[12, 12]}>
             <Col flex="auto">
-              <Space direction="vertical" size={0}>
-                <Typography.Text strong>
-                  Jabali panel self-update{" "}
-                  <Tooltip title="A bad self-update can take the panel offline. Leave off unless you actively want hands-off panel upgrades.">
-                    <Tag color="orange">advanced</Tag>
-                  </Tooltip>
-                </Typography.Text>
-                <Typography.Text type="secondary">
+              <Text strong>
+                Jabali panel self-update{" "}
+                <Tooltip title="A bad self-update can take the panel offline. Leave off unless you want hands-off panel upgrades.">
+                  <Tag color="orange">advanced</Tag>
+                </Tooltip>
+              </Text>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
                   Run <code>jabali update</code> automatically on a schedule.
-                </Typography.Text>
-              </Space>
-            </Col>
-            <Col>
-              <Switch
-                checked={cfg.jabali_enabled}
-                onChange={(v) => patch({ jabali_enabled: v })}
-              />
+                </Text>
+              </div>
             </Col>
             <Col>
               <TimePicker
@@ -537,19 +634,15 @@ function AutomaticUpdatesCard() {
                 allowClear={false}
                 disabled={!cfg.jabali_enabled}
                 value={dayjs(cfg.jabali_time, "HH:mm")}
-                onChange={(d) =>
-                  patch({ jabali_time: d ? d.format("HH:mm") : cfg.jabali_time })
-                }
+                onChange={(d) => patch({ jabali_time: d ? d.format("HH:mm") : cfg.jabali_time })}
               />
+            </Col>
+            <Col>
+              <Switch checked={cfg.jabali_enabled} onChange={(v) => patch({ jabali_enabled: v })} />
             </Col>
           </Row>
 
-          <Button
-            type="primary"
-            onClick={onSave}
-            disabled={!dirty}
-            loading={save.isPending}
-          >
+          <Button type="primary" onClick={onSave} disabled={!dirty} loading={save.isPending}>
             Save
           </Button>
         </Space>
@@ -558,61 +651,63 @@ function AutomaticUpdatesCard() {
   );
 }
 
+// --- Recent History --------------------------------------------------------
+
 const historyStatusTag = (status: string) => {
   if (status === "success") return <Tag color="green">success</Tag>;
   if (status === "failed") return <Tag color="red">failed</Tag>;
   return <Tag color="processing">running</Tag>;
 };
 
-// RecentHistoryCard — the persisted update_history log (runs only). Survives
-// page reloads because panel-api logs the row and the run reconciler marks it
-// finished, regardless of whether this page was open.
 function RecentHistoryCard() {
-  const { data, isLoading } = useUpdateHistory(20);
+  const { data, isLoading } = useUpdateHistory(8);
   const rows = data?.items ?? [];
   return (
-    <Card title={<span><ClockCircleOutlined /> Recent History</span>}>
+    <Card
+      style={{ height: "100%" }}
+      title={
+        <Space>
+          <ClockCircleOutlined />
+          <span>Recent Update History</span>
+        </Space>
+      }
+    >
       {isLoading ? (
-        <Typography.Text type="secondary">Loading…</Typography.Text>
+        <div style={{ textAlign: "center", padding: 24 }}><Spin /></div>
       ) : rows.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No update runs yet" />
       ) : (
-        <Table<UpdateHistoryRow>
-          rowKey="id"
-          size="small"
-          dataSource={rows}
-          pagination={false}
-          scroll={{ x: "max-content" }}
-          columns={[
-            {
-              title: "When",
-              dataIndex: "started_at",
-              render: (t: string) => dayjs(t).format("YYYY-MM-DD HH:mm"),
-            },
-            {
-              title: "Target",
-              dataIndex: "kind",
-              render: (k: string) => (k === "jabali" ? "Jabali panel" : "OS packages"),
-            },
-            { title: "Action", dataIndex: "action" },
-            { title: "Status", dataIndex: "status", render: historyStatusTag },
-            { title: "Summary", dataIndex: "summary" },
-          ]}
+        <Timeline
+          items={rows.map((r: UpdateHistoryRow) => ({
+            color: r.status === "success" ? "green" : r.status === "failed" ? "red" : "blue",
+            children: (
+              <Space direction="vertical" size={0}>
+                <Space>
+                  <Text>{dayjs(r.started_at).format("MMM D, YYYY HH:mm")}</Text>
+                  {historyStatusTag(r.status)}
+                </Space>
+                <Text type="secondary">
+                  {r.kind === "jabali" ? "Jabali panel" : "System packages"} {r.action}
+                  {r.summary ? ` — ${r.summary}` : ""}
+                </Text>
+              </Space>
+            ),
+          }))}
         />
       )}
     </Card>
   );
 }
 
-// ChangelogCard — release notes from the public GitHub mirror. Empty until the
-// first release is cut.
+// --- Changelog -------------------------------------------------------------
+
 function ChangelogCard() {
   const { data, isLoading } = useChangelog();
   const items = data?.items ?? [];
   return (
-    <Card title={<span><FileTextOutlined /> Changelog</span>}>
+    <Card id="changelog" title={<Space><FileTextOutlined /><span>Changelog</span></Space>}>
       {isLoading ? (
-        <Typography.Text type="secondary">Loading…</Typography.Text>
+        <div style={{ textAlign: "center", padding: 24 }}><Spin /></div>
       ) : items.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No releases yet" />
       ) : (
@@ -620,20 +715,20 @@ function ChangelogCard() {
           items={items.map((e) => ({
             children: (
               <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                <Typography.Text strong>
+                <Text strong>
                   {e.name || e.tag}{" "}
-                  <Typography.Text type="secondary">
-                    {e.published_at ? dayjs(e.published_at).format("YYYY-MM-DD") : ""}
-                  </Typography.Text>
-                </Typography.Text>
+                  <Text type="secondary">
+                    {e.published_at ? dayjs(e.published_at).format("MMM D, YYYY") : ""}
+                  </Text>
+                </Text>
                 {e.body ? (
-                  <Typography.Paragraph
+                  <Paragraph
                     type="secondary"
                     ellipsis={{ rows: 4, expandable: true, symbol: "more" }}
                     style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}
                   >
                     {e.body}
-                  </Typography.Paragraph>
+                  </Paragraph>
                 ) : null}
               </Space>
             ),
