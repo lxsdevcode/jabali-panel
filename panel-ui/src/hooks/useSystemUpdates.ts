@@ -8,11 +8,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../apiClient";
 
+export interface CommitSummary {
+  sha: string;
+  subject: string;
+  date: string;
+}
+
 export interface JabaliCheckResult {
   current_sha: string;
   remote_sha: string;
   behind_count: number;
   branch: string;
+  recent_commits?: CommitSummary[];
 }
 
 export interface AptPackage {
@@ -173,13 +180,6 @@ export interface AutoupdateConfig {
   jabali_time: string;
 }
 
-export interface ChangelogEntry {
-  tag: string;
-  name: string;
-  published_at: string;
-  body: string;
-}
-
 // useUpdateState reads the persisted last-check snapshot for instant page
 // load. Refetched after a check completes (the check hooks invalidate it).
 export function useUpdateState() {
@@ -225,15 +225,4 @@ export function useUpdateAutoupdate() {
   });
 }
 
-export function useChangelog() {
-  return useQuery<{ items: ChangelogEntry[]; total: number; cached_at: string }>({
-    queryKey: ["update-changelog"],
-    queryFn: async () => {
-      const r = await apiClient.get<{ items: ChangelogEntry[]; total: number; cached_at: string }>(
-        "/admin/updates/changelog",
-      );
-      return r.data;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-}
+

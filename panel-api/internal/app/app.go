@@ -23,7 +23,6 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
@@ -624,7 +623,6 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			State:      deps.UpdateState,
 			History:    deps.UpdateHistory,
 			Autoupdate: deps.UpdateAutoupdate,
-			Changelog:  services.NewChangelogService(),
 		})
 		// Admin: Support diagnostic report (M29, ADR-0064).
 		api.RegisterAdminSupportRoutes(v1, api.AdminSupportHandlerConfig{
