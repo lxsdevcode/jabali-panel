@@ -48,10 +48,12 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
   const [form] = Form.useForm();
   const watchedDomain = Form.useWatch<string | undefined>("domain", form);
   const [ports, setPorts] = useState<PortRow[]>([]);
+  const [envVals, setEnvVals] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!entry) {
       setPorts([]);
+      setEnvVals({});
       return;
     }
     // Seed port rows from the catalog defaults whenever a new entry
@@ -108,6 +110,7 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
       memory_limit: values.memory_limit,
       pids_limit: values.pids_limit,
       ports: ports.map(({ container_port: _cp, protocol: _proto, ...rest }) => rest),
+      env: Object.fromEntries(Object.entries(envVals).filter(([, v]) => v !== "")),
       ...(values.backup_destination_id
         ? { backup_destination_id: values.backup_destination_id }
         : {}),
@@ -304,6 +307,38 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
             directly (UDP, SSH, etc).
           </Typography.Paragraph>
           {portsTable}
+
+          {(entry.env ?? []).length > 0 && (
+            <>
+              <Typography.Title level={5} style={{ marginTop: 8 }}>
+                Environment
+              </Typography.Title>
+              <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+                Secrets are auto-generated — view or change them later from Edit. Set any plain values here.
+              </Typography.Paragraph>
+              {(entry.env ?? []).map((ev) => {
+                const auto = ev.secret || !!ev.generate;
+                return (
+                  <Form.Item
+                    key={ev.name}
+                    style={{ marginBottom: 8 }}
+                    label={
+                      <Space size={4}>
+                        <Typography.Text code>{ev.name}</Typography.Text>
+                        {auto && <Tag>auto-generated</Tag>}
+                      </Space>
+                    }
+                  >
+                    <Input
+                      value={envVals[ev.name] ?? ""}
+                      placeholder={auto ? "auto-generated (leave blank)" : ev.value ?? ""}
+                      onChange={(e) => setEnvVals((st) => ({ ...st, [ev.name]: e.target.value }))}
+                    />
+                  </Form.Item>
+                );
+              })}
+            </>
+          )}
         </Form>
       )}
     </Drawer>
