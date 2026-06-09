@@ -251,15 +251,16 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
             <div style={{ flex: "auto", minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <Text type="secondary" style={{ whiteSpace: "nowrap" }}>Last Checked</Text>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<ReloadOutlined />}
-                  loading={checking}
-                  onClick={onCheckNow}
-                >
-                  {checking ? "Checking…" : "Check now"}
-                </Button>
+                <Tooltip title="Check for updates">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    loading={checking}
+                    onClick={onCheckNow}
+                    aria-label="Check for updates"
+                  />
+                </Tooltip>
               </div>
               <div style={{ margin: "4px 0" }}>
                 <Text strong style={{ fontSize: 18 }}>{timeAgo(lastChecked)}</Text>
