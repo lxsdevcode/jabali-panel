@@ -20,11 +20,13 @@ export interface AptPackage {
   current: string;
   new: string;
   source: string;
+  security?: boolean;
 }
 
 export interface AptCheckResult {
   packages: AptPackage[];
   total: number;
+  security_total?: number;
 }
 
 export interface RunResult {
@@ -137,5 +139,100 @@ export function useAptStop() {
       return r.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["apt-status"] }),
+  });
+}
+
+// --- M53 Updates Center: state, history, auto-update, changelog ------------
+
+export interface UpdateState {
+  jabali_behind: number;
+  jabali_current_sha?: string;
+  jabali_checked_at?: string;
+  apt_total: number;
+  apt_security: number;
+  apt_checked_at?: string;
+}
+
+export interface UpdateHistoryRow {
+  id: string;
+  kind: string;
+  action: string;
+  status: string;
+  security_count: number;
+  summary: string;
+  unit?: string;
+  started_at: string;
+  finished_at?: string;
+}
+
+export interface AutoupdateConfig {
+  apt_enabled: boolean;
+  apt_time: string;
+  jabali_enabled: boolean;
+  jabali_time: string;
+}
+
+export interface ChangelogEntry {
+  tag: string;
+  name: string;
+  published_at: string;
+  body: string;
+}
+
+// useUpdateState reads the persisted last-check snapshot for instant page
+// load. Refetched after a check completes (the check hooks invalidate it).
+export function useUpdateState() {
+  return useQuery<UpdateState>({
+    queryKey: ["update-state"],
+    queryFn: async () => {
+      const r = await apiClient.get<UpdateState>("/admin/updates/state");
+      return r.data;
+    },
+  });
+}
+
+export function useUpdateHistory(limit = 20) {
+  return useQuery<{ items: UpdateHistoryRow[]; total: number }>({
+    queryKey: ["update-history", limit],
+    queryFn: async () => {
+      const r = await apiClient.get<{ items: UpdateHistoryRow[]; total: number }>(
+        `/admin/updates/history?limit=${limit}`,
+      );
+      return r.data;
+    },
+  });
+}
+
+export function useAutoupdateConfig() {
+  return useQuery<AutoupdateConfig>({
+    queryKey: ["update-autoupdate"],
+    queryFn: async () => {
+      const r = await apiClient.get<AutoupdateConfig>("/admin/updates/autoupdate");
+      return r.data;
+    },
+  });
+}
+
+export function useUpdateAutoupdate() {
+  const qc = useQueryClient();
+  return useMutation<AutoupdateConfig, Error, AutoupdateConfig>({
+    mutationFn: async (cfg) => {
+      const r = await apiClient.put<AutoupdateConfig>("/admin/updates/autoupdate", cfg);
+      return r.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["update-autoupdate"] }),
+  });
+}
+
+export function useChangelog() {
+  return useQuery<{ items: ChangelogEntry[]; total: number; cached_at: string }>({
+    queryKey: ["update-changelog"],
+    queryFn: async () => {
+      const r = await apiClient.get<{ items: ChangelogEntry[]; total: number; cached_at: string }>(
+        "/admin/updates/changelog",
+      );
+      return r.data;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
