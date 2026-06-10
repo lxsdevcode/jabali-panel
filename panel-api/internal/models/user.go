@@ -17,7 +17,7 @@ type User struct {
 	// ID is a 26-char ULID (Crockford base32). See internal/ids.
 	ID string `gorm:"type:char(26);primaryKey" json:"id"`
 
-	Email string `gorm:"type:varchar(255);uniqueIndex:ux_users_email;not null" json:"email"`
+	Email string `gorm:"type:varchar(255);not null" json:"email"` // M54: no longer unique (may be shared)
 
 	// Username is the Linux account name for this user. NULL for admins
 	// (panel-only, no OS account). Must match POSIX regex
