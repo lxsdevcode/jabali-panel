@@ -4,7 +4,7 @@
 // TOTP enrolled (unlink button), recovery-codes reveal.
 // All tests start with ?flow=flow-s1 in the URL so initSettingsFlow
 // is bypassed; only getSettingsFlow is exercised.
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -197,4 +197,35 @@ describe("MyProfile 2FA", () => {
     expect(screen.getByText(/aaaaa-bbbbb/)).toBeInTheDocument();
     expect(screen.getByText(/ccccc-ddddd/)).toBeInTheDocument();
   });
+
+  it("submits the typed totp_code on TOTP enrolment (regression #140)", async () => {
+    vi.spyOn(kratos, "getSettingsFlow").mockResolvedValue(
+      baseFlow([
+        {
+          type: "input",
+          group: "totp",
+          attributes: { name: "totp_code", type: "text", required: true },
+        },
+        {
+          type: "input",
+          group: "totp",
+          attributes: { name: "method", type: "submit", value: "totp" },
+        },
+      ]),
+    );
+    const submitSpy = vi
+      .spyOn(kratos, "submitSettingsFlow")
+      .mockResolvedValue({ kind: "success" } as kratos.KratosSubmitResult);
+
+    renderProfile();
+    const input = await screen.findByRole("textbox");
+    fireEvent.change(input, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save TOTP" }));
+
+    await waitFor(() => expect(submitSpy).toHaveBeenCalled());
+    const body = submitSpy.mock.calls[0][1];
+    expect(body.totp_code).toBe("123456");
+    expect(body.method).toBe("totp");
+  });
+
 });
