@@ -243,11 +243,26 @@ func sslMailIssueHandler(ctx context.Context, params json.RawMessage) (any, erro
 	runner := certbot.NewRunner()
 	res, err := runner.Issue(effectiveSANs[0], p.Webroot, p.Email, p.Staging, effectiveSANs[1:])
 	if err != nil {
+		// Surface the actual LE failure reason, not just "exit status 1".
+		// certbot prints a "Domain: / Type: / Detail:" block before "Some
+		// challenges have failed"; ExtractActionableDetail pulls it so the
+		// panel's last_error tells the operator which SAN failed and why
+		// (rate limit, CAA, HTTP-01 404, ...) without VPS shell access to
+		// /var/log/letsencrypt/letsencrypt.log. Mirrors ssl.issue /
+		// ssl.panel.issue (GH #132).
+		detail := firstMailErrLine(err.Error())
+		if res != nil {
+			if actionable := certbot.ExtractActionableDetail(res.Stderr); actionable != "" {
+				detail = fmt.Sprintf("certbot issue failed (%s): %s", res.Reason, actionable)
+			} else if res.Reason != "" {
+				detail = fmt.Sprintf("certbot issue failed (%s): %s", res.Reason, detail)
+			}
+		}
 		return sslMailIssueResponse{
 			Outcome: "failed",
 			Domain:  p.Domain,
 			SANs:    effectiveSANs,
-			Detail:  firstMailErrLine(err.Error()),
+			Detail:  detail,
 		}, nil
 	}
 
