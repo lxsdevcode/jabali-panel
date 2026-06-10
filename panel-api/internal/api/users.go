@@ -93,6 +93,7 @@ func RegisterUserRoutes(g *gin.RouterGroup, cfg UserHandlerConfig) {
 	// Admin-only 2FA reset for locked-out users (Kratos JSON-Patch
 	// removes totp + lookup_secret credentials).
 	g.POST("/admin/users/:id/2fa/reset", middleware.RequireAdmin(), h.reset2FA)
+	g.POST("/admin/users/:id/password/reset", middleware.RequireAdmin(), h.resetPassword)
 
 	// Admin-only user suspend / unsuspend. Suspending pushes the
 	// user offline in three steps: flag, Kratos state=inactive,
