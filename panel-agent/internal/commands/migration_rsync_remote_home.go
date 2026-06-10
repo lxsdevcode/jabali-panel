@@ -9,6 +9,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -111,12 +112,23 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 				continue
 			}
 			_ = os.Chmod(tmp.Name(), 0o600)
-			// b64 decode via shell to avoid pulling another import here.
-			dec := exec.CommandContext(subctx, "bash", "-c", "echo "+b64+" | base64 -d > "+tmp.Name())
-			if dErr := dec.Run(); dErr != nil {
+			// Decode in-process. Previously this shelled out to
+			// `bash -c "echo $b64 | base64 -d > tmp"`, interpolating the
+			// secret-file value into a shell string — a shell-injection
+			// sink if the value isn't pure base64. Go's decoder removes the
+			// shell entirely.
+			decoded, dErr := base64.StdEncoding.DecodeString(strings.Map(stripBase64Whitespace, b64))
+			if dErr != nil {
+				_ = tmp.Close()
 				_ = os.Remove(tmp.Name())
 				continue
 			}
+			if _, wErr := tmp.Write(decoded); wErr != nil {
+				_ = tmp.Close()
+				_ = os.Remove(tmp.Name())
+				continue
+			}
+			_ = tmp.Close()
 			keyTmp = tmp.Name()
 		}
 	}
@@ -223,3 +235,13 @@ func lookupUserUID(name string) (int, error) {
 // unused-warning sink — keeps filepath dep when other paths get
 // inlined later.
 var _ = filepath.Join
+
+// stripBase64Whitespace drops spaces/tabs/newlines so a PEM-wrapped or
+// line-broken base64 value decodes the same way the old shell pipe did.
+func stripBase64Whitespace(r rune) rune {
+	switch r {
+	case ' ', '\t', '\n', '\r':
+		return -1
+	}
+	return r
+}
