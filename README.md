@@ -31,6 +31,33 @@ until 1.0.
 - Website: https://jabali-panel.com/
 - Demo: https://jabali-panel.com/demo/
 
+### Demo mode (the `feat/demo-mode` branch)
+
+The public demo at `https://jabali-panel.com/demo/` runs **demo mode**, which
+lives on the long-lived **`feat/demo-mode`** branch (open PR, e.g. #103) and is
+**intentionally never merged to `main`**.
+
+What demo mode adds:
+
+- write-blocking middleware — every non-idempotent `/api/v1/*` request
+  (POST/PUT/PATCH/DELETE) returns `403 {"error":"demo_mode"}`, so visitors can
+  browse every read endpoint without ever reaching the agent or a DB write;
+- a `/info` endpoint that **exposes the seeded demo credentials**;
+- a fixed **DEMO banner** + "Enter as admin / Enter as user" buttons that
+  replace the real login form.
+
+It is config-gated off by default (`[demo] enabled = false`), so it is inert in
+a normal install. It is still kept off `main` on purpose: merging would ship the
+demo middleware, the DEMO banner/login override, and especially the
+credential-exposing `/info` endpoint into **every production binary + SPA** —
+one mis-set toggle away from leaking seeded creds on a real host. Keeping it on
+its own branch means production installs never carry that code at all.
+
+**Operating the demo:** deploy the `feat/demo-mode` branch to the demo host,
+rebase it on `main` when you want newer features, and leave the PR open as the
+deploy/tracking branch — do **not** merge it. Production fixes go to `main` and
+are picked up on the next rebase.
+
 ## Installation
 
 One-line install on a fresh Debian 13 box:
