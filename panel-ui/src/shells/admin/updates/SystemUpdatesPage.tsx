@@ -154,11 +154,14 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
   const lastChecked = state?.apt_checked_at ?? state?.jabali_checked_at;
 
   const cardBody: CSSProperties = { display: "flex", gap: 14, alignItems: "flex-start" };
-  const iconBox = (bg: string, color: string): CSSProperties => ({
+  // Background is a translucent tint of the icon color so the box reads the
+  // same on light and dark themes (hardcoded pastels were invisible/clashing
+  // in dark mode). `${color}22` ~= 13% alpha.
+  const iconBox = (color: string): CSSProperties => ({
     width: 44,
     height: 44,
     borderRadius: 10,
-    background: bg,
+    background: `${color}22`,
     color,
     display: "flex",
     alignItems: "center",
@@ -172,7 +175,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       <Col xs={24} sm={12} xl={6}>
         <Card style={{ height: "100%" }}>
           <div style={cardBody}>
-            <span style={iconBox("#e6f0ff", "#2563eb")}>
+            <span style={iconBox("#2563eb")}>
               <CodeOutlined />
             </span>
             <div>
@@ -196,7 +199,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       <Col xs={24} sm={12} xl={6}>
         <Card style={{ height: "100%" }}>
           <div style={cardBody}>
-            <span style={iconBox("#f3edff", "#7c3aed")}>
+            <span style={iconBox("#7c3aed")}>
               <AppstoreOutlined />
             </span>
             <div>
@@ -220,7 +223,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       <Col xs={24} sm={12} xl={6}>
         <Card style={{ height: "100%" }}>
           <div style={cardBody}>
-            <span style={iconBox("#ffeaea", "#dc2626")}>
+            <span style={iconBox("#dc2626")}>
               <SafetyOutlined />
             </span>
             <div>
@@ -242,7 +245,7 @@ function StatCards({ state, jabali, apt, checking, onCheckNow }: StatCardsProps)
       <Col xs={24} sm={12} xl={6}>
         <Card style={{ height: "100%" }}>
           <div style={cardBody}>
-            <span style={iconBox("#e7f7ee", "#16a34a")}>
+            <span style={iconBox("#16a34a")}>
               <ClockCircleOutlined />
             </span>
             <div style={{ flex: "auto", minWidth: 0 }}>
