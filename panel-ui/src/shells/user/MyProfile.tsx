@@ -309,6 +309,7 @@ type GroupFormProps = {
 };
 
 function SettingsGroupForm({ flow, group, onSubmit }: GroupFormProps) {
+  const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const fields = renderableFields(flow, group);
   const totpDisplay = group === "totp" ? totpEnrolmentDisplay(flow) : null;
@@ -375,6 +376,7 @@ function SettingsGroupForm({ flow, group, onSubmit }: GroupFormProps) {
         <RecoveryCodesReveal codes={recoveryCodes} />
       )}
       <Form
+        form={form}
         layout="vertical"
         requiredMark={false}
         onFinish={submit}
@@ -395,7 +397,8 @@ function SettingsGroupForm({ flow, group, onSubmit }: GroupFormProps) {
               .map((f) => {
                 const isDestructive =
                   f.name.endsWith("_unlink") || f.name.endsWith("_disable");
-                const onPress = () => submit({ [f.name]: f.value });
+                const onPress = () =>
+                  submit({ ...form.getFieldsValue(true), [f.name]: f.value });
                 return (
                   <Button
                     key={f.name + "=" + f.value}
