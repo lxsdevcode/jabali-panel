@@ -4567,6 +4567,35 @@ install_nginx_ssl_hardening() {
   # groups to classical curves so every vhost stays compatible.
   _log "writing nginx TLS curve hardening (disable OpenSSL 3.5 PQ groups)"
   local dst="/etc/nginx/conf.d/jabali-ssl-curves.conf"
+
+  # Idempotency guard: a second ssl_ecdh_curve at conf.d/http scope is ALWAYS a
+  # hard nginx error ("directive is duplicate"), which fails nginx -t and makes
+  # the panel report nginx down. Strays appear from an old-named managed file or
+  # a hand-patch left during debugging (puzzle 2026-06-10: a manual
+  # zz-classical-curves.conf collided with this managed file). jabali owns the
+  # curve policy in $dst, so purge ssl_ecdh_curve from every OTHER conf.d file
+  # before writing: drop curve-only files outright, strip just the line from
+  # multi-directive ones.
+  local f
+  for f in /etc/nginx/conf.d/*.conf; do
+    [[ -f "$f" ]] || continue
+    [[ "$f" == "$dst" ]] && continue
+    grep -qE '^[[:space:]]*ssl_ecdh_curve' "$f" 2>/dev/null || continue
+    # Count directive lines (start with a letter) that are NOT ssl_ecdh_curve.
+    # >0 -> the file has other config, so strip only the curve line; else the
+    # file is curve-only -> remove it. (grep -qv with a $-alternation is
+    # unreliable, so count explicitly.)
+    local _other
+    _other=$(grep -E '^[[:space:]]*[a-zA-Z]' "$f" | grep -vcE '^[[:space:]]*ssl_ecdh_curve')
+    if [[ "${_other:-0}" -gt 0 ]]; then
+      sed -i '/^[[:space:]]*ssl_ecdh_curve/d' "$f"
+      _warn "stripped stray ssl_ecdh_curve from $f (jabali manages it in $dst)"
+    else
+      rm -f "$f"
+      _warn "removed stray curve-only file $f (jabali manages curves in $dst)"
+    fi
+  done
+
   cat > "$dst" <<'CURVEEOF'
 # Managed by jabali. Pin TLS 1.3 groups to classical curves: OpenSSL 3.5's
 # default post-quantum group (X25519MLKEM768) breaks Cloudflare-fronted
