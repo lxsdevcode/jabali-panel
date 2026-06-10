@@ -11,29 +11,23 @@
         "email": {
           "type": "string",
           "title": "Email",
-          "description": "The identity's email address (required, unique)",
-          "format": "email",
+          "description": "Contact email (may be shared across accounts; not used for login).",
+          "format": "email"
+        },
+        "username": {
+          "type": "string",
+          "title": "Username",
+          "description": "Your account login name (unique). Not your email.",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z_][a-z0-9_-]*$",
           "ory.sh/kratos": {
             "credentials": {
               "password": {
                 "identifier": true
               }
-            },
-            "recovery": {
-              "via": "email"
-            },
-            "verification": {
-              "via": "email"
             }
           }
-        },
-        "username": {
-          "type": "string",
-          "title": "Linux Username",
-          "description": "Optional Linux shell username. Admins may not have an OS account.",
-          "minLength": 1,
-          "maxLength": 32,
-          "pattern": "^[a-z_][a-z0-9_-]*$"
         },
         "is_admin": {
           "type": "boolean",
@@ -43,6 +37,7 @@
         }
       },
       "required": [
+        "username",
         "email"
       ],
       "additionalProperties": false

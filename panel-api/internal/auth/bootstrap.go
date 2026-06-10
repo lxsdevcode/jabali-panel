@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -97,9 +99,14 @@ func BootstrapAdmin(ctx context.Context, users repository.UserRepository, opt Bo
 	}
 
 	now := time.Now().UTC()
+	// M54: username is the login identifier under the v2 schema, so the
+	// bootstrap admin must have one (derived from the email local-part).
+	// Harmless under the old schema where username is optional.
+	adminUsername := deriveBootstrapUsername(opt.Email)
 	u := &models.User{
 		ID:           ids.NewULID(),
 		Email:        opt.Email,
+		Username:     &adminUsername,
 		PasswordHash: hash,
 		IsAdmin:      true,
 		CreatedAt:    now,
@@ -117,8 +124,9 @@ func BootstrapAdmin(ctx context.Context, users repository.UserRepository, opt Bo
 	// Kratos-aware path. Mirrors the compensating transaction in
 	// internal/api/users.go so bootstrap + API share one invariant.
 	traits := kratosclient.AdminTraits{
-		Email:   u.Email,
-		IsAdmin: u.IsAdmin,
+		Email:    u.Email,
+		Username: adminUsername,
+		IsAdmin:  u.IsAdmin,
 	}
 	identityID, err := opt.Kratos.CreateIdentityWithPassword(ctx, traits, u.PasswordHash)
 	// ErrIdentityExisted (Kratos 409) returns a VALID existing identity
@@ -155,4 +163,29 @@ func BootstrapAdmin(ctx context.Context, users repository.UserRepository, opt Bo
 	}
 
 	return BootstrapResult{Created: true, UserID: u.ID, KratosIdentityID: identityID}, nil
+}
+
+var bootstrapUsernameInvalid = regexp.MustCompile(`[^a-z0-9_-]`)
+
+// deriveBootstrapUsername turns the admin email into a schema-valid username
+// (local-part, lowercased, non [a-z0-9_-] -> _, starts [a-z_], max 32). Same
+// derivation as `jabali admin backfill-usernames` so a re-run agrees. On a
+// fresh DB the first admin has no collisions to resolve.
+func deriveBootstrapUsername(email string) string {
+	local := email
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		local = email[:i]
+	}
+	local = bootstrapUsernameInvalid.ReplaceAllString(strings.ToLower(local), "_")
+	local = strings.Trim(local, "-")
+	if local == "" {
+		local = "admin"
+	}
+	if c := local[0]; !(c == '_' || (c >= 'a' && c <= 'z')) {
+		local = "u" + local
+	}
+	if len(local) > 32 {
+		local = local[:32]
+	}
+	return local
 }
