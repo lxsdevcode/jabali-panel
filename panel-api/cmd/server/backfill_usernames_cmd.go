@@ -25,10 +25,7 @@ import (
 // user that already has one. The matching Kratos identity trait is synced by
 // `admin relabel-identifiers` (Wave C). Always --dry-run first; --apply writes.
 func newAdminBackfillUsernamesCmd() *cobra.Command {
-	var (
-		dryRun bool
-		apply  bool
-	)
+	var apply bool
 	cmd := &cobra.Command{
 		Use:   "backfill-usernames",
 		Short: "Assign a unique username to every user missing one (M54 Wave A)",
@@ -42,10 +39,6 @@ identity trait is synced separately by 'admin relabel-identifiers' (Wave C).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
-			if !apply {
-				dryRun = true
-			}
-
 			// Existing usernames form the reserved set the derivation must avoid.
 			var existing []string
 			if err := sharedDB.WithContext(ctx).Model(&models.User{}).
@@ -88,7 +81,7 @@ identity trait is synced separately by 'admin relabel-identifiers' (Wave C).`,
 			}
 			tw.Flush()
 
-			if dryRun {
+			if !apply {
 				fmt.Printf("\n[dry-run] %d user(s) would get a username. Re-run with --apply to write.\n", len(planned))
 				return nil
 			}
@@ -104,7 +97,6 @@ identity trait is synced separately by 'admin relabel-identifiers' (Wave C).`,
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", true, "Print the plan without writing (default)")
 	cmd.Flags().BoolVar(&apply, "apply", false, "Write the derived usernames to the DB")
 	return cmd
 }

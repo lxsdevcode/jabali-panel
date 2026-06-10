@@ -52,9 +52,6 @@ const RESOURCE = "users";
 
 export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
   const [form] = Form.useForm<UserFormInput>();
-  // Drive the Username required-mark: a Linux account (hence a
-  // username) is mandatory for every non-admin user.
-  const isAdminWatched = Form.useWatch("is_admin", form);
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
   const isEdit = Boolean(editingId);
@@ -135,6 +132,7 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
           <Form.Item
             label="Email"
             name="email"
+            tooltip="Contact email. May be shared across accounts — it is not used for login."
             rules={[
               { required: true, message: "Email is required" },
               { type: "email", message: "Must be a valid email" },
@@ -147,17 +145,13 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
             <Form.Item
               label="Username"
               name="username"
-              required={!isAdminWatched}
-              tooltip="Linux account name. Lowercase letters and digits, 3–32 chars, must start with a letter. Leave blank for admin-only accounts."
-              dependencies={["is_admin"]}
+              required
+              tooltip="Login username (M54) — this is what you sign in with, not your email. Lowercase letters and digits, 3–32 chars, must start with a letter."
               rules={[
-                ({ getFieldValue }) => ({
+                () => ({
                   validator(_, value: string | undefined) {
-                    const isAdmin = getFieldValue("is_admin");
-                    if (!isAdmin && !value) {
-                      return Promise.reject(
-                        new Error("Username is required for non-admin users"),
-                      );
+                    if (!value) {
+                      return Promise.reject(new Error("Username is required"));
                     }
                     if (value && !/^[a-z][a-z0-9]{2,31}$/.test(value)) {
                       return Promise.reject(

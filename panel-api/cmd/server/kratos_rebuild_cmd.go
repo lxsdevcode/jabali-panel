@@ -115,7 +115,7 @@ Always run with --dry-run first. --yes skips the interactive prompt.`,
 			defer f.Close()
 			w := csv.NewWriter(f)
 			defer w.Flush()
-			if err := w.Write([]string{"email", "kratos_identity_id", "recovery_link", "status"}); err != nil {
+			if err := w.Write([]string{"email", "kratos_identity_id", "temp_password", "status"}); err != nil {
 				return fmt.Errorf("write csv header: %w", err)
 			}
 
@@ -210,7 +210,7 @@ func rebuildOne(ctx context.Context, kc *kratosclient.Client, users repository.U
 		}
 	}
 
-	tempHash, err := genTempBcrypt()
+	tempPlain, tempHash, err := genTempCredential()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ! %s: temp-password hash failed: %v\n", u.Email, err)
 		return statusCreateFailed, "", ""
@@ -252,33 +252,29 @@ func rebuildOne(ctx context.Context, kc *kratosclient.Client, users repository.U
 		return statusLinkFailed, "", ""
 	}
 
-	rc, err := kc.CreateRecoveryCode(ctx, newID, expiresIn)
-	if err != nil {
-		// Relink succeeded but the code endpoint didn't. User is in a
-		// safe state (new identity + panel row relinked); operator just
-		// needs to re-run recovery for this identity later. Don't roll
-		// back — that would put the panel row back to a dangling UUID.
-		fmt.Fprintf(os.Stderr, "  ! %s: CreateRecoveryCode: %v (user is relinked; regenerate manually)\n", u.Email, err)
-		return statusRecoveryMissing, newID, ""
-	}
-	return statusOK, newID, rc.RecoveryLink
+	// M54: plain-email Kratos has no recovery address, so we hand the operator
+	// the temp password the identity was just created with (reveal here, in the
+	// CSV) instead of a recovery link. The user logs in with it + changes it.
+	return statusOK, newID, tempPlain
 }
 
 // genTempBcrypt generates a random 32-byte token, bcrypt-hashes it at cost 12
 // (same as the rest of the panel), and returns the hash. The plaintext is
 // discarded — the user will reset their password via the recovery link, so
 // there's no need to surface the temp password anywhere.
-func genTempBcrypt() (string, error) {
-	raw := make([]byte, 32)
+func genTempCredential() (plaintext, hash string, err error) {
+	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("rand.Read: %w", err)
+		return "", "", fmt.Errorf("rand.Read: %w", err)
 	}
-	token := hex.EncodeToString(raw) // 64 hex chars, well below bcrypt's 72-byte cap
+	token := hex.EncodeToString(raw) // 48 hex chars, well below bcrypt's 72-byte cap
 	h, err := bcrypt.GenerateFromPassword([]byte(token), 12)
 	if err != nil {
-		return "", fmt.Errorf("bcrypt: %w", err)
+		return "", "", fmt.Errorf("bcrypt: %w", err)
 	}
-	return string(h), nil
+	// M54: plaintext is returned so the operator can hand the temp password to
+	// the user — plain-email Kratos has no self-service recovery to fall back on.
+	return token, string(h), nil
 }
 
 func pluralize(n int, singular, plural string) string {

@@ -139,8 +139,8 @@ func TestRebuildOne_HappyPath(t *testing.T) {
 	if newID != "new-kratos-uuid" {
 		t.Errorf("newID = %q, want new-kratos-uuid", newID)
 	}
-	if link != "https://panel.example/recover?token=xyz" {
-		t.Errorf("link = %q, want recovery URL", link)
+	if link == "" {
+		t.Error("link (temp password) should be non-empty under M54 (no recovery link)")
 	}
 	if users.linkedNew["user-id-1"] != "new-kratos-uuid" {
 		t.Errorf("user row not relinked to new UUID: %v", users.linkedNew)
@@ -221,17 +221,19 @@ func TestRebuildOne_RecoveryCodeFailureKeepsRelink(t *testing.T) {
 	u := testUser("user-id-3", "carol@example.com", true, "old")
 	status, newID, link := rebuildOne(context.Background(), kc, users, u, "1h")
 
-	if status != statusRecoveryMissing {
-		t.Errorf("status = %q, want ok_no_link — relink succeeded, only code endpoint failed", status)
+	// M54: rebuild no longer calls /admin/recovery/code, so a failing recovery
+	// endpoint is irrelevant — it succeeds and emits a temp password instead.
+	if status != statusOK {
+		t.Errorf("status = %q, want ok (M54 doesn't depend on the recovery endpoint)", status)
 	}
 	if newID != "new-kratos-uuid" {
 		t.Errorf("newID = %q, want new-kratos-uuid (user is relinked)", newID)
 	}
-	if link != "" {
-		t.Errorf("link should be empty when code endpoint failed, got %q", link)
+	if link == "" {
+		t.Error("link (temp password) should be non-empty under M54")
 	}
 	if users.linkedNew["user-id-3"] != "new-kratos-uuid" {
-		t.Error("user row must stay relinked even when recovery code generation fails (operator can regenerate manually)")
+		t.Error("user row must stay relinked")
 	}
 }
 

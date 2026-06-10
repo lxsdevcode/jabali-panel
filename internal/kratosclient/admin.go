@@ -272,8 +272,8 @@ func (c *Client) SetPassword(ctx context.Context, identityID, passwordHash strin
 
 	patch := []map[string]any{
 		{
-			"op":   "add",
-			"path": "/credentials/password/config/hashed_password",
+			"op":    "add",
+			"path":  "/credentials/password/config/hashed_password",
 			"value": passwordHash,
 		},
 	}
@@ -301,6 +301,48 @@ func (c *Client) SetPassword(ctx context.Context, identityID, passwordHash strin
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("setpassword: status %d: %s", resp.StatusCode, string(errBody))
+	}
+	return nil
+}
+
+// UpdateUsernameTrait PATCHes identity.traits.username. Under the M54 v2
+// schema (username = password identifier), this makes Kratos re-derive
+// credentials.password.identifiers from the new trait — flipping the login
+// identifier from email to username WITHOUT touching credentials.password.config
+// (so the password hash is preserved). Proven on Kratos v26.2.0 (M54 spike
+// 2026-06-10). Uses json-patch `add` so it works whether or not the identity
+// already had a username trait (RFC 6902 `add` replaces an existing member).
+func (c *Client) UpdateUsernameTrait(ctx context.Context, identityID, username string) error {
+	if identityID == "" {
+		return fmt.Errorf("updateusernametrait: identityID is empty")
+	}
+	if username == "" {
+		return fmt.Errorf("updateusernametrait: username is empty (would leave the identity with no login identifier)")
+	}
+	patch := []map[string]any{
+		{"op": "add", "path": "/traits/username", "value": username},
+	}
+	body, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("updateusernametrait: marshal: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPatch,
+		c.adminURL+"/admin/identities/"+url.PathEscape(identityID), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("updateusernametrait: request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json-patch+json")
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("updateusernametrait: do: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrIdentityNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("updateusernametrait: status %d: %s", resp.StatusCode, string(errBody))
 	}
 	return nil
 }
@@ -574,19 +616,19 @@ func lc(s string) string {
 // ExportedIdentity represents a single identity in Kratos export format.
 // This matches the structure returned by Kratos export API.
 type ExportedIdentity struct {
-	ID                 string            `json:"id"`
-	SchemaID           string            `json:"schema_id"`
-	Traits             json.RawMessage   `json:"traits"`
-	State              string            `json:"state"`
-	StateChangedAt     *string           `json:"state_changed_at,omitempty"`
-	MetadataPublic     json.RawMessage   `json:"metadata_public,omitempty"`
-	MetadataAdmin      json.RawMessage   `json:"metadata_admin,omitempty"`
-	AvailableAAL       json.RawMessage   `json:"available_aal,omitempty"`
-	Credentials        json.RawMessage   `json:"credentials,omitempty"`
-	RecoveryAddresses  json.RawMessage   `json:"recovery_addresses,omitempty"`
-	VerifiableAddresses json.RawMessage  `json:"verifiable_addresses,omitempty"`
-	CreatedAt          string            `json:"created_at"`
-	UpdatedAt          string            `json:"updated_at"`
+	ID                  string          `json:"id"`
+	SchemaID            string          `json:"schema_id"`
+	Traits              json.RawMessage `json:"traits"`
+	State               string          `json:"state"`
+	StateChangedAt      *string         `json:"state_changed_at,omitempty"`
+	MetadataPublic      json.RawMessage `json:"metadata_public,omitempty"`
+	MetadataAdmin       json.RawMessage `json:"metadata_admin,omitempty"`
+	AvailableAAL        json.RawMessage `json:"available_aal,omitempty"`
+	Credentials         json.RawMessage `json:"credentials,omitempty"`
+	RecoveryAddresses   json.RawMessage `json:"recovery_addresses,omitempty"`
+	VerifiableAddresses json.RawMessage `json:"verifiable_addresses,omitempty"`
+	CreatedAt           string          `json:"created_at"`
+	UpdatedAt           string          `json:"updated_at"`
 }
 
 // ExportIdentities exports all identities from Kratos using the official export API.
