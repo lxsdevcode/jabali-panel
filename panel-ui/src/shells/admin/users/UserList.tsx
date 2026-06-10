@@ -23,6 +23,7 @@ import { UserDeleteAction } from "./UserDeleteAction";
 import { UserDrawer } from "./UserDrawer";
 import { UserDiskUsage } from "./UserDiskUsage";
 import { UserReset2FAAction } from "./UserReset2FAAction";
+import { UserResetPasswordAction } from "./UserResetPasswordAction";
 import { UserSuspendAction } from "./UserSuspendAction";
 
 type User = {
@@ -63,6 +64,7 @@ function RowActions({
   onEdit: (id: string) => void;
 }) {
   const [reset2faOpen, setReset2faOpen] = useState(false);
+  const [resetPwOpen, setResetPwOpen] = useState(false);
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -75,6 +77,12 @@ function RowActions({
       icon: <SafetyOutlined />,
       label: "Reset 2FA",
       onClick: () => setReset2faOpen(true),
+    },
+    {
+      key: "resetpw",
+      icon: <SafetyOutlined />,
+      label: "Reset password",
+      onClick: () => setResetPwOpen(true),
     },
     ...(!user.is_admin
       ? [
@@ -112,6 +120,12 @@ function RowActions({
         userEmail={user.email}
         open={reset2faOpen}
         onClose={() => setReset2faOpen(false)}
+      />
+      <UserResetPasswordAction
+        userId={user.id}
+        userEmail={user.email}
+        open={resetPwOpen}
+        onClose={() => setResetPwOpen(false)}
       />
       {!user.is_admin && (
         <UserSuspendAction
