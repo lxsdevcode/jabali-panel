@@ -1,0 +1,32 @@
+slug: answer
+name: Apache Answer
+version: "2.0.1"
+description: |
+  Open-source Q&A platform (Stack Overflow-style) from the Apache Software
+  Foundation. Questions, answers, voting, tags, reputation, badges, and admin
+  moderation. Single container with SQLite by default; the first visit opens a
+  web setup wizard to create the database and the admin account.
+icon: icon.svg
+upstream: https://github.com/apache/answer
+documentation: https://answer.apache.org/
+
+image_channel: apache/answer:2.0.1
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "512m"
+  pids: 200
+
+volumes:
+  - name: data
+    container_path: /data
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
