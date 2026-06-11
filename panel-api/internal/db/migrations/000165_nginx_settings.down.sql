@@ -1,0 +1,14 @@
+ALTER TABLE server_settings
+  DROP COLUMN nginx_client_max_body_size,
+  DROP COLUMN nginx_keepalive_timeout,
+  DROP COLUMN nginx_server_tokens,
+  DROP COLUMN nginx_gzip,
+  DROP COLUMN nginx_client_body_timeout,
+  DROP COLUMN nginx_client_header_timeout,
+  DROP COLUMN nginx_send_timeout,
+  DROP COLUMN nginx_proxy_connect_timeout,
+  DROP COLUMN nginx_proxy_read_timeout,
+  DROP COLUMN nginx_proxy_send_timeout,
+  DROP COLUMN nginx_worker_processes,
+  DROP COLUMN nginx_worker_connections,
+  DROP COLUMN nginx_custom_http;

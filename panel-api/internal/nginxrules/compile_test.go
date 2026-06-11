@@ -1,6 +1,7 @@
 package nginxrules
 
 import (
+	"strings"
 	"testing"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
@@ -338,4 +339,60 @@ func TestQuoteNginxLocation(t *testing.T) {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// TestCompileProxyPassDefaults pins the upload-safe defaults baked into
+// every proxy_pass block (GH#172): http/1.1 keepalive, request buffering
+// off, and default timeouts. Non-websocket proxies get Connection "";
+// websocket proxies get Connection "upgrade" + the Upgrade header.
+func TestCompileProxyPassDefaults(t *testing.T) {
+	d := &models.Domain{
+		NginxRules: []models.NginxRule{
+			{Type: "proxy_pass", Path: "/app", Target: "http://127.0.0.1:8080"},
+		},
+	}
+	got := Compile(d)
+	for _, want := range []string{
+		"location ^~ /app {",
+		"proxy_pass http://127.0.0.1:8080;",
+		"proxy_http_version 1.1;",
+		"proxy_request_buffering off;",
+		`proxy_set_header Connection "";`,
+		"proxy_connect_timeout 300s;",
+		"proxy_send_timeout 300s;",
+		"proxy_read_timeout 300s;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("proxy_pass output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// Non-websocket must NOT carry the upgrade header.
+	if strings.Contains(got, "Upgrade $http_upgrade") {
+		t.Errorf("non-websocket proxy unexpectedly set Upgrade header:\n%s", got)
+	}
+}
+
+// TestCompileProxyPassWebsocket verifies the websocket branch still emits
+// the Upgrade/Connection-upgrade pair and an overridable read timeout.
+func TestCompileProxyPassWebsocket(t *testing.T) {
+	ws := true
+	d := &models.Domain{
+		NginxRules: []models.NginxRule{
+			{Type: "proxy_pass", Path: "/ws", Target: "http://127.0.0.1:9000", Websocket: &ws, ReadTimeout: "600s"},
+		},
+	}
+	got := Compile(d)
+	for _, want := range []string{
+		"proxy_http_version 1.1;",
+		"proxy_set_header Upgrade $http_upgrade;",
+		`proxy_set_header Connection "upgrade";`,
+		"proxy_read_timeout 600s;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("websocket proxy output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `Connection "";`) {
+		t.Errorf("websocket proxy should not emit empty Connection header:\n%s", got)
+	}
 }

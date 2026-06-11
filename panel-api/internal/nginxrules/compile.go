@@ -44,22 +44,47 @@ func Compile(d *models.Domain) string {
 			// /assets/foo.css goes to try_files in the empty docroot
 			// instead of the upstream -- Gitea + every other proxied
 			// app's bundled assets came back 404.
+			//
+			// Upload-safe defaults (GH#172): proxied apps (ownCloud,
+			// dailytxt, ...) were failing file uploads because the
+			// template carried none of the streaming/keepalive
+			// directives. We bake the safe ones into EVERY proxy block:
+			//   - proxy_http_version 1.1 + Connection "" -> upstream
+			//     keepalive (instead of HTTP/1.0 close-per-request)
+			//   - proxy_request_buffering off -> stream large bodies to
+			//     the upstream instead of spooling to a temp file
+			//   - default 300s connect/send/read timeouts so long
+			//     uploads / slow apps don't 504
+			// The request-body SIZE cap comes from the http{}-scope
+			// client_max_body_size set by Server Settings -> Nginx
+			// (default 50m); admins raise it there for big-upload apps.
+			// proxy_buffering stays ON (default) -- disabling it is an
+			// opt-in concern, not a safe default.
 			fmt.Fprintf(&b,
 				"    location ^~ %s {\n"+
 					"        proxy_pass %s;\n"+
+					"        proxy_http_version 1.1;\n"+
 					"        proxy_set_header Host $host;\n"+
 					"        proxy_set_header X-Real-IP $remote_addr;\n"+
 					"        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"+
-					"        proxy_set_header X-Forwarded-Proto $scheme;\n",
+					"        proxy_set_header X-Forwarded-Proto $scheme;\n"+
+					"        proxy_request_buffering off;\n",
 				quoteNginxLocation(r.Path), r.Target)
 			if r.Websocket != nil && *r.Websocket {
-				b.WriteString("        proxy_http_version 1.1;\n")
 				b.WriteString("        proxy_set_header Upgrade $http_upgrade;\n")
 				b.WriteString("        proxy_set_header Connection \"upgrade\";\n")
+			} else {
+				// Empty Connection header lets nginx keep the upstream
+				// connection alive across requests (HTTP/1.1 keepalive).
+				b.WriteString("        proxy_set_header Connection \"\";\n")
 			}
-			if r.ReadTimeout != "" {
-				fmt.Fprintf(&b, "        proxy_read_timeout %s;\n", r.ReadTimeout)
+			readTimeout := r.ReadTimeout
+			if readTimeout == "" {
+				readTimeout = "300s"
 			}
+			b.WriteString("        proxy_connect_timeout 300s;\n")
+			b.WriteString("        proxy_send_timeout 300s;\n")
+			fmt.Fprintf(&b, "        proxy_read_timeout %s;\n", readTimeout)
 			b.WriteString("    }\n")
 
 		case "ip_access":
