@@ -4297,6 +4297,23 @@ EOF
 
 # ---------- step 7: start + smoke test --------------------------------------
 
+# _derive_admin_username mirrors panel-api auth.deriveBootstrapUsername exactly:
+# the M54 login username derived from the admin email (local-part, lowercased,
+# non [a-z0-9_-] -> _, trimmed of -, must start [a-z_], max 32). Kept in lockstep
+# so the installer banner shows the SAME username the operator logs in with
+# (GH#175: banner used to print the email, which is no longer the login).
+_derive_admin_username() {
+  local email="$1" lp
+  lp="${email%%@*}"
+  lp="$(printf '%s' "$lp" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]/_/g; s/^-+//; s/-+$//')"
+  [[ -z "$lp" ]] && lp="admin"
+  case "${lp:0:1}" in
+    [a-z_]) : ;;
+    *) lp="u${lp}" ;;
+  esac
+  printf '%s' "${lp:0:32}"
+}
+
 # ---------- step 6b: seed admin credentials ---------------------------------
 
 # prompt_admin_account — collect the panel admin LOGIN email up-front,
@@ -4397,7 +4414,7 @@ seed_admin_env() {
   local admin_pass
   admin_pass="$(openssl rand -base64 18)"
 
-  _log "seeding panel admin bootstrap credentials (login email: $admin_email)"
+  _log "seeding panel admin bootstrap credentials (login username: $(_derive_admin_username "$admin_email"), contact email: $admin_email)"
   cat >>"$ENV_FILE" <<EOF
 
 # Admin bootstrap (consumed once on first boot, safe to leave).
@@ -11627,7 +11644,7 @@ main() {
     echo "============================================================"
     echo ""
     printf "  URL:       %s\n" "$panel_url"
-    printf "  Email:     %s\n" "$JABALI_SEED_EMAIL"
+    printf "  Username:  %s\n" "$(_derive_admin_username "$JABALI_SEED_EMAIL")"
     printf "  Password:  %s\n" "$JABALI_SEED_PASS"
     echo ""
     echo "  > Change this password immediately after first login."
