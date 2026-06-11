@@ -58,14 +58,14 @@ func validateSlug(slug string) error {
 
 // dockerAppInstallParams is the input shape for docker_app.install.
 type dockerAppInstallParams struct {
-	Slug       string            `json:"slug"`
-	ComposeYML string            `json:"compose_yml"`           // rendered template
-	EnvFile    string            `json:"env_file,omitempty"`    // .env contents (secrets); empty = no .env
-	Volumes    []string          `json:"volumes"`               // subdirs to create under DataRoot
-	VolumeOwner string           `json:"volume_owner,omitempty"`// optional "uid:gid" applied to the data root + each volume subdir before compose-up
-	WaitHealth bool              `json:"wait_healthy,omitempty"`
-	HealthTO   int               `json:"healthcheck_timeout_seconds,omitempty"`
-	Metadata   map[string]string `json:"metadata,omitempty"`    // free-form tags; written into a sidecar JSON for ops
+	Slug        string            `json:"slug"`
+	ComposeYML  string            `json:"compose_yml"`            // rendered template
+	EnvFile     string            `json:"env_file,omitempty"`     // .env contents (secrets); empty = no .env
+	Volumes     []string          `json:"volumes"`                // subdirs to create under DataRoot
+	VolumeOwner string            `json:"volume_owner,omitempty"` // optional "uid:gid" applied to the data root + each volume subdir before compose-up
+	WaitHealth  bool              `json:"wait_healthy,omitempty"`
+	HealthTO    int               `json:"healthcheck_timeout_seconds,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"` // free-form tags; written into a sidecar JSON for ops
 }
 
 type dockerAppInstallResponse struct {
@@ -169,7 +169,7 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 	if out, err := runDockerCompose(ctx, dir, "up", "-d"); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("docker compose up -d failed: %v", err),
+			Message: composeFailMessage("up -d", out, err),
 			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
 		}
 	}
@@ -191,8 +191,8 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 
 // dockerAppLifecycleParams covers start/stop/restart/rebuild/delete.
 type dockerAppLifecycleParams struct {
-	Slug          string `json:"slug"`
-	PurgeVolumes  bool   `json:"purge_volumes,omitempty"` // delete only
+	Slug         string `json:"slug"`
+	PurgeVolumes bool   `json:"purge_volumes,omitempty"` // delete only
 }
 
 type dockerAppLifecycleResponse struct {
@@ -284,12 +284,12 @@ type dockerAppStatusParams struct {
 }
 
 type dockerAppStatusResponse struct {
-	Slug    string             `json:"slug"`
-	Present bool               `json:"present"`     // compose.yml exists on disk
-	Running bool               `json:"running"`     // at least one service is in 'running' state
-	Health  string             `json:"health"`      // "healthy" | "unhealthy" | "starting" | "none"
-	DataBytes int64            `json:"data_bytes,omitempty"` // du of the install dir; only when with_size
-	Lines   []dockerAppPsLine  `json:"lines,omitempty"`
+	Slug      string            `json:"slug"`
+	Present   bool              `json:"present"`              // compose.yml exists on disk
+	Running   bool              `json:"running"`              // at least one service is in 'running' state
+	Health    string            `json:"health"`               // "healthy" | "unhealthy" | "starting" | "none"
+	DataBytes int64             `json:"data_bytes,omitempty"` // du of the install dir; only when with_size
+	Lines     []dockerAppPsLine `json:"lines,omitempty"`
 }
 
 type dockerAppPsLine struct {
@@ -386,6 +386,36 @@ func runDockerCompose(ctx context.Context, dir string, args ...string) (string, 
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// composeFailMessage builds a user-facing error that includes the TAIL of the
+// docker compose output, so the panel surfaces the real reason (which container
+// failed, an image-pull error, a MariaDB native-AIO crash inside LXC, ...)
+// instead of a bare "exit status 1". The full output still rides along in the
+// AgentError Details. GH#178.
+func composeFailMessage(action, out string, err error) string {
+	tail := lastNonEmptyLines(out, 8)
+	if tail == "" {
+		return fmt.Sprintf("docker compose %s failed: %v", action, err)
+	}
+	return fmt.Sprintf("docker compose %s failed: %v\n%s", action, err, tail)
+}
+
+// lastNonEmptyLines returns the last up-to-n non-blank lines of s, joined with
+// newlines — enough signal to diagnose a compose failure without dumping the
+// whole (often noisy) output into the error message.
+func lastNonEmptyLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		if t := strings.TrimSpace(ln); t != "" {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) > n {
+		kept = kept[len(kept)-n:]
+	}
+	return strings.Join(kept, "\n")
 }
 
 // writeAtomic writes data to a temp file in the same dir, fsyncs,
@@ -541,7 +571,6 @@ func init() {
 // removed by a refactor. Keep the import so future expansion (timeouts,
 // percentile parsing) doesn't trip over a missing dependency.
 var _ = strconv.Itoa
-
 
 // parseUIDGID splits "uid:gid" into ints. Both halves must be
 // numeric; we do NOT resolve usernames to uids because the agent
