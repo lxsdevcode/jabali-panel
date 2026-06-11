@@ -511,7 +511,7 @@ function ProcessesSection() {
     void refresh(engine);
     const t = setInterval(() => void refresh(engine), 3000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [engine]);
 
   const kill = async (id: string) => {

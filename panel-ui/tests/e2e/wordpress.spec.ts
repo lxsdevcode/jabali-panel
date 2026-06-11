@@ -122,7 +122,7 @@ if (SKIP_REASON) {
       // --- Poll for Domain A "ready" status (up to 2 min) ---
       const installReadyTimeout = 120_000; // 2 minutes
       const pollInterval = 3_000; // 3 seconds
-      let startTime = Date.now();
+      const startTime = Date.now();
 
       let domainAReady = false;
       while (!domainAReady && Date.now() - startTime < installReadyTimeout) {
@@ -132,7 +132,7 @@ if (SKIP_REASON) {
 
         // Look for a row with domainA and status "ready" or similar
         // The list should show Domain A's install with status indicator
-        let rows = await page.getByRole("row").all();
+        const rows = await page.getByRole("row").all();
         for (const row of rows) {
           const text = await row.textContent();
           if (text?.includes(domainA) && text?.includes("ready")) {
@@ -242,7 +242,7 @@ if (SKIP_REASON) {
         await page.reload();
         await page.waitForURL(/\/jabali-panel\/wordpress/);
 
-        let rowsForB = await page.getByRole("row").all();
+        const rowsForB = await page.getByRole("row").all();
         for (const row of rowsForB) {
           const text = await row.textContent();
           if (text?.includes(domainB) && text?.includes("ready")) {
@@ -383,7 +383,7 @@ if (SKIP_REASON) {
       await page.reload();
       await page.waitForURL(/\/jabali-panel\/wordpress/);
 
-      let rowsFinal = await page.getByRole("row").all();
+      const rowsFinal = await page.getByRole("row").all();
       for (const row of rowsFinal) {
         const text = await row.textContent();
         expect(text).not.toContain(domainA);

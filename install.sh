@@ -8722,6 +8722,24 @@ AIDE_CONF
     _ok "removed Debian stock /etc/cron.daily/aide (jabali-aide-check.timer covers it)"
   fi
 
+  # Disable + mask Debian's stock systemd AIDE units. Newer aide-common
+  # (trixie) ships dailyaidecheck.timer + dailyaidecheck.service +
+  # dailyaidecheck-buildcache.service IN ADDITION to the cron job. They run
+  # the stock check, which depends on the /etc/aide/aide.conf.d/* fragments
+  # we purge above (Apache/Dovecot/LVM/etc. rules jabali doesn't use) — so on
+  # a non-LVM host dailyaidecheck-buildcache.service fails every run
+  # referencing a non-existent 10_aide_lvm fragment (GH report 2026-06-09).
+  # jabali-aide-check.timer already owns the daily check, so neutralize the
+  # stock units to stop the competing failure (mirrors the cron removal).
+  local _stock_aide_unit
+  for _stock_aide_unit in dailyaidecheck.timer dailyaidecheck.service dailyaidecheck-buildcache.service; do
+    if systemctl list-unit-files "$_stock_aide_unit" >/dev/null 2>&1        && systemctl list-unit-files "$_stock_aide_unit" 2>/dev/null | grep -q "$_stock_aide_unit"; then
+      systemctl disable --now "$_stock_aide_unit" >/dev/null 2>&1 || true
+      systemctl mask "$_stock_aide_unit" >/dev/null 2>&1 || true
+      _ok "masked Debian stock $_stock_aide_unit (jabali-aide-check.timer covers it)"
+    fi
+  done
+
   # Initial DB build — only if missing AND no in-progress marker.
   # AIDE 0.19.1 requires an explicit --config (no implicit /etc/aide/
   # aide.conf default any more), or --init exits with

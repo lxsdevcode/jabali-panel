@@ -133,7 +133,7 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
     try {
       // Drain queueRef sequentially. New items added during the run
       // are picked up because we re-read queueRef after each iteration.
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
         const next = queueRef.current.shift();
         if (!next) break;

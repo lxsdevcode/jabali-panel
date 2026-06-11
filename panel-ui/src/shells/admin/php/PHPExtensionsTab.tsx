@@ -86,7 +86,7 @@ export const PHPExtensionsTab = () => {
     if (!selectedVersion) return;
     loadExtensions(selectedVersion);
     // loadExtensions closes over setState only, safe to omit from deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [selectedVersion]);
 
   const loadExtensions = async (version: string) => {

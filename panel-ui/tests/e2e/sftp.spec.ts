@@ -130,7 +130,7 @@ if (SKIP_REASON) {
       const fingerprintCell = keyRow
         .locator("xpath=ancestor::tr")
         .first()
-        .getByText(/[A-Z0-9+\/]{12,}/);
+        .getByText(/[A-Z0-9+/]{12,}/);
       await expect(fingerprintCell).toBeVisible();
 
       // --- Attempt to add the same key again → expect duplicate error ---
