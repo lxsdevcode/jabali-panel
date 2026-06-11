@@ -13,9 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
@@ -107,14 +107,14 @@ type userHandler struct{ cfg UserHandlerConfig }
 // ---------- request / response shapes ----------
 
 type createUserRequest struct {
-	Email           string  `json:"email"                    binding:"required,email"`
-	Password        string  `json:"password"                 binding:"required,min=10"`
-	Username        *string `json:"username,omitempty"       binding:"omitempty,min=1,max=32"`
-	NameFirst       string  `json:"name_first"`
-	NameLast        string  `json:"name_last"`
-	IsAdmin         bool    `json:"is_admin"`
-	PackageID       *string `json:"package_id,omitempty"`
-	SkipProvision   bool    `json:"skip_provision,omitempty"`
+	Email         string  `json:"email"                    binding:"required,email"`
+	Password      string  `json:"password"                 binding:"required,min=10"`
+	Username      *string `json:"username,omitempty"       binding:"omitempty,min=1,max=32"`
+	NameFirst     string  `json:"name_first"`
+	NameLast      string  `json:"name_last"`
+	IsAdmin       bool    `json:"is_admin"`
+	PackageID     *string `json:"package_id,omitempty"`
+	SkipProvision bool    `json:"skip_provision,omitempty"`
 }
 
 // updateUserRequest uses pointers so the handler can distinguish "omit this
@@ -426,11 +426,11 @@ func (h *userHandler) update(c *gin.Context) {
 			if agentErr != nil {
 				slog.Warn("agent user.password failed", "user_id", id, "err", agentErr)
 				c.JSON(http.StatusBadGateway, gin.H{
-					"error":             "agent_error",
-					"detail":            agentErr.Error(),
-					"kratos_synced":     true,
-					"db_synced":         false,
-					"os_synced":         false,
+					"error":         "agent_error",
+					"detail":        agentErr.Error(),
+					"kratos_synced": true,
+					"db_synced":     false,
+					"os_synced":     false,
 				})
 				return
 			}
@@ -613,6 +613,23 @@ func (h *userHandler) delete(c *gin.Context) {
 				break
 			}
 		}
+	}
+
+	// Remove the Kratos identity so the username + email free up immediately.
+	// Without this the identity is orphaned and recreating the same user
+	// collides on the unique identifier ("username_taken" / kratos conflict) —
+	// the user "still exists" even after delete (GH#132 follow-up, johnnyq).
+	// Synchronous + before the DB delete so a 200 means the identity is gone
+	// and recreate works right away. DeleteIdentity treats 404 as success.
+	// Best-effort on a Kratos outage: log loudly rather than strand the DB
+	// delete, but the common (Kratos-up) path now fully cleans up.
+	if h.cfg.KratosClient != nil && target.KratosIdentityID != nil && *target.KratosIdentityID != "" {
+		kctx, kcancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		if kerr := h.cfg.KratosClient.DeleteIdentity(kctx, *target.KratosIdentityID); kerr != nil {
+			slog.Warn("user delete: kratos identity delete failed (orphan may block recreate)",
+				"user_id", id, "identity_id", *target.KratosIdentityID, "err", kerr)
+		}
+		kcancel()
 	}
 
 	if err := h.cfg.Repo.Delete(c.Request.Context(), id); err != nil {

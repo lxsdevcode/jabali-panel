@@ -1026,3 +1026,42 @@ func TestUsers_Create_KratosUnreachable_PanelRolledBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, all, 1, "panel row must be rolled back even when Kratos is unreachable")
 }
+
+// TestUsers_Delete_RemovesKratosIdentity pins the GH#132 follow-up fix:
+// deleting a user must also delete its Kratos identity, otherwise the
+// username/email stay taken and recreating the same user collides
+// ("user still there even though I deleted it").
+func TestUsers_Delete_RemovesKratosIdentity(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var deletedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			mu.Lock()
+			deletedPath = r.URL.Path
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	repo := newMemUserRepo()
+	admin := makeUser(t, "admin@example.com", true, "adminpassword")
+	target := makeUser(t, "victim@example.com", false, "password01")
+	idid := "kratos-identity-xyz"
+	target.KratosIdentityID = &idid
+	repo.seed(admin)
+	repo.seed(target)
+
+	r := buildRouterWithKratos(repo, srv.URL, &auth.AccessClaims{UserID: admin.ID, IsAdmin: true})
+	rec := doJSON(t, r, http.MethodDelete, "/api/v1/users/"+target.ID, nil)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, "/admin/identities/"+idid, deletedPath,
+		"user delete must DELETE the Kratos identity so recreate doesn't collide")
+}
