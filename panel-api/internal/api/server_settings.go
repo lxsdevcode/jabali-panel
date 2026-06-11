@@ -76,23 +76,23 @@ func (h *serverSettingsHandler) get(c *gin.Context) {
 }
 
 type updateServerSettingsRequest struct {
-	Hostname            *string `json:"hostname,omitempty"`
-	PublicIPv4          *string `json:"public_ipv4,omitempty"`
-	PublicIPv6          *string `json:"public_ipv6,omitempty"`
-	NS1Name             *string `json:"ns1_name,omitempty"`
-	NS1IPv4             *string `json:"ns1_ipv4,omitempty"`
-	NS2Name             *string `json:"ns2_name,omitempty"`
-	NS2IPv4             *string `json:"ns2_ipv4,omitempty"`
-	AdminEmail          *string `json:"admin_email,omitempty"`
-	Timezone            *string `json:"timezone,omitempty"`
-	SSHPort             *uint16 `json:"ssh_port,omitempty"`
-	SSHPasswordAuth     *bool   `json:"ssh_password_auth,omitempty"`
-	SSHUserPasswordAuth *bool   `json:"ssh_user_password_auth,omitempty"`
-	PanelBrandText      *string `json:"panel_brand_text,omitempty"`
-	DiskQuotaEnabled    *bool   `json:"disk_quota_enabled,omitempty"`
-	RootTerminalEnabled *bool   `json:"root_terminal_enabled,omitempty"`
-	BandwidthQuotaEnforceEnabled *bool `json:"bandwidth_quota_enforce_enabled,omitempty"`
-	UploadMaxSizeMB     *uint32 `json:"upload_max_size_mb,omitempty"`
+	Hostname                     *string `json:"hostname,omitempty"`
+	PublicIPv4                   *string `json:"public_ipv4,omitempty"`
+	PublicIPv6                   *string `json:"public_ipv6,omitempty"`
+	NS1Name                      *string `json:"ns1_name,omitempty"`
+	NS1IPv4                      *string `json:"ns1_ipv4,omitempty"`
+	NS2Name                      *string `json:"ns2_name,omitempty"`
+	NS2IPv4                      *string `json:"ns2_ipv4,omitempty"`
+	AdminEmail                   *string `json:"admin_email,omitempty"`
+	Timezone                     *string `json:"timezone,omitempty"`
+	SSHPort                      *uint16 `json:"ssh_port,omitempty"`
+	SSHPasswordAuth              *bool   `json:"ssh_password_auth,omitempty"`
+	SSHUserPasswordAuth          *bool   `json:"ssh_user_password_auth,omitempty"`
+	PanelBrandText               *string `json:"panel_brand_text,omitempty"`
+	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
+	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
+	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
+	UploadMaxSizeMB              *uint32 `json:"upload_max_size_mb,omitempty"`
 
 	// M13 SSH shell sandbox.
 	SSHSandboxMode            *string `json:"ssh_sandbox_mode,omitempty"`
@@ -106,7 +106,7 @@ type updateServerSettingsRequest struct {
 	// M37 PostgreSQL parity (ADR-0091). PostgresEnabled gates the
 	// /databases POST handler from accepting engine="postgres" + the
 	// reconciler from starting the postgresql service.
-	PostgresEnabled               *bool   `json:"postgres_enabled,omitempty"`
+	PostgresEnabled *bool `json:"postgres_enabled,omitempty"`
 	// M48 docker-app marketplace opt-in. flip true -> agent installs
 	// docker via install_docker_engine; flip false -> agent stops +
 	// disables docker units (data kept).
@@ -140,6 +140,22 @@ type updateServerSettingsRequest struct {
 	// security.crowdsec.bouncer.mode.apply which rewrites MODE= in the
 	// nginx-bouncer conf + reloads nginx.
 	CrowdsecBouncerMode *string `json:"crowdsec_bouncer_mode,omitempty"`
+
+	// M55 Nginx Settings tab. All optional; any present field triggers a
+	// re-render + nginx.tunables.apply dispatch (re-sync semantics, like SSH).
+	NginxClientMaxBodySize   *string `json:"nginx_client_max_body_size,omitempty"`
+	NginxKeepaliveTimeout    *string `json:"nginx_keepalive_timeout,omitempty"`
+	NginxServerTokens        *bool   `json:"nginx_server_tokens,omitempty"`
+	NginxGzip                *bool   `json:"nginx_gzip,omitempty"`
+	NginxClientBodyTimeout   *string `json:"nginx_client_body_timeout,omitempty"`
+	NginxClientHeaderTimeout *string `json:"nginx_client_header_timeout,omitempty"`
+	NginxSendTimeout         *string `json:"nginx_send_timeout,omitempty"`
+	NginxProxyConnectTimeout *string `json:"nginx_proxy_connect_timeout,omitempty"`
+	NginxProxyReadTimeout    *string `json:"nginx_proxy_read_timeout,omitempty"`
+	NginxProxySendTimeout    *string `json:"nginx_proxy_send_timeout,omitempty"`
+	NginxWorkerProcesses     *string `json:"nginx_worker_processes,omitempty"`
+	NginxWorkerConnections   *uint32 `json:"nginx_worker_connections,omitempty"`
+	NginxCustomHTTP          *string `json:"nginx_custom_http,omitempty"`
 }
 
 func (h *serverSettingsHandler) update(c *gin.Context) {
@@ -307,6 +323,54 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 		current.WorkingFolder = v
 	}
 
+	// M55 nginx tunables. nginxTouched drives the re-sync dispatch below.
+	nginxTouched := req.NginxClientMaxBodySize != nil || req.NginxKeepaliveTimeout != nil ||
+		req.NginxServerTokens != nil || req.NginxGzip != nil ||
+		req.NginxClientBodyTimeout != nil || req.NginxClientHeaderTimeout != nil ||
+		req.NginxSendTimeout != nil || req.NginxProxyConnectTimeout != nil ||
+		req.NginxProxyReadTimeout != nil || req.NginxProxySendTimeout != nil ||
+		req.NginxWorkerProcesses != nil || req.NginxWorkerConnections != nil ||
+		req.NginxCustomHTTP != nil
+	if req.NginxClientMaxBodySize != nil {
+		current.NginxClientMaxBodySize = strings.TrimSpace(*req.NginxClientMaxBodySize)
+	}
+	if req.NginxKeepaliveTimeout != nil {
+		current.NginxKeepaliveTimeout = strings.TrimSpace(*req.NginxKeepaliveTimeout)
+	}
+	if req.NginxServerTokens != nil {
+		current.NginxServerTokens = *req.NginxServerTokens
+	}
+	if req.NginxGzip != nil {
+		current.NginxGzip = *req.NginxGzip
+	}
+	if req.NginxClientBodyTimeout != nil {
+		current.NginxClientBodyTimeout = strings.TrimSpace(*req.NginxClientBodyTimeout)
+	}
+	if req.NginxClientHeaderTimeout != nil {
+		current.NginxClientHeaderTimeout = strings.TrimSpace(*req.NginxClientHeaderTimeout)
+	}
+	if req.NginxSendTimeout != nil {
+		current.NginxSendTimeout = strings.TrimSpace(*req.NginxSendTimeout)
+	}
+	if req.NginxProxyConnectTimeout != nil {
+		current.NginxProxyConnectTimeout = strings.TrimSpace(*req.NginxProxyConnectTimeout)
+	}
+	if req.NginxProxyReadTimeout != nil {
+		current.NginxProxyReadTimeout = strings.TrimSpace(*req.NginxProxyReadTimeout)
+	}
+	if req.NginxProxySendTimeout != nil {
+		current.NginxProxySendTimeout = strings.TrimSpace(*req.NginxProxySendTimeout)
+	}
+	if req.NginxWorkerProcesses != nil {
+		current.NginxWorkerProcesses = strings.TrimSpace(*req.NginxWorkerProcesses)
+	}
+	if req.NginxWorkerConnections != nil {
+		current.NginxWorkerConnections = *req.NginxWorkerConnections
+	}
+	if req.NginxCustomHTTP != nil {
+		current.NginxCustomHTTP = strings.TrimSpace(*req.NginxCustomHTTP)
+	}
+
 	// Validate — reject obviously bad input so we don't persist garbage.
 	if err := validateServerSettings(current); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_settings", "detail": err.Error()})
@@ -464,6 +528,34 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 		}()
 	}
 
+	// M55 nginx tunables: re-render the http-scope fragment + patch worker
+	// lines whenever the operator touched the Nginx form. Background dispatch
+	// (atomic-write + nginx -t gate + reload happen agent-side). Re-sync
+	// semantics: re-saving the form always re-applies, healing on-disk drift.
+	if nginxTouched && h.cfg.Agent != nil {
+		go func(s models.ServerSettings) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "nginx.tunables.apply", map[string]any{
+				"client_max_body_size":  s.NginxClientMaxBodySize,
+				"keepalive_timeout":     s.NginxKeepaliveTimeout,
+				"server_tokens":         s.NginxServerTokens,
+				"gzip":                  s.NginxGzip,
+				"client_body_timeout":   s.NginxClientBodyTimeout,
+				"client_header_timeout": s.NginxClientHeaderTimeout,
+				"send_timeout":          s.NginxSendTimeout,
+				"proxy_connect_timeout": s.NginxProxyConnectTimeout,
+				"proxy_read_timeout":    s.NginxProxyReadTimeout,
+				"proxy_send_timeout":    s.NginxProxySendTimeout,
+				"worker_processes":      s.NginxWorkerProcesses,
+				"worker_connections":    s.NginxWorkerConnections,
+				"custom_http":           s.NginxCustomHTTP,
+			}); err != nil {
+				h.cfg.Log.Error("agent nginx tunables apply failed", "err", err)
+			}
+		}(*current)
+	}
+
 	h.cfg.Log.Info("event=audit kind=server_settings_updated actor_id=" + claims.UserID)
 	c.JSON(http.StatusOK, current)
 }
@@ -544,6 +636,33 @@ func validateServerSettings(s *models.ServerSettings) error {
 			return fmt.Errorf("working_folder: must not contain '..'")
 		}
 	}
+	// M55 nginx tunables. Sizes/timeouts go verbatim into a config file,
+	// so reject anything not matching nginx's value grammar.
+	if s.NginxClientMaxBodySize != "" && !nginxSizeRE.MatchString(s.NginxClientMaxBodySize) {
+		return fmt.Errorf("nginx_client_max_body_size: invalid nginx size (e.g. 50m)")
+	}
+	for label, v := range map[string]string{
+		"nginx_keepalive_timeout":     s.NginxKeepaliveTimeout,
+		"nginx_client_body_timeout":   s.NginxClientBodyTimeout,
+		"nginx_client_header_timeout": s.NginxClientHeaderTimeout,
+		"nginx_send_timeout":          s.NginxSendTimeout,
+		"nginx_proxy_connect_timeout": s.NginxProxyConnectTimeout,
+		"nginx_proxy_read_timeout":    s.NginxProxyReadTimeout,
+		"nginx_proxy_send_timeout":    s.NginxProxySendTimeout,
+	} {
+		if v != "" && !nginxTimeRE.MatchString(v) {
+			return fmt.Errorf("%s: invalid nginx time (e.g. 300s)", label)
+		}
+	}
+	if s.NginxWorkerProcesses != "" && !nginxWorkerProcRE.MatchString(s.NginxWorkerProcesses) {
+		return fmt.Errorf("nginx_worker_processes: must be 'auto' or 1-99")
+	}
+	if s.NginxWorkerConnections > 1048576 {
+		return fmt.Errorf("nginx_worker_connections: must be <= 1048576")
+	}
+	if len(s.NginxCustomHTTP) > 4000 {
+		return fmt.Errorf("nginx_custom_http: must be <= 4000 chars")
+	}
 	return nil
 }
 
@@ -567,8 +686,13 @@ func isImageNamePattern(s string) bool {
 }
 
 var (
-	hostnameRE  = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
-	timezoneRE  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$`)
+	hostnameRE = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+	timezoneRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$`)
+
+	// M55 nginx tunable value grammars.
+	nginxSizeRE       = regexp.MustCompile(`^[0-9]+[kKmMgG]?$`)
+	nginxTimeRE       = regexp.MustCompile(`^[0-9]+(ms|s|m|h)?$`)
+	nginxWorkerProcRE = regexp.MustCompile(`^(auto|[1-9][0-9]?)$`)
 )
 
 func isValidHostname(s string) bool {

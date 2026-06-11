@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   WarningOutlined,
   AppstoreOutlined,
+  ToolOutlined,
 } from "@icons";
 import {
   Alert,
@@ -57,6 +58,7 @@ import { DNSResolversCard } from "./DNSResolversCard";
 import { EmailCard } from "./EmailCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
 import { PanelSSLCard } from "./PanelSSLCard";
+import { NginxSettingsCard } from "./NginxSettingsCard";
 
 type ServerSettings = {
   id: number;
@@ -849,6 +851,7 @@ type SettingsTabKey =
   | "email"
   | "databases"
   | "apps"
+  | "nginx"
   | "branding";
 
 const BrandingSettingsTab = () => (
@@ -927,6 +930,15 @@ export const ServerSettingsPage = () => {
             ),
           },
           {
+            key: "nginx",
+            tab: (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                <ToolOutlined />
+                Nginx
+              </span>
+            ),
+          },
+          {
             key: "branding",
             tab: (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
@@ -950,6 +962,7 @@ export const ServerSettingsPage = () => {
           </>
         )}
         {activeTab === "apps" && <DockerMarketplaceCard />}
+        {activeTab === "nginx" && <NginxSettingsCard />}
         {activeTab === "branding" && <BrandingSettingsTab />}
       </Card>
     </div>

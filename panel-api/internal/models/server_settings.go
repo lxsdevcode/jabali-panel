@@ -9,15 +9,15 @@ import (
 // DNS configuration. Operators edit these from the admin Settings page;
 // at first boot the row is seeded from the installer's config.toml.
 type ServerSettings struct {
-	ID          uint8     `gorm:"primaryKey;default:1"                json:"id"`
-	Hostname    string    `gorm:"type:varchar(253);not null;default:''" json:"hostname"`
-	PublicIPv4  string    `gorm:"type:varchar(45);not null;default:''"  json:"public_ipv4"`
-	PublicIPv6  string    `gorm:"type:varchar(45);not null;default:''"  json:"public_ipv6"`
-	NS1Name     string    `gorm:"type:varchar(253);not null;default:''" json:"ns1_name"`
-	NS1IPv4     string    `gorm:"type:varchar(45);not null;default:''"  json:"ns1_ipv4"`
-	NS2Name     string    `gorm:"type:varchar(253);not null;default:''" json:"ns2_name"`
-	NS2IPv4     string    `gorm:"type:varchar(45);not null;default:''"  json:"ns2_ipv4"`
-	AdminEmail  string    `gorm:"type:varchar(320);not null;default:''" json:"admin_email"`
+	ID         uint8  `gorm:"primaryKey;default:1"                json:"id"`
+	Hostname   string `gorm:"type:varchar(253);not null;default:''" json:"hostname"`
+	PublicIPv4 string `gorm:"type:varchar(45);not null;default:''"  json:"public_ipv4"`
+	PublicIPv6 string `gorm:"type:varchar(45);not null;default:''"  json:"public_ipv6"`
+	NS1Name    string `gorm:"type:varchar(253);not null;default:''" json:"ns1_name"`
+	NS1IPv4    string `gorm:"type:varchar(45);not null;default:''"  json:"ns1_ipv4"`
+	NS2Name    string `gorm:"type:varchar(253);not null;default:''" json:"ns2_name"`
+	NS2IPv4    string `gorm:"type:varchar(45);not null;default:''"  json:"ns2_ipv4"`
+	AdminEmail string `gorm:"type:varchar(320);not null;default:''" json:"admin_email"`
 	// DefaultDNSTTL is the TTL (seconds) applied to newly-created DNS
 	// records when the API caller doesn't pass one. Editable via
 	// Server Settings → DNS in the admin UI. Range 60–86400 enforced
@@ -29,22 +29,22 @@ type ServerSettings struct {
 	// Admin changes it via POST /admin/php/versions/:version/default; agent
 	// php.version.status reports it in default_version. Schema default '8.4'.
 	DefaultPHPVersion string `gorm:"type:varchar(8);not null;default:'8.4'" json:"default_php_version"`
-	Timezone           string `gorm:"type:varchar(64);not null;default:''"   json:"timezone"`
-	SSHPort            uint16 `gorm:"type:int unsigned;not null;default:22"  json:"ssh_port"`
+	Timezone          string `gorm:"type:varchar(64);not null;default:''"   json:"timezone"`
+	SSHPort           uint16 `gorm:"type:int unsigned;not null;default:22"  json:"ssh_port"`
 	// SSHPasswordAuth governs the GLOBAL PasswordAuthentication directive
 	// in /etc/ssh/sshd_config.d/jabali-sshd.conf. In practice this only
 	// affects users NOT in the jabali-sftp group (root, admin shell users)
 	// because the M12 Match Group jabali-sftp block in jabali-sftp.conf
 	// overrides the global for hosting users. Use SSHUserPasswordAuth to
 	// flip the per-group setting.
-	SSHPasswordAuth     bool   `gorm:"type:tinyint(1);not null;default:0"     json:"ssh_password_auth"`
+	SSHPasswordAuth bool `gorm:"type:tinyint(1);not null;default:0"     json:"ssh_password_auth"`
 	// SSHUserPasswordAuth governs PasswordAuthentication inside the
 	// Match Group jabali-sftp block — i.e. for hosting users. The agent's
 	// system.set_ssh_config rewrites jabali-sftp.conf to honor this flag.
 	// Note: ForceCommand internal-sftp still applies, so password-authed
 	// hosting users land in SFTP, not a shell — per-package shell access
 	// is a separate, future feature.
-	SSHUserPasswordAuth bool   `gorm:"type:tinyint(1);not null;default:0"     json:"ssh_user_password_auth"`
+	SSHUserPasswordAuth bool `gorm:"type:tinyint(1);not null;default:0"     json:"ssh_user_password_auth"`
 
 	// VAPIDPublicKey / VAPIDPrivateKey / VAPIDSubject hold the Web Push
 	// keypair + subject mint. See ADR-0057. Generated on first boot by
@@ -179,7 +179,7 @@ type ServerSettings struct {
 	EgressDefaultLoopback6CIDRs *json.RawMessage `gorm:"column:egress_default_loopback6_cidrs;type:json"         json:"egress_default_loopback6_cidrs,omitempty"`
 	EgressDefaultPortsTCP       *json.RawMessage `gorm:"column:egress_default_ports_tcp;type:json"               json:"egress_default_ports_tcp,omitempty"`
 	EgressDefaultPortsUDP       *json.RawMessage `gorm:"column:egress_default_ports_udp;type:json"               json:"egress_default_ports_udp,omitempty"`
-	EgressBurstThreshold        uint32  `gorm:"column:egress_burst_threshold;type:int unsigned;not null;default:50" json:"egress_burst_threshold"`
+	EgressBurstThreshold        uint32           `gorm:"column:egress_burst_threshold;type:int unsigned;not null;default:50" json:"egress_burst_threshold"`
 
 	// M37 PostgreSQL parity (Phase 1, ADR-0091). Migration 000111.
 	// PostgresEnabled gates the engine-discriminator code path —
@@ -187,7 +187,7 @@ type ServerSettings struct {
 	// flips this true in Server Settings to start using PG.
 	// PostgresMaxConnectionsPerUser is surfaced when Wave A creates
 	// per-user PG roles (mirrors MariaDB max_user_connections cap).
-	PostgresEnabled               bool   `gorm:"column:postgres_enabled;type:tinyint(1);not null;default:0" json:"postgres_enabled"`
+	PostgresEnabled bool `gorm:"column:postgres_enabled;type:tinyint(1);not null;default:0" json:"postgres_enabled"`
 	// DockerMarketplaceEnabled gates the M48 docker-app marketplace.
 	// When false, the panel installs no docker engine and unmounts
 	// /admin/docker-apps; when flipped true, panel-api dispatches
@@ -217,6 +217,30 @@ type ServerSettings struct {
 	// remain valid agent-side; install.sh symlinks them under the new
 	// working_folder so existing data survives schema upgrade.
 	WorkingFolder string `gorm:"column:working_folder;type:varchar(255);not null;default:'/var/lib/jabali'" json:"working_folder"`
+
+	// M55 Nginx Settings tab (migration 000165). Server-wide nginx tunables.
+	// The agent's nginx.tunables.apply verb renders the http-scope columns into
+	// /etc/nginx/conf.d/05-jabali-tunables.conf (atomic-write + nginx -t gate +
+	// rollback) and patches the two worker-scope knobs into /etc/nginx/nginx.conf.
+	// install.sh seeds the fragment with these same defaults so a fresh install
+	// matches the row. Timeout/size columns hold the nginx value verbatim
+	// ("50m", "300s"); the API + agent validate by regex. NginxServerTokens=false
+	// → `server_tokens off` (hide version, secure default). NginxCustomHTTP is
+	// admin-supplied raw http{}-scope directives gated only by nginx -t; the UI
+	// warns it can destabilize the server. NginxWorkerProcesses is "auto" or int.
+	NginxClientMaxBodySize   string `gorm:"column:nginx_client_max_body_size;type:varchar(16);not null;default:'50m'"   json:"nginx_client_max_body_size"`
+	NginxKeepaliveTimeout    string `gorm:"column:nginx_keepalive_timeout;type:varchar(16);not null;default:'65s'"      json:"nginx_keepalive_timeout"`
+	NginxServerTokens        bool   `gorm:"column:nginx_server_tokens;type:tinyint(1);not null;default:0"               json:"nginx_server_tokens"`
+	NginxGzip                bool   `gorm:"column:nginx_gzip;type:tinyint(1);not null;default:1"                        json:"nginx_gzip"`
+	NginxClientBodyTimeout   string `gorm:"column:nginx_client_body_timeout;type:varchar(16);not null;default:'60s'"    json:"nginx_client_body_timeout"`
+	NginxClientHeaderTimeout string `gorm:"column:nginx_client_header_timeout;type:varchar(16);not null;default:'60s'"  json:"nginx_client_header_timeout"`
+	NginxSendTimeout         string `gorm:"column:nginx_send_timeout;type:varchar(16);not null;default:'60s'"           json:"nginx_send_timeout"`
+	NginxProxyConnectTimeout string `gorm:"column:nginx_proxy_connect_timeout;type:varchar(16);not null;default:'300s'" json:"nginx_proxy_connect_timeout"`
+	NginxProxyReadTimeout    string `gorm:"column:nginx_proxy_read_timeout;type:varchar(16);not null;default:'300s'"    json:"nginx_proxy_read_timeout"`
+	NginxProxySendTimeout    string `gorm:"column:nginx_proxy_send_timeout;type:varchar(16);not null;default:'300s'"    json:"nginx_proxy_send_timeout"`
+	NginxWorkerProcesses     string `gorm:"column:nginx_worker_processes;type:varchar(8);not null;default:'auto'"       json:"nginx_worker_processes"`
+	NginxWorkerConnections   uint32 `gorm:"column:nginx_worker_connections;type:int unsigned;not null;default:768"      json:"nginx_worker_connections"`
+	NginxCustomHTTP          string `gorm:"column:nginx_custom_http;type:varchar(4000);not null;default:''"             json:"nginx_custom_http"`
 
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null"             json:"updated_at"`
 }
