@@ -75,13 +75,13 @@ type CreateResult struct {
 // Sentinel errors — callers use errors.Is to map to HTTP status
 // codes / CLI exit codes / migration-stage failure kinds.
 var (
-	ErrDeps              = errors.New("userops: dependencies not wired")
-	ErrInvalidUsername   = errors.New("userops: invalid username")
-	ErrInvalidPackage    = errors.New("userops: invalid package id")
-	ErrUsernameTaken     = errors.New("userops: username already exists")
-	ErrEmailTaken        = errors.New("userops: email already exists")
-	ErrKratosFailed      = errors.New("userops: kratos identity create failed")
-	ErrInternal          = errors.New("userops: internal error")
+	ErrDeps            = errors.New("userops: dependencies not wired")
+	ErrInvalidUsername = errors.New("userops: invalid username")
+	ErrInvalidPackage  = errors.New("userops: invalid package id")
+	ErrUsernameTaken   = errors.New("userops: username already exists")
+	ErrEmailTaken      = errors.New("userops: email already exists")
+	ErrKratosFailed    = errors.New("userops: kratos identity create failed")
+	ErrInternal        = errors.New("userops: internal error")
 )
 
 var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -90,15 +90,15 @@ var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 // + (when SkipProvision=false and not admin) an OS account.
 // Pipeline matches the pre-extraction REST handler exactly:
 //
-//   1. validate username (effective username = req.Username when
-//      set, else derived from email prefix)
-//   2. validate package_id (when supplied)
-//   3. bcrypt hash password
-//   4. insert users row (rolled back on kratos failure)
-//   5. kratos atomic CreateIdentityWithPassword (when client wired)
-//   6. LinkKratosIdentity (with double-rollback on failure)
-//   7. agent.user.create (best-effort; warning, not rollback)
-//   8. malware-monitor reload (fire-and-forget goroutine)
+//  1. validate username (effective username = req.Username when
+//     set, else derived from email prefix)
+//  2. validate package_id (when supplied)
+//  3. bcrypt hash password
+//  4. insert users row (rolled back on kratos failure)
+//  5. kratos atomic CreateIdentityWithPassword (when client wired)
+//  6. LinkKratosIdentity (with double-rollback on failure)
+//  7. agent.user.create (best-effort; warning, not rollback)
+//  8. malware-monitor reload (fire-and-forget goroutine)
 //
 // Returns ErrUsernameTaken / ErrEmailTaken on conflict; caller
 // surfaces 409. ErrKratosFailed on kratos failure (panel row
@@ -107,8 +107,12 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*CreateResult, error) 
 	if d.Users == nil || d.BcryptCost == 0 {
 		return nil, ErrDeps
 	}
-	if in.Email == "" || in.Password == "" {
-		return nil, fmt.Errorf("%w: email and password required", ErrInvalidUsername)
+	// M54/GH#176: username is the login identifier; email is optional contact.
+	// Require a password + a resolvable username (validated below). An empty
+	// email is fine — the Kratos email trait is omitempty, so it's simply
+	// omitted from the identity rather than sent as an invalid "".
+	if in.Password == "" {
+		return nil, fmt.Errorf("%w: password required", ErrInvalidUsername)
 	}
 
 	// Effective username — caller-supplied OR derived from email

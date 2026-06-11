@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,11 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -1064,4 +1065,45 @@ func TestUsers_Delete_RemovesKratosIdentity(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, "/admin/identities/"+idid, deletedPath,
 		"user delete must DELETE the Kratos identity so recreate doesn't collide")
+}
+
+// TestUsers_Create_NoEmail_OK pins GH#176: email is optional now that usernames
+// are the login. Creating a user with a username + no email must succeed, and
+// the Kratos identity payload must omit the email trait (not send "").
+func TestUsers_Create_NoEmail_OK(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/admin/identities" {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			gotBody = string(b)
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"kratos-id-noemail","traits":{"username":"acmecorp"}}`))
+			return
+		}
+		http.Error(w, "unexpected", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	repo := newMemUserRepo()
+	admin := makeUser(t, "admin@example.com", true, "adminpassword")
+	repo.seed(admin)
+
+	r := buildRouterWithKratos(repo, srv.URL, &auth.AccessClaims{UserID: admin.ID, IsAdmin: true})
+	rec := doJSON(t, r, http.MethodPost, "/api/v1/users", map[string]any{
+		"username":   "acmecorp",
+		"password":   "password123",
+		"name_first": "Acme Corp",
+	})
+	require.Equal(t, http.StatusCreated, rec.Code, "create with no email must succeed")
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.NotContains(t, gotBody, `"email":""`, "must not send an empty email trait to Kratos")
+	assert.Contains(t, gotBody, `"username":"acmecorp"`)
 }

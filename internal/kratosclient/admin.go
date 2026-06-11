@@ -18,7 +18,7 @@ import (
 // three fields; the IsAdmin flag is boolean so `omitempty` would drop the false
 // value and break the schema's required-fields check — tag is plain `json:"is_admin"`.
 type AdminTraits struct {
-	Email    string `json:"email"`
+	Email    string `json:"email,omitempty"`
 	Username string `json:"username,omitempty"`
 	IsAdmin  bool   `json:"is_admin"`
 }
