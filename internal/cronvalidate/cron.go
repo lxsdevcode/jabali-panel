@@ -22,14 +22,14 @@ import (
 
 // Error codes for structured error reporting (suitable for API "error" field).
 const (
-	ErrCodeEmpty            = "empty"
-	ErrCodeTooLong          = "too_long"           // >1024 bytes
-	ErrCodeBinaryNotAllowed = "binary_not_allowed" // not wp/php
-	ErrCodeMetacharReject   = "metachar_reject"    // shell metacharacters
-	ErrCodeBadPathArg       = "bad_path_arg"       // --path= missing, not absolute, traversal, or not in owned docroot
-	ErrCodeBadScheduleSyntax = "bad_schedule_syntax"
+	ErrCodeEmpty               = "empty"
+	ErrCodeTooLong             = "too_long"           // >1024 bytes
+	ErrCodeBinaryNotAllowed    = "binary_not_allowed" // not wp/php
+	ErrCodeMetacharReject      = "metachar_reject"    // shell metacharacters
+	ErrCodeBadPathArg          = "bad_path_arg"       // --path= missing, not absolute, traversal, or not in owned docroot
+	ErrCodeBadScheduleSyntax   = "bad_schedule_syntax"
 	ErrCodeScheduleTooFrequent = "schedule_too_frequent" // < 1 min step
-	ErrCodeInvalidName      = "invalid_name"       // control characters or invalid name
+	ErrCodeInvalidName         = "invalid_name"          // control characters or invalid name
 )
 
 // ValidationError is the error type returned by validators.
@@ -53,22 +53,22 @@ type Command struct {
 // string unless they appear inside matched quotes. These are shell metacharacters
 // that could enable injection if present unquoted.
 var metacharSet = map[byte]bool{
-	'&':  true,  // background / AND
-	'|':  true,  // pipe / OR
-	';':  true,  // statement separator
-	'$':  true,  // variable expansion
-	'`':  true,  // backtick substitution
-	'(':  true,  // subshell
-	')':  true,
-	'<':  true,  // input redirection
-	'>':  true,  // output redirection
-	'\\': true,  // escape
-	'\n': true,  // newline
+	'&':    true, // background / AND
+	'|':    true, // pipe / OR
+	';':    true, // statement separator
+	'$':    true, // variable expansion
+	'`':    true, // backtick substitution
+	'(':    true, // subshell
+	')':    true,
+	'<':    true, // input redirection
+	'>':    true, // output redirection
+	'\\':   true, // escape
+	'\n':   true, // newline
 	'\x00': true, // NUL byte
-	'{':  true,  // brace expansion
-	'}':  true,
-	'*':  true,  // glob (allowed inside quotes; will check below)
-	'?':  true,  // glob (allowed inside quotes; will check below)
+	'{':    true, // brace expansion
+	'}':    true,
+	'*':    true, // glob (allowed inside quotes; will check below)
+	'?':    true, // glob (allowed inside quotes; will check below)
 }
 
 // hasUnquotedMetachar scans s for any metachar outside balanced quotes.
@@ -131,6 +131,26 @@ func ValidateCommand(raw string, ownedDocroots []string) (*Command, error) {
 		return nil, &ValidationError{
 			Code:   ErrCodeTooLong,
 			Detail: fmt.Sprintf("command exceeds 1024 bytes (%d bytes)", len(raw)),
+		}
+	}
+
+	// Reject ALL control characters (newline, CR, NUL, etc.) outright —
+	// INCLUDING inside quotes. hasUnquotedMetachar deliberately skips quoted
+	// spans, but a newline inside a quoted arg survives shlex.Split as a token,
+	// and the agent emits each token single-quoted into a systemd ExecStart=.
+	// systemd parses unit files LINE BY LINE (not shell-style), so a literal
+	// newline breaks out of ExecStart= and injects attacker-controlled unit
+	// directives — letting a tenant bypass the wp/php allowlist and run
+	// arbitrary commands as their own uid (outside the SSH sandbox) via the
+	// generated user timer. Control chars have no legitimate place in a cron
+	// command, so reject them at the source. (\t is allowed: it cannot break
+	// a unit line.)
+	for i := 0; i < len(raw); i++ {
+		if c := raw[i]; c < 0x20 && c != '\t' {
+			return nil, &ValidationError{
+				Code:   ErrCodeMetacharReject,
+				Detail: "command contains control characters (newline/CR/NUL/etc.) which are not allowed",
+			}
 		}
 	}
 
@@ -219,6 +239,7 @@ var phpStandaloneFlags = map[string]bool{
 	"-h": true, "--help": true,
 	"-r": true, // followed by code string, not file
 }
+
 func validatePHPCommand(argv []string, ownedDocroots []string) (*Command, error) {
 	if len(argv) < 2 {
 		return nil, &ValidationError{
@@ -290,10 +311,11 @@ func validatePHPCommand(argv []string, ownedDocroots []string) (*Command, error)
 
 	return &Command{Argv: argv}, nil
 }
+
 // validatePathArg validates that an absolute path:
-//   1. Has no .. tokens
-//   2. Is inside one of ownedDocroots (with / boundary check)
-//   3. If it exists, verifies via EvalSymlinks; if not, that's OK (will be checked at runtime by cron-precheck)
+//  1. Has no .. tokens
+//  2. Is inside one of ownedDocroots (with / boundary check)
+//  3. If it exists, verifies via EvalSymlinks; if not, that's OK (will be checked at runtime by cron-precheck)
 func validatePathArg(pathStr string, ownedDocroots []string) error {
 	// Belt-and-suspenders: reject .. anywhere in original string
 	if strings.Contains(pathStr, "..") {
@@ -375,7 +397,7 @@ func ValidateSchedule(expr string) error {
 		return &ValidationError{
 			Code: ErrCodeBadScheduleSyntax,
 			Detail: fmt.Sprintf(
-				"schedule shortcuts (@hourly, @daily, @reboot, @every) not allowed; "+
+				"schedule shortcuts (@hourly, @daily, @reboot, @every) not allowed; " +
 					"use 5-field cron syntax (e.g. '0 * * * *' for hourly)",
 			),
 		}
