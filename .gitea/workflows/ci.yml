@@ -91,10 +91,11 @@ jobs:
           cache-dependency-path: panel-ui/package-lock.json
       - name: Install deps
         run: cd panel-ui && npm ci --no-audit --no-fund
-      # Lint is intentionally not wired in: panel-ui/package.json has an
-      # eslint script but no eslint in devDependencies. Adding a real
-      # lint gate is a separate chore (needs @typescript-eslint/* +
-      # plugin-react + a config) — don't pretend we have it.
+      # ESLint (flat config, eslint.config.js): typescript-eslint + react-hooks
+      # rules. Fails the build on errors; warnings are advisory (npm run lint
+      # drops --max-warnings 0). Tighten toward zero-warnings incrementally.
+      - name: eslint
+        run: cd panel-ui && npm run lint
       - name: vitest
         run: cd panel-ui && npm test
 

@@ -62,7 +62,7 @@ export const DomainIndexButton = ({
     if (effectiveOpen) {
       setValue((domain.index_priority as IndexPriority) || "html_first");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [effectiveOpen, domain.index_priority]);
 
   const handleSave = async () => {
