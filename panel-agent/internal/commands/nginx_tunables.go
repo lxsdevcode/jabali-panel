@@ -14,29 +14,34 @@ import (
 )
 
 // nginx.tunables.apply — renders the server-wide nginx tunables managed by
-// Server Settings → Nginx (M55) into the http{}-scope fragment
+// Server Settings → Nginx (M55).
 //
-//	/etc/nginx/conf.d/05-jabali-tunables.conf
+// Two destinations, because nginx config has two kinds of directive here:
 //
-// and patches the two worker-scope knobs (worker_processes,
-// worker_connections) into /etc/nginx/nginx.conf. The 05- prefix loads
-// after the 00-jabali-ratelimits.conf zone declarations but before any
-// per-vhost include, so these http-scope defaults are in effect when the
-// server{} blocks parse (each vhost can still override per-directive).
+//   - DIRECTIVES DEBIAN/UBUNTU SHIP IN nginx.conf (server_tokens, gzip,
+//     keepalive_timeout) + the worker knobs (worker_processes main-scope,
+//     worker_connections events-scope): these are REPLACED IN PLACE in
+//     /etc/nginx/nginx.conf. They can't go in a conf.d fragment because that
+//     fragment is included inside http{} where nginx.conf already declares
+//     them — a second declaration is a hard `nginx -t` "directive is
+//     duplicate" error (caught live on a real box, GH#172 follow-up). We
+//     replace the first matching line only (a stray copy inside a nested
+//     server{} is left alone) and skip silently if the directive is absent.
 //
-// Atomicity: the fragment is staged to .new, the live files backed up to
-// .bak, both swapped in, then a SINGLE `nginx -t` validates the whole
-// config. On failure BOTH files roll back from their .bak and the command
-// errors — so a bad value (or bad admin custom-snippet) never leaves nginx
-// in a state that fails to reload. Same shape as nginx.ratelimits.apply,
-// extended to cover nginx.conf.
+//   - GENUINELY-ADDITIVE DIRECTIVES (client_max_body_size, the client/send
+//     timeouts, the proxy timeouts, plus the admin free-form block): these
+//     are NOT in stock nginx.conf, so they render cleanly into the http-scope
+//     fragment /etc/nginx/conf.d/05-jabali-tunables.conf.
 //
-// Inputs are re-validated here (not just at the panel-api edge): the agent
-// is the privileged boundary that writes root-owned config, so it must not
-// trust the caller's strings. Size/timeout values are regex-checked before
-// they reach the file; the free-form CustomHTTP is length-capped and
-// NUL-screened but otherwise gated only by nginx -t (matching the documented
-// "advanced, can destabilize" contract).
+// Atomicity: both files are staged with a backup, swapped in, then a SINGLE
+// `nginx -t` validates the whole config. On failure BOTH roll back. So a bad
+// value (or a bad admin custom-snippet) never leaves nginx unable to reload.
+//
+// Inputs are re-validated here (not just at the panel-api edge): the agent is
+// the privileged boundary writing root-owned config and must not trust the
+// caller's strings. Size/timeout values are regex-checked; the free-form
+// CustomHTTP is length-capped + NUL-screened but otherwise gated only by
+// nginx -t (the documented "advanced, can destabilize" contract).
 
 const (
 	nginxTunablesFragmentPath = "/etc/nginx/conf.d/05-jabali-tunables.conf"
@@ -44,16 +49,8 @@ const (
 	nginxCustomHTTPMaxLen     = 4000
 )
 
-// nginxSizeRe matches an nginx size value: digits with an optional k/m/g
-// suffix (case-insensitive). "0" disables the limit (valid for
-// client_max_body_size). Empty is rejected by the caller before we get here.
 var nginxSizeRe = regexp.MustCompile(`^[0-9]+[kKmMgG]?$`)
-
-// nginxTimeRe matches an nginx time value: digits with an optional unit
-// (ms|s|m|h). Bare digits mean seconds to nginx.
 var nginxTimeRe = regexp.MustCompile(`^[0-9]+(ms|s|m|h)?$`)
-
-// nginxWorkerProcessesRe matches "auto" or a small positive integer.
 var nginxWorkerProcessesRe = regexp.MustCompile(`^(auto|[1-9][0-9]?)$`)
 
 type nginxTunablesApplyParams struct {
@@ -73,10 +70,9 @@ type nginxTunablesApplyParams struct {
 }
 
 type nginxTunablesApplyResponse struct {
-	FragmentPath  string `json:"fragment_path"`
-	WorkerPatched bool   `json:"worker_patched"`
-	NoChange      bool   `json:"no_change,omitempty"`
-	Rolled        bool   `json:"rolled_back,omitempty"`
+	FragmentPath    string `json:"fragment_path"`
+	MainConfPatched bool   `json:"main_conf_patched"`
+	NoChange        bool   `json:"no_change,omitempty"`
 }
 
 func nginxTunablesApplyHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -88,32 +84,21 @@ func nginxTunablesApplyHandler(ctx context.Context, params json.RawMessage) (any
 		}
 	}
 	if err := validateNginxTunables(&p); err != nil {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInvalidArgument,
-			Message: err.Error(),
-		}
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
 	}
 
 	fragment := BuildNginxTunablesFragment(&p)
 
-	// Compute desired nginx.conf BEFORE touching disk so we can detect a
-	// true no-op (fragment unchanged AND worker lines already correct).
 	liveMain, _ := os.ReadFile(nginxMainConfPath)
-	newMain, workerChanged := patchNginxWorkerLines(liveMain, p.WorkerProcesses, p.WorkerConnections)
+	newMain, mainChanged := patchNginxMainConf(liveMain, &p)
 
 	liveFragment, _ := os.ReadFile(nginxTunablesFragmentPath)
 	fragmentChanged := !bytes.Equal(liveFragment, []byte(fragment))
 
-	if !fragmentChanged && !workerChanged {
-		return &nginxTunablesApplyResponse{
-			FragmentPath: nginxTunablesFragmentPath,
-			NoChange:     true,
-		}, nil
+	if !fragmentChanged && !mainChanged {
+		return &nginxTunablesApplyResponse{FragmentPath: nginxTunablesFragmentPath, NoChange: true}, nil
 	}
 
-	// Stage + swap with coordinated rollback. We back up whatever we are
-	// about to overwrite, swap the new content in, run a single nginx -t,
-	// and on failure restore every file we touched.
 	var rollbacks []func()
 	restore := func() {
 		for i := len(rollbacks) - 1; i >= 0; i-- {
@@ -127,7 +112,7 @@ func nginxTunablesApplyHandler(ctx context.Context, params json.RawMessage) (any
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 		}
 	}
-	if workerChanged {
+	if mainChanged {
 		if err := swapFile(nginxMainConfPath, newMain, &rollbacks); err != nil {
 			restore()
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
@@ -146,31 +131,23 @@ func nginxTunablesApplyHandler(ctx context.Context, params json.RawMessage) (any
 		}
 	}
 
-	// Validated — reload so the new config takes effect.
 	reloadCmd := exec.CommandContext(ctx, "systemctl", "reload", "nginx")
 	var reloadOut bytes.Buffer
 	reloadCmd.Stdout = &reloadOut
 	reloadCmd.Stderr = &reloadOut
 	if err := reloadCmd.Run(); err != nil {
-		// Config is valid but reload failed — leave the files in place
-		// (next reload/restart will pick them up) and surface the error.
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("nginx -t passed but reload failed: %s", reloadOut.String()),
 		}
 	}
 
-	return &nginxTunablesApplyResponse{
-		FragmentPath:  nginxTunablesFragmentPath,
-		WorkerPatched: workerChanged,
-	}, nil
+	return &nginxTunablesApplyResponse{FragmentPath: nginxTunablesFragmentPath, MainConfPatched: mainChanged}, nil
 }
 
-// swapFile backs up path → .bak (if it exists), writes content, and pushes a
-// rollback closure that restores the previous state. The caller runs the
-// rollbacks in reverse on any later failure and removes the .bak files on
-// success implicitly (they are left on disk; a subsequent successful run
-// overwrites them — harmless, and useful for forensic diff).
+// swapFile backs up path → .jabali-bak (if present), writes content, and
+// pushes a rollback closure restoring the previous state. The caller runs the
+// rollbacks in reverse on any later failure.
 func swapFile(path string, content []byte, rollbacks *[]func()) error {
 	backup := path + ".jabali-bak"
 	orig, statErr := os.ReadFile(path)
@@ -193,47 +170,71 @@ func swapFile(path string, content []byte, rollbacks *[]func()) error {
 	return nil
 }
 
-// patchNginxWorkerLines returns the nginx.conf bytes with worker_processes and
-// worker_connections set to the requested values, plus whether anything
-// changed. It only REPLACES existing directives — it never inserts new ones,
-// because worker_connections must live inside the events{} block and
-// worker_processes at main scope; getting that placement wrong on an unusual
-// nginx.conf would break the config. If a directive isn't present in the
-// expected form, it's left untouched (the value silently no-ops for that
-// knob rather than risking a malformed file). Debian/Ubuntu stock nginx.conf
-// always ships both, so this covers every supported install.
-func patchNginxWorkerLines(conf []byte, workerProcesses string, workerConnections uint32) ([]byte, bool) {
+// patchNginxMainConf applies the directives that live in nginx.conf (rather
+// than the http-scope fragment, where they would duplicate Debian's stock
+// declarations and fail nginx -t). Every directive is REPLACE-IN-PLACE,
+// first-match-only, skip-if-absent — never inserted, because getting scope
+// placement wrong (worker_connections must be inside events{}, etc.) on an
+// unusual nginx.conf could break the whole config. Debian/Ubuntu stock
+// nginx.conf ships server_tokens/gzip/worker_* so those always apply;
+// keepalive_timeout is occasionally absent, in which case it silently no-ops
+// (nginx's built-in default stands). Returns new bytes + whether anything
+// changed.
+func patchNginxMainConf(conf []byte, p *nginxTunablesApplyParams) ([]byte, bool) {
 	if len(conf) == 0 {
 		return conf, false
 	}
-	out := string(conf)
+	s := string(conf)
 	changed := false
-
-	if workerProcesses != "" {
-		re := regexp.MustCompile(`(?m)^([ \t]*)worker_processes[ \t]+[^;]+;`)
-		if loc := re.FindStringSubmatchIndex(out); loc != nil {
-			repl := re.ReplaceAllString(out, fmt.Sprintf("${1}worker_processes %s;", workerProcesses))
-			if repl != out {
-				out = repl
-				changed = true
-			}
+	set := func(name, value string) {
+		if value == "" {
+			return
+		}
+		if ns, c := setDirectiveFirst(s, name, value); c {
+			s = ns
+			changed = true
 		}
 	}
-	if workerConnections > 0 {
-		re := regexp.MustCompile(`(?m)^([ \t]*)worker_connections[ \t]+[^;]+;`)
-		if loc := re.FindStringSubmatchIndex(out); loc != nil {
-			repl := re.ReplaceAllString(out, fmt.Sprintf("${1}worker_connections %d;", workerConnections))
-			if repl != out {
-				out = repl
-				changed = true
-			}
-		}
+	set("worker_processes", p.WorkerProcesses)
+	if p.WorkerConnections > 0 {
+		set("worker_connections", fmt.Sprintf("%d", p.WorkerConnections))
 	}
-	return []byte(out), changed
+	set("server_tokens", boolOnOff(p.ServerTokens))
+	set("gzip", boolOnOff(p.Gzip))
+	set("keepalive_timeout", p.KeepaliveTimeout)
+	return []byte(s), changed
 }
 
-// BuildNginxTunablesFragment renders the http{}-scope fragment. Pure +
+func boolOnOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+// setDirectiveFirst replaces the value of the first line declaring `name`,
+// preserving its leading indentation (capture ${1}) and stopping the match at
+// the first `;` so any trailing comment (e.g. "server_tokens off; # ...") is
+// left intact — which makes a default-value save a true no-op. Returns the
+// new string + whether it changed. A directive that isn't present is left
+// untouched (changed=false). Go's regexp has no ReplaceFirst, so we splice by
+// submatch index.
+func setDirectiveFirst(conf, name, value string) (string, bool) {
+	re := regexp.MustCompile(`(?m)^([ \t]*)` + regexp.QuoteMeta(name) + `[ \t][^;\n]*;`)
+	loc := re.FindStringSubmatchIndex(conf)
+	if loc == nil {
+		return conf, false
+	}
+	newSeg := string(re.ExpandString(nil, "${1}"+name+" "+value+";", conf, loc))
+	out := conf[:loc[0]] + newSeg + conf[loc[1]:]
+	return out, out != conf
+}
+
+// BuildNginxTunablesFragment renders the http{}-scope fragment of
+// genuinely-additive directives (those NOT in stock nginx.conf). Pure +
 // deterministic so the idempotent read-compare in the handler works.
+// server_tokens / gzip / keepalive_timeout are intentionally NOT here — they
+// live in nginx.conf and are patched there (see patchNginxMainConf).
 func BuildNginxTunablesFragment(p *nginxTunablesApplyParams) string {
 	var b strings.Builder
 	b.WriteString("# Auto-generated by jabali — do not edit.\n")
@@ -242,19 +243,6 @@ func BuildNginxTunablesFragment(p *nginxTunablesApplyParams) string {
 
 	if p.ClientMaxBodySize != "" {
 		fmt.Fprintf(&b, "client_max_body_size %s;\n", p.ClientMaxBodySize)
-	}
-	if p.KeepaliveTimeout != "" {
-		fmt.Fprintf(&b, "keepalive_timeout %s;\n", p.KeepaliveTimeout)
-	}
-	if p.ServerTokens {
-		b.WriteString("server_tokens on;\n")
-	} else {
-		b.WriteString("server_tokens off;\n")
-	}
-	if p.Gzip {
-		b.WriteString("gzip on;\n")
-	} else {
-		b.WriteString("gzip off;\n")
 	}
 	if p.ClientBodyTimeout != "" {
 		fmt.Fprintf(&b, "client_body_timeout %s;\n", p.ClientBodyTimeout)
@@ -285,11 +273,8 @@ func BuildNginxTunablesFragment(p *nginxTunablesApplyParams) string {
 }
 
 func validateNginxTunables(p *nginxTunablesApplyParams) error {
-	sizes := map[string]string{"client_max_body_size": p.ClientMaxBodySize}
-	for name, v := range sizes {
-		if v != "" && !nginxSizeRe.MatchString(v) {
-			return fmt.Errorf("%s: invalid nginx size %q", name, v)
-		}
+	if p.ClientMaxBodySize != "" && !nginxSizeRe.MatchString(p.ClientMaxBodySize) {
+		return fmt.Errorf("client_max_body_size: invalid nginx size %q", p.ClientMaxBodySize)
 	}
 	times := map[string]string{
 		"keepalive_timeout":     p.KeepaliveTimeout,
