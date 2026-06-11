@@ -74,6 +74,7 @@ func newRootCmd() *cobra.Command {
 	adminCmd.AddCommand(newAdminRebuildKratosCmd())
 	adminCmd.AddCommand(newAdminBackfillUsernamesCmd())
 	adminCmd.AddCommand(newAdminRelabelIdentifiersCmd())
+	adminCmd.AddCommand(newAdminPurgeOrphanIdentitiesCmd())
 
 	cmd.AddCommand(
 		newServeCmd(),
