@@ -11,8 +11,8 @@
 // Snapshot taxonomy uses restic --tag so a per-app snapshot is
 // trivially queryable later:
 //
-//   docker-app, slug:<slug>, reason:manual | reason:pre-update,
-//   panel-managed
+//	docker-app, slug:<slug>, reason:manual | reason:pre-update,
+//	panel-managed
 package commands
 
 import (
@@ -109,8 +109,8 @@ type dockerAppBackupRow struct {
 }
 
 type dockerAppListBackupsResponse struct {
-	Slug     string               `json:"slug"`
-	Backups  []dockerAppBackupRow `json:"backups"`
+	Slug    string               `json:"slug"`
+	Backups []dockerAppBackupRow `json:"backups"`
 }
 
 func dockerAppListBackupsHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -189,12 +189,12 @@ type dockerAppRestoreResponse struct {
 // dockerAppRestoreHandler restores the per-app data tree from a
 // restic snapshot. Sequence:
 //
-//   1. docker compose down  — container must not be writing volumes
-//      mid-restore.
-//   2. restic restore <id> --target /var/lib/jabali/docker-apps/<slug>
-//      with --include trimmed to the slug subtree.
-//   3. docker compose up -d  — bring the app back up on the restored
-//      state.
+//  1. docker compose down  — container must not be writing volumes
+//     mid-restore.
+//  2. restic restore <id> --target /var/lib/jabali/docker-apps/<slug>
+//     with --include trimmed to the slug subtree.
+//  3. docker compose up -d  — bring the app back up on the restored
+//     state.
 //
 // On failure we leave the operator with whatever state restic landed
 // in; the runbook covers manual recovery.
@@ -235,7 +235,7 @@ func dockerAppRestoreHandler(ctx context.Context, params json.RawMessage) (any, 
 	if out, err := runDockerCompose(ctx, dir, "up", "-d"); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("docker compose up failed after restore: %v", err),
+			Message: composeFailMessage("up -d (after restore)", out, err),
 			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
 		}
 	}
