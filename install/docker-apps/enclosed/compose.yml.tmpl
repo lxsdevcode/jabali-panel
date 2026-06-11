@@ -1,0 +1,28 @@
+services:
+  enclosed:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      # Absolute base URL so shared note links + QR codes are correct.
+      BASE_URL: "https://{{ .Domain }}"
+{{- range $name, $val := .Env }}
+      {{ $name }}: "{{ $val }}"
+{{- end }}
+    volumes:
+      - {{ .DataRoot }}/data:/app/.data
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8787/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
