@@ -3142,12 +3142,17 @@ RESOLVEDEOF
     _die "recursor→public chain broken (dig @127.0.0.1 deb.debian.org failed after 8 retries). Check recursor logs."
   fi
 
-  # Probe 3: drop-in merge sanity. resolvectl MUST show DNS Servers:
-  # with 127.0.0.1 only. If jabali.conf's DNS=1.1.1.1 9.9.9.9 bleeds
-  # through, the man-page claim about DNS= reset semantics doesn't hold
-  # on this system — abort so the operator can switch to the fallback
-  # (consolidate jabali.conf into zz-jabali-recursor.conf) per the
-  # M6.3 plan.
+  # Probe 3: drop-in merge sanity (ADVISORY, non-fatal). resolvectl SHOULD
+  # show the global DNS server as 127.0.0.1 only. If jabali.conf's
+  # DNS=1.1.1.1 9.9.9.9 bleeds through, the man-page claim about DNS= reset
+  # semantics doesn't hold on this system — but Probes 1+2 above ALREADY
+  # proved the resolved->recursor->public chain works end-to-end via dig, so
+  # this is a _warn, never a _die: a cosmetic resolvectl-format mismatch must
+  # not abort an otherwise-healthy install. (It used to _die and bit real
+  # hosts — per-link "DNS Servers:" line ordering, SIGPIPE, dormant D-Bus.)
+  # The fallback (consolidate jabali.conf into zz-jabali-recursor.conf) stays
+  # documented in the M6.3 plan for operators who hit actual self-resolution
+  # problems.
   #
   # Requires D-Bus. On minimal LXC/OpenVZ VPS images dbus is installed
   # but dbus.socket is dormant — `resolvectl` then dies with
@@ -3166,21 +3171,30 @@ RESOLVEDEOF
     # systemd 257 / resolvectl ~258.3. The `|| true` keeps the assignment
     # happy; the subsequent `case` on $dns_servers is the real gate.
     local dns_servers
-    dns_servers="$(resolvectl status 2>/dev/null | awk '/^ *DNS Servers:/{sub(/^ *DNS Servers: */,""); print; exit}')" || true
+    # Read the GLOBAL merged resolver view deterministically. `resolvectl dns`
+    # prints a single "Global:" line — that's the global scope. We do NOT key
+    # off the first "DNS Servers:" line in `resolvectl status`, because that
+    # output also lists per-interface views (e.g. "DNS Servers: 1.1.1.1 fe80::1")
+    # and the first match isn't guaranteed to be the global one — the original
+    # cause of spurious aborts on healthy hosts. `|| true` guards the set -e +
+    # pipefail + SIGPIPE interaction (awk's exit closes stdout before resolvectl
+    # finishes writing; saw exit 141 on systemd 257 / resolvectl ~258.3).
+    dns_servers="$(resolvectl dns 2>/dev/null | awk '/^Global:/{$1=""; sub(/^[[:space:]]+/,""); print; exit}')" || true
     if [[ -z "$dns_servers" ]]; then
-      # Older systemd: "Current DNS Server:" one-liner, or global-only view.
-      # Fall back to `resolvectl dns` which returns the merged list.
-      dns_servers="$(resolvectl dns 2>/dev/null | awk '/^Global:/{print $2; exit}')" || true
+      # Fallback for systemd versions whose `resolvectl dns` omits Global:.
+      dns_servers="$(resolvectl status 2>/dev/null | awk '/^[[:space:]]*Global/{f=1} f&&/DNS Servers:/{sub(/^.*DNS Servers:[[:space:]]*/,""); print; exit}')" || true
     fi
-    # Accept "127.0.0.1" exactly, OR "127.0.0.1 127.0.0.1" (some systemd
-    # versions list per-interface views that repeat the loopback line).
-    # Reject anything else — any 1.1.1.1 / 9.9.9.9 / interface-upstream
-    # in the DNS Servers line means our reset didn't take globally.
+    # Expected: 127.0.0.1 only (the recursor), optionally repeated. Anything
+    # else (1.1.1.1 / 9.9.9.9 / an interface upstream) means the
+    # zz-jabali-recursor.conf reset didn't take globally — WARN, do not die:
+    # Probes 1+2 already verified the chain functionally via dig.
     case "$dns_servers" in
-      "127.0.0.1"|"127.0.0.1 127.0.0.1") : ;;
-      *) _die "resolvectl shows DNS Servers='$dns_servers' — expected '127.0.0.1' only. zz-jabali-recursor.conf merge isn't producing the expected state; see plans/m6.3-pdns-recursor.md §Step 2 fallback (consolidate jabali.conf into zz-jabali-recursor.conf; panel UI edits FallbackDNS= instead of DNS=)." ;;
+      "127.0.0.1"|"127.0.0.1 127.0.0.1")
+        _ok "pdns-recursor running on 127.0.0.1:53 — stub + recursor + public chain verified" ;;
+      *)
+        _warn "resolvectl global DNS='${dns_servers:-<unreadable>}' (expected '127.0.0.1'); the dig probes above already confirmed resolved->recursor->public works, so continuing. If panel-zone self-resolution misbehaves later, see plans/m6.3-pdns-recursor.md §Step 2 fallback (consolidate jabali.conf into zz-jabali-recursor.conf; panel UI edits FallbackDNS= instead of DNS=)."
+        _ok "pdns-recursor running on 127.0.0.1:53 — dig chain verified (resolvectl global view differs; warned, not fatal)" ;;
     esac
-    _ok "pdns-recursor running on 127.0.0.1:53 — stub + recursor + public chain verified"
   else
     _warn "skipping resolvectl drop-in merge check (no D-Bus); chain verified via dig only"
     _ok "pdns-recursor running on 127.0.0.1:53 — dig probes passed (resolvectl skipped)"
