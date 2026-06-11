@@ -107,7 +107,7 @@ type userHandler struct{ cfg UserHandlerConfig }
 // ---------- request / response shapes ----------
 
 type createUserRequest struct {
-	Email         string  `json:"email"                    binding:"required,email"`
+	Email         string  `json:"email"                    binding:"omitempty,email"`
 	Password      string  `json:"password"                 binding:"required,min=10"`
 	Username      *string `json:"username,omitempty"       binding:"omitempty,min=1,max=32"`
 	NameFirst     string  `json:"name_first"`

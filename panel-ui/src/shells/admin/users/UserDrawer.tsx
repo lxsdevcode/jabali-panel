@@ -130,13 +130,10 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
           onFinish={handleFinish}
         >
           <Form.Item
-            label="Email"
+            label="Email (optional)"
             name="email"
-            tooltip="Contact email. May be shared across accounts — it is not used for login."
-            rules={[
-              { required: true, message: "Email is required" },
-              { type: "email", message: "Must be a valid email" },
-            ]}
+            tooltip="Contact email. Optional — usernames are the login since M54. May be shared across accounts."
+            rules={[{ type: "email", message: "Must be a valid email" }]}
           >
             <Input autoComplete={isEdit ? "email" : "off"} />
           </Form.Item>
@@ -185,11 +182,13 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
             <PasswordInput autoComplete="new-password" />
           </Form.Item>
 
-          <Form.Item label="First name" name="name_first" rules={[noXSS, maxLen(64)]}>
-            <Input />
-          </Form.Item>
-          <Form.Item label="Last name" name="name_last" rules={[noXSS, maxLen(64)]}>
-            <Input />
+          <Form.Item
+            label="Name"
+            name="name_first"
+            tooltip="Display name — a person or a company name."
+            rules={[noXSS, maxLen(100)]}
+          >
+            <Input placeholder="Person or company name" />
           </Form.Item>
 
           <Form.Item
