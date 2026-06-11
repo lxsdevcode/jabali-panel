@@ -25,6 +25,7 @@ type SSLHandlerConfig struct {
 	Domains        repository.DomainRepository
 	SSLCerts       repository.SSLCertificateRepository
 	PanelCerts     repository.PanelCertificateRepository
+	MailCerts      repository.MailCertificateRepository
 	ServerSettings repository.ServerSettingsRepository
 	Reconciler     SSLScheduler
 	Config         *config.Config
@@ -362,6 +363,16 @@ func (h *sslHandler) listAllSSL(c *gin.Context) {
 		certs = append(panelCertSyntheticRows(ctx, h.cfg), certs...)
 	}
 
+	// Per-domain mail certs (mail_certificate table, M6.6) live separately
+	// from ssl_certificates. Surface them here as "mail-cert:<domainID>" rows
+	// so the SSL Manager shows + can reissue every cert the panel manages
+	// (GH#132: tenants couldn't find/reissue the mail cert anywhere).
+	if h.cfg.MailCerts != nil {
+		if mailRows, err := h.cfg.MailCerts.ListWithDomain(ctx); err == nil {
+			certs = append(certs, mailRows...)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"items": certs})
 }
 
@@ -424,6 +435,14 @@ func (h *sslHandler) listUserSSL(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
+	}
+
+	// Per-domain mail certs the caller owns, projected as "mail-cert:<id>"
+	// rows so they appear (+ are reissuable) in the user SSL Manager (GH#132).
+	if h.cfg.MailCerts != nil {
+		if mailRows, err := h.cfg.MailCerts.ListWithDomainByUser(c.Request.Context(), claims.UserID); err == nil {
+			certs = append(certs, mailRows...)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": certs})

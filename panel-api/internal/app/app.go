@@ -681,6 +681,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:        deps.Domains,
 				SSLCerts:       deps.SSLCerts,
 				PanelCerts:     deps.PanelCerts,
+				MailCerts:      deps.MailCerts,
 				ServerSettings: deps.ServerSettings,
 				Reconciler:     deps.Reconciler,
 				Config:         cfg,

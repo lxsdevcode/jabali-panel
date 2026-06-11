@@ -16,6 +16,11 @@ import (
 // (plans/m6.6-per-domain-mail-tls.md) + ADR-0091.
 type MailCertificateRepository interface {
 	GetByDomain(ctx context.Context, domainID string) (*models.MailCertificate, error)
+	// ListWithDomain / ListWithDomainByUser project non-disabled mail certs as
+	// SSLCertificateWithDomain rows so they render in the SSL Manager next to
+	// website certs (id="mail-cert:<domainID>", domain_name="mail.<domain>").
+	ListWithDomain(ctx context.Context) ([]SSLCertificateWithDomain, error)
+	ListWithDomainByUser(ctx context.Context, userID string) ([]SSLCertificateWithDomain, error)
 	List(ctx context.Context) ([]*models.MailCertificate, error)
 	EnsureForDomain(ctx context.Context, domainID string) (*models.MailCertificate, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
@@ -46,6 +51,46 @@ func (r *mailCertRepo) GetByDomain(ctx context.Context, domainID string) (*model
 		return nil, translate(err)
 	}
 	return &c, nil
+}
+
+// mailCertSSLCols projects mail_certificate (joined with domains + users) into
+// the SSLCertificateWithDomain shape used by the SSL Manager. Synthetic id +
+// "mail." hostname mark it as a per-domain mail cert; renewal_count/staging/
+// last_renewed_at have no mail-cert analogue and stay zero.
+const mailCertSSLCols = `CONCAT('mail-cert:', mc.domain_id) as id, mc.domain_id, ` +
+	`CONCAT('mail.', d.name) as domain_name, d.user_id, u.username as user_username, ` +
+	`mc.status, mc.issued_at, mc.expires_at, mc.last_error, mc.updated_at as last_attempt_at`
+
+func (r *mailCertRepo) ListWithDomain(ctx context.Context) ([]SSLCertificateWithDomain, error) {
+	var out []SSLCertificateWithDomain
+	err := r.db.WithContext(ctx).
+		Select(mailCertSSLCols).
+		Table("mail_certificate mc").
+		Joins("JOIN domains d ON mc.domain_id = d.id").
+		Joins("JOIN users u ON d.user_id = u.id").
+		Where("mc.status <> ?", models.MailCertStatusDisabled).
+		Order("mc.updated_at DESC").
+		Scan(&out).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	return out, nil
+}
+
+func (r *mailCertRepo) ListWithDomainByUser(ctx context.Context, userID string) ([]SSLCertificateWithDomain, error) {
+	var out []SSLCertificateWithDomain
+	err := r.db.WithContext(ctx).
+		Select(mailCertSSLCols).
+		Table("mail_certificate mc").
+		Joins("JOIN domains d ON mc.domain_id = d.id").
+		Joins("JOIN users u ON d.user_id = u.id").
+		Where("d.user_id = ? AND mc.status <> ?", userID, models.MailCertStatusDisabled).
+		Order("mc.updated_at DESC").
+		Scan(&out).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	return out, nil
 }
 
 func (r *mailCertRepo) List(ctx context.Context) ([]*models.MailCertificate, error) {

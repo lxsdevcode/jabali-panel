@@ -203,6 +203,21 @@ export const SSLManagerTable = ({
     },
   });
 
+  // Reissue mutation for per-domain mail certs (mail-cert:<domainID> rows).
+  // Hits the mail-certificate endpoint, NOT the website-cert retry/renew.
+  const reissueMailMutation = useMutation({
+    mutationFn: async (domainId: string) => {
+      await apiClient.post(`/domains/${domainId}/mail-certificate/reissue`);
+    },
+    onSuccess: () => {
+      message.success("Mail certificate reissue queued");
+      queryClient.invalidateQueries({ queryKey: ["ssl-manager", endpoint] });
+    },
+    onError: () => {
+      message.error("Failed to reissue mail certificate");
+    },
+  });
+
   if (error) {
     return (
       <Empty
@@ -343,6 +358,22 @@ export const SSLManagerTable = ({
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               Manage in Server Settings &rarr; Panel SSL
             </Typography.Text>
+          );
+        }
+        // Per-domain mail cert (mail_certificate table) — only a Reissue
+        // action applies (the website-cert retry/renew/revoke endpoints don't
+        // exist for it). GH#132.
+        if (record.id.startsWith("mail-cert:")) {
+          return (
+            <Tooltip title="Clears backoff and reissues the Let's Encrypt mail certificate">
+              <Button
+                icon={<RedoOutlined />}
+                loading={reissueMailMutation.isPending}
+                onClick={() => reissueMailMutation.mutate(record.domain_id)}
+              >
+                Reissue
+              </Button>
+            </Tooltip>
           );
         }
         const isRetryable = record.status === "failed" ||
