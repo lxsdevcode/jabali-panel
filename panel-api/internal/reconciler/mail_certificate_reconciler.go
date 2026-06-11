@@ -14,13 +14,13 @@ import (
 // domain that has opted in to per-domain mail TLS (mail_certificate
 // row exists), drive the state machine:
 //
-//   pending      → dispatch ssl.mail.issue immediately.
-//   dns_missing  → re-check at most every hour.
-//   failed       → 3h backoff (next_retry_at gate) then retry.
-//   issuing      → no-op; the in-flight call writes the terminal
-//                  state. Watchdog timeout in step 5b if added later.
-//   issued       → renew when <30d to expiry.
-//   disabled     → operator opted out; skip.
+//	pending      → dispatch ssl.mail.issue immediately.
+//	dns_missing  → re-check at most every hour.
+//	failed       → 3h backoff (next_retry_at gate) then retry.
+//	issuing      → no-op; the in-flight call writes the terminal
+//	               state. Watchdog timeout in step 5b if added later.
+//	issued       → renew when <30d to expiry.
+//	disabled     → operator opted out; skip.
 //
 // Per-tenant LE rate-limit guard lives in step 7.
 func (r *Reconciler) reconcileMailCertificates(ctx context.Context) {
@@ -45,8 +45,29 @@ func (r *Reconciler) reconcileMailCertificates(ctx context.Context) {
 				if !d.EmailEnabled {
 					continue
 				}
+				// The panel primary domain's mail TLS (mail.<panel-hostname>) is
+				// owned by the panel certificate (panel_certificate kind=mail,
+				// M32/M6.4). A per-domain mail_certificate for it would double-
+				// issue LE for the same SAN and surface a duplicate SSL Manager
+				// row (the panel synthetic row already covers it). Skip it.
+				if d.IsPanelPrimary {
+					continue
+				}
 				if _, err := r.mailCerts.EnsureForDomain(ctx, d.ID); err != nil {
 					r.log.Warn("mail-cert backfill EnsureForDomain failed", "domain_id", d.ID, "error", err)
+				}
+			}
+		}
+
+		// Prune any redundant per-domain mail cert an earlier build created for
+		// the panel primary domain (before the skip above existed). The panel
+		// cert covers mail.<panel-hostname>, so this row is pure duplication.
+		if primary, perr := r.domains.FindPanelPrimary(ctx); perr == nil && primary != nil {
+			if existing, gerr := r.mailCerts.GetByDomain(ctx, primary.ID); gerr == nil && existing != nil {
+				if derr := r.mailCerts.Delete(ctx, existing.ID); derr == nil {
+					r.log.Info("mail-cert reconcile: pruned redundant per-domain mail cert for panel primary domain (panel cert owns mail.<hostname>)", "domain", primary.Name)
+				} else {
+					r.log.Warn("mail-cert reconcile: failed to prune panel-primary mail cert", "domain", primary.Name, "error", derr)
 				}
 			}
 		}
@@ -162,11 +183,11 @@ func (r *Reconciler) reconcileOneMailCert(ctx context.Context, row *models.MailC
 		return
 	}
 	var resp struct {
-		Outcome     string    `json:"outcome"`
-		LineagePath string    `json:"lineage_path"`
-		IssuedAt    string    `json:"issued_at"`
-		ExpiresAt   string    `json:"expires_at"`
-		Detail      string    `json:"detail"`
+		Outcome     string `json:"outcome"`
+		LineagePath string `json:"lineage_path"`
+		IssuedAt    string `json:"issued_at"`
+		ExpiresAt   string `json:"expires_at"`
+		Detail      string `json:"detail"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		_ = r.mailCerts.MarkFailed(ctx, row.ID, "parse ssl.mail.issue response: "+err.Error(), 3*time.Hour)

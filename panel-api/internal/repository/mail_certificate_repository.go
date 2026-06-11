@@ -68,7 +68,7 @@ func (r *mailCertRepo) ListWithDomain(ctx context.Context) ([]SSLCertificateWith
 		Table("mail_certificate mc").
 		Joins("JOIN domains d ON mc.domain_id = d.id").
 		Joins("JOIN users u ON d.user_id = u.id").
-		Where("mc.status <> ?", models.MailCertStatusDisabled).
+		Where("mc.status <> ? AND d.is_panel_primary = 0", models.MailCertStatusDisabled).
 		Order("mc.updated_at DESC").
 		Scan(&out).Error
 	if err != nil {
@@ -84,7 +84,7 @@ func (r *mailCertRepo) ListWithDomainByUser(ctx context.Context, userID string) 
 		Table("mail_certificate mc").
 		Joins("JOIN domains d ON mc.domain_id = d.id").
 		Joins("JOIN users u ON d.user_id = u.id").
-		Where("d.user_id = ? AND mc.status <> ?", userID, models.MailCertStatusDisabled).
+		Where("d.user_id = ? AND mc.status <> ? AND d.is_panel_primary = 0", userID, models.MailCertStatusDisabled).
 		Order("mc.updated_at DESC").
 		Scan(&out).Error
 	if err != nil {
