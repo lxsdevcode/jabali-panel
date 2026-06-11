@@ -24,10 +24,10 @@ type Result struct {
 
 // Runner manages certbot operations.
 type Runner struct {
-	Binary   string
-	OpenSSL  string
-	Env      []string
-	LERoot   string
+	Binary  string
+	OpenSSL string
+	Env     []string
+	LERoot  string
 }
 
 // NewRunner creates a default certbot runner.
@@ -95,6 +95,13 @@ func (r *Runner) Issue(domain, webroot, email string, staging bool, extraHostnam
 
 	err := cmd.Run()
 	stderrText := stderr.String()
+	// certbot may print the actionable failure block ("Domain:/Type:/Detail:")
+	// to EITHER stdout or stderr depending on version + auth plugin. Classify
+	// and surface from the combined stream so the real reason isn't lost when
+	// it lands on stdout (GH#132: a fresh install still showed only "exit
+	// status 1" because we only looked at stderr and the caller then discarded
+	// even that).
+	combinedOutput := stdout.String() + "\n" + stderrText
 	// certbot prints these to stdout when --keep-until-expiring finds an
 	// existing cert that is still valid: nothing was renewed, so the
 	// on-disk cert (and whatever is already deployed) is unchanged. The
@@ -117,14 +124,14 @@ func (r *Runner) Issue(domain, webroot, email string, staging bool, extraHostnam
 	// Classify the error if present
 	reason := ""
 	if err != nil {
-		reason = classifyStderr([]byte(stderrText))
+		reason = classifyStderr([]byte(combinedOutput))
 	}
 
 	// Try to read the cert regardless of error — certbot may partially succeed
 	cert, certErr := r.readCert(domain)
 	if err != nil && certErr != nil {
 		// Both issue and read failed
-		stderrTail := truncateStderr(stderrText, 4096)
+		stderrTail := truncateStderr(combinedOutput, 4096)
 		return &Result{
 			Reason: reason,
 			Stderr: stderrTail,
@@ -133,7 +140,7 @@ func (r *Runner) Issue(domain, webroot, email string, staging bool, extraHostnam
 
 	if certErr != nil {
 		// Issue succeeded (no error), but we can't read the cert
-		stderrTail := truncateStderr(stderrText, 4096)
+		stderrTail := truncateStderr(combinedOutput, 4096)
 		return &Result{
 			Reason: "unknown",
 			Stderr: stderrTail,
@@ -350,7 +357,7 @@ func classifyStderr(stderr []byte) string {
 
 	patterns := map[string]string{
 		"404.*Not Found|Fetching|webroot unreachable": "webroot_unreachable",
-		"too many certificates already issued":       "rate_limited",
+		"too many certificates already issued":        "rate_limited",
 		"DNS problem.*NXDOMAIN":                       "dns_resolve_failed",
 		"Invalid email address":                       "invalid_email",
 		"Permission denied":                           "permission_denied",
@@ -373,7 +380,6 @@ func truncateStderr(stderr string, maxBytes int) string {
 	// Keep the last maxBytes characters (the tail)
 	return stderr[len(stderr)-maxBytes:]
 }
-
 
 // ExtractActionableDetail pulls the "Domain: X / Type: Y / Detail: Z"
 // block certbot prints right before "Some challenges have failed."
@@ -402,4 +408,32 @@ func ExtractActionableDetail(stderr string) string {
 		}
 	}
 	return strings.Join(out, " | ")
+}
+
+// RawErrorTail returns the last up-to-n non-empty, non-noise lines of certbot's
+// output, joined with " | ". Used as the fallback when ExtractActionableDetail
+// finds no structured Domain:/Detail: block — so the operator still sees the
+// real certbot error (e.g. a rate-limit URL, a plugin error, an unexpected
+// traceback) instead of a bare "exit status 1". GH#132.
+func RawErrorTail(output string, n int) string {
+	if n <= 0 {
+		n = 6
+	}
+	lines := strings.Split(output, "\n")
+	var kept []string
+	for _, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if t == "" {
+			continue
+		}
+		// Drop certbot's boilerplate framing so the tail is signal, not dashes.
+		if strings.HasPrefix(t, "- - -") || strings.HasPrefix(t, "* * *") {
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if len(kept) > n {
+		kept = kept[len(kept)-n:]
+	}
+	return strings.Join(kept, " | ")
 }

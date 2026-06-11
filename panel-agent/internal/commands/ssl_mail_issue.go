@@ -252,10 +252,19 @@ func sslMailIssueHandler(ctx context.Context, params json.RawMessage) (any, erro
 		// ssl.panel.issue (GH #132).
 		detail := firstMailErrLine(err.Error())
 		if res != nil {
+			reason := res.Reason
+			if reason == "" {
+				reason = "unknown"
+			}
 			if actionable := certbot.ExtractActionableDetail(res.Stderr); actionable != "" {
-				detail = fmt.Sprintf("certbot issue failed (%s): %s", res.Reason, actionable)
+				detail = fmt.Sprintf("certbot issue failed (%s): %s", reason, actionable)
+			} else if tail := certbot.RawErrorTail(res.Stderr, 6); tail != "" {
+				// No structured Domain:/Detail: block matched — surface the raw
+				// certbot output tail so last_error carries the real reason
+				// instead of a bare "exit status 1" (GH#132).
+				detail = fmt.Sprintf("certbot issue failed (%s): %s", reason, tail)
 			} else if res.Reason != "" {
-				detail = fmt.Sprintf("certbot issue failed (%s): %s", res.Reason, detail)
+				detail = fmt.Sprintf("certbot issue failed (%s): %s", reason, detail)
 			}
 		}
 		return sslMailIssueResponse{
