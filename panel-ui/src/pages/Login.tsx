@@ -64,6 +64,15 @@ export const LoginPage = () => {
   const [loadingFlow, setLoadingFlow] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
 
+  // GH#177: Kratos is same-origin — login cookies, CSRF tokens, and allowed
+  // return URLs are all bound to the panel hostname. Signing in over the raw
+  // server IP can't complete the flow and surfaces a generic
+  // "could not reach identity service". Detect IP-host access and steer the
+  // operator to the hostname.
+  const isIPHost =
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(window.location.hostname) ||
+    window.location.hostname.includes(":");
+
   useEffect(() => {
     let cancelled = false;
     // Re-hydrate an existing flow when Kratos redirected here with
@@ -197,6 +206,15 @@ export const LoginPage = () => {
               Jabali Panel
             </Typography.Title>
           </div>
+
+          {isIPHost && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Log in using your hostname, not the IP"
+              description="The identity provider is bound to the panel hostname, so signing in over the server IP address won't work. Open the panel by its hostname (the URL shown after install) and try again."
+            />
+          )}
 
           {initError && (
             <Alert title={initError} type="error" showIcon />
