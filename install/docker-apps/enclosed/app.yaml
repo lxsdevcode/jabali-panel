@@ -1,0 +1,35 @@
+slug: enclosed
+name: Enclosed
+version: "latest"
+description: |
+  Minimalist, open-source web app for sending private and encrypted
+  notes and files. Zero-knowledge: content is end-to-end encrypted in
+  the browser before upload, with optional password, expiration, and
+  read-once (burn-after-reading). Single container, filesystem storage
+  by default — no external database.
+icon: icon.svg
+upstream: https://github.com/CorentinTh/enclosed
+documentation: https://docs.enclosed.cc
+
+# Stable tag; the panel pins the digest at install time and tracks
+# updates separately (update_mode: manual).
+image_channel: corentinth/enclosed:latest
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "256m"
+  pids: 200
+
+volumes:
+  - name: data
+    container_path: /app/.data
+
+ports:
+  - name: http
+    container_port: 8787
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
