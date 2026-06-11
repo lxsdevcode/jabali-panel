@@ -93,9 +93,17 @@ func sslIssueHandler(ctx context.Context, params json.RawMessage) (any, error) {
 			"stderr": result.Stderr,
 		})
 		actionable := certbot.ExtractActionableDetail(result.Stderr)
+		reason := result.Reason
+		if reason == "" {
+			reason = "unknown"
+		}
 		msg := fmt.Sprintf("certbot issue failed: %v", err)
 		if actionable != "" {
-			msg = fmt.Sprintf("certbot issue failed (%s): %s", result.Reason, actionable)
+			msg = fmt.Sprintf("certbot issue failed (%s): %s", reason, actionable)
+		} else if tail := certbot.RawErrorTail(result.Stderr, 6); tail != "" {
+			// No structured block matched — surface the raw certbot tail so the
+			// error isn't a bare "exit status 1" (GH#132).
+			msg = fmt.Sprintf("certbot issue failed (%s): %s", reason, tail)
 		}
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
