@@ -46,7 +46,7 @@ services:
       MARIADB_DATABASE: "owncloud"
       MARIADB_USER: "owncloud"
       MARIADB_PASSWORD: "{{ index .Env "MARIADB_PASSWORD" }}"
-    command: ["--max-allowed-packet=128M", "--innodb-log-file-size=64M"]
+    command: ["--max-allowed-packet=128M", "--innodb-log-file-size=64M", "--innodb-use-native-aio=0"]
     volumes:
       - {{ .DataRoot }}/db:/var/lib/mysql
     healthcheck:

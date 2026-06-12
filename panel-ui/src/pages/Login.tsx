@@ -217,7 +217,7 @@ export const LoginPage = () => {
           )}
 
           {initError && (
-            <Alert title={initError} type="error" showIcon />
+            <Alert message={initError} type="error" showIcon />
           )}
 
           {loadingFlow && !initError && (
@@ -253,7 +253,7 @@ function FlowForm({ flow, onFinish }: FlowFormProps) {
   if (!activeGroup) {
     return (
       <Alert
-        title="No credential method is currently configured for your account. Contact an administrator."
+        message="No credential method is currently configured for your account. Contact an administrator."
         type="warning"
         showIcon
       />
@@ -264,7 +264,7 @@ function FlowForm({ flow, onFinish }: FlowFormProps) {
   return (
     <>
       {topErrors.map((msg, i) => (
-        <Alert key={i} title={msg} type="error" showIcon />
+        <Alert key={i} message={msg} type="error" showIcon />
       ))}
       <GroupForm
         groupName={activeGroup}
