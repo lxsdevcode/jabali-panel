@@ -810,7 +810,6 @@ fi
 					// sudoers + mode files on every update. Idempotent.
 					"getent group jabali-ssh-sandbox >/dev/null || groupadd --system jabali-ssh-sandbox; "+
 					"install -d -m 0755 -o root -g root /etc/jabali /etc/jabali/users /var/lib/jabali-nspawn /var/lib/jabali-nspawn/images; "+
-					"install -m 0755 -o root -g root "+repoDir+"/install/ssh/jabali-ssh-shell /usr/local/bin/jabali-ssh-shell; "+
 					"install -m 0755 -o root -g root "+repoDir+"/install/ssh/jabali-nspawn-enter /usr/local/bin/jabali-nspawn-enter; "+
 					"visudo -cf "+repoDir+"/install/ssh/jabali-nspawn-sudoers >/dev/null && install -m 0440 -o root -g root "+repoDir+"/install/ssh/jabali-nspawn-sudoers /etc/sudoers.d/jabali-nspawn; "+
 					"[ -f /etc/jabali/ssh-sandbox-mode ] || { echo bubblewrap > /etc/jabali/ssh-sandbox-mode; chmod 0644 /etc/jabali/ssh-sandbox-mode; }; "+
@@ -1037,12 +1036,31 @@ test -x node_modules/.bin/tsc || {
 						"-o", repoDir+"/bin/jabali-agent.new", "./panel-agent/cmd/jabali-agent")
 				}()
 			}
+			// jabali-ssh-shell is a tiny binary built from the same
+			// panel-agent module; always rebuild it when buildSteps runs
+			// (this whole step is skipped on the fast-path no-op, so the
+			// cost is only paid on a real update). It is the single SSH
+			// login-shell wrapper across all install/update paths — the
+			// old install/ssh/jabali-ssh-shell bash script was retired in
+			// favour of this binary (filtered passwd + -c forwarding).
+			var sshShellErr error
+			if !agentSkip {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					sshShellErr = asUser(repoDir, goBin, "build", "-trimpath", "-ldflags", ldflagsAgent,
+						"-o", repoDir+"/bin/jabali-ssh-shell.new", "./panel-agent/cmd/jabali-ssh-shell")
+				}()
+			}
 			wg.Wait()
 			if apiErr != nil {
 				return fmt.Errorf("panel-api: %w", apiErr)
 			}
 			if agentErr != nil {
 				return fmt.Errorf("panel-agent: %w", agentErr)
+			}
+			if sshShellErr != nil {
+				return fmt.Errorf("jabali-ssh-shell: %w", sshShellErr)
 			}
 			// Persist the sha only on the side we just rebuilt; skipped
 			// side keeps its existing sha file untouched.
@@ -1075,6 +1093,13 @@ test -x node_modules/.bin/tsc || {
 					return err
 				}
 				_ = os.Remove(agentNew)
+			}
+			sshShellNew := repoDir + "/bin/jabali-ssh-shell.new"
+			if _, err := os.Stat(sshShellNew); err == nil {
+				if err := run("", "install", "-m", "0755", "-o", "root", "-g", "root", sshShellNew, "/usr/local/bin/jabali-ssh-shell"); err != nil {
+					return err
+				}
+				_ = os.Remove(sshShellNew)
 			}
 			// Idempotent ergonomic alias: `jabali` → `jabali-panel`.
 			// install.sh creates this on fresh installs; update.go refreshes it

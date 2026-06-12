@@ -5731,10 +5731,12 @@ install_ssh_sandbox() {
   install -d -m 0755 -o root -g root /var/lib/jabali-nspawn
   install -d -m 0755 -o root -g root /var/lib/jabali-nspawn/images
 
-  # Wrapper script — every hosting user's login shell.
-  install -m 0755 -o root -g root \
-    "$REPO_DIR/install/ssh/jabali-ssh-shell" \
-    /usr/local/bin/jabali-ssh-shell
+  # The login-shell wrapper (/usr/local/bin/jabali-ssh-shell) is the Go
+  # binary built + installed by install_ssh_sandbox_prereqs (and shipped
+  # in the release tarball / rebuilt by `jabali update`). The old bash
+  # script that used to be installed here was retired — it lacked SSH
+  # command (-c) forwarding (scp/git/rsync broke) and didn't filter
+  # /etc/passwd. Single source of truth = panel-agent/cmd/jabali-ssh-shell.
 
   # Sudo-bridged nspawn entry helper. Runs as root after sudoers gate.
   install -m 0755 -o root -g root \
