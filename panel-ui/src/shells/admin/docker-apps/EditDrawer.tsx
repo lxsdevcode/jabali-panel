@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
 
+import { useServerStatus } from "../../../hooks/useServerStatus";
 import { listCatalog, patchApp } from "./api";
 import { EnvSection } from "./EnvSection";
 import type { CatalogEntry, InstallPortOverride, InstalledApp } from "./types";
@@ -37,6 +38,18 @@ export const EditDrawer = ({ open, app, onClose }: Props) => {
   const qc = useQueryClient();
   const [form] = Form.useForm<FormValues>();
   const watchedDomain = Form.useWatch<string | undefined>("domain", form);
+  // Mirror the install drawer: surface the agent's silent host-core cap
+  // on the compose `cpus` limit so an edited value above the host count
+  // reads as effective-at-N, not invisibly clamped (GH#178).
+  const statusQ = useServerStatus({ enabled: open });
+  const hostCPUs = statusQ.data?.host?.cpu_count;
+  const watchedCPU = Form.useWatch<string | undefined>("cpu_limit", form);
+  const cpuCapNote = useMemo(() => {
+    if (!hostCPUs || !watchedCPU) return undefined;
+    const v = parseFloat(watchedCPU);
+    if (!Number.isFinite(v) || v <= hostCPUs) return undefined;
+    return `Capped to ${hostCPUs} on this host — only ${hostCPUs} core${hostCPUs === 1 ? "" : "s"} available.`;
+  }, [hostCPUs, watchedCPU]);
   const [ports, setPorts] = useState<PortRow[]>([]);
 
   const catalogQ = useQuery({ queryKey: ["docker-apps-catalog"], queryFn: listCatalog });
@@ -253,7 +266,7 @@ export const EditDrawer = ({ open, app, onClose }: Props) => {
         </Form.Item>
 
         <Space size="middle" style={{ width: "100%" }}>
-          <Form.Item label="CPU" name="cpu_limit" style={{ flex: 1 }}>
+          <Form.Item label="CPU" name="cpu_limit" style={{ flex: 1 }} extra={cpuCapNote}>
             <Input placeholder="0.5" />
           </Form.Item>
           <Form.Item label="Memory" name="memory_limit" style={{ flex: 1 }}>
