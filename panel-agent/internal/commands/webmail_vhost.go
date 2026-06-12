@@ -49,7 +49,7 @@ server {
 {{ end }}{{ if .ListenIPv6 }}  listen [{{.ListenIPv6}}]:443 ssl http2;
 {{ else }}  listen [::]:443 ssl http2;
 {{ end }}  # http2 folded into listen — legacy form, nginx>=1.9.5
-  server_name {{ if .IsPanelPrimary }}{{.DomainName}} {{ end }}mail.{{.DomainName}} autoconfig.{{.DomainName}};
+  server_name {{ if .IsPanelPrimary }}{{.DomainName}} {{ end }}mail.{{.DomainName}} autoconfig.{{.DomainName}} autodiscover.{{.DomainName}} mta-sts.{{.DomainName}};
 
   ssl_certificate {{.SSLCertPath}};
   ssl_certificate_key {{.SSLKeyPath}};
@@ -134,7 +134,7 @@ server {
 {{ else }}  listen 80;
 {{ end }}{{ if .ListenIPv6 }}  listen [{{.ListenIPv6}}]:80;
 {{ else }}  listen [::]:80;
-{{ end }}  server_name {{ if .IsPanelPrimary }}{{.DomainName}} {{ end }}mail.{{.DomainName}} autoconfig.{{.DomainName}};
+{{ end }}  server_name {{ if .IsPanelPrimary }}{{.DomainName}} {{ end }}mail.{{.DomainName}} autoconfig.{{.DomainName}} autodiscover.{{.DomainName}} mta-sts.{{.DomainName}};
 
   # ACME HTTP-01 webroot. Must be a location block — a server-level
   # redirect fires in nginx SERVER_REWRITE phase BEFORE FIND_CONFIG,

@@ -13,7 +13,7 @@
 
 server {
   ${LISTEN_443}
-  server_name mail.${DOMAIN};
+  server_name mail.${DOMAIN} autoconfig.${DOMAIN} autodiscover.${DOMAIN} mta-sts.${DOMAIN};
 
   ssl_certificate ${SSL_CERT_PATH};
   ssl_certificate_key ${SSL_KEY_PATH};
@@ -126,7 +126,7 @@ server {
 # stuck because mail.jabali.site:80 redirected to https → 404.
 server {
   ${LISTEN_80}
-  server_name mail.${DOMAIN};
+  server_name mail.${DOMAIN} autoconfig.${DOMAIN} autodiscover.${DOMAIN} mta-sts.${DOMAIN};
 
   # Serves two webroots in priority order so BOTH the regular
   # per-domain cert (-w docroot) and the M6.6 per-domain mail cert
