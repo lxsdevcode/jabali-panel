@@ -56,6 +56,14 @@ var BaseAllowedServices = []string{
 	// Identity (M20).
 	"jabali-kratos",
 	"pdns", // PowerDNS, not BIND — see ADR-0003
+	// Docker engine — present only on hosts running the M48 docker-app
+	// marketplace. Not jabali-managed beyond the app lifecycle, but the
+	// operator expects to see + control it when it's installed. The
+	// LoadState "not-found" filter hides it on hosts without Docker, so
+	// it's listed unconditionally rather than in optionalServices (which
+	// would also hide a stopped-but-installed engine the operator may
+	// want to Start).
+	"docker",
 	"jabali-panel",
 	"jabali-agent",
 	"ssh",  // Debian unit name for OpenSSH is ssh.service, not sshd.service
