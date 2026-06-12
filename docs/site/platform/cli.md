@@ -31,6 +31,7 @@ jabali admin sso reap                           # sweep orphan jabali-sso-*.php 
 jabali admin slice cutover                      # M9 per-user PHP pool slice cutover (one-time)
 jabali admin panel primary                      # set / show panel primary user
 jabali admin malware purge                      # purge quarantine
+jabali admin purge-orphan-identities             # delete Kratos identities with no panel user (frees stuck usernames)
 ```
 
 ## Users

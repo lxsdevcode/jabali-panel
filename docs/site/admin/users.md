@@ -45,6 +45,13 @@ jabali user delete <email>
 
 Direct-DB path (M20-safe); bypasses the HTTP layer, runs from the panel host.
 
+Deleting a user now removes its Kratos identity as well as the DB row and OS account, so the username and email free up immediately and the same user can be recreated. To clear an identity orphaned by an older build (a delete that left the identity behind, so recreate failed with "username taken"):
+
+```bash
+jabali admin purge-orphan-identities                       # dry-run, lists orphans
+jabali admin purge-orphan-identities --username <name> --apply
+```
+
 ## Audit
 
 Every action above writes an audit row: actor user, subject user, action, result. See [Audit Log](./audit.md).

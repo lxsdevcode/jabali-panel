@@ -11,6 +11,7 @@ Columns: domain, owner, status (`issued` / `pending` / `failed`), issued at, exp
 - **Retry** — schedules an immediate issuance or renewal via the agent. Useful after fixing a DNS misconfiguration.
 - **Force renewal** — bypasses certbot's "not yet due" check and renews now. Use sparingly to avoid Let's Encrypt rate limits.
 - **Revoke** — removes the certificate from the host and from `/etc/letsencrypt/live/<domain>`. The next request without SSL toggled on returns to the HTTP-only vhost.
+- **Reissue** (per-domain mail certificates only) — clears the backoff and re-requests the mail certificate. Mail-cert rows (shown as `mail.<domain>`) support only Reissue; the website-cert Retry / Force renewal / Revoke actions do not apply to them.
 
 ## Convergence model
 
@@ -27,6 +28,12 @@ Successful issuance typically completes within 60 seconds. Failures retry every 
 The panel itself uses a Let's Encrypt certificate for the configured panel hostname. The row appears at the top of the list, marked **Panel hostname**. The deploy hook reloads nginx, then the panel API, then Bulwark, in that order. A failure here falls back to a self-signed certificate to keep the UI reachable; the failure reason is visible on the row and on the Server Settings → General → Panel SSL card.
 
 See also: [Panel Certificate](./panel-certificate.md), [SSL](../ssl.md).
+
+## Per-domain mail certificates
+
+Domains with per-domain mail TLS enabled appear in the list as `mail.<domain>` rows, owned by the domain's owner, next to their website certificate. Each row shows the certificate status and last error and offers a **Reissue** action that re-requests the Let's Encrypt certificate Stalwart presents for `mail.<domain>` (SMTP/IMAP/submission). The panel's own mail hostname (`mail.<panel-hostname>`) is covered by the [Panel Certificate](./panel-certificate.md) and is not duplicated here.
+
+For the certbot HTTP-01 challenge to succeed, `mail.<domain>` must resolve to the server and port 80 must be reachable. The shared mail ACME webroot is `/var/www/jabali-acme` (provisioned by install.sh and on every `jabali update`).
 
 ## Rate limit visibility
 

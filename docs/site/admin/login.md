@@ -4,11 +4,13 @@
 
 ## Flow
 
-1. Email or username + password.
+1. Username + password. The **username** is the login identifier (M54); the email is not used to sign in.
 2. If TOTP 2FA is enrolled: redirect to [Two-Factor Challenge](./two-factor-challenge.md).
 3. Session cookie set; redirect to `/jabali-admin/dashboard`.
 
 Sessions are managed by **Kratos** (M20). The panel itself does not store passwords or session tokens.
+
+> **Log in via the panel hostname, not the server IP.** Kratos is same-origin — its login cookies, CSRF tokens, and allowed return URLs are bound to the panel hostname (FQDN), so opening the panel by raw IP fails the flow with "could not reach identity service". The login page shows a hint when you reach it by IP.
 
 ## First admin
 
