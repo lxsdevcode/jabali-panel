@@ -19,6 +19,20 @@
 
 See [Database Tuning](./database-tuning.md) for the per-key reference.
 
+## Nginx
+
+Server-wide nginx tunables (M55). Applied at `http{}` scope so they default for every site; individual vhosts may still override per-directive. Every change is validated with `nginx -t` and rolled back automatically if the test fails.
+
+- **Max upload size** (`client_max_body_size`) — largest request body nginx accepts before returning 413. Default `50m`. Raise it for big-upload apps (ownCloud, Nextcloud); this is also what lets reverse-proxied apps accept uploads.
+- **Show nginx version** (`server_tokens`) — off by default (hides the version from responses and error pages).
+- **Gzip compression** — on by default.
+- **Keepalive timeout**, **client body / header timeouts**, **send timeout** — slow-client tuning.
+- **Reverse-proxy timeouts** (`proxy_connect_timeout` / `proxy_read_timeout` / `proxy_send_timeout`) — defaults applied to every proxied app. Default `300s`.
+- **Worker processes / connections** — `worker_processes` and `worker_connections`, patched into `nginx.conf`.
+- **Advanced** — a free-form box for raw `http{}`-scope directives. Gated by `nginx -t` only; a syntactically valid but wrong directive can still destabilize the server, so it carries a red warning. Leave empty unless you know exactly what you are adding.
+
+Tunables persist to `server_settings` and are applied by the agent's `nginx.tunables.apply` verb: additive directives render into `/etc/nginx/conf.d/05-jabali-tunables.conf`, while the worker knobs and the directives nginx already ships in `nginx.conf` (`server_tokens`, `gzip`, `keepalive_timeout`) are patched in place.
+
 ## Mail
 
 - **Recovery sender** — the `From:` for Kratos password-recovery email.

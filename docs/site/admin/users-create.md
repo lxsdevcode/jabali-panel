@@ -4,9 +4,7 @@ Reached from **Users → Create User**. Single-form wizard that provisions every
 
 ## Required fields
 
-- **Username** — lowercase, alphanumeric plus `-` and `_`, 3–32 characters. Becomes the Linux account name, the PHP pool name, and the SFTP login.
-- **Email** — used for Kratos login and recovery email.
-- **Display name** — shown in the panel header.
+- **Username** — the login identifier (M54: you sign in with the username, not the email). Lowercase, alphanumeric plus `-` and `_`, 3–32 characters. Becomes the Linux account name, the PHP pool name, and the SFTP login.
 - **Role** — `user` (hosting customer) or `admin` (full operator access).
 - **Package** — selected from [Hosting Packages](./hosting-packages.md). Determines quotas and limits.
 - **Primary domain** — the first hosted domain for this user. Created in the same transaction.
@@ -14,12 +12,14 @@ Reached from **Users → Create User**. Single-form wizard that provisions every
 ## Optional fields
 
 - **Password** — leave blank to auto-generate (recommended). The generated password is displayed once on the success page and never stored in cleartext.
+- **Email** — optional contact address. Since usernames are the login, email is informational only; it may be shared across accounts and is not used to sign in. (There is no self-service password recovery — admins reset passwords.)
+- **Name** — a single display name shown in the panel header. Can be a person's name or a company name.
 - **Enable SFTP** — defaults to on; users without an SSH key cannot SFTP until they add one under SSH Keys.
-- **Send welcome email** — sends the credential to the user's email address via Stalwart.
+- **Send welcome email** — sends the credential to the user's email address via Stalwart (only if an email was provided).
 
 ## What happens at submit
 
-1. Validate uniqueness of username, email, and primary domain.
+1. Validate uniqueness of username and primary domain (email is not unique).
 2. Create the Kratos identity with the (generated or supplied) password.
 3. Insert the `users` row with package and quota links.
 4. Create the Linux account with `useradd -m -s /usr/sbin/nologin -G www-data,jabali-sftp`.
