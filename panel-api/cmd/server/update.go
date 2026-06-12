@@ -290,6 +290,24 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 					"true")
 			return nil
 		}},
+		{"ensure mail ACME webroot (/var/www/jabali-acme)", func() error {
+			// Per-domain mail certs serve /.well-known/acme-challenge/ from
+			// /var/www/jabali-acme — separate from the panel cert's
+			// /var/www/jabali-panel-acme. install.sh creates it only in
+			// main()/bootstrap_panel_acme_webroot, which `jabali update`
+			// does NOT run, so existing installs were missing it and EVERY
+			// mail cert failed certbot "webroot does not exist or is not a
+			// directory" (GH#132). Create it here in the PRELUDE so it lands
+			// on every update, including the fast-path "already up to date"
+			// no-op (buildSteps is skipped when last-built-sha == HEAD, and
+			// the agent isn't always restarted on a binary-only change).
+			// Idempotent: install -d is a no-op when the dir already exists.
+			return run("", "bash", "-c", `set -e
+WR=/var/www/jabali-acme
+[ -d "$WR" ] || install -d -m 0750 -o root -g www-data "$WR"
+chown root:www-data "$WR"
+chmod 0750 "$WR"`)
+		}},
 		{"git fetch + reset to origin/main", func() error {
 			// The VM is a deployment target, not a source of truth. Tracked-
 			// file drift (typical cause: operator `sed`/patches a file in
