@@ -76,7 +76,11 @@ func TestWebmailVhostApply_WritesAndReloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read vhost: %v", err)
 	}
-	if !strings.Contains(string(b), "server_name mail.example.com autoconfig.example.com;") {
+	// GH#132: server_name must cover every mail cert SAN hostname so
+	// certbot's HTTP-01 challenge for autodiscover/mta-sts resolves to
+	// this vhost (and its ACME webroot) instead of falling to nginx
+	// default and 404ing. mail + autoconfig + autodiscover + mta-sts.
+	if !strings.Contains(string(b), "server_name mail.example.com autoconfig.example.com autodiscover.example.com mta-sts.example.com;") {
 		t.Errorf("vhost missing server_name: %s", string(b))
 	}
 	if !strings.Contains(string(b), "/etc/letsencrypt/live/example.com/fullchain.pem") {
