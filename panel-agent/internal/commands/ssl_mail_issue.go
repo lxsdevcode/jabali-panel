@@ -227,17 +227,6 @@ func sslMailIssueHandler(ctx context.Context, params json.RawMessage) (any, erro
 		// /var/www/jabali-panel-acme.)
 		p.Webroot = "/var/www/jabali-acme"
 	}
-	// Ensure the webroot exists before certbot — install.sh provisions it on
-	// fresh installs, but existing installs (or a missed bootstrap) would hit
-	// "webroot does not exist or is not a directory" and fail every mail cert
-	// (GH#132 root cause: nothing created /var/www/jabali-acme). 0755 so nginx
-	// (www-data) can traverse + serve the public challenge file.
-	if err := os.MkdirAll(p.Webroot, 0o755); err != nil {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("could not create ACME webroot %s: %v", p.Webroot, err),
-		}
-	}
 	if p.Email == "" {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -251,6 +240,19 @@ func sslMailIssueHandler(ctx context.Context, params json.RawMessage) (any, erro
 	// deploy-hook (step 4) uses the lineage basename to route the
 	// new cert into Stalwart's per-domain x:Certificate entry. The
 	// aux SANs are only present when DNS proved they point at us.
+	// Ensure the webroot exists before certbot — install.sh provisions it on
+	// fresh installs, but existing installs (or a missed bootstrap) would hit
+	// "webroot does not exist or is not a directory" and fail every mail cert
+	// (GH#132 root cause: nothing created /var/www/jabali-acme). Placed after
+	// all validation so a bad request still 4xx's before we touch the FS. 0755
+	// so nginx (www-data) can traverse + serve the public challenge file.
+	if err := os.MkdirAll(p.Webroot, 0o755); err != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInternal,
+			Message: fmt.Sprintf("could not create ACME webroot %s: %v", p.Webroot, err),
+		}
+	}
+
 	runner := certbot.NewRunner()
 	res, err := runner.Issue(effectiveSANs[0], p.Webroot, p.Email, p.Staging, effectiveSANs[1:])
 	if err != nil {
