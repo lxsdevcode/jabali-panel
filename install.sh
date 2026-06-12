@@ -5842,8 +5842,16 @@ install_sftp_sshd_config() {
   # Detect socket-activated mode and skip the reload block in that
   # case. Otherwise (classic sshd.service that owns its own PID),
   # walk the canonical reload chain.
-  if systemctl is-enabled ssh.socket >/dev/null 2>&1 \
-     || systemctl list-unit-files ssh.socket >/dev/null 2>&1; then
+  # Socket-activated means the host actually USES ssh.socket as the
+  # listener — i.e. it is active or enabled. Merely shipping the unit
+  # file isn't enough: Debian also ships ssh.socket on classic hosts
+  # where it's installed-but-disabled and the long-lived ssh.service
+  # owns :22. Testing `list-unit-files` (file exists) misclassified
+  # those classic hosts as socket-activated and SKIPPED the reload, so
+  # the SFTP drop-in we just wrote silently never applied until a manual
+  # sshd restart (GH#133). Test is-active/is-enabled instead.
+  if systemctl is-active --quiet ssh.socket \
+     || systemctl is-enabled --quiet ssh.socket; then
     _ok "sshd is socket-activated; new config applies on next connection (no reload needed)"
   else
     sshd_reloaded=0
