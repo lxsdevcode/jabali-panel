@@ -4050,6 +4050,19 @@ bootstrap_panel_acme_webroot() {
   # serve the challenge file.
   chown root:www-data "$webroot"
   chmod 0750 "$webroot"
+
+  # Per-domain MAIL certs (M6.6) use a SEPARATE webroot — every mail vhost
+  # serves /.well-known/acme-challenge/ from /var/www/jabali-acme (see
+  # jabali-mail-vhost.conf.tmpl). It was never created, so every mail cert
+  # failed certbot with "webroot does not exist" (GH#132). Provision it the
+  # same way as the panel webroot.
+  local mail_webroot="/var/www/jabali-acme"
+  if [[ ! -d "$mail_webroot" ]]; then
+    install -d -m 0750 -o root -g www-data "$mail_webroot"
+    _ok "mail-acme webroot ready: $mail_webroot (root:www-data 0750)"
+  fi
+  chown root:www-data "$mail_webroot"
+  chmod 0750 "$mail_webroot"
 }
 
 install_jabali_panel_cert_hook() {
