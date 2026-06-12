@@ -147,13 +147,19 @@ export interface Alert {
   detail: string;
 }
 
-export function useServerStatus() {
+export function useServerStatus(opts?: { enabled?: boolean }) {
   return useQuery<ServerStatusEnvelope>({
     queryKey: ["admin", "server-status"],
     queryFn: async () => {
       const r = await apiClient.get<ServerStatusEnvelope>("/admin/server-status");
       return r.data;
     },
+    // Shares the cache key with the Server Status page, so a caller that
+    // only needs one field (e.g. host.cpu_count in the docker-app
+    // drawers) reuses an already-fetched payload and can gate its own
+    // polling with `enabled` instead of fetching the heavy aggregate
+    // on every render.
+    enabled: opts?.enabled ?? true,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
   });

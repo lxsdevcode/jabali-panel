@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
 
+import { useServerStatus } from "../../../hooks/useServerStatus";
 import { installApp } from "./api";
 import type { CatalogEntry, InstallPortOverride, InstallRequest } from "./types";
 
@@ -47,6 +48,19 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
   });
   const [form] = Form.useForm();
   const watchedDomain = Form.useWatch<string | undefined>("domain", form);
+  // The agent silently caps the compose `cpus` limit to the host core
+  // count (Docker rejects a higher value). Surface the effective value
+  // so an admin who types e.g. "2" on a 1-core box understands why the
+  // app still installs at 1 — instead of an invisible clamp (GH#178).
+  const statusQ = useServerStatus({ enabled: open });
+  const hostCPUs = statusQ.data?.host?.cpu_count;
+  const watchedCPU = Form.useWatch<string | undefined>("cpu_limit", form);
+  const cpuCapNote = useMemo(() => {
+    if (!hostCPUs || !watchedCPU) return undefined;
+    const v = parseFloat(watchedCPU);
+    if (!Number.isFinite(v) || v <= hostCPUs) return undefined;
+    return `Capped to ${hostCPUs} on this host — only ${hostCPUs} core${hostCPUs === 1 ? "" : "s"} available.`;
+  }, [hostCPUs, watchedCPU]);
   const [ports, setPorts] = useState<PortRow[]>([]);
   const [envVals, setEnvVals] = useState<Record<string, string>>({});
 
@@ -271,7 +285,7 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
             />
           </Form.Item>
           <Space size="middle" style={{ width: "100%" }}>
-            <Form.Item label="CPU" name="cpu_limit" style={{ flex: 1 }}>
+            <Form.Item label="CPU" name="cpu_limit" style={{ flex: 1 }} extra={cpuCapNote}>
               <Input placeholder="0.5" />
             </Form.Item>
             <Form.Item label="Memory" name="memory_limit" style={{ flex: 1 }}>
