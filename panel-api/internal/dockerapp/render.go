@@ -9,6 +9,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"runtime"
+	"strconv"
+	"strings"
 	"text/template"
 )
 
@@ -53,11 +56,43 @@ func Render(entry Entry, params RenderParams) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse compose template for %q: %w", entry.Slug, err)
 	}
+	// Docker rejects a deploy.resources.limits.cpus value greater than
+	// the host's CPU count ("range of CPUs is from 0.01 to N.00, as
+	// there are only N CPUs available"), which fails the whole app at
+	// `compose up`. A catalog default like ownCloud's "2.0" therefore
+	// bricks install on any 1-vCPU box (GH#178). Clamp to the host here
+	// — the single chokepoint every render path (install, update,
+	// reconcile, CLI) flows through. panel-api runs on the docker host
+	// in jabali's single-box model, so runtime.NumCPU() is the daemon's
+	// CPU count.
+	params.CPULimit = clampCPULimit(params.CPULimit, runtime.NumCPU())
+
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, params); err != nil {
 		return "", fmt.Errorf("execute compose template for %q: %w", entry.Slug, err)
 	}
 	return buf.String(), nil
+}
+
+// clampCPULimit caps the requested cpus value to the host's logical
+// CPU count. Docker hard-rejects a limit above the available CPUs, so
+// without this a catalog default that exceeds a small VPS's core count
+// fails the deploy (GH#178). Empty, unparseable, or already-in-range
+// values pass through unchanged; only an over-budget value is lowered,
+// to the whole-host count in the two-decimal form Docker accepts.
+func clampCPULimit(cpu string, hostCPUs int) string {
+	if hostCPUs <= 0 {
+		return cpu
+	}
+	trimmed := strings.TrimSpace(cpu)
+	if trimmed == "" {
+		return cpu
+	}
+	v, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil || v <= float64(hostCPUs) {
+		return cpu
+	}
+	return strconv.FormatFloat(float64(hostCPUs), 'f', 2, 64)
 }
 
 // MaterialiseEnv resolves the catalog's env declarations into a
