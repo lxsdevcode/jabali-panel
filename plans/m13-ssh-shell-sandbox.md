@@ -1,6 +1,13 @@
 # M13 — SSH shell sandbox (bubblewrap default; nspawn opt-in)
 
-**Status:** SHIPPED — all steps on main 2026-04-26; ADR-0067 ACCEPTED; E2E spec at panel-ui/tests/e2e/ssh-sandbox.spec.ts.
+**Status:** PARTIAL — Step 1 (skeleton) shipped 2026-04-26 but the
+dispatch was a stub that ALWAYS fell back to nologin; the feature was
+mistakenly recorded as fully shipped. **Bubblewrap dispatch (Step 2)
+actually implemented + box-verified 2026-06-13 (GH#179).** nspawn
+dispatch (Step 3 sudo bridge) is STILL a stub — `nspawn` mode falls to
+nologin until that lands. ADR-0067 ACCEPTED; E2E spec at
+panel-ui/tests/e2e/ssh-sandbox.spec.ts. Default mode is bubblewrap, so
+the common path now works end to end.
 **Goal:** Every hosting user gets `/usr/local/bin/jabali-ssh-shell` as
 login shell. SFTP users still hit `ForceCommand internal-sftp` (chroot
 path from M12 + 7480fff covers them). SSH-shell users land in one of two
