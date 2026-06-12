@@ -33,7 +33,7 @@ services:
     image: mariadb:11
     container_name: jabali-app-{{ .Slug }}-db
     restart: unless-stopped
-    command: --max-allowed-packet=64MB
+    command: --max-allowed-packet=64MB --innodb-use-native-aio=0
     environment:
       MYSQL_DATABASE: "matomo"
       MYSQL_USER: "matomo"
