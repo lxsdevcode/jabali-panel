@@ -7,12 +7,13 @@
 // they SFTP instead.
 //
 // Plan invariants (plans/m13-ssh-shell-sandbox.md §0):
-//   #1: Two modes only — bubblewrap (default) + nspawn (opt-in).
-//       No 'none' / plain bash mode.
-//   #2: Default mode = bubblewrap (lightweight, no rootfs cost).
-//   #4: Fallback on bad config = nologin. Never bash.
-//   #8: bwrap relies on its setuid bit; no sudo needed.
-//   #9: Mode toggle is a single-file write.
+//
+//	#1: Two modes only — bubblewrap (default) + nspawn (opt-in).
+//	    No 'none' / plain bash mode.
+//	#2: Default mode = bubblewrap (lightweight, no rootfs cost).
+//	#4: Fallback on bad config = nologin. Never bash.
+//	#8: bwrap relies on its setuid bit; no sudo needed.
+//	#9: Mode toggle is a single-file write.
 //
 // Step 1 ships the dispatch skeleton + nologin fallback. bwrap
 // argv assembly + nspawn privilege bridge ship in Step 2 +
@@ -30,6 +31,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -89,18 +91,262 @@ func readMode() (string, error) {
 	return trimmed, nil
 }
 
-// dispatchBubblewrap will exec /usr/bin/bwrap with the per-user
-// jail in Step 2. v1: explicit not-yet-wired error → nologin
-// fallback. Operator running the wrapper before Step 2 ships
-// sees a clear signal rather than silent passthrough.
+// dispatchBubblewrap exec's /usr/bin/bwrap with the per-user jail
+// (M13 Step 2). The sandbox binds a read-only system (/usr + the
+// usr-merged symlinks), a filtered /etc/passwd + /etc/group (system
+// users + the connecting user only — no tenant enumeration), the
+// user's own /home/<user> rw, fresh tmpfs at /tmp /run /var, an
+// isolated PID namespace, and shared networking (egress stays open for
+// git/composer/wp-cli). Hidden by omission: /etc/shadow, /etc/jabali,
+// /etc/ssh, every other tenant's /home, and every host Unix socket
+// (/run is a fresh tmpfs). On any setup error we fall back to nologin —
+// never an unsandboxed shell.
 func dispatchBubblewrap() error {
-	if _, err := exec.LookPath("bwrap"); err != nil {
+	bwrap, err := exec.LookPath("bwrap")
+	if err != nil {
 		return execNologin(fmt.Sprintf("bwrap not found in PATH (apt install bubblewrap): %v", err))
 	}
-	// TODO(M13 Step 2): build bwrap argv with per-user jail
-	// (bind /home/<user> rw, /etc/passwd ro, /tmp tmpfs, etc.)
-	// + exec the user's chosen interactive shell inside.
-	return execNologin("M13 Step 1: bubblewrap dispatch not yet wired (Step 2 ships argv assembly)")
+
+	name, _, _, home, err := currentUser()
+	if err != nil {
+		return execNologin(fmt.Sprintf("resolve current user: %v", err))
+	}
+	// Defense-in-depth: this wrapper is only ever a hosting user's login
+	// shell, whose home is /home/<user>. Refuse to bind anything else —
+	// a non-/home home (root, a system account) must never reach a shell
+	// through this path.
+	if home != "/home/"+name {
+		return execNologin(fmt.Sprintf("refusing sandbox: user %q home %q is not /home/%s", name, home, name))
+	}
+	if fi, err := os.Stat(home); err != nil || !fi.IsDir() {
+		return execNologin(fmt.Sprintf("home %q missing or not a directory", home))
+	}
+
+	passwdData, err := filterPasswd(name)
+	if err != nil {
+		return execNologin(fmt.Sprintf("build filtered passwd: %v", err))
+	}
+	groupData, err := filterGroup(name)
+	if err != nil {
+		return execNologin(fmt.Sprintf("build filtered group: %v", err))
+	}
+
+	// Feed the filtered files to bwrap over pipe FDs (--ro-bind-data) so
+	// nothing touches the host filesystem. The read ends must outlive
+	// syscall.Exec, so keep the *os.File refs alive (keepAlive) until the
+	// exec replaces us, and clear FD_CLOEXEC so the fds survive it.
+	passwdFD, f1, err := bindDataFD(passwdData)
+	if err != nil {
+		return execNologin(fmt.Sprintf("passwd bind-data fd: %v", err))
+	}
+	groupFD, f2, err := bindDataFD(groupData)
+	if err != nil {
+		return execNologin(fmt.Sprintf("group bind-data fd: %v", err))
+	}
+	keepAlive := []*os.File{f1, f2}
+
+	shell := pickShell()
+	argv := buildBwrapArgv(name, home, passwdFD, groupFD, shell, os.Args[1:])
+
+	err = syscall.Exec(bwrap, argv, sandboxBwrapEnv())
+	// Exec only returns on failure. Reference keepAlive past the exec so
+	// the compiler/GC can't close the pipe fds before bwrap reads them.
+	runtimeKeepAlive(keepAlive)
+	return execNologin(fmt.Sprintf("exec bwrap: %v", err))
+}
+
+// buildBwrapArgv assembles the bwrap command line. When the wrapper was
+// invoked as `jabali-ssh-shell -c "<cmd>"` (sshd's non-interactive form,
+// used by scp/rsync/git-over-ssh and `ssh host cmd`), the command is
+// forwarded into the sandbox as `<shell> -c "<cmd>"`. Otherwise a login
+// shell. invokedArgs is os.Args[1:].
+func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, invokedArgs []string) []string {
+	argv := []string{
+		"bwrap",
+		"--ro-bind", "/usr", "/usr",
+		// usr-merged layout (Debian 12+/Ubuntu): /bin /sbin /lib /lib64
+		// are symlinks into /usr. Recreate them so the dynamic linker
+		// and #!-shebangs resolve.
+		"--symlink", "usr/bin", "/bin",
+		"--symlink", "usr/sbin", "/sbin",
+		"--symlink", "usr/lib", "/lib",
+		"--symlink", "usr/lib64", "/lib64",
+		// Minimal read-only system config a shell needs.
+		"--ro-bind-try", "/etc/ssl", "/etc/ssl",
+		"--ro-bind-try", "/etc/ca-certificates", "/etc/ca-certificates",
+		"--ro-bind-try", "/etc/ca-certificates.conf", "/etc/ca-certificates.conf",
+		"--ro-bind-try", "/etc/resolv.conf", "/etc/resolv.conf",
+		"--ro-bind-try", "/etc/hosts", "/etc/hosts",
+		"--ro-bind-try", "/etc/hostname", "/etc/hostname",
+		"--ro-bind-try", "/etc/nsswitch.conf", "/etc/nsswitch.conf",
+		"--ro-bind-try", "/etc/localtime", "/etc/localtime",
+		"--ro-bind-try", "/etc/profile", "/etc/profile",
+		"--ro-bind-try", "/etc/profile.d", "/etc/profile.d",
+		"--ro-bind-try", "/etc/bash.bashrc", "/etc/bash.bashrc",
+		"--ro-bind-try", "/etc/alternatives", "/etc/alternatives",
+		"--ro-bind-data", strconv.Itoa(int(passwdFD)), "/etc/passwd",
+		"--ro-bind-data", strconv.Itoa(int(groupFD)), "/etc/group",
+		"--proc", "/proc",
+		"--dev", "/dev",
+		"--tmpfs", "/tmp",
+		"--tmpfs", "/run",
+		"--tmpfs", "/var",
+		"--bind", home, home,
+		"--chdir", home,
+		// Isolate everything, then re-share only the network so egress
+		// (git/composer/wp-cli) keeps working. PID-namespace isolation
+		// is what hides other tenants' processes.
+		"--unshare-all",
+		"--share-net",
+		"--die-with-parent",
+		// Build the sandbox env explicitly — don't leak the host's.
+		"--clearenv",
+		"--setenv", "HOME", home,
+		"--setenv", "USER", name,
+		"--setenv", "LOGNAME", name,
+		"--setenv", "SHELL", shell,
+		"--setenv", "PATH", "/usr/local/bin:/usr/bin:/bin",
+		"--setenv", "TERM", envOr("TERM", "xterm"),
+	}
+	if lang := os.Getenv("LANG"); lang != "" {
+		argv = append(argv, "--setenv", "LANG", lang)
+	}
+	argv = append(argv, "--")
+	// Forward an SSH-supplied command, else an interactive login shell.
+	if len(invokedArgs) >= 2 && invokedArgs[0] == "-c" {
+		argv = append(argv, shell, "-c", invokedArgs[1])
+	} else {
+		argv = append(argv, shell, "-l")
+	}
+	return argv
+}
+
+// filterPasswd returns /etc/passwd reduced to system accounts (uid <
+// 1000) plus the connecting user's own row. Hides other tenants from
+// enumeration inside the sandbox while keeping `id`, prompt expansion,
+// and tool uid->name lookups working.
+func filterPasswd(username string) ([]byte, error) {
+	return filterColonFile("/etc/passwd", func(fields []string) bool {
+		if len(fields) < 3 {
+			return false
+		}
+		if fields[0] == username {
+			return true
+		}
+		uid, err := strconv.Atoi(fields[2])
+		return err == nil && uid < 1000
+	})
+}
+
+// filterGroup returns /etc/group reduced to system groups (gid < 1000)
+// plus the user's own group, www-data (the SSH-mode home group), and any
+// group listing the user as a member.
+func filterGroup(username string) ([]byte, error) {
+	return filterColonFile("/etc/group", func(fields []string) bool {
+		if len(fields) < 4 {
+			return false
+		}
+		if fields[0] == username || fields[0] == "www-data" {
+			return true
+		}
+		if gid, err := strconv.Atoi(fields[2]); err == nil && gid < 1000 {
+			return true
+		}
+		for _, m := range strings.Split(fields[3], ",") {
+			if m == username {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// filterColonFile reads a colon-delimited file (passwd/group) and keeps
+// only the lines whose split fields satisfy keep. Preserves order and a
+// trailing newline.
+func filterColonFile(path string, keep func(fields []string) bool) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var b strings.Builder
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		if keep(strings.Split(line, ":")) {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+	return []byte(b.String()), nil
+}
+
+// bindDataFD writes content into a pipe, closes the write end (so bwrap's
+// --ro-bind-data read sees EOF), clears FD_CLOEXEC on the read end so it
+// survives syscall.Exec, and returns the read-end fd. The caller MUST
+// keep the returned *os.File alive until after exec — otherwise the GC
+// finalizer closes the fd. passwd/group are far below the 64 KiB pipe
+// buffer, so the single Write never blocks.
+func bindDataFD(content []byte) (uintptr, *os.File, error) {
+	if len(content) > 60000 {
+		return 0, nil, fmt.Errorf("bind-data content too large (%d bytes)", len(content))
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		return 0, nil, err
+	}
+	if _, err := w.Write(content); err != nil {
+		r.Close()
+		w.Close()
+		return 0, nil, err
+	}
+	if err := w.Close(); err != nil {
+		r.Close()
+		return 0, nil, err
+	}
+	fd := r.Fd()
+	if _, _, errno := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, 0); errno != 0 {
+		r.Close()
+		return 0, nil, fmt.Errorf("clear cloexec: %v", errno)
+	}
+	return fd, r, nil
+}
+
+// pickShell returns the interactive shell to run inside the sandbox.
+// The user's /etc/passwd shell is this wrapper, so it can't be the
+// source; prefer bash, fall back to sh.
+func pickShell() string {
+	for _, sh := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh"} {
+		if fi, err := os.Stat(sh); err == nil && !fi.IsDir() {
+			return sh
+		}
+	}
+	return "/bin/sh"
+}
+
+// sandboxBwrapEnv is the env handed to the bwrap PROCESS itself (not the
+// sandboxed shell — that one is built via --clearenv/--setenv). Kept
+// minimal so bwrap inherits nothing sensitive.
+func sandboxBwrapEnv() []string {
+	return []string{"PATH=/usr/bin:/bin"}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// runtimeKeepAlive is a no-op that references the pipe files so the
+// compiler can't consider them dead before syscall.Exec runs.
+func runtimeKeepAlive(files []*os.File) {
+	for _, f := range files {
+		if f != nil {
+			_ = f.Fd()
+		}
+	}
 }
 
 // dispatchNspawn will read /etc/jabali/users/<username>/nspawn-
@@ -133,29 +379,36 @@ func dispatchNspawn() error {
 	return execNologin("M13 Step 1: nspawn dispatch not yet wired (Step 3 ships sudo bridge)")
 }
 
-// currentUsername returns the SSH-side login name. Read from $USER
-// first (set by sshd before exec'ing the login shell); falls back
-// to looking up the real uid via /etc/passwd. Either path returns
-// a clean string or the error.
-func currentUsername() (string, error) {
-	if u := os.Getenv("USER"); u != "" {
-		return u, nil
-	}
-	uid := os.Getuid()
+// currentUser resolves the connecting identity from the real uid via
+// /etc/passwd — deliberately NOT from $USER. The home-dir bind is keyed
+// off this name, so trusting a client-settable env var could let one
+// tenant bind another's home. sshd doesn't normally let the client set
+// $USER, but the sandbox must not depend on that.
+func currentUser() (name string, uid, gid int, home string, err error) {
+	uid = os.Getuid()
+	gid = os.Getgid()
 	pw, err := os.ReadFile("/etc/passwd")
 	if err != nil {
-		return "", err
+		return "", uid, gid, "", err
 	}
+	want := strconv.Itoa(uid)
 	for _, line := range strings.Split(string(pw), "\n") {
 		fields := strings.Split(line, ":")
-		if len(fields) < 3 {
+		if len(fields) < 6 {
 			continue
 		}
-		if fields[2] == fmt.Sprintf("%d", uid) {
-			return fields[0], nil
+		if fields[2] == want {
+			return fields[0], uid, gid, fields[5], nil
 		}
 	}
-	return "", fmt.Errorf("uid %d not in /etc/passwd", uid)
+	return "", uid, gid, "", fmt.Errorf("uid %d not in /etc/passwd", uid)
+}
+
+// currentUsername returns just the login name (nspawn path). uid-derived
+// for the same reason as currentUser — no $USER trust.
+func currentUsername() (string, error) {
+	name, _, _, _, err := currentUser()
+	return name, err
 }
 
 // execNologin replaces the current process with /usr/sbin/nologin.
