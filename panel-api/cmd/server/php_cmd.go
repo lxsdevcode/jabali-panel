@@ -309,6 +309,13 @@ func newPHPPoolSetCmd() *cobra.Command {
 				created = true
 			} else {
 				pool.PHPVersion = version
+				// Mark pending so the reconciler re-applies. Without this
+				// the pool stays `active`, and ReconcilePHPPools skips
+				// active pools — so a version change updated the DB but
+				// never reached disk (pin/pool-conf/fpm master all stayed
+				// on the old version, even after restart). The API
+				// version-change paths already do this; the CLI didn't.
+				pool.Status = "pending"
 				if err := repo.Update(ctx, pool); err != nil {
 					return fmt.Errorf("update pool: %w", err)
 				}
