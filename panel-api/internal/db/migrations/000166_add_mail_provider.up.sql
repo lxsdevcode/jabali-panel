@@ -16,3 +16,7 @@ ALTER TABLE domains
 --     explicit provider re-selection). No UPDATE touches skip_auto_san here,
 --     so the ADR-0070 state survives.
 UPDATE domains SET mail_provider = 'none' WHERE email_enabled = 0;
+
+-- Widen dns_records.managed_by: the per-provider markers (mail-provider-m365
+-- = 18 chars, mail-provider-google = 19) overflow the original VARCHAR(16).
+ALTER TABLE dns_records MODIFY COLUMN managed_by VARCHAR(32) NULL;
