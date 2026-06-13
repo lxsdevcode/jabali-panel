@@ -8,7 +8,7 @@ Errgroup-aggregated polling every 5 seconds. Each card returns its own status; o
 
 ### Per-service cards
 
-For each of: nginx, php-fpm (per version), mariadb, postgresql, pdns-server, pdns-recursor, stalwart-mail, kratos, bulwark, redis, crowdsec, jabali-panel, jabali-agent:
+For each of: nginx, php-fpm (per version), mariadb, postgresql, pdns-server, pdns-recursor, stalwart-mail, kratos, bulwark, redis, crowdsec, jabali-panel, jabali-agent, ssh, cron, and **docker** (shown only on hosts where the engine is installed — the M48 app marketplace):
 
 - Active state (active, inactive, failed)
 - Time since the unit entered the current state

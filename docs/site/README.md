@@ -19,7 +19,7 @@ Comprehensive English docs for the current (Go) generation of Jabali Panel. Desi
 | [wordpress.md](./wordpress.md) | 1-click WP install / clone / admin SSO. |
 | [applications.md](./applications.md) | 15-app registry, install pipeline. |
 | [files.md](./files.md) | In-panel AntD File Manager. |
-| [sftp.md](./sftp.md) | SFTP via OpenSSH `Match Group`, SSH key vault. |
+| [sftp.md](./sftp.md) | SFTP via OpenSSH `Match Group`, sandboxed SSH shell (M13 bubblewrap), SSH key vault. |
 | [cron.md](./cron.md) | systemd-user timers + command allowlist. |
 | [databases.md](./databases.md) | MariaDB / PostgreSQL + phpMyAdmin SSO + admin ops. |
 | [backups.md](./backups.md) | account_full + system_backup + destinations + schedules. |
