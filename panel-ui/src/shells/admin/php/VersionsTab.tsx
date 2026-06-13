@@ -13,6 +13,8 @@ interface PHPVersionStatus {
   version: string;
   installed: boolean;
   fpm_running: boolean;
+  workers_running?: number;
+  workers_total?: number;
 }
 
 interface PHPVersionStatusResponse {
@@ -262,19 +264,21 @@ export const VersionsTab = () => {
         />
         <Table.Column<PHPVersionStatus>
           dataIndex="fpm_running"
-          title="FPM"
-          width={150}
-          render={(fpmRunning: boolean, record: PHPVersionStatus) =>
-            record.installed ? (
-              fpmRunning ? (
-                <Tag color="green">Running</Tag>
-              ) : (
-                <Tag>Stopped</Tag>
-              )
-            ) : (
-              "—"
-            )
-          }
+          title="FPM workers"
+          width={170}
+          render={(_fpmRunning: boolean, record: PHPVersionStatus) => {
+            if (!record.installed) return "—";
+            const total = record.workers_total ?? 0;
+            const running = record.workers_running ?? 0;
+            // No pools pinned to this version — installed but idle.
+            if (total === 0) return <Tag>No pools</Tag>;
+            const allUp = running === total;
+            return (
+              <Tag color={running > 0 ? (allUp ? "green" : "orange") : "red"}>
+                {running}/{total} running
+              </Tag>
+            );
+          }}
         />
         <Table.Column<PHPVersionStatus>
           title="Actions"
