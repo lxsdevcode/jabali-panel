@@ -873,6 +873,51 @@ func cpanelRestoreCallback(
 			}
 		}
 
+		// Post-migration WP/site health probe. The vhosts are live
+		// (ImportDomains rendered them synchronously); the per-user FPM
+		// pool converges just after, so the agent retries 502/503. A
+		// migrated app that crashes on jabali (e.g. WP fatal on malformed
+		// option data that survived on the source via an object cache)
+		// shows up here as a 500 — caught at migration time, in the
+		// report, instead of from the customer. Best-effort: never fails
+		// the migration.
+		if len(p.parsed.DomainNames) > 0 {
+			probeCtx, probeCancel := context.WithTimeout(ctx, 5*time.Minute)
+			if raw, perr := restoreAgent.Call(probeCtx, "migration.http_probe", map[string]any{
+				"domains": p.parsed.DomainNames,
+			}); perr != nil {
+				warnings = append(warnings, fmt.Sprintf("health_probe: %v", perr))
+			} else {
+				var pr struct {
+					Results []struct {
+						Domain string `json:"domain"`
+						Status int    `json:"status"`
+						OK     bool   `json:"ok"`
+						Note   string `json:"note"`
+					} `json:"results"`
+				}
+				_ = json.Unmarshal(raw, &pr)
+				okCount := 0
+				for _, r := range pr.Results {
+					if r.OK {
+						okCount++
+						continue
+					}
+					warnings = append(warnings, fmt.Sprintf(
+						"health_probe: ⚠ %s returned %d%s",
+						r.Domain, r.Status,
+						func() string {
+							if r.Note != "" {
+								return " — " + r.Note
+							}
+							return ""
+						}()))
+				}
+				warnings = append(warnings, fmt.Sprintf("health_probe: %d/%d domains healthy", okCount, len(pr.Results)))
+			}
+			probeCancel()
+		}
+
 		return bytes, warnings, nil
 	}
 }
