@@ -17,6 +17,8 @@ emergencies); for one feature at a time start there.
 | [`runbooks/m23-responsive.md`](runbooks/m23-responsive.md) | Responsive UI breakpoints + scroll-table contract (M23). |
 | [`runbooks/m24-ip-manager-smoke.md`](runbooks/m24-ip-manager-smoke.md) | M24 IP Manager — smoke validation on a multi-IP VM. |
 | [`runbooks/m30-cloud-destinations-smoke.md`](runbooks/m30-cloud-destinations-smoke.md) | M30 cloud backup destinations smoke (S3 / B2 / SFTP). |
+| [`runbooks/m35-migration-importer.md`](runbooks/m35-migration-importer.md) | M35 cPanel/DirectAdmin/Hestia/WHM account migration importer. |
+| [`runbooks/m49-audit-log.md`](runbooks/m49-audit-log.md) | M49 unified append-only audit log — operate / verify / retain (ADR-0106). |
 | [`runbooks/panel-ssl.md`](runbooks/panel-ssl.md) | M32 Let's Encrypt cert for the panel hostname (ADR-0066). |
 | [`runbooks/per-user-slices.md`](runbooks/per-user-slices.md) | Per-user PHP-FPM slice + cgroups layout. |
 | [`runbooks/php-extensions.md`](runbooks/php-extensions.md) | M9.6 PHP extension management (ADR-0031). |

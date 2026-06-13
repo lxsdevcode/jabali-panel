@@ -41,6 +41,28 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0027](0027-m11-filebrowser-integration.md) | M11 File manager via filebrowser + proxy auth | Accepted |
 | [0028](0028-m12-sftp-integration.md) | M12 SFTP via openssh group-based Match (no chroot) | Accepted |
 | [0029](0029-m8-cron-systemd-user-timers.md) | M8 Cron via systemd-user timers with closed-set allowlist | Accepted |
+| [0030](0030-antd-file-manager-replaces-filebrowser.md) | AntD-native file manager replaces filebrowser | Accepted |
+| [0031](0031-php-extensions-management.md) | PHP extensions management — server-wide, dpkg-live, fixed allowlist | Accepted |
+| [0032](0032-m18-resource-limits.md) | M18 per-user resource limits — POSIX quota + cgroups v2 + nginx | Accepted |
+| [0033](0033-m19-applications-framework.md) | M19 Applications Framework | Accepted |
+| [0034](0034-m20-kratos-identity.md) | M20 Kratos identity — self-hosted Ory Kratos as IdP | Accepted |
+| [0036](0036-m16-hydra-identity.md) | M16 Ory Hydra OAuth2/OIDC provider | Superseded by ADR-0038 |
+| [0037](0037-drop-refine.md) | Drop Refine → TanStack Query + AntD + react-router | Accepted |
+| [0038](0038-m16-rollback.md) | M16 rollback — OIDC+Hydra dropped, magic-link (M22) replaces | Accepted |
+| [0039](0039-m22-magic-link.md) | Magic-link token for Panel→WP admin SSO | Superseded by ADR-0040 |
+| [0040](0040-m22-sso-file.md) | Self-deleting SSO file for Panel→WP admin login (M22 rework) | Accepted |
+| [0041](0041-m6-mail-storage-rocksdb.md) | M6 mail storage — RocksDB + Bulwark webmail | Accepted (amended by 0045) |
+| [0042](0042-m6-sql-directory-mailboxes-table.md) | M6 SQL directory — Stalwart reads jabali_panel.mailboxes | Accepted (amended by 0045) |
+| [0043](0043-m6-dkim-key-rotation-policy.md) | M6 DKIM — Ed25519 primary, RSA-2048 escape hatch | Accepted |
+| [0044](0044-m6-imap-migrate-deferred-to-m15.md) | M6 IMAP migration — deferred to M15 | Accepted |
+| [0045](0045-m6-stalwart-v016-pivot.md) | M6 pivot to Stalwart v0.16 management model | Accepted |
+| [0046](0046-responsive-ui-strategy.md) | M23 responsive UI strategy | Accepted |
+| [0047](0047-pdns-recursor-local-self-resolution.md) | M6.3 pdns-recursor for local self-resolution | Accepted |
+| [0048](0048-panel-hostname-primary-mail-domain.md) | Panel hostname as primary mail domain | Accepted |
+| [0049](0049-m24-ip-address-manager.md) | M24 IP address manager | Accepted |
+| [0050](0050-m25-unix-sockets.md) | M25 localhost hardening via Unix sockets | Accepted |
+| [0051](0051-m6.5-email-features-db-as-truth.md) | M6.5 email features — DB-as-truth reconciliation | Accepted |
+| [0052](0052-disclaimer-sieve-vs-mtahook.md) | Disclaimer — Sieve system script (HTML covered) | Accepted |
 | [0053](0053-crowdsec-over-fail2ban.md) | CrowdSec over fail2ban for behaviour-based IP blocking | Accepted |
 | [0054](0054-ufw-over-iptables.md) | UFW over raw iptables/nftables for the host firewall | Accepted |
 | [0055](0055-modsecurity-per-domain.md) | ModSecurity-nginx + OWASP CRS, per-domain toggle | SUPERSEDED (2026-04-26) by ADR-0060 + M27 AppSec |
@@ -91,7 +113,23 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0100](0100-db-maintenance-processlist-privilege-model.md) | M46 DB maintenance + processlist privilege model | Accepted |
 | [0101](0101-cron-intake-synchronous-apply.md) | Cron Job Intake owns synchronous agent-apply (amends 0083) | Accepted |
 | [0102](0102-appsec-exempt-authenticated-admin-api.md) | Authenticated admin API exempt from AppSec WAF (ADR-0060/0063 related) | Accepted |
+| [0103](0103-email-deliverability-suite.md) | Email deliverability suite (queue/throttle/RBL/DMARC + MTA-STS/TLS-RPT) | Proposed |
+| [0105](0105-panel-cert-split-hostname-mail.md) | Panel cert split — independent hostname + mail certs | Accepted (amends 0066) |
 | [0106](0106-unified-audit-log.md) | M49 Unified audit log (append-only hash-chained, dedicated audit stream, admin + per-user scope) | Accepted |
+| [0107](0107-operator-dns-edits-authoritative.md) | Operator/admin DNS record edits are authoritative | Accepted |
+| [0108](0108-per-domain-fastcgi-microcache.md) | Per-domain opt-in nginx FastCGI micro-cache | Accepted |
+| [0109](0109-per-domain-mta-sts.md) | Per-domain MTA-STS (M47 Wave 7) | Accepted |
+| [0110](0110-m47-stalwart-report-ingest.md) | M47 Stalwart-report ingest + deliverability score | Accepted |
+| [0111](0111-m47-wave3-outbound-throttle.md) | M47 outbound throttle reconciler | Accepted |
+| [0112](0112-m47-wave3v2-expression-filters.md) | M47 Stalwart Expression filters + per-domain widget | Accepted |
+| [0113](0113-drop-crowdsec-console.md) | Drop CrowdSec Console integration | Accepted |
+| [0114](0114-stalwart-auth-fail-bruteforce.md) | Mail-bf via Stalwart webhook | Superseded by ADR-0115 |
+| [0115](0115-stalwart-bruteforce-crowdsec-parser.md) | Mail bruteforce via CrowdSec parser + Stalwart tracer | Proposed |
+| [0116](0116-m48-docker-app-marketplace.md) | M48 Docker App Marketplace | Proposed |
+| [0117](0117-m6.6-per-domain-mail-tls.md) | M6.6 per-domain mail TLS | Accepted |
+| [0118](0118-m53-updates-center.md) | M53 Updates Center | Accepted |
+| [0119](0119-m54-username-login.md) | M54 username-only login (hard cutover) | Accepted |
+| [0120](0120-mail-provider-dns-templates.md) | Mail-provider DNS templates | Proposed |
 
 ## Decision Categories
 
