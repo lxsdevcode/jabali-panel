@@ -14,6 +14,9 @@ export type DomainCreateInput = {
   name: string;
   user_id: string;
   doc_root?: string;
+  mail_provider?: string;
+  m365_onmicrosoft?: string;
+  google_dkim?: string;
 };
 
 type DomainCreated = { id: string };
@@ -21,6 +24,7 @@ type DomainCreated = { id: string };
 export const DomainCreate = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm<DomainCreateInput>();
+  const mailProvider = Form.useWatch("mail_provider", form) ?? "jabali";
   const createMutation = useCreateMutation<DomainCreated, DomainCreateInput>({
     resource: "domains",
   });
@@ -95,6 +99,42 @@ export const DomainCreate = () => {
         >
           <Input placeholder="auto-generated if empty" />
         </Form.Item>
+
+        <Form.Item
+          label="Mail"
+          name="mail_provider"
+          initialValue="jabali"
+          tooltip="Where this domain's email is hosted. 'None' and the external providers skip Jabali's mail DNS records and mail certificate SANs."
+        >
+          <Select
+            options={[
+              { value: "jabali", label: "Jabali mail (this server)" },
+              { value: "none", label: "No mail" },
+              { value: "m365", label: "Microsoft 365" },
+              { value: "google", label: "Google Workspace" },
+            ]}
+          />
+        </Form.Item>
+
+        {mailProvider === "m365" && (
+          <Form.Item
+            label="Microsoft 365 tenant"
+            name="m365_onmicrosoft"
+            tooltip="Optional. Your <tenant>.onmicrosoft.com — adds the selector1/2 DKIM CNAMEs. MX/SPF/autodiscover are added automatically."
+          >
+            <Input placeholder="contoso.onmicrosoft.com (optional)" />
+          </Form.Item>
+        )}
+
+        {mailProvider === "google" && (
+          <Form.Item
+            label="Google DKIM value"
+            name="google_dkim"
+            tooltip="Optional. Paste the google._domainkey TXT value from Google Admin. MX/SPF are added automatically."
+          >
+            <Input.TextArea rows={2} placeholder="v=DKIM1; k=rsa; p=... (optional)" />
+          </Form.Item>
+        )}
 
         <Form.Item>
           <Button

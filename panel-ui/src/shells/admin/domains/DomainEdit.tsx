@@ -22,6 +22,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useOneQuery, useUpdateMutation } from "../../../hooks/useQueries";
 import type { Domain } from "./DomainList";
 import { DomainEmailSection } from "./DomainEmailSection";
+import { DomainMailProviderSection } from "./DomainMailProviderSection";
 import { DomainIPACLSection } from "./DomainIPACLSection";
 import { DomainDirectoryPrivacySection } from "./DomainDirectoryPrivacySection";
 import { DomainListenIPSection } from "./DomainListenIPSection";
@@ -198,6 +199,17 @@ export const DomainEdit = () => {
       <Space direction="vertical" style={{ width: "100%" }} size="large">
         <div>
           <Typography.Title level={5} style={{ marginTop: 0 }}>
+            Mail provider
+          </Typography.Title>
+          <DomainMailProviderSection
+            domainId={domain.id}
+            mailProvider={domain.mail_provider}
+            m365Onmicrosoft={domain.m365_onmicrosoft}
+            googleDkim={domain.google_dkim}
+          />
+        </div>
+        <div>
+          <Typography.Title level={5}>
             Incoming + Outgoing
           </Typography.Title>
           <DomainEmailSection domainId={domain.id} />

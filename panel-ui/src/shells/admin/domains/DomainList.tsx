@@ -103,6 +103,9 @@ export type Domain = {
   is_panel_primary?: boolean;
   is_quota_suspended?: boolean;
   ssl_enabled?: boolean;
+  mail_provider?: string;
+  m365_onmicrosoft?: string;
+  google_dkim?: string;
   ssl?: SSLBadge | null;
   bytes_30d?: number;
   nginx_custom_directives: string;
