@@ -3,10 +3,10 @@
 // validate → restore) using the source-kind-appropriate writers.
 //
 // Operator-driven workflow (until the admin REST + UI Step 8 lands):
-//   1. Pre-create the destination jabali user via /admin/users
-//   2. Insert a migration_jobs row + extract a cpmove tarball
-//      under /var/lib/jabali-migrations/<job-id>/extracted/
-//   3. Run: jabali migrate run --job-id <ulid> --target-user <username>
+//  1. Pre-create the destination jabali user via /admin/users
+//  2. Insert a migration_jobs row + extract a cpmove tarball
+//     under /var/lib/jabali-migrations/<job-id>/extracted/
+//  3. Run: jabali migrate run --job-id <ulid> --target-user <username>
 //
 // Resume after a partial failure: same command — runner skips
 // already-done stages, picks up at the first failed/pending one.
@@ -42,8 +42,8 @@ func newMigrateImportCmd() *cobra.Command {
 	var jobID, targetUser, targetEmail, targetPassword, targetPackageID string
 	var keepStaging bool
 	cmd := &cobra.Command{
-		Use:     "import",
-		Short:   "Run (or resume) a migration job through the four-stage pipeline",
+		Use:   "import",
+		Short: "Run (or resume) a migration job through the four-stage pipeline",
 		Long: `Walks the named migration_jobs row through analyze → fix_perms →
 validate → restore. The destination jabali user must already
 exist (pre-create via the admin UI or jabali user CLI).
@@ -373,7 +373,7 @@ failed stage. Already-done stages are skipped.`,
 					parsed = &cpanel.ParsedTarball{
 						ExtractDir: extractDir,
 						SourceUser: job.SourceUser,
-						HomeDir:    h.WebRoot, // Hestia rsync target = web/<dom>/public_html/...
+						HomeDir:    h.WebRoot,  // Hestia rsync target = web/<dom>/public_html/...
 						MailRoot:   h.MailRoot, // Hestia stores at mail/<dom>/<local>/Maildir
 						MySQLDumps: h.MySQLDumps,
 					}
@@ -483,7 +483,6 @@ failed stage. Already-done stages are skipped.`,
 	return cmd
 }
 
-
 // cpanelRunPayload is the opaque payload threaded through every
 // stage callback. The runner forwards it via WithContext.
 type cpanelRunPayload struct {
@@ -575,6 +574,15 @@ func cpanelRestoreCallback(
 		var warnings []string
 		var bytes int64
 
+		// The migration imports (home rsync, mailbox maildirs, big DB
+		// loads) routinely run far longer than the shared agent client's
+		// default per-call deadline (config default 30s / 120s fallback),
+		// which killed every big account with
+		// "agent.migration.import_home: agent: read: i/o timeout". Use a
+		// dedicated long-deadline client for the whole restore stage —
+		// same as account-restore (1h) and system-restore (4h) already do.
+		restoreAgent := agent.NewClient(agent.Config{Timeout: 4 * time.Hour})
+
 		sshRes, err := cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("ssh: %w", err)
@@ -582,14 +590,14 @@ func cpanelRestoreCallback(
 		warnings = append(warnings, fmt.Sprintf("ssh: created=%d", sshRes.Created))
 		warnings = append(warnings, sshRes.Skipped...)
 
-		dbsRes, err := cpanel.ImportDatabases(ctx, dbsRepo, dbUsersRepo, dbGrantsRepo, sharedAgent, p.parsed, p.targetUserID, p.targetUsername)
+		dbsRes, err := cpanel.ImportDatabases(ctx, dbsRepo, dbUsersRepo, dbGrantsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("databases: %w", err)
 		}
 		warnings = append(warnings, fmt.Sprintf("databases: created=%d", dbsRes.Created))
 		warnings = append(warnings, dbsRes.Skipped...)
 
-		dnsRes, err := cpanel.ImportDNS(ctx, sharedAgent, p.parsed)
+		dnsRes, err := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("dns: %w", err)
 		}
@@ -695,7 +703,7 @@ func cpanelRestoreCallback(
 			domCount := 0
 			for _, r := range rsyncRows {
 				destPath := filepath.Join("/home", p.targetUsername, "domains", r.Dom, "public_html")
-				rawResp, rerr := sharedAgent.Call(ctx, "migration.rsync_remote_home", map[string]any{
+				rawResp, rerr := restoreAgent.Call(ctx, "migration.rsync_remote_home", map[string]any{
 					"job_id":      job.ID,
 					"host":        job.SourceHost,
 					"ssh_user":    "root",
@@ -730,7 +738,7 @@ func cpanelRestoreCallback(
 		// public_html. Falls back to the legacy whole-homedir rsync
 		// when no userdata YAML is present.
 		if !daHomeHandled {
-			hsRes, err := cpanel.ImportHomeSplit(ctx, sharedAgent, p.parsed, job.ID, p.targetUsername)
+			hsRes, err := cpanel.ImportHomeSplit(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("home_split: %w", err)
 			}
@@ -742,7 +750,7 @@ func cpanelRestoreCallback(
 				}
 			}
 			if fallback || hsRes.DomainsCopied == 0 {
-				homeRes, err := cpanel.ImportHome(ctx, sharedAgent, p.parsed, job.ID, p.targetUsername)
+				homeRes, err := cpanel.ImportHome(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
 				if err != nil {
 					return bytes, warnings, fmt.Errorf("home: %w", err)
 				}
@@ -756,7 +764,7 @@ func cpanelRestoreCallback(
 			}
 		}
 
-		domainsRes, err := cpanel.ImportDomains(ctx, domainsRepo, sharedAgent, p.parsed, p.targetUserID, p.targetUsername)
+		domainsRes, err := cpanel.ImportDomains(ctx, domainsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("domains: %w", err)
 		}
@@ -774,7 +782,7 @@ func cpanelRestoreCallback(
 		warnings = append(warnings, fmt.Sprintf("cron: created=%d", cronRes.Created))
 		warnings = append(warnings, cronRes.Skipped...)
 
-		mailRes, err := cpanel.ImportMailboxes(ctx, p.parsed, sharedAgent, job.ID, mbRepo, domainsRepo)
+		mailRes, err := cpanel.ImportMailboxes(ctx, p.parsed, restoreAgent, job.ID, mbRepo, domainsRepo)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("mailboxes: %w", err)
 		}
@@ -784,7 +792,7 @@ func cpanelRestoreCallback(
 		warnings = append(warnings, mailRes.Skipped...)
 
 		// M35.8 P3: per-domain custom SSL certs from apache_tls/.
-		sslRes, err := cpanel.ImportSSL(ctx, sharedAgent, p.parsed)
+		sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("ssl: %w", err)
 		}
@@ -798,7 +806,7 @@ func cpanelRestoreCallback(
 		// the rewriter reads each per-domain docroot under
 		// /home/<u>/domains/<dom>/public_html and splices values in.
 		// Best-effort: missing app config = silent skip.
-		appRes, err := cpanel.ImportAppConfigs(ctx, sharedAgent, p.targetUserID, p.targetUsername, dbsRes.Credentials)
+		appRes, err := cpanel.ImportAppConfigs(ctx, restoreAgent, p.targetUserID, p.targetUsername, dbsRes.Credentials)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("appconfigs: %v", err))
 		} else {
@@ -808,7 +816,7 @@ func cpanelRestoreCallback(
 			warnings = append(warnings, appRes.Skipped...)
 		}
 
-		extrasRes, err := cpanel.ImportExtras(ctx, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, sharedAgent, p.parsed, p.targetUserID, p.targetUsername)
+		extrasRes, err := cpanel.ImportExtras(ctx, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("extras: %w", err)
 		}
