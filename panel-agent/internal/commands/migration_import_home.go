@@ -2,20 +2,22 @@
 // destination jabali user's /home/<user>/. M35 cPanel restore stage.
 //
 // Source path: /var/lib/jabali-migrations/<job-id>/extracted/cp/
-//              <source-user>/homedir/
+//
+//	<source-user>/homedir/
+//
 // Destination: /home/<target-user>/
 //
 // Mechanics:
-// - rsync -aH (preserve perms/links/hardlinks) with delete-after on
-//   the destination so resume after partial failure converges
-// - chown -R <target>:<target> after rsync (cpmove tarballs preserve
-//   source-side ownership which would point at numeric uids on the
-//   source host)
-// - excludes .ssh/ (panel-side ssh_keys table is the truth; reconciler
-//   materialises authorized_keys), .cpanel/ (cPanel control files
-//   meaningless on jabali), .htpasswd files (operator re-creates),
-//   and standard backup-noise (.lock, .DS_Store, etc.)
-// - 4-hour timeout per call; mid-call cancellation kills rsync
+//   - rsync -aH (preserve perms/links/hardlinks) with delete-after on
+//     the destination so resume after partial failure converges
+//   - chown -R <target>:<target> after rsync (cpmove tarballs preserve
+//     source-side ownership which would point at numeric uids on the
+//     source host)
+//   - excludes .ssh/ (panel-side ssh_keys table is the truth; reconciler
+//     materialises authorized_keys), .cpanel/ (cPanel control files
+//     meaningless on jabali), .htpasswd files (operator re-creates),
+//     and standard backup-noise (.lock, .DS_Store, etc.)
+//   - 4-hour timeout per call; mid-call cancellation kills rsync
 //
 // SECURITY: only runs as root (agent is privileged). The dest_user
 // argument is validated against /etc/passwd via getent before any
@@ -77,9 +79,9 @@ type migrationImportHomeParams struct {
 }
 
 type migrationImportHomeResult struct {
-	BytesCopied int64  `json:"bytes_copied"`
-	Files       int64  `json:"files"`
-	DestPath    string `json:"dest_path"`
+	BytesCopied int64    `json:"bytes_copied"`
+	Files       int64    `json:"files"`
+	DestPath    string   `json:"dest_path"`
 	Skipped     []string `json:"skipped,omitempty"`
 }
 
@@ -161,7 +163,15 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 	// DestSubpath is supplied (per-domain mode) so multiple calls
 	// accumulate cleanly without trashing each other's output.
 	rsyncFlags := "-aH"
-	args := []string{rsyncFlags, "--no-h", "--info=stats2"}
+	// --partial keeps a partially-transferred file on interruption (instead
+	// of discarding it); --append-verify resumes that file from where it
+	// stopped and then checksums the whole result. So a transfer that dies
+	// mid-large-file (flaky long-haul link, 50 GB account) resumes that one
+	// file instead of restarting it. Safe for migration because the source
+	// is a static cpmove snapshot during the window, and append-verify's
+	// full-file checksum self-corrects a bad/truncated partial (mismatch ->
+	// rsync re-sends the file).
+	args := []string{rsyncFlags, "--partial", "--append-verify", "--no-h", "--info=stats2"}
 	if p.DestSubpath == "" {
 		args = append(args, "--delete-after")
 	}
