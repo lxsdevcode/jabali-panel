@@ -18,6 +18,8 @@ Filters: by owner, by package, by SSL state (issued / pending / failed / off), b
 
 The admin create flow is identical to the user create flow except the admin chooses the owning user. Use this to provision a domain on behalf of a user during migration or onboarding.
 
+The create form includes a **Mail** picker (Jabali mail / No mail / Microsoft 365 / Google Workspace). Choosing anything other than Jabali stops the panel acting as the mailserver, drops the mail SANs from the certificate, and (for the external providers) publishes that provider's DNS records. See [Mail provider (per domain)](../dns.md#mail-provider-per-domain). It's editable later under Domains → Edit → Email.
+
 ## Per-domain settings (admin-only fields)
 
 In addition to the fields a user sees:
