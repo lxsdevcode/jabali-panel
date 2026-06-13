@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/cronvalidate"
@@ -109,7 +110,21 @@ type removeParams struct {
 }
 
 func depsWired(d Deps) bool {
-	return d.Users != nil && d.Domains != nil && d.CronJobs != nil && d.Agent != nil
+	return d.Users != nil && d.Domains != nil && d.CronJobs != nil && !agentIsNil(d.Agent)
+}
+
+// agentIsNil reports whether the AgentCaller is unusable: a nil
+// interface, or a typed-nil pointer boxed in the interface. A CLI
+// path that runs PreRunE: requireDB (not requireDBAndAgent) wires
+// Agent: (*agent.Client)(nil) — which is != nil as an interface but
+// SIGSEGVs on Call. Catching it here turns a panic into ErrDeps even
+// when a future command forgets to require the agent.
+func agentIsNil(a AgentCaller) bool {
+	if a == nil {
+		return true
+	}
+	v := reflect.ValueOf(a)
+	return v.Kind() == reflect.Ptr && v.IsNil()
 }
 
 // resolveLinuxUser loads the user and enforces the Linux-account

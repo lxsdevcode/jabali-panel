@@ -159,6 +159,29 @@ func TestCreate_DisabledDoesNotApply(t *testing.T) {
 // cron.* parse these exact JSON keys — drift = silent runtime
 // validation failure (feedback_cross_boundary_contracts). Change
 // this AND panel-agent/internal/commands/cron_*.go together.
+// Regression: a typed-nil agent (CLI path that ran requireDB instead
+// of requireDBAndAgent → Agent: (*fakeAgent)(nil), boxed non-nil in the
+// AgentCaller interface) must return ErrDeps, NOT SIGSEGV on Call.
+// Guards both the missing-PreRunE wiring and the typed-nil interface trap.
+func TestCreateUpdate_TypedNilAgent_ReturnsErrDeps(t *testing.T) {
+	u := &models.User{ID: "u1", Username: uname("alice")}
+	var nilAgent *fakeAgent // typed-nil; (AgentCaller)(nilAgent) != nil
+	d := deps(u, nilAgent, &fakeCronRepo{})
+
+	_, err := Create(context.Background(), d, CreateInput{
+		UserID: "u1", Name: "t", Schedule: "*/15 * * * *",
+		Command: "/usr/bin/php -v", Enabled: true,
+	})
+	if !errors.Is(err, ErrDeps) {
+		t.Fatalf("Create typed-nil agent: want ErrDeps, got %v", err)
+	}
+
+	_, err = Update(context.Background(), d, "job1", UpdatePatch{})
+	if !errors.Is(err, ErrDeps) {
+		t.Fatalf("Update typed-nil agent: want ErrDeps, got %v", err)
+	}
+}
+
 func TestCronWireShape(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
