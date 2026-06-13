@@ -1432,6 +1432,11 @@ func (r *Reconciler) reconcileDNSZone(ctx context.Context, domain *models.Domain
 	// reconcile cycle (≤60s default) per Step 7 exit criteria.
 	r.convergeApexAddrRecords(ctx, zone, domain)
 
+	// GH#181: converge mail DNS to the domain's mail provider (jabali /
+	// none / m365 / google) BEFORE listing for compile, so the right
+	// MX/SPF/autodiscover (or none) get pushed to PowerDNS this pass.
+	r.reconcileMailProviderRecords(ctx, zone, domain, srv)
+
 	records, err := r.dnsRecords.ListByZoneID(ctx, zone.ID)
 	if err != nil {
 		r.log.Error("list records failed", "zone", zone.Name, "err", err)
