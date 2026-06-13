@@ -54,7 +54,7 @@ npm run dev                        # http://localhost:5173, proxies /api → :84
 | `make test-coverage` | Tests with coverage (internal packages only) |
 | `make test-integration` | Integration tests (requires `JABALI_TEST_DATABASE_URL` + real MariaDB) |
 | `make coverage-check` | Fail if combined coverage below 80% |
-| `make lint` | `golangci-lint` across the workspace |
+| `make lint` | `golangci-lint` across the workspace + `tools/lint-install-sh.sh` (install.sh phantom-function lint) |
 | `make fmt` | Format all Go code |
 | `make vet` | `go vet` |
 | `make tidy` | `go mod tidy` |
