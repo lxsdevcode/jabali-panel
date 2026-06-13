@@ -53,6 +53,10 @@ func (f *fakeDomainRepo) FindByName(_ context.Context, name string) (*models.Dom
 	return nil, repository.ErrNotFound
 }
 
+func (f *fakeDomainRepo) UpdateMailProvider(_ context.Context, _ string, _ repository.DomainMailProvider) error {
+	return nil
+}
+
 func (f *fakeDomainRepo) UpdateEmailState(_ context.Context, id string, state repository.DomainEmailState) error {
 	if f.updateErr != nil {
 		return f.updateErr

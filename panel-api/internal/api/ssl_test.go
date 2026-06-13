@@ -193,6 +193,10 @@ func (m *MockDomainRepository) UpdatePHPSettings(ctx context.Context, id string,
 	return args.Error(0)
 }
 
+func (m *MockDomainRepository) UpdateMailProvider(_ context.Context, _ string, _ repository.DomainMailProvider) error {
+	return nil
+}
+
 func (m *MockDomainRepository) UpdateEmailState(ctx context.Context, id string, state repository.DomainEmailState) error {
 	args := m.Called(ctx, id, state)
 	return args.Error(0)

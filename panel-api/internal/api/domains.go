@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnscompile"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
@@ -80,6 +81,11 @@ type createDomainRequest struct {
 	Name    string `json:"name" binding:"required"`
 	UserID  string `json:"user_id"`
 	DocRoot string `json:"doc_root"`
+	// GH#181: mail provider chosen at domain-add. Empty -> "jabali".
+	// Drives EmailEnabled + SkipAutoSAN via models.DeriveMailFlags.
+	MailProvider    string `json:"mail_provider"`
+	M365Onmicrosoft string `json:"m365_onmicrosoft"`
+	GoogleDKIM      string `json:"google_dkim"`
 }
 
 // validateDomainName validates domain name for security and RFC compliance
@@ -145,6 +151,12 @@ type updateDomainRequest struct {
 	PageRedirects         *models.PageRedirects `json:"page_redirects,omitempty"`
 	NginxRules            *models.NginxRules    `json:"nginx_rules,omitempty"`
 	IndexPriority         *string               `json:"index_priority,omitempty"`
+	// GH#181: mail provider + optional DKIM tokens. Pointers so an absent
+	// field in the PATCH leaves the columns untouched. When MailProvider is
+	// present, EmailEnabled + SkipAutoSAN are re-derived from it.
+	MailProvider    *string `json:"mail_provider,omitempty"`
+	M365Onmicrosoft *string `json:"m365_onmicrosoft,omitempty"`
+	GoogleDKIM      *string `json:"google_dkim,omitempty"`
 	// M24: per-domain IP binding. nullableUint64 distinguishes
 	// "absent in PATCH" (don't touch the column) from "explicitly null"
 	// (clear binding → fall back to server default for the family) from
@@ -561,13 +573,35 @@ func (h *domainHandler) create(c *gin.Context) {
 		docRoot = "/home/" + *user.Username + "/domains/" + req.Name + "/public_html"
 	}
 
+	// GH#181 mail provider: default jabali; validate + normalise tokens;
+	// EmailEnabled/SkipAutoSAN are DERIVED (never client-set directly).
+	mailProvider := req.MailProvider
+	if mailProvider == "" {
+		mailProvider = models.MailProviderJabali
+	}
+	if !models.ValidMailProvider(mailProvider) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_mail_provider"})
+		return
+	}
+	m365Tenant, err := dnscompile.NormaliseM365Onmicrosoft(req.M365Onmicrosoft)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_m365_onmicrosoft", "detail": err.Error()})
+		return
+	}
+	googleDKIM, err := dnscompile.ValidateGoogleDKIM(req.GoogleDKIM)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_google_dkim", "detail": err.Error()})
+		return
+	}
+	mailEnabled, mailSkipSAN := models.DeriveMailFlags(mailProvider)
+
 	now := time.Now().UTC()
 	domain := &models.Domain{
-		ID:        ids.NewULID(),
-		UserID:    targetUserID,
-		Name:      req.Name,
-		DocRoot:   docRoot,
-		IsEnabled: true,
+		ID:         ids.NewULID(),
+		UserID:     targetUserID,
+		Name:       req.Name,
+		DocRoot:    docRoot,
+		IsEnabled:  true,
 		SSLEnabled: true,
 		// ADR-0080: email on by default for new domains. Set explicitly
 		// rather than relying on the DB default so GORM emits
@@ -576,9 +610,13 @@ func (h *domainHandler) create(c *gin.Context) {
 		// clearer and unit-test fixtures that bypass DB defaults stay
 		// correct). Admin can opt-out per-domain via the existing
 		// disable endpoint.
-		EmailEnabled: true,
-		CreatedAt: now,
-		UpdatedAt: now,
+		MailProvider:    mailProvider,
+		M365Onmicrosoft: strPtrOrNil(m365Tenant),
+		GoogleDKIM:      strPtrOrNil(googleDKIM),
+		EmailEnabled:    mailEnabled,
+		SkipAutoSAN:     mailSkipSAN,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	if err := h.cfg.Domains.Create(ctx, domain); err != nil {
@@ -606,7 +644,7 @@ func (h *domainHandler) create(c *gin.Context) {
 	// response (that would change the wire shape); they're surfaced to
 	// the operator on the next GET /domains/:id/email poll, which
 	// computes live DNS status anyway. Hard errors go to slog.
-	if h.cfg.Agent != nil && h.cfg.DNSZones != nil && h.cfg.DNSRecords != nil {
+	if mailProvider == models.MailProviderJabali && h.cfg.Agent != nil && h.cfg.DNSZones != nil && h.cfg.DNSRecords != nil {
 		if _, _, warnings, err := EnableDomainEmailInline(ctx, enableDomainEmailDeps{
 			Agent:         h.cfg.Agent,
 			Domains:       h.cfg.Domains,
@@ -772,6 +810,51 @@ func (h *domainHandler) update(c *gin.Context) {
 		if listenUpd.ChangeIPv6 {
 			domain.ListenIPv6ID = listenUpd.IPv6ID
 		}
+	}
+
+	// GH#181 mail provider: dedicated repo method (Domain.Update's
+	// allowlist excludes these columns). Validate, derive the two mail
+	// flags, write. A switch re-publishes DNS + reissues the cert on the
+	// next reconcile (Schedule below).
+	if req.MailProvider != nil {
+		mp := *req.MailProvider
+		if !models.ValidMailProvider(mp) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_mail_provider"})
+			return
+		}
+		var m365In, gdkimIn string
+		if req.M365Onmicrosoft != nil {
+			m365In = *req.M365Onmicrosoft
+		}
+		if req.GoogleDKIM != nil {
+			gdkimIn = *req.GoogleDKIM
+		}
+		m365Tenant, err := dnscompile.NormaliseM365Onmicrosoft(m365In)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_m365_onmicrosoft", "detail": err.Error()})
+			return
+		}
+		gdkim, err := dnscompile.ValidateGoogleDKIM(gdkimIn)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_google_dkim", "detail": err.Error()})
+			return
+		}
+		emailEnabled, skipSAN := models.DeriveMailFlags(mp)
+		if err := h.cfg.Domains.UpdateMailProvider(ctx, domain.ID, repository.DomainMailProvider{
+			Provider:        mp,
+			EmailEnabled:    emailEnabled,
+			SkipAutoSAN:     skipSAN,
+			M365Onmicrosoft: strPtrOrNil(m365Tenant),
+			GoogleDKIM:      strPtrOrNil(gdkim),
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		domain.MailProvider = mp
+		domain.EmailEnabled = emailEnabled
+		domain.SkipAutoSAN = skipSAN
+		domain.M365Onmicrosoft = strPtrOrNil(m365Tenant)
+		domain.GoogleDKIM = strPtrOrNil(gdkim)
 	}
 
 	// Schedule reconciliation to sync the domain state with the agent.
@@ -1172,7 +1255,6 @@ func validatePageRedirects(prs models.PageRedirects) error {
 	return nil
 }
 
-
 func isValidNginxRuleType(s string) bool {
 	switch s {
 	case "custom_header", "rewrite", "proxy_pass", "ip_access", "php_setting", "max_upload_size":
@@ -1202,9 +1284,9 @@ func validateNginxRules(rules models.NginxRules) error {
 				return fmt.Errorf("rule %d: header name required", i)
 			}
 			if r.Value == "" {
-			return fmt.Errorf("rule %d: header value required", i)
-		}
-		if strings.ContainsAny(r.Name, " \t\n\r:;") {
+				return fmt.Errorf("rule %d: header value required", i)
+			}
+			if strings.ContainsAny(r.Name, " \t\n\r:;") {
 				return fmt.Errorf("rule %d: invalid chars in header name", i)
 			}
 		case "rewrite":
@@ -1281,15 +1363,16 @@ func domainLinuxUser(email string) string {
 // `from` accepts YYYY-MM-DD to override; `to` defaults to today UTC.
 //
 // Response shape:
-//   {
-//     "domain_id": "01...",
-//     "from": "2026-04-09", "to": "2026-05-09",
-//     "bytes_total": 12345678, "requests_total": 9876,
-//     "daily": [
-//       {"day": "2026-05-08", "bytes_total": 1234, "requests_total": 56},
-//       ...
-//     ]
-//   }
+//
+//	{
+//	  "domain_id": "01...",
+//	  "from": "2026-04-09", "to": "2026-05-09",
+//	  "bytes_total": 12345678, "requests_total": 9876,
+//	  "daily": [
+//	    {"day": "2026-05-08", "bytes_total": 1234, "requests_total": 56},
+//	    ...
+//	  ]
+//	}
 //
 // Authorization mirrors GET /domains/:id: admins read any, users only
 // their own. Domain ownership is verified via the existing FindByID
@@ -1382,4 +1465,13 @@ func isNginxDuration(v string) bool {
 		return true
 	}
 	return false
+}
+
+// strPtrOrNil returns nil for an empty string, else a pointer to it — so
+// the optional mail-provider DKIM tokens write SQL NULL when absent.
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
