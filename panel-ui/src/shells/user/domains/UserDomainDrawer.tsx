@@ -1,11 +1,16 @@
 // UserDomainDrawer — tenant Add-domain Drawer (replaces the
 // /jabali-panel/domains/create page route).
-import { Button, Drawer, Form, Grid, Input, Space, message } from "antd";
+import { Button, Drawer, Form, Grid, Input, Select, Space, message } from "antd";
 import { useEffect } from "react";
 
 import { useCreateMutation } from "../../../hooks/useQueries";
 
-type UserDomainCreateInput = { name: string };
+type UserDomainCreateInput = {
+  name: string;
+  mail_provider?: string;
+  m365_onmicrosoft?: string;
+  google_dkim?: string;
+};
 type DomainCreated = { id: string };
 
 export interface UserDomainDrawerProps {
@@ -15,6 +20,7 @@ export interface UserDomainDrawerProps {
 
 export const UserDomainDrawer = ({ open, onClose }: UserDomainDrawerProps) => {
   const [form] = Form.useForm<UserDomainCreateInput>();
+  const mailProvider = Form.useWatch("mail_provider", form) ?? "jabali";
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
 
@@ -60,6 +66,42 @@ export const UserDomainDrawer = ({ open, onClose }: UserDomainDrawerProps) => {
         >
           <Input placeholder="e.g., example.com" />
         </Form.Item>
+
+        <Form.Item
+          label="Mail"
+          name="mail_provider"
+          initialValue="jabali"
+          tooltip="Where this domain's email is hosted. 'None' and the external providers skip Jabali's mail DNS records and mail certificate SANs."
+        >
+          <Select
+            options={[
+              { value: "jabali", label: "Jabali mail (this server)" },
+              { value: "none", label: "No mail" },
+              { value: "m365", label: "Microsoft 365" },
+              { value: "google", label: "Google Workspace" },
+            ]}
+          />
+        </Form.Item>
+
+        {mailProvider === "m365" && (
+          <Form.Item
+            label="Microsoft 365 tenant"
+            name="m365_onmicrosoft"
+            tooltip="Optional. Your <tenant>.onmicrosoft.com — adds the selector1/2 DKIM CNAMEs. MX/SPF/autodiscover are added automatically."
+          >
+            <Input placeholder="contoso.onmicrosoft.com (optional)" />
+          </Form.Item>
+        )}
+
+        {mailProvider === "google" && (
+          <Form.Item
+            label="Google DKIM value"
+            name="google_dkim"
+            tooltip="Optional. Paste the google._domainkey TXT value from Google Admin. MX/SPF are added automatically."
+          >
+            <Input.TextArea rows={2} placeholder="v=DKIM1; k=rsa; p=... (optional)" />
+          </Form.Item>
+        )}
 
         <Form.Item>
           <Space>
