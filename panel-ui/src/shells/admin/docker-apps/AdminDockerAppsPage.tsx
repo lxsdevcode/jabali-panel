@@ -69,12 +69,11 @@ export const AdminDockerAppsPage = () => {
 
   const updateImage = useMutation({
     mutationFn: async (id: string) => updateApp(id),
-    onSuccess: (r) => {
-      if (r.outcome === "rolled_back") {
-        message.warning(r.detail ? `Rolled back: ${r.detail}` : "Update failed; rolled back to previous image");
-      } else {
-        message.success("Updated");
-      }
+    onSuccess: () => {
+      // Async: the server returned 202 (update started). The row shows the
+      // "updating" spinner and the 8s poll flips it to running/failed when
+      // the background pull + recreate finishes.
+      message.info("Update started — this can take a few minutes");
       qc.invalidateQueries({ queryKey: ["docker-apps-installed"] });
     },
     onError: (e: unknown) => message.error(e instanceof Error ? e.message : "Update failed"),

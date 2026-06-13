@@ -1222,12 +1222,12 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	// Mark `updating` so the UI shows a spinner; restore on outcome.
 	_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusUpdating, nil)
 
-	callCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
-	defer cancel()
 	// Re-render the compose from the CURRENT catalog template so catalog
 	// fixes (e.g. a corrected healthcheck) and version bumps reach this
 	// install — update otherwise reused the stale on-disk compose.yml.
-	// Secrets are preserved via the install's existing .env.
+	// Secrets are preserved via the install's existing .env. (Fast — kept
+	// on the request path so render errors are visible; the slow pull runs
+	// in the background below.)
 	updateParams := map[string]any{
 		"slug":                        app.EffectiveSlug(),
 		"healthcheck_timeout_seconds": 300,
@@ -1244,46 +1244,58 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 		updateParams["compose_yml"] = composeYML
 		updateParams["env_file"] = envFile
 	}
-	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.update", updateParams)
-	// Same WithoutCancel guard as install: the terminal status
-	// has to land even if the client dropped the connection.
-	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer persistCancel()
-	if err != nil {
-		msg := firstLineString(err.Error())
-		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusFailed, &msg)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_update_failed", "detail": msg})
-		return
-	}
-	// Parse the outcome to set the right terminal status.
-	var resp struct {
-		Outcome  string `json:"outcome"`
-		Detail   string `json:"detail"`
-		NewImage string `json:"new_image"`
-	}
-	_ = json.Unmarshal(raw, &resp)
-	switch resp.Outcome {
-	case "updated":
-		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, nil)
-		if resp.NewImage != "" {
-			_ = h.cfg.Repo.UpdateImageSHA(persistCtx, app.ID, resp.NewImage)
-			_ = h.cfg.Repo.UpdateAvailableDigest(persistCtx, app.ID, resp.NewImage)
+
+	// docker_app.update pulls a new image + recreates containers, which can
+	// take minutes. Running it on the request goroutine held the HTTP
+	// response open past nginx's proxy_read_timeout -> 502 in the browser,
+	// even though the update finished in the background and the app ended up
+	// updated. Detach it: return 202 now and run the agent call + terminal
+	// status in a background goroutine. The status was already set to
+	// `updating` above; the UI polls docker-app status every 8s and shows
+	// the spinner until the row flips to running / failed.
+	appID := app.ID
+	appSlug := app.Slug
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+		defer cancel()
+		raw, err := h.cfg.Agent.Call(bgCtx, "docker_app.update", updateParams)
+		persistCtx, persistCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer persistCancel()
+		if err != nil {
+			msg := firstLineString(err.Error())
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusFailed, &msg)
+			return
 		}
-		// The install was just re-rendered from the current catalog, so the
-		// version label should track the catalog instead of freezing at the
-		// install-time value (the "shows 2.8.1 but running 2.14.1" report).
-		if h.cfg.Catalog != nil {
-			if entry, ok := h.cfg.Catalog.Get(app.Slug); ok && entry.Version != "" {
-				_ = h.cfg.Repo.UpdateCatalogVersion(persistCtx, app.ID, entry.Version)
+		var resp struct {
+			Outcome  string `json:"outcome"`
+			Detail   string `json:"detail"`
+			NewImage string `json:"new_image"`
+		}
+		_ = json.Unmarshal(raw, &resp)
+		switch resp.Outcome {
+		case "updated":
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusRunning, nil)
+			if resp.NewImage != "" {
+				_ = h.cfg.Repo.UpdateImageSHA(persistCtx, appID, resp.NewImage)
+				_ = h.cfg.Repo.UpdateAvailableDigest(persistCtx, appID, resp.NewImage)
 			}
+			// The install was just re-rendered from the current catalog, so
+			// the version label tracks the catalog instead of freezing at
+			// the install-time value.
+			if h.cfg.Catalog != nil {
+				if entry, ok := h.cfg.Catalog.Get(appSlug); ok && entry.Version != "" {
+					_ = h.cfg.Repo.UpdateCatalogVersion(persistCtx, appID, entry.Version)
+				}
+			}
+		case "rolled_back":
+			detail := resp.Detail
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusRunning, &detail)
+		default:
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusRunning, nil)
 		}
-	case "rolled_back":
-		detail := resp.Detail
-		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, &detail)
-	default:
-		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, nil)
-	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"status": "updating", "id": appID})
 }
 
 // logs proxies docker_app.logs through. Query params: lines (int,

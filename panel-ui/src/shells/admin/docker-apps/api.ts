@@ -38,8 +38,12 @@ export async function lifecycleAction(
   await apiClient.post(`${BASE}/${id}/${action}`);
 }
 
-export async function updateApp(id: string): Promise<{ outcome: "updated" | "rolled_back"; detail?: string }> {
-  const { data } = await apiClient.post<{ outcome: "updated" | "rolled_back"; detail?: string }>(`${BASE}/${id}/update`, undefined, { timeout: 10 * 60 * 1000 });
+export async function updateApp(id: string): Promise<{ status: string; id: string }> {
+  // The server now starts the update asynchronously and returns 202 with
+  // { status: "updating" } — the pull + recreate runs in the background and
+  // the row's status (polled every 8s) flips to running/failed. (Was
+  // synchronous; long image pulls blew past nginx's proxy timeout -> 502.)
+  const { data } = await apiClient.post<{ status: string; id: string }>(`${BASE}/${id}/update`, undefined);
   return data;
 }
 
