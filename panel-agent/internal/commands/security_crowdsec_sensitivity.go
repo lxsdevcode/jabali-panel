@@ -179,7 +179,11 @@ func sensitivityApplyHandler(ctx context.Context, params json.RawMessage) (any, 
 		if err := writeSensitivityFile(sensAPITokenBfPath, apiTokenBfYAML(50, "60s", "4h")); err != nil {
 			return nil, csInternal("write api-token-bf", err)
 		}
-		if err := writeSensitivityFile(sensStalwartAuthBf, stalwartAuthBfYAML(5, "60s", "4h")); err != nil {
+		// GH#132: 5 failures banned a legit user mid-Thunderbird setup
+		// (autoconfig probes IMAP/SMTP/sieve, plus one fumbled password,
+		// hit 5 fast). Mail clients need more headroom than the panel/SSH
+		// scenarios; 10 still catches a real brute force.
+		if err := writeSensitivityFile(sensStalwartAuthBf, stalwartAuthBfYAML(10, "60s", "1h")); err != nil {
 			return nil, csInternal("write stalwart-auth-bf", err)
 		}
 		if err := writeSensitivityFile(sensStalwartUserEnum, stalwartUserEnumYAML(3, "60s", "4h")); err != nil {

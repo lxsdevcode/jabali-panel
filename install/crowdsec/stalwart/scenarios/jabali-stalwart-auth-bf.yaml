@@ -17,13 +17,15 @@ filter: evt.Parsed.event in ["auth.failed", "auth.error", "auth.too-many-attempt
 # Group by source IP to track per-attacker
 groupby: evt.Meta.source_ip
 
-# Leaky bucket: 5 events in ~50 seconds triggers ban
+# Leaky bucket: 10 events triggers ban (GH#132: mail clients probe several
+# protocols on setup; 5 banned a legit Thunderbird user). Still catches a
+# real brute force.
 # Adjust based on your threat model
-leakspeed: "10s"
-capacity: 5
+leakspeed: "30s"
+capacity: 10
 
 # Silence after triggering to reduce alert spam
-blackhole: "5m"
+blackhole: "1m"
 
 # Ban duration (can be overridden by profiles)
 labels:
