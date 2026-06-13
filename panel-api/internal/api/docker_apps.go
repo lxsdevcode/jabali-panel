@@ -526,44 +526,47 @@ func (h *dockerAppHandler) install(c *gin.Context) {
 		return
 	}
 
-	// Dispatch install via the agent (synchronous, with a sensible
-	// deadline). On failure we surface the error AND leave the row in
-	// `failed` state so the operator can retry from the UI.
+	// Dispatch the install through the agent in the BACKGROUND. The image
+	// pull + compose-up + health wait can take minutes; running it on the
+	// request goroutine held the response past nginx's proxy_read_timeout
+	// -> 502 in the browser (same shape as the update path). The row is
+	// created with status=installing and the UI polls every 8s until it
+	// flips to running / failed.
 	if h.cfg.Agent != nil {
-		callCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		defer cancel()
-		_ = h.cfg.Repo.UpdateStatus(callCtx, app.ID, models.DockerAppStatusInstalling, nil)
+		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusInstalling, nil)
 		volumeNames := make([]string, 0, len(entry.Volumes))
 		for _, v := range entry.Volumes {
 			volumeNames = append(volumeNames, v.Name)
 		}
-		envFile := buildEnvFile(envMap)
-		_, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", map[string]any{
+		installParams := map[string]any{
 			"slug":                        instanceSlug,
 			"compose_yml":                 composeYML,
-			"env_file":                    envFile,
+			"env_file":                    buildEnvFile(envMap),
 			"volumes":                     volumeNames,
 			"volume_owner":                entry.VolumeOwner,
 			"wait_healthy":                true,
 			"healthcheck_timeout_seconds": 300,
-		})
-		// Use WithoutCancel for terminal status writes -- if the
-		// client dropped the connection mid-install (closed drawer,
-		// navigated away, network blip) we still want the row to
-		// converge to its true terminal state. Without this the row
-		// sticks at `installing` forever.
-		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer persistCancel()
-		if agentErr != nil {
-			msg := firstLineString(agentErr.Error())
-			_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusFailed, &msg)
-			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_install_failed", "detail": msg, "id": app.ID})
-			return
 		}
-		_ = h.cfg.Repo.UpdateStatus(persistCtx, app.ID, models.DockerAppStatusRunning, nil)
+		appID := app.ID
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+			defer cancel()
+			_, agentErr := h.cfg.Agent.Call(bgCtx, "docker_app.install", installParams)
+			// WithoutCancel/Background so the terminal status lands even
+			// though the request already returned.
+			persistCtx, persistCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer persistCancel()
+			if agentErr != nil {
+				msg := firstLineString(agentErr.Error())
+				_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusFailed, &msg)
+				return
+			}
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusRunning, nil)
+		}()
 	}
 
-	// Return the installed row.
+	// Return the row immediately (status=installing). The UI's 8s poll
+	// flips it to running / failed when the background install finishes.
 	fresh, _ := h.cfg.Repo.FindByID(ctx, app.ID)
 	ports, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
 	if fresh != nil {
