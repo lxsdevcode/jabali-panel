@@ -49,6 +49,11 @@ type DomainRepository interface {
 	// dkim_public_key so DNS re-publication after a later re-enable doesn't
 	// re-roll the key per ADR-0043.
 	UpdateEmailState(ctx context.Context, id string, state DomainEmailState) error
+	// UpdateMailProvider writes the GH#181 mail-provider columns
+	// (mail_provider + the optional DKIM tokens) together with the
+	// derived email_enabled + skip_auto_san. Dedicated method (not the
+	// Select-allowlist Update) so the columns can't be silently dropped.
+	UpdateMailProvider(ctx context.Context, id string, mp DomainMailProvider) error
 	// FindPanelPrimary returns the single is_panel_primary=1 row, or
 	// ErrPanelPrimaryNotFound if no such row exists. ADR-0048.
 	FindPanelPrimary(ctx context.Context) (*models.Domain, error)
@@ -438,6 +443,40 @@ func (r *domainRepo) UpdateEmailState(ctx context.Context, id string, state Doma
 	}
 	if state.DkimPublicKey != nil {
 		updates["dkim_public_key"] = state.DkimPublicKey
+	}
+	res := r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Updates(updates)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DomainMailProvider is the input to UpdateMailProvider. EmailEnabled +
+// SkipAutoSAN are the values DERIVED from Provider by models.DeriveMailFlags
+// (the caller computes them so the reconciler/cert columns stay consistent
+// with the enum). M365Onmicrosoft / GoogleDKIM are written as-is (nil ->
+// SQL NULL); validate/normalise before calling.
+type DomainMailProvider struct {
+	Provider        string
+	EmailEnabled    bool
+	SkipAutoSAN     bool
+	M365Onmicrosoft *string
+	GoogleDKIM      *string
+}
+
+func (r *domainRepo) UpdateMailProvider(ctx context.Context, id string, mp DomainMailProvider) error {
+	updates := map[string]interface{}{
+		"mail_provider":    mp.Provider,
+		"email_enabled":    mp.EmailEnabled,
+		"skip_auto_san":    mp.SkipAutoSAN,
+		"m365_onmicrosoft": mp.M365Onmicrosoft,
+		"google_dkim":      mp.GoogleDKIM,
+		"updated_at":       time.Now().UTC(),
 	}
 	res := r.db.WithContext(ctx).Model(&models.Domain{}).
 		Where("id = ?", id).

@@ -44,6 +44,30 @@ jabali pdns dnssec disable <domain>
 
 See [platform/dnssec.md](./platform/dnssec.md) for the architecture details.
 
+## Mail provider (per domain)
+
+Each domain has a **mail provider** (Domains → Edit → Email → *Mail provider*,
+or chosen at domain-add). It is the single source of truth for the domain's
+mail DNS and certificate posture — `email_enabled` and the cert's mail SANs
+are derived from it:
+
+| Provider | MX | SPF (apex) | Other | Jabali mail cert SANs |
+|----------|----|-----------|-------|------------------------|
+| **Jabali mail** (default) | `mail.<domain>` | `v=spf1 mx …` | DKIM, autoconfig/autodiscover, IMAP/submission SRVs (the M6 set) | yes (mail/autoconfig/autodiscover/mta-sts) |
+| **No mail** | — | — | none | no |
+| **Microsoft 365** | `<domain-dashed>.mail.protection.outlook.com` | `include:spf.protection.outlook.com -all` | `autodiscover → autodiscover.outlook.com`; optional `selector1/2._domainkey` CNAMEs (set the tenant's `onmicrosoft` name) | no |
+| **Google Workspace** | `smtp.google.com` | `include:_spf.google.com ~all` | optional `google._domainkey` TXT (paste from Google Admin) | no |
+
+Switching providers is reconciled like any other DNS change: the panel
+publishes the new set, prunes the previous one (scoped by `managed_by` —
+`mail-apex` for the apex MX/SPF/DMARC, `mail-provider-<p>` for the rest, `m6`
+for the Jabali set), and re-issues the certificate without the mail SANs for
+external/none. There is always exactly one `v=spf1` TXT at the apex.
+Operator-authored apex mail records are replaced when a provider is selected
+(pick a preset, or pick **No mail** and hand-manage the records yourself).
+DKIM for Microsoft 365 / Google is published only when you supply the token;
+MX / SPF / autodiscover are automatic.
+
 ## Cache invalidation
 
 PowerDNS auth caches answers for `cache-ttl` (default 60 s). After any panel-side mutation (record add/update/delete, zone create/delete) the agent runs `pdns_control purge <zone>$` so callers don't see stale data for up to 60 s. This is the "PDNS cache after backend write" rule — without it, fresh records appear stuck.

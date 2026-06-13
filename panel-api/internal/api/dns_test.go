@@ -87,6 +87,10 @@ func (m *mockDomainRepo) UpdatePHPSettings(ctx context.Context, id string, setti
 	return nil
 }
 
+func (m *mockDomainRepo) UpdateMailProvider(_ context.Context, _ string, _ repository.DomainMailProvider) error {
+	return nil
+}
+
 func (m *mockDomainRepo) UpdateEmailState(ctx context.Context, id string, state repository.DomainEmailState) error {
 	d, ok := m.domains[id]
 	if !ok {

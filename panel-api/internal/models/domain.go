@@ -243,6 +243,18 @@ type Domain struct {
 	// LE challenge fails for the missing subdomain and the WHOLE cert
 	// stays pending.
 	SkipAutoSAN     bool       `gorm:"column:skip_auto_san;type:tinyint(1);not null;default:0" json:"skip_auto_san"`
+	// MailProvider (GH#181 / ADR-0120, migration 000166) is the single
+	// source of truth for where this domain's mail lives. EmailEnabled +
+	// SkipAutoSAN are DERIVED from it on create/edit (see
+	// DeriveMailFlags). Values: "jabali" (default) | "none" | "m365" |
+	// "google". External/none providers set EmailEnabled=false +
+	// SkipAutoSAN=true and publish the provider's own DNS records.
+	MailProvider string `gorm:"column:mail_provider;type:varchar(16);not null;default:'jabali'" json:"mail_provider"`
+	// M365Onmicrosoft / GoogleDKIM are optional per-provider DKIM tokens
+	// the operator pastes from the provider's admin console. Empty ->
+	// the provider's DKIM records are simply not published.
+	M365Onmicrosoft *string `gorm:"column:m365_onmicrosoft;type:varchar(255)" json:"m365_onmicrosoft,omitempty"`
+	GoogleDKIM      *string `gorm:"column:google_dkim;type:text" json:"google_dkim,omitempty"`
 	DkimSelector    *string    `gorm:"type:varchar(64)" json:"dkim_selector,omitempty"`
 	DkimPublicKey   *string    `gorm:"type:text" json:"dkim_public_key,omitempty"`
 	EmailEnabledAt  *time.Time `gorm:"type:datetime(6)" json:"email_enabled_at,omitempty"`
