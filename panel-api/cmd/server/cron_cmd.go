@@ -110,7 +110,7 @@ func newCronAddCmd() *cobra.Command {
 		Use:     "add",
 		Short:   "Add a cron job (5-field cron, allowlisted commands only)",
 		Long:    "Schedule format is standard 5-field cron (e.g. '*/15 * * * *'). Command must pass cron-validate (php/wp/curl/git etc. allowlist; absolute paths only).",
-		PreRunE: requireDB,
+		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
@@ -162,7 +162,7 @@ func newCronUpdateCmd() *cobra.Command {
 		Use:     "update <job-id>",
 		Short:   "Update a cron job",
 		Args:    cobra.ExactArgs(1),
-		PreRunE: requireDB,
+		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
