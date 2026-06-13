@@ -1,0 +1,53 @@
+services:
+  rocketchat:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      PORT: "3000"
+      ROOT_URL: "{{ if .Domain }}https://{{ .Domain }}{{ else }}http://localhost:3000{{ end }}"
+      MONGO_URL: "mongodb://mongodb:27017/rocketchat?replicaSet=rs0"
+      MONGO_OPLOG_URL: "mongodb://mongodb:27017/local?replicaSet=rs0"
+      DEPLOY_METHOD: "docker"
+      # Pre-create the admin so the install isn't stuck on the setup wizard.
+      ADMIN_USERNAME: "{{ index .Env "ROCKETCHAT_ADMIN_USERNAME" }}"
+      ADMIN_PASS: "{{ index .Env "ROCKETCHAT_ADMIN_PASSWORD" }}"
+      ADMIN_EMAIL: "{{ index .Env "ROCKETCHAT_ADMIN_EMAIL" }}"
+      OVERWRITE_SETTING_Show_Setup_Wizard: "completed"
+    volumes:
+      - {{ .DataRoot }}/uploads:/app/uploads
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/info',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  mongodb:
+    image: mongo:6.0
+    container_name: jabali-app-{{ .Slug }}-mongo
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - {{ .DataRoot }}/mongo:/data/db
+    healthcheck:
+      # Initiate the single-node replica set on first boot, then report
+      # healthy once it's PRIMARY. Idempotent — re-running rs.initiate on an
+      # already-initiated set is caught and ignored.
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"try{rs.status().ok}catch(e){rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}).ok}\" | grep -q 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
