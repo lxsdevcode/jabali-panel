@@ -10,6 +10,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 
 ## ADR Index
 
+<!-- AUTO-GENERATED:adr-index — rows generated from docs/adr/NNNN-*.md (title + status). Regenerate via /update-docs. Curated titles are preserved on merge; do not hand-edit inside the markers. -->
 | # | Title | Status |
 |---|-------|--------|
 | [0000](0000-control-plane-model.md) | Control plane model (overview) | Accepted |
@@ -130,6 +131,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0118](0118-m53-updates-center.md) | M53 Updates Center | Accepted |
 | [0119](0119-m54-username-login.md) | M54 username-only login (hard cutover) | Accepted |
 | [0120](0120-mail-provider-dns-templates.md) | Mail-provider DNS templates | Proposed |
+<!-- /AUTO-GENERATED -->
 
 ## Decision Categories
 
