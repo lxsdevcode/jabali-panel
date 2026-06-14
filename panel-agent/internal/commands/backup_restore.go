@@ -328,7 +328,7 @@ func applyAccountRestore(
 			// → branded 403 on /. Reconciler does not self-heal the
 			// docroot group, so re-apply it here. Mirrors domain_create's
 			// <user>:www-data chain.
-			if err := restoreDocrootGroup(ctx, username); err != nil {
+			if err := restoreDocrootGroup(username); err != nil {
 				warnings = append(warnings, fmt.Sprintf("home: docroot group www-data: %v", err))
 			}
 			applied = append(applied, fmt.Sprintf("home → /home/%s", username))
@@ -520,40 +520,80 @@ func applyAccountRestore(
 // restoreDocrootGroup re-applies the provisioning convention that the
 // blanket uid:gid home chown clobbers: web docroots are group-owned by
 // www-data so nginx workers (www-data) can read them. Mirrors the
-// <user>:www-data chain domain_create lays down. chgrp keeps owner +
-// perms, flips only the group. Best-effort per domain: a non-standard
-// layout (no public_html) is skipped, not failed.
-func restoreDocrootGroup(ctx context.Context, username string) error {
+// <user>:www-data chain domain_create lays down — group only, owner +
+// perms preserved (Lchown with uid -1).
+//
+// SECURITY: this runs as root over a tenant-writable tree
+// (/home/<user>/domains is owned by the tenant). It must NEVER follow a
+// symlink, or a tenant who swaps public_html (or a domain dir) for a
+// symlink to /etc, another user's home, etc. could redirect the group
+// flip outside the docroot. So: os.Lstat (not Stat) at every decision
+// point, refuse symlinked/non-dir paths, and chgrp the tree with an
+// Lchown-based walk (filepath.Walk uses Lstat and does not descend into
+// symlinks; Lchown changes the link's own group, never its target) —
+// the same symlink-safe pattern chownTreeRecursive uses below.
+func restoreDocrootGroup(username string) error {
+	grp, err := user.LookupGroup("www-data")
+	if err != nil {
+		return fmt.Errorf("lookup group www-data: %w", err)
+	}
+	gid, err := strconv.Atoi(grp.Gid)
+	if err != nil {
+		return fmt.Errorf("www-data gid %q: %w", grp.Gid, err)
+	}
+
 	domainsDir := "/home/" + username + "/domains"
-	entries, err := os.ReadDir(domainsDir)
+	fi, err := os.Lstat(domainsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // user has no domains → nothing to re-group
 		}
 		return err
 	}
-	// The domains/ dir itself must be group www-data (g+x for traversal).
-	if err := exec.CommandContext(ctx, "chgrp", "www-data", domainsDir).Run(); err != nil {
-		return fmt.Errorf("chgrp %s: %w", domainsDir, err)
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return nil // refuse a symlinked / non-dir domains path
+	}
+	// domains/ itself must be group www-data (g+x for traversal).
+	if err := os.Lchown(domainsDir, -1, gid); err != nil {
+		return fmt.Errorf("lchown %s: %w", domainsDir, err)
+	}
+
+	entries, err := os.ReadDir(domainsDir)
+	if err != nil {
+		return err
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+		if e.Type()&os.ModeSymlink != 0 || !e.IsDir() {
+			continue // skip symlinks + non-dir entries
 		}
 		domDir := filepath.Join(domainsDir, e.Name())
 		pub := filepath.Join(domDir, "public_html")
-		if _, statErr := os.Stat(pub); statErr != nil {
-			continue // not a standard docroot layout
+		pfi, lerr := os.Lstat(pub)
+		if lerr != nil || pfi.Mode()&os.ModeSymlink != 0 || !pfi.IsDir() {
+			continue // not a real docroot dir (missing or symlinked)
 		}
-		if err := exec.CommandContext(ctx, "chgrp", "www-data", domDir).Run(); err != nil {
-			return fmt.Errorf("chgrp %s: %w", domDir, err)
+		if err := os.Lchown(domDir, -1, gid); err != nil {
+			return fmt.Errorf("lchown %s: %w", domDir, err)
 		}
-		// chgrp -R defaults to -P (no symlink follow) — stays in-tree.
-		if err := exec.CommandContext(ctx, "chgrp", "-R", "www-data", pub).Run(); err != nil {
-			return fmt.Errorf("chgrp -R %s: %w", pub, err)
+		if err := chgrpTreeNoFollow(pub, gid); err != nil {
+			return fmt.Errorf("chgrp tree %s: %w", pub, err)
 		}
 	}
 	return nil
+}
+
+// chgrpTreeNoFollow sets the group of every entry under root to gid via
+// Lchown (owner preserved with uid -1; symlinks are not followed — the
+// link's own group is changed, never its target). filepath.Walk Lstats
+// each entry and does not descend into symlinked dirs, so the walk
+// stays inside the docroot even on a tenant-controlled tree.
+func chgrpTreeNoFollow(root string, gid int) error {
+	return filepath.Walk(root, func(path string, _ os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Lchown(path, -1, gid)
+	})
 }
 
 // chownTreeRecursive walks `root` and chowns every entry to uid:gid.
