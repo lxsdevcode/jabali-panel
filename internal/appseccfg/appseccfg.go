@@ -107,6 +107,44 @@ func sanitizeWebmailHosts(in []string) []string {
 	return out
 }
 
+// CRSPluginBeforePath is the jabali-owned CRS "before" plugin file.
+// crowdsecurity/crs globs crs-plugins/*/*-before.conf (via its
+// seclang_files_rules) and runs them BEFORE the CRS detection rules
+// (REQUEST-933 PHP-injection, REQUEST-949 anomaly blocking), which is
+// exactly where a targeted exclusion must sit. The jabali/ subdir is
+// not hub-managed, so it survives crowdsec hub updates; render-config
+// rewrites it on every install + `jabali update`.
+const CRSPluginBeforePath = "/var/lib/crowdsec/data/crs-plugins/jabali/jabali-before.conf"
+
+// CRSPluginBefore returns the body of the jabali CRS "before" plugin —
+// targeted CrowdSec AppSec / CRS false-positive exclusions that must run
+// before the detection + anomaly-scoring rules.
+//
+// Jabali CRS-plugin SecRule id range: 9,599,000–9,599,999.
+//
+// Keep every exclusion as NARROW as the evidence: prefer
+// ctl:ruleRemoveTargetById=<rule>;ARGS:<arg> (drop one rule's
+// inspection of one argument) over ruleRemoveById (kills the rule
+// everywhere) or a path-allow (kills the whole WAF for that path).
+func CRSPluginBefore() string {
+	return `# Managed by jabali — CRS "before" exclusion plugin.
+# DO NOT hand-edit. Written by ` + "`jabali appsec render-config`" + `.
+# Loaded by crowdsecurity/crs via the crs-plugins/*/*-before.conf glob,
+# BEFORE REQUEST-933 (PHP injection) + REQUEST-949 (anomaly blocking).
+#
+# 933120 vs WordPress admin search: editing a custom post type issues
+# /wp-admin/edit.php?...&_wp_http_referer=<double-URL-encoded URL>. The
+# nested URL-inside-a-URL trips CRS 933120 (PHP injection) → php_injection
+# score 10 >= anomaly threshold 5 → 949110 blocks → CrowdSec AppSec 4h
+# ban. False positive on legit logged-in admin traffic.
+#
+# Drop ONLY 933120's inspection of ONLY the _wp_http_referer arg, ONLY
+# under /wp-admin/. Body inspection, every other rule, and 933120 on
+# every other arg/path all stay active.
+SecRule REQUEST_URI "@beginsWith /wp-admin/"     "id:9599100,phase:1,pass,nolog,ctl:ruleRemoveTargetById=933120;ARGS:_wp_http_referer"
+`
+}
+
 // Render returns the full jabali-appsec.yaml body. Deterministic:
 // header(+inband) → on_match (ADR-0102) → pre_eval (geoblock).
 func Render(o Opts) string {

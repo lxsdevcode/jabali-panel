@@ -64,6 +64,13 @@ otherwise refuses to start).
 Exits 0 with "written" / "unchanged" on the last line so callers can
 gate a 'systemctl reload crowdsec' on real diffs.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Targeted CRS false-positive exclusions (jabali CRS "before"
+			// plugin). Independent of the geoblock config; loaded before
+			// REQUEST-933/949. Write-on-diff; the caller reloads crowdsec.
+			if err := writeCRSPluginBefore(cmd); err != nil {
+				return err
+			}
+
 			mode := "off"
 			var countries []string
 			if reconcile {
@@ -168,6 +175,27 @@ func detectInbandRules(dir string) []string {
 		}
 	}
 	return out
+}
+
+// writeCRSPluginBefore writes the jabali CRS "before" plugin
+// (appseccfg.CRSPluginBefore) to its CRS data path. Skips cleanly on a
+// host without crowdsec installed (CI, dev) so we never create a stray
+// /var/lib/crowdsec tree. Write-on-diff: returns without writing when
+// the content already matches.
+func writeCRSPluginBefore(cmd *cobra.Command) error {
+	if _, err := os.Stat("/var/lib/crowdsec/data"); err != nil {
+		return nil // crowdsec not installed here — nothing to manage
+	}
+	body := appseccfg.CRSPluginBefore()
+	existing, _ := os.ReadFile(appseccfg.CRSPluginBeforePath)
+	if string(existing) == body {
+		return nil
+	}
+	if err := atomicWriteAppSec(appseccfg.CRSPluginBeforePath, body); err != nil {
+		return fmt.Errorf("write %s: %w", appseccfg.CRSPluginBeforePath, err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "written %s (CRS before-plugin)\n", appseccfg.CRSPluginBeforePath)
+	return nil
 }
 
 // atomicWriteAppSec writes via tmpfile + rename in the same dir so the
