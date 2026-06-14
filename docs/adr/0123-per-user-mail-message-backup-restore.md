@@ -1,7 +1,7 @@
 # ADR-0123: Per-user mail message backup + restore via JMAP Maildir export/import
 
 **Date**: 2026-06-14
-**Status**: proposed
+**Status**: accepted
 **Amends**: ADR-0122 (messages were "manual bodies.tar only")
 **Deciders**: shukiv
 
