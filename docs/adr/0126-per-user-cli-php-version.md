@@ -75,6 +75,17 @@ already root-owned (M18), so B is as tamper-resistant as A in practice.
   reload churn (symlink no-op when already correct).
 - Reuses `phpCLIFor` lineage; small surface.
 
+### Security hardening (symlink TOCTOU)
+
+The agent runs as root and writes under `/home/<user>`. Every path component
+(`/home/<user>`, `.jabali`, `.jabali/bin`, the `php` entry) is `Lstat`'d and
+refused if it is a symlink or not root-owned; chowns use `Lchown`; the wrapper
+is replaced only when the existing entry is absent or already a symlink (never
+over a regular file). So even if a future host had a tenant-writable home, a
+planted symlink could not redirect root's mkdir/chown/symlink/rename into
+privileged space — the agent refuses and logs instead. Live-verified: a
+tenant-owned home is refused; a root-owned (jabali 0751) home is provisioned.
+
 ### Negative
 - A tenant who renames their root-owned `.jabali` could shadow the
   wrapper — self-only downgrade, accepted (documented).

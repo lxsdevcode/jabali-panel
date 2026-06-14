@@ -66,3 +66,41 @@ func TestRemoveUserCLIPHP_BadUser(t *testing.T) {
 		t.Error("expected error for invalid username")
 	}
 }
+
+// TestReplaceCLISymlink_RefusesRegularFile — a planted regular file at the
+// wrapper path must NOT be overwritten (symlink-TOCTOU hardening).
+func TestReplaceCLISymlink_RefusesRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "php8.4")
+	if err := os.WriteFile(target, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "php")
+	if err := os.WriteFile(link, []byte("planted"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceCLISymlink(link, target); err == nil {
+		t.Error("expected refusal to overwrite a regular file")
+	}
+	// The planted file is untouched.
+	if b, _ := os.ReadFile(link); string(b) != "planted" {
+		t.Error("planted file was modified")
+	}
+}
+
+// TestEnsureRootDir_RefusesSymlink — a symlink where a dir is expected is
+// refused (never followed).
+func TestEnsureRootDir_RefusesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	elsewhere := filepath.Join(dir, "elsewhere")
+	if err := os.Mkdir(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "asdir")
+	if err := os.Symlink(elsewhere, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureRootDir(link); err == nil {
+		t.Error("expected refusal for a symlink standing in for a directory")
+	}
+}
