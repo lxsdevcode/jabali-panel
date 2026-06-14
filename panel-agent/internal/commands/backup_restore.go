@@ -28,9 +28,9 @@ import (
 const restoreLockPath = "/var/lib/jabali-backups/.restore.lock"
 
 type backupRestoreParams struct {
-	JobID              string   `json:"job_id"`
-	ManifestSnapshotID string   `json:"manifest_snapshot_id"`
-	TargetUserID       string   `json:"target_user_id"`
+	JobID              string `json:"job_id"`
+	ManifestSnapshotID string `json:"manifest_snapshot_id"`
+	TargetUserID       string `json:"target_user_id"`
 	// TargetUsername is the system account name (matches /etc/passwd).
 	// Required for the apply step to chown home + scope mariadb loads.
 	// API resolves this from the panel users repo before dispatching.
@@ -209,11 +209,11 @@ func backupRestoreHandler(ctx context.Context, raw json.RawMessage) (any, error)
 // applyAccountRestore walks the materialized stage tree and applies
 // home + db onto the live system. Order:
 //
-//   1. home → rsync staging/home/<username>/ → /home/<username>/
-//      then chown -R <uid>:<gid> /home/<username>
-//   2. db → for each stage with Items=[<dbname>]: mariadb <dbname>
-//      < staging/db/<dbname>.sql (CREATE/DROP TABLE in dump rebuild
-//      schema; existing GRANTs survive because the database row stays)
+//  1. home → rsync staging/home/<username>/ → /home/<username>/
+//     then chown -R <uid>:<gid> /home/<username>
+//  2. db → for each stage with Items=[<dbname>]: mariadb <dbname>
+//     < staging/db/<dbname>.sql (CREATE/DROP TABLE in dump rebuild
+//     schema; existing GRANTs survive because the database row stays)
 //
 // mail is intentionally NOT auto-applied: stalwart-cli apply over a
 // running spool corrupts RocksDB, plan.json has cross-host references
@@ -421,7 +421,17 @@ func applyAccountRestore(
 			applied = append(applied, fmt.Sprintf("db → %s", db))
 
 		case backup.StageMail:
+			// restic preserves the backup-time absolute source path, so the
+			// stage materializes at
+			//   stagingRoot/mail/run/jabali-backup/<backupJobID>/mail/
+			// NOT stagingRoot/mail directly — and <backupJobID> is the
+			// ORIGINAL backup job id (differs from this restore's job), so
+			// it can't be reconstructed. Resolve the real dir by globbing;
+			// fall back to the flat path for any flat-layout snapshot.
 			mailStagingPath := filepath.Join(stagingRoot, "mail")
+			if matches, _ := filepath.Glob(filepath.Join(stagingRoot, "mail", "run", "jabali-backup", "*", "mail")); len(matches) > 0 {
+				mailStagingPath = matches[len(matches)-1]
+			}
 			planPath := filepath.Join(mailStagingPath, "plan.json")
 			bodiesPath := filepath.Join(mailStagingPath, "bodies.tar")
 
