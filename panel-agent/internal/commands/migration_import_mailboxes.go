@@ -200,6 +200,22 @@ func looksLikeMailMaildir(path string) (string, bool) {
 			return dapath, true
 		}
 	}
+	// Subfolder-only mailbox: empty INBOX (no root cur/new) but a
+	// Maildir++ .<Sub> with cur/new still holds mail. Treat the dir as a
+	// maildir so importOneMailbox processes the (empty) INBOX + every
+	// subfolder, instead of dropping the whole mailbox.
+	if entries, err := os.ReadDir(path); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() || !strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			for _, marker := range []string{"cur", "new"} {
+				if st, serr := os.Stat(filepath.Join(path, e.Name(), marker)); serr == nil && st.IsDir() {
+					return path, true
+				}
+			}
+		}
+	}
 	return "", false
 }
 

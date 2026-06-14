@@ -110,6 +110,16 @@ func exportMailboxToMaildir(ctx context.Context, email, destRoot string) (msgs i
 	// destRoot is the mail staging dir; the importer's src_mail_dir
 	// points here and walks <domain>/<local> subdirs.
 	mailRoot := filepath.Join(destRoot, domain, local)
+	// Always materialize the INBOX root cur/+new/ so a mailbox whose
+	// messages live only in subfolders (empty INBOX, e.g. all mail in
+	// Junk) is still a well-formed Maildir the importer's
+	// looksLikeMailMaildir gate accepts — otherwise it silently drops
+	// the whole mailbox.
+	for _, slot := range []string{"cur", "new"} {
+		if err := os.MkdirAll(filepath.Join(mailRoot, slot), 0o700); err != nil {
+			return msgs, bytes, fmt.Errorf("mkdir inbox %s: %w", slot, err)
+		}
+	}
 	for _, mb := range mbResp.List {
 		sub := roleToMaildirSubdir(mb.Role, mb.Name)
 		maildir := mailRoot
