@@ -135,6 +135,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0122](0122-restore-mail-no-stalwart-apply.md) | Account-restore does NOT run stalwart-cli apply — DB rows authoritative | Accepted |
 | [0123](0123-per-user-mail-message-backup-restore.md) | Per-user mail message backup + restore via JMAP Maildir export/import | Accepted |
 | [0124](0124-crs-false-positive-exclusion-plugin.md) | jabali CRS "before" plugin for targeted AppSec false-positive exclusions | Accepted |
+| [0125](0125-m50-directory-privacy.md) | M50 Directory Privacy — per-subdirectory HTTP Basic Auth | Accepted |
 <!-- /AUTO-GENERATED -->
 
 ## Decision Categories
