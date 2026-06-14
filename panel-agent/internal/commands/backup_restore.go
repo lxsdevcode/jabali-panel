@@ -320,6 +320,17 @@ func applyAccountRestore(
 				warnings = append(warnings, fmt.Sprintf("home: chown: %v", err))
 				continue
 			}
+			// BUG A fix: the blanket uid:gid chown above clobbers the
+			// provisioning convention that web docroots are group-owned
+			// by www-data (so nginx workers, which run as www-data, can
+			// read them). Without this re-flip a restored site is
+			// <user>:<user> 0640 → www-data falls to "other" → no read
+			// → branded 403 on /. Reconciler does not self-heal the
+			// docroot group, so re-apply it here. Mirrors domain_create's
+			// <user>:www-data chain.
+			if err := restoreDocrootGroup(ctx, username); err != nil {
+				warnings = append(warnings, fmt.Sprintf("home: docroot group www-data: %v", err))
+			}
 			applied = append(applied, fmt.Sprintf("home → /home/%s", username))
 
 		case backup.StageDB:
@@ -504,6 +515,45 @@ func applyAccountRestore(
 		}
 	}
 	return applied, warnings
+}
+
+// restoreDocrootGroup re-applies the provisioning convention that the
+// blanket uid:gid home chown clobbers: web docroots are group-owned by
+// www-data so nginx workers (www-data) can read them. Mirrors the
+// <user>:www-data chain domain_create lays down. chgrp keeps owner +
+// perms, flips only the group. Best-effort per domain: a non-standard
+// layout (no public_html) is skipped, not failed.
+func restoreDocrootGroup(ctx context.Context, username string) error {
+	domainsDir := "/home/" + username + "/domains"
+	entries, err := os.ReadDir(domainsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // user has no domains → nothing to re-group
+		}
+		return err
+	}
+	// The domains/ dir itself must be group www-data (g+x for traversal).
+	if err := exec.CommandContext(ctx, "chgrp", "www-data", domainsDir).Run(); err != nil {
+		return fmt.Errorf("chgrp %s: %w", domainsDir, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		domDir := filepath.Join(domainsDir, e.Name())
+		pub := filepath.Join(domDir, "public_html")
+		if _, statErr := os.Stat(pub); statErr != nil {
+			continue // not a standard docroot layout
+		}
+		if err := exec.CommandContext(ctx, "chgrp", "www-data", domDir).Run(); err != nil {
+			return fmt.Errorf("chgrp %s: %w", domDir, err)
+		}
+		// chgrp -R defaults to -P (no symlink follow) — stays in-tree.
+		if err := exec.CommandContext(ctx, "chgrp", "-R", "www-data", pub).Run(); err != nil {
+			return fmt.Errorf("chgrp -R %s: %w", pub, err)
+		}
+	}
+	return nil
 }
 
 // chownTreeRecursive walks `root` and chowns every entry to uid:gid.
