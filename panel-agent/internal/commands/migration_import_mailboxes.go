@@ -10,8 +10,8 @@
 //  3. For each .eml file in cur/ + new/:
 //     a. POST raw bytes to /jmap/upload → blobId
 //     b. Email/import with blobId + mailboxIds:{<inbox>:true} +
-//        keywords:{$seen:true for cur/, none for new/} +
-//        receivedAt parsed from Maildir filename
+//     keywords:{$seen:true for cur/, none for new/} +
+//     receivedAt parsed from Maildir filename
 //  4. Record bytes + count in MailboxImportResult
 //
 // Idempotent on resume: a re-run will re-upload + re-import. Stalwart
@@ -42,7 +42,7 @@ import (
 )
 
 const (
-	migrationMailboxTimeout = 4 * time.Hour
+	migrationMailboxTimeout         = 4 * time.Hour
 	migrationMailboxJMAPCallTimeout = 30 * time.Second
 	// migrationMailboxMessageCap caps per-message size at 64 MiB.
 	// Stalwart's default is 50 MiB; bumped slightly so a slightly-
@@ -99,6 +99,17 @@ func migrationImportMailboxesHandler(ctx context.Context, raw json.RawMessage) (
 		}
 	}
 
+	return importMaildirTree(ctx, srcAbs, p.OwnerEmail)
+}
+
+// importMaildirTree imports every <domain>/<local>/{cur,new,.Sub} Maildir
+// under srcAbs into the matching Stalwart account via JMAP Email/import
+// (Message-ID dedup → idempotent). When ownerEmail is set, a Maildir
+// directly at srcAbs (cPanel owner layout) imports under that address.
+// Shared by migration.import_mailboxes (operator-supplied path, prefix-
+// guarded by the caller) and account-restore (internally-derived path,
+// ADR-0123). Applies its own 4h ceiling.
+func importMaildirTree(ctx context.Context, srcAbs, ownerEmail string) (*migrationImportMailboxesResult, error) {
 	subctx, cancel := context.WithTimeout(ctx, migrationMailboxTimeout)
 	defer cancel()
 
@@ -106,13 +117,13 @@ func migrationImportMailboxesHandler(ctx context.Context, raw json.RawMessage) (
 
 	// Owner default mailbox — cPanel stores the user's primary
 	// mailbox directly under mail/{cur,new,tmp,.Drafts,...} rather
-	// than under a per-domain subdir. Import it under OwnerEmail
+	// than under a per-domain subdir. Import it under ownerEmail
 	// when supplied so messages aren't silently dropped.
-	if p.OwnerEmail != "" {
+	if ownerEmail != "" {
 		if _, ok := looksLikeMailMaildir(srcAbs); ok {
-			n, b, skipped, err := importOneMailbox(subctx, p.OwnerEmail, srcAbs)
+			n, b, skipped, err := importOneMailbox(subctx, ownerEmail, srcAbs)
 			if err != nil {
-				res.Skipped = append(res.Skipped, fmt.Sprintf("owner_mailbox %s: %v", p.OwnerEmail, err))
+				res.Skipped = append(res.Skipped, fmt.Sprintf("owner_mailbox %s: %v", ownerEmail, err))
 			} else {
 				res.MailboxesProcessed++
 				res.MessagesImported += n
@@ -127,7 +138,7 @@ func migrationImportMailboxesHandler(ctx context.Context, raw json.RawMessage) (
 	domains, err := os.ReadDir(srcAbs)
 	if err != nil {
 		return nil, &agentwire.AgentError{
-			Code: agentwire.CodeFailedPrecondition,
+			Code:    agentwire.CodeFailedPrecondition,
 			Message: fmt.Sprintf("read mail root %s: %v", srcAbs, err),
 		}
 	}
@@ -435,15 +446,15 @@ func importOneMessage(ctx context.Context, accountID, mailboxID, path string, si
 		"accountId": accountID,
 		"emails": map[string]any{
 			"m0": map[string]any{
-				"blobId":      blobID,
-				"mailboxIds":  map[string]bool{mailboxID: true},
-				"keywords":    keywords,
-				"receivedAt":  receivedAtStr,
+				"blobId":     blobID,
+				"mailboxIds": map[string]bool{mailboxID: true},
+				"keywords":   keywords,
+				"receivedAt": receivedAtStr,
 			},
 		},
 	}
 	var resp struct {
-		Created   map[string]json.RawMessage `json:"created"`
+		Created    map[string]json.RawMessage `json:"created"`
 		NotCreated map[string]struct {
 			Type        string `json:"type"`
 			Description string `json:"description,omitempty"`

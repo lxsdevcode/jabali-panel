@@ -421,93 +421,45 @@ func applyAccountRestore(
 			applied = append(applied, fmt.Sprintf("db → %s", db))
 
 		case backup.StageMail:
-			mailStagingPath := filepath.Join(stagingRoot, "mail")
-			planPath := filepath.Join(mailStagingPath, "plan.json")
-			bodiesPath := filepath.Join(mailStagingPath, "bodies.tar")
+			// ADR-0123: the mail stage carries a per-user Maildir tree
+			// (exported via JMAP at backup). restic preserves the backup-time
+			// absolute path, so it materializes at
+			//   stagingRoot/mail/run/jabali-backup/<backupJobID>/mail/<domain>/<local>/...
+			// Resolve the dir holding the <domain> subdirs.
+			mailTree := filepath.Join(stagingRoot, "mail") // flat-layout fallback
+			if matches, _ := filepath.Glob(filepath.Join(stagingRoot, "mail", "run", "jabali-backup", "*", "mail")); len(matches) > 0 {
+				mailTree = matches[len(matches)-1]
+			}
 
-			if _, err := os.Stat(planPath); err != nil {
-				warnings = append(warnings, fmt.Sprintf("mail: plan.json missing at %s — skip", mailStagingPath))
+			// Legacy (pre-ADR-0123) snapshots carried a whole-store
+			// bodies.tar instead of a Maildir tree — not replayable per-user.
+			// Surface the documented manual path instead of skipping silently.
+			if _, err := os.Stat(filepath.Join(mailTree, "bodies.tar")); err == nil {
+				warnings = append(warnings,
+					"mail: legacy bodies.tar snapshot (pre-ADR-0123) — historical messages need manual restore "+
+						"(stop stalwart-mail; tar -xf bodies.tar -C /; start stalwart-mail)")
 				continue
 			}
 
-			// Ensure each domain from the backed-up mailboxes exists in
-			// Stalwart before applying the account plan. stalwart-cli apply
-			// fails with "domain not found" when the domain was never
-			// registered (fresh DR host or domain.email_enable not yet run).
-			// Items[*] are "user@domain" strings from the backup manifest.
-			if stalwartActive(ctx) {
-				seen := map[string]struct{}{}
-				for _, mb := range st.Items {
-					_, dom, ok := splitMailbox(mb)
-					if !ok || dom == "" {
-						continue
-					}
-					if _, already := seen[dom]; already {
-						continue
-					}
-					seen[dom] = struct{}{}
-					existingID, dErr := domainIDByName(ctx, dom)
-					if dErr != nil {
-						warnings = append(warnings,
-							fmt.Sprintf("mail: check domain %q in Stalwart: %v", dom, dErr))
-						continue
-					}
-					if existingID == "" {
-						if _, cErr := createDomain(ctx, dom); cErr != nil {
-							warnings = append(warnings,
-								fmt.Sprintf("mail: create domain %q in Stalwart: %v — apply may fail", dom, cErr))
-						}
-					}
-				}
+			// New snapshot: import the Maildir tree via JMAP Email/import
+			// (Stalwart Message-ID dedup → idempotent + multi-tenant-safe).
+			if entries, err := os.ReadDir(mailTree); err != nil || len(entries) == 0 {
+				warnings = append(warnings, "mail: no message tree in snapshot — skip")
+				continue
 			}
-
-			// Apply account config (mailboxes, aliases, rules) via the
-			// Stalwart HTTP API. Safe against a live instance: stalwart-cli
-			// apply operates over HTTP, not directly on the RocksDB store.
-			cliOK := false
-			if _, cliErr := exec.LookPath("stalwart-cli"); cliErr == nil {
-				adminURL, adminUser, adminPass := stalwartAdminCreds()
-				if adminURL != "" && adminUser != "" && adminPass != "" {
-					applyCmd := exec.CommandContext(ctx, "stalwart-cli",
-						"apply", planPath, "--quiet", "--no-color")
-					applyCmd.Env = append(os.Environ(),
-						"STALWART_URL="+adminURL,
-						"STALWART_USER="+adminUser,
-						"STALWART_PASSWORD="+adminPass,
-					)
-					if applyOut, applyErr := applyCmd.CombinedOutput(); applyErr != nil {
-						warnings = append(warnings,
-							fmt.Sprintf("mail: stalwart-cli apply failed: %v: %s",
-								applyErr, strings.TrimSpace(string(applyOut))))
-					} else {
-						applied = append(applied, fmt.Sprintf("mail → %s (account config)", username))
-						cliOK = true
-					}
-				} else {
-					warnings = append(warnings,
-						fmt.Sprintf("mail: Stalwart admin creds missing — account config not applied; "+
-							"run manually: STALWART_URL=http://127.0.0.1:18181 stalwart-cli apply %s", planPath))
-				}
-			} else {
-				warnings = append(warnings,
-					fmt.Sprintf("mail: stalwart-cli not found — account config not applied; "+
-						"run manually: stalwart-cli apply %s", planPath))
+			if !stalwartActive(ctx) {
+				warnings = append(warnings, "mail: Stalwart inactive — message import skipped")
+				continue
 			}
-
-			// bodies.tar is a full snapshot of /var/lib/stalwart (RocksDB,
-			// shared across all accounts). Per-user body extraction is not
-			// possible without stopping Stalwart — live extraction corrupts
-			// the store for every account on the host.
-			// To restore historical messages after applying account config:
-			//   systemctl stop stalwart-mail
-			//   tar -xf <bodies.tar> -C /
-			//   systemctl start stalwart-mail
-			if cliOK {
-				if _, err := os.Stat(bodiesPath); err == nil {
-					warnings = append(warnings,
-						fmt.Sprintf("mail: account config applied. Historical messages require manual restore: "+
-							"stop stalwart-mail, tar -xf %s -C /, start stalwart-mail", bodiesPath))
-				}
+			impRes, impErr := importMaildirTree(ctx, mailTree, "")
+			if impErr != nil {
+				warnings = append(warnings, fmt.Sprintf("mail: import: %v", impErr))
+				continue
+			}
+			applied = append(applied,
+				fmt.Sprintf("mail → %s (%d messages in %d mailboxes)", username, impRes.MessagesImported, impRes.MailboxesProcessed))
+			for _, sk := range impRes.Skipped {
+				warnings = append(warnings, "mail: "+sk)
 			}
 		case backup.StageMeta, backup.StageDNS, backup.StageCron, backup.StageSSH,
 			backup.StageApps, backup.StagePHP:
