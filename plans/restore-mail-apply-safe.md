@@ -1,3 +1,9 @@
+> **SUPERSEDED by ADR-0122 (2026-06-14). DO NOT BUILD.** Verification on
+> 10.0.3.14 (SMTP RCPT) proved Bug-B-restored mailbox rows route mail +
+> aliases via Stalwart's SQL directory with no stalwart-cli apply. The
+> Account apply is redundant + carries the destroy-all risk; the plan
+> carries only bare principals. Account-restore runs NO mail apply.
+
 # Blueprint: Safe per-user restore-side mail apply
 
 **Status**: proposed (ADR-0121)
