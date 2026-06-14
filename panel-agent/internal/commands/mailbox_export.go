@@ -62,6 +62,66 @@ func roleToMaildirSubdir(role, name string) string {
 	return "." + clean
 }
 
+// maildirSegmentName returns the single Maildir++ path segment for one
+// mailbox: the canonical role name for a roled folder (so it round-trips
+// to the role on import), else the sanitized display name. The "." and
+// path separators are escaped to "_" so an internal dot can't be mistaken
+// for the Maildir++ hierarchy separator on import. Returns "" for INBOX.
+func maildirSegmentName(mb jmapMailbox) string {
+	switch strings.ToLower(mb.Role) {
+	case "inbox":
+		return ""
+	case "sent":
+		return "Sent"
+	case "drafts":
+		return "Drafts"
+	case "junk":
+		return "Junk"
+	case "trash":
+		return "Trash"
+	case "archive":
+		return "Archive"
+	}
+	clean := strings.ReplaceAll(mb.Name, ".", "_")
+	clean = strings.ReplaceAll(clean, "/", "_")
+	clean = strings.ReplaceAll(clean, string(os.PathSeparator), "_")
+	clean = strings.TrimLeft(clean, ".")
+	return clean
+}
+
+// maildirSubdirForMailbox builds the Maildir++ subfolder path for a
+// mailbox by walking its parentId chain to the account root, joining the
+// per-level segments with ".". INBOX (and anything that resolves to no
+// segments) returns "" (the maildir root). A child of INBOX is treated
+// as top-level — Maildir++ has no INBOX prefix. Guards against cycles by
+// bounding the walk to the mailbox count.
+func maildirSubdirForMailbox(mb jmapMailbox, byID map[string]jmapMailbox) string {
+	if strings.EqualFold(mb.Role, "inbox") {
+		return ""
+	}
+	var segs []string
+	cur := mb
+	for range byID {
+		seg := maildirSegmentName(cur)
+		if seg == "" {
+			break
+		}
+		segs = append([]string{seg}, segs...)
+		if cur.ParentID == "" {
+			break
+		}
+		parent, ok := byID[cur.ParentID]
+		if !ok || strings.EqualFold(parent.Role, "inbox") {
+			break
+		}
+		cur = parent
+	}
+	if len(segs) == 0 {
+		return ""
+	}
+	return "." + strings.Join(segs, ".")
+}
+
 // keywordsToMaildirFlags renders the Maildir info-flag string (the part
 // after ":2," in a cur/ filename) from a JMAP keyword set. Flags are
 // single ASCII letters in sorted order: D(raft) F(lagged) R(eplied/
@@ -85,9 +145,10 @@ func keywordsToMaildirFlags(kw map[string]bool) string {
 }
 
 type jmapMailbox struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Role string `json:"role"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	ParentID string `json:"parentId"`
 }
 
 type jmapEmailMeta struct {
@@ -123,10 +184,16 @@ func exportMailboxToMaildir(ctx context.Context, email, destRoot string) (msgs i
 	mbArgs := map[string]any{
 		"accountId":  accountID,
 		"ids":        nil,
-		"properties": []string{"id", "name", "role"},
+		"properties": []string{"id", "name", "role", "parentId"},
 	}
 	if err := jmapCallWith(ctx, "urn:ietf:params:jmap:mail", "Mailbox/get", mbArgs, &mbResp); err != nil {
 		return 0, 0, fmt.Errorf("Mailbox/get %q: %w", email, err)
+	}
+	// Index mailboxes by id so we can walk parentId chains and encode the
+	// full Maildir++ hierarchy path (.Parent.Child), not just the leaf.
+	byID := make(map[string]jmapMailbox, len(mbResp.List))
+	for _, mb := range mbResp.List {
+		byID[mb.ID] = mb
 	}
 
 	// destRoot is the mail staging dir; the importer's src_mail_dir
@@ -143,7 +210,7 @@ func exportMailboxToMaildir(ctx context.Context, email, destRoot string) (msgs i
 		}
 	}
 	for _, mb := range mbResp.List {
-		sub := roleToMaildirSubdir(mb.Role, mb.Name)
+		sub := maildirSubdirForMailbox(mb, byID)
 		maildir := mailRoot
 		if sub != "" {
 			maildir = filepath.Join(mailRoot, sub)
