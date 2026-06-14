@@ -56,6 +56,10 @@ func applyPanelMetadata(ctx context.Context, cmd *cobra.Command, raw json.RawMes
 		PHPPoolIni:     repository.NewPHPPoolIniOverrideRepository(sharedDB),
 		SSHKeys:        repository.NewSSHKeyRepository(sharedDB),
 		CronJobs:       repository.NewCronJobRepository(sharedDB),
+		Mailboxes:      repository.NewMailboxRepository(sharedDB),
+		Forwarders:     repository.NewEmailForwarderRepository(sharedDB),
+		Autoresponders: repository.NewEmailAutoresponderRepository(sharedDB),
+		MailboxShares:  repository.NewMailboxShareRepository(sharedDB),
 		KratosClient:   kratosclient.NewClient(sharedCfg.Auth.Kratos.PublicURL, sharedCfg.Auth.Kratos.AdminURL),
 	}
 	r := backupmetadata.Apply(ctx, &meta, deps)
