@@ -421,17 +421,7 @@ func applyAccountRestore(
 			applied = append(applied, fmt.Sprintf("db → %s", db))
 
 		case backup.StageMail:
-			// restic preserves the backup-time absolute source path, so the
-			// stage materializes at
-			//   stagingRoot/mail/run/jabali-backup/<backupJobID>/mail/
-			// NOT stagingRoot/mail directly — and <backupJobID> is the
-			// ORIGINAL backup job id (differs from this restore's job), so
-			// it can't be reconstructed. Resolve the real dir by globbing;
-			// fall back to the flat path for any flat-layout snapshot.
 			mailStagingPath := filepath.Join(stagingRoot, "mail")
-			if matches, _ := filepath.Glob(filepath.Join(stagingRoot, "mail", "run", "jabali-backup", "*", "mail")); len(matches) > 0 {
-				mailStagingPath = matches[len(matches)-1]
-			}
 			planPath := filepath.Join(mailStagingPath, "plan.json")
 			bodiesPath := filepath.Join(mailStagingPath, "bodies.tar")
 
