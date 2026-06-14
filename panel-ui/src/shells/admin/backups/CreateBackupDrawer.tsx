@@ -42,8 +42,8 @@ export const CreateBackupDrawer = ({ open, onClose, onCreated }: CreateBackupDra
   const kind = Form.useWatch("kind", form) ?? "account_backup";
 
   const usersQuery = useListQuery<User>({
-    resource: "admin/users",
-    params: { pageSize: 200 },
+    resource: "users",
+    params: { pageSize: 500 },
     enabled: open && kind === "account_backup",
   });
   const destQuery = useListQuery<Destination>({
