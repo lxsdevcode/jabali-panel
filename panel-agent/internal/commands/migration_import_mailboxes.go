@@ -262,6 +262,14 @@ func importOneMailbox(ctx context.Context, destEmail, maildir string) (int64, in
 	// JMAP mailbox strips the dot + collapses nested dots to slashes
 	// per RFC 5256 §5.1.
 	entries, _ := os.ReadDir(maildir)
+	// Load the account's mailbox tree once so the Maildir++ hierarchy
+	// resolves in-memory (by name+parentId), without relying on
+	// server-side Mailbox/query filtering. Best-effort: nil on error →
+	// every level is created fresh.
+	var nodes []mailboxNode
+	if len(entries) > 0 {
+		nodes, _ = loadMailboxNodes(ctx, accountID)
+	}
 	for _, e := range entries {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), ".") {
 			continue
@@ -271,14 +279,14 @@ func importOneMailbox(ctx context.Context, destEmail, maildir string) (int64, in
 			continue
 		}
 		subDir := filepath.Join(maildir, e.Name())
-		// Maildir++: subfolder name is `.Parent.Child` → "Parent/Child".
+		// Maildir++ encodes hierarchy as ".Parent.Child.Grandchild"; split
+		// into segments and ensure the whole chain so a nested folder
+		// restores nested, not flattened to its leaf name.
 		raw := strings.TrimPrefix(e.Name(), ".")
-		friendly := strings.ReplaceAll(raw, ".", "/")
-		role := maildirSubfolderRole(raw)
-
-		mboxID, err := ensureMailbox(ctx, accountID, friendly, role)
+		segments := strings.Split(raw, ".")
+		mboxID, err := ensureMailboxPath(ctx, accountID, segments, &nodes)
 		if err != nil {
-			skipped = append(skipped, fmt.Sprintf("ensure mailbox %q: %v", friendly, err))
+			skipped = append(skipped, fmt.Sprintf("ensure mailbox %q: %v", raw, err))
 			continue
 		}
 		sn, sb, ssk := pushMaildirSlots(ctx, accountID, mboxID, subDir, &skipped)
@@ -407,49 +415,104 @@ func maildirSubfolderRole(name string) string {
 	return ""
 }
 
-// ensureMailbox looks up or creates a JMAP Mailbox under accountID
-// with the given friendly name + optional role. Idempotent: an
-// existing mailbox with matching role (when role is set) or matching
-// name (when role is empty) is reused.
-func ensureMailbox(ctx context.Context, accountID, name, role string) (string, error) {
-	// Try role-based lookup first when the subfolder mapped to a
-	// canonical role (drafts/sent/trash/junk/archive). Stalwart
-	// auto-creates Drafts/Sent/Trash on first use, so we'd otherwise
-	// race + create a duplicate.
-	if role != "" {
-		if id, err := mailboxIDByRole(ctx, accountID, role); err == nil && id != "" {
-			return id, nil
+// mailboxNode is an in-memory view of one JMAP mailbox, used to resolve a
+// Maildir++ hierarchy path to ids without relying on Mailbox/query
+// filtering by name/parentId. We fetch all mailboxes once, then match
+// locally and append as levels are created.
+type mailboxNode struct {
+	id, name, role, parentID string
+}
+
+// loadMailboxNodes fetches every mailbox in the account (id, name, role,
+// parentId) for in-memory hierarchy resolution.
+func loadMailboxNodes(ctx context.Context, accountID string) ([]mailboxNode, error) {
+	var resp struct {
+		List []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Role     string `json:"role"`
+			ParentID string `json:"parentId"`
+		} `json:"list"`
+	}
+	args := map[string]any{
+		"accountId":  accountID,
+		"ids":        nil,
+		"properties": []string{"id", "name", "role", "parentId"},
+	}
+	if err := jmapCall(ctx, "Mailbox/get", args, &resp); err != nil {
+		return nil, err
+	}
+	nodes := make([]mailboxNode, 0, len(resp.List))
+	for _, m := range resp.List {
+		nodes = append(nodes, mailboxNode{id: m.ID, name: m.Name, role: m.Role, parentID: m.ParentID})
+	}
+	return nodes, nil
+}
+
+// ensureMailboxPath ensures every level of a Maildir++ segment path
+// (e.g. ["Archive","2026","Q1"]) exists under the account, creating
+// missing levels with parentId set, and returns the leaf mailbox id.
+// Resolution is in-memory against `nodes` (updated as levels are
+// created), so it never depends on server-side name/parentId filtering.
+// Only the top-level segment may map to a JMAP role (Sent/Drafts/...).
+func ensureMailboxPath(ctx context.Context, accountID string, segments []string, nodes *[]mailboxNode) (string, error) {
+	parentID := "" // "" == account root
+	var leafID string
+	for i, seg := range segments {
+		if seg == "" {
+			continue
 		}
+		role := ""
+		if i == 0 {
+			role = maildirSubfolderRole(seg)
+		}
+		var found string
+		for _, n := range *nodes {
+			if n.parentID != parentID {
+				continue
+			}
+			if strings.EqualFold(n.name, seg) || (role != "" && n.role == role) {
+				found = n.id
+				break
+			}
+		}
+		if found == "" {
+			id, err := createMailboxUnder(ctx, accountID, seg, role, parentID)
+			if err != nil {
+				return "", err
+			}
+			found = id
+			*nodes = append(*nodes, mailboxNode{id: id, name: seg, role: role, parentID: parentID})
+		}
+		parentID = found
+		leafID = found
 	}
-	// Name-based lookup — covers custom subfolders + the fallback
-	// path when role is empty or the role mailbox doesn't exist yet.
-	if id, err := mailboxIDByName(ctx, accountID, name); err == nil && id != "" {
-		return id, nil
+	if leafID == "" {
+		return "", fmt.Errorf("empty mailbox path")
 	}
-	// Create.
-	createID := "newmbox"
-	body := map[string]any{
-		"name": name,
-	}
+	return leafID, nil
+}
+
+// createMailboxUnder creates a JMAP mailbox with an optional role and
+// parentId (account root when parentID is "").
+func createMailboxUnder(ctx context.Context, accountID, name, role, parentID string) (string, error) {
+	const createID = "newmbox"
+	body := map[string]any{"name": name}
 	if role != "" {
 		body["role"] = role
 	}
+	if parentID != "" {
+		body["parentId"] = parentID
+	}
 	args := map[string]any{
 		"accountId": accountID,
-		"create": map[string]any{
-			createID: body,
-		},
+		"create":    map[string]any{createID: body},
 	}
 	var result jmapSetResult
 	if err := jmapCall(ctx, "Mailbox/set", args, &result); err != nil {
 		return "", fmt.Errorf("Mailbox/set create: %w", err)
 	}
 	if reason, ok := result.NotCreated[createID]; ok {
-		// Race: another writer created the same mailbox between
-		// our lookup + create. Try the name lookup once more.
-		if id, err := mailboxIDByName(ctx, accountID, name); err == nil && id != "" {
-			return id, nil
-		}
 		return "", fmt.Errorf("Mailbox/set notCreated: %s", string(reason))
 	}
 	raw, ok := result.Created[createID]
@@ -463,26 +526,6 @@ func ensureMailbox(ctx context.Context, accountID, name, role string) (string, e
 		return "", fmt.Errorf("Mailbox/set decode: %w", err)
 	}
 	return created.ID, nil
-}
-
-// mailboxIDByName resolves a mailbox by its `name` property in the
-// given account. Returns "" + nil on no-match.
-func mailboxIDByName(ctx context.Context, accountID, name string) (string, error) {
-	args := map[string]any{
-		"accountId": accountID,
-		"filter":    map[string]any{"name": name},
-		"limit":     1,
-	}
-	var result struct {
-		IDs []string `json:"ids"`
-	}
-	if err := jmapCall(ctx, "Mailbox/query", args, &result); err != nil {
-		return "", err
-	}
-	if len(result.IDs) == 0 {
-		return "", nil
-	}
-	return result.IDs[0], nil
 }
 
 // mailboxIDByRole resolves the mailbox ID with the given role
