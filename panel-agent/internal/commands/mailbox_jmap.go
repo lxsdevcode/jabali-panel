@@ -660,7 +660,13 @@ func accountEnsureInRegistry(ctx context.Context, email string) error {
 			Type string `json:"type"`
 		}
 		_ = json.Unmarshal(reason, &r)
-		if r.Type == "alreadyExists" {
+		// alreadyExists OR primaryKeyViolation(email) both mean the
+		// principal is already present — the idempotent success case.
+		// Stalwart 1.0.8 returns primaryKeyViolation for an existing
+		// account email (e.g. account-restore re-importing messages into
+		// an account Bug B already recreated); treat it as success so the
+		// caller proceeds to use the existing account.
+		if r.Type == "alreadyExists" || r.Type == "primaryKeyViolation" {
 			return nil
 		}
 		return &agentwire.AgentError{
