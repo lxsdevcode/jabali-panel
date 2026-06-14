@@ -133,6 +133,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0120](0120-mail-provider-dns-templates.md) | Mail-provider DNS templates | Proposed |
 | [0121](0121-safe-restore-mail-apply.md) | Safe per-user restore-side mail apply (scoped, additive, dry-run-gated) | Superseded by ADR-0122 |
 | [0122](0122-restore-mail-no-stalwart-apply.md) | Account-restore does NOT run stalwart-cli apply — DB rows authoritative | Accepted |
+| [0123](0123-per-user-mail-message-backup-restore.md) | Per-user mail message backup + restore via JMAP Maildir export/import | Proposed |
 <!-- /AUTO-GENERATED -->
 
 ## Decision Categories
