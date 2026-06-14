@@ -62,6 +62,28 @@ func roleToMaildirSubdir(role, name string) string {
 	return "." + clean
 }
 
+// keywordsToMaildirFlags renders the Maildir info-flag string (the part
+// after ":2," in a cur/ filename) from a JMAP keyword set. Flags are
+// single ASCII letters in sorted order: D(raft) F(lagged) R(eplied/
+// answered) S(een). Trashed (T) is intentionally not emitted. Returns ""
+// when no mapped keyword is set (the message belongs in new/).
+func keywordsToMaildirFlags(kw map[string]bool) string {
+	var b strings.Builder
+	if kw["$draft"] {
+		b.WriteByte('D')
+	}
+	if kw["$flagged"] {
+		b.WriteByte('F')
+	}
+	if kw["$answered"] {
+		b.WriteByte('R')
+	}
+	if kw["$seen"] {
+		b.WriteByte('S')
+	}
+	return b.String()
+}
+
 type jmapMailbox struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -126,6 +148,14 @@ func exportMailboxToMaildir(ctx context.Context, email, destRoot string) (msgs i
 		if sub != "" {
 			maildir = filepath.Join(mailRoot, sub)
 		}
+		// Materialize cur/+new/ for every folder, even one with zero
+		// messages, so an empty folder is still a well-formed Maildir the
+		// importer enumerates and recreates (else empty folders vanish).
+		for _, slot := range []string{"cur", "new"} {
+			if err := os.MkdirAll(filepath.Join(maildir, slot), 0o700); err != nil {
+				return msgs, bytes, fmt.Errorf("mkdir folder %s: %w", slot, err)
+			}
+		}
 		n, b, ferr := exportFolder(ctx, accountID, mb.ID, maildir)
 		if ferr != nil {
 			return msgs, bytes, fmt.Errorf("export folder %q (%s): %w", mb.Name, email, ferr)
@@ -173,8 +203,7 @@ func exportFolder(ctx context.Context, accountID, mailboxID, maildir string) (ms
 			if m.Size > migrationMailboxMessageCap {
 				continue // skip oversize, mirror importer
 			}
-			seen := m.Keywords["$seen"]
-			n, werr := writeMaildirMessage(ctx, accountID, m, maildir, seen)
+			n, werr := writeMaildirMessage(ctx, accountID, m, maildir)
 			if werr != nil {
 				return msgs, bytes, werr
 			}
@@ -192,19 +221,29 @@ func exportFolder(ctx context.Context, accountID, mailboxID, maildir string) (ms
 // writeMaildirMessage downloads the RFC822 blob and writes it to the
 // cur/ (seen) or new/ (unseen) slot, stamping the file mtime with
 // receivedAt so the importer recovers it.
-func writeMaildirMessage(ctx context.Context, accountID string, m jmapEmailMeta, maildir string, seen bool) (int64, error) {
+func writeMaildirMessage(ctx context.Context, accountID string, m jmapEmailMeta, maildir string) (int64, error) {
+	// Maildir encodes flags by location + filename: a message with any
+	// info flag lives in cur/ with a ":2,<flags>" suffix; a message with
+	// no flags at all is a fresh new/ delivery with a bare name. A
+	// flagged-but-unseen message lands in cur/ with e.g. ":2,F" (no S) —
+	// valid Maildir, and the importer reads every flag back from the
+	// suffix ($flagged/$answered/$draft were stripped before this).
+	flags := keywordsToMaildirFlags(m.Keywords)
 	slot := "new"
-	if seen {
+	if flags != "" {
 		slot = "cur"
 	}
 	dir := filepath.Join(maildir, slot)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return 0, fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	// Filename is irrelevant to the importer (it reads slot + mtime),
-	// but must be unique within the slot. JMAP email id is unique per
-	// account; tag with the size for a Maildir-ish shape.
+	// Filename must be unique within the slot. JMAP email id is unique
+	// per account; tag with the size for a Maildir-ish shape, then append
+	// the Maildir ":2,<flags>" info suffix when any flag is set.
 	fname := m.ID + ".jabali," + strconv.FormatInt(m.Size, 10)
+	if flags != "" {
+		fname += ":2," + flags
+	}
 	dst := filepath.Join(dir, fname)
 
 	n, err := downloadBlob(ctx, accountID, m.BlobID, dst)
