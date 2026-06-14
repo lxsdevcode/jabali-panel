@@ -28,6 +28,12 @@ func NewCronJobRepository(db *gorm.DB) CronJobRepository {
 }
 
 func (r *cronJobRepo) Create(ctx context.Context, job *models.CronJob) error {
+	// CronJob.Enabled intentionally carries NO gorm `default` tag: GORM
+	// substitutes a defaulted field's default for a zero value (even
+	// under Select), which silently flipped an intentional Enabled=false
+	// to enabled=1 — defeating the cPanel cron importer's disabled-import
+	// and any disabled cron via cronops/backup-restore. Without the tag,
+	// the struct's Enabled is written verbatim.
 	if err := r.db.WithContext(ctx).Create(job).Error; err != nil {
 		return err
 	}

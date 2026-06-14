@@ -44,12 +44,12 @@ func TestCronJobCreate_Success(t *testing.T) {
 	now := time.Now()
 
 	job := &models.CronJob{
-		ID:       "cron_abc123",
-		UserID:   "user1",
-		Name:     "hourly sync",
-		Command:  "wp cron event run --due-now --path=/home/user1/example.com/public_html",
-		Schedule: "0 * * * *",
-		Enabled:  true,
+		ID:        "cron_abc123",
+		UserID:    "user1",
+		Name:      "hourly sync",
+		Command:   "wp cron event run --due-now --path=/home/user1/example.com/public_html",
+		Schedule:  "0 * * * *",
+		Enabled:   true,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -68,6 +68,42 @@ func TestCronJobCreate_Success(t *testing.T) {
 
 	err := repo.Create(context.Background(), job)
 	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Regression: Enabled=false MUST be written to the INSERT, not dropped as
+// a Go zero-value (the model carries `default:1`, so a plain GORM Create
+// would silently land enabled=1 — the cPanel cron importer's
+// disabled-import safety net was defeated this way).
+func TestCronJobCreate_DisabledPersists(t *testing.T) {
+	db, mock, raw := newMockCronDB(t)
+	defer raw.Close()
+
+	repo := NewCronJobRepository(db)
+	now := time.Now()
+	job := &models.CronJob{
+		ID:        "cron_disabled1",
+		UserID:    "user1",
+		Name:      "imported-1",
+		Command:   "/usr/bin/wget https://example.com/ping",
+		Schedule:  "*/10 * * * *",
+		Enabled:   false, // must reach the DB as 0, not the default:1
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO `cron_jobs` (`id`,`user_id`,`name`,`command`,`schedule`,`enabled`,`run_as_root`,`last_run_at`,`last_exit_code`,`last_error`,`created_at`,`updated_at`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING `created_at`,`updated_at`")).
+		WithArgs(
+			job.ID, job.UserID, job.Name, job.Command, job.Schedule, false, false,
+			nil, nil, nil,
+			sqlmock.AnyArg(), sqlmock.AnyArg(),
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"created_at", "updated_at"}).
+			AddRow(now, now))
+	mock.ExpectCommit()
+
+	require.NoError(t, repo.Create(context.Background(), job))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
