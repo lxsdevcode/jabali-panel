@@ -131,7 +131,8 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0118](0118-m53-updates-center.md) | M53 Updates Center | Accepted |
 | [0119](0119-m54-username-login.md) | M54 username-only login (hard cutover) | Accepted |
 | [0120](0120-mail-provider-dns-templates.md) | Mail-provider DNS templates | Proposed |
-| [0121](0121-safe-restore-mail-apply.md) | Safe per-user restore-side mail apply (scoped, additive, dry-run-gated) | Proposed |
+| [0121](0121-safe-restore-mail-apply.md) | Safe per-user restore-side mail apply (scoped, additive, dry-run-gated) | Superseded by ADR-0122 |
+| [0122](0122-restore-mail-no-stalwart-apply.md) | Account-restore does NOT run stalwart-cli apply — DB rows authoritative | Accepted |
 <!-- /AUTO-GENERATED -->
 
 ## Decision Categories

@@ -1,7 +1,7 @@
 # ADR-0121: Safe per-user restore-side mail apply (scoped, additive, dry-run-gated)
 
 **Date**: 2026-06-14
-**Status**: proposed
+**Status**: superseded by ADR-0122
 **Deciders**: shukiv
 
 ## Context
