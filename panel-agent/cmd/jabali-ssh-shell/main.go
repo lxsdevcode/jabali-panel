@@ -205,7 +205,9 @@ func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, 
 		"--setenv", "USER", name,
 		"--setenv", "LOGNAME", name,
 		"--setenv", "SHELL", shell,
-		"--setenv", "PATH", "/usr/local/bin:/usr/bin:/bin",
+		// Per-user CLI php wrapper first so `php`/Composer/wp-cli use the
+		// user's pinned PHP version (GH #184), then the normal dirs.
+		"--setenv", "PATH", home + "/.jabali/bin:/usr/local/bin:/usr/bin:/bin",
 		"--setenv", "TERM", envOr("TERM", "xterm"),
 	}
 	if lang := os.Getenv("LANG"); lang != "" {

@@ -18,14 +18,14 @@ import (
 
 // cronApplyParams is the input for cron.apply command.
 type cronApplyParams struct {
-	UserID         string   `json:"user_id"`
-	Username       string   `json:"username"`
-	JobID          string   `json:"job_id"`
-	Name           string   `json:"name"`
-	Command        string   `json:"command"`
-	Schedule       string   `json:"schedule"`
-	OwnedDocroots  []string `json:"owned_docroots"`
-	RunAsRoot      bool     `json:"run_as_root,omitempty"`
+	UserID        string   `json:"user_id"`
+	Username      string   `json:"username"`
+	JobID         string   `json:"job_id"`
+	Name          string   `json:"name"`
+	Command       string   `json:"command"`
+	Schedule      string   `json:"schedule"`
+	OwnedDocroots []string `json:"owned_docroots"`
+	RunAsRoot     bool     `json:"run_as_root,omitempty"`
 }
 
 // cronApplyResponse is the output from cron.apply.
@@ -264,10 +264,12 @@ StartLimitBurst=1
 [Service]
 Type=oneshot
 RemainAfterExit=no
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PATH=%s
 WorkingDirectory=%%h
 %s%s
-`, jobID, name, execStartPre, execStart)
+`, jobID, name,
+		"/home/"+username+"/.jabali/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
+		execStartPre, execStart)
 }
 
 // buildCronTimerContent generates the systemd timer unit content. The
@@ -310,10 +312,11 @@ func checkUserLinger(ctx context.Context, username string) error {
 }
 
 // ensureUserManager makes `systemctl --user` usable for username:
-//   1. enable-linger (idempotent) so the user manager persists + the
-//      runtime dir is created.
-//   2. start user@<uid>.service synchronously so /run/user/<uid>/bus
-//      exists right now (enable-linger alone can be async).
+//  1. enable-linger (idempotent) so the user manager persists + the
+//     runtime dir is created.
+//  2. start user@<uid>.service synchronously so /run/user/<uid>/bus
+//     exists right now (enable-linger alone can be async).
+//
 // Both are no-ops when already in place.
 func ensureUserManager(ctx context.Context, username string, uid int, runtimeDir string) error {
 	if err := checkUserLinger(ctx, username); err != nil {
@@ -339,8 +342,10 @@ func ensureUserManager(ctx context.Context, username string, uid int, runtimeDir
 // $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined". Pass the
 // two vars the user-bus connection needs THROUGH sudo via the `env`
 // command so they land in the child's environment:
-//   XDG_RUNTIME_DIR=/run/user/<uid>
-//   DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus
+//
+//	XDG_RUNTIME_DIR=/run/user/<uid>
+//	DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus
+//
 // This is the bug that left every migrated user's cron timer unscheduled
 // (panel row enabled, but `systemctl --user list-timers` empty).
 func systemctlUserExec(ctx context.Context, username string, runtimeDir string, args ...string) error {

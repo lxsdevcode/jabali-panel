@@ -264,6 +264,11 @@ func TestBuildCronServiceContent(t *testing.T) {
 	if !contains(content, "WorkingDirectory=%h") {
 		t.Error("missing WorkingDirectory=%h")
 	}
+	// GH #184: the per-user CLI php wrapper dir must lead PATH so a cron
+	// `php`/`wp` runs the user's pinned version, not the host default.
+	if !contains(content, "Environment=PATH=/home/testuser/.jabali/bin:") {
+		t.Error("cron PATH must prepend the per-user .jabali/bin wrapper dir")
+	}
 }
 
 func TestBuildCronTimerContent(t *testing.T) {

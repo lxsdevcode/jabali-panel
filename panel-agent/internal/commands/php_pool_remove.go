@@ -84,6 +84,9 @@ func phpPoolRemoveHandler(ctx context.Context, params json.RawMessage) (any, err
 		}
 	}
 
+	// Remove the per-user CLI php wrapper (GH #184). Best-effort teardown.
+	_ = removeUserCLIPHP(p.Username)
+
 	// Stop the per-user FPM service (if loaded).
 	if os.Getenv("JABALI_PHP_POOL_SKIP_RELOAD") == "" {
 		serviceName := fmt.Sprintf("jabali-fpm@%s.service", p.Username)

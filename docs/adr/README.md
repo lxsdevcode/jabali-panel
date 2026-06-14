@@ -136,6 +136,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0123](0123-per-user-mail-message-backup-restore.md) | Per-user mail message backup + restore via JMAP Maildir export/import | Accepted |
 | [0124](0124-crs-false-positive-exclusion-plugin.md) | jabali CRS "before" plugin for targeted AppSec false-positive exclusions | Accepted |
 | [0125](0125-m50-directory-privacy.md) | M50 Directory Privacy — per-subdirectory HTTP Basic Auth | Accepted |
+| [0126](0126-per-user-cli-php-version.md) | Per-user CLI PHP version follows the FPM version pin | Accepted |
 <!-- /AUTO-GENERATED -->
 
 ## Decision Categories

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,14 +19,14 @@ import (
 
 // phpPoolApplyParams is the input shape for php.pool.apply.
 type phpPoolApplyParams struct {
-	Username                   string `json:"username"`
-	PHPVersion                 string `json:"php_version"`
-	Additive                   bool   `json:"additive,omitempty"` // M35.8: keep other-version pools for this user
-	PmMode                     string `json:"pm_mode"`
-	PmMaxChildren              uint32 `json:"pm_max_children"`
-	ProcessIdleTimeoutSeconds  uint32 `json:"process_idle_timeout_seconds"`
-	AdminValues                []KV   `json:"admin_values"`
-	AdminFlags                 []KV   `json:"admin_flags"`
+	Username                  string `json:"username"`
+	PHPVersion                string `json:"php_version"`
+	Additive                  bool   `json:"additive,omitempty"` // M35.8: keep other-version pools for this user
+	PmMode                    string `json:"pm_mode"`
+	PmMaxChildren             uint32 `json:"pm_max_children"`
+	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
+	AdminValues               []KV   `json:"admin_values"`
+	AdminFlags                []KV   `json:"admin_flags"`
 }
 
 // KV represents a key-value pair for ini directives.
@@ -42,15 +43,15 @@ type phpPoolApplyResponse struct {
 
 // phpPoolSpecTemplate represents the template data for rendering the pool config.
 type phpPoolSpecTemplate struct {
-	PoolName                       string
-	User                           string
-	Group                          string
-	SocketPath                     string
-	PmMode                         string
-	PmMaxChildren                  uint32
-	ProcessIdleTimeoutSeconds      uint32
-	AdminValues                    []KV
-	AdminFlags                     []KV
+	PoolName                  string
+	User                      string
+	Group                     string
+	SocketPath                string
+	PmMode                    string
+	PmMaxChildren             uint32
+	ProcessIdleTimeoutSeconds uint32
+	AdminValues               []KV
+	AdminFlags                []KV
 }
 
 // phpVersionRegex validates PHP version format: X.Y where X and Y are digits.
@@ -62,13 +63,13 @@ var phpPoolUsernameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
 // adminValueAllowlist is the set of allowed php_admin_value directives.
 var adminValueAllowlist = map[string]bool{
-	"memory_limit":         true,
-	"upload_max_filesize":  true,
-	"post_max_size":        true,
-	"max_execution_time":   true,
-	"max_input_vars":       true,
-	"max_input_time":       true,
-	"date.timezone":        true,
+	"memory_limit":        true,
+	"upload_max_filesize": true,
+	"post_max_size":       true,
+	"max_execution_time":  true,
+	"max_input_vars":      true,
+	"max_input_time":      true,
+	"date.timezone":       true,
 }
 
 // adminFlagAllowlist is the set of allowed php_admin_flag directives.
@@ -81,10 +82,10 @@ var adminFlagAllowlist = map[string]bool{
 // forbiddenDirectives are directives that must never appear in overrides,
 // even if they pass the allowlist check. Belt-and-suspenders defense.
 var forbiddenDirectives = map[string]bool{
-	"open_basedir":       true,
-	"disable_functions":  true,
-	"extension_dir":      true,
-	"zend_extension":     true,
+	"open_basedir":      true,
+	"disable_functions": true,
+	"extension_dir":     true,
+	"zend_extension":    true,
 }
 
 // beltAndSuspendersCheck performs a final check on directive names to ensure
@@ -492,6 +493,13 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to write version pin: %v", err),
 		}
+	}
+
+	// Per-user CLI php wrapper so the user's shell, Composer, wp-cli, and cron
+	// resolve `php` to their pinned version (GH #184). Best-effort: a failure
+	// here must not fail the FPM apply (the web path is already converged).
+	if err := ensureUserCLIPHP(p.Username, p.PHPVersion); err != nil {
+		slog.Warn("per-user CLI php wrapper", "user", p.Username, "version", p.PHPVersion, "err", err)
 	}
 
 	// Restart or reload the per-user FPM service.
