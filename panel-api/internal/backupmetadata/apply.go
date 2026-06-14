@@ -17,10 +17,10 @@ package backupmetadata
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
-	"encoding/json"
 
 	internalbackup "git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
@@ -31,19 +31,21 @@ import (
 // ApplyResult counts what landed during a single Apply call.
 // The CLI prints these so the operator sees concretely what came back.
 type ApplyResult struct {
-	UserCreated     bool
-	PHPPools        int
-	PHPPoolIni      int
-	Domains         int
-	SSLCerts        int
-	Databases       int
-	DatabaseUsers   int
-	DatabaseGrants  int
-	AppInstalls     int
-	SSHKeys         int
-	CronJobs        int
-	Skipped         int
-	Errors          []string
+	UserCreated    bool
+	PHPPools       int
+	PHPPoolIni     int
+	Domains        int
+	SSLCerts       int
+	Mailboxes      int
+	Forwarders     int
+	Databases      int
+	DatabaseUsers  int
+	DatabaseGrants int
+	AppInstalls    int
+	SSHKeys        int
+	CronJobs       int
+	Skipped        int
+	Errors         []string
 }
 
 // Apply walks the metadata bundle and inserts missing rows into the
@@ -53,21 +55,6 @@ type ApplyResult struct {
 func Apply(ctx context.Context, m *internalbackup.AccountMetadata, d Deps) ApplyResult {
 	r := ApplyResult{}
 	if m == nil {
-
-	// 8) Kratos identity restoration
-	if m.Kratos != nil && m.Kratos.ExportedIdentity != "" && d.KratosClient != nil {
-		var exportedIdentity kratosclient.ExportedIdentity
-		if err := json.Unmarshal([]byte(m.Kratos.ExportedIdentity), &exportedIdentity); err != nil {
-			r.Errors = append(r.Errors, fmt.Sprintf("kratos identity: unmarshal: %v", err))
-		} else {
-			if err := d.KratosClient.ImportIdentities(ctx, []kratosclient.ExportedIdentity{exportedIdentity}); err != nil {
-				r.Errors = append(r.Errors, fmt.Sprintf("kratos identity: import: %v", err))
-			} else {
-				// Successfully imported Kratos identity
-				r.UserCreated = true // User was restored to Kratos
-			}
-		}
-	}
 		return r
 	}
 	now := time.Now().UTC()
@@ -77,21 +64,6 @@ func Apply(ctx context.Context, m *internalbackup.AccountMetadata, d Deps) Apply
 	if uerr != nil {
 		r.Errors = append(r.Errors, "user: "+uerr.Error())
 		// no point inserting child rows without the parent
-
-	// 8) Kratos identity restoration
-	if m.Kratos != nil && m.Kratos.ExportedIdentity != "" && d.KratosClient != nil {
-		var exportedIdentity kratosclient.ExportedIdentity
-		if err := json.Unmarshal([]byte(m.Kratos.ExportedIdentity), &exportedIdentity); err != nil {
-			r.Errors = append(r.Errors, fmt.Sprintf("kratos identity: unmarshal: %v", err))
-		} else {
-			if err := d.KratosClient.ImportIdentities(ctx, []kratosclient.ExportedIdentity{exportedIdentity}); err != nil {
-				r.Errors = append(r.Errors, fmt.Sprintf("kratos identity: import: %v", err))
-			} else {
-				// Successfully imported Kratos identity
-				r.UserCreated = true // User was restored to Kratos
-			}
-		}
-	}
 		return r
 	}
 	r.UserCreated = created
@@ -206,6 +178,103 @@ func Apply(ctx context.Context, m *internalbackup.AccountMetadata, d Deps) Apply
 					continue
 				}
 				r.SSLCerts++
+			}
+		}
+	}
+
+	// 3b) Mailboxes (+ autoresponders + shares) and forwarders.
+	// Stalwart reads jabali_panel.mailboxes via its SQL directory
+	// (ADR-0042), so recreating the row restores the account's auth +
+	// quota immediately. The Maildir MESSAGE content lives in a separate
+	// backup stage and is NOT replayed here — the restore command
+	// surfaces that as a warning.
+	for di := range m.Domains {
+		dm := m.Domains[di]
+		if d.Mailboxes != nil {
+			for _, mb := range dm.Mailboxes {
+				if existing, err := d.Mailboxes.FindByID(ctx, mb.ID); err == nil && existing != nil {
+					r.Skipped++
+				} else {
+					row := &models.Mailbox{
+						ID:           mb.ID,
+						DomainID:     dm.ID,
+						LocalPart:    mb.LocalPart,
+						EmailCached:  mb.EmailCached,
+						PasswordHash: mb.PasswordHash,
+						PasswordEnc:  mb.PasswordEnc,
+						QuotaBytes:   mb.QuotaBytes,
+						IsDisabled:   mb.IsDisabled,
+						CreatedAt:    now,
+						UpdatedAt:    now,
+					}
+					if err := d.Mailboxes.Create(ctx, row); err != nil {
+						r.Errors = append(r.Errors, fmt.Sprintf("mailbox %s: create: %v", mb.ID, err))
+						continue
+					}
+					r.Mailboxes++
+				}
+				// Autoresponder is keyed by the mailbox PK; Update upserts.
+				if mb.Autoresponder != nil && d.Autoresponders != nil {
+					ar := &models.EmailAutoresponder{
+						MailboxID: mb.ID,
+						Enabled:   mb.Autoresponder.Enabled,
+						Subject:   mb.Autoresponder.Subject,
+						TextBody:  mb.Autoresponder.TextBody,
+						HTMLBody:  mb.Autoresponder.HTMLBody,
+						FromDate:  parseMetaTime(mb.Autoresponder.FromDate),
+						ToDate:    parseMetaTime(mb.Autoresponder.ToDate),
+					}
+					if err := d.Autoresponders.Update(ctx, ar); err != nil {
+						r.Errors = append(r.Errors, fmt.Sprintf("autoresponder %s: %v", mb.ID, err))
+					}
+				}
+				// Mailbox shares owned by this mailbox.
+				if d.MailboxShares != nil {
+					for _, sh := range mb.SharedWith {
+						if existing, err := d.MailboxShares.FindByID(ctx, sh.ID); err == nil && existing != nil {
+							r.Skipped++
+							continue
+						}
+						var rights models.Rights
+						if sh.Rights != "" {
+							_ = json.Unmarshal([]byte(sh.Rights), &rights)
+						}
+						share := &models.MailboxShare{
+							ID:                  sh.ID,
+							OwnerMailboxID:      mb.ID,
+							SharedWithMailboxID: sh.SharedWithMailboxID,
+							Rights:              rights,
+							CreatedAt:           now,
+						}
+						if err := d.MailboxShares.Create(ctx, share); err != nil {
+							r.Errors = append(r.Errors, fmt.Sprintf("mailbox_share %s: create: %v", sh.ID, err))
+						}
+					}
+				}
+			}
+		}
+		if d.Forwarders != nil {
+			for _, fw := range dm.Forwarders {
+				if existing, err := d.Forwarders.FindByID(ctx, fw.ID); err == nil && existing != nil {
+					r.Skipped++
+					continue
+				}
+				row := &models.EmailForwarder{
+					ID:        fw.ID,
+					MailboxID: fw.MailboxID,
+					DomainID:  dm.ID,
+					Type:      fw.Type,
+					LocalPart: fw.LocalPart,
+					Target:    fw.Target,
+					Enabled:   fw.Enabled,
+					CreatedAt: now,
+					UpdatedAt: now,
+				}
+				if err := d.Forwarders.Create(ctx, row); err != nil {
+					r.Errors = append(r.Errors, fmt.Sprintf("forwarder %s: create: %v", fw.ID, err))
+					continue
+				}
+				r.Forwarders++
 			}
 		}
 	}
@@ -372,7 +441,6 @@ func Apply(ctx context.Context, m *internalbackup.AccountMetadata, d Deps) Apply
 		}
 	}
 
-
 	// 8) Kratos identity restoration
 	if m.Kratos != nil && m.Kratos.ExportedIdentity != "" && d.KratosClient != nil {
 		var exportedIdentity kratosclient.ExportedIdentity
@@ -458,3 +526,16 @@ func applyUser(ctx context.Context, m *internalbackup.AccountMetadata, d Deps, n
 // require duplicating the struct, so add it as a nullable lookup
 // here and have callers extend Deps via the Users field below.
 func (d Deps) users() repository.UserRepository { return d.Users }
+
+// parseMetaTime parses a timeRFC ("2006-01-02T15:04:05Z") string back to
+// a *time.Time, returning nil for empty or unparseable input.
+func parseMetaTime(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil
+	}
+	return &t
+}

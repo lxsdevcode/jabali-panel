@@ -5,8 +5,8 @@
 //
 // Two modes:
 //
-//   * Scriptable: every required flag set on the command line.
-//   * Interactive: --interactive, OR no flags on a TTY. Prompts the
+//   - Scriptable: every required flag set on the command line.
+//   - Interactive: --interactive, OR no flags on a TTY. Prompts the
 //     operator through destination → snapshot → user (existing or
 //     disaster-recovery) → confirmation. Same dispatch as scriptable.
 package main
@@ -26,11 +26,11 @@ import (
 	"golang.org/x/term"
 
 	internalbackup "git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/backupmetadata"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/backupwrapperhelpers"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -64,6 +64,7 @@ func applyPanelMetadata(ctx context.Context, cmd *cobra.Command, raw json.RawMes
 	fmt.Fprintf(w, "  user:           %s\n", boolMark(r.UserCreated))
 	fmt.Fprintf(w, "  php_pools:      %d (ini overrides: %d)\n", r.PHPPools, r.PHPPoolIni)
 	fmt.Fprintf(w, "  domains:        %d (ssl_certs: %d)\n", r.Domains, r.SSLCerts)
+	fmt.Fprintf(w, "  mailboxes:      %d (forwarders: %d)\n", r.Mailboxes, r.Forwarders)
 	fmt.Fprintf(w, "  databases:      %d (users: %d, grants: %d)\n", r.Databases, r.DatabaseUsers, r.DatabaseGrants)
 	fmt.Fprintf(w, "  app_installs:   %d\n", r.AppInstalls)
 	fmt.Fprintf(w, "  ssh_keys:       %d\n", r.SSHKeys)
@@ -86,8 +87,11 @@ func applyPanelMetadata(ctx context.Context, cmd *cobra.Command, raw json.RawMes
 		}
 	}
 
-	fmt.Fprintln(w, "Mailboxes/forwarders/dnssec keys are NOT in this bundle —")
-	fmt.Fprintln(w, "rebuild via the mail-stage warning + `jabali pdns dnssec enable`.")
+	fmt.Fprintln(w, "Note: mailbox + forwarder ROWS are reconstructed above — accounts")
+	fmt.Fprintln(w, "authenticate again via the Stalwart SQL directory. Stored Maildir")
+	fmt.Fprintln(w, "MESSAGES are NOT replayed by account-restore yet; migrate old mail")
+	fmt.Fprintln(w, "separately. DNSSEC keys are not in this bundle — re-enable with")
+	fmt.Fprintln(w, "`jabali pdns dnssec enable`.")
 }
 
 func boolMark(b bool) string {
