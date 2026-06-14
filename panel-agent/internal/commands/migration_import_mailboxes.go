@@ -14,9 +14,10 @@
 //     receivedAt parsed from Maildir filename
 //  4. Record bytes + count in MailboxImportResult
 //
-// Idempotent on resume: a re-run will re-upload + re-import. Stalwart
-// dedupes on Message-ID — duplicate imports become silent no-ops at
-// the JMAP layer. We don't track per-message progress in
+// Idempotent on resume: pushMaildirSlots skips any message whose
+// Message-ID is already present in the target mailbox (Stalwart's
+// Email/import does NOT dedup, so we dedup explicitly). We don't track
+// per-message progress in
 // migration_stages (would 10x the row count); operator sees per-
 // mailbox count + bytes summary in the manifest_json warnings.
 //
@@ -26,6 +27,7 @@
 package commands
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -278,6 +280,11 @@ func importOneMailbox(ctx context.Context, destEmail, maildir string) (int64, in
 func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string, _ *[]string) (int64, int64, []string) {
 	var imported, bytes int64
 	var skipped []string
+	// Idempotency: Stalwart's Email/import does NOT dedup on Message-ID
+	// (a re-run would duplicate every message), so we skip any message
+	// whose Message-ID is already present in the target mailbox. The set
+	// also absorbs messages imported earlier in this same run.
+	seen := existingMessageIDs(ctx, accountID, mailboxID)
 	for _, sub := range []string{"cur", "new"} {
 		dir := filepath.Join(maildir, sub)
 		entries, err := os.ReadDir(dir)
@@ -298,6 +305,12 @@ func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string,
 			if info.Size() > migrationMailboxMessageCap {
 				skipped = append(skipped, fmt.Sprintf("oversized:%s:%d", path, info.Size()))
 				continue
+			}
+			if mid := messageIDFromFile(path); mid != "" {
+				if seen[mid] {
+					continue // already in mailbox → idempotent skip
+				}
+				seen[mid] = true
 			}
 			n, err := importOneMessage(ctx, accountID, mailboxID, path, info.Size(), seenFlag, info.ModTime())
 			if err != nil {
@@ -587,4 +600,83 @@ func jmapCallWith(ctx context.Context, extraCap, method string, args any, out an
 		return json.Unmarshal(rawArgs, out)
 	}
 	return nil
+}
+
+// existingMessageIDs returns the set of normalized Message-IDs already
+// present in the mailbox, so a re-import can skip them (Stalwart does
+// not dedup Email/import itself). Best-effort: a query error yields an
+// empty set (import proceeds, may duplicate — never drops).
+func existingMessageIDs(ctx context.Context, accountID, mailboxID string) map[string]bool {
+	set := map[string]bool{}
+	position := 0
+	for {
+		var q struct {
+			IDs []string `json:"ids"`
+		}
+		qa := map[string]any{
+			"accountId": accountID,
+			"filter":    map[string]any{"inMailbox": mailboxID},
+			"position":  position,
+			"limit":     500,
+		}
+		if err := jmapCallWith(ctx, "urn:ietf:params:jmap:mail", "Email/query", qa, &q); err != nil {
+			return set
+		}
+		if len(q.IDs) == 0 {
+			return set
+		}
+		var g struct {
+			List []struct {
+				MessageID []string `json:"messageId"`
+			} `json:"list"`
+		}
+		ga := map[string]any{
+			"accountId":  accountID,
+			"ids":        q.IDs,
+			"properties": []string{"messageId"},
+		}
+		if err := jmapCallWith(ctx, "urn:ietf:params:jmap:mail", "Email/get", ga, &g); err != nil {
+			return set
+		}
+		for _, m := range g.List {
+			for _, mid := range m.MessageID {
+				set[normMsgID(mid)] = true
+			}
+		}
+		if len(q.IDs) < 500 {
+			return set
+		}
+		position += 500
+	}
+}
+
+// messageIDFromFile reads the Message-ID header from an RFC822 file.
+// Returns "" when absent (such messages can't be deduped — they import).
+func messageIDFromFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			break // end of header block
+		}
+		if len(line) >= 11 && strings.EqualFold(line[:11], "message-id:") {
+			return normMsgID(line[11:])
+		}
+	}
+	return ""
+}
+
+// normMsgID strips angle brackets + whitespace and lowercases, matching
+// the bracket-stripped form Stalwart returns in the messageId property.
+func normMsgID(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "<")
+	s = strings.TrimSuffix(s, ">")
+	return strings.ToLower(strings.TrimSpace(s))
 }
