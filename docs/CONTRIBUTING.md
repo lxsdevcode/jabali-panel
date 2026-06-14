@@ -10,7 +10,7 @@ new worktree branch or agent starts there before touching code.
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Go | 1.25+ | Pinned in `go.mod`; `install.sh` fetches `1.25.1` on a clean box |
+| Go | 1.25+ | Pinned in `go.mod`; `install.sh` fetches `1.26.4` on a clean box |
 | Node | 20+ | Required to build `panel-ui/` |
 | golangci-lint | v2 | `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest` |
 | MariaDB | 10.11+ | Phase 3+; the panel + PowerDNS use separate DBs on the same instance |
