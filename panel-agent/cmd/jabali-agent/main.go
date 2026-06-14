@@ -115,6 +115,11 @@ func main() {
 	ptySock := filepath.Join(filepath.Dir(*socketPath), "agent-pty.sock")
 	commands.StartTerminalPTYBroker(ctx, ptySock, *socketGID, "/var/log/jabali/terminal", log)
 
+	// GH #184: backfill per-user CLI php wrappers for existing pinned users
+	// (reconciler only applies pending/error pools, so a restart converges
+	// active ones). Best-effort, runs once at boot.
+	commands.BackfillUserCLIPHP(log)
+
 	if err := srv.Serve(ctx); err != nil {
 		log.Error("agent serve failed", "err", err)
 		os.Exit(1)
