@@ -307,7 +307,7 @@ func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string,
 		if err != nil {
 			continue
 		}
-		seenFlag := sub == "cur" // cur/ messages are already-read in Maildir spec
+		seenSlot := sub == "cur" // Maildir spec: cur/ holds already-read mail
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
@@ -328,7 +328,20 @@ func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string,
 				}
 				seen[mid] = true
 			}
-			n, err := importOneMessage(ctx, accountID, mailboxID, path, info.Size(), seenFlag, info.ModTime())
+			// Flags: trust the Maildir ":2,<flags>" suffix when present
+			// (S/F/R/D → $seen/$flagged/$answered/$draft); otherwise fall
+			// back to the slot (cur=seen). Restores $flagged/$answered/$draft
+			// that the seen-only path dropped.
+			var keywords map[string]bool
+			if flags, hasInfo := maildirInfoFlags(e.Name()); hasInfo {
+				keywords = maildirFlagsToKeywords(flags)
+			} else {
+				keywords = map[string]bool{}
+				if seenSlot {
+					keywords["$seen"] = true
+				}
+			}
+			n, err := importOneMessage(ctx, accountID, mailboxID, path, info.Size(), keywords, info.ModTime())
 			if err != nil {
 				skipped = append(skipped, fmt.Sprintf("%s: %v", path, err))
 				continue
@@ -338,6 +351,40 @@ func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string,
 		}
 	}
 	return imported, bytes, skipped
+}
+
+// maildirInfoFlags extracts the Maildir info-flag letters from a
+// filename. A Maildir "cur" file is "<base>:2,<flags>"; "new" files have
+// no info part. Returns (flags, true) when the ":2," marker is present
+// (even with empty flags), else ("", false) so the caller falls back to
+// the slot (cur=seen). This "trust the suffix when present" rule also
+// fixes real cPanel cur/ messages without an S flag being marked seen.
+func maildirInfoFlags(name string) (string, bool) {
+	i := strings.LastIndex(name, ":2,")
+	if i < 0 {
+		return "", false
+	}
+	return name[i+3:], true
+}
+
+// maildirFlagsToKeywords maps Maildir info-flag letters to JMAP keywords
+// (inverse of keywordsToMaildirFlags). Unknown letters (incl. 'T'
+// trashed, 'P' passed) are ignored.
+func maildirFlagsToKeywords(flags string) map[string]bool {
+	kw := map[string]bool{}
+	for _, c := range flags {
+		switch c {
+		case 'S':
+			kw["$seen"] = true
+		case 'F':
+			kw["$flagged"] = true
+		case 'R':
+			kw["$answered"] = true
+		case 'D':
+			kw["$draft"] = true
+		}
+	}
+	return kw
 }
 
 // maildirSubfolderRole maps cpanel/Hestia Maildir+ subfolder names
@@ -461,14 +508,13 @@ func mailboxIDByRole(ctx context.Context, accountID, role string) (string, error
 
 // importOneMessage = blob upload + Email/import in two HTTP round-
 // trips. Returns the bytes uploaded.
-func importOneMessage(ctx context.Context, accountID, mailboxID, path string, size int64, seenFlag bool, receivedAt time.Time) (int64, error) {
+func importOneMessage(ctx context.Context, accountID, mailboxID, path string, size int64, keywords map[string]bool, receivedAt time.Time) (int64, error) {
 	blobID, err := uploadBlob(ctx, accountID, path)
 	if err != nil {
 		return 0, fmt.Errorf("blob/upload: %w", err)
 	}
-	keywords := map[string]bool{}
-	if seenFlag {
-		keywords["$seen"] = true
+	if keywords == nil {
+		keywords = map[string]bool{}
 	}
 	receivedAtStr := receivedAt.UTC().Format(time.RFC3339)
 	args := map[string]any{
