@@ -93,11 +93,14 @@ and survives agent/panel restarts.
   `/var/lib/jabali-backups/.restore.lock`). Two parallel restores
   would race nginx reload + PowerDNS NOTIFY + MariaDB DDL.
 
-### Hard 50 GB account ceiling (logical content)
+### ~~Hard 50 GB account ceiling (logical content)~~ — REMOVED 2026-06-15
 
-Pre-pass `du -sb /home/<u>` plus mailbox sizes; refuse above with a
-pointer at SFTP+rsync. Operational not technical — backups above 50 GB
-take long enough that a streaming sync is the right tool.
+Originally: a pre-pass `du -sb /home/<u>` refused any account above 50 GiB
+with a pointer at SFTP+rsync. **Removed** — operators need to back up large
+accounts. `backup.home` still runs the `du -sb` pre-pass, but only to report
+`logical_bytes` (best-effort, non-fatal); it no longer refuses. restic's
+dedup keeps the repo far below the logical size regardless, and long backups
+are acceptable.
 
 ### Manifest is schema-versioned
 
