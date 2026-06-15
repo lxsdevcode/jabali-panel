@@ -45,9 +45,6 @@ type User = {
 
 type HostingPackage = { id: string; name: string };
 
-const renderName = (_: unknown, r: User) =>
-  [r.name_first, r.name_last].filter(Boolean).join(" ");
-
 const renderCreated = (ts: string) => new Date(ts).toLocaleString();
 
 // Shared row-action buttons for both tables. Wired to react-router
@@ -277,88 +274,8 @@ function UsersShellTable({
       }}
     >
       <Table.Column<User>
-        dataIndex="email"
-        title="Email"
-        key="email"
-        sorter={{ multiple: 1 }}
-        filterIcon={() => (
-          <SearchOutlined
-            style={{ color: query.params.q ? "#ef4444" : undefined }}
-          />
-        )}
-        filterDropdown={({ confirm, close }) => (
-          <div style={{ padding: 8, minWidth: 240 }}>
-            <Input.Search
-              placeholder={searchPlaceholder}
-              allowClear
-              defaultValue={query.params.q}
-              onSearch={(value) => {
-                query.setParams({ q: value.trim(), page: 1 });
-                confirm({ closeDropdown: false });
-                close();
-              }}
-            />
-          </div>
-        )}
-        render={(email: string, r: User) =>
-          r.suspended ? (
-            <span>
-              {email}{" "}
-              <Tooltip
-                title={
-                  <>
-                    <div>
-                      <b>Suspended</b>
-                      {r.suspended_at ? ` on ${new Date(r.suspended_at).toLocaleString()}` : ""}
-                    </div>
-                    {r.suspend_reason ? <div>Reason: {r.suspend_reason}</div> : null}
-                  </>
-                }
-              >
-                <Tag color="error">Suspended</Tag>
-              </Tooltip>
-            </span>
-          ) : (
-            email
-          )
-        }
-      />
-      <Table.Column<User>
-        dataIndex="username"
-        title="Username"
-        key="username"
-        render={(v: string | null | undefined) =>
-          v ? (
-            <Typography.Text style={{ fontFamily: "monospace" }}>
-              {v}
-            </Typography.Text>
-          ) : (
-            <Typography.Text type="secondary">—</Typography.Text>
-          )
-        }
-        filterIcon={() => (
-          <SearchOutlined
-            style={{ color: query.params.q ? "#ef4444" : undefined }}
-          />
-        )}
-        filterDropdown={({ confirm, close }) => (
-          <div style={{ padding: 8, minWidth: 240 }}>
-            <Input.Search
-              placeholder={searchPlaceholder}
-              allowClear
-              defaultValue={query.params.q}
-              onSearch={(value) => {
-                query.setParams({ q: value.trim(), page: 1 });
-                confirm({ closeDropdown: false });
-                close();
-              }}
-            />
-          </div>
-        )}
-      />
-      <Table.Column
         title="Name"
-        render={renderName}
+        key="name"
         filterIcon={() => (
           <SearchOutlined
             style={{ color: query.params.q ? "#ef4444" : undefined }}
@@ -378,6 +295,49 @@ function UsersShellTable({
             />
           </div>
         )}
+        render={(_: unknown, r: User) => {
+          const fullName = [r.name_first, r.name_last]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div>
+              <div>
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  {r.username || "\u2014"}
+                </Typography.Text>
+                {fullName ? (
+                  <Typography.Text style={{ marginLeft: 8 }}>
+                    {fullName}
+                  </Typography.Text>
+                ) : null}
+                {r.suspended ? (
+                  <Tooltip
+                    title={
+                      <>
+                        <div>
+                          <b>Suspended</b>
+                          {r.suspended_at
+                            ? ` on ${new Date(r.suspended_at).toLocaleString()}`
+                            : ""}
+                        </div>
+                        {r.suspend_reason ? (
+                          <div>Reason: {r.suspend_reason}</div>
+                        ) : null}
+                      </>
+                    }
+                  >
+                    <Tag color="error" style={{ marginLeft: 8 }}>
+                      Suspended
+                    </Tag>
+                  </Tooltip>
+                ) : null}
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {r.email}
+              </Typography.Text>
+            </div>
+          );
+        }}
       />
       {!isAdmin && (
         <Table.Column<User>
