@@ -1315,8 +1315,12 @@ func validateNginxRules(rules models.NginxRules) error {
 			if r.Mode != "allow_list" && r.Mode != "deny_list" {
 				return fmt.Errorf("rule %d: mode must be allow_list or deny_list", i)
 			}
-			if len(r.IPs) == 0 {
-				return fmt.Errorf("rule %d: at least one IP required", i)
+			// allow_list with zero IPs compiles to a bare `deny all;` — a
+			// valid, most-restrictive config (an .htaccess `Deny from all`
+			// converts to exactly this). A deny_list with zero IPs would deny
+			// nobody (a no-op), so still require at least one there.
+			if r.Mode == "deny_list" && len(r.IPs) == 0 {
+				return fmt.Errorf("rule %d: deny_list needs at least one IP", i)
 			}
 		case "php_setting":
 			if r.Name == "" || r.Value == "" {

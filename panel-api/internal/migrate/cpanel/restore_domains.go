@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/htaccess"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
@@ -21,6 +22,11 @@ type DomainImportResult struct {
 	Created      int
 	EmailEnabled int
 	Skipped      []string
+	// HtaccessRulesImported counts typed Rule Builder entries converted from
+	// migrated .htaccess files (ADR-0130). HtaccessWarnings carries the
+	// per-domain "not converted" advisories for the migration manifest.
+	HtaccessRulesImported int
+	HtaccessWarnings      []string
 }
 
 type domainEmailEnableResp struct {
@@ -123,6 +129,16 @@ func ImportDomains(
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
+
+		// .htaccess -> typed Rule Builder entries (ADR-0130). The source
+		// docroot was rsynced into docRoot by the home-split step that runs
+		// before this stage, so a .htaccess present there converts to typed
+		// NginxRules now, persisted with the row (the reconciler renders them
+		// into the vhost on its next tick — nginx -t gated). An absent
+		// .htaccess is the common case and is a silent no-op; unconverted
+		// lines surface as per-domain manifest warnings, never dropped quietly.
+		applyMigratedHtaccess(filepath.Join(docRoot, ".htaccess"), domainName, d, res)
+
 		if err := domainsRepo.Create(ctx, d); err != nil {
 			res.Skipped = append(res.Skipped, fmt.Sprintf("domain_skip:db_create_failed:%s:%v", domainName, err))
 			continue
@@ -184,4 +200,30 @@ func scanMailDomains(parsed *ParsedTarball) map[string]bool {
 		}
 	}
 	return result
+}
+
+// applyMigratedHtaccess reads the .htaccess at path (if any), converts it to
+// typed NginxRules on d, and records counts/warnings on res. Best-effort: a
+// missing file is normal and silent; conversion never fails the migration.
+// Capped at the 50-rule API limit (extra rules are reported, not applied).
+func applyMigratedHtaccess(path, domainName string, d *models.Domain, res *DomainImportResult) {
+	raw, err := os.ReadFile(path)
+	if err != nil || len(raw) == 0 {
+		return
+	}
+	conv := htaccess.Convert(string(raw), "/")
+	rules := conv.Rules
+	if len(rules) > 50 {
+		res.HtaccessWarnings = append(res.HtaccessWarnings,
+			fmt.Sprintf("%s: .htaccess produced %d rules; only the first 50 were imported", domainName, len(rules)))
+		rules = rules[:50]
+	}
+	if len(rules) > 0 {
+		d.NginxRules = models.NginxRules(rules)
+		res.HtaccessRulesImported += len(rules)
+	}
+	for _, w := range conv.Warnings {
+		res.HtaccessWarnings = append(res.HtaccessWarnings,
+			fmt.Sprintf("%s: %s", domainName, w.Reason))
+	}
 }

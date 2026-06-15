@@ -29,6 +29,7 @@ import {
   CircleHelp,
   Clock,
   Code,
+  Import,
   SquareTerminal,
   Copy,
   Database,
@@ -200,6 +201,7 @@ export const DeleteOutlined = shim(Trash2);
 export const EditOutlined = shim(Pencil);
 export const CopyOutlined = shim(Copy);
 export const DownloadOutlined = shim(Download);
+export const ImportOutlined = shim(Import);
 export const UploadOutlined = shim(Upload);
 export const SaveOutlined = shim(Save);
 export const SearchOutlined = shim(Search);

@@ -1,6 +1,10 @@
 # Blueprint: `.htaccess` → Rule Builder converter
 
-**Status**: Stage 1 (core translator) in progress on `feat/htaccess-converter`.
+**Status**: Stages 1–5 implemented on `feat/htaccess-converter`. Stage 5
+(migration auto-wire) is correct but DORMANT — it lives in `ImportDomains`,
+which the cP/DA/Hestia restore-stage runner does not yet call (those import
+functions are scaffolding without a live caller); it activates when the
+restore stage is wired.
 **ADR**: 0130. **Fixes**: the migration gap where Apache `.htaccess` rewrites
 silently break on nginx (raised on GH #133 follow-up; cPanel/DA/Hestia docs).
 

@@ -10,6 +10,7 @@ import {
   CloseOutlined,
   WarningOutlined,
   PlusOutlined,
+  ImportOutlined,
   DownOutlined,
   DeleteOutlined,
   MenuOutlined,
@@ -28,6 +29,7 @@ import {
   Row,
   Col,
   Dropdown,
+  Tag,
   notification,
 } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
@@ -774,6 +776,197 @@ const RuleBuilder = ({
   );
 };
 
+// HtaccessImport — paste an Apache .htaccess and convert it into typed Rule
+// Builder entries via POST /domains/:id/htaccess/preview (ADR-0130). The
+// converted rules are MERGED into the current rules list (the operator still
+// reviews + Saves on the Rule Builder tab); warnings/notes are shown so
+// nothing is silently dropped. Security-relevant warnings are flagged red.
+type PreviewWarning = {
+  line: number;
+  source: string;
+  reason: string;
+  security?: boolean;
+};
+type PreviewResponse = {
+  rules: NginxRule[];
+  warnings: PreviewWarning[];
+  notes: string[];
+  invalid?: string[];
+};
+
+const HtaccessImport = ({
+  domainId,
+  rules,
+  onRulesChange,
+}: {
+  domainId: string;
+  rules: NginxRule[];
+  onRulesChange: (rules: NginxRule[]) => void;
+}) => {
+  const [content, setContent] = useState("");
+  const [basePath, setBasePath] = useState("/");
+  const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleConvert = async () => {
+    setLoading(true);
+    setPreview(null);
+    try {
+      const res = await apiClient.post<PreviewResponse>(
+        `/domains/${domainId}/htaccess/preview`,
+        { content, base_path: basePath || "/" },
+      );
+      setPreview(res.data);
+    } catch (err) {
+      const e = err as {
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      notification.error({
+        message: "Could not convert .htaccess",
+        description: e.response?.data?.error ?? e.message ?? "Unknown error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdd = () => {
+    if (!preview || preview.rules.length === 0) return;
+    onRulesChange([...rules, ...preview.rules]);
+    notification.success({
+      message: `Added ${preview.rules.length} rule(s) to the Rule Builder`,
+      description: "Review them on the Rule Builder tab, then Save / Apply.",
+    });
+    setPreview(null);
+    setContent("");
+  };
+
+  const securityWarnings = preview?.warnings.filter((w) => w.security) ?? [];
+  const otherWarnings = preview?.warnings.filter((w) => !w.security) ?? [];
+
+  return (
+    <div>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+        Paste an Apache <code>.htaccess</code> to convert its redirects,
+        rewrites, headers, PHP settings and access rules into typed Rule
+        Builder entries. The front-controller block used by WordPress / Laravel
+        is recognized and skipped (the default routing already handles it).
+        Anything that can&apos;t be safely converted is listed below — never
+        applied silently.
+      </Typography.Paragraph>
+      <Input.TextArea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder={"# paste .htaccess here\nRewriteEngine On\n..."}
+        rows={10}
+        style={{ fontFamily: "monospace", marginBottom: 8 }}
+      />
+      <Row gutter={8} style={{ marginBottom: 12 }} align="middle">
+        <Col flex="none">
+          <Typography.Text type="secondary">Base path</Typography.Text>
+        </Col>
+        <Col flex="120px">
+          <Input
+            value={basePath}
+            onChange={(e) => setBasePath(e.target.value)}
+            placeholder="/"
+          />
+        </Col>
+        <Col flex="auto">
+          <Button
+            type="primary"
+            onClick={handleConvert}
+            loading={loading}
+            disabled={content.trim() === ""}
+          >
+            Convert
+          </Button>
+        </Col>
+      </Row>
+
+      {preview && (
+        <div>
+          <Alert
+            type={preview.rules.length > 0 ? "success" : "info"}
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={
+              preview.rules.length > 0
+                ? `${preview.rules.length} rule(s) ready to import`
+                : "No convertible rules found"
+            }
+            action={
+              preview.rules.length > 0 ? (
+                <Button size="small" type="primary" onClick={handleAdd}>
+                  Add to Rule Builder
+                </Button>
+              ) : undefined
+            }
+          />
+
+          {securityWarnings.length > 0 && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Not converted — review manually (security relevant)"
+              description={
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {securityWarnings.map((w, i) => (
+                    <li key={i}>
+                      <Tag color="red">line {w.line}</Tag> {w.reason}
+                      <br />
+                      <Typography.Text code>{w.source}</Typography.Text>
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
+          )}
+
+          {otherWarnings.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={`${otherWarnings.length} line(s) not converted`}
+              description={
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {otherWarnings.map((w, i) => (
+                    <li key={i}>
+                      <Typography.Text type="secondary">
+                        line {w.line}:
+                      </Typography.Text>{" "}
+                      {w.reason}
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
+          )}
+
+          {preview.notes.length > 0 && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Notes"
+              description={
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {preview.notes.map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
+                </ul>
+              }
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const DomainSettingsButton = ({
   domain,
   open: controlledOpen,
@@ -910,6 +1103,21 @@ export const DomainSettingsButton = ({
                 />
               ),
             },
+            {
+              key: "htaccess",
+              label: (
+                <span>
+                  <ImportOutlined /> Import .htaccess
+                </span>
+              ),
+              children: (
+                <HtaccessImport
+                  domainId={domain.id}
+                  rules={rules}
+                  onRulesChange={setRules}
+                />
+              ),
+            },
           ]}
         />
       </Modal>
@@ -996,6 +1204,21 @@ export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget })
                 value={directivesValue}
                 onChange={setDirectivesValue}
                 rules={rules}
+              />
+            ),
+          },
+          {
+            key: "htaccess",
+            label: (
+              <span>
+                <ImportOutlined /> Import .htaccess
+              </span>
+            ),
+            children: (
+              <HtaccessImport
+                domainId={domain.id}
+                rules={rules}
+                onRulesChange={setRules}
               />
             ),
           },

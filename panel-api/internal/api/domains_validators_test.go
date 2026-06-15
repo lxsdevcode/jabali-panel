@@ -220,16 +220,31 @@ func TestValidateNginxRules(t *testing.T) {
 			errorMsg:  "path",
 		},
 		{
-			name: "ip_access missing IPs",
+			// deny_list with no IPs is a no-op (denies nobody) — still rejected.
+			name: "ip_access deny_list missing IPs",
 			rules: []models.NginxRule{
 				{
 					Type: "ip_access",
 					Path: "/admin",
-					Mode: "allow_list",
+					Mode: "deny_list",
 				},
 			},
 			wantError: true,
-			errorMsg:  "ips",
+			errorMsg:  "ip",
+		},
+		{
+			// allow_list with no IPs compiles to `deny all;` (deny everyone) —
+			// a valid, most-restrictive config (an .htaccess `Deny from all`
+			// converts to exactly this). ADR-0130.
+			name: "ip_access allow_list no IPs is deny-all (valid)",
+			rules: []models.NginxRule{
+				{
+					Type: "ip_access",
+					Path: "/private",
+					Mode: "allow_list",
+				},
+			},
+			wantError: false,
 		},
 		{
 			name: "ip_access invalid mode",
