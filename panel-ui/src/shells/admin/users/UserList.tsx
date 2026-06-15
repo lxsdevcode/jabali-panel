@@ -86,6 +86,12 @@ function RowActions({
   >[number];
   const items: MenuItem[] = [
     {
+      key: "edit",
+      icon: <EditOutlined />,
+      label: "Edit",
+      onClick: () => onEdit(user.id),
+    },
+    {
       key: "reset2fa",
       icon: <SafetyOutlined />,
       label: "Reset 2FA",
@@ -97,16 +103,6 @@ function RowActions({
       label: "Reset password",
       onClick: () => setResetPwOpen(true),
     },
-    ...(!user.is_admin
-      ? [
-          {
-            key: "loginas",
-            icon: <LoginOutlined />,
-            label: "Log in as user",
-            onClick: handleLoginAs,
-          } as MenuItem,
-        ]
-      : []),
     ...(!user.is_admin
       ? [
           {
@@ -130,13 +126,18 @@ function RowActions({
 
   return (
     <Space size="middle">
-      <RowActionButton icon={<EditOutlined />} onClick={() => onEdit(user.id)}>
-        Edit
-      </RowActionButton>
+      {!user.is_admin && (
+        <Tooltip title="Log in as user">
+          <RowActionButton
+            icon={<LoginOutlined />}
+            color="default"
+            aria-label="Log in as user"
+            onClick={handleLoginAs}
+          />
+        </Tooltip>
+      )}
       <Dropdown trigger={["click"]} placement="bottomRight" menu={{ items }}>
-        <RowActionButton icon={<MoreOutlined />} color="default">
-          Actions
-        </RowActionButton>
+        <RowActionButton icon={<MoreOutlined />} color="default" aria-label="Actions" />
       </Dropdown>
       <UserReset2FAAction
         userId={user.id}

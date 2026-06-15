@@ -78,9 +78,10 @@ async function cleanup(page: any) {
         await searchInput.fill(TEST_USER.email);
         await page.waitForTimeout(1000);
 
-        // Row actions (Suspend/Delete/Reset 2FA) now live behind an
-        // "Actions" dropdown; open it before reaching for Delete.
-        const actionsBtn = page.locator('button:has-text("Actions")').first();
+        // Row actions (Edit/Suspend/Delete/Reset 2FA) live behind an
+        // icon-only Actions (⋯) dropdown; open it before reaching for
+        // Delete. Icon-only button → match by accessible name (aria-label).
+        const actionsBtn = page.getByRole('button', { name: 'Actions' }).first();
         if (await actionsBtn.isVisible().catch(() => false)) {
           await actionsBtn.click();
           await page.waitForTimeout(300);
