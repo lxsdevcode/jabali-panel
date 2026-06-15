@@ -5925,42 +5925,32 @@ install_sftp_sshd_config() {
   ensure_sshd_running
 }
 
-# ensure_sshd_running — start whichever sshd unit this host uses if
-# it isn't already active. Defensive against earlier install runs
-# leaving the unit in a 'failed' state (GH #133).
+# ensure_sshd_running — converge the host onto a single classic ssh.service
+# listener and retire ssh.socket (GH #133). Delegates to the shared,
+# lockout-safe normalizer so a fresh install and a later `jabali update`
+# behave identically. Falls back to a best-effort start if the script is
+# somehow absent.
 ensure_sshd_running() {
-  local started=0
-  if systemctl list-unit-files ssh.socket >/dev/null 2>&1; then
-    if ! systemctl is-active --quiet ssh.socket; then
-      _log "ssh.socket is not active -- starting"
-      systemctl reset-failed ssh.socket 2>/dev/null || true
-      systemctl start ssh.socket 2>/dev/null && started=1 ||         _warn "systemctl start ssh.socket failed -- check 'systemctl status ssh.socket'"
+  local norm="${REPO_DIR:-/opt/jabali-panel}/install/ssh/normalize-ssh-classic.sh"
+  if [[ -r "$norm" ]]; then
+    _log "normalizing SSH to classic ssh.service (masking ssh.socket)"
+    if bash "$norm"; then
+      _ok "sshd is reachable (classic ssh.service)"
     else
-      started=1
+      _warn "SSH normalization reported a problem -- check 'systemctl status ssh.service ssh.socket'"
     fi
+    return 0
   fi
-  if [[ $started -eq 0 ]] && systemctl list-unit-files ssh.service >/dev/null 2>&1; then
-    if ! systemctl is-active --quiet ssh.service; then
-      _log "ssh.service is not active -- starting"
-      systemctl reset-failed ssh.service 2>/dev/null || true
-      systemctl start ssh.service 2>/dev/null && started=1 ||         _warn "systemctl start ssh.service failed -- check 'systemctl status ssh.service'"
-    else
-      started=1
-    fi
+  # Fallback: normalizer missing -- best-effort start of whatever unit exists.
+  if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+    systemctl is-active --quiet ssh.service || { systemctl reset-failed ssh.service 2>/dev/null || true; systemctl start ssh.service 2>/dev/null || true; }
+  elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then
+    systemctl is-active --quiet sshd.service || { systemctl reset-failed sshd.service 2>/dev/null || true; systemctl start sshd.service 2>/dev/null || true; }
   fi
-  if [[ $started -eq 0 ]] && systemctl list-unit-files sshd.service >/dev/null 2>&1; then
-    if ! systemctl is-active --quiet sshd.service; then
-      _log "sshd.service is not active -- starting"
-      systemctl reset-failed sshd.service 2>/dev/null || true
-      systemctl start sshd.service 2>/dev/null && started=1 ||         _warn "systemctl start sshd.service failed -- check 'systemctl status sshd.service'"
-    else
-      started=1
-    fi
-  fi
-  if [[ $started -eq 0 ]]; then
-    _warn "no active sshd unit found after install -- you may be locked out next reboot; check 'systemctl status ssh' / 'ssh.socket' / 'sshd'"
-  else
+  if systemctl is-active --quiet ssh.service || systemctl is-active --quiet sshd.service; then
     _ok "sshd is reachable"
+  else
+    _warn "no active sshd unit found after install -- check 'systemctl status ssh' / 'ssh.socket' / 'sshd'"
   fi
 }
 

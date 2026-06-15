@@ -789,18 +789,16 @@ fi
 					// halts before the reload. Operator sees the error and fixes the
 					// source file.
 					"sshd -t; "+
-					// Reload the unit that actually exists. Debian/Ubuntu
-					// ship the daemon as ssh.service; RHEL/Rocky ship it
-					// as sshd.service. systemctl reload <name> aborts on
-					// unknown units, which broke jabali update on Debian
-					// 13 — pick the right name first.
-					"if systemctl list-unit-files ssh.service >/dev/null 2>&1; then "+
-					"  systemctl reload ssh; "+
-					"elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then "+
-					"  systemctl reload sshd; "+
-					"else "+
-					"  echo 'no ssh/sshd unit found, skipping reload' >&2; "+
-					"fi; "+
+					// GH #133: do NOT `systemctl reload ssh` here. On hosts where
+					// ssh.service + ssh.socket are both enabled (Debian 13 /
+					// Ubuntu 24.04 preset) they conflict on :22; a reload SIGHUPs a
+					// socket-activated sshd that then cannot rebind the port
+					// (fatal: Cannot bind any address) -> ssh.service fails ->
+					// operator lockout. Instead run the shared normalizer, which
+					// converges the host onto a single classic ssh.service listener
+					// (masking ssh.socket) in a lockout-safe sequence and applies
+					// the freshly-written drop-in via a clean restart.
+					"bash "+repoDir+"/install/ssh/normalize-ssh-classic.sh || echo 'ssh normalize reported a problem' >&2; "+
 					// jabali service user in www-data group — needed for
 					// the reconciler's per-user FPM socket stat-check.
 					// usermod is idempotent; 'groups | grep -w' avoids an
