@@ -8,10 +8,11 @@
 // the ?is_admin filter is applied before search/sort so the paginated
 // total stays correct per tab.
 import { useState } from "react";
-import { Badge, Button, Card, Dropdown, Input, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
-import { DeleteOutlined, EditOutlined, MoreOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
+import { Badge, Button, Card, Dropdown, Input, message, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { DeleteOutlined, EditOutlined, LoginOutlined, MoreOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
 
 import { RowActionButton } from "../../../components/RowActionButton";
+import { startImpersonation } from "../../../impersonation";
 import type { SorterResult } from "antd/es/table/interface";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
@@ -68,6 +69,18 @@ function RowActions({
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // ADR-0128 — start act-as, then full-reload into the user shell so /me
+  // (now carrying the grant header) returns the target and every admin-scoped
+  // query cache is dropped cleanly.
+  const handleLoginAs = async () => {
+    try {
+      await startImpersonation(user.id);
+      window.location.assign("/jabali-panel");
+    } catch {
+      message.error("Could not start \"log in as\" for this user");
+    }
+  };
+
   type MenuItem = NonNullable<
     NonNullable<Parameters<typeof Dropdown>[0]["menu"]>["items"]
   >[number];
@@ -84,6 +97,16 @@ function RowActions({
       label: "Reset password",
       onClick: () => setResetPwOpen(true),
     },
+    ...(!user.is_admin
+      ? [
+          {
+            key: "loginas",
+            icon: <LoginOutlined />,
+            label: "Log in as user",
+            onClick: handleLoginAs,
+          } as MenuItem,
+        ]
+      : []),
     ...(!user.is_admin
       ? [
           {
