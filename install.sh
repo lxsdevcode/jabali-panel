@@ -3873,6 +3873,46 @@ install_ssh_sandbox_prereqs() {
   # Per-user image-pin dir for nspawn mode (currently unused; Step 3
   # follow-up reads /etc/jabali/users/<user>/nspawn-image).
   install -d -m 0755 -o root -g root /etc/jabali/users
+
+  # Ubuntu 24.04+ ships kernel.apparmor_restrict_unprivileged_userns=1, which
+  # blocks bwrap from creating the user namespace the sandbox needs — every
+  # tenant SSH session would die with "bwrap: setting up uid map: Permission
+  # denied". Grant userns to jabali-ssh-shell via a scoped, ENFORCE-mode
+  # AppArmor profile (NOT the host-wide sysctl, NOT all bwrap callers). Only
+  # acts when the restriction is active; a no-op on Debian. Runs after
+  # install_apparmor, so apparmor_parser/aa-enforce are present. (GH #184
+  # follow-up; loaded enforce via apparmor_parser -r — flags=(unconfined)
+  # keeps it allow-all, so do NOT aa-enforce it.)
+  if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" == "1" ]]; then
+    if command -v apparmor_parser >/dev/null 2>&1; then
+      cat > /etc/apparmor.d/jabali-ssh-shell <<'AAPROF'
+abi <abi/4.0>,
+include <tunables/global>
+
+# Grant unprivileged user-namespace creation to the M13 SSH sandbox wrapper on
+# hosts that restrict userns (Ubuntu 24.04+). flags=(unconfined) adds no
+# confinement — the bwrap sandbox is the actual boundary; the exec'd bwrap
+# inherits this profile and may create the namespace. Scoped to this binary
+# only, so other bwrap callers stay restricted.
+profile jabali-ssh-shell /usr/local/bin/jabali-ssh-shell flags=(unconfined) {
+  userns,
+
+  include if exists <local/jabali-ssh-shell>
+}
+AAPROF
+      # apparmor_parser -r loads in ENFORCE by default, which is required
+      # (complain mode does NOT satisfy the kernel userns check). Do NOT
+      # aa-enforce afterwards: that strips the flags=(unconfined) allow-all and
+      # turns the profile restrictive, denying the wrapper's own file reads.
+      if apparmor_parser -r /etc/apparmor.d/jabali-ssh-shell 2>/dev/null; then
+        _ok "AppArmor userns profile for jabali-ssh-shell (Ubuntu noble bwrap fix)"
+      else
+        _warn "failed to load AppArmor userns profile for jabali-ssh-shell — SSH sandbox may fail on this host"
+      fi
+    else
+      _warn "kernel restricts unprivileged userns but apparmor_parser is missing — SSH sandbox will fail until a userns AppArmor profile is loaded"
+    fi
+  fi
 }
 
 # ---------- step 6: env file + systemd unit ---------------------------------
