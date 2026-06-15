@@ -153,3 +153,38 @@ func TestHeaderNameInjectionRejected(t *testing.T) {
 		t.Errorf("header name with injection chars must be rejected")
 	}
 }
+
+func TestGzipBlockIsOneNote(t *testing.T) {
+	in := `<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>`
+	r := Convert(in, "/")
+	if len(r.Rules) != 0 {
+		t.Errorf("gzip block emits no rules, got %+v", r.Rules)
+	}
+	if len(r.Warnings) != 0 {
+		t.Errorf("gzip block should NOT warn (nginx handles it), got %+v", r.Warnings)
+	}
+	if len(r.Notes) != 1 {
+		t.Errorf("gzip block should be ONE dedup note, got %d: %v", len(r.Notes), r.Notes)
+	}
+}
+
+func TestExpiresBlockIsOneNote(t *testing.T) {
+	in := `<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpeg "access 1 year"
+    ExpiresByType text/css "access 1 month"
+    ExpiresDefault "access 1 month"
+</IfModule>`
+	r := Convert(in, "/")
+	if len(r.Warnings) != 0 {
+		t.Errorf("expires block should NOT warn, got %+v", r.Warnings)
+	}
+	if len(r.Notes) != 1 {
+		t.Errorf("expires block should be ONE dedup note, got %d: %v", len(r.Notes), r.Notes)
+	}
+}

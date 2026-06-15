@@ -16,7 +16,7 @@ func Convert(htaccess, basePath string) Result {
 	var res Result
 
 	base := normalizeBase(basePath)
-	st := &state{base: base}
+	st := &state{base: base, noted: map[string]bool{}}
 
 	skipDepth := 0 // inside a scoping section (<Files>/<Directory>/…) we skip
 
@@ -83,8 +83,21 @@ func Convert(htaccess, basePath string) Result {
 			// Access-control directives are buffered and emitted together at
 			// the end so Order + Allow/Deny semantics resolve as a unit.
 			st.access = append(st.access, accessLine{directive: strings.ToLower(directive), args: args, num: ln.num})
-		case "errordocument", "directoryindex", "setenv", "setenvif", "addhandler",
-			"adddefaultcharset", "addtype", "expiresactive", "expiresbytype", "expiresdefault":
+		case "addoutputfilterbytype", "addoutputfilter", "setoutputfilter":
+			// Apache gzip (mod_deflate). nginx compresses server-wide, so
+			// these need no per-site rule — collapse to one reassuring note.
+			if argsMentionDeflate(args) {
+				noteOnce(&res, st, "gzip", "gzip/DEFLATE compression directives skipped — nginx already compresses responses server-wide, so no per-site rule is needed")
+			} else {
+				res.warn(ln.num, ln.text, "output filter not supported by the Rule Builder")
+			}
+		case "expiresactive", "expiresbytype", "expiresdefault":
+			// mod_expires browser caching. nginx serves static assets with its
+			// own cache headers; configure caching in the panel if needed.
+			noteOnce(&res, st, "expires", "browser-cache directives (mod_expires) skipped — nginx sets cache headers for static assets; adjust caching in the panel if needed")
+		case "addtype", "addcharset", "adddefaultcharset":
+			noteOnce(&res, st, "mime", "MIME-type / charset directives skipped — nginx serves these from its own mime.types")
+		case "errordocument", "directoryindex", "setenv", "setenvif", "addhandler":
 			res.warn(ln.num, ln.text, "directive not supported by the Rule Builder; configure it in the panel instead")
 		default:
 			res.warn(ln.num, ln.text, "unrecognized or unsupported directive")
@@ -110,6 +123,7 @@ type state struct {
 	rewriteEngineOff bool
 	pendingConds     []condLine
 	access           []accessLine
+	noted            map[string]bool // dedup keys for noteOnce
 }
 
 type condLine struct {
@@ -216,4 +230,25 @@ func normalizeBase(p string) string {
 		p += "/"
 	}
 	return p
+}
+
+// noteOnce adds an informational note for a category only the first time it is
+// seen, so a 20-line gzip/expires block produces one note, not 20 warnings.
+func noteOnce(res *Result, st *state, key, msg string) {
+	if st.noted[key] {
+		return
+	}
+	st.noted[key] = true
+	res.addNote(msg)
+}
+
+// argsMentionDeflate reports whether any token is DEFLATE/gzip (the compression
+// filter), vs some other output filter we don't recognize.
+func argsMentionDeflate(args []string) bool {
+	for _, a := range args {
+		if strings.EqualFold(a, "deflate") || strings.EqualFold(a, "gzip") {
+			return true
+		}
+	}
+	return false
 }
