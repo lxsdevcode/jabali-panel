@@ -56,13 +56,22 @@ func AuditRecord(rec audit.Recorder) gin.HandlerFunc {
 			result = models.AuditResultDenied
 		}
 
-		var actorUserID, actorKind string
+		var actorUserID, actorKind, impersonatedTarget string
 		if cl := ginctx.Claims(c); cl != nil {
-			actorUserID = cl.UserID
-			if cl.IsAdmin {
+			if cl.ImpersonatedBy != "" {
+				// Act-as override (ADR-0128): the REAL admin is the
+				// accountable actor; the target user is the subject. Never
+				// attribute an impersonated action to the target.
+				actorUserID = cl.ImpersonatedBy
 				actorKind = models.AuditActorAdmin
+				impersonatedTarget = cl.UserID
 			} else {
-				actorKind = models.AuditActorUser
+				actorUserID = cl.UserID
+				if cl.IsAdmin {
+					actorKind = models.AuditActorAdmin
+				} else {
+					actorKind = models.AuditActorUser
+				}
 			}
 		} else {
 			actorKind = models.AuditActorSystem
@@ -77,7 +86,11 @@ func AuditRecord(rec audit.Recorder) gin.HandlerFunc {
 		// worse than an absent one (absent = admin-only visibility,
 		// the safe default).
 		subject := ""
-		if strings.HasPrefix(route, "/api/v1/me") {
+		if impersonatedTarget != "" {
+			// Act-as: the impersonated user is the subject of the action
+			// (actor=admin, subject=target → who did what to whom).
+			subject = impersonatedTarget
+		} else if strings.HasPrefix(route, "/api/v1/me") {
 			subject = actorUserID
 		}
 

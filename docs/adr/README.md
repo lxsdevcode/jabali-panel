@@ -137,6 +137,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [0124](0124-crs-false-positive-exclusion-plugin.md) | jabali CRS "before" plugin for targeted AppSec false-positive exclusions | Accepted |
 | [0125](0125-m50-directory-privacy.md) | M50 Directory Privacy — per-subdirectory HTTP Basic Auth | Accepted |
 | [0126](0126-per-user-cli-php-version.md) | Per-user CLI PHP version follows the FPM version pin | Accepted |
+| [0128](0128-admin-impersonation-act-as.md) | Admin act-as impersonation via effective-user override | Accepted |
 <!-- /AUTO-GENERATED -->
 
 ## Decision Categories

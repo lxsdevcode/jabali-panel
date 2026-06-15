@@ -14,6 +14,11 @@ type AccessClaims struct {
 	UserID  string
 	Email   string
 	IsAdmin bool
+	// ImpersonatedBy is the real admin's user id when this request is an
+	// act-as override (ADR-0128): UserID/Email/IsAdmin describe the TARGET
+	// user the admin is operating as, while ImpersonatedBy stays the admin
+	// so the audit trail records the real actor. Empty on normal requests.
+	ImpersonatedBy string
 	// Source identifies which middleware authenticated this request.
 	// Empty defaults to SourceKratos (the historical browser-cookie
 	// path) for backwards compatibility — old middleware that pre-

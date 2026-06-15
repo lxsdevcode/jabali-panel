@@ -409,6 +409,14 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Records:    deps.DNSRecords,
 			Reconciler: deps.Reconciler,
 		})
+		// ADR-0128 — admin act-as override. Runs after RequireKratosSession
+		// (claims populated) and BEFORE AuditRecord so the audit records the
+		// REAL admin as actor. No-op unless the X-Jabali-Act-As header is set
+		// by a real admin presenting a valid grant.
+		if deps.Users != nil && deps.DB != nil {
+			v1.Use(middleware.ResolveImpersonation(
+				repository.NewImpersonationGrantRepository(deps.DB), deps.Users, nil))
+		}
 		// M14 — fire one admin.login envelope per Kratos session.
 		// Redis SETNX dedupes; downgrades to no-op without Redis/queue.
 		v1.Use(middleware.TrackAdminLogin(deps.Redis, deps.NotificationQueue, deps.Log))
@@ -420,6 +428,16 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Packages:       deps.Packages,
 			ServerSettings: deps.ServerSettings,
 		})
+
+		// ADR-0128 — admin act-as grant management (GH #183). Mounted on v1;
+		// ResolveImpersonation skips this path so it always runs as the real
+		// admin (an admin can exit even while a header is set).
+		if deps.Users != nil && deps.DB != nil {
+			api.RegisterImpersonationRoutes(v1, api.ImpersonationHandlerConfig{
+				Grants: repository.NewImpersonationGrantRepository(deps.DB),
+				Users:  deps.Users,
+			})
+		}
 
 		// M49 — unified audit log read surface (ADR-0106):
 		// /admin/audit (RequireAdmin) + /me/activity (subject-scoped).
