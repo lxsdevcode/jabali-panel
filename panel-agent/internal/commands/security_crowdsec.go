@@ -67,15 +67,15 @@ func runCscliJSON(ctx context.Context, args ...string) ([]byte, error) {
 // ---- security.crowdsec.status ----------------------------------------------
 
 type csStatusResponse struct {
-	Running         bool   `json:"running"`
-	LapiReachable   bool   `json:"lapi_reachable"`
-	Version         string `json:"version,omitempty"`
-	Hostname        string `json:"hostname,omitempty"`
-	OSPretty        string `json:"os_pretty,omitempty"`
-	StartedAt       string `json:"started_at,omitempty"`
-	MachineID       string `json:"machine_id,omitempty"`
-	LastHeartbeat   string `json:"last_heartbeat,omitempty"`
-	CAPIReachable   bool   `json:"capi_reachable"`
+	Running       bool   `json:"running"`
+	LapiReachable bool   `json:"lapi_reachable"`
+	Version       string `json:"version,omitempty"`
+	Hostname      string `json:"hostname,omitempty"`
+	OSPretty      string `json:"os_pretty,omitempty"`
+	StartedAt     string `json:"started_at,omitempty"`
+	MachineID     string `json:"machine_id,omitempty"`
+	LastHeartbeat string `json:"last_heartbeat,omitempty"`
+	CAPIReachable bool   `json:"capi_reachable"`
 }
 
 func csStatusHandler(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -962,6 +962,9 @@ func csAllowlistsListHandler(ctx context.Context, _ json.RawMessage) (any, error
 type csAllowlistAddParams struct {
 	Value  string `json:"value"`
 	Reason string `json:"reason"`
+	// Expiration is an optional Go duration (e.g. "168h"). Empty = permanent.
+	// Used by the auto-whitelist-on-login flow to time-box user IPs.
+	Expiration string `json:"expiration,omitempty"`
 }
 
 // ensureJabaliAllowlist creates the named allowlist if missing. Idempotent:
@@ -1007,10 +1010,22 @@ func csAllowlistsAddHandler(ctx context.Context, params json.RawMessage) (any, e
 	if err := ensureJabaliAllowlist(ctx); err != nil {
 		return nil, csInternal("ensure allowlist", err)
 	}
-	cmd := exec.CommandContext(ctx, "cscli", "allowlists", "add",
-		jabaliAllowlistName, value, "-d", p.Reason)
+	args := []string{"allowlists", "add", jabaliAllowlistName, value, "-d", p.Reason}
+	if exp := strings.TrimSpace(p.Expiration); exp != "" {
+		if _, err := time.ParseDuration(exp); err != nil {
+			return nil, csInvalidArg("expiration must be a Go duration (e.g. \"168h\")")
+		}
+		args = append(args, "-e", exp)
+	}
+	cmd := exec.CommandContext(ctx, "cscli", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, csInternal(fmt.Sprintf("cscli allowlists add: %s", strings.TrimSpace(string(out))), err)
+		msg := strings.TrimSpace(string(out))
+		// Re-adding an already-allowlisted value is a no-op success for the
+		// idempotent login refresh path.
+		if strings.Contains(strings.ToLower(msg), "already") {
+			return map[string]any{"value": value}, nil
+		}
+		return nil, csInternal(fmt.Sprintf("cscli allowlists add: %s", msg), err)
 	}
 	return map[string]any{"value": value}, nil
 }

@@ -40,6 +40,7 @@ import {
   ApiOutlined,
   SafetyOutlined,
   ThunderboltOutlined,
+  CheckOutlined,
   DeleteOutlined,
   ReloadOutlined,
 } from "@icons";
@@ -148,6 +149,20 @@ export const AdminSecurityCrowdsec = () => {
     }
   };
 
+  const addAllowlist = useAddCrowdsecAllowlist();
+  const onWhitelist = async (row: CrowdsecDecision) => {
+    try {
+      await addAllowlist.mutateAsync({
+        value: row.ip,
+        reason: `Whitelisted from active decisions (${row.scenario})`.slice(0, 200),
+      });
+      await deleteDecision.mutateAsync(row.id);
+      message.success(`Whitelisted ${row.ip} and removed the ban`);
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : "Failed to whitelist IP");
+    }
+  };
+
   // Sub-tabs (one card per tab). URL-driven via ?sub= so a direct link
   // deep-links to a specific sub-tab. Keep the Add-decision Drawer
   // OUTSIDE the Tabs so it stays open across tab switches (rare, but
@@ -231,21 +246,34 @@ export const AdminSecurityCrowdsec = () => {
         />
         <Table.Column<CrowdsecDecision>
           title=""
-          key="delete"
-          width={90}
+          key="actions"
+          width={200}
           render={(_, row) => (
-            <Popconfirm
-              title="Remove ban"
-              description={`Remove the ban on ${row.ip}? Traffic will resume immediately.`}
-              okText="Remove"
-              okButtonProps={{ danger: true }}
-              cancelText="Cancel"
-              onConfirm={() => onDeleteDecision(row)}
-            >
-              <RowActionButton danger size="small" icon={<DeleteOutlined />}>
-                Delete
-              </RowActionButton>
-            </Popconfirm>
+            <Space>
+              <Popconfirm
+                title="Whitelist IP"
+                description={`Add ${row.ip} to the allowlist and remove this ban? CrowdSec will stop blocking it.`}
+                okText="Whitelist"
+                cancelText="Cancel"
+                onConfirm={() => onWhitelist(row)}
+              >
+                <RowActionButton size="small" icon={<CheckOutlined />}>
+                  Whitelist
+                </RowActionButton>
+              </Popconfirm>
+              <Popconfirm
+                title="Remove ban"
+                description={`Remove the ban on ${row.ip}? Traffic will resume immediately.`}
+                okText="Remove"
+                okButtonProps={{ danger: true }}
+                cancelText="Cancel"
+                onConfirm={() => onDeleteDecision(row)}
+              >
+                <RowActionButton danger size="small" icon={<DeleteOutlined />}>
+                  Delete
+                </RowActionButton>
+              </Popconfirm>
+            </Space>
           )}
         />
       </Table>

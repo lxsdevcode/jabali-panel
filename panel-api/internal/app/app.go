@@ -420,6 +420,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// M14 — fire one admin.login envelope per Kratos session.
 		// Redis SETNX dedupes; downgrades to no-op without Redis/queue.
 		v1.Use(middleware.TrackAdminLogin(deps.Redis, deps.NotificationQueue, deps.Log))
+		// Auto-whitelist a logged-in user's IP in CrowdSec (time-boxed, all
+		// users) so active sessions are never bounced from their own IP.
+		if deps.Agent != nil {
+			v1.Use(middleware.WhitelistLoginIP(deps.Redis, deps.Agent, deps.Log))
+		}
 		// M49 — record one audit event per mutating request (never
 		// the body). No-op when AuditRecorder is nil (no Redis).
 		v1.Use(middleware.AuditRecord(deps.AuditRecorder))
