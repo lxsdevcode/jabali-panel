@@ -97,7 +97,9 @@ func (f *fakeDomainRepo) Update(ctx context.Context, d *models.Domain) error {
 	return nil
 }
 
-func (f *fakeDomainRepo) BulkSetEnabledByUserID(_ context.Context, _ string, _ bool) (int64, error) { return 0, nil }
+func (f *fakeDomainRepo) BulkSetEnabledByUserID(_ context.Context, _ string, _ bool) (int64, error) {
+	return 0, nil
+}
 
 func (f *fakeDomainRepo) Delete(ctx context.Context, id string) error {
 	delete(f.domains, id)
@@ -1009,14 +1011,14 @@ func TestReconcileOne_PassesCustomDirectives(t *testing.T) {
 
 	customDirectives := "add_header X-Foo bar;"
 	domain := &models.Domain{
-		ID:                     "domain-4",
-		UserID:                 user.ID,
-		Name:                   "test2.com",
-		DocRoot:                "/home/bob/domains/test2.com/public_html",
-		IsEnabled:              true,
-		NginxCustomDirectives:  &customDirectives,
-		CreatedAt:              now,
-		UpdatedAt:              now,
+		ID:                    "domain-4",
+		UserID:                user.ID,
+		Name:                  "test2.com",
+		DocRoot:               "/home/bob/domains/test2.com/public_html",
+		IsEnabled:             true,
+		NginxCustomDirectives: &customDirectives,
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 	domainRepo.domains[domain.ID] = domain
 
@@ -1975,7 +1977,6 @@ func TestReconcileMysqlAdminShadow_BatchLimitOf50(t *testing.T) {
 	require.Equal(t, 50, len(sso.ensureShadowCalls))
 }
 
-
 // TestSANHostnamesForDomain covers the helper that builds extra
 // SAN list for the per-domain cert. Email-enabled domains advertise
 // mail.<d> + autoconfig.<d> (pdns CNAMEs autoconfig → mail.<zone>
@@ -1997,7 +1998,7 @@ func TestSANHostnamesForDomain(t *testing.T) {
 	t.Run("email enabled", func(t *testing.T) {
 		d := &models.Domain{Name: "example.com", EmailEnabled: true}
 		got := sanHostnamesForDomain(d)
-		want := []string{"mail.example.com", "autoconfig.example.com"}
+		want := []string{"mail.example.com", "autoconfig.example.com", "autodiscover.example.com"}
 		if len(got) != len(want) {
 			t.Fatalf("got %v, want %v", got, want)
 		}
@@ -2018,7 +2019,7 @@ func TestSANHostnamesForDomain(t *testing.T) {
 	t.Run("email + mta_sts", func(t *testing.T) {
 		d := &models.Domain{Name: "example.com", EmailEnabled: true, MTASTSEnabled: true}
 		got := sanHostnamesForDomain(d)
-		want := []string{"mail.example.com", "autoconfig.example.com", "mta-sts.example.com"}
+		want := []string{"mail.example.com", "autoconfig.example.com", "autodiscover.example.com", "mta-sts.example.com"}
 		if len(got) != len(want) {
 			t.Fatalf("got %v, want %v", got, want)
 		}
