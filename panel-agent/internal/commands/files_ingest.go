@@ -33,10 +33,11 @@ import (
 // app installers reuse.
 
 type filesIngestParams struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	TmpPath  string `json:"tmp_path"`
-	DestPath string `json:"dest_path"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	TmpPath   string `json:"tmp_path"`
+	DestPath  string `json:"dest_path"`
+	Overwrite bool   `json:"overwrite,omitempty"`
 }
 
 type filesIngestResponse struct {
@@ -82,11 +83,28 @@ func filesIngestHandler(ctx context.Context, params json.RawMessage) (any, error
 			Message: fmt.Sprintf("dest_path validation failed: %v", err),
 		}
 	}
-	if _, err := os.Lstat(dst); err == nil {
-		_ = os.Remove(p.TmpPath)
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInvalidArgument,
-			Message: "target path already exists",
+	if fi, err := os.Lstat(dst); err == nil {
+		// Never replace a directory with an uploaded file.
+		if fi.IsDir() {
+			_ = os.Remove(p.TmpPath)
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeFailedPrecondition,
+				Message: "target is a directory",
+			}
+		}
+		if !p.Overwrite {
+			_ = os.Remove(p.TmpPath)
+			// "already_exists" token lets panel-api map this to HTTP 409 so
+			// the upload UI can offer overwrite / keep-both / cancel (GH #188).
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeAlreadyExists,
+				Message: "already_exists: target path already exists",
+			}
+		}
+		// Overwrite a symlink by removing it first, so os.Rename replaces the
+		// link itself and the cross-fs fallback's create won't trip on it.
+		if fi.Mode()&os.ModeSymlink != 0 {
+			_ = os.Remove(dst)
 		}
 	}
 
@@ -115,7 +133,11 @@ func filesIngestHandler(ctx context.Context, params json.RawMessage) (any, error
 		return nil, classifyFSWriteErr("open_tmp", err)
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	dstFlags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	if p.Overwrite {
+		dstFlags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	}
+	out, err := os.OpenFile(dst, dstFlags, 0o644)
 	if err != nil {
 		return nil, classifyFSWriteErr("open_dst", err)
 	}

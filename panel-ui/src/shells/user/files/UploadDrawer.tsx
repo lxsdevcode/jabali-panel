@@ -26,11 +26,12 @@ import {
   CloseOutlined,
   InboxOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, List, Progress, Space, Typography, Upload } from "antd";
+import { Button, Checkbox, Drawer, List, Modal, Progress, Space, Typography, Upload } from "antd";
 import type { UploadProps } from "antd";
 import { AxiosError } from "axios";
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { filesUpload, filesUploadChunked } from "./filesApi";
+import type { UploadOpts } from "./filesApi";
 
 export interface UploadDrawerHandle {
   /** Enqueue a file for upload and open the drawer if closed. */
@@ -84,6 +85,28 @@ function errMessage(err: unknown): string {
   return "Unexpected error";
 }
 
+// isAlreadyExists detects the 409 a collision raises (GH #188) so the worker
+// can offer overwrite / keep-both / cancel instead of just failing.
+function isAlreadyExists(err: unknown): boolean {
+  if (err instanceof AxiosError) {
+    const data = err.response?.data as { error?: string } | undefined;
+    return err.response?.status === 409 || data?.error === "already_exists";
+  }
+  return false;
+}
+
+// makeRenamedName turns "photo.jpg" into "photo (1).jpg" for "keep both".
+function makeRenamedName(name: string, n: number): string {
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return `${name} (${n})`; // no ext, or a leading-dot dotfile
+  return `${name.slice(0, dot)} (${n})${name.slice(dot)}`;
+}
+
+type ConflictDecision = {
+  action: "overwrite" | "keepboth" | "cancel";
+  always: boolean;
+};
+
 export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(function UploadDrawer(
   { open, currentPath, onClose, onUploaded, onOpenRequest },
   ref,
@@ -93,6 +116,30 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
   // queue of items waiting to be processed; ref so the worker loop sees
   // the latest set without re-running on every state change
   const queueRef = useRef<UploadItem[]>([]);
+  // Collision prompt (GH #188). conflictItem drives the modal; the worker
+  // loop awaits the user's decision via the promise stashed in the ref.
+  const [conflictItem, setConflictItem] = useState<UploadItem | null>(null);
+  const [conflictAlways, setConflictAlways] = useState(false);
+  const conflictResolveRef = useRef<((d: ConflictDecision) => void) | null>(null);
+  const alwaysOverwriteRef = useRef(false);
+
+  const askConflict = useCallback((item: UploadItem) => {
+    setConflictAlways(false);
+    setConflictItem(item);
+    return new Promise<ConflictDecision>((resolve) => {
+      conflictResolveRef.current = resolve;
+    });
+  }, []);
+
+  const resolveConflict = useCallback(
+    (action: ConflictDecision["action"]) => {
+      const resolve = conflictResolveRef.current;
+      conflictResolveRef.current = null;
+      setConflictItem(null);
+      resolve?.({ action, always: conflictAlways });
+    },
+    [conflictAlways],
+  );
 
   const updateItem = useCallback((id: string, patch: Partial<UploadItem>) => {
     setItems((prev) =>
@@ -106,17 +153,50 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
         if (item.file.size > HARD_CEILING) {
           throw new Error("exceeds 1 GB hard limit");
         }
-        updateItem(item.id, { status: "uploading", progress: 0 });
-        if (item.file.size <= SINGLE_MULTIPART_CEILING) {
-          await filesUpload(currentPath, item.file, (frac) => {
-            updateItem(item.id, { progress: frac });
-          });
-        } else {
-          await filesUploadChunked(currentPath, item.file, CHUNK_SIZE, (frac) => {
-            updateItem(item.id, { progress: frac });
-          });
+        const doUpload = (opts?: UploadOpts) => {
+          const onp = (frac: number) => updateItem(item.id, { progress: frac });
+          return item.file.size <= SINGLE_MULTIPART_CEILING
+            ? filesUpload(currentPath, item.file, onp, opts)
+            : filesUploadChunked(currentPath, item.file, CHUNK_SIZE, onp, opts);
+        };
+        let mode: "ask" | "overwrite" | "rename" = alwaysOverwriteRef.current
+          ? "overwrite"
+          : "ask";
+        let renameN = 0;
+        for (let guard = 0; guard < 1002; guard++) {
+          let opts: UploadOpts | undefined;
+          if (mode === "overwrite") opts = { overwrite: true };
+          else if (mode === "rename")
+            opts = { name: makeRenamedName(item.file.name, ++renameN) };
+          updateItem(item.id, { status: "uploading", progress: 0 });
+          try {
+            await doUpload(opts);
+            updateItem(item.id, { status: "success", progress: 1 });
+            return;
+          } catch (err) {
+            if (!isAlreadyExists(err)) throw err;
+            if (mode === "rename") continue; // try the next (n) silently
+            if (mode === "overwrite") throw err; // overwrite shouldn't collide
+            const d = await askConflict(item);
+            if (d.action === "cancel") {
+              updateItem(item.id, {
+                status: "error",
+                errorMessage: "Skipped — file already exists",
+              });
+              return;
+            }
+            if (d.action === "overwrite") {
+              if (d.always) alwaysOverwriteRef.current = true;
+              mode = "overwrite";
+              continue;
+            }
+            mode = "rename"; // keep both
+          }
         }
-        updateItem(item.id, { status: "success", progress: 1 });
+        updateItem(item.id, {
+          status: "error",
+          errorMessage: "Too many name collisions",
+        });
       } catch (err) {
         updateItem(item.id, {
           status: "error",
@@ -124,7 +204,7 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
         });
       }
     },
-    [currentPath, updateItem],
+    [currentPath, updateItem, askConflict],
   );
 
   const processQueue = useCallback(async () => {
@@ -196,6 +276,7 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
   };
 
   return (
+    <>
     <Drawer
       title="Upload files"
       open={open}
@@ -291,5 +372,39 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
         />
       </Space>
     </Drawer>
+    <Modal
+      title="File already exists"
+      open={conflictItem !== null}
+      onCancel={() => resolveConflict("cancel")}
+      maskClosable={false}
+      footer={[
+        <Button key="cancel" onClick={() => resolveConflict("cancel")}>
+          Cancel
+        </Button>,
+        <Button key="keep" onClick={() => resolveConflict("keepboth")}>
+          Keep both
+        </Button>,
+        <Button
+          key="overwrite"
+          type="primary"
+          danger
+          onClick={() => resolveConflict("overwrite")}
+        >
+          Overwrite
+        </Button>,
+      ]}
+    >
+      <Typography.Paragraph>
+        <Typography.Text code>{conflictItem?.file.name}</Typography.Text>{" "}
+        already exists in this folder.
+      </Typography.Paragraph>
+      <Checkbox
+        checked={conflictAlways}
+        onChange={(e) => setConflictAlways(e.target.checked)}
+      >
+        Always overwrite for the rest of this upload
+      </Checkbox>
+    </Modal>
+    </>
   );
 });

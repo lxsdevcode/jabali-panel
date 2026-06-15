@@ -55,14 +55,25 @@ export function filesDownloadURL(path: string): string {
   return `/api/v1/files/download?path=${encodeURIComponent(path)}`;
 }
 
+export interface UploadOpts {
+  overwrite?: boolean;
+  // name overrides the destination filename (used for "keep both" auto-rename
+  // on a collision). Defaults to the File's own name.
+  name?: string;
+}
+
 export async function filesUpload(
   dirPath: string,
   file: File,
   onProgress?: (frac: number) => void,
+  opts?: UploadOpts,
 ): Promise<void> {
   const fd = new FormData();
   fd.append("file", file);
-  await apiClient.post(`/files/upload?path=${encodeURIComponent(dirPath)}`, fd, {
+  const q = new URLSearchParams({ path: dirPath });
+  if (opts?.overwrite) q.set("overwrite", "true");
+  if (opts?.name) q.set("name", opts.name);
+  await apiClient.post(`/files/upload?${q.toString()}`, fd, {
     headers: { "Content-Type": "multipart/form-data" },
     onUploadProgress: (e) => {
       if (!onProgress) return;
@@ -87,9 +98,11 @@ export async function filesUploadChunked(
   file: File,
   chunkSize = 10 * 1024 * 1024,
   onProgress?: (frac: number) => void,
+  opts?: UploadOpts,
 ): Promise<void> {
+  const destName = opts?.name ?? file.name;
   const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
-  const resumeKey = `jabali:upload:${dirPath}|${file.name}|${file.size}|${file.lastModified}`;
+  const resumeKey = `jabali:upload:${dirPath}|${destName}|${file.size}|${file.lastModified}`;
   let uploadId = readResumeId(resumeKey);
   let startChunk = 0;
   if (uploadId) {
@@ -123,12 +136,14 @@ export async function filesUploadChunked(
     const start = i * chunkSize;
     const end = Math.min(start + chunkSize, file.size);
     const blob = file.slice(start, end);
+    const isLast = i === totalChunks - 1;
     const params = new URLSearchParams({
       upload_id: uploadId,
       offset: String(start),
       path: dirPath,
-      name: file.name,
-      ...(i === totalChunks - 1 ? { final: "1" } : {}),
+      name: destName,
+      ...(isLast ? { final: "1" } : {}),
+      ...(isLast && opts?.overwrite ? { overwrite: "true" } : {}),
     });
     await apiClient.post(`/files/upload-chunk?${params.toString()}`, blob, {
       headers: { "Content-Type": "application/octet-stream" },

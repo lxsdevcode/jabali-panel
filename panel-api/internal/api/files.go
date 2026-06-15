@@ -139,10 +139,11 @@ type filesCopyAgentParams struct {
 }
 
 type filesIngestAgentParams struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	TmpPath  string `json:"tmp_path"`
-	DestPath string `json:"dest_path"`
+	Overwrite bool   `json:"overwrite,omitempty"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	TmpPath   string `json:"tmp_path"`
+	DestPath  string `json:"dest_path"`
 }
 
 type filesStatAgentParams struct {
@@ -358,6 +359,8 @@ func agentErrorStatus(err error) int {
 		strings.Contains(msg, "too_long"),
 		strings.Contains(msg, "invalid"):
 		return http.StatusBadRequest
+	case strings.Contains(msg, "already_exists"):
+		return http.StatusConflict
 	case strings.Contains(msg, "no such file"),
 		strings.Contains(msg, "not_found"):
 		return http.StatusNotFound
@@ -379,6 +382,8 @@ func agentErrorCode(err error) string {
 		return "quota_exceeded"
 	case strings.Contains(msg, "disk_full"):
 		return "disk_full"
+	case strings.Contains(msg, "already_exists"):
+		return "already_exists"
 	default:
 		return "agent_error"
 	}
@@ -633,9 +638,21 @@ func (h *filesHandler) upload(c *gin.Context) {
 		return
 	}
 
-	destPath := filepath.Join(dirPath, fileHeader.Filename)
+	// Destination filename: the multipart filename, or a "name" override the
+	// upload UI sends for "keep both" (auto-renamed) on a collision (GH #188).
+	destName := fileHeader.Filename
+	if override := c.Query("name"); override != "" {
+		if strings.ContainsAny(override, "/\\") || override == "." || override == ".." {
+			_ = os.Remove(tmpPath)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_filename"})
+			return
+		}
+		destName = override
+	}
+	destPath := filepath.Join(dirPath, destName)
 	_, err = h.cfg.Agent.Call(c.Request.Context(), "files.ingest", filesIngestAgentParams{
 		UserID: userID, Username: username, TmpPath: tmpPath, DestPath: destPath,
+		Overwrite: c.Query("overwrite") == "true",
 	})
 	if err != nil {
 		_ = os.Remove(tmpPath)
@@ -962,6 +979,7 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 	destPath := filepath.Join(destDir, filename)
 	_, err = h.cfg.Agent.Call(c.Request.Context(), "files.ingest", filesIngestAgentParams{
 		UserID: userID, Username: username, TmpPath: tmpPath, DestPath: destPath,
+		Overwrite: c.Query("overwrite") == "true",
 	})
 	if err != nil {
 		_ = os.Remove(tmpPath)
