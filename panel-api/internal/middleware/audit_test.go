@@ -113,3 +113,20 @@ func TestAudit_NilRecorderIsPassThrough(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/x", nil))
 	require.Equal(t, 200, rec.Code) // no panic, handler ran
 }
+
+// TestAudit_Impersonation_ActorIsAdminSubjectIsTarget — an act-as request
+// (ADR-0128) must record the REAL admin as actor and the target as subject,
+// never the target as the actor.
+func TestAudit_Impersonation_ActorIsAdminSubjectIsTarget(t *testing.T) {
+	rec := newFakeRec()
+	r := newRouter(rec, &auth.AccessClaims{
+		UserID: "user9", IsAdmin: false, ImpersonatedBy: "admin1",
+	})
+	do(r, http.MethodPost, "/api/v1/users")
+	e := rec.recorded(t)
+	require.Equal(t, models.AuditActorAdmin, e.ActorKind, "actor must be admin")
+	require.NotNil(t, e.ActorUserID)
+	require.Equal(t, "admin1", *e.ActorUserID, "actor is the real admin, not the target")
+	require.NotNil(t, e.SubjectUserID)
+	require.Equal(t, "user9", *e.SubjectUserID, "subject is the impersonated target")
+}

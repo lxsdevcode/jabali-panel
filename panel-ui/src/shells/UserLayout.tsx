@@ -9,6 +9,7 @@ import { ConfigProvider, Drawer, Grid, Layout, Menu, theme } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { JabaliFooter } from "../components/JabaliFooter";
+import { ImpersonationBanner } from "../components/ImpersonationBanner";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { selectedNavKey, userNav } from "../nav";
 import { useThemeMode } from "../theme/ThemeModeContext";
@@ -83,6 +84,7 @@ export function UserLayout() {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
+      <ImpersonationBanner />
       <JabaliHeader
         showMenuButton={!isDesktop}
         onMenuClick={() => setDrawerOpen(true)}

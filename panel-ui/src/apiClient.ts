@@ -23,9 +23,44 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
+// ADR-0128 — inject the admin act-as grant id on every request when one is
+// active (per-tab sessionStorage). Read inline (not via impersonation.ts) to
+// avoid an import cycle. panel-api ignores it unless the real Kratos cookie is
+// an admin who owns the grant.
+apiClient.interceptors.request.use((config) => {
+  try {
+    const raw = sessionStorage.getItem("jabali_act_as");
+    if (raw) {
+      const grant = JSON.parse(raw) as { id?: string };
+      if (grant?.id) {
+        config.headers = config.headers ?? {};
+        config.headers["X-Jabali-Act-As"] = grant.id;
+      }
+    }
+  } catch {
+    // sessionStorage unavailable — proceed without the header
+  }
+  return config;
+});
+
 apiClient.interceptors.response.use(
   (resp) => resp,
-  (err: AxiosError) => Promise.reject(normalizeError(err)),
+  (err: AxiosError) => {
+    // A dead/expired/foreign act-as grant: drop the grant and bounce back to
+    // the admin view rather than silently continuing as the admin.
+    const data = err.response?.data as { error?: string } | undefined;
+    if (err.response?.status === 403 && data?.error === "impersonation_invalid") {
+      try {
+        sessionStorage.removeItem("jabali_act_as");
+      } catch {
+        // ignore
+      }
+      if (typeof window !== "undefined") {
+        window.location.assign("/jabali-admin");
+      }
+    }
+    return Promise.reject(normalizeError(err));
+  },
 );
 
 /**
