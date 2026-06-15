@@ -43,6 +43,17 @@ func (r *Reconciler) reconcileMailCertificates(ctx context.Context) {
 			for i := range domains {
 				d := &domains[i]
 				if !d.EmailEnabled {
+					// Mail is off (provider none/external, or switched off
+					// after a prior jabali state): tear down any per-domain
+					// mail certificate so a stale mail.<domain> SSL doesn't
+					// linger (GH #189). Idempotent — no-op when none exists.
+					if existing, gerr := r.mailCerts.GetByDomain(ctx, d.ID); gerr == nil && existing != nil {
+						if derr := r.mailCerts.Delete(ctx, existing.ID); derr == nil {
+							r.log.Info("mail-cert reconcile: removed mail cert for non-email domain (GH #189)", "domain", d.Name)
+						} else {
+							r.log.Warn("mail-cert reconcile: failed to remove mail cert for non-email domain", "domain", d.Name, "error", derr)
+						}
+					}
 					continue
 				}
 				// The panel primary domain's mail TLS (mail.<panel-hostname>) is
