@@ -1015,6 +1015,10 @@ func csAllowlistsAddHandler(ctx context.Context, params json.RawMessage) (any, e
 		if _, err := time.ParseDuration(exp); err != nil {
 			return nil, csInvalidArg("expiration must be a Go duration (e.g. \"168h\")")
 		}
+		// cscli `add` of an existing value is a no-op and does NOT refresh the
+		// expiration. For the time-boxed login path we want each re-login to
+		// slide the TTL forward, so best-effort remove first, then re-add.
+		_ = exec.CommandContext(ctx, "cscli", "allowlists", "remove", jabaliAllowlistName, value).Run()
 		args = append(args, "-e", exp)
 	}
 	cmd := exec.CommandContext(ctx, "cscli", args...)
