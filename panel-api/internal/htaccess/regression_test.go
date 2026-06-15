@@ -188,3 +188,36 @@ func TestExpiresBlockIsOneNote(t *testing.T) {
 		t.Errorf("expires block should be ONE dedup note, got %d: %v", len(r.Notes), r.Notes)
 	}
 }
+
+// `Order Allow,Deny` + `Deny from X` + `Allow from all` = allow everyone
+// EXCEPT X (Deny wins under Allow,Deny) → a clean deny_list, not a drop.
+func TestAllowDenyAllowAllThenDenyIsBlacklist(t *testing.T) {
+	in := `order allow,deny
+deny from 22.222.22.222
+allow from all`
+	r := Convert(in, "/uploads/")
+	ru, ok := firstRule(r, "ip_access")
+	if !ok {
+		t.Fatalf("allow-all + deny X must convert to a deny_list, got %+v", r)
+	}
+	if ru.Mode != "deny_list" || len(ru.IPs) != 1 || ru.IPs[0] != "22.222.22.222" {
+		t.Errorf("expected deny_list [22.222.22.222], got %+v", ru)
+	}
+	if hasSecurityWarning(r) {
+		t.Errorf("a representable blacklist should not warn: %+v", r.Warnings)
+	}
+}
+
+// Same at the docroot → still refused by the PHP-routing guard (deny_list at /).
+func TestAllowDenyBlacklistAtDocrootRefused(t *testing.T) {
+	in := `order allow,deny
+deny from 22.222.22.222
+allow from all`
+	r := Convert(in, "/")
+	if _, ok := firstRule(r, "ip_access"); ok {
+		t.Errorf("docroot deny_list must be refused (PHP routing)")
+	}
+	if !hasSecurityWarning(r) {
+		t.Errorf("docroot refusal must warn")
+	}
+}

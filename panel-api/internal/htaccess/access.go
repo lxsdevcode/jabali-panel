@@ -67,10 +67,21 @@ func flushAccess(res *Result, st *state) {
 			// Default-deny with no Allow -> nobody passes (any specific Deny
 			// is redundant). Deny everyone.
 			emitAccessRule(res, firstLine, src, denyAllRule(st.base))
+		case allAllowed && specificDenies:
+			// `Allow from all` + `Deny from X`: everyone is provisionally
+			// allowed, then Deny (evaluated last under Allow,Deny) blocks X ->
+			// allow all EXCEPT X -> a clean deny_list.
+			ips, ok := cidrList(denies)
+			if !ok {
+				res.warnSec(firstLine, src, "Deny list has a hostname or unparseable entry — NOT applied (an omitted deny would silently grant access)")
+				return
+			}
+			emitAccessRule(res, firstLine, src, denyListRule(st.base, ips))
 		case specificDenies:
-			// Allow X but also Deny Y under default-deny: a flat nginx list
-			// can't express "allow X minus Y". Drop fail-closed.
-			res.warnSec(firstLine, src, "mixed Allow and specific Deny under `Order Allow,Deny` can't be expressed as one nginx allow/deny list — NOT applied; recreate it in the panel")
+			// Specific Allow X AND specific Deny Y under default-deny: the
+			// allowed set is "X minus Y", which a flat nginx list can't
+			// express. Drop fail-closed.
+			res.warnSec(firstLine, src, "mixed specific Allow and Deny under `Order Allow,Deny` can't be expressed as one nginx allow/deny list — NOT applied; recreate it in the panel")
 		case allAllowed:
 			res.addNote("`Allow from all` under `Order Allow,Deny` allows everyone — no rule needed")
 		default:
