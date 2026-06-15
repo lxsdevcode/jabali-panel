@@ -62,11 +62,11 @@ func flushAccess(res *Result, st *state) {
 		switch {
 		case allDenied:
 			// `Deny from all` wins over any Allow -> deny everyone.
-			res.addRule(denyAllRule(st.base))
+			emitAccessRule(res, firstLine, src, denyAllRule(st.base))
 		case len(allows) == 0:
 			// Default-deny with no Allow -> nobody passes (any specific Deny
 			// is redundant). Deny everyone.
-			res.addRule(denyAllRule(st.base))
+			emitAccessRule(res, firstLine, src, denyAllRule(st.base))
 		case specificDenies:
 			// Allow X but also Deny Y under default-deny: a flat nginx list
 			// can't express "allow X minus Y". Drop fail-closed.
@@ -79,7 +79,7 @@ func flushAccess(res *Result, st *state) {
 				res.warnSec(firstLine, src, "Allow list has a hostname or unparseable entry — NOT applied (an omitted entry would silently change access)")
 				return
 			}
-			res.addRule(allowListRule(st.base, ips))
+			emitAccessRule(res, firstLine, src, allowListRule(st.base, ips))
 		}
 
 	case "deny,allow":
@@ -95,10 +95,10 @@ func flushAccess(res *Result, st *state) {
 					res.warnSec(firstLine, src, "Allow list has a hostname or unparseable entry — NOT applied (an omitted allow would silently change access)")
 					return
 				}
-				res.addRule(allowListRule(st.base, ips))
+				emitAccessRule(res, firstLine, src, allowListRule(st.base, ips))
 			} else {
 				// `Deny from all` with no Allow -> deny everyone.
-				res.addRule(denyAllRule(st.base))
+				emitAccessRule(res, firstLine, src, denyAllRule(st.base))
 			}
 		case specificAllows && specificDenies:
 			// default-allow, deny Y, allow X: Allow wins on overlap; a flat
@@ -110,7 +110,7 @@ func flushAccess(res *Result, st *state) {
 				res.warnSec(firstLine, src, "Deny list has a hostname or unparseable entry — NOT applied (an omitted deny would silently grant access)")
 				return
 			}
-			res.addRule(denyListRule(st.base, ips))
+			emitAccessRule(res, firstLine, src, denyListRule(st.base, ips))
 		default:
 			res.addNote("`Order Deny,Allow` with no effective Deny — allows everyone, no rule needed")
 		}
@@ -120,6 +120,24 @@ func flushAccess(res *Result, st *state) {
 		// action — guessing wrong inverts the policy.
 		res.warnSec(firstLine, src, "Allow/Deny without a clear `Order` — can't determine the default action, NOT applied (fail-closed)")
 	}
+}
+
+// emitAccessRule applies a converted access rule, but REFUSES a docroot-level
+// (Path "/") rule that still needs to serve content. Such a rule compiles to
+// `location / { … }`, which makes the vhost template treat the root as
+// overridden and drop BOTH its default `location /` AND its `location ~
+// \.php$` (domain_create.go writeVhost) — so an allow_list ("lock the site to
+// my office IP") would serve PHP as SOURCE to the allowed clients. The one
+// safe docroot case is a pure deny-all (allow_list with no IPs): everything is
+// blocked, no routing needed. Anything else at the docroot is dropped with a
+// security warning rather than silently breaking PHP routing.
+func emitAccessRule(res *Result, line int, src string, rule models.NginxRule) {
+	denyAll := rule.Mode == "allow_list" && len(rule.IPs) == 0
+	if rule.Path == "/" && !denyAll {
+		res.warnSec(line, src, "a whole-site IP restriction at the document root can't be applied as a Rule Builder rule without breaking PHP routing (it would serve PHP as source) — restrict a specific subdirectory instead, or apply a server-wide restriction in the panel")
+		return
+	}
+	res.addRule(rule)
 }
 
 // denyAllRule denies everyone for base. allow_list with no IPs compiles to a
@@ -154,7 +172,7 @@ func flushRequire(res *Result, st *state, requires [][]string, lineNum int) {
 			}
 			if len(r) >= 2 && strings.EqualFold(r[1], "denied") {
 				// Deny everyone: allow_list with no IPs => `deny all;`.
-				res.addRule(models.NginxRule{Type: "ip_access", Mode: "allow_list", Path: st.base, IPs: nil})
+				emitAccessRule(res, lineNum, src, models.NginxRule{Type: "ip_access", Mode: "allow_list", Path: st.base, IPs: nil})
 				continue
 			}
 			res.warnSec(lineNum, src, "unrecognized `Require all …` — dropped (fail-closed)")
@@ -175,7 +193,7 @@ func flushRequire(res *Result, st *state, requires [][]string, lineNum int) {
 		}
 	}
 	if len(allowIPs) > 0 {
-		res.addRule(models.NginxRule{Type: "ip_access", Mode: "allow_list", Path: st.base, IPs: allowIPs})
+		emitAccessRule(res, lineNum, src, models.NginxRule{Type: "ip_access", Mode: "allow_list", Path: st.base, IPs: allowIPs})
 	}
 }
 

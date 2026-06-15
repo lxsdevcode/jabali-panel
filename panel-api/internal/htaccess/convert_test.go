@@ -210,15 +210,59 @@ Allow from 10.0.0.5`
 }
 
 func TestOrderDenyAllowBlacklist(t *testing.T) {
+	// Subdir scope: a deny_list compiles to `location /uploads/ { … }`, which
+	// does NOT clobber the default routing, so it's emitted.
 	in := `Order Deny,Allow
 Deny from 1.2.3.4`
-	r := Convert(in, "/")
+	r := Convert(in, "/uploads/")
 	ru, _ := firstRule(r, "ip_access")
 	if ru.Mode != "deny_list" {
 		t.Errorf("Order Deny,Allow should be deny_list, got %q", ru.Mode)
 	}
 	if len(ru.IPs) != 1 || ru.IPs[0] != "1.2.3.4" {
 		t.Errorf("unexpected deny IPs: %v", ru.IPs)
+	}
+}
+
+// Docroot-level (Path "/") allow_list / deny_list would compile to a
+// `location /` that REPLACES the vhost's default routing (dropping try_files
+// + the PHP location → PHP served as source). Must warn-and-skip, NOT emit.
+func TestDocrootAllowListRefusedToProtectPHP(t *testing.T) {
+	in := `Order Allow,Deny
+Allow from 203.0.113.0/24`
+	r := Convert(in, "/") // docroot
+	if _, ok := firstRule(r, "ip_access"); ok {
+		t.Fatalf("docroot allow_list must NOT be emitted (would serve PHP as source): %+v", r.Rules)
+	}
+	if !hasSecurityWarning(r) {
+		t.Errorf("refusing a docroot whole-site restriction must raise a security warning")
+	}
+}
+
+func TestDocrootDenyListRefused(t *testing.T) {
+	in := `Order Deny,Allow
+Deny from 1.2.3.4`
+	r := Convert(in, "/")
+	if _, ok := firstRule(r, "ip_access"); ok {
+		t.Errorf("docroot deny_list must NOT be emitted (would clobber PHP routing)")
+	}
+	if !hasSecurityWarning(r) {
+		t.Errorf("refusing a docroot deny_list must raise a security warning")
+	}
+}
+
+// The one safe docroot case: `Deny from all` locks the whole site (everything
+// 403s, no routing needed) → emitted as deny-all.
+func TestDocrootDenyAllStillEmitted(t *testing.T) {
+	in := `Order Allow,Deny
+Deny from all`
+	r := Convert(in, "/")
+	ru, ok := firstRule(r, "ip_access")
+	if !ok {
+		t.Fatalf("docroot Deny-from-all is safe (fully locked) and should still emit, got %+v", r)
+	}
+	if ru.Mode != "allow_list" || len(ru.IPs) != 0 {
+		t.Errorf("expected deny-all (allow_list, no IPs), got %+v", ru)
 	}
 }
 

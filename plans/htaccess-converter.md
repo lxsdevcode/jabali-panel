@@ -107,6 +107,22 @@ drop block + warning (fail-closed). nginx `if` is deliberately NOT emitted
 
 ## Known limitations (recorded, not silent)
 
+- **Docroot-level access control is refused (security).** A whole-site
+  (`basePath "/"`) `allow_list`/`deny_list` would compile to `location / {…}`,
+  which makes `writeVhost` treat the root as overridden and drop BOTH the
+  default `location /` AND `location ~ \.php$` (`domain_create.go:473` feeds
+  the compiled rules to `directivesOverrideRoot`; template lines 171/220).
+  An allow_list would then serve PHP as SOURCE to the allowed clients. The
+  converter refuses any docroot access rule except a pure `Deny from all`
+  (everything 403s, no routing needed) and emits a security warning instead.
+  Verified by code inspection + unit tests; a full live PATCH round-trip is
+  NOT yet run (needs an authenticated session).
+- **Subdir `ip_access` does not gate `.php` files.** A `location /sub/ {
+  allow…; deny…; }` is a prefix match; nginx's regex `location ~ \.php$`
+  wins for `/sub/x.php`, so the IP restriction does not cover PHP under that
+  subdir. This is the existing `ip_access` rule-type behavior, inherited (not
+  introduced) by the converter; faithful conversion, imperfect Apache parity.
+
 - **Docroot-level access rule → `location /`.** A `basePath "/"` access rule
   (e.g. a docroot `Deny from all`) compiles to `location / { deny all; }`.
   Verified on real nginx (10.0.3.14): the compiled directives pass `nginx -t`
