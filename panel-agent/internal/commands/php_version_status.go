@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
@@ -34,14 +33,21 @@ type phpVersionStatusDetail struct {
 	WorkersTotal   int `json:"workers_total"`
 }
 
-// isInstalledPHPVersion checks if a PHP version is installed by verifying the pool.d directory exists.
+// isInstalledPHPVersion reports whether the PHP version's runtime binaries are
+// present. The binaries are the source of truth — NOT /etc/php/<v>/fpm/pool.d,
+// which jabali fills with its own (non-apt) per-user pool files that survive
+// `apt purge`, so a pool.d check reports a purged version as still installed
+// (GH #187).
 func isInstalledPHPVersion(version string) bool {
-	poolDir := filepath.Join("/etc/php", version, "fpm/pool.d")
-	info, err := os.Stat(poolDir)
-	if err != nil {
-		return false
+	for _, bin := range []string{
+		"/usr/bin/php" + version,
+		"/usr/sbin/php-fpm" + version,
+	} {
+		if _, err := os.Stat(bin); err == nil {
+			return true
+		}
 	}
-	return info.IsDir()
+	return false
 }
 
 // fpmWorkerStatus reports how many per-user jabali-fpm@<user>.service

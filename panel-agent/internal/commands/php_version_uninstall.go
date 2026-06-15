@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
@@ -108,12 +109,26 @@ func phpVersionUninstallHandler(_ context.Context, params json.RawMessage) (any,
 		}
 	}
 
-	// Re-poll to confirm the package is actually gone (apt may report
-	// success while leaving residual config files; isInstalledPHPVersion
-	// checks for the runtime binary specifically).
+	// apt purge only removes apt-owned files. jabali writes its own per-user
+	// FPM pool configs under /etc/php/<v>/fpm/pool.d, which survive the purge
+	// and would otherwise leave the version looking "installed" and the config
+	// tree littered (GH #187). Remove the version's config tree. p.Version is
+	// validated by versionRegex above, so the path is safe.
+	_ = os.RemoveAll(filepath.Join("/etc/php", p.Version))
+
+	// Confirm the runtime binaries are actually gone. If they remain, the
+	// purge silently failed (held packages, apt error) — surface a real error
+	// instead of reporting a phantom success the UI would trust (GH #187).
+	if isInstalledPHPVersion(p.Version) {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInternal,
+			Message: fmt.Sprintf("php %s is still installed after purge (binaries present) — packages may be held or apt failed", p.Version),
+		}
+	}
+
 	return phpVersionUninstallResponse{
 		Version:    p.Version,
-		Installed:  isInstalledPHPVersion(p.Version),
+		Installed:  false,
 		FPMRunning: checkFPMRunning(p.Version),
 	}, nil
 }

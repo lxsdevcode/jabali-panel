@@ -209,6 +209,19 @@ func RegisterPHPVersionAdminRoutes(rg *gin.RouterGroup, cli agent.AgentInterface
 			c.JSON(status, body)
 			return
 		}
+		// Defense-in-depth (GH #187): the agent already errors when the
+		// version survives the purge, but never report success if the
+		// response still flags it installed — that was the silent-failure.
+		var resp struct {
+			Installed bool `json:"installed"`
+		}
+		if uerr := json.Unmarshal(raw, &resp); uerr == nil && resp.Installed {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":  "uninstall_incomplete",
+				"detail": "PHP version is still installed after the uninstall — check for held packages",
+			})
+			return
+		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	})
 
