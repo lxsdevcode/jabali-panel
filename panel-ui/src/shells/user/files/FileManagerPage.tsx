@@ -39,6 +39,8 @@ import {
 import type { DataNode } from "antd/es/tree";
 import {
   DeleteOutlined,
+  DownOutlined,
+  FileAddOutlined,
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
@@ -326,6 +328,9 @@ export const FileManagerPage = () => {
   const [mkdirOpen, setMkdirOpen] = useState(false);
   const [mkdirName, setMkdirName] = useState("");
   const mkdirSubmitting = useRef(false);
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+  const newFileSubmitting = useRef(false);
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null);
@@ -653,6 +658,36 @@ export const FileManagerPage = () => {
       message.error(`Create folder failed: ${errMessage(err)}`);
     } finally {
       mkdirSubmitting.current = false;
+    }
+  };
+
+  const openNewFile = () => {
+    setNewFileName("");
+    setNewFileOpen(true);
+  };
+
+  const submitNewFile = async () => {
+    if (!currentPath || newFileSubmitting.current) return;
+    const name = newFileName.trim();
+    if (!name || name.includes("/") || name === "." || name === "..") {
+      message.error("Invalid file name");
+      return;
+    }
+    // Guard: never overwrite an existing entry with an empty file.
+    if (entries.some((e) => e.name === name)) {
+      message.error(`"${name}" already exists`);
+      return;
+    }
+    newFileSubmitting.current = true;
+    try {
+      await filesWrite(joinPath(currentPath, name), "");
+      message.success(`Created ${name}`);
+      setNewFileOpen(false);
+      void reloadList(currentPath);
+    } catch (err) {
+      message.error(`Create file failed: ${errMessage(err)}`);
+    } finally {
+      newFileSubmitting.current = false;
     }
   };
 
@@ -1150,9 +1185,31 @@ export const FileManagerPage = () => {
           >
             Upload
           </Button>
-          <Button icon={<PlusOutlined />} onClick={openMkdir}>
-            New Folder
-          </Button>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                {
+                  key: "folder",
+                  icon: (
+                    <FolderAddOutlined style={{ color: "#faad14" }} />
+                  ),
+                  label: "New Folder",
+                  onClick: openMkdir,
+                },
+                {
+                  key: "file",
+                  icon: <FileAddOutlined />,
+                  label: "New File",
+                  onClick: openNewFile,
+                },
+              ],
+            }}
+          >
+            <Button type="primary" icon={<PlusOutlined />}>
+              New <DownOutlined />
+            </Button>
+          </Dropdown>
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} />
         </Space>
       </div>
@@ -1479,6 +1536,22 @@ export const FileManagerPage = () => {
           placeholder="folder-name"
           autoFocus
           onPressEnter={() => void submitMkdir()}
+        />
+      </Modal>
+
+      <Modal
+        title="New File"
+        open={newFileOpen}
+        onOk={() => void submitNewFile()}
+        onCancel={() => setNewFileOpen(false)}
+        okText="Create"
+      >
+        <Input
+          value={newFileName}
+          onChange={(e) => setNewFileName(e.target.value)}
+          placeholder="filename.txt"
+          autoFocus
+          onPressEnter={() => void submitNewFile()}
         />
       </Modal>
 
