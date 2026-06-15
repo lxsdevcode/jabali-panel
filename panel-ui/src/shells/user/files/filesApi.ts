@@ -177,6 +177,26 @@ export async function filesMkdir(path: string): Promise<void> {
   await apiClient.post("/files/mkdir", { path });
 }
 
+export interface FilesExtractResult {
+  dest: string;
+  extracted: number;
+  skipped: number;
+}
+
+// filesExtract unpacks an archive (.zip/.tar/.tar.gz/.tgz/.tar.bz2/.gz) into
+// dest (default: the archive's own directory). The agent enforces zip-slip,
+// symlink, and decompression-bomb defenses.
+export async function filesExtract(
+  path: string,
+  dest?: string,
+): Promise<FilesExtractResult> {
+  const { data } = await apiClient.post<FilesExtractResult>("/files/extract", {
+    path,
+    dest,
+  });
+  return data;
+}
+
 export async function filesRename(path: string, newName: string): Promise<void> {
   await apiClient.post("/files/rename", { path, new_name: newName });
 }

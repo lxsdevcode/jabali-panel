@@ -124,6 +124,13 @@ type filesArchiveAgentResult struct {
 	Size        int64  `json:"size"`
 }
 
+type filesExtractAgentParams struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	Path     string `json:"path"`
+	Dest     string `json:"dest,omitempty"`
+}
+
 type filesCopyAgentParams struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
@@ -194,6 +201,7 @@ func RegisterFilesRoutes(g *gin.RouterGroup, cfg FilesHandlerConfig) {
 	grp.POST("/move", h.move)
 	grp.POST("/chmod", h.chmod)
 	grp.POST("/archive", h.archive)
+	grp.POST("/extract", h.extract)
 	grp.POST("/copy", h.copy)
 	grp.POST("/write", h.write)
 	grp.POST("/upload-chunk", h.uploadChunk)
@@ -207,6 +215,11 @@ type filesHandler struct{ cfg FilesHandlerConfig }
 
 type mkdirRequest struct {
 	Path string `json:"path" binding:"required"`
+}
+
+type extractRequest struct {
+	Path string `json:"path" binding:"required"`
+	Dest string `json:"dest,omitempty"`
 }
 
 type renameRequest struct {
@@ -650,6 +663,30 @@ func (h *filesHandler) mkdir(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"path": req.Path})
+}
+
+// extract handles POST /files/extract: unpack a .zip/.tar/.tar.gz/.tgz/
+// .tar.bz2/.gz archive into a directory inside the user's scope. The agent
+// enforces zip-slip, symlink, and decompression-bomb defenses.
+func (h *filesHandler) extract(c *gin.Context) {
+	userID, username, ok := h.requireClaimsAndUsername(c)
+	if !ok {
+		return
+	}
+	var req extractRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
+		return
+	}
+	raw, err := h.cfg.Agent.Call(c.Request.Context(), "files.extract", filesExtractAgentParams{
+		UserID: userID, Username: username, Path: req.Path, Dest: req.Dest,
+	})
+	if err != nil {
+		respondAgentError(c, err)
+		return
+	}
+	var res json.RawMessage = raw
+	c.Data(http.StatusOK, "application/json", res)
 }
 
 func (h *filesHandler) rename(c *gin.Context) {

@@ -70,6 +70,7 @@ import {
   filesChmod,
   filesCopy,
   filesDelete,
+  filesExtract,
   filesDownloadURL,
   filesHome,
   filesList,
@@ -178,29 +179,19 @@ function isImagePath(name: string): boolean {
   return imageExtensions.has(name.slice(i).toLowerCase());
 }
 
-// Common text-editable extensions. Shown above — drives the per-row
-// "Edit" menu item so it only appears on reasonable candidates; we
-// don't want to open a 400 MB binary in Monaco.
-const textExtensions = new Set([
-  ".txt", ".md", ".markdown",
-  ".html", ".htm", ".css", ".scss", ".less",
-  ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
-  ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".env",
-  ".php", ".py", ".rb", ".go", ".rs", ".java", ".kt",
-  ".sh", ".bash", ".zsh", ".fish",
-  ".sql", ".conf", ".config",
-  ".gitignore", ".dockerignore",
-]);
+// EDIT_MAX_BYTES matches the server preview cap (files.read default 1 MiB).
+// Gating Edit at this size means the editor always loads the FULL file, so a
+// save can never truncate a larger file on disk.
+const EDIT_MAX_BYTES = 1024 * 1024;
 
+// isTextEditable decides whether to OFFER the per-row "Edit" item. It allows
+// ANY file small enough to load fully — dotfiles (.bashrc, .htaccess) and
+// extensionless configs included, not just whitelisted extensions. openEditor
+// still refuses real binaries (mime sniff + NUL bytes), so an accidental Edit
+// on a binary fails gracefully rather than corrupting it.
 function isTextEditable(entry: FileEntry): boolean {
   if (entry.is_dir || entry.is_symlink) return false;
-  const i = entry.name.lastIndexOf(".");
-  if (i < 0) {
-    // Extensionless files: allow if reasonably small (<1 MiB matches
-    // the filesPreview cap on the backend).
-    return entry.size > 0 && entry.size < 1024 * 1024;
-  }
-  return textExtensions.has(entry.name.slice(i).toLowerCase());
+  return entry.size > 0 && entry.size < EDIT_MAX_BYTES;
 }
 
 // Monaco language key by extension. Only common ones are mapped; other
@@ -837,6 +828,35 @@ export const FileManagerPage = () => {
     return items;
   }, [currentPath, rootPath]);
 
+  const EXTRACTABLE_EXTS = [
+    ".zip",
+    ".tar",
+    ".tar.gz",
+    ".tgz",
+    ".tar.bz2",
+    ".tbz2",
+    ".gz",
+  ];
+  const isArchive = (entry: FileEntry) => {
+    if (entry.is_dir) return false;
+    const n = entry.name.toLowerCase();
+    return EXTRACTABLE_EXTS.some((e) => n.endsWith(e));
+  };
+
+  const handleExtract = async (entry: FileEntry) => {
+    if (!currentPath) return;
+    const path = joinPath(currentPath, entry.name);
+    try {
+      const res = await filesExtract(path);
+      const skipped =
+        res.skipped > 0 ? `, ${res.skipped} unsafe entr(y/ies) skipped` : "";
+      message.success(`Extracted ${res.extracted} file(s)${skipped}`);
+      void reloadList(currentPath);
+    } catch (err) {
+      message.error(`Extract failed: ${errMessage(err)}`);
+    }
+  };
+
   const buildRowMenuItems = (entry: FileEntry) => [
     ...(!entry.is_dir
       ? [
@@ -851,6 +871,16 @@ export const FileManagerPage = () => {
             icon: <EyeOutlined />,
             label: "Preview",
             onClick: () => void handlePreview(entry),
+          },
+        ]
+      : []),
+    ...(isArchive(entry)
+      ? [
+          {
+            key: "extract",
+            icon: <FolderOpenOutlined />,
+            label: "Extract here",
+            onClick: () => void handleExtract(entry),
           },
         ]
       : []),
