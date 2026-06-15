@@ -1,28 +1,28 @@
 package reconciler
 
 import (
-	"strings"
-	"sync"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dnsverify"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dnscompile"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dnsverify"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/nginxrules"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/redirects"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler/phases"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/redirects"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
@@ -97,7 +97,7 @@ type Reconciler struct {
 	// M32 — singleton panel-cert row. When nil the panel-cert hook
 	// short-circuits (lab installs, tests). When wired with a routability
 	// service it drives ssl.panel.issue from ReconcileAll.
-	panelCerts          repository.PanelCertificateRepository
+	panelCerts           repository.PanelCertificateRepository
 	panelCertRoutability *services.PanelCertRoutability
 
 	// M53 Updates Center: update_history repo. When nil the run reconciler
@@ -995,12 +995,12 @@ func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *
 
 	// Call agent to apply the pool configuration
 	params := map[string]any{
-		"user_id":       user.ID,
-		"pool_id":       pool.ID,
-		"username":      username,
-		"php_version":   pool.PHPVersion,
-		"pm_mode":       pool.PmMode,
-		"pm_max_children": pool.PmMaxChildren,
+		"user_id":                      user.ID,
+		"pool_id":                      pool.ID,
+		"username":                     username,
+		"php_version":                  pool.PHPVersion,
+		"pm_mode":                      pool.PmMode,
+		"pm_max_children":              pool.PmMaxChildren,
 		"process_idle_timeout_seconds": pool.ProcessIdleTimeoutSeconds,
 	}
 
@@ -1069,8 +1069,6 @@ func (r *Reconciler) regenerateNginxForPool(ctx context.Context, pool *models.PH
 		}
 	}
 }
-
-
 
 // ensureDomainPHPBinding auto-binds the domain to its owner's default PHP pool
 // if it has no binding yet. This is a no-op if the domain already has a PHPPoolID
@@ -1320,6 +1318,7 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 			"err", err)
 	}
 }
+
 // resolveListenIPAddress returns the kernel address string for a
 // domain's per-family listen binding. When the explicit binding is
 // missing (NULL or the row was somehow deleted), falls back to the
@@ -1462,10 +1461,10 @@ func (r *Reconciler) reconcileDNSZone(ctx context.Context, domain *models.Domain
 	pushCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if _, err := r.agent.Call(pushCtx, "dns.zone.upsert", map[string]any{
-		"zone":              zone.Name,
-		"records":           compiled,
-		"allow_axfr_from":   allowAXFR,
-		"also_notify":       alsoNotify,
+		"zone":            zone.Name,
+		"records":         compiled,
+		"allow_axfr_from": allowAXFR,
+		"also_notify":     alsoNotify,
 	}); err != nil {
 		r.log.Error("dns.zone.upsert failed", "zone", zone.Name, "err", err)
 	}
@@ -1530,10 +1529,11 @@ type sslSelfSignResult struct {
 // CNAME wasn't yet wired; M32 follow-up restores it now that the
 // DNS side ships the record by default.
 //
-// autodiscover.<domain> is NOT yet on the list — pdns auto-creates
-// only the SRV record, not the A/CNAME hostname Outlook fetches
-// directly. Re-introduce after dnscompile/email_records.go adds the
-// matching CNAME.
+// autodiscover.<domain> is included too (GH #185): email_records.go
+// ships the matching CNAME (GH #134) and the webmail vhost server_name
+// already covers it, so Outlook's direct
+// autodiscover.<domain>/autodiscover.xml probe lands on a cert that
+// names it instead of a TLS mismatch.
 func sanHostnamesForDomain(d *models.Domain) []string {
 	if d == nil {
 		return nil
@@ -1548,7 +1548,7 @@ func sanHostnamesForDomain(d *models.Domain) []string {
 	}
 	var out []string
 	if d.EmailEnabled {
-		out = append(out, "mail."+d.Name, "autoconfig."+d.Name)
+		out = append(out, "mail."+d.Name, "autoconfig."+d.Name, "autodiscover."+d.Name)
 	}
 	// M47 Wave 7 / ADR-0109: mta-sts.<domain> must be a SAN on the
 	// domain's TLS cert so the agent-served MTA-STS vhost can present
@@ -1625,11 +1625,13 @@ const acmeRetryInterval = 3 * time.Hour
 // upstream missing -> "nginx test failed" -> all certs stuck in
 // pending_acme_retry for 3h after a 30-second fix; observed in GH#114).
 // Use exponential backoff capped at the existing 3h:
-//   attempt 1 -> 5m   (quickest retry after a fix)
-//   attempt 2 -> 15m
-//   attempt 3 -> 45m
-//   attempt 4 -> 2h
-//   attempt 5+ -> 3h  (cap)
+//
+//	attempt 1 -> 5m   (quickest retry after a fix)
+//	attempt 2 -> 15m
+//	attempt 3 -> 45m
+//	attempt 4 -> 2h
+//	attempt 5+ -> 3h  (cap)
+//
 // retryCount is the count AFTER this failure is recorded.
 func acmeRetryDelay(retryCount int) time.Duration {
 	delays := []time.Duration{
@@ -1684,7 +1686,7 @@ func (r *Reconciler) reconcileSSLForDomain(ctx context.Context, domain *models.D
 		r.tryACMEOrFallback(ctx, domain, cert)
 	case !domain.SSLEnabled && cert != nil && cert.Status == models.SSLStatusIssued:
 		r.sslRevokeForDomain(ctx, domain, cert)
-	// !ssl_enabled && status='self_signed' is a no-op; leave cert in place
+		// !ssl_enabled && status='self_signed' is a no-op; leave cert in place
 	}
 }
 
@@ -1711,12 +1713,12 @@ func (r *Reconciler) tryACMEOrFallback(ctx context.Context, domain *models.Domai
 	// Ensure a cert row exists so we have an id to thread status updates through.
 	if cert == nil {
 		cert = &models.SSLCertificate{
-			ID:        ids.NewULID(),
-			DomainID:  domain.ID,
-			Status:    models.SSLStatusPending,
+			ID:         ids.NewULID(),
+			DomainID:   domain.ID,
+			Status:     models.SSLStatusPending,
 			RetryCount: 0,
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
+			CreatedAt:  time.Now().UTC(),
+			UpdatedAt:  time.Now().UTC(),
 		}
 		if err := r.sslCerts.Create(ctx, cert); err != nil {
 			r.log.Error("ssl: create cert row failed", "domain", domain.Name, "err", err)
@@ -1860,8 +1862,10 @@ func (r *Reconciler) fallbackToSelfSignAndRetry(ctx context.Context, domain *mod
 // genuinely misconfigured (DNS not pointing here, port 80 blocked,
 // etc.) stops burning LE rate limits, but a transient ACME outage or
 // a sub-hour config flip still gets through. acmeRetryDelay sums to:
-//     attempts 1..4: 5m + 15m + 45m + 2h ~= 3h
-//     attempts 5..20: 3h × 16 = 48h
+//
+//	attempts 1..4: 5m + 15m + 45m + 2h ~= 3h
+//	attempts 5..20: 3h × 16 = 48h
+//
 // Total window ~= 51h. Past 20 = stop.
 const acmeMaxRetries = 20
 
@@ -1936,12 +1940,12 @@ func (r *Reconciler) ReconcileSSLInline(ctx context.Context, domain *models.Doma
 
 	if cert == nil {
 		cert = &models.SSLCertificate{
-			ID:        ids.NewULID(),
-			DomainID:  domain.ID,
-			Status:    models.SSLStatusPending,
+			ID:         ids.NewULID(),
+			DomainID:   domain.ID,
+			Status:     models.SSLStatusPending,
 			RetryCount: 0,
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
+			CreatedAt:  time.Now().UTC(),
+			UpdatedAt:  time.Now().UTC(),
 		}
 		if err := r.sslCerts.Create(ctx, cert); err != nil {
 			r.log.Error("ssl inline: create cert row failed", "domain", domain.Name, "err", err)

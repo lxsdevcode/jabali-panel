@@ -63,11 +63,12 @@ func (r *Reconciler) reconcileWebmailVhosts(ctx context.Context) {
 			anyEmailEnabled = true
 			r.applyWebmailVhost(ctx, d)
 			// Mirror what the agent's mail vhost template emits as
-			// server_name: mail.<dom> + autoconfig.<dom>. Panel-primary
+			// server_name: mail.<dom> + autoconfig.<dom> + autodiscover.<dom>.
+			// Panel-primary
 			// also serves the bare panel hostname but that's never a
 			// public WAF-bypass target — it's the panel itself and
 			// already covered by the /api/v1/ allowlist.
-			webmailHosts = append(webmailHosts, "mail."+d.Name, "autoconfig."+d.Name)
+			webmailHosts = append(webmailHosts, "mail."+d.Name, "autoconfig."+d.Name, "autodiscover."+d.Name)
 		} else {
 			r.removeWebmailVhost(ctx, d.Name)
 		}
@@ -123,7 +124,7 @@ func (r *Reconciler) applyWebmailVhost(ctx context.Context, d *models.Domain) {
 		// doc_root is the ACME HTTP-01 webroot for renewals targeting
 		// mail.<domain>. Same path ssl.issue uses (-w domain.DocRoot)
 		// so renewal challenge files land where nginx will serve them.
-		"doc_root":         d.DocRoot,
+		"doc_root": d.DocRoot,
 		// M6.6 / 2026-06-01: panel-primary mail vhost includes bare
 		// PanelHostname in server_name so Bulwark's /api/auth/impersonate
 		// upstream JMAP fetch (https://<panel-hostname>/jmap) routes
