@@ -816,7 +816,14 @@ const HtaccessImport = ({
         `/domains/${domainId}/htaccess/preview`,
         { content, base_path: basePath || "/" },
       );
-      setPreview(res.data);
+      // Normalize: a no-rule conversion may arrive as null fields; coerce to
+      // arrays so the render below can use .length/.filter safely.
+      setPreview({
+        rules: res.data.rules ?? [],
+        warnings: res.data.warnings ?? [],
+        notes: res.data.notes ?? [],
+        invalid: res.data.invalid ?? [],
+      });
     } catch (err) {
       const e = err as {
         response?: { data?: { error?: string } };

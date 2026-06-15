@@ -98,3 +98,20 @@ func TestHtaccessPreview_NotFound(t *testing.T) {
 	w := postPreview(r, "nope", map[string]any{"content": "Redirect 301 /a /b"})
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+func TestHtaccessPreview_NoRulesEmitsEmptyArrays(t *testing.T) {
+	r, dr := htaccessRouter("owner", false)
+	dr.Create(context.Background(), &models.Domain{ID: "dom1", UserID: "owner", Name: "example.com"})
+
+	// Front-controller-only input -> 0 rules. The JSON must carry [] not null
+	// so the SPA can read .length/.filter without crashing.
+	w := postPreview(r, "dom1", map[string]any{
+		"content": "RewriteCond %{REQUEST_FILENAME} !-f\nRewriteCond %{REQUEST_FILENAME} !-d\nRewriteRule . /index.php [L]",
+	})
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"rules":[]`)
+	assert.NotContains(t, body, `"rules":null`)
+	assert.NotContains(t, body, `"warnings":null`)
+	assert.NotContains(t, body, `"notes":null`)
+}

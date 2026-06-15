@@ -97,10 +97,25 @@ func (h *domainHtaccessHandler) preview(c *gin.Context) {
 		invalid = append(invalid, err.Error())
 	}
 
+	// Always emit arrays (never JSON null) so the SPA can read .length/.filter
+	// without a null guard — a no-rule conversion is {rules:[],...}, not null.
+	rules := res.Rules
+	if rules == nil {
+		rules = []models.NginxRule{}
+	}
+	warnings := res.Warnings
+	if warnings == nil {
+		warnings = []htaccess.Warning{}
+	}
+	notes := res.Notes
+	if notes == nil {
+		notes = []string{}
+	}
+
 	c.JSON(http.StatusOK, htaccessPreviewResponse{
-		Rules:    models.NginxRules(res.Rules),
-		Warnings: res.Warnings,
-		Notes:    res.Notes,
+		Rules:    models.NginxRules(rules),
+		Warnings: warnings,
+		Notes:    notes,
 		Invalid:  invalid,
 	})
 }
