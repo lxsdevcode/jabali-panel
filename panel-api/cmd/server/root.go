@@ -109,6 +109,7 @@ func newRootCmd() *cobra.Command {
 		newDBCmd(),
 		newAuditCmd(),
 		newDockerAppCmd(),
+		newPythonAppCmd(),
 		newDockerEngineCmd(),
 	)
 	// `jabali reconcile` was removed by M20 — the reconciler already ticks
