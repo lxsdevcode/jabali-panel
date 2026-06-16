@@ -110,7 +110,9 @@ type updateServerSettingsRequest struct {
 	// M48 docker-app marketplace opt-in. flip true -> agent installs
 	// docker via install_docker_engine; flip false -> agent stops +
 	// disables docker units (data kept).
-	DockerMarketplaceEnabled      *bool   `json:"docker_marketplace_enabled,omitempty"`
+	DockerMarketplaceEnabled *bool `json:"docker_marketplace_enabled,omitempty"`
+	// ADR-0131: Python Application Manager opt-in.
+	PythonAppsEnabled             *bool   `json:"python_apps_enabled,omitempty"`
 	PostgresMaxConnectionsPerUser *uint16 `json:"postgres_max_connections_per_user,omitempty"`
 
 	// M35 SSRF override. When true, migrate.ValidateHost accepts
@@ -301,6 +303,9 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.DockerMarketplaceEnabled != nil {
 		current.DockerMarketplaceEnabled = *req.DockerMarketplaceEnabled
+	}
+	if req.PythonAppsEnabled != nil {
+		current.PythonAppsEnabled = *req.PythonAppsEnabled
 	}
 	if req.MigrationAllowPrivateHosts != nil {
 		current.MigrationAllowPrivateHosts = *req.MigrationAllowPrivateHosts

@@ -98,6 +98,7 @@ type Deps struct {
 	Apps           *apps.Registry
 	CronJobs       repository.CronJobRepository
 	DockerApps     repository.DockerAppRepository
+	PythonApps     repository.PythonAppRepository
 	DockerCatalog  *dockerapp.Catalog
 	SSHKeys        repository.SSHKeyRepository
 	LimitOverrides repository.UserLimitOverrideRepository
@@ -1020,6 +1021,15 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:        deps.Domains,
 				Agent:          deps.Agent,
 				Log:            deps.Log,
+			})
+		}
+		if deps.PythonApps != nil && deps.Agent != nil && deps.Domains != nil {
+			api.RegisterPythonAppRoutes(v1, api.PythonAppHandlerConfig{
+				Apps:       deps.PythonApps,
+				Domains:    deps.Domains,
+				Settings:   deps.ServerSettings,
+				Agent:      deps.Agent,
+				Reconciler: deps.Reconciler,
 			})
 		}
 

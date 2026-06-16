@@ -17,28 +17,28 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/limits"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/app"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/audit"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/db"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/backupfinalizer"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/backupscheduler"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/db"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/eventsources"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/mailscan"
-	stalwartadmin "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/stalwartadmin"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications/senders"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	stalwartadmin "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/stalwartadmin"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/webmailsso"
 
 	// M35 migration importer registry — blank imports run each
@@ -185,6 +185,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		wordpressInstallRepo := repository.NewWordPressInstallRepository(sharedDB)
 		cronJobsRepo := repository.NewCronJobRepository(sharedDB)
 		dockerAppRepo := repository.NewDockerAppRepository(sharedDB)
+		pythonAppRepo := repository.NewPythonAppRepository(sharedDB)
 		// M48: load the docker-app catalog. Failures are logged + skipped,
 		// not fatal -- the panel boots without M48 routes when the catalog
 		// is unavailable.
@@ -282,6 +283,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		rec.WithSSHKeys(sshKeyRepo)
 		rec.WithCronJobs(cronJobsRepo)
 		rec.WithDockerApps(dockerAppRepo)
+		rec.WithPythonApps(pythonAppRepo)
 		rec.WithDockerCatalog(dockerCatalog)
 		// M18 wiring — packages + overrides + /home mount path so
 		// ReconcileUserLimits and ReconcileNginxRateLimits have every
@@ -436,6 +438,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		deps.WordPressInstalls = wordpressInstallRepo
 		deps.CronJobs = cronJobsRepo
 		deps.DockerApps = dockerAppRepo
+		deps.PythonApps = pythonAppRepo
 		deps.DockerCatalog = dockerCatalog
 		deps.LimitOverrides = limitOverridesRepo
 
@@ -826,11 +829,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 			Log:      log,
 			Ingest: func(ctx context.Context, h mailscan.IngestHit) error {
 				p := &api.MalwareEventIngestPayload{
-					Source:     h.Source,
-					EventType:  h.EventType,
-					Severity:   h.Severity,
-					Signature:  h.Signature,
-					RawJSON:    h.RawJSON,
+					Source:    h.Source,
+					EventType: h.EventType,
+					Severity:  h.Severity,
+					Signature: h.Signature,
+					RawJSON:   h.RawJSON,
 					Hits: []api.MalwareEventIngestHit{{
 						OriginalPath:   h.OriginalPath,
 						QuarantinePath: h.QuarantinePath,
@@ -891,7 +894,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 			BackupJobs:         deps.BackupJobs,
 		})
 	}
-
 
 	var ssoUDSShutdown func(context.Context) error
 	if ssoKeyPtr != nil && cfg.SSO.SocketPath != "" {
@@ -1109,4 +1111,3 @@ func readStalwartAdminCreds() (user, password string, ok bool) {
 	}
 	return "", "", false
 }
-

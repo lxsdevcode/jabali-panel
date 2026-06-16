@@ -28,8 +28,8 @@ func pythonAppControlHandler(ctx context.Context, params json.RawMessage) (any, 
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
 	}
-	if p.AppID == "" {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id required"}
+	if !appIDRe.MatchString(p.AppID) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid app_id"}
 	}
 	unit := pythonAppUnitName(p.AppID)
 	switch p.Action {
@@ -60,8 +60,8 @@ func pythonAppRemoveHandler(ctx context.Context, params json.RawMessage) (any, e
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
 	}
-	if p.AppID == "" {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id required"}
+	if !appIDRe.MatchString(p.AppID) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid app_id"}
 	}
 	unit := pythonAppUnitName(p.AppID)
 	_ = exec.CommandContext(ctx, "systemctl", "stop", unit).Run()
@@ -83,8 +83,8 @@ func pythonAppLogsHandler(ctx context.Context, params json.RawMessage) (any, err
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
 	}
-	if p.AppID == "" {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id required"}
+	if !appIDRe.MatchString(p.AppID) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid app_id"}
 	}
 	n := p.Lines
 	if n <= 0 || n > 1000 {

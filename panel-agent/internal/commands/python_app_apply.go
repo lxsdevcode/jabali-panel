@@ -32,6 +32,25 @@ const (
 
 var pythonVersionRe = regexp.MustCompile(`^3\.(?:[0-9]|1[0-9])$`)
 
+// appIDRe / usernameRe guard the values embedded into root-written systemd
+// unit + EnvironmentFile paths and directives. The agent is the security
+// boundary for these root ops — never trust the caller's app_id/username
+// shape, even though panel-api sends ULIDs.
+var appIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+var memLimitRe = regexp.MustCompile(`^[0-9]+[KMGT]?$`)
+var cpuLimitRe = regexp.MustCompile(`^[0-9]+%$`)
+var baseURIRe = regexp.MustCompile(`^/[A-Za-z0-9._/-]*$`)
+
+func hasCtrl(s string) bool {
+	for _, c := range s {
+		if c == '\n' || c == '\r' || c == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 type pythonAppApplyParams struct {
 	AppID         string            `json:"app_id"`
 	Username      string            `json:"username"`
@@ -63,6 +82,24 @@ func pythonAppApplyHandler(ctx context.Context, params json.RawMessage) (any, er
 	}
 	if p.AppID == "" || p.Username == "" || p.AppRoot == "" || p.Entrypoint == "" || p.Port == 0 {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id, username, app_root, entrypoint and port are required"}
+	}
+	if !appIDRe.MatchString(p.AppID) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid app_id"}
+	}
+	if !usernameRe.MatchString(p.Username) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid username"}
+	}
+	if hasCtrl(p.StartCommand) || hasCtrl(p.Entrypoint) || hasCtrl(p.AppRoot) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "control characters not allowed"}
+	}
+	if p.BaseURI != "" && !baseURIRe.MatchString(p.BaseURI) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid base_uri"}
+	}
+	if p.MemoryLimit != "" && !memLimitRe.MatchString(p.MemoryLimit) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid memory_limit"}
+	}
+	if p.CPULimit != "" && !cpuLimitRe.MatchString(p.CPULimit) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid cpu_limit"}
 	}
 	if !pythonVersionRe.MatchString(p.PythonVersion) {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "python_version must be like 3.11"}
