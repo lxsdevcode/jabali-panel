@@ -1404,7 +1404,13 @@ func (r *Reconciler) reconcileDNSZone(ctx context.Context, domain *models.Domain
 				return
 			}
 			srv, _ := r.serverSettings.Get(ctx)
-			boots := dnscompile.BootstrapRecords(zone.ID, zone.Name, srv, ids.NewULID, domain.EmailEnabled)
+			// Skip Jabali mail rows when the domain opts out of Jabali mail
+			// (provider none/m365/google). Empty provider == jabali (matches
+			// reconcileMailProviderRecords), so legacy/default domains keep
+			// their mail rows. GH #189: a "No mail" domain never even briefly
+			// has mail DNS.
+			includeMail := domain.MailProvider == "" || domain.MailProvider == models.MailProviderJabali
+			boots := dnscompile.BootstrapRecords(zone.ID, zone.Name, srv, ids.NewULID, includeMail)
 			for i := range boots {
 				if err := r.dnsRecords.Create(ctx, &boots[i]); err != nil {
 					r.log.Error("bootstrap record failed", "err", err)
