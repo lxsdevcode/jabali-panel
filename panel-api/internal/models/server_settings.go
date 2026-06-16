@@ -195,7 +195,10 @@ type ServerSettings struct {
 	// install_docker_engine). Flip false stops the daemon and masks
 	// the units; per-app data under /var/lib/jabali/docker-apps/ is
 	// left intact for a future re-enable.
-	DockerMarketplaceEnabled      bool   `gorm:"column:docker_marketplace_enabled;type:tinyint(1);not null;default:0" json:"docker_marketplace_enabled"`
+	DockerMarketplaceEnabled bool `gorm:"column:docker_marketplace_enabled;type:tinyint(1);not null;default:0" json:"docker_marketplace_enabled"`
+	// PythonAppsEnabled gates the Python Application Manager (ADR-0131 / GH
+	// #203): hidden + endpoints 403 when off (default). Enabling installs the
+	PythonAppsEnabled             bool   `gorm:"column:python_apps_enabled;type:tinyint(1);not null;default:0" json:"python_apps_enabled"`
 	PostgresMaxConnectionsPerUser uint16 `gorm:"column:postgres_max_connections_per_user;type:smallint unsigned;not null;default:25" json:"postgres_max_connections_per_user"`
 
 	// MigrationAllowPrivateHosts — ADR-0095 decision 8. When TRUE the
