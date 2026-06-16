@@ -330,7 +330,7 @@ export function NotificationBell() {
         </div>
       )}
     >
-      <Button type="text" aria-label="Notifications">
+      <Button type="text" aria-label="Notifications" style={{ width: 40, height: 40, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         <Badge count={unread} size="small" overflowCount={99}>
           <BellOutlined />
         </Badge>

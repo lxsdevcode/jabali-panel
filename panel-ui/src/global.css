@@ -226,3 +226,19 @@
 .goaccess-modal .ant-modal-content {
   padding: 0;
 }
+
+/* ---------- Long inline code + pre blocks (mobile overflow) -----------------
+ * Inline <code> (hostnames, sockets, paths, keys, e.g. mail.jabali-panel.local
+ * or /run/php/jabali-<u>/fpm.sock) is the #1 source of horizontal overflow in
+ * cards on narrow screens. Let it wrap. This does NOT affect code inside a
+ * <pre>: <pre> keeps white-space:pre, which prevents line-breaking regardless
+ * of word-break, so log/command formatting is preserved. <pre> itself scrolls
+ * horizontally rather than pushing the page wide. */
+code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+}

@@ -15,6 +15,7 @@ export function ThemeToggle() {
         aria-label={`Switch to ${next} mode`}
         icon={mode === "dark" ? <SunOutlined /> : <MoonOutlined />}
         onClick={toggle}
+        style={{ width: 40, height: 40, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
       />
     </Tooltip>
   );

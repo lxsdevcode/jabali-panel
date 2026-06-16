@@ -72,6 +72,7 @@ export function ServerHealthIndicator(): JSX.Element | null {
         type="text"
         aria-label="Server health alerts"
         onClick={() => navigate("/jabali-admin/server-status")}
+        style={{ width: 40, height: 40, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
       >
         <Badge
           count={count}
