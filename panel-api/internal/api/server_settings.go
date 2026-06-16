@@ -36,6 +36,7 @@ func RegisterServerSettingsRoutes(g *gin.RouterGroup, cfg ServerSettingsHandlerC
 	admin.Use(middleware.RequireAdmin())
 	admin.GET("", h.get)
 	admin.PATCH("", h.update)
+	admin.GET("/python-runtime", h.pythonRuntimeStatus)
 }
 
 type serverSettingsHandler struct{ cfg ServerSettingsHandlerConfig }
@@ -187,6 +188,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevHostname := current.Hostname
 	prevPostgresEnabled := current.PostgresEnabled
 	prevDockerEnabled := current.DockerMarketplaceEnabled
+	prevPythonEnabled := current.PythonAppsEnabled
 	prevTimezone := current.Timezone
 	prevSSHPort := current.SSHPort
 	prevSSHPasswordAuth := current.SSHPasswordAuth
@@ -441,6 +443,19 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 					"method", method, "err", err)
 			}
 		}(current.DockerMarketplaceEnabled)
+	}
+
+	// ADR-0131: install the Python app runtime prerequisites on enable
+	// (mirrors the docker/postgres opt-ins). Disable leaves packages in
+	// place. Background dispatch so the PATCH does not block on apt.
+	if current.PythonAppsEnabled != prevPythonEnabled && current.PythonAppsEnabled && h.cfg.Agent != nil {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "app.python.install_runtime", map[string]any{}); err != nil {
+				h.cfg.Log.Error("agent python runtime install failed", "err", err)
+			}
+		}()
 	}
 
 	// Apply timezone to the OS via agent if changed and not empty.
@@ -718,4 +733,19 @@ func isValidTimezone(s string) bool {
 		return false
 	}
 	return timezoneRE.MatchString(s)
+}
+
+// pythonRuntimeStatus reports whether the Python app runtime prerequisites
+// are installed, so the Apps-tab card can poll after enabling (ADR-0131).
+func (h *serverSettingsHandler) pythonRuntimeStatus(c *gin.Context) {
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusOK, gin.H{"installed": false})
+		return
+	}
+	raw, err := h.cfg.Agent.Call(c.Request.Context(), "app.python.runtime_status", map[string]any{})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"installed": false})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", raw)
 }
