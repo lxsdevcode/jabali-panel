@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -373,7 +374,7 @@ func (h *sslHandler) listAllSSL(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"items": certs})
+	c.JSON(http.StatusOK, gin.H{"items": h.enrichCertRows(c.Request.Context(), certs)})
 }
 
 // panelCertSyntheticRows projects the panel_certificate rows
@@ -445,7 +446,7 @@ func (h *sslHandler) listUserSSL(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"items": certs})
+	c.JSON(http.StatusOK, gin.H{"items": h.enrichCertRows(c.Request.Context(), certs)})
 }
 
 // loadDomainOwned fetches the domain by ID and enforces that the
@@ -474,4 +475,83 @@ func (h *sslHandler) loadDomainOwned(c *gin.Context, domainID string) *models.Do
 	}
 
 	return domain
+}
+
+// sslListRow is a cert row plus the two fields GH #195 adds to the SSL
+// Manager: the service the cert secures and the full alias (SAN) list,
+// so aliases render under the primary record.
+type sslListRow struct {
+	repository.SSLCertificateWithDomain
+	Service string   `json:"service"`
+	SANs    []string `json:"sans"`
+}
+
+// enrichCertRows attaches Service + SANs to every cert row. SANs are
+// derived from the same policy issuance uses (mirrors the reconciler's
+// sanHostnamesForDomain + the agent's mailSANHostnames), so the panel
+// shows what the issued cert covers without reading cert files.
+func (h *sslHandler) enrichCertRows(ctx context.Context, certs []repository.SSLCertificateWithDomain) []sslListRow {
+	out := make([]sslListRow, 0, len(certs))
+	for _, c := range certs {
+		row := sslListRow{SSLCertificateWithDomain: c}
+		switch {
+		case c.ID == "panel-cert:"+models.PanelCertKindMail:
+			row.Service = "Panel mail"
+			row.SANs = []string{c.DomainName}
+		case strings.HasPrefix(c.ID, "panel-cert:"):
+			row.Service = "Panel (HTTPS)"
+			row.SANs = []string{c.DomainName}
+		case strings.HasPrefix(c.ID, "mail-cert:"):
+			row.Service = "Mail (SMTPS, IMAPS)"
+			row.SANs = mailCertSANs(c.DomainName)
+		default:
+			row.Service = "HTTPS"
+			row.SANs = h.webCertSANs(ctx, c)
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// webCertSANs returns the SAN list of a website (HTTPS) cert: base
+// [domain, www.domain] plus the auto-added names. Falls back to the
+// base pair if the domain can't be loaded.
+func (h *sslHandler) webCertSANs(ctx context.Context, c repository.SSLCertificateWithDomain) []string {
+	base := []string{c.DomainName, "www." + c.DomainName}
+	if h.cfg.Domains == nil {
+		return base
+	}
+	d, err := h.cfg.Domains.FindByID(ctx, c.DomainID)
+	if err != nil || d == nil {
+		return base
+	}
+	return webCertSANsForDomain(d)
+}
+
+// webCertSANsForDomain is the pure policy (extracted for testing) — it
+// MUST stay in lockstep with reconciler.sanHostnamesForDomain (ADR-0070).
+func webCertSANsForDomain(d *models.Domain) []string {
+	sans := []string{d.Name, "www." + d.Name}
+	if d.SkipAutoSAN {
+		return sans
+	}
+	if d.EmailEnabled {
+		sans = append(sans, "mail."+d.Name, "autoconfig."+d.Name, "autodiscover."+d.Name)
+	}
+	if d.MTASTSEnabled {
+		sans = append(sans, "mta-sts."+d.Name)
+	}
+	return sans
+}
+
+// mailCertSANs mirrors the agent's mailSANHostnames — the 4 hostnames a
+// per-domain Stalwart mail cert covers, in stable order.
+func mailCertSANs(domain string) []string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	return []string{
+		"mail." + domain,
+		"autoconfig." + domain,
+		"autodiscover." + domain,
+		"mta-sts." + domain,
+	}
 }

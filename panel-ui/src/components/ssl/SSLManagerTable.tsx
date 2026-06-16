@@ -41,6 +41,8 @@ interface SSLCertificate {
   staging: boolean;
   next_retry_at: string | null;
   retry_count: number;
+  service: string;
+  sans?: string[];
 }
 
 interface SSLManagerTableProps {
@@ -239,13 +241,27 @@ export const SSLManagerTable = ({
       }),
       render: (text: string, record: SSLCertificate) => {
         const isPanelCert = record.id.startsWith("panel-cert:");
+        // Aliases = every SAN other than the primary record name, shown
+        // as a muted second line beneath it (GH #195).
+        const aliases = (record.sans ?? []).filter((s) => s !== text);
         return (
-          <Space size={4}>
-            <span style={{ fontFamily: "monospace" }}>{text}</span>
-            {isPanelCert && (
-              <Tooltip title="Panel cert — managed via Server Settings → Panel SSL">
-                <Tag color="purple">panel</Tag>
-              </Tooltip>
+          <Space direction="vertical" size={0}>
+            <Space size={4}>
+              <span style={{ fontFamily: "monospace" }}>{text}</span>
+              {isPanelCert && (
+                <Tooltip title="Panel cert — managed via Server Settings → Panel SSL">
+                  <Tag color="purple">panel</Tag>
+                </Tooltip>
+              )}
+            </Space>
+            {aliases.length > 0 && (
+              <Typography.Text
+                type="secondary"
+                italic
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              >
+                {aliases.join(", ")}
+              </Typography.Text>
             )}
           </Space>
         );
@@ -265,6 +281,13 @@ export const SSLManagerTable = ({
           },
         ]
       : []),
+    {
+      title: "Service",
+      dataIndex: "service",
+      key: "service",
+      render: (service: string) =>
+        service ? <Tag color="geekblue">{service}</Tag> : <span>—</span>,
+    },
     {
       title: "Status",
       dataIndex: "status",
