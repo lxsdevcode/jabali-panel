@@ -87,7 +87,10 @@ function CertRow({
               Routable
             </Tag>
           ) : (
-            <Tag icon={<CloseOutlined />}>
+            <Tag
+              icon={<CloseOutlined />}
+              style={{ whiteSpace: "normal", maxWidth: "100%", height: "auto" }}
+            >
               Not routable
               {cert.routable_reason ? ` — ${cert.routable_reason}` : ""}
             </Tag>

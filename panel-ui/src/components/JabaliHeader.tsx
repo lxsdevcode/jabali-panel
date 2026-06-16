@@ -351,9 +351,14 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
         />
       )}
 
-      <div style={{ flexShrink: 0 }}>
-        <JabaliTitle showWordmark={isWide} />
-      </div>
+      {/* Logo only on desktop (no hamburger). On mobile/tablet the brand
+          lockup lives in the nav Drawer header, so the top bar stays
+          uncluttered. */}
+      {!showMenuButton && (
+        <div style={{ flexShrink: 0 }}>
+          <JabaliTitle showWordmark={isWide} />
+        </div>
+      )}
 
       {/* Middle column: flex:1 lets it absorb the slack between the
           logo and the right-side actions, and justifyContent:center

@@ -11,6 +11,7 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { apiClient } from "../apiClient";
 import { JabaliFooter } from "../components/JabaliFooter";
 import { JabaliHeader } from "../components/JabaliHeader";
+import { JabaliTitle } from "../components/JabaliTitle";
 import { adminNav, selectedNavKey } from "../nav";
 import { useThemeMode } from "../theme/ThemeModeContext";
 import { QuickStartModal } from "./admin/QuickStartModal";
@@ -120,8 +121,12 @@ export function AdminLayout() {
             onClose={() => setDrawerOpen(false)}
             placement="left"
             width={256}
-            closable={false}
-            styles={{ body: { padding: 8, background: siderBg } }}
+            closable
+            title={<JabaliTitle />}
+            styles={{
+              body: { padding: 8, background: siderBg },
+              header: { background: siderBg },
+            }}
           >
             {menu}
           </Drawer>
@@ -133,6 +138,12 @@ export function AdminLayout() {
               // the header's bottom border. Horizontal + bottom stay
               // at the baseline gutter.
               padding: screens.md ? "32px 24px 24px" : "20px 12px 12px",
+              // minWidth:0 lets this flex child shrink instead of forcing
+              // the page wider than the viewport; overflowX hidden is the
+              // backstop so a single wide element can't sideways-scroll the
+              // whole page on mobile (tables keep their own inner scroll).
+              minWidth: 0,
+              overflowX: "hidden",
             }}
           >
             <Outlet />
