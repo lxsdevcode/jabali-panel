@@ -407,7 +407,22 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
         <Dropdown menu={{ items: userMenu }} placement="bottomRight">
           <Button
             type="text"
-            style={{ height: "auto", paddingTop: 4, paddingBottom: 4 }}
+            style={
+              isWide
+                ? { height: "auto", paddingTop: 4, paddingBottom: 4 }
+                : {
+                    // Mobile: icon-only avatar button — keep it square
+                    // (the text-button default padding makes it wider
+                    // than tall otherwise), matching the other header
+                    // action buttons.
+                    width: 40,
+                    height: 40,
+                    padding: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }
+            }
             icon={<GravatarAvatar email={email} />}
           >
             {isWide ? (
