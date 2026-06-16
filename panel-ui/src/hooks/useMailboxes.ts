@@ -261,6 +261,26 @@ export function useRotateMailboxPassword(): UseMutationResult<
   });
 }
 
+export interface AdminMailbox extends Mailbox {
+  domain_name: string;
+  owner_user_id: string;
+  user_username: string;
+}
+
+// useAdminMailboxes lists every mailbox on the server (admin-only) for the
+// server-wide Mail tab.
+export function useAdminMailboxes(): UseQueryResult<AdminMailbox[]> {
+  return useQuery({
+    queryKey: ["admin", "mailboxes"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data?: AdminMailbox[] }>(
+        "/admin/mailboxes",
+      );
+      return data.data ?? [];
+    },
+  });
+}
+
 // useUpdateMailbox is the general partial-update PATCH (GH #197 + admin
 // Mail tab): any provided field (display_name / quota_bytes / is_disabled)
 // is updated, the rest left unchanged.

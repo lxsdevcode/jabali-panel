@@ -35,6 +35,7 @@ import { ThemeModeProvider, useThemeMode } from "./theme/ThemeModeContext";
 import { Dashboard } from "./shells/admin/Dashboard";
 import { UserList } from "./shells/admin/users/UserList";
 import { AdminIPList } from "./shells/admin/ips/AdminIPList";
+import { AdminMailPage } from "./shells/admin/mail/AdminMailPage";
 import { AdminAuditList } from "./shells/admin/audit/AdminAuditList";
 import { AccountActivity } from "./shells/user/activity/AccountActivity";
 import { NotificationsTabsPage } from "./shells/admin/notifications/NotificationsTabsPage";
@@ -179,6 +180,7 @@ const ThemedApp = () => {
               <Route index element={<PHPVersionsPage />} />
               <Route path="edit/:id" element={<PHPPoolEdit />} />
             </Route>
+            <Route path="mail" element={<AdminMailPage />} />
             <Route path="applications" element={<AdminApplicationList />} />
             <Route path="docker-apps" element={<AdminDockerAppsPage />} />
             <Route path="logs" element={<LogsPage />} />

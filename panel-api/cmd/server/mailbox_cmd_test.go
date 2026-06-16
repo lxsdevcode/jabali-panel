@@ -137,6 +137,7 @@ func (f *fakeMailboxRepo) UpdateQuota(_ context.Context, id string, quotaBytes u
 
 func (f *fakeMailboxRepo) UpdateDisplayName(_ context.Context, _ string, _ string) error { return nil }
 func (f *fakeMailboxRepo) SetDisabled(_ context.Context, _ string, _ bool) error         { return nil }
+func (f *fakeMailboxRepo) ListAllWithDomain(_ context.Context) ([]repository.MailboxWithDomain, error) { return nil, nil }
 
 func (f *fakeMailboxRepo) UpdateUsage(_ context.Context, _ string, _ uint64, _ time.Time) error {
 	return nil

@@ -18,6 +18,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
@@ -87,6 +88,8 @@ func RegisterMailboxRoutes(g *gin.RouterGroup, cfg MailboxHandlerConfig) {
 
 	g.GET("/domains/:id/mailboxes", h.list)
 	g.POST("/domains/:id/mailboxes", h.create)
+
+	g.GET("/admin/mailboxes", middleware.RequireAdmin(), h.listAllAdmin)
 
 	mbox := g.Group("/mailboxes")
 	mbox.GET("/:mbid", h.get)
@@ -669,6 +672,35 @@ func (h *mailboxHandler) notifyAgent(ctx context.Context, command string, params
 	agentCtx, cancel := context.WithTimeout(ctx, mailboxAgentTimeout)
 	defer cancel()
 	_, _ = h.cfg.Agent.Call(agentCtx, command, params)
+}
+
+// adminMailboxResponse is a server-wide mailbox row for the admin Mail tab:
+// the per-mailbox fields plus its domain + owner.
+type adminMailboxResponse struct {
+	mailboxResponse
+	DomainName   string `json:"domain_name"`
+	OwnerUserID  string `json:"owner_user_id"`
+	UserUsername string `json:"user_username"`
+}
+
+// listAllAdmin returns every mailbox on the server (admin-only) for the
+// server-wide Mail tab. GET /api/v1/admin/mailboxes.
+func (h *mailboxHandler) listAllAdmin(c *gin.Context) {
+	rows, err := h.cfg.Mailboxes.ListAllWithDomain(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	out := make([]adminMailboxResponse, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, adminMailboxResponse{
+			mailboxResponse: toMailboxResponse(r.Mailbox),
+			DomainName:      r.DomainName,
+			OwnerUserID:     r.OwnerUserID,
+			UserUsername:    r.UserUsername,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
 }
 
 func toMailboxResponse(mb models.Mailbox) mailboxResponse {

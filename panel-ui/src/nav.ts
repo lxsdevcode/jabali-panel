@@ -93,6 +93,12 @@ export const adminNav: NavItem[] = [
     path: "/jabali-admin/domains",
   },
   {
+    key: "mail",
+    label: "Mail",
+    icon: navIcon(MailOutlined),
+    path: "/jabali-admin/mail",
+  },
+  {
     key: "packages",
     label: "Hosting Packages",
     icon: navIcon(PackageOpenOutlined),
