@@ -118,7 +118,13 @@ func pythonAppApplyHandler(ctx context.Context, params json.RawMessage) (any, er
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("scope: %v", err)}
 	}
-	appRoot, err := scope.Resolve(p.AppRoot)
+	// app_root may arrive home-relative ("domains/x/app") or absolute
+	// ("/home/<user>/domains/x/app"); filesafe.Resolve requires absolute.
+	appRootIn := p.AppRoot
+	if !filepath.IsAbs(appRootIn) {
+		appRootIn = filepath.Join(homeDir, appRootIn)
+	}
+	appRoot, err := scope.Resolve(appRootIn)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("app_root validation failed: %v", err)}
 	}
