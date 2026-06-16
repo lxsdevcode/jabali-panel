@@ -53,6 +53,7 @@ import { apiClient } from "../../../apiClient";
 import { BrandingCard } from "./BrandingCard";
 import { DatabasesCard } from "./DatabasesCard";
 import { DockerMarketplaceCard } from "./DockerMarketplaceCard";
+import { PythonAppsCard } from "./PythonAppsCard";
 import { DatabaseAdminSections } from "./DatabaseAdminSections";
 import { DNSResolversCard } from "./DNSResolversCard";
 import { EmailCard } from "./EmailCard";
@@ -961,7 +962,12 @@ export const ServerSettingsPage = () => {
             <DatabaseAdminSections />
           </>
         )}
-        {activeTab === "apps" && <DockerMarketplaceCard />}
+        {activeTab === "apps" && (
+          <Space direction="vertical" style={{ width: "100%" }} size="large">
+            <DockerMarketplaceCard />
+            <PythonAppsCard />
+          </Space>
+        )}
         {activeTab === "nginx" && <NginxSettingsCard />}
         {activeTab === "branding" && <BrandingSettingsTab />}
       </Card>

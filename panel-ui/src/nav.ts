@@ -247,6 +247,12 @@ export const userNav: NavItem[] = [
     path: "/jabali-panel/applications",
   },
   {
+    key: "python-apps",
+    label: "Python Apps",
+    icon: navIcon(CodeOutlined),
+    path: "/jabali-panel/python-apps",
+  },
+  {
     key: "databases",
     label: "Databases",
     icon: navIcon(DatabaseOutlined),

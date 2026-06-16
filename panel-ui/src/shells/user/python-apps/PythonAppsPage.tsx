@@ -1,0 +1,238 @@
+// Python Application Manager (ADR-0131 / GH #203) — user-shell page to
+// register and control native Python web apps. Hidden behind the
+// python_apps_enabled server setting; the API 403s when off.
+import {
+  App,
+  Button,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import { apiClient } from "../../../apiClient";
+import type { CreatePythonAppInput, PythonApp } from "./usePythonApps";
+import {
+  fetchPythonAppLogs,
+  useControlPythonApp,
+  useCreatePythonApp,
+  useDeletePythonApp,
+  usePythonApps,
+} from "./usePythonApps";
+
+type DomainRow = { id: string; name: string };
+
+const STATUS_COLOR: Record<string, string> = {
+  running: "green",
+  pending: "default",
+  building: "processing",
+  stopped: "default",
+  failed: "red",
+};
+
+export function PythonAppsPage() {
+  const { message } = App.useApp();
+  const apps = usePythonApps();
+  const create = useCreatePythonApp();
+  const del = useDeletePythonApp();
+  const control = useControlPythonApp();
+
+  const domains = useQuery({
+    queryKey: ["domains", "for-pyapps"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data: DomainRow[] }>("/domains");
+      return data.data ?? [];
+    },
+  });
+  const domainName = useMemo(() => {
+    const m = new Map<string, string>();
+    (domains.data ?? []).forEach((d) => m.set(d.id, d.name));
+    return m;
+  }, [domains.data]);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form] = Form.useForm<CreatePythonAppInput>();
+  const [logsApp, setLogsApp] = useState<PythonApp | null>(null);
+  const [logsText, setLogsText] = useState("");
+
+  const submit = async () => {
+    const values = await form.validateFields();
+    try {
+      await create.mutateAsync({ ...values, base_uri: values.base_uri || "/" });
+      message.success("App created — building…");
+      setCreateOpen(false);
+      form.resetFields();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Create failed");
+    }
+  };
+
+  const doControl = async (id: string, action: string) => {
+    try {
+      await control.mutateAsync({ id, action });
+      message.success(`${action} requested`);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : `${action} failed`);
+    }
+  };
+
+  const openLogs = async (app: PythonApp) => {
+    setLogsApp(app);
+    setLogsText("Loading…");
+    try {
+      setLogsText((await fetchPythonAppLogs(app.id)) || "(no output)");
+    } catch (e) {
+      setLogsText(e instanceof Error ? e.message : "Failed to load logs");
+    }
+  };
+
+  return (
+    <div>
+      <Space
+        style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }}
+      >
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          Python Apps
+        </Typography.Title>
+        <Button type="primary" onClick={() => setCreateOpen(true)}>
+          Create app
+        </Button>
+      </Space>
+
+      <Table<PythonApp>
+        rowKey="id"
+        dataSource={apps.data ?? []}
+        loading={apps.isLoading}
+        pagination={false}
+      >
+        <Table.Column<PythonApp> title="Name" dataIndex="name" />
+        <Table.Column<PythonApp>
+          title="Domain"
+          render={(_, r) => (
+            <Typography.Text>
+              {domainName.get(r.domain_id) ?? "—"}
+              {r.base_uri !== "/" ? (
+                <Typography.Text type="secondary"> {r.base_uri}</Typography.Text>
+              ) : null}
+            </Typography.Text>
+          )}
+        />
+        <Table.Column<PythonApp>
+          title="Runtime"
+          render={(_, r) => (
+            <span>
+              Python {r.python_version}{" "}
+              <Tag>{r.app_type.toUpperCase()}</Tag>
+            </span>
+          )}
+        />
+        <Table.Column<PythonApp>
+          title="Status"
+          render={(_, r) => (
+            <Tag color={STATUS_COLOR[r.status] ?? "default"}>{r.status}</Tag>
+          )}
+        />
+        <Table.Column<PythonApp>
+          title=""
+          width={280}
+          render={(_, r) => (
+            <Space size={4}>
+              <Button size="small" onClick={() => void doControl(r.id, "restart")}>
+                Restart
+              </Button>
+              <Button size="small" onClick={() => void doControl(r.id, "stop")}>
+                Stop
+              </Button>
+              <Button size="small" onClick={() => void openLogs(r)}>
+                Logs
+              </Button>
+              <Popconfirm
+                title="Delete app?"
+                description="Stops the service and removes it. App files are kept."
+                okText="Delete"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void del.mutateAsync(r.id)}
+              >
+                <Button size="small" danger>
+                  Delete
+                </Button>
+              </Popconfirm>
+            </Space>
+          )}
+        />
+      </Table>
+
+      <Modal
+        title="Create Python app"
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => void submit()}
+        okText="Create"
+        confirmLoading={create.isPending}
+      >
+        <Form form={form} layout="vertical" initialValues={{ app_type: "wsgi", python_version: "3.11", base_uri: "/" }}>
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+            <Input placeholder="My API" />
+          </Form.Item>
+          <Form.Item name="domain_id" label="Domain" rules={[{ required: true }]}>
+            <Select
+              loading={domains.isLoading}
+              options={(domains.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
+              placeholder="Select a domain"
+            />
+          </Form.Item>
+          <Form.Item name="base_uri" label="Mount path" tooltip="'/' for the whole domain, or '/app' for a sub-path">
+            <Input placeholder="/" />
+          </Form.Item>
+          <Space style={{ width: "100%" }} size="middle">
+            <Form.Item name="python_version" label="Python" rules={[{ required: true }]}>
+              <Select
+                style={{ width: 120 }}
+                options={["3.11", "3.12", "3.13"].map((v) => ({ value: v, label: v }))}
+              />
+            </Form.Item>
+            <Form.Item name="app_type" label="Type" rules={[{ required: true }]}>
+              <Select
+                style={{ width: 160 }}
+                options={[
+                  { value: "wsgi", label: "WSGI (gunicorn)" },
+                  { value: "asgi", label: "ASGI (uvicorn)" },
+                ]}
+              />
+            </Form.Item>
+          </Space>
+          <Form.Item
+            name="entrypoint"
+            label="Entrypoint"
+            tooltip="module:callable, e.g. myapp.wsgi:application or main:app"
+            rules={[{ required: true }, { pattern: /^[A-Za-z0-9_.]+:[A-Za-z0-9_]+$/, message: "Expected module:callable" }]}
+          >
+            <Input placeholder="main:app" />
+          </Form.Item>
+          <Form.Item name="app_root" label="App directory" tooltip="Path under your home, e.g. domains/example.com/app" rules={[{ required: true }]}>
+            <Input placeholder="domains/example.com/app" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={logsApp ? `Logs — ${logsApp.name}` : "Logs"}
+        open={logsApp !== null}
+        onCancel={() => setLogsApp(null)}
+        footer={null}
+        width={800}
+      >
+        <pre style={{ maxHeight: 480, overflow: "auto", fontSize: 12, whiteSpace: "pre-wrap" }}>
+          {logsText}
+        </pre>
+      </Modal>
+    </div>
+  );
+}
