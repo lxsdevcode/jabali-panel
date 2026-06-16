@@ -30,6 +30,7 @@ export type MeUser = {
   email: string;
   isAdmin: boolean;
   fullName?: string;
+  username?: string;
 };
 
 type MeResponse = {
@@ -37,6 +38,7 @@ type MeResponse = {
   email: string;
   is_admin: boolean;
   full_name?: string;
+  username?: string;
 };
 
 type AuthState = {
@@ -58,6 +60,7 @@ async function fetchMe(): Promise<MeUser | null> {
       email: data.email ?? "",
       isAdmin: data.is_admin === true,
       fullName: data.full_name,
+      username: data.username,
     };
   } catch {
     // 401 (no session) and transient 5xx both collapse to null. Consumers
