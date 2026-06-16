@@ -503,7 +503,10 @@ func (h *sslHandler) enrichCertRows(ctx context.Context, certs []repository.SSLC
 			row.SANs = []string{c.DomainName}
 		case strings.HasPrefix(c.ID, "mail-cert:"):
 			row.Service = "Mail (SMTPS, IMAPS)"
-			row.SANs = mailCertSANs(c.DomainName)
+			// The row's DomainName is the cert's primary hostname
+			// (mail.<base>); mailCertSANs wants the BASE domain or it
+			// double-prefixes (mail.mail.<base>). Strip the leading label.
+			row.SANs = mailCertSANs(strings.TrimPrefix(c.DomainName, "mail."))
 		default:
 			row.Service = "HTTPS"
 			row.SANs = h.webCertSANs(ctx, c)
