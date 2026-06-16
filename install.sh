@@ -1784,6 +1784,29 @@ install_php() {
   for version in $php_versions; do
     _install_php_version "$version"
   done
+
+  # Per-user CLI PHP wrapper on PATH for ALL login shells (GH #184).
+  # The agent writes /home/<user>/.jabali/bin/php -> /usr/bin/php<pinned>,
+  # and jabali-ssh-shell already puts that dir on PATH inside its sandbox.
+  # But users whose login shell is a plain bash (migrated / manually
+  # created), or access via `su -`, `sudo -u`, or an IDE remote, bypass
+  # the sandbox and resolve a bare `php` to the host default — so the
+  # panel-selected version + its extensions looked "missing" at the CLI.
+  # This profile.d snippet prepends the per-user wrapper dir in EVERY
+  # login shell; it is a no-op for users without a pin (no .jabali/bin).
+  cat >/etc/profile.d/jabali-php-cli.sh <<'EOF'
+# jabali: prepend the per-user pinned PHP CLI wrapper (GH #184) so php,
+# composer, and wp-cli use the panel-selected PHP version in every login
+# shell, not just the jabali-ssh-shell sandbox. No-op without a pin.
+if [ -d "$HOME/.jabali/bin" ]; then
+  case ":$PATH:" in
+    *":$HOME/.jabali/bin:"*) ;;
+    *) PATH="$HOME/.jabali/bin:$PATH" ;;
+  esac
+fi
+EOF
+  chmod 0644 /etc/profile.d/jabali-php-cli.sh
+  _ok "per-user CLI PHP wrapper wired into login-shell PATH (/etc/profile.d/jabali-php-cli.sh)"
 }
 
 
@@ -11949,6 +11972,7 @@ RESOLV
   rm -f  /usr/local/bin/jabali-ssh-shell /usr/local/bin/jabali-nspawn-enter
   rm -rf /var/lib/jabali-nspawn
   rm -f  /etc/profile.d/jabali-go.sh
+  rm -f  /etc/profile.d/jabali-php-cli.sh
   rm -f  /etc/apt/sources.list.d/sury-php.list
   rm -f  /usr/share/keyrings/sury-php.gpg
   rm -f  /etc/apt/apt.conf.d/98-jabali-sury-ua.conf
