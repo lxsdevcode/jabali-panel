@@ -14,9 +14,11 @@ type Mailbox struct {
 	DomainID       string    `gorm:"type:char(26);not null;index:ix_mailboxes_domain" json:"domain_id"`
 	LocalPart      string    `gorm:"type:varchar(64);not null" json:"local_part"`
 	EmailCached    string    `gorm:"type:varchar(320);not null;uniqueIndex:ux_mailboxes_email_cached" json:"email"`
-	// DisplayName is the human-readable name (GH #197). Wired to the
-	// Stalwart principal description (columnDescription) so it drives the
-	// JMAP identity name shown in Bulwark webmail.
+	// DisplayName is the human-readable name (GH #197). The agent pushes
+	// it to the Stalwart account's JMAP description (x:Account/set), which
+	// drives the default Identity name shown as the From name in Bulwark
+	// webmail. Set over JMAP (not the SQL directory) so it converges on
+	// existing installs too.
 	DisplayName    string    `gorm:"column:display_name;type:varchar(255);not null;default:''" json:"display_name"`
 	PasswordHash   string    `gorm:"type:varchar(255);not null" json:"-"`
 	// PasswordEnc is the AES-256-GCM ciphertext of the mailbox's

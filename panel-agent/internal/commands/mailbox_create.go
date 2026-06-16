@@ -23,8 +23,9 @@ import (
 // Param validation still runs — that's defence in depth against a
 // malformed request sneaking past the panel-API layer.
 type mailboxCreateParams struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
 }
 
 func mailboxCreateHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -47,6 +48,11 @@ func mailboxCreateHandler(ctx context.Context, params json.RawMessage) (any, err
 	// first-auth. The DB row is already authoritative (ADR-0045);
 	// errors here are best-effort.
 	_ = accountEnsureInRegistry(ctx, p.Email)
+	// Set the display name on the freshly-registered account (GH #197).
+	// Best-effort, same as the registry create above.
+	if p.DisplayName != "" {
+		_ = setAccountDescription(ctx, p.Email, p.DisplayName)
+	}
 	return okBody{Ok: true}, nil
 }
 

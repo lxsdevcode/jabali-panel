@@ -334,8 +334,9 @@ func (h *mailboxHandler) create(c *gin.Context) {
 	// acknowledgement rather than a cache-invalidate — but we still
 	// surface agent errors so operators can see them.
 	h.notifyAgent(ctx, "mailbox.create", map[string]any{
-		"id":    mb.ID,
-		"email": canonLocal + "@" + dom.Name,
+		"id":           mb.ID,
+		"email":        canonLocal + "@" + dom.Name,
+		"display_name": mb.DisplayName,
 	})
 
 	c.JSON(http.StatusCreated, createMailboxResponse{
@@ -423,6 +424,13 @@ func (h *mailboxHandler) update(c *gin.Context) {
 			return
 		}
 		mb.DisplayName = name
+		// Push the new description to the Stalwart account (GH #197) so
+		// Bulwark webmail's From name updates. Best-effort: the DB is
+		// authoritative; the agent sets the JMAP Account description.
+		h.notifyAgent(ctx, "mailbox.set_display_name", map[string]any{
+			"email":        mb.LocalPart + "@" + dom.Name,
+			"display_name": name,
+		})
 	}
 
 	// Enable / disable. queryLogin filters is_disabled = 0, so the change
