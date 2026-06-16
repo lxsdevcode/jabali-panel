@@ -7,6 +7,8 @@ import { useMemo, useState } from "react";
 import {
   Button,
   Empty,
+  Form,
+  Modal,
   Popconfirm,
   Progress,
   Skeleton,
@@ -35,6 +37,7 @@ import {
 import { useListQuery } from "../../../../hooks/useQueries";
 import type { Domain } from "../../domains/UserDomainList";
 import { DatabaseUserPasswordModal } from "../../../../components/DatabaseUserPasswordModal";
+import { PasswordInput } from "../../../../components/PasswordInput";
 
 type MailboxRow = Mailbox & { domain_name: string };
 
@@ -86,28 +89,43 @@ export const MailboxesTab = () => {
     title: string;
   } | null>(null);
   const [rotatingId, setRotatingId] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<MailboxRow | null>(null);
+  const [resetForm] = Form.useForm<{ password?: string }>();
 
   const deleteMutation = useDeleteMailbox();
   const rotateMutation = useRotateMailboxPassword();
   const ssoMutation = useMintMailboxSSO();
 
-  const rotate = async (row: MailboxRow) => {
-    setRotatingId(row.id);
+  const openReset = (row: MailboxRow) => {
+    resetForm.resetFields();
+    setResetTarget(row);
+  };
+
+  const submitReset = async () => {
+    if (!resetTarget) return;
+    const values = await resetForm.validateFields();
+    const custom = (values.password ?? "").trim();
+    setRotatingId(resetTarget.id);
     try {
-      const resp = await rotateMutation.mutateAsync({ id: row.id });
+      const resp = await rotateMutation.mutateAsync({
+        id: resetTarget.id,
+        new_password: custom || undefined,
+      });
+      setResetTarget(null);
       if (resp.password) {
+        // No custom password supplied -> server generated one; reveal once.
         setPasswordModal({
-          email: row.email,
+          email: resetTarget.email,
           password: resp.password,
-          title: "New mailbox password (rotation)",
+          title: "New mailbox password (auto-generated)",
         });
       } else {
-        message.success("Password rotated");
+        message.success("Password updated");
       }
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-        "Failed to rotate password";
+        "Failed to reset password";
       message.error(msg);
     } finally {
       setRotatingId(null);
@@ -232,12 +250,12 @@ export const MailboxesTab = () => {
                     onClick={() => openWebmail(row)}
                   />
                 </Tooltip>
-                <Tooltip title="Rotate password">
+                <Tooltip title="Reset password">
                   <Button
                     type="text"
                     icon={<KeyOutlined />}
                     loading={rotatingId === row.id}
-                    onClick={() => rotate(row)}
+                    onClick={() => openReset(row)}
                   />
                 </Tooltip>
                 <Popconfirm
@@ -267,6 +285,32 @@ export const MailboxesTab = () => {
           },
         ]}
       />
+
+      <Modal
+        open={resetTarget !== null}
+        title={resetTarget ? `Reset password — ${resetTarget.email}` : "Reset password"}
+        okText="Set password"
+        confirmLoading={resetTarget ? rotatingId === resetTarget.id : false}
+        onOk={submitReset}
+        onCancel={() => setResetTarget(null)}
+        destroyOnClose
+      >
+        <Form form={resetForm} layout="vertical" requiredMark={false}>
+          <Form.Item
+            label="New password"
+            name="password"
+            tooltip="Leave blank to auto-generate. Auto-generated passwords are shown exactly once."
+          >
+            <PasswordInput
+              autoComplete="new-password"
+              placeholder="(leave blank to auto-generate)"
+            />
+          </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Use the dice button to generate a strong password, or type your own.
+          </Typography.Text>
+        </Form>
+      </Modal>
 
       {passwordModal && (
         <DatabaseUserPasswordModal
