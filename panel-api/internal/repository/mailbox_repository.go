@@ -32,6 +32,8 @@ type MailboxRepository interface {
 	// decrypts to a password Stalwart no longer accepts.
 	UpdatePasswordHashAndEnc(ctx context.Context, id string, hash string, enc []byte) error
 	UpdateQuota(ctx context.Context, id string, quotaBytes uint64) error
+	UpdateDisplayName(ctx context.Context, id, displayName string) error
+	SetDisabled(ctx context.Context, id string, disabled bool) error
 	UpdateUsage(ctx context.Context, id string, usageBytes uint64, at time.Time) error
 	ExistsByDomainAndLocalPart(ctx context.Context, domainID, localPart string) (bool, error)
 }
@@ -148,6 +150,24 @@ func (r *mailboxRepo) UpdateQuota(ctx context.Context, id string, quotaBytes uin
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"quota_bytes": quotaBytes,
+			"updated_at":  time.Now().UTC(),
+		}).Error
+}
+
+func (r *mailboxRepo) UpdateDisplayName(ctx context.Context, id, displayName string) error {
+	return r.db.WithContext(ctx).Model(&models.Mailbox{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"display_name": displayName,
+			"updated_at":   time.Now().UTC(),
+		}).Error
+}
+
+func (r *mailboxRepo) SetDisabled(ctx context.Context, id string, disabled bool) error {
+	return r.db.WithContext(ctx).Model(&models.Mailbox{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"is_disabled": disabled,
 			"updated_at":  time.Now().UTC(),
 		}).Error
 }

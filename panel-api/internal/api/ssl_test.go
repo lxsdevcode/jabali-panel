@@ -103,7 +103,6 @@ func (m *MockSSLCertificateRepository) UpdateAfterACMEFailure(ctx context.Contex
 	return args.Error(0)
 }
 
-
 func (m *MockSSLCertificateRepository) UpdateAfterACMEFailureCapped(ctx context.Context, id string, lastError string, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error {
 	return nil
 }
@@ -139,7 +138,9 @@ func (m *MockDomainRepository) FindByID(ctx context.Context, id string) (*models
 	return args.Get(0).(*models.Domain), args.Error(1)
 }
 
-func (m *MockDomainRepository) BulkSetEnabledByUserID(_ context.Context, _ string, _ bool) (int64, error) { return 0, nil }
+func (m *MockDomainRepository) BulkSetEnabledByUserID(_ context.Context, _ string, _ bool) (int64, error) {
+	return 0, nil
+}
 func (m *MockDomainRepository) Update(ctx context.Context, domain *models.Domain) error {
 	args := m.Called(ctx, domain)
 	return args.Error(0)
@@ -312,6 +313,9 @@ func TestListAllSSL_Success(t *testing.T) {
 	}
 
 	mockSSLCerts.On("ListAll", mock.MatchedBy(func(ctx context.Context) bool { return true })).Return(certs, nil)
+	// #195 enrichment loads the domain to compute website-cert SANs;
+	// fall back to base SANs in the test (assertions below don't check sans).
+	mockDomains.On("FindByID", mock.Anything, mock.Anything).Return((*models.Domain)(nil), repository.ErrNotFound)
 
 	cfg := SSLHandlerConfig{
 		Domains:        mockDomains,
@@ -514,6 +518,7 @@ func TestListUserSSL_Success(t *testing.T) {
 	}
 
 	mockSSLCerts.On("ListByUserID", mock.MatchedBy(func(ctx context.Context) bool { return true }), "user-1").Return(certs, nil)
+	mockDomains.On("FindByID", mock.Anything, mock.Anything).Return((*models.Domain)(nil), repository.ErrNotFound)
 
 	cfg := SSLHandlerConfig{
 		Domains:        mockDomains,
@@ -690,6 +695,7 @@ func TestListUserSSL_MultipleDomainsFiltered(t *testing.T) {
 	}
 
 	mockSSLCerts.On("ListByUserID", mock.MatchedBy(func(ctx context.Context) bool { return true }), "user-alice").Return(certs, nil)
+	mockDomains.On("FindByID", mock.Anything, mock.Anything).Return((*models.Domain)(nil), repository.ErrNotFound)
 
 	cfg := SSLHandlerConfig{
 		Domains:        mockDomains,

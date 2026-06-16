@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,15 +25,15 @@ import (
 
 // MailboxHandlerConfig plugs the mailbox HTTP handlers into the router.
 type MailboxHandlerConfig struct {
-	Mailboxes      repository.MailboxRepository
-	Domains        repository.DomainRepository
-	Agent          agent.AgentInterface
+	Mailboxes repository.MailboxRepository
+	Domains   repository.DomainRepository
+	Agent     agent.AgentInterface
 	// SSOKey + SSOTokens enable the webmail SSO flow (M6 Step 8 Phase B).
 	// When either is nil, create/rotate still succeed but password_enc
 	// stays NULL and POST /mailboxes/:id/sso returns 503 — matches the
 	// panel-running-without-sso.key pre-M20 topology.
-	SSOKey     *ssokey.Key
-	SSOTokens  repository.MailboxSSOTokenRepository
+	SSOKey    *ssokey.Key
+	SSOTokens repository.MailboxSSOTokenRepository
 	// SSOTokenTTL controls how long a minted SSO token is valid before
 	// the landing endpoint refuses it. Defaults to 5 minutes (matches
 	// PhpMyAdmin SSO) when zero-valued.
@@ -89,7 +90,7 @@ func RegisterMailboxRoutes(g *gin.RouterGroup, cfg MailboxHandlerConfig) {
 
 	mbox := g.Group("/mailboxes")
 	mbox.GET("/:mbid", h.get)
-	mbox.PATCH("/:mbid", h.updateQuota)
+	mbox.PATCH("/:mbid", h.update)
 	mbox.POST("/:mbid/rotate-password", h.rotatePassword)
 	mbox.POST("/:mbid/sso", h.mintSSO)
 	mbox.DELETE("/:mbid", h.delete)
@@ -111,12 +112,17 @@ type createMailboxRequest struct {
 
 	// QuotaBytes — optional. Zero means "use default" (1 GiB).
 	QuotaBytes uint64 `json:"quota_bytes"`
+
+	// DisplayName — optional human-readable name (GH #197). Wired to the
+	// Stalwart principal description → Bulwark webmail identity name.
+	DisplayName string `json:"display_name"`
 }
 
 type createMailboxResponse struct {
-	ID         string  `json:"id"`
-	Email      string  `json:"email"`
-	QuotaBytes uint64  `json:"quota_bytes"`
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	QuotaBytes  uint64 `json:"quota_bytes"`
+	DisplayName string `json:"display_name"`
 	// Password is returned exactly once when the caller did NOT send a
 	// password — the agent-computed random one. Empty when the caller
 	// supplied their own.
@@ -133,14 +139,19 @@ type rotateMailboxPasswordResponse struct {
 	Password string `json:"password,omitempty"`
 }
 
-type updateMailboxQuotaRequest struct {
-	QuotaBytes uint64 `json:"quota_bytes" binding:"required"`
+// updateMailboxRequest is a partial update — any nil field is left
+// unchanged. Used by the user edit + the admin Mail tab (GH #197).
+type updateMailboxRequest struct {
+	QuotaBytes  *uint64 `json:"quota_bytes"`
+	DisplayName *string `json:"display_name"`
+	IsDisabled  *bool   `json:"is_disabled"`
 }
 
 type mailboxResponse struct {
 	ID             string     `json:"id"`
 	DomainID       string     `json:"domain_id"`
 	Email          string     `json:"email"`
+	DisplayName    string     `json:"display_name"`
 	QuotaBytes     uint64     `json:"quota_bytes"`
 	IsDisabled     bool       `json:"is_disabled"`
 	LastUsageBytes uint64     `json:"last_usage_bytes"`
@@ -302,6 +313,7 @@ func (h *mailboxHandler) create(c *gin.Context) {
 		ID:           ids.NewULID(),
 		DomainID:     dom.ID,
 		LocalPart:    canonLocal,
+		DisplayName:  strings.TrimSpace(req.DisplayName),
 		PasswordHash: string(hash),
 		PasswordEnc:  enc,
 		QuotaBytes:   quota,
@@ -327,10 +339,11 @@ func (h *mailboxHandler) create(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusCreated, createMailboxResponse{
-		ID:         mb.ID,
-		Email:      canonLocal + "@" + dom.Name,
-		QuotaBytes: quota,
-		Password:   generatedPassword,
+		ID:          mb.ID,
+		Email:       canonLocal + "@" + dom.Name,
+		QuotaBytes:  quota,
+		DisplayName: mb.DisplayName,
+		Password:    generatedPassword,
 	})
 }
 
@@ -353,7 +366,7 @@ func (h *mailboxHandler) get(c *gin.Context) {
 	c.JSON(http.StatusOK, toMailboxResponse(*mb))
 }
 
-func (h *mailboxHandler) updateQuota(c *gin.Context) {
+func (h *mailboxHandler) update(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	claims := ginctx.Claims(c)
@@ -362,16 +375,9 @@ func (h *mailboxHandler) updateQuota(c *gin.Context) {
 		return
 	}
 
-	var req updateMailboxQuotaRequest
+	var req updateMailboxRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
-		return
-	}
-	if req.QuotaBytes < minMailboxQuotaBytes {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":  "quota_too_small",
-			"detail": "quota_bytes must be at least 16 MiB",
-		})
 		return
 	}
 
@@ -381,18 +387,54 @@ func (h *mailboxHandler) updateQuota(c *gin.Context) {
 		return
 	}
 
-	if err := h.cfg.Mailboxes.UpdateQuota(ctx, mb.ID, req.QuotaBytes); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+	// Quota.
+	if req.QuotaBytes != nil {
+		if *req.QuotaBytes < minMailboxQuotaBytes {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "quota_too_small",
+				"detail": "quota_bytes must be at least 16 MiB",
+			})
+			return
+		}
+		if err := h.cfg.Mailboxes.UpdateQuota(ctx, mb.ID, *req.QuotaBytes); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		mb.QuotaBytes = *req.QuotaBytes
+		h.notifyAgent(ctx, "mailbox.set_quota", map[string]any{
+			"id":          mb.ID,
+			"email":       mb.LocalPart + "@" + dom.Name,
+			"quota_bytes": *req.QuotaBytes,
+		})
 	}
 
-	h.notifyAgent(ctx, "mailbox.set_quota", map[string]any{
-		"id":          mb.ID,
-		"email":       mb.LocalPart + "@" + dom.Name,
-		"quota_bytes": req.QuotaBytes,
-	})
+	// Display name (GH #197). Stalwart's SqlDirectory reads display_name
+	// as the principal description on the next auth, so new logins reflect
+	// it; an already-created webmail identity may not retro-update until
+	// re-login (best-effort, ADR note).
+	if req.DisplayName != nil {
+		name := strings.TrimSpace(*req.DisplayName)
+		if len(name) > 255 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "display_name_too_long", "detail": "max 255 chars"})
+			return
+		}
+		if err := h.cfg.Mailboxes.UpdateDisplayName(ctx, mb.ID, name); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		mb.DisplayName = name
+	}
 
-	mb.QuotaBytes = req.QuotaBytes
+	// Enable / disable. queryLogin filters is_disabled = 0, so the change
+	// takes effect on the next authentication (live directory).
+	if req.IsDisabled != nil {
+		if err := h.cfg.Mailboxes.SetDisabled(ctx, mb.ID, *req.IsDisabled); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		mb.IsDisabled = *req.IsDisabled
+	}
+
 	mb.UpdatedAt = time.Now().UTC()
 	c.JSON(http.StatusOK, toMailboxResponse(*mb))
 }
@@ -626,6 +668,7 @@ func toMailboxResponse(mb models.Mailbox) mailboxResponse {
 		ID:             mb.ID,
 		DomainID:       mb.DomainID,
 		Email:          mb.EmailCached,
+		DisplayName:    mb.DisplayName,
 		QuotaBytes:     mb.QuotaBytes,
 		IsDisabled:     mb.IsDisabled,
 		LastUsageBytes: mb.LastUsageBytes,

@@ -21,6 +21,7 @@ import {
 } from "antd";
 import {
   DeleteOutlined,
+  EditOutlined,
   KeyOutlined,
   MailOutlined,
 } from "@icons";
@@ -38,6 +39,7 @@ import { useListQuery } from "../../../../hooks/useQueries";
 import type { Domain } from "../../domains/UserDomainList";
 import { DatabaseUserPasswordModal } from "../../../../components/DatabaseUserPasswordModal";
 import { PasswordInput } from "../../../../components/PasswordInput";
+import { EditMailboxModal } from "../../../../components/mail/EditMailboxModal";
 
 type MailboxRow = Mailbox & { domain_name: string };
 
@@ -90,6 +92,7 @@ export const MailboxesTab = () => {
   } | null>(null);
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<MailboxRow | null>(null);
+  const [editTarget, setEditTarget] = useState<MailboxRow | null>(null);
   const [resetForm] = Form.useForm<{ password?: string }>();
 
   const deleteMutation = useDeleteMailbox();
@@ -188,6 +191,17 @@ export const MailboxesTab = () => {
             ),
           },
           {
+            title: "Name",
+            dataIndex: "display_name",
+            ellipsis: true,
+            render: (v: string) =>
+              v ? (
+                v
+              ) : (
+                <Typography.Text type="secondary">—</Typography.Text>
+              ),
+          },
+          {
             title: "Domain",
             dataIndex: "domain_name",
             sorter: (a, b) => a.domain_name.localeCompare(b.domain_name),
@@ -250,6 +264,13 @@ export const MailboxesTab = () => {
                     onClick={() => openWebmail(row)}
                   />
                 </Tooltip>
+                <Tooltip title="Edit mailbox">
+                  <Button
+                    type="text"
+                    icon={<EditOutlined />}
+                    onClick={() => setEditTarget(row)}
+                  />
+                </Tooltip>
                 <Tooltip title="Reset password">
                   <Button
                     type="text"
@@ -284,6 +305,12 @@ export const MailboxesTab = () => {
             ),
           },
         ]}
+      />
+
+      <EditMailboxModal
+        open={editTarget !== null}
+        mailbox={editTarget}
+        onClose={() => setEditTarget(null)}
       />
 
       <Modal

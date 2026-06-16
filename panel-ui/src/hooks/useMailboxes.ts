@@ -63,6 +63,7 @@ export interface Mailbox {
   id: string;
   domain_id: string;
   email: string;
+  display_name: string;
   quota_bytes: number;
   is_disabled: boolean;
   last_usage_bytes: number;
@@ -73,6 +74,7 @@ export interface Mailbox {
 
 export interface CreateMailboxInput {
   local_part: string;
+  display_name?: string;
   password?: string;
   quota_bytes?: number;
 }
@@ -81,6 +83,7 @@ export interface CreateMailboxResponse {
   id: string;
   email: string;
   quota_bytes: number;
+  display_name?: string;
   // Present only when caller didn't supply a password — reveal-once.
   password?: string;
 }
@@ -254,6 +257,40 @@ export function useRotateMailboxPassword(): UseMutationResult<
         { new_password: new_password ?? "" },
       );
       return data;
+    },
+  });
+}
+
+// useUpdateMailbox is the general partial-update PATCH (GH #197 + admin
+// Mail tab): any provided field (display_name / quota_bytes / is_disabled)
+// is updated, the rest left unchanged.
+export function useUpdateMailbox(): UseMutationResult<
+  Mailbox,
+  unknown,
+  {
+    id: string;
+    domainId?: string;
+    display_name?: string;
+    quota_bytes?: number;
+    is_disabled?: boolean;
+  }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, display_name, quota_bytes, is_disabled }) => {
+      const body: Record<string, unknown> = {};
+      if (display_name !== undefined) body.display_name = display_name;
+      if (quota_bytes !== undefined) body.quota_bytes = quota_bytes;
+      if (is_disabled !== undefined) body.is_disabled = is_disabled;
+      const { data } = await apiClient.patch<Mailbox>(`/mailboxes/${id}`, body);
+      return data;
+    },
+    onSuccess: (_data, { domainId }) => {
+      if (domainId) {
+        qc.invalidateQueries({ queryKey: ["list", "mailboxes", domainId] });
+      }
+      qc.invalidateQueries({ queryKey: ["list", "mailboxes"] });
+      qc.invalidateQueries({ queryKey: ["admin", "mailboxes"] });
     },
   });
 }

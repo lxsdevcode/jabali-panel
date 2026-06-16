@@ -14,6 +14,10 @@ type Mailbox struct {
 	DomainID       string    `gorm:"type:char(26);not null;index:ix_mailboxes_domain" json:"domain_id"`
 	LocalPart      string    `gorm:"type:varchar(64);not null" json:"local_part"`
 	EmailCached    string    `gorm:"type:varchar(320);not null;uniqueIndex:ux_mailboxes_email_cached" json:"email"`
+	// DisplayName is the human-readable name (GH #197). Wired to the
+	// Stalwart principal description (columnDescription) so it drives the
+	// JMAP identity name shown in Bulwark webmail.
+	DisplayName    string    `gorm:"column:display_name;type:varchar(255);not null;default:''" json:"display_name"`
 	PasswordHash   string    `gorm:"type:varchar(255);not null" json:"-"`
 	// PasswordEnc is the AES-256-GCM ciphertext of the mailbox's
 	// plaintext password, encrypted with /etc/jabali-panel/sso.key.

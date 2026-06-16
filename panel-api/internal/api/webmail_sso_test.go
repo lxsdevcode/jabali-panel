@@ -96,6 +96,11 @@ func (r *ssoFakeMailboxRepo) UpdatePasswordHashAndEnc(ctx context.Context, id, h
 func (r *ssoFakeMailboxRepo) UpdateQuota(ctx context.Context, id string, quotaBytes uint64) error {
 	return nil
 }
+
+func (r *ssoFakeMailboxRepo) UpdateDisplayName(_ context.Context, _ string, _ string) error {
+	return nil
+}
+func (r *ssoFakeMailboxRepo) SetDisabled(_ context.Context, _ string, _ bool) error { return nil }
 func (r *ssoFakeMailboxRepo) UpdateDisabled(ctx context.Context, id string, disabled bool) error {
 	return nil
 }

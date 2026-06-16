@@ -42,6 +42,7 @@ type Props = {
 type FormValues = {
   domain_id?: string;
   local_part?: string;
+  display_name?: string;
   password?: string;
   quota_mib?: number;
 };
@@ -79,6 +80,7 @@ export const CreateMailboxWizardModal = ({
         domainId: values.domain_id,
         input: {
           local_part: values.local_part,
+          display_name: values.display_name?.trim() || undefined,
           password: values.password || undefined,
           quota_bytes: parseQuotaInput(values.quota_mib),
         },
@@ -164,6 +166,14 @@ export const CreateMailboxWizardModal = ({
                 autoComplete="off"
                 addonAfter={`@${chosenDomain.name}`}
               />
+            </Form.Item>
+
+            <Form.Item
+              label="Display name"
+              name="display_name"
+              tooltip="Shown as the sender name in webmail and outgoing mail (e.g. Alice Smith). Optional."
+            >
+              <Input placeholder="Alice Smith" autoComplete="off" maxLength={255} />
             </Form.Item>
 
             <Form.Item
