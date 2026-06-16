@@ -67,6 +67,8 @@ const (
 var jmapUsing = []string{
 	"urn:ietf:params:jmap:core",
 	"urn:stalwart:jmap",
+	// Identity/get + Identity/set (GH #197 display name → webmail From).
+	"urn:ietf:params:jmap:submission",
 }
 
 // Test injection seams. _test.go files swap these and restore in Cleanup.

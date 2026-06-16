@@ -45,6 +45,45 @@ func setAccountDescription(ctx context.Context, email, displayName string) error
 			Message: fmt.Sprintf("x:Account/set description refused: %s", string(reason)),
 		}
 	}
+
+	// The Account description only seeds the DEFAULT Identity name at
+	// identity-creation time; a later description change does NOT
+	// retro-update an existing Identity (verified on .14). So also rename
+	// the default identity (the one whose email is the mailbox's primary
+	// address) via Identity/set — this is what Bulwark webmail shows as
+	// the From name. Custom identities the user added for aliases are left
+	// untouched. Best-effort: a brand-new account may have no identity yet
+	// (it will be created from the description above), so an empty list is
+	// fine.
+	return renameDefaultIdentity(ctx, id, email, displayName)
+}
+
+// identityRow is the subset of a JMAP Identity we read.
+type identityRow struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func renameDefaultIdentity(ctx context.Context, accountID, email, displayName string) error {
+	var getResult struct {
+		List []identityRow `json:"list"`
+	}
+	if err := jmapCall(ctx, "Identity/get", map[string]any{"accountId": accountID}, &getResult); err != nil {
+		// Non-fatal: the account description is already set; the identity
+		// will pick it up when first created. Don't fail the whole op.
+		return nil
+	}
+	for _, idn := range getResult.List {
+		if idn.Email != email || idn.Name == displayName {
+			continue // not the default identity, or already correct
+		}
+		var setResult jmapSetResult
+		_ = jmapCall(ctx, "Identity/set", map[string]any{
+			"accountId": accountID,
+			"update":    map[string]any{idn.ID: map[string]any{"name": displayName}},
+		}, &setResult)
+	}
 	return nil
 }
 
