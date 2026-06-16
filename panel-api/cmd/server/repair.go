@@ -8,10 +8,15 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/fsperm"
 )
 
 // jabali repair — self-heal subcommand for known recurring scars on a
@@ -253,26 +258,26 @@ func repairSteps() []repairStep {
 			fix:         fixGitPointer,
 		},
 		{
-			id:    "git-ownership",
-			label: "/opt/jabali-panel/.git owned by wrong user",
+			id:     "git-ownership",
+			label:  "/opt/jabali-panel/.git owned by wrong user",
 			detect: detectGitOwnership,
 			fix:    fixGitOwnership,
 		},
 		{
-			id:    "git-stale-worktrees",
-			label: "/opt/jabali-panel/.git/worktrees has stale entries",
+			id:     "git-stale-worktrees",
+			label:  "/opt/jabali-panel/.git/worktrees has stale entries",
 			detect: detectGitStaleWorktrees,
 			fix:    fixGitStaleWorktrees,
 		},
 		{
-			id:    "uploads-dir",
-			label: "/var/lib/jabali-uploads missing or wrong perms",
+			id:     "uploads-dir",
+			label:  "/var/lib/jabali-uploads missing or wrong perms",
 			detect: detectUploadsDir,
 			fix:    fixUploadsDir,
 		},
 		{
-			id:    "ondrej-nginx-ppa",
-			label: "stale ondrej/nginx PPA in apt sources (404 on noble)",
+			id:     "ondrej-nginx-ppa",
+			label:  "stale ondrej/nginx PPA in apt sources (404 on noble)",
 			detect: detectOndrejPPA,
 			fix:    fixOndrejPPA,
 		},
@@ -284,40 +289,40 @@ func repairSteps() []repairStep {
 			fix:         fixNodeModules,
 		},
 		{
-			id:    "daemon-reload",
-			label: "systemd has unloaded unit-file changes on disk",
+			id:     "daemon-reload",
+			label:  "systemd has unloaded unit-file changes on disk",
 			detect: detectDaemonReload,
 			fix:    fixDaemonReload,
 		},
 		{
-			id:    "orphan-slices",
-			label: "jabali-user-*.slice units exist for deleted unix users",
+			id:     "orphan-slices",
+			label:  "jabali-user-*.slice units exist for deleted unix users",
 			detect: detectOrphanSlices,
 			fix:    fixOrphanSlices,
 		},
 		{
-			id:    "crowdsec-bouncer-key",
-			label: "crowdsec-firewall-bouncer crash-loops with stale LAPI key",
+			id:     "crowdsec-bouncer-key",
+			label:  "crowdsec-firewall-bouncer crash-loops with stale LAPI key",
 			detect: detectCrowdSecBouncerKey,
 			fix:    fixCrowdSecBouncerKey,
 		},
 		{
-			id:    "apparmor-profiles-missing",
-			label: "jabali AppArmor profiles absent from /etc/apparmor.d/",
+			id:     "apparmor-profiles-missing",
+			label:  "jabali AppArmor profiles absent from /etc/apparmor.d/",
 			detect: detectAppArmorProfilesMissing,
 			fix:    fixAppArmorProfilesMissing,
 		},
 		{
-			id:    "apparmor-profiles-disabled",
-			label: "jabali AppArmor profiles exist but are disabled",
+			id:     "apparmor-profiles-disabled",
+			label:  "jabali AppArmor profiles exist but are disabled",
 			detect: detectAppArmorProfilesDisabled,
 			fix:    fixAppArmorProfilesDisabled,
 		},
 		{
-			id:    "orphan-migration-staging",
-			label: "/var/lib/jabali-migrations/* dirs for jobs already terminal in DB",
-			detect: detectOrphanMigrationStaging,
-			fix:    fixOrphanMigrationStaging,
+			id:          "orphan-migration-staging",
+			label:       "/var/lib/jabali-migrations/* dirs for jobs already terminal in DB",
+			detect:      detectOrphanMigrationStaging,
+			fix:         fixOrphanMigrationStaging,
 			destructive: true,
 		},
 		{
@@ -325,6 +330,13 @@ func repairSteps() []repairStep {
 			label:  "jabali-default/jabali-panel.conf has `http2 on;` on nginx<1.25.1 (nginx -t fails, reloads rejected)",
 			detect: detectNginxConfigInvalid,
 			fix:    fixNginxConfigInvalid,
+		},
+		{
+			id:          "docroot-www-data-group",
+			label:       "web docroot files not group www-data / dirs not setgid (nginx 403 on newly uploaded media)",
+			destructive: true,
+			detect:      detectDocrootGroup,
+			fix:         fixDocrootGroup,
 		},
 	}
 }
@@ -893,7 +905,6 @@ func repairHint() string {
 		"      jabali repair --auto\n"
 }
 
-
 // ---------- orphan-migration-staging ----------
 //
 // Symptom: /var/lib/jabali-migrations/<job-id>/ holds 3-5 GB of
@@ -963,4 +974,243 @@ func orphanMigrationStagingDirs(_ repairCtx) ([]string, error) {
 		}
 	}
 	return orphans, nil
+}
+
+// ---------- docroot-www-data-group ----------
+//
+// Symptom: a freshly uploaded WordPress image (or any file the app's
+// PHP-FPM pool writes) returns 403, with nginx logging
+//   open() "/home/<u>/domains/<d>/public_html/wp-content/uploads/.../x.jpg"
+//   failed (13: Permission denied)
+//
+// Cause: jabali serves tenant files as <user>:www-data 0640 and nginx
+// (www-data) reads them via the group. But the per-user PHP-FPM pool
+// runs with group=<user>, and if the docroot dirs are not setgid the
+// files PHP creates land as <user>:<user> 0640 → www-data is "other" →
+// no read → 403. domain_create now lays docroots down 2750 (setgid) so
+// new files inherit the www-data group; this repair retrofits sites
+// provisioned before that, or whose group ownership was clobbered by an
+// out-of-band restore / chown -R (GH reviews-il.co.il, 2026-06-16).
+//
+// Destructive: it rewrites group ownership + the setgid bit across every
+// docroot, so it runs only with --all --yes or the explicit flag.
+
+// jabaliDocrootRe matches `root /home/...;` directives in the per-domain
+// nginx configs. We read the authoritative docroot list from nginx
+// rather than globbing /home so we only ever touch real served roots.
+var jabaliDocrootRe = regexp.MustCompile(`(?m)^\s*root\s+(/home/[^;\n]+);`)
+
+func jabaliDocroots() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(dr string) {
+		dr = strings.TrimSpace(dr)
+		if dr == "" || seen[dr] || !strings.HasPrefix(dr, "/home/") {
+			return
+		}
+		// Only ever a real (non-symlink) directory — the detector/fix
+		// must never be pointed at a symlinked "docroot".
+		if fi, lerr := os.Lstat(dr); lerr == nil && fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
+			seen[dr] = true
+			out = append(out, dr)
+		}
+	}
+
+	// Source 1: `root /home/...;` directives in the per-domain nginx
+	// configs. jabali has shipped these under a few layouts across
+	// versions (and migrated-from-DA hosts keep sites-available), so we
+	// scan all the standard locations rather than one.
+	confGlobs := []string{
+		"/etc/nginx/jabali/*/*.conf",
+		"/etc/nginx/jabali/*.conf",
+		"/etc/nginx/sites-enabled/*.conf",
+		"/etc/nginx/sites-available/*.conf",
+		"/etc/nginx/conf.d/*.conf",
+	}
+	for _, g := range confGlobs {
+		matches, _ := filepath.Glob(g)
+		for _, f := range matches {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				continue
+			}
+			for _, m := range jabaliDocrootRe.FindAllStringSubmatch(string(b), -1) {
+				add(m[1])
+			}
+		}
+	}
+
+	// Source 2: on-disk docroots. The authoritative jabali layout is
+	// /home/<user>/domains/<domain>/public_html; some hosts also use
+	// /home/<user>/public_html. This is the safety net when the nginx
+	// config layout doesn't match any glob above.
+	for _, g := range []string{
+		"/home/*/domains/*/public_html",
+		"/home/*/public_html",
+	} {
+		matches, _ := filepath.Glob(g)
+		for _, dr := range matches {
+			add(dr)
+		}
+	}
+	return out
+}
+
+// homeChainDirs returns the docroot's ancestor directories up to (but
+// not including) /home/<user> — the dirs nginx (www-data) must traverse
+// to reach the served root. domain_create chowns these <user>:www-data
+// 2750; if a chown -R clobbers them, www-data loses +x and every file
+// 403s regardless of the file's own group. For
+// /home/u/domains/d/public_html → [/home/u/domains/d, /home/u/domains].
+func homeChainDirs(dr string) []string {
+	clean := filepath.Clean(dr)
+	parts := strings.Split(clean, "/")
+	if len(parts) < 4 || parts[1] != "home" {
+		return nil
+	}
+	userRoot := "/home/" + parts[2]
+	var out []string
+	for cur := filepath.Dir(clean); cur != userRoot && strings.HasPrefix(cur, userRoot+"/"); cur = filepath.Dir(cur) {
+		out = append(out, cur)
+	}
+	return out
+}
+
+// dirTraversableByGroup reports whether path is a real dir owned by gid
+// with group-execute set (so www-data can traverse it). A symlink or
+// missing dir returns false-but-not-drift (handled by the caller).
+func dirTraversableByGroup(path string, gid int) (ok bool, isReal bool) {
+	fi, err := os.Lstat(path)
+	if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return false, false
+	}
+	st, sok := fi.Sys().(*syscall.Stat_t)
+	if !sok {
+		return false, false
+	}
+	return int(st.Gid) == gid && fi.Mode().Perm()&0o010 != 0, true
+}
+
+func wwwDataGid() (int, error) {
+	g, err := user.LookupGroup("www-data")
+	if err != nil {
+		return -1, err
+	}
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		return -1, fmt.Errorf("www-data gid %q: %w", g.Gid, err)
+	}
+	return gid, nil
+}
+
+// docrootDrifted reports whether any real (non-symlink) entry under dr is
+// not group www-data, or any real directory lacks the setgid bit. Walks
+// with Lstat (filepath.Walk) so symlinked dirs are never descended and
+// symlink entries are ignored — never follows a tenant symlink out of
+// the tree. Stops at the first offending entry.
+var errDocrootDrift = errors.New("drift")
+
+func docrootDrifted(dr string, gid int) bool {
+	drift := false
+	_ = filepath.Walk(dr, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // unreadable entry: skip, keep scanning
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil // ignore symlinks (Walk won't descend symlinked dirs)
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil
+		}
+		if int(st.Gid) != gid {
+			drift = true
+			return errDocrootDrift
+		}
+		if info.IsDir() && info.Mode()&os.ModeSetgid == 0 {
+			drift = true
+			return errDocrootDrift
+		}
+		return nil
+	})
+	return drift
+}
+
+func detectDocrootGroup(_ repairCtx) (bool, string, error) {
+	gid, err := wwwDataGid()
+	if err != nil {
+		return false, "", nil // no www-data group (dev box) → not applicable
+	}
+	docroots := jabaliDocroots()
+	var bad []string
+	for _, dr := range docroots {
+		drift := docrootDrifted(dr, gid)
+		if !drift {
+			for _, anc := range homeChainDirs(dr) {
+				if ok, real := dirTraversableByGroup(anc, gid); real && !ok {
+					drift = true
+					break
+				}
+			}
+		}
+		if drift {
+			bad = append(bad, dr)
+		}
+	}
+	if len(bad) == 0 {
+		return false, "", nil
+	}
+	detail := fmt.Sprintf("%d/%d docroot(s) with files unreadable by nginx: %s",
+		len(bad), len(docroots), strings.Join(shortPaths(bad, 3), ", "))
+	return true, detail, nil
+}
+
+// shortPaths renders up to n basenames for diagnose output.
+func shortPaths(paths []string, n int) []string {
+	out := make([]string, 0, n+1)
+	for i, p := range paths {
+		if i >= n {
+			out = append(out, fmt.Sprintf("(+%d more)", len(paths)-n))
+			break
+		}
+		// /home/<user>/domains/<domain>/public_html → <domain>
+		parts := strings.Split(p, "/")
+		if len(parts) >= 5 {
+			out = append(out, parts[4])
+		} else {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func fixDocrootGroup(_ repairCtx) error {
+	gid, err := wwwDataGid()
+	if err != nil {
+		return err
+	}
+	for _, dr := range jabaliDocroots() {
+		home := userHomeOf(dr)
+		if home == "" {
+			continue
+		}
+		// fsperm descends symlink-safely from /home/<user> (openat
+		// O_NOFOLLOW per component), repairing the traversal chain
+		// (domains/<domain>, domains) so www-data keeps +x to reach the
+		// root, then the docroot subtree. Never passes a tenant path to
+		// a privileged chmod/chown (TOCTOU-safe).
+		if err := fsperm.RepairDocrootGroup(home, dr, gid); err != nil {
+			return fmt.Errorf("%s: %w", dr, err)
+		}
+	}
+	return nil
+}
+
+// userHomeOf returns /home/<user> for a /home/<user>/... docroot, or "".
+func userHomeOf(dr string) string {
+	parts := strings.Split(filepath.Clean(dr), "/")
+	if len(parts) < 3 || parts[1] != "home" || parts[2] == "" {
+		return ""
+	}
+	return "/home/" + parts[2]
 }

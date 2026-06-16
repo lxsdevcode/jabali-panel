@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/fsperm"
 )
 
 const restoreLockPath = "/var/lib/jabali-backups/.restore.lock"
@@ -472,8 +473,10 @@ func applyAccountRestore(
 // restoreDocrootGroup re-applies the provisioning convention that the
 // blanket uid:gid home chown clobbers: web docroots are group-owned by
 // www-data so nginx workers (www-data) can read them. Mirrors the
-// <user>:www-data chain domain_create lays down — group only, owner +
-// perms preserved (Lchown with uid -1).
+// <user>:www-data chain domain_create lays down — group flipped to
+// www-data (owner preserved via Lchown uid -1) and the setgid bit set
+// on directories so app-created files keep inheriting the www-data
+// group after the restore (matches domain_create's 2750).
 //
 // SECURITY: this runs as root over a tenant-writable tree
 // (/home/<user>/domains is owned by the tenant). It must NEVER follow a
@@ -527,25 +530,11 @@ func restoreDocrootGroup(username string) error {
 		if err := os.Lchown(domDir, -1, gid); err != nil {
 			return fmt.Errorf("lchown %s: %w", domDir, err)
 		}
-		if err := chgrpTreeNoFollow(pub, gid); err != nil {
+		if err := fsperm.GroupSetgidTree(pub, gid); err != nil {
 			return fmt.Errorf("chgrp tree %s: %w", pub, err)
 		}
 	}
 	return nil
-}
-
-// chgrpTreeNoFollow sets the group of every entry under root to gid via
-// Lchown (owner preserved with uid -1; symlinks are not followed — the
-// link's own group is changed, never its target). filepath.Walk Lstats
-// each entry and does not descend into symlinked dirs, so the walk
-// stays inside the docroot even on a tenant-controlled tree.
-func chgrpTreeNoFollow(root string, gid int) error {
-	return filepath.Walk(root, func(path string, _ os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		return os.Lchown(path, -1, gid)
-	})
 }
 
 // chownTreeRecursive walks `root` and chowns every entry to uid:gid.

@@ -591,7 +591,13 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 				Message: fmt.Sprintf("chown %s: %v", dir, err),
 			}
 		}
-		if err := exec.CommandContext(ctx, "chmod", "0750", dir).Run(); err != nil {
+		// 2750, not 0750: the setgid bit makes files and subdirs that the
+		// app (PHP-FPM, running with group=<user>) later creates inherit
+		// the docroot's www-data group instead of the user's primary
+		// group. Without it, new WordPress uploads land as <user>:<user>
+		// 0640 → nginx (www-data) is "other" → "Permission denied" → 403
+		// on freshly uploaded media (GH #194-adjacent; reviews-il.co.il).
+		if err := exec.CommandContext(ctx, "chmod", "2750", dir).Run(); err != nil {
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
 				Message: fmt.Sprintf("chmod %s: %v", dir, err),
