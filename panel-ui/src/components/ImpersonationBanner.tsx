@@ -20,7 +20,7 @@ export function ImpersonationBanner() {
       type="warning"
       banner
       showIcon
-      message={`Viewing as ${actAs.email} — acting on this user's behalf. Every action is logged.`}
+      message={`Viewing as ${actAs.username || actAs.id} — acting on this user's behalf. Every action is logged.`}
       action={
         <Button size="small" danger onClick={exit}>
           Exit

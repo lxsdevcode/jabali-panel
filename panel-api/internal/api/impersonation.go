@@ -49,19 +49,29 @@ type createImpersonationRequest struct {
 }
 
 type impersonationGrantResponse struct {
-	ID           string    `json:"id"`
-	TargetUserID string    `json:"target_user_id"`
-	TargetEmail  string    `json:"target_email"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	ID             string    `json:"id"`
+	TargetUserID   string    `json:"target_user_id"`
+	TargetEmail    string    `json:"target_email"`
+	TargetUsername string    `json:"target_username"`
+	ExpiresAt      time.Time `json:"expires_at"`
 }
 
-func toGrantResponse(g *models.ImpersonationGrant, targetEmail string) impersonationGrantResponse {
+func toGrantResponse(g *models.ImpersonationGrant, targetEmail, targetUsername string) impersonationGrantResponse {
 	return impersonationGrantResponse{
-		ID:           g.ID,
-		TargetUserID: g.TargetUserID,
-		TargetEmail:  targetEmail,
-		ExpiresAt:    g.ExpiresAt,
+		ID:             g.ID,
+		TargetUserID:   g.TargetUserID,
+		TargetEmail:    targetEmail,
+		TargetUsername: targetUsername,
+		ExpiresAt:      g.ExpiresAt,
 	}
+}
+
+// derefStr returns the pointed-to string or "" for a nil pointer.
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // create mints a grant for (admin → target). Target must exist, be non-admin,
@@ -104,7 +114,7 @@ func (h *impersonationHandler) create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "message": "could not create grant"})
 		return
 	}
-	c.JSON(http.StatusCreated, toGrantResponse(grant, target.Email))
+	c.JSON(http.StatusCreated, toGrantResponse(grant, target.Email, derefStr(target.Username)))
 }
 
 // list returns the admin's own active grants.
@@ -117,11 +127,12 @@ func (h *impersonationHandler) list(c *gin.Context) {
 	}
 	out := make([]impersonationGrantResponse, 0, len(grants))
 	for i := range grants {
-		email := ""
+		email, username := "", ""
 		if u, uErr := h.cfg.Users.FindByID(c.Request.Context(), grants[i].TargetUserID); uErr == nil && u != nil {
 			email = u.Email
+			username = derefStr(u.Username)
 		}
-		out = append(out, toGrantResponse(&grants[i], email))
+		out = append(out, toGrantResponse(&grants[i], email, username))
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
 }

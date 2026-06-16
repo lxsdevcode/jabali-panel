@@ -10,7 +10,7 @@ import { apiClient } from "./apiClient";
 
 export const ACT_AS_KEY = "jabali_act_as";
 
-export type ActAsState = { id: string; email: string };
+export type ActAsState = { id: string; username: string };
 
 export function getActAs(): ActAsState | null {
   try {
@@ -29,11 +29,11 @@ function setActAs(s: ActAsState | null): void {
 /** Start acting as a user. Returns the grant; caller should refetch auth +
  * navigate to the user shell. Runs as the real admin (no grant set yet). */
 export async function startImpersonation(userId: string): Promise<ActAsState> {
-  const { data } = await apiClient.post<{ id: string; target_email: string }>(
-    "/admin/impersonation",
-    { user_id: userId },
-  );
-  const state: ActAsState = { id: data.id, email: data.target_email };
+  const { data } = await apiClient.post<{
+    id: string;
+    target_username: string;
+  }>("/admin/impersonation", { user_id: userId });
+  const state: ActAsState = { id: data.id, username: data.target_username };
   setActAs(state);
   return state;
 }
