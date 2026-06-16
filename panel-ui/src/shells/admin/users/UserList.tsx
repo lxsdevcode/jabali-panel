@@ -274,6 +274,20 @@ function UsersShellTable({
       }}
     >
       <Table.Column<User>
+        title="Username"
+        dataIndex="username"
+        key="username"
+        render={(v: string | null | undefined) =>
+          v ? (
+            <Typography.Text style={{ fontFamily: "monospace" }}>
+              {v}
+            </Typography.Text>
+          ) : (
+            <Typography.Text type="secondary">\u2014</Typography.Text>
+          )
+        }
+      />
+      <Table.Column<User>
         title="Name"
         key="name"
         filterIcon={() => (
@@ -302,14 +316,7 @@ function UsersShellTable({
           return (
             <div>
               <div>
-                <Typography.Text style={{ fontFamily: "monospace" }}>
-                  {r.username || "\u2014"}
-                </Typography.Text>
-                {fullName ? (
-                  <Typography.Text style={{ marginLeft: 8 }}>
-                    {fullName}
-                  </Typography.Text>
-                ) : null}
+                <Typography.Text>{fullName || "\u2014"}</Typography.Text>
                 {r.suspended ? (
                   <Tooltip
                     title={
