@@ -407,7 +407,7 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
           >
             {isWide ? (
               <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2, marginLeft: 8 }}>
-                <span>{user?.username || email || "…"}</span>
+                <span>{user?.username || user?.fullName || email || "…"}</span>
                 <span style={{ fontSize: 12, opacity: 0.7 }}>
                   {typeof window !== "undefined" ? window.location.hostname : ""}
                 </span>
