@@ -148,8 +148,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// the secret file (older installs, dev fixtures) we leave the
 	// minter nil so /sso/webmail returns 503 cleanly.
 	if secretBytes, sErr := os.ReadFile("/etc/jabali-panel/bulwark-jwt-auth.secret"); sErr == nil {
-		secretBytes = []byte(strings.TrimSpace(string(secretBytes)))
-		if m, mErr := webmailsso.New(secretBytes, ""); mErr == nil {
+		// Use the first whitespace-delimited token, not just TrimSpace.
+		// A pre-fix install (GH #193) could embed openssl's line-wrap
+		// newline mid-secret; Bulwark's line-based env parser keeps only
+		// the pre-newline portion, so we must sign with the same token or
+		// every JWT fails verification ("Invalid signature"). On a clean
+		// secret this is identical to TrimSpace.
+		secret := ""
+		if f := strings.Fields(string(secretBytes)); len(f) > 0 {
+			secret = f[0]
+		}
+		if m, mErr := webmailsso.New([]byte(secret), ""); mErr == nil {
 			deps.WebmailSSOMinter = m
 		} else {
 			log.Warn("webmail SSO minter init failed", "err", mErr)
