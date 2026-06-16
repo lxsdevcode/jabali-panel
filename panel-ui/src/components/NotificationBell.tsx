@@ -261,7 +261,13 @@ export function NotificationBell() {
       // holds for width=calc(100vw-16px) and any standard phone layout.
       // adjustX/adjustY let AntD nudge the popup if it still clips.
       placement="bottomRight"
-      align={{ overflow: { adjustX: 1, adjustY: 1 } }}
+      // shiftX/shiftY slide a wide popup fully into the viewport (a
+      // near-full-width popup right-anchored to the bell would otherwise
+      // hang off the LEFT edge on phones — the bell sits ~100px from the
+      // viewport's right edge). adjustX flip alone can't fix a wide popup;
+      // shiftX is the slide-to-fit that keeps both edges on-screen.
+      getPopupContainer={() => document.body}
+      align={{ overflow: { adjustX: false, adjustY: true, shiftX: true, shiftY: true } }}
       dropdownRender={(menu) => (
         <div style={contentStyle}>
           <div style={rowStyle}>
