@@ -1,0 +1,102 @@
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+)
+
+// app.python.control — start | stop | restart | status a Python app unit.
+type pythonAppControlParams struct {
+	AppID  string `json:"app_id"`
+	Action string `json:"action"` // start|stop|restart|status
+}
+
+type pythonAppControlResult struct {
+	Active bool   `json:"active"`
+	State  string `json:"state"` // systemctl is-active output
+}
+
+func pythonAppControlHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p pythonAppControlParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if p.AppID == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id required"}
+	}
+	unit := pythonAppUnitName(p.AppID)
+	switch p.Action {
+	case "start", "stop", "restart":
+		if out, err := exec.CommandContext(ctx, "systemctl", p.Action, unit).CombinedOutput(); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("systemctl %s %s: %v: %s", p.Action, unit, err, strings.TrimSpace(string(out)))}
+		}
+	case "status":
+		// no-op; just report below
+	default:
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "action must be start|stop|restart|status"}
+	}
+	state, _ := exec.CommandContext(ctx, "systemctl", "is-active", unit).Output()
+	st := strings.TrimSpace(string(state))
+	return pythonAppControlResult{Active: st == "active", State: st}, nil
+}
+
+// app.python.remove — stop + disable + delete the unit + env file. The venv
+// (under the user's app_root) is intentionally left in place; deleting it is
+// the panel's job via the File Manager / a separate purge, so app code +
+// data aren't destroyed by a unit teardown.
+type pythonAppRemoveParams struct {
+	AppID string `json:"app_id"`
+}
+
+func pythonAppRemoveHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p pythonAppRemoveParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if p.AppID == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id required"}
+	}
+	unit := pythonAppUnitName(p.AppID)
+	_ = exec.CommandContext(ctx, "systemctl", "stop", unit).Run()
+	_ = exec.CommandContext(ctx, "systemctl", "disable", "--quiet", unit).Run()
+	_ = os.Remove(filepath.Join(pythonAppUnitDir, unit))
+	_ = os.Remove(filepath.Join(pythonAppEnvDir, p.AppID+".env"))
+	_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+	return map[string]any{"removed": true}, nil
+}
+
+// app.python.logs — tail the unit journal.
+type pythonAppLogsParams struct {
+	AppID string `json:"app_id"`
+	Lines int    `json:"lines,omitempty"`
+}
+
+func pythonAppLogsHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p pythonAppLogsParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if p.AppID == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "app_id required"}
+	}
+	n := p.Lines
+	if n <= 0 || n > 1000 {
+		n = 200
+	}
+	out, _ := exec.CommandContext(ctx, "journalctl", "-u", pythonAppUnitName(p.AppID),
+		"-n", fmt.Sprintf("%d", n), "--no-pager", "-o", "short-iso").CombinedOutput()
+	return map[string]any{"logs": string(out)}, nil
+}
+
+func init() {
+	Default.Register("app.python.control", pythonAppControlHandler)
+	Default.Register("app.python.remove", pythonAppRemoveHandler)
+	Default.Register("app.python.logs", pythonAppLogsHandler)
+}
