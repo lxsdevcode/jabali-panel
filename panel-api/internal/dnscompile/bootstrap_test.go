@@ -37,6 +37,7 @@ func TestBootstrapRecords_WWWIsCNAMEToApex(t *testing.T) {
 		"example.com",
 		&models.ServerSettings{PublicIPv4: "192.0.2.1"},
 		bootIDCounter(),
+		true,
 	)
 
 	// www must be a CNAME, not an A — MX-target-can't-be-a-CNAME
@@ -62,6 +63,7 @@ func TestBootstrapRecords_MailStaysA_NotCNAME(t *testing.T) {
 		"example.com",
 		&models.ServerSettings{PublicIPv4: "192.0.2.1", PublicIPv6: "2001:db8::1"},
 		bootIDCounter(),
+		true,
 	)
 	for _, r := range recs {
 		if r.Name == "mail" && r.Type == "CNAME" {
@@ -88,6 +90,7 @@ func TestBootstrapRecords_MXTargetIsFQDN(t *testing.T) {
 		"example.com",
 		&models.ServerSettings{PublicIPv4: "192.0.2.1"},
 		bootIDCounter(),
+		true,
 	)
 	mx := findRec(t, recs, "@", "MX")
 	if mx.Content != "mail.example.com" {
@@ -107,6 +110,7 @@ func TestBootstrapRecords_MXSkippedWhenZoneNameEmpty(t *testing.T) {
 		"",
 		&models.ServerSettings{PublicIPv4: "192.0.2.1"},
 		bootIDCounter(),
+		true,
 	)
 	for _, r := range recs {
 		if r.Type == "MX" {
@@ -132,6 +136,7 @@ func TestBootstrapRecords_SPFIncludesIP4AndIP6(t *testing.T) {
 				"example.com",
 				&models.ServerSettings{PublicIPv4: tt.v4, PublicIPv6: tt.v6},
 				bootIDCounter(),
+				true,
 			)
 			// SPF is the "@" TXT that starts with v=spf1.
 			var spf string
@@ -152,7 +157,7 @@ func TestBootstrapRecords_SPFIncludesIP4AndIP6(t *testing.T) {
 }
 
 func TestBootstrapRecords_NoServerSettingsReturnsEmpty(t *testing.T) {
-	recs := BootstrapRecords("zone1", "example.com", nil, bootIDCounter())
+	recs := BootstrapRecords("zone1", "example.com", nil, bootIDCounter(), true)
 	if len(recs) != 0 {
 		t.Errorf("expected 0 records when srv is nil, got %d", len(recs))
 	}
@@ -166,6 +171,7 @@ func TestBootstrapRecords_WWWSkippedWhenZoneNameEmpty(t *testing.T) {
 		"",
 		&models.ServerSettings{PublicIPv4: "192.0.2.1"},
 		bootIDCounter(),
+		true,
 	)
 	for _, r := range recs {
 		if r.Name == "www" {
@@ -183,6 +189,7 @@ func TestBootstrapRecords_AllManagedTrue_ManagedByNil(t *testing.T) {
 		"example.com",
 		&models.ServerSettings{PublicIPv4: "192.0.2.1"},
 		bootIDCounter(),
+		true,
 	)
 	for _, r := range recs {
 		if !r.Managed {
@@ -202,7 +209,7 @@ func TestBootstrapRecords_NSARecord_InZone(t *testing.T) {
 		NS2Name:    "ns2.example.com",
 		NS2IPv4:    "203.0.113.11",
 	}
-	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter())
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter(), true)
 	ns1 := findRec(t, recs, "ns1", "A")
 	if ns1.Content != "203.0.113.10" {
 		t.Errorf("ns1 A content = %q, want 203.0.113.10", ns1.Content)
@@ -219,7 +226,7 @@ func TestBootstrapRecords_NSARecord_OffZone_Skipped(t *testing.T) {
 		NS1Name:    "ns1.other-zone.net",
 		NS1IPv4:    "203.0.113.10",
 	}
-	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter())
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter(), true)
 	for _, r := range recs {
 		if r.Name == "ns1" && r.Type == "A" {
 			t.Errorf("ns1 A leaked into zone where ns1_name lives elsewhere: %+v", r)
@@ -229,10 +236,47 @@ func TestBootstrapRecords_NSARecord_OffZone_Skipped(t *testing.T) {
 
 func TestBootstrapRecords_NSARecord_EmptyConfig_Noop(t *testing.T) {
 	srv := &models.ServerSettings{PublicIPv4: "203.0.113.10"}
-	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter())
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter(), true)
 	for _, r := range recs {
 		if (r.Name == "ns1" || r.Name == "ns2") && r.Type == "A" {
 			t.Errorf("ns A record emitted without ns_name/ns_ipv4 config: %+v", r)
 		}
 	}
+}
+
+// includeMail=false (provider none/external) must omit ALL Jabali mail rows —
+// no mail A/AAAA, no MX, no apex SPF, no _dmarc — while keeping apex + www +
+// ns records (GH #189: a "No mail" domain never even briefly has mail DNS).
+func TestBootstrapRecords_NoMailOmitsMailRows(t *testing.T) {
+	srv := &models.ServerSettings{PublicIPv4: "192.0.2.1", PublicIPv6: "2001:db8::1"}
+	recs := BootstrapRecords("zone-1", "example.com", srv, bootIDCounter(), false)
+
+	for _, r := range recs {
+		switch {
+		case r.Name == "mail" && (r.Type == "A" || r.Type == "AAAA"):
+			t.Errorf("no-mail bootstrap must not add a mail %s record", r.Type)
+		case r.Name == "@" && r.Type == "MX":
+			t.Errorf("no-mail bootstrap must not add an MX record")
+		case r.Name == "_dmarc":
+			t.Errorf("no-mail bootstrap must not add a _dmarc record")
+		case r.Name == "@" && r.Type == "TXT" && len(r.Content) >= 6 && r.Content[:6] == "\"v=spf":
+			t.Errorf("no-mail bootstrap must not add an apex SPF record")
+		}
+	}
+	// Apex A + www must still be present.
+	if findRecOpt(recs, "@", "A") == nil {
+		t.Errorf("apex A record should still be bootstrapped")
+	}
+	if findRecOpt(recs, "www", "CNAME") == nil {
+		t.Errorf("www CNAME should still be bootstrapped")
+	}
+}
+
+func findRecOpt(recs []models.DNSRecord, name, typ string) *models.DNSRecord {
+	for i := range recs {
+		if recs[i].Name == name && recs[i].Type == typ {
+			return &recs[i]
+		}
+	}
+	return nil
 }

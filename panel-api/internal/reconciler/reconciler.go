@@ -1404,7 +1404,7 @@ func (r *Reconciler) reconcileDNSZone(ctx context.Context, domain *models.Domain
 				return
 			}
 			srv, _ := r.serverSettings.Get(ctx)
-			boots := dnscompile.BootstrapRecords(zone.ID, zone.Name, srv, ids.NewULID)
+			boots := dnscompile.BootstrapRecords(zone.ID, zone.Name, srv, ids.NewULID, domain.EmailEnabled)
 			for i := range boots {
 				if err := r.dnsRecords.Create(ctx, &boots[i]); err != nil {
 					r.log.Error("bootstrap record failed", "err", err)

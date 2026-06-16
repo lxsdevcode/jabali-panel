@@ -32,7 +32,7 @@ import (
 //     sent from the apex IP (not just from the mail host's A record)
 //     still passes SPF checks — e.g. panel-local scripts sending via
 //     the local stalwart over the apex bind.
-func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew func() string) []models.DNSRecord {
+func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew func() string, includeMail bool) []models.DNSRecord {
 	now := time.Now().UTC()
 	mk := func(name, typ, content string, priority int) models.DNSRecord {
 		return models.DNSRecord{
@@ -57,11 +57,15 @@ func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew
 	// Apex + mail host IPs. www is added as a CNAME below.
 	if srv.PublicIPv4 != "" {
 		out = append(out, mk("@", "A", srv.PublicIPv4, 0))
-		out = append(out, mk("mail", "A", srv.PublicIPv4, 0))
+		if includeMail {
+			out = append(out, mk("mail", "A", srv.PublicIPv4, 0))
+		}
 	}
 	if srv.PublicIPv6 != "" {
 		out = append(out, mk("@", "AAAA", srv.PublicIPv6, 0))
-		out = append(out, mk("mail", "AAAA", srv.PublicIPv6, 0))
+		if includeMail {
+			out = append(out, mk("mail", "AAAA", srv.PublicIPv6, 0))
+		}
 	}
 
 	// www CNAME to the apex. Content is the zone FQDN verbatim (pdns
@@ -80,13 +84,17 @@ func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew
 	// to resolve. Same convention as the www CNAME above. Skip the row
 	// entirely if we don't know the zone name rather than write broken
 	// content.
-	if zoneName != "" {
-		out = append(out, mk("@", "MX", "mail."+zoneName, 10))
+	// Mail rows (MX / SPF / DMARC) only when this domain uses Jabali mail.
+	// For provider=none / external (m365/google) we skip them so a "No mail"
+	// domain never even briefly has Jabali mail DNS (GH #189); the
+	// mail-provider reconciler publishes provider-specific rows where needed.
+	if includeMail {
+		if zoneName != "" {
+			out = append(out, mk("@", "MX", "mail."+zoneName, 10))
+		}
+		out = append(out, mk("@", "TXT", BuildSPFString(srv), 0))
+		out = append(out, mk("_dmarc", "TXT", `"v=DMARC1; p=quarantine; sp=quarantine; adkim=r; aspf=r"`, 0))
 	}
-
-	out = append(out, mk("@", "TXT", BuildSPFString(srv), 0))
-
-	out = append(out, mk("_dmarc", "TXT", `"v=DMARC1; p=quarantine; sp=quarantine; adkim=r; aspf=r"`, 0))
 
 	// ns1/ns2 A records. compile.go already synthesises the NS records
 	// at the zone apex from server_settings.ns1_name / ns2_name, but
@@ -159,4 +167,3 @@ func BuildSPFString(srv *models.ServerSettings) string {
 // drift (extra space, a different spf modifier) is enough to mark the
 // row as operator-touched and skip the rewrite.
 const LegacyBootstrapSPFContent = `"v=spf1 mx ~all"`
-
