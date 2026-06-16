@@ -1758,6 +1758,21 @@ PLACEHOLDER_EOF
   _ok "PHP ${version} installed; global php${version}-fpm.service masked (per-user jabali-fpm@<user>.service takes over)"
 }
 
+install_python_apps_runtime() {
+  # ADR-0131 / GH #203: prerequisites for the Python Application Manager.
+  # Installs the default python3 venv tooling + build toolchain so user
+  # virtualenvs can compile C-extension wheels (psycopg2, cryptography, lxml).
+  # Cheap + idempotent; the feature itself stays opt-in (python_apps_enabled).
+  _log "installing Python app runtime prerequisites (venv + build toolchain)"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+    python3 python3-venv python3-dev build-essential libffi-dev libssl-dev \
+    >>"${LOG_FILE:-/dev/null}" 2>&1 || {
+      _warn "Python app runtime prereqs failed to install — Python apps may not build until resolved"
+      return 0
+    }
+  _ok "Python app runtime prerequisites installed"
+}
+
 install_php() {
   _log "configuring PHP/FPM (packages installed in base batch; this runs per-version post-install config)"
   # Default install is PHP 8.4 — phpMyAdmin 5.2.x cannot run on PHP 8.5
@@ -11602,6 +11617,7 @@ main() {
   install_jabali_slices
   install_kratos
   install_php_pool_template
+  install_python_apps_runtime
   build_frontend
   build_backend
   # Re-run AppSec wiring now that build_backend produced
