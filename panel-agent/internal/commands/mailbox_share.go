@@ -30,6 +30,41 @@ type Rights struct {
 	MaySubmit      bool `json:"maySubmit,omitempty"`
 }
 
+// toStalwartACL maps the internal Rights (jabali's own JSON keys, shared with
+// panel-api models.Rights + the UI) to the exact permission keys Stalwart's
+// Mailbox/shareWith expects. Two differed and silently broke every share:
+// jabali "mayRead" is Stalwart "mayReadItems", and jabali "mayAdmin" is
+// Stalwart "mayShare" — Stalwart rejects the originals as invalidProperties.
+// Only true permissions are emitted (a false permission is simply absent).
+func (r Rights) toStalwartACL() map[string]bool {
+	acl := map[string]bool{}
+	if r.MayRead {
+		acl["mayReadItems"] = true
+	}
+	if r.MayAddItems {
+		acl["mayAddItems"] = true
+	}
+	if r.MayRemoveItems {
+		acl["mayRemoveItems"] = true
+	}
+	if r.MayCreateChild {
+		acl["mayCreateChild"] = true
+	}
+	if r.MayRename {
+		acl["mayRename"] = true
+	}
+	if r.MayDelete {
+		acl["mayDelete"] = true
+	}
+	if r.MayAdmin {
+		acl["mayShare"] = true
+	}
+	if r.MaySubmit {
+		acl["maySubmit"] = true
+	}
+	return acl
+}
+
 type mailboxShareSetResponse struct {
 	Ok bool `json:"ok"`
 }
@@ -55,7 +90,7 @@ func mailboxShareSetHandler(ctx context.Context, params json.RawMessage) (any, e
 	}
 
 	// Resolve target principals by email → id.
-	targetIDs := make(map[string]Rights, len(p.Shares))
+	targetIDs := make(map[string]map[string]bool, len(p.Shares))
 	for targetEmail, rights := range p.Shares {
 		tid, err := accountIDByEmail(ctx, targetEmail)
 		if err != nil {
@@ -64,7 +99,7 @@ func mailboxShareSetHandler(ctx context.Context, params json.RawMessage) (any, e
 		if tid == "" {
 			continue // not yet registered; skip silently
 		}
-		targetIDs[tid] = rights
+		targetIDs[tid] = rights.toStalwartACL()
 	}
 
 	// Find INBOX mailbox id under this account. If we can't, the account has
