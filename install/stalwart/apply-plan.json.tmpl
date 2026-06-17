@@ -24,7 +24,7 @@
         "columnClass": null,
         "columnDescription": null,
         "queryLogin": "SELECT email_cached, password_hash FROM mailboxes WHERE email_cached = ? AND is_disabled = 0",
-        "queryRecipient": "SELECT m.email_cached, m.password_hash FROM (SELECT ? AS lookup) input JOIN mailboxes m ON m.is_disabled = 0 AND (m.email_cached = input.lookup OR m.email_cached = (SELECT f.target FROM email_forwarders f JOIN domains d ON d.id = f.domain_id WHERE f.enabled = 1 AND f.type = 'alias' AND CONCAT(f.local_part, '@', d.name) = input.lookup LIMIT 1))",
+        "queryRecipient": "SELECT u.email_cached, u.password_hash FROM (SELECT ? AS lookup) input JOIN (SELECT m.email_cached AS email_cached, m.password_hash AS password_hash, m.email_cached AS match_key FROM mailboxes m WHERE m.is_disabled = 0 UNION ALL SELECT g.email_cached, '', g.email_cached FROM mail_groups g WHERE g.has_mailbox = 1) u ON (u.match_key = input.lookup OR u.email_cached = (SELECT f.target FROM email_forwarders f JOIN domains d ON d.id = f.domain_id WHERE f.enabled = 1 AND f.type = 'alias' AND CONCAT(f.local_part, '@', d.name) = input.lookup LIMIT 1)) LIMIT 1",
         "queryMemberOf": null,
         "queryEmailAliases": "SELECT CONCAT(f.local_part, '@', d.name) AS alias FROM email_forwarders f JOIN domains d ON d.id = f.domain_id JOIN mailboxes m ON m.id = f.mailbox_id WHERE f.enabled = 1 AND f.type = 'alias' AND m.email_cached = ?"
       }
