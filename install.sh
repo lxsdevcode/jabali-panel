@@ -10131,6 +10131,21 @@ install_bulwark() {
     rmdir /opt/jabali-webmail 2>/dev/null || rm -rf /opt/jabali-webmail
   fi
   mv "$inner_dir" /opt/jabali-webmail
+
+  # GH #200: ship jabali's default mail logo into Bulwark's public branding
+  # dir so a fresh install is jabali-branded out of the box. The agent's
+  # webmail.branding.apply overrides these with the operator's uploaded
+  # Server-Settings logo when one is set (and reverts here when cleared).
+  install -d -m 0755 /opt/jabali-webmail/public/branding
+  if [[ -f "${REPO_DIR}/panel-ui/public/images/jabali_logo.svg" ]]; then
+    install -m 0644 "${REPO_DIR}/panel-ui/public/images/jabali_logo.svg" \
+      /opt/jabali-webmail/public/branding/jabali-mail-light.svg
+  fi
+  if [[ -f "${REPO_DIR}/panel-ui/public/images/jabali_logo_dark.svg" ]]; then
+    install -m 0644 "${REPO_DIR}/panel-ui/public/images/jabali_logo_dark.svg" \
+      /opt/jabali-webmail/public/branding/jabali-mail-dark.svg
+  fi
+  chown -R jabali-webmail:jabali-webmail /opt/jabali-webmail/public/branding
   rm -rf "$stage" /opt/jabali-webmail.prev
 
   _ok "Bulwark $bulwark_version installed at /opt/jabali-webmail"

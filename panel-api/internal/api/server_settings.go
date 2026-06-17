@@ -187,6 +187,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 
 	prevHostname := current.Hostname
 	prevPostgresEnabled := current.PostgresEnabled
+	prevPanelBrandText := current.PanelBrandText
 	prevDockerEnabled := current.DockerMarketplaceEnabled
 	prevPythonEnabled := current.PythonAppsEnabled
 	prevTimezone := current.Timezone
@@ -423,6 +424,21 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 					"method", method, "err", err)
 			}
 		}(current.PostgresEnabled)
+	}
+
+	// GH #200: brand text drives Bulwark webmail branding (app name +
+	// login company name) server-wide. Push it when it changes; the
+	// agent restarts jabali-webmail only on a real change.
+	if current.PanelBrandText != prevPanelBrandText && h.cfg.Agent != nil {
+		go func(brandText string) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "webmail.branding.apply", map[string]any{
+				"brand_text": brandText,
+			}); err != nil {
+				h.cfg.Log.Warn("webmail branding sync failed", "err", err)
+			}
+		}(current.PanelBrandText)
 	}
 
 	// M48 docker marketplace opt-in. Mirrors the postgres pattern

@@ -720,8 +720,9 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			// M28 — admin logo upload/delete. Public GET lives on the
 			// root router above so it's reachable pre-auth.
 			api.RegisterBrandingRoutes(v1, api.BrandingHandlerConfig{
-				Repo: deps.ServerSettings,
-				Log:  deps.Log,
+				Repo:  deps.ServerSettings,
+				Log:   deps.Log,
+				Agent: deps.Agent,
 			})
 		}
 		// M37 Phase 4: Postgres lifecycle admin endpoints (status +

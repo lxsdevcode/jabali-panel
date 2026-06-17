@@ -6,13 +6,16 @@ import (
 	"io"
 	"log/slog"
 	"mime/multipart"
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
@@ -39,8 +42,9 @@ var allowedLogoExts = map[string]string{
 }
 
 type BrandingHandlerConfig struct {
-	Repo repository.ServerSettingsRepository
-	Log  *slog.Logger
+	Repo  repository.ServerSettingsRepository
+	Log   *slog.Logger
+	Agent agent.AgentInterface
 }
 
 // RegisterBrandingRoutes mounts admin-only logo upload/delete under
@@ -221,7 +225,26 @@ func (h *brandingHandler) upload(c *gin.Context) {
 	}
 
 	h.cfg.Log.Info("event=audit kind=branding_logo_uploaded actor_id="+claims.UserID+" variant="+variant+" ext="+ext)
+	h.syncWebmailBranding(current.PanelBrandText)
 	c.JSON(http.StatusOK, gin.H{"variant": variant, "ext": ext})
+}
+
+// syncWebmailBranding pushes the operator branding (logo + brand text) to
+// Bulwark webmail server-wide (GH #200). Best-effort, in the background so
+// the admin's upload/clear response isn't blocked on a webmail restart.
+func (h *brandingHandler) syncWebmailBranding(brandText string) {
+	if h.cfg.Agent == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := h.cfg.Agent.Call(ctx, "webmail.branding.apply", map[string]any{
+			"brand_text": brandText,
+		}); err != nil && h.cfg.Log != nil {
+			h.cfg.Log.Warn("webmail branding sync failed", "err", err)
+		}
+	}()
 }
 
 func (h *brandingHandler) clear(c *gin.Context) {
@@ -260,6 +283,7 @@ func (h *brandingHandler) clear(c *gin.Context) {
 		return
 	}
 	h.cfg.Log.Info("event=audit kind=branding_logo_cleared actor_id=" + claims.UserID + " variant=" + variant)
+	h.syncWebmailBranding(current.PanelBrandText)
 	c.Status(http.StatusNoContent)
 }
 
