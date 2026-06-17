@@ -2,9 +2,9 @@ package api
 
 import (
 	"context"
-	"log/slog"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -93,12 +93,12 @@ type wordPressListResponse struct {
 	// default; the UI also falls back to "wordpress" when the field is
 	// missing, so an older API build serving this struct without
 	// AppType still renders sanely (just always as WordPress).
-	AppType       string    `json:"app_type"`
-	DomainID      string    `json:"domain_id"`
-	DomainName    string    `json:"domain_name"`
-	DBID          string    `json:"db_id"`
-	AdminUsername string    `json:"admin_username"`
-	AdminEmail    string    `json:"admin_email"`
+	AppType       string `json:"app_type"`
+	DomainID      string `json:"domain_id"`
+	DomainName    string `json:"domain_name"`
+	DBID          string `json:"db_id"`
+	AdminUsername string `json:"admin_username"`
+	AdminEmail    string `json:"admin_email"`
 	// Panel owner — the jabali user that installed this app. Distinct
 	// from AdminEmail/AdminUsername (those identify the WordPress/Joomla
 	// site admin inside the CMS). Admin list view surfaces this so an
@@ -121,7 +121,6 @@ type healthResponse struct {
 	WPVersion   string `json:"wp_version"`
 	HTTPStatus  int    `json:"http_status"`
 }
-
 
 // subdirectoryRegex accepts a single path segment: starts with
 // lowercase alnum, may contain lowercase alnum plus _ or -, max 64
@@ -239,14 +238,17 @@ func (h *wordPressHandler) create(c *gin.Context) {
 
 	now := time.Now().UTC()
 
-	// Provision database (database name = wp_<6-char ULID prefix>)
+	// FQDN-based DB + user names (GH #196): <osuser>_wp_<fqdn>[_<subdir>]
+	// {_db,_user}, so operators can tell at a glance which install owns a
+	// database. Unique by construction ((domain, subdirectory) is unique);
+	// a short suffix is appended only if truncation/sanitisation collides.
 	dbID := ids.NewULID()
-	// ULID first chars are timestamp; use the trailing random segment
-	// so back-to-back installs do not collide. Lowercase it because
-	// MariaDB db/user name validators in panel-agent accept only
-	// [a-z0-9_-] and ULIDs are Crockford base32 (uppercase).
-	dbSuffix := strings.ToLower(dbID[len(dbID)-6:])
-	dbName := osUser + "_wp_" + dbSuffix
+	dbName, dbUsername, nameErr := h.wpDBNames(ctx, targetUserID, osUser, domain.Name, req.Subdirectory)
+	if nameErr != nil {
+		slog.ErrorContext(ctx, "wordpress create: db name allocation failed", "err", nameErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
 	database := &models.Database{
 		ID:        dbID,
 		UserID:    targetUserID,
@@ -263,10 +265,8 @@ func (h *wordPressHandler) create(c *gin.Context) {
 		return
 	}
 
-	// Provision database user
+	// Provision database user (username computed alongside dbName above).
 	dbUserID := ids.NewULID()
-	dbUserSuffix := strings.ToLower(dbUserID[len(dbUserID)-6:])
-	dbUsername := osUser + "_wp_" + dbUserSuffix
 	hash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		slog.ErrorContext(ctx, "wordpress create: bcrypt failed", "err", err)
@@ -292,13 +292,13 @@ func (h *wordPressHandler) create(c *gin.Context) {
 	// Provision grant
 	grantID := ids.NewULID()
 	grant := &models.DatabaseUserGrant{
-		ID:               grantID,
-		DatabaseUserID:   dbUserID,
-		DatabaseID:       dbID,
-		GrantLevel:       "rw",
-		Privileges:       "ALL",
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:             grantID,
+		DatabaseUserID: dbUserID,
+		DatabaseID:     dbID,
+		GrantLevel:     "rw",
+		Privileges:     "ALL",
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := h.cfg.DatabaseGrants.Create(ctx, grant); err != nil {
 		// Rollback database and user
@@ -950,7 +950,9 @@ func (h *wordPressHandler) health(c *gin.Context) {
 			defer statCancel()
 			raw, sErr := h.cfg.Agent.Call(statCtx, "fs.stat", map[string]any{"path": probePath})
 			if sErr == nil {
-				var stat struct{ Exists bool `json:"exists"` }
+				var stat struct {
+					Exists bool `json:"exists"`
+				}
 				if json.Unmarshal(raw, &stat) == nil {
 					resp.WPInstalled = stat.Exists
 				}
@@ -984,7 +986,7 @@ type installKickArgs struct {
 	AdminEmail    string
 	Locale        string
 	Subdirectory  string
-	UseWWW bool
+	UseWWW        bool
 }
 
 // buildSiteURL composes the canonical WordPress siteurl/home value.
@@ -1026,21 +1028,21 @@ func createInstallAndKickAgent(parentCtx context.Context, args installKickArgs, 
 	// app_dispatch.go). Legacy "wordpress.install" still works on the
 	// agent for any straggler caller through M19.1.
 	payload := map[string]any{
-		"app_type":      "wordpress",
-		"os_user":       args.OSUser,
-		"docroot":       args.DocRoot,
-		"db_name":       args.DBName,
-		"db_user":       args.DBUser,
-		"db_password":   args.DBPassword,
-		"db_host":       "localhost",
-		"site_url":      args.SiteURL,
-		"site_title":    args.SiteTitle,
-		"admin_user":    args.AdminUsername,
-		"admin_pass":    args.AdminPassword,
-		"admin_email":   args.AdminEmail,
-		"locale":        args.Locale,
-		"subdirectory":  args.Subdirectory,
-		"use_www":       args.UseWWW,
+		"app_type":     "wordpress",
+		"os_user":      args.OSUser,
+		"docroot":      args.DocRoot,
+		"db_name":      args.DBName,
+		"db_user":      args.DBUser,
+		"db_password":  args.DBPassword,
+		"db_host":      "localhost",
+		"site_url":     args.SiteURL,
+		"site_title":   args.SiteTitle,
+		"admin_user":   args.AdminUsername,
+		"admin_pass":   args.AdminPassword,
+		"admin_email":  args.AdminEmail,
+		"locale":       args.Locale,
+		"subdirectory": args.Subdirectory,
+		"use_www":      args.UseWWW,
 	}
 	// (M22 magic-link mu-plugin payload plumbing removed in the M22
 	// rework — see ADR-0040. SSO files are minted on demand via
@@ -1084,7 +1086,6 @@ func createDeleteAndKickAgent(parentCtx context.Context, installID, appType, sub
 		cfg.ApplicationInstalls.UpdateStatus(ctx, installID, "failed", &errMsg, nil)
 		return
 	}
-
 
 	// Default appType to "wordpress" for any install row that pre-dates
 	// the M19 migration (the column NOT NULL DEFAULT 'wordpress' should
@@ -1321,6 +1322,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	// Update status to 'ready' with version
 	cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "ready", nil, &version)
 }
+
 // ---- Helpers ----
 
 func truncateError(msg string, maxLen int) string {
@@ -1334,4 +1336,74 @@ func isValidEmail(email string) bool {
 	const emailRegex = `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
 	re := regexp.MustCompile(emailRegex)
 	return re.MatchString(email)
+}
+
+// wpDBNames builds the FQDN-based database + user names for a WordPress
+// install (GH #196): <osuser>_wp_<fqdn>[_<subdir>] with `_db` / `_user`
+// suffixes. Dots and any non-[a-z0-9] characters become underscores (the
+// DB-user validator forbids dashes), names are lowercased and truncated to
+// the 64-char MariaDB identifier limit. (domain, subdirectory) is unique so
+// the readable name is normally free; if a collision survives sanitisation
+// or truncation, a short random suffix is appended.
+func (h *wordPressHandler) wpDBNames(ctx context.Context, userID, osUser, fqdn, subdir string) (dbName, dbUser string, err error) {
+	label := sanitizeDBLabel(fqdn)
+	if subdir != "" {
+		if sub := sanitizeDBLabel(subdir); sub != "" {
+			label += "_" + sub
+		}
+	}
+	prefix := sanitizeDBLabel(osUser) + "_wp_"
+	for attempt := 0; attempt < 16; attempt++ {
+		l := label
+		if attempt > 0 {
+			u := ids.NewULID()
+			l = label + "_" + strings.ToLower(u[len(u)-4:])
+		}
+		db := fitDBName(prefix, l, "_db")
+		usr := fitDBName(prefix, l, "_user")
+		dbTaken, e := h.cfg.Databases.ExistsByUserAndName(ctx, userID, db)
+		if e != nil {
+			return "", "", e
+		}
+		usrTaken, e := h.cfg.DatabaseUsers.ExistsByUserAndUsername(ctx, userID, usr)
+		if e != nil {
+			return "", "", e
+		}
+		if !dbTaken && !usrTaken {
+			return db, usr, nil
+		}
+	}
+	return "", "", fmt.Errorf("wpDBNames: could not allocate a free name for %q", fqdn)
+}
+
+// sanitizeDBLabel lowercases s and maps every non-[a-z0-9] rune to '_',
+// collapsing runs and trimming leading/trailing underscores.
+func sanitizeDBLabel(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	for strings.Contains(out, "__") {
+		out = strings.ReplaceAll(out, "__", "_")
+	}
+	return strings.Trim(out, "_")
+}
+
+// fitDBName assembles prefix+label+suffix, truncating label so the whole
+// name fits the 64-char MariaDB identifier limit.
+func fitDBName(prefix, label, suffix string) string {
+	const max = 64
+	budget := max - len(prefix) - len(suffix)
+	if budget < 1 {
+		budget = 1
+	}
+	if len(label) > budget {
+		label = strings.Trim(label[:budget], "_")
+	}
+	return prefix + label + suffix
 }
