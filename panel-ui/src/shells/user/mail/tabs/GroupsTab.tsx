@@ -1,0 +1,395 @@
+// GroupsTab — M51 mail groups (issue #201). Pick a mail-enabled domain,
+// create/edit groups (shared mailbox + calendar + address book + files),
+// manage membership, delete. Mirrors MailboxesTab styling.
+import { useMemo, useState } from "react";
+import {
+  App,
+  Button,
+  Checkbox,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Skeleton,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+  TeamOutlined,
+  UsergroupAddOutlined,
+} from "@icons";
+
+import { useListQuery } from "../../../../hooks/useQueries";
+import type { Domain } from "../../domains/UserDomainList";
+import { useMailboxes } from "../../../../hooks/useMailboxes";
+import {
+  useMailGroups,
+  useMailGroup,
+  useCreateMailGroup,
+  useUpdateMailGroup,
+  useDeleteMailGroup,
+  useSetMailGroupMembers,
+  type MailGroup,
+} from "../../../../hooks/useMailGroups";
+
+const RESOURCE_TAGS: { key: keyof MailGroup; label: string; color: string }[] = [
+  { key: "has_mailbox", label: "Mailbox", color: "blue" },
+  { key: "has_calendar", label: "Calendar", color: "green" },
+  { key: "has_addressbook", label: "Contacts", color: "purple" },
+  { key: "has_files", label: "Files", color: "gold" },
+];
+
+export function GroupsTab() {
+  const { message } = App.useApp();
+
+  const { items: domains } = useListQuery<Domain>({
+    resource: "domains",
+    params: { page: 1, pageSize: 200, sort: "name", order: "asc" },
+  });
+  const mailDomains = useMemo(() => domains.filter((d) => d.email_enabled), [domains]);
+
+  const [domainId, setDomainId] = useState<string | undefined>(undefined);
+  const effectiveDomain = domainId ?? mailDomains[0]?.id;
+
+  const { data: groups, isLoading } = useMailGroups(effectiveDomain);
+
+  const [editTarget, setEditTarget] = useState<MailGroup | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [membersTarget, setMembersTarget] = useState<MailGroup | null>(null);
+
+  const del = useDeleteMailGroup();
+
+  if (mailDomains.length === 0) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="Enable email on a domain first to create groups"
+      />
+    );
+  }
+
+  return (
+    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+      <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
+        <Select
+          style={{ minWidth: 240 }}
+          value={effectiveDomain}
+          onChange={setDomainId}
+          options={mailDomains.map((d) => ({ value: d.id, label: d.name }))}
+          showSearch
+          optionFilterProp="label"
+        />
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+          New group
+        </Button>
+      </Space>
+
+      {isLoading && !groups ? (
+        <Skeleton active paragraph={{ rows: 4 }} />
+      ) : (
+        <Table<MailGroup>
+          scroll={{ x: "max-content" }}
+          rowKey="id"
+          dataSource={groups ?? []}
+          pagination={{ pageSize: 25, showSizeChanger: true }}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No groups" />,
+          }}
+          columns={[
+            {
+              title: "Group",
+              dataIndex: "email",
+              render: (email: string, row) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>{row.display_name || row.local_part}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontFamily: "monospace", fontSize: 12 }}>
+                    {email}
+                  </Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: "Resources",
+              key: "resources",
+              render: (_, row) => (
+                <Space size={4} wrap>
+                  {RESOURCE_TAGS.filter((r) => row[r.key]).map((r) => (
+                    <Tag key={r.label} color={r.color}>
+                      {r.label}
+                    </Tag>
+                  ))}
+                </Space>
+              ),
+            },
+            {
+              title: "Members",
+              dataIndex: "member_count",
+              width: 110,
+              render: (n: number) => <Tag>{n}</Tag>,
+            },
+            {
+              title: "Actions",
+              key: "actions",
+              render: (_, row) => (
+                <Space>
+                  <Tooltip title="Manage members">
+                    <Button
+                      type="text"
+                      icon={<UsergroupAddOutlined />}
+                      onClick={() => setMembersTarget(row)}
+                    />
+                  </Tooltip>
+                  <Tooltip title="Edit group">
+                    <Button type="text" icon={<EditOutlined />} onClick={() => setEditTarget(row)} />
+                  </Tooltip>
+                  <Popconfirm
+                    title={`Delete ${row.email}?`}
+                    description="The shared mailbox, calendar, address book and files are removed. This cannot be undone."
+                    okText="Delete"
+                    okType="danger"
+                    onConfirm={async () => {
+                      try {
+                        await del.mutateAsync({ id: row.id, domainId: row.domain_id });
+                        message.success("Group deleted");
+                      } catch {
+                        message.error("Failed to delete group");
+                      }
+                    }}
+                  >
+                    <Button danger type="text" icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      )}
+
+      <GroupDrawer
+        open={createOpen}
+        domainId={effectiveDomain}
+        group={null}
+        onClose={() => setCreateOpen(false)}
+      />
+      <GroupDrawer
+        open={editTarget !== null}
+        domainId={effectiveDomain}
+        group={editTarget}
+        onClose={() => setEditTarget(null)}
+      />
+      {membersTarget && (
+        <MembersModal
+          group={membersTarget}
+          onClose={() => setMembersTarget(null)}
+        />
+      )}
+    </Space>
+  );
+}
+
+// --- Create / edit drawer ---------------------------------------------
+
+function GroupDrawer({
+  open,
+  domainId,
+  group,
+  onClose,
+}: {
+  open: boolean;
+  domainId: string | undefined;
+  group: MailGroup | null;
+  onClose: () => void;
+}) {
+  const { message } = App.useApp();
+  const [form] = Form.useForm();
+  const create = useCreateMailGroup();
+  const update = useUpdateMailGroup();
+  const editing = group !== null;
+
+  // Reset the form whenever the drawer opens for a different target.
+  useMemo(() => {
+    if (open) {
+      form.setFieldsValue(
+        group
+          ? {
+              name: group.local_part,
+              display_name: group.display_name,
+              description: group.description,
+              has_mailbox: group.has_mailbox,
+              has_calendar: group.has_calendar,
+              has_addressbook: group.has_addressbook,
+              has_files: group.has_files,
+            }
+          : {
+              name: "",
+              display_name: "",
+              description: "",
+              has_mailbox: true,
+              has_calendar: true,
+              has_addressbook: true,
+              has_files: true,
+            },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, group]);
+
+  const submit = async () => {
+    const v = await form.validateFields();
+    try {
+      if (editing && group) {
+        await update.mutateAsync({
+          id: group.id,
+          domainId: group.domain_id,
+          input: {
+            display_name: v.display_name,
+            description: v.description,
+            has_mailbox: v.has_mailbox,
+            has_calendar: v.has_calendar,
+            has_addressbook: v.has_addressbook,
+            has_files: v.has_files,
+          },
+        });
+        message.success("Group updated");
+      } else {
+        if (!domainId) return;
+        await create.mutateAsync({
+          domainId,
+          input: {
+            name: v.name,
+            display_name: v.display_name,
+            description: v.description,
+            has_mailbox: v.has_mailbox,
+            has_calendar: v.has_calendar,
+            has_addressbook: v.has_addressbook,
+            has_files: v.has_files,
+          },
+        });
+        message.success("Group created");
+      }
+      onClose();
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string; error?: string } } })?.response
+        ?.data;
+      message.error(detail?.detail ?? detail?.error ?? "Failed to save group");
+    }
+  };
+
+  return (
+    <Drawer
+      open={open}
+      title={editing ? `Edit ${group?.email}` : "New group"}
+      width={420}
+      onClose={onClose}
+      destroyOnClose
+      extra={
+        <Button type="primary" onClick={submit} loading={create.isPending || update.isPending}>
+          Save
+        </Button>
+      }
+    >
+      <Form form={form} layout="vertical" requiredMark={false}>
+        <Form.Item
+          label="Group name"
+          name="name"
+          tooltip="The group address local part — group email is name@domain."
+          rules={editing ? [] : [{ required: true, message: "Name is required" }]}
+        >
+          <Input placeholder="marketing" disabled={editing} autoComplete="off" />
+        </Form.Item>
+        <Form.Item label="Display name" name="display_name">
+          <Input placeholder="Marketing" autoComplete="off" />
+        </Form.Item>
+        <Form.Item label="Description" name="description">
+          <Input.TextArea placeholder="Optional note" rows={2} maxLength={255} />
+        </Form.Item>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Shared resources — every member gets access in their webmail:
+        </Typography.Text>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <Form.Item name="has_mailbox" valuePropName="checked" noStyle>
+            <Checkbox>Shared mailbox (send &amp; receive on the group address)</Checkbox>
+          </Form.Item>
+          <Form.Item name="has_calendar" valuePropName="checked" noStyle>
+            <Checkbox>Shared calendar</Checkbox>
+          </Form.Item>
+          <Form.Item name="has_addressbook" valuePropName="checked" noStyle>
+            <Checkbox>Shared address book</Checkbox>
+          </Form.Item>
+          <Form.Item name="has_files" valuePropName="checked" noStyle>
+            <Checkbox>Shared file folder</Checkbox>
+          </Form.Item>
+        </div>
+      </Form>
+    </Drawer>
+  );
+}
+
+// --- Members modal -----------------------------------------------------
+
+function MembersModal({ group, onClose }: { group: MailGroup; onClose: () => void }) {
+  const { message } = App.useApp();
+  const { data: detail, isLoading } = useMailGroup(group.id);
+  const { items: mailboxes } = useMailboxes({
+    domainId: group.domain_id,
+    params: { page: 1, pageSize: 500 },
+  });
+  const setMembers = useSetMailGroupMembers();
+
+  const [selected, setSelected] = useState<string[] | null>(null);
+  const value = selected ?? detail?.members.map((m) => m.mailbox_id) ?? [];
+
+  const submit = async () => {
+    try {
+      await setMembers.mutateAsync({
+        id: group.id,
+        domainId: group.domain_id,
+        mailbox_ids: value,
+      });
+      message.success("Members updated");
+      onClose();
+    } catch {
+      message.error("Failed to update members");
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={
+        <Space>
+          <TeamOutlined />
+          {`Members — ${group.email}`}
+        </Space>
+      }
+      okText="Save"
+      confirmLoading={setMembers.isPending}
+      onOk={submit}
+      onCancel={onClose}
+      destroyOnClose
+    >
+      {isLoading ? (
+        <Skeleton active paragraph={{ rows: 3 }} />
+      ) : (
+        <Select
+          mode="multiple"
+          style={{ width: "100%" }}
+          placeholder="Select member mailboxes"
+          value={value}
+          onChange={setSelected}
+          optionFilterProp="label"
+          options={mailboxes.map((m) => ({ value: m.id, label: m.email }))}
+        />
+      )}
+    </Modal>
+  );
+}

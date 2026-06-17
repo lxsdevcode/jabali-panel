@@ -9,6 +9,7 @@ import { useNavigate, useParams } from "react-router";
 import { useListQuery } from "../../../hooks/useQueries";
 import type { Domain } from "../domains/UserDomainList";
 import { MailboxesTab } from "./tabs/MailboxesTab";
+import { GroupsTab } from "./tabs/GroupsTab";
 import { ForwardersTab } from "./tabs/ForwardersTab";
 import { AutorespondersTab } from "./tabs/AutorespondersTab";
 import { CatchAllTab } from "./tabs/CatchAllTab";
@@ -17,12 +18,13 @@ import { SharedFoldersTab } from "./tabs/SharedFoldersTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { CreateMailboxWizardModal } from "./CreateMailboxWizardModal";
 
-const TAB_KEYS = ["mailboxes", "forwarders", "autoresponders", "catchall", "disclaimer", "shared", "logs"] as const;
+const TAB_KEYS = ["mailboxes", "groups", "forwarders", "autoresponders", "catchall", "disclaimer", "shared", "logs"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 const DEFAULT_TAB: TabKey = "mailboxes";
 
 const TAB_LABELS: Record<TabKey, string> = {
   mailboxes: "Mailboxes",
+  groups: "Groups",
   forwarders: "Forwarders",
   autoresponders: "Autoresponders",
   catchall: "Catch-All",
@@ -50,6 +52,8 @@ export const MailTabsPage = () => {
     switch (activeKey) {
       case "mailboxes":
         return <MailboxesTab />;
+      case "groups":
+        return <GroupsTab />;
       case "forwarders":
         return <ForwardersTab />;
       case "autoresponders":

@@ -99,6 +99,7 @@ import {
   Upload,
   User,
   Users,
+  UserPlus,
   Waypoints,
   Wrench,
   X,
@@ -189,6 +190,7 @@ export const SendOutlined = shim(Send);
 export const MailOutlined = shim(Mail);
 export const SettingOutlined = shim(Settings);
 export const TeamOutlined = shim(Users);
+export const UsergroupAddOutlined = shim(UserPlus);
 export const CloudServerOutlined = shim(Waypoints);
 export const ServerOutlined = shim(Server);
 export const ChartBarOutlined = shim(ChartBar);
