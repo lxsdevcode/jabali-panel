@@ -338,6 +338,12 @@ func repairSteps() []repairStep {
 			detect:      detectDocrootGroup,
 			fix:         fixDocrootGroup,
 		},
+		{
+			id:     "bulwark-jwt-secret",
+			label:  "Bulwark webmail-SSO secret poisoned / out of sync with bulwark.env (mail impersonation 'Invalid signature')",
+			detect: detectBulwarkJWTSecret,
+			fix:    fixBulwarkJWTSecret,
+		},
 	}
 }
 
@@ -1213,4 +1219,141 @@ func userHomeOf(dr string) string {
 		return ""
 	}
 	return "/home/" + parts[2]
+}
+
+// ---------- bulwark-jwt-secret ----------
+//
+// Symptom: clicking "Open webmail" / mail-user impersonation fails with
+// Bulwark's "Invalid signature" (GH #193). Root cause was openssl's
+// base64 line-wrap newline baked into the secret, which split
+// BULWARK_JWT_AUTH_SECRET across two lines in bulwark.env so Bulwark and
+// panel-api signed/verified with different keys. This also covers any
+// later divergence (file regenerated, env not resynced) — `jabali update`
+// rebuilds the panel binary but never re-runs the secret provisioning, so
+// a mismatched env would otherwise persist.
+//
+// Fix: sanitize the secret file to a clean single token, rewrite
+// BULWARK_JWT_AUTH_SECRET in bulwark.env to match (dropping any orphan
+// fragment line), and restart jabali-webmail + jabali-panel so both pick
+// up the same key.
+
+const (
+	bulwarkSecretFile = "/etc/jabali-panel/bulwark-jwt-auth.secret"
+	bulwarkEnvFile    = "/etc/jabali-panel/bulwark.env"
+)
+
+var alnumRe = regexp.MustCompile(`[^A-Za-z0-9]`)
+
+// bulwarkCleanSecret returns the sanitized secret (alnum only), the raw
+// file contents, and ok=false if the file is absent (no Bulwark here).
+func bulwarkCleanSecret() (clean, raw string, ok bool) {
+	b, err := os.ReadFile(bulwarkSecretFile)
+	if err != nil {
+		return "", "", false
+	}
+	raw = string(b)
+	return alnumRe.ReplaceAllString(raw, ""), raw, true
+}
+
+// bulwarkEnvSecret extracts the BULWARK_JWT_AUTH_SECRET value from
+// bulwark.env (the value Bulwark actually uses), or "" if absent.
+func bulwarkEnvSecret() string {
+	b, err := os.ReadFile(bulwarkEnvFile)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, found := strings.CutPrefix(line, "BULWARK_JWT_AUTH_SECRET="); found {
+			return strings.TrimRight(v, "\r")
+		}
+	}
+	return ""
+}
+
+func detectBulwarkJWTSecret(_ repairCtx) (bool, string, error) {
+	clean, raw, ok := bulwarkCleanSecret()
+	if !ok {
+		return false, "", nil // no Bulwark secret on this host
+	}
+	env := bulwarkEnvSecret()
+	if env == "" {
+		return false, "", nil // bulwark.env not provisioned
+	}
+	if strings.TrimSpace(raw) != clean {
+		return true, "secret file has a stray newline/whitespace (splits the env value)", nil
+	}
+	if env != clean {
+		return true, "bulwark.env BULWARK_JWT_AUTH_SECRET != secret file", nil
+	}
+	return false, "", nil
+}
+
+func fixBulwarkJWTSecret(_ repairCtx) error {
+	clean, raw, ok := bulwarkCleanSecret()
+	if !ok {
+		return nil
+	}
+	// 1. Rewrite the secret file clean if it carried any junk.
+	if strings.TrimSpace(raw) != clean {
+		if err := writeBulwarkSecretFile(clean); err != nil {
+			return err
+		}
+	}
+	// 2. Rebuild bulwark.env: drop the old secret line + any orphan
+	//    fragment (a line with no '=' that isn't a comment/blank), then
+	//    set BULWARK_JWT_AUTH_SECRET=clean.
+	if err := resyncBulwarkEnv(clean); err != nil {
+		return err
+	}
+	// 3. Restart both so they reload the matching key.
+	for _, unit := range []string{"jabali-webmail", "jabali-panel"} {
+		_ = exec.Command("systemctl", "restart", unit).Run()
+	}
+	return nil
+}
+
+func writeBulwarkSecretFile(clean string) error {
+	if err := os.WriteFile(bulwarkSecretFile, []byte(clean), 0o640); err != nil {
+		return fmt.Errorf("write secret file: %w", err)
+	}
+	if g, err := user.LookupGroup("jabali-webmail"); err == nil {
+		if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
+			_ = os.Chown(bulwarkSecretFile, 0, gid)
+		}
+	}
+	return nil
+}
+
+func resyncBulwarkEnv(clean string) error {
+	b, err := os.ReadFile(bulwarkEnvFile)
+	if err != nil {
+		return fmt.Errorf("read bulwark.env: %w", err)
+	}
+	var keep []string
+	for _, line := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "BULWARK_JWT_AUTH_SECRET=") {
+			continue // drop old secret line
+		}
+		// Drop orphan fragments: non-empty, not a comment, and no '='.
+		if t != "" && !strings.HasPrefix(t, "#") && !strings.Contains(line, "=") {
+			continue
+		}
+		keep = append(keep, line)
+	}
+	out := strings.Join(keep, "\n")
+	out = strings.TrimRight(out, "\n") + "\nBULWARK_JWT_AUTH_SECRET=" + clean + "\n"
+	tmp := bulwarkEnvFile + ".tmp"
+	if err := os.WriteFile(tmp, []byte(out), 0o640); err != nil {
+		return fmt.Errorf("write bulwark.env tmp: %w", err)
+	}
+	if g, err := user.LookupGroup("jabali-webmail"); err == nil {
+		if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
+			_ = os.Chown(tmp, gid, gid)
+		}
+	}
+	if err := os.Rename(tmp, bulwarkEnvFile); err != nil {
+		return fmt.Errorf("rename bulwark.env: %w", err)
+	}
+	return nil
 }
