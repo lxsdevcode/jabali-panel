@@ -9123,7 +9123,7 @@ install_notify_template() {
 #   /etc/jabali-panel/bulwark-session.key — Bulwark SESSION_SECRET (jabali-webmail:jabali-webmail, 0640)
 
 install_stalwart() {
-  local stalwart_version="0.16.7"
+  local stalwart_version="0.16.9"
   _log "installing Stalwart Mail Server (v${stalwart_version})"
 
   # Purge any preinstalled MTA that would conflict with Stalwart on
@@ -10005,7 +10005,7 @@ _install_spam_rules() {
 }
 
 install_bulwark() {
-  local bulwark_version="1.7.3"
+  local bulwark_version="1.7.4"
   local arch="linux-amd64"
   local tarball="bulwark-standalone-${bulwark_version}-${arch}.tar.gz"
   local url="https://github.com/bulwarkmail/webmail/releases/download/${bulwark_version}/${tarball}"

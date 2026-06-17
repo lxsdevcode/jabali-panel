@@ -1,6 +1,6 @@
-# Stalwart Mail Server v0.16.7 SHA-256 checksum for stalwart-x86_64-unknown-linux-gnu.tar.gz
-# Source: https://github.com/stalwartlabs/stalwart/releases/tag/v0.16.7
-# Captured 2026-05-24 directly from the GitHub release artifact.
+# Stalwart Mail Server v0.16.9 SHA-256 checksum for stalwart-x86_64-unknown-linux-gnu.tar.gz
+# Source: https://github.com/stalwartlabs/stalwart/releases/tag/v0.16.9
+# Captured 2026-06-17 directly from the GitHub release artifact (GH #205).
 #
 # Stalwart v0.16.x replaced its REST API with a JMAP management API
 # (see ADR-0041 + plan §1). SQL directory is supported against MariaDB
@@ -10,4 +10,4 @@
 #   curl -sSL https://github.com/stalwartlabs/stalwart/releases/download/v<x.y.z>/stalwart-x86_64-unknown-linux-gnu.tar.gz | sha256sum
 # install.sh `_die`s if the placeholder PLACEHOLDER_CAPTURE_ON_FIRST_DEPLOY
 # survives — matches the DokuWiki/MediaWiki tarball precedent.
-01afaad1f8ca8c53c00a4fe799d1e2e10384ab3d369b008b41eec0d7dcb65feb  stalwart-x86_64-unknown-linux-gnu.tar.gz
+0a6614f23c151bb32d788bd17fda2f57d73ab87b978026d097d2807d528c41b0  stalwart-x86_64-unknown-linux-gnu.tar.gz
