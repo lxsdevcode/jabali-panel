@@ -17,9 +17,9 @@ import (
 // entries (Stalwart allows only one active sieve script per account —
 // schema SieveScript.isActive).
 type forwarderApplyParams struct {
-	MailboxEmail string             `json:"mailbox_email"`
-	Aliases      []forwarderAlias   `json:"aliases"`   // local parts within the mailbox's own domain
-	Externals    []string           `json:"externals"` // target emails
+	MailboxEmail string           `json:"mailbox_email"`
+	Aliases      []forwarderAlias `json:"aliases"`   // local parts within the mailbox's own domain
+	Externals    []string         `json:"externals"` // target emails
 }
 
 type forwarderAlias struct {
@@ -95,13 +95,17 @@ func applyAccountAliases(ctx context.Context, acctID, domainID string, aliases [
 			},
 		},
 	}
+	// Best-effort: on Stalwart 0.16.7 the legacy `x:Account/User/set`
+	// method is gone (returns unknownMethod), AND jabali serves aliases
+	// from its SQL directory (queryEmailAliases on email_forwarders), not
+	// the principal's `aliases` property — which stays empty by design.
+	// The receiving alias and Stalwart's auto-created sending Identity both
+	// come from the directory, so this call is unnecessary; we keep it
+	// (now via the current `x:Account/set` method) but never fail
+	// forwarder.apply on it. Before this, every alias made forwarder.apply
+	// error on the dead method (GH #199 investigation).
 	var result jmapSetResult
-	if err := jmapCall(ctx, "x:Account/User/set", args, &result); err != nil {
-		return err
-	}
-	if reason, ok := result.NotUpdated[acctID]; ok {
-		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("Account alias set refused: %s", string(reason))}
-	}
+	_ = jmapCall(ctx, "x:Account/set", args, &result)
 	return nil
 }
 
