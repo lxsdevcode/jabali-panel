@@ -18,11 +18,12 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { DeleteOutlined, EditOutlined, KeyOutlined, PlusOutlined } from "@icons";
+import { DeleteOutlined, EditOutlined, KeyOutlined, MailOutlined, PlusOutlined } from "@icons";
 
 import {
   useAdminMailboxes,
   useDeleteMailbox,
+  useMintMailboxSSO,
   useRotateMailboxPassword,
   type AdminMailbox,
 } from "../../../hooks/useMailboxes";
@@ -54,6 +55,31 @@ export function AdminMailPage() {
 
   const deleteMutation = useDeleteMailbox();
   const rotate = useRotateMailboxPassword();
+  const ssoMutation = useMintMailboxSSO();
+
+  const openWebmail = (row: AdminMailbox) => {
+    const popup = window.open("about:blank", "_blank");
+    ssoMutation.mutate(
+      { id: row.id },
+      {
+        onSuccess: (data) => {
+          if (popup && data?.url) popup.location.href = data.url;
+        },
+        onError: (err) => {
+          const code = (err as { response?: { data?: { error?: string } } })?.response
+            ?.data?.error;
+          popup?.close();
+          if (code === "sso_unavailable_rotate_password") {
+            message.error(
+              "Rotate the mailbox password first — SSO material is populated on rotation.",
+            );
+          } else {
+            message.error("Failed to open webmail");
+          }
+        },
+      },
+    );
+  };
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AdminMailbox | null>(null);
@@ -189,6 +215,16 @@ export function AdminMailPage() {
               key: "actions",
               render: (_, row) => (
                 <Space>
+                  <Tooltip title="Open webmail for this mailbox">
+                    <Button
+                      type="text"
+                      icon={<MailOutlined />}
+                      loading={
+                        ssoMutation.isPending && ssoMutation.variables?.id === row.id
+                      }
+                      onClick={() => openWebmail(row)}
+                    />
+                  </Tooltip>
                   <Tooltip title="Edit mailbox">
                     <Button type="text" icon={<EditOutlined />} onClick={() => setEditTarget(row)} />
                   </Tooltip>

@@ -225,6 +225,7 @@ export function useCreateMailbox(): UseMutationResult<
     },
     onSuccess: (_data, { domainId }) => {
       qc.invalidateQueries({ queryKey: ["list", "mailboxes", domainId] });
+      qc.invalidateQueries({ queryKey: ["admin", "mailboxes"] });
     },
   });
 }
@@ -241,6 +242,7 @@ export function useDeleteMailbox(): UseMutationResult<
     },
     onSuccess: (_data, { domainId }) => {
       qc.invalidateQueries({ queryKey: ["list", "mailboxes", domainId] });
+      qc.invalidateQueries({ queryKey: ["admin", "mailboxes"] });
     },
   });
 }
