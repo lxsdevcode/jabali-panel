@@ -885,6 +885,29 @@ install_base_packages() {
   # their GPG keys. Minimal LXC containers often ship without gnupg. Two
   # apt runs total (this bootstrap + the big install below) is still a
   # huge win over the pre-consolidation 6 calls.
+  # Debian installed from a DVD/ISO leaves a `deb cdrom:` line in
+  # /etc/apt/sources.list. Once the media is ejected, `apt-get update`
+  # fails with exit 100 ("The repository 'cdrom://[...] trixie Release'
+  # does not have a Release file"), which kills the whole install before
+  # a single package is fetched — nothing ends up listening on :8443
+  # (GH #207). Comment out any cdrom sources so apt only hits the network
+  # mirrors. Covers both the legacy one-line format and deb822 *.sources.
+  if grep -rqsE '^[[:space:]]*deb(-src)?[[:space:]]+cdrom:' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
+    _log "disabling cdrom apt source(s) left by the DVD install (GH #207)"
+    sed -i -E 's|^([[:space:]]*deb(-src)?[[:space:]]+cdrom:)|#\1|' /etc/apt/sources.list 2>/dev/null || true
+    for _f in /etc/apt/sources.list.d/*.list; do
+      [[ -e "$_f" ]] || continue
+      sed -i -E 's|^([[:space:]]*deb(-src)?[[:space:]]+cdrom:)|#\1|' "$_f" 2>/dev/null || true
+    done
+  fi
+  for _f in /etc/apt/sources.list.d/*.sources; do
+    [[ -e "$_f" ]] || continue
+    if grep -qiE '^[[:space:]]*URIs:[[:space:]]*cdrom:' "$_f" 2>/dev/null; then
+      _log "disabling deb822 cdrom apt source $_f (GH #207)"
+      mv "$_f" "${_f}.disabled-by-jabali" 2>/dev/null || true
+    fi
+  done
+
   _spin "apt update (bootstrap)" \
     apt-get update -qq
   _spin "apt install bootstrap (gnupg + ca-certificates + curl)" \
