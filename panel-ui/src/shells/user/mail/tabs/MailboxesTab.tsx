@@ -136,7 +136,17 @@ export const MailboxesTab = () => {
   };
 
   const openWebmail = (row: MailboxRow) => {
+    // Sever the opener link so the webmail tab can't reverse-tabnab the panel.
+    // (noopener can't be passed to window.open here — it returns null and
+    // breaks the synchronous-popup-then-set-href pattern that dodges blockers.)
     const popup = window.open("about:blank", "_blank");
+    if (popup) {
+      try {
+        popup.opener = null;
+      } catch {
+        // older Safari — best effort
+      }
+    }
     ssoMutation.mutate(
       { id: row.id },
       {
