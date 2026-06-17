@@ -503,10 +503,7 @@ func (h *sslHandler) enrichCertRows(ctx context.Context, certs []repository.SSLC
 			row.SANs = []string{c.DomainName}
 		case strings.HasPrefix(c.ID, "mail-cert:"):
 			row.Service = "Mail (SMTPS, IMAPS)"
-			// The row's DomainName is the cert's primary hostname
-			// (mail.<base>); mailCertSANs wants the BASE domain or it
-			// double-prefixes (mail.mail.<base>). Strip the leading label.
-			row.SANs = mailCertSANs(strings.TrimPrefix(c.DomainName, "mail."))
+			row.SANs = h.mailCertSANs(ctx, c)
 		default:
 			row.Service = "HTTPS"
 			row.SANs = h.webCertSANs(ctx, c)
@@ -547,14 +544,32 @@ func webCertSANsForDomain(d *models.Domain) []string {
 	return sans
 }
 
-// mailCertSANs mirrors the agent's mailSANHostnames — the 4 hostnames a
-// per-domain Stalwart mail cert covers, in stable order.
-func mailCertSANs(domain string) []string {
-	domain = strings.TrimSpace(strings.ToLower(domain))
-	return []string{
-		"mail." + domain,
-		"autoconfig." + domain,
-		"autodiscover." + domain,
-		"mta-sts." + domain,
+// mailCertSANs returns the SAN list of a per-domain Stalwart mail cert.
+// The row's DomainName is the cert's primary hostname (mail.<base>); we
+// strip that label to get the base domain. mta-sts.<base> is included
+// ONLY when MTA-STS is enabled — its DNS record exists only then, so the
+// agent's issuance drops it otherwise (selectEffectiveSANs), and showing
+// it would over-report (GH #195, johnnyq). Falls back to no-mta-sts when
+// the domain can't be loaded.
+func (h *sslHandler) mailCertSANs(ctx context.Context, c repository.SSLCertificateWithDomain) []string {
+	base := strings.TrimPrefix(c.DomainName, "mail.")
+	mtasts := false
+	if h.cfg.Domains != nil {
+		if d, err := h.cfg.Domains.FindByID(ctx, c.DomainID); err == nil && d != nil {
+			mtasts = d.MTASTSEnabled
+		}
 	}
+	return mailCertSANsForBase(base, mtasts)
+}
+
+// mailCertSANsForBase is the pure SAN policy (extracted for testing) —
+// mail/autoconfig/autodiscover always (their CNAMEs ship with email),
+// plus mta-sts only when enabled.
+func mailCertSANsForBase(base string, mtastsEnabled bool) []string {
+	base = strings.TrimSpace(strings.ToLower(base))
+	sans := []string{"mail." + base, "autoconfig." + base, "autodiscover." + base}
+	if mtastsEnabled {
+		sans = append(sans, "mta-sts."+base)
+	}
+	return sans
 }

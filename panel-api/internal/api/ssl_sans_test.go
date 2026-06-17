@@ -43,9 +43,15 @@ func TestWebCertSANsForDomain(t *testing.T) {
 	}
 }
 
-func TestMailCertSANs(t *testing.T) {
-	want := []string{"mail.example.com", "autoconfig.example.com", "autodiscover.example.com", "mta-sts.example.com"}
-	if got := mailCertSANs("Example.COM"); !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v want %v", got, want)
+func TestMailCertSANsForBase(t *testing.T) {
+	// MTA-STS off → no mta-sts SAN.
+	want := []string{"mail.example.com", "autoconfig.example.com", "autodiscover.example.com"}
+	if got := mailCertSANsForBase("Example.COM", false); !reflect.DeepEqual(got, want) {
+		t.Errorf("off: got %v want %v", got, want)
+	}
+	// MTA-STS on → mta-sts SAN appended.
+	wantOn := append(append([]string{}, want...), "mta-sts.example.com")
+	if got := mailCertSANsForBase("example.com", true); !reflect.DeepEqual(got, wantOn) {
+		t.Errorf("on: got %v want %v", got, wantOn)
 	}
 }
