@@ -51,6 +51,16 @@ type WebmailSSOHandlerConfig struct {
 	Log *slog.Logger
 }
 
+// webmailExpiredHTML is the friendly landing shown when an SSO token is
+// unknown / expired / already-consumed (single-use). Self-contained (no
+// external assets) since it renders on the per-tenant mail vhost. Links
+// back to the webmail login ("/" on mail.<domain>) so the user can sign in
+// manually or return to the panel for a fresh link.
+const webmailExpiredHTML = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign-in link expired</title>
+<style>body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;min-height:100vh;margin:0;align-items:center;justify-content:center;padding:24px}.card{max-width:420px;text-align:center}.card h1{font-size:20px;margin:0 0 12px}.card p{color:#94a3b8;line-height:1.5;margin:0 0 20px}.card a{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}</style>
+</head><body><div class="card"><h1>Sign-in link expired</h1><p>This webmail sign-in link was already used or has expired. Open the Jabali panel and click <strong>Webmail</strong> again to get a fresh link.</p><a href="/">Go to webmail login</a></div></body></html>`
+
 // RegisterWebmailSSORoutes mounts GET /sso/webmail at the top-level
 // engine root (not under /api/v1) because Bulwark / Stalwart vhosts
 // don't share the API prefix and the handler is designed to be
@@ -106,7 +116,7 @@ func (h *webmailSSOHandler) land(c *gin.Context) {
 		if errors.Is(err, repository.ErrNotFound) {
 			// Unknown / expired / already-consumed — collapse to one
 			// response so an attacker can't tell them apart.
-			c.String(http.StatusForbidden, "token is invalid or expired")
+			c.Data(http.StatusForbidden, "text/html; charset=utf-8", []byte(webmailExpiredHTML))
 			return
 		}
 		h.logErr("webmail sso: peek token", err)
