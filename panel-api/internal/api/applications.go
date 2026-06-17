@@ -86,14 +86,14 @@ type applicationsHandler struct{ cfg ApplicationHandlerConfig }
 // We project the App descriptor onto a dedicated struct so internal
 // fields (AgentInstallCmd, etc.) never leak to the UI.
 type registryEntry struct {
-	Name                 string                     `json:"name"`
-	DisplayName          string                     `json:"display_name"`
-	Icon                 string                     `json:"icon,omitempty"`
-	Description          string                     `json:"description,omitempty"`
-	DefaultSubdirectory  string                     `json:"default_subdirectory"`
-	RequiresDB           bool                       `json:"requires_db"`
-	SupportedPHPVersions []string                   `json:"supported_php_versions,omitempty"`
-	InstallParamSchema   map[string]apps.ParamSpec  `json:"install_param_schema,omitempty"`
+	Name                 string                    `json:"name"`
+	DisplayName          string                    `json:"display_name"`
+	Icon                 string                    `json:"icon,omitempty"`
+	Description          string                    `json:"description,omitempty"`
+	DefaultSubdirectory  string                    `json:"default_subdirectory"`
+	RequiresDB           bool                      `json:"requires_db"`
+	SupportedPHPVersions []string                  `json:"supported_php_versions,omitempty"`
+	InstallParamSchema   map[string]apps.ParamSpec `json:"install_param_schema,omitempty"`
 }
 
 func (h *applicationsHandler) registry(c *gin.Context) {
@@ -190,7 +190,6 @@ func (h *applicationsHandler) create(c *gin.Context) {
 		UpdatedAt:     install.UpdatedAt,
 	})
 }
-
 
 // validateInstallParams enforces a descriptor's InstallParamSchema
 // against the JSON params blob the UI sent. Rejects missing required
@@ -316,11 +315,13 @@ type provisionedDB struct {
 // wordPressHandler.create: panel rows + MariaDB CREATE DATABASE/USER/
 // GRANT via the agent. Each step rolls back the prior ones on failure
 // before returning the error.
-func provisionDBChain(ctx context.Context, cfg ApplicationHandlerConfig, userID, osUser, dbPassword string) (provisionedDB, error) {
+func provisionDBChain(ctx context.Context, cfg ApplicationHandlerConfig, userID, osUser, fqdn, subdir, dbPassword string) (provisionedDB, error) {
 	now := time.Now().UTC()
+	dbName, dbUsername, nameErr := allocateAppDBNames(ctx, cfg.Databases, cfg.DatabaseUsers, userID, osUser, fqdn, subdir)
+	if nameErr != nil {
+		return provisionedDB{}, fmt.Errorf("allocate db names: %w", nameErr)
+	}
 	dbID := ids.NewULID()
-	dbSuffix := strings.ToLower(dbID[len(dbID)-6:])
-	dbName := osUser + "_wp_" + dbSuffix
 	database := &models.Database{
 		ID:        dbID,
 		UserID:    userID,
@@ -336,8 +337,6 @@ func provisionDBChain(ctx context.Context, cfg ApplicationHandlerConfig, userID,
 	}
 
 	dbUserID := ids.NewULID()
-	dbUserSuffix := strings.ToLower(dbUserID[len(dbUserID)-6:])
-	dbUsername := osUser + "_wp_" + dbUserSuffix
 	hash, err := bcrypt.GenerateFromPassword([]byte(dbPassword), bcrypt.DefaultCost)
 	if err != nil {
 		cfg.Databases.Delete(ctx, dbID)
@@ -635,21 +634,21 @@ func createJoomlaInstallAndKickAgent(parentCtx context.Context, args joomlaKickA
 	}
 
 	agentResp, err := cfg.Agent.Call(ctx, "app.install", map[string]any{
-		"app_type":         "joomla",
-		"os_user":          args.OSUser,
-		"docroot":          args.DocRoot,
-		"subdirectory":     args.Subdirectory,
-		"site_url":         args.SiteURL,
-		"db_name":          args.DBName,
-		"db_user":          args.DBUser,
-		"db_password":      args.DBPassword,
-		"db_host":          "localhost",
-		"site_title":       args.SiteTitle,
-		"admin_user":       args.AdminUser,
-		"admin_pass":       args.AdminPass,
-		"admin_email":      args.AdminEmail,
-		"admin_full_name":  args.AdminFullName,
-		"use_www":          args.UseWWW,
+		"app_type":        "joomla",
+		"os_user":         args.OSUser,
+		"docroot":         args.DocRoot,
+		"subdirectory":    args.Subdirectory,
+		"site_url":        args.SiteURL,
+		"db_name":         args.DBName,
+		"db_user":         args.DBUser,
+		"db_password":     args.DBPassword,
+		"db_host":         "localhost",
+		"site_title":      args.SiteTitle,
+		"admin_user":      args.AdminUser,
+		"admin_pass":      args.AdminPass,
+		"admin_email":     args.AdminEmail,
+		"admin_full_name": args.AdminFullName,
+		"use_www":         args.UseWWW,
 	})
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("agent install failed: %v", err), 1024)
@@ -876,8 +875,6 @@ func createPrestaShopInstallAndKickAgent(parentCtx context.Context, args prestas
 	}
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
-
-
 
 // pickAdminUsername prefers the agent-detected WP admin login (from
 // wp_users) over the operator's email. Empty / missing detection

@@ -162,7 +162,7 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 		if adminPassword == "" {
 			adminPassword = ids.NewULID()
 		}
-		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, adminPassword)
+		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, domain.Name, p.Subdirectory, adminPassword)
 		if err != nil {
 			slog.ErrorContext(ctx, "applications create: provision db chain", "err", err)
 			return nil, newInstallErr(http.StatusBadGateway, "agent_failed", err.Error())
@@ -220,18 +220,18 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 	snapshot := *install
 
 	adminPassword = dispatchInstallKicker(ctx, descriptor.Name, kickContext{
-		InstallID:        installID,
-		OSUser:           osUser,
-		DocRoot:          domain.DocRoot,
-		Subdirectory:     install.Subdirectory,
-		SiteURL:          siteURL,
-		AdminUsername:    install.AdminUsername,
-		AdminEmail:       install.AdminEmail,
-		Locale:           install.Locale,
-		UseWWW:           install.UseWWW,
-		Chain:            chain,
-		Params:           p.Params,
-		DBPassword:       adminPassword,
+		InstallID:     installID,
+		OSUser:        osUser,
+		DocRoot:       domain.DocRoot,
+		Subdirectory:  install.Subdirectory,
+		SiteURL:       siteURL,
+		AdminUsername: install.AdminUsername,
+		AdminEmail:    install.AdminEmail,
+		Locale:        install.Locale,
+		UseWWW:        install.UseWWW,
+		Chain:         chain,
+		Params:        p.Params,
+		DBPassword:    adminPassword,
 	}, deps)
 
 	return &InstallResult{Install: &snapshot, AdminPassword: adminPassword}, nil
@@ -267,20 +267,20 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 	switch appName {
 	case "wordpress":
 		go createInstallAndKickAgent(ctx, installKickArgs{
-			InstallID:        k.InstallID,
-			OSUser:           k.OSUser,
-			DocRoot:          k.DocRoot,
-			DBName:           k.Chain.DBName,
-			DBUser:           k.Chain.DBUsername,
-			DBPassword:       adminPassword,
-			SiteURL:          k.SiteURL,
-			SiteTitle:        paramOr(k.Params, "site_title", "My WordPress Site"),
-			AdminUsername:    k.AdminUsername,
-			AdminPassword:    adminPassword,
-			AdminEmail:       k.AdminEmail,
-			Locale:           k.Locale,
-			Subdirectory:     k.Subdirectory,
-			UseWWW:           k.UseWWW,
+			InstallID:     k.InstallID,
+			OSUser:        k.OSUser,
+			DocRoot:       k.DocRoot,
+			DBName:        k.Chain.DBName,
+			DBUser:        k.Chain.DBUsername,
+			DBPassword:    adminPassword,
+			SiteURL:       k.SiteURL,
+			SiteTitle:     paramOr(k.Params, "site_title", "My WordPress Site"),
+			AdminUsername: k.AdminUsername,
+			AdminPassword: adminPassword,
+			AdminEmail:    k.AdminEmail,
+			Locale:        k.Locale,
+			Subdirectory:  k.Subdirectory,
+			UseWWW:        k.UseWWW,
 		}, deps)
 	case "drupal":
 		drupalPass := paramOr(k.Params, "admin_password", "")

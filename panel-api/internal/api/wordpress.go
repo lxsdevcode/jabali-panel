@@ -243,7 +243,7 @@ func (h *wordPressHandler) create(c *gin.Context) {
 	// database. Unique by construction ((domain, subdirectory) is unique);
 	// a short suffix is appended only if truncation/sanitisation collides.
 	dbID := ids.NewULID()
-	dbName, dbUsername, nameErr := h.wpDBNames(ctx, targetUserID, osUser, domain.Name, req.Subdirectory)
+	dbName, dbUsername, nameErr := allocateAppDBNames(ctx, h.cfg.Databases, h.cfg.DatabaseUsers, targetUserID, osUser, domain.Name, req.Subdirectory)
 	if nameErr != nil {
 		slog.ErrorContext(ctx, "wordpress create: db name allocation failed", "err", nameErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
@@ -1338,14 +1338,14 @@ func isValidEmail(email string) bool {
 	return re.MatchString(email)
 }
 
-// wpDBNames builds the FQDN-based database + user names for a WordPress
+// allocateAppDBNames builds the FQDN-based database + user names for a WordPress
 // install (GH #196): <osuser>_wp_<fqdn>[_<subdir>] with `_db` / `_user`
 // suffixes. Dots and any non-[a-z0-9] characters become underscores (the
 // DB-user validator forbids dashes), names are lowercased and truncated to
 // the 64-char MariaDB identifier limit. (domain, subdirectory) is unique so
 // the readable name is normally free; if a collision survives sanitisation
 // or truncation, a short random suffix is appended.
-func (h *wordPressHandler) wpDBNames(ctx context.Context, userID, osUser, fqdn, subdir string) (dbName, dbUser string, err error) {
+func allocateAppDBNames(ctx context.Context, dbs repository.DatabaseRepository, users repository.DatabaseUserRepository, userID, osUser, fqdn, subdir string) (dbName, dbUser string, err error) {
 	label := sanitizeDBLabel(fqdn)
 	if subdir != "" {
 		if sub := sanitizeDBLabel(subdir); sub != "" {
@@ -1361,11 +1361,11 @@ func (h *wordPressHandler) wpDBNames(ctx context.Context, userID, osUser, fqdn, 
 		}
 		db := fitDBName(prefix, l, "_db")
 		usr := fitDBName(prefix, l, "_user")
-		dbTaken, e := h.cfg.Databases.ExistsByUserAndName(ctx, userID, db)
+		dbTaken, e := dbs.ExistsByUserAndName(ctx, userID, db)
 		if e != nil {
 			return "", "", e
 		}
-		usrTaken, e := h.cfg.DatabaseUsers.ExistsByUserAndUsername(ctx, userID, usr)
+		usrTaken, e := users.ExistsByUserAndUsername(ctx, userID, usr)
 		if e != nil {
 			return "", "", e
 		}
@@ -1373,7 +1373,7 @@ func (h *wordPressHandler) wpDBNames(ctx context.Context, userID, osUser, fqdn, 
 			return db, usr, nil
 		}
 	}
-	return "", "", fmt.Errorf("wpDBNames: could not allocate a free name for %q", fqdn)
+	return "", "", fmt.Errorf("allocateAppDBNames: could not allocate a free name for %q", fqdn)
 }
 
 // sanitizeDBLabel lowercases s and maps every non-[a-z0-9] rune to '_',
