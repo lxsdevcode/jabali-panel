@@ -198,7 +198,7 @@ export function GroupsTab() {
 
 // --- Create / edit drawer ---------------------------------------------
 
-function GroupDrawer({
+export function GroupDrawer({
   open,
   domainId,
   group,
@@ -336,7 +336,7 @@ function GroupDrawer({
 
 // --- Members modal -----------------------------------------------------
 
-function MembersModal({ group, onClose }: { group: MailGroup; onClose: () => void }) {
+export function MembersModal({ group, onClose }: { group: MailGroup; onClose: () => void }) {
   const { message } = App.useApp();
   const { data: detail, isLoading } = useMailGroup(group.id);
   const { items: mailboxes } = useMailboxes({

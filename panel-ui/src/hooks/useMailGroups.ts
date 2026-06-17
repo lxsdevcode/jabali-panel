@@ -164,6 +164,26 @@ export function useSetMailGroupMembers(): UseMutationResult<
   });
 }
 
+// useAddMailboxToGroup adds a single mailbox to a group without touching
+// existing members — used by the create-mailbox wizard's "add to groups"
+// step (POST /mailgroups/:gid/members/:mbid).
+export function useAddMailboxToGroup(): UseMutationResult<
+  void,
+  unknown,
+  { groupId: string; mailboxId: string; domainId?: string }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, mailboxId }) => {
+      await apiClient.post(`/mailgroups/${groupId}/members/${mailboxId}`);
+    },
+    onSuccess: (_d, { groupId, domainId }) => {
+      invalidateGroups(qc, domainId);
+      qc.invalidateQueries({ queryKey: ["one", "mailgroup", groupId] });
+    },
+  });
+}
+
 export function useDeleteMailGroup(): UseMutationResult<
   void,
   unknown,

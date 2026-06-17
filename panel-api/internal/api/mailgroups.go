@@ -60,6 +60,7 @@ func RegisterMailGroupRoutes(g *gin.RouterGroup, cfg MailGroupHandlerConfig) {
 	grp.GET("/:gid", h.get)
 	grp.PATCH("/:gid", h.update)
 	grp.PUT("/:gid/members", h.setMembers)
+	grp.POST("/:gid/members/:mbid", h.addMember)
 	grp.DELETE("/:gid", h.delete)
 }
 
@@ -432,6 +433,41 @@ func (h *mailGroupHandler) setMembers(c *gin.Context) {
 	})
 	_ = dom
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"member_count": len(desiredIDs)}})
+}
+
+// addMember adds a single mailbox to a group without disturbing existing
+// members (used by the create-mailbox wizard's "add to groups" step). The
+// member-set agent call carries only the added email.
+func (h *mailGroupHandler) addMember(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	g, _, ok := h.loadGroupWithAuth(c, c.Param("gid"), claims)
+	if !ok {
+		return
+	}
+	mb, err := h.cfg.Mailboxes.FindByID(ctx, c.Param("mbid"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_member", "detail": "mailbox not found"})
+		return
+	}
+	if mb.DomainID != g.DomainID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "member_wrong_domain"})
+		return
+	}
+	if err := h.cfg.Groups.AddMember(ctx, g.ID, mb.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	h.notifyAgent(ctx, "mailgroup.members_set", map[string]any{
+		"group_email":   g.EmailCached,
+		"member_emails": []string{mb.EmailCached},
+		"remove_emails": []string{},
+	})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *mailGroupHandler) delete(c *gin.Context) {

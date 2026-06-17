@@ -16,6 +16,7 @@ import {
   Table,
   Tag,
   Tooltip,
+  Tabs,
   Typography,
 } from "antd";
 import { DeleteOutlined, EditOutlined, KeyOutlined, MailOutlined, PlusOutlined } from "@icons";
@@ -30,6 +31,7 @@ import {
 import { useListQuery } from "../../../hooks/useQueries";
 import type { Domain } from "../../user/domains/UserDomainList";
 import { EditMailboxModal } from "../../../components/mail/EditMailboxModal";
+import { AdminGroupsTab } from "./AdminGroupsTab";
 import { CreateMailboxWizardModal } from "../../user/mail/CreateMailboxWizardModal";
 import { DatabaseUserPasswordModal } from "../../../components/DatabaseUserPasswordModal";
 import { PasswordInput } from "../../../components/PasswordInput";
@@ -91,6 +93,7 @@ export function AdminMailPage() {
     );
   };
 
+  const [tab, setTab] = useState<string>("mailboxes");
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AdminMailbox | null>(null);
   const [resetTarget, setResetTarget] = useState<AdminMailbox | null>(null);
@@ -136,6 +139,16 @@ export function AdminMailPage() {
 
   return (
     <>
+      <Tabs
+        activeKey={tab}
+        onChange={setTab}
+        items={[
+          { key: "mailboxes", label: "Mailboxes" },
+          { key: "groups", label: "Groups" },
+        ]}
+      />
+      {tab === "groups" && <AdminGroupsTab />}
+      {tab === "mailboxes" && (
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <Typography.Title level={3} style={{ margin: 0 }}>
@@ -270,6 +283,7 @@ export function AdminMailPage() {
           ]}
         />
       </Space>
+      )}
 
       <CreateMailboxWizardModal
         open={createOpen}

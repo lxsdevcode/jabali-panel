@@ -13,6 +13,7 @@
 import { Alert, Button, Drawer, Form, Grid, Input, InputNumber, Select, Space } from "antd";
 
 import { PasswordInput } from "../../../components/PasswordInput";
+import { useMailGroups, useAddMailboxToGroup } from "../../../hooks/useMailGroups";
 import {
   useCreateMailbox,
   type CreateMailboxResponse,
@@ -45,6 +46,7 @@ type FormValues = {
   display_name?: string;
   password?: string;
   quota_mib?: number;
+  group_ids?: string[];
 };
 
 export const CreateMailboxWizardModal = ({
@@ -63,6 +65,8 @@ export const CreateMailboxWizardModal = ({
   // value, so the cascading fields stay hidden on first render.
   const watchedDomainId = Form.useWatch("domain_id", form);
   const chosenDomain = domains.find((d) => d.id === watchedDomainId);
+  const { data: domainGroups } = useMailGroups(watchedDomainId);
+  const addToGroup = useAddMailboxToGroup();
 
   const onOk = async () => {
     // validateFields rejects when required rules fail; AntD surfaces
@@ -85,6 +89,15 @@ export const CreateMailboxWizardModal = ({
           quota_bytes: parseQuotaInput(values.quota_mib),
         },
       });
+      if (values.group_ids?.length) {
+        await Promise.all(
+          values.group_ids.map((gid) =>
+            addToGroup
+              .mutateAsync({ groupId: gid, mailboxId: resp.id, domainId: values.domain_id })
+              .catch(() => {}),
+          ),
+        );
+      }
       form.resetFields();
       onCreated(resp);
     } catch (err) {
@@ -202,6 +215,22 @@ export const CreateMailboxWizardModal = ({
                 style={{ width: 200 }}
               />
             </Form.Item>
+
+            {domainGroups && domainGroups.length > 0 && (
+              <Form.Item
+                label="Add to groups"
+                name="group_ids"
+                tooltip="The mailbox joins these groups and gains their shared mailbox, calendar, address book and files."
+              >
+                <Select
+                  mode="multiple"
+                  allowClear
+                  placeholder="Select groups (optional)"
+                  optionFilterProp="label"
+                  options={domainGroups.map((g) => ({ value: g.id, label: g.display_name || g.email }))}
+                />
+              </Form.Item>
+            )}
           </>
         )}
 
