@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/appseccfg"
@@ -104,8 +105,41 @@ func (r *Reconciler) reconcileWebmailVhosts(ctx context.Context) {
 	}
 }
 
+// panelPrimaryWebmailSSLPaths returns the cert/key for the panel-primary
+// domain's mail vhost. That domain has no per-domain ssl_certificates row;
+// its cert is the M32 panel-cert system's on-disk files. Prefer the
+// dedicated panel-mail cert (Let's Encrypt on a real hostname); fall back
+// to the panel hostname cert (self-signed on a .local/internal host, whose
+// SAN already covers mail.<hostname> per M6.4). Empty when neither exists.
+func panelPrimaryWebmailSSLPaths() (string, string, bool) {
+	for _, pair := range [2][2]string{
+		{"/etc/jabali/tls/panel-mail.crt", "/etc/jabali/tls/panel-mail.key"},
+		{"/etc/jabali/tls/panel.crt", "/etc/jabali/tls/panel.key"},
+	} {
+		if fileReadable(pair[0]) && fileReadable(pair[1]) {
+			return pair[0], pair[1], true
+		}
+	}
+	return "", "", false
+}
+
+func fileReadable(p string) bool {
+	if _, err := os.Stat(p); err != nil {
+		return false
+	}
+	return true
+}
+
 func (r *Reconciler) applyWebmailVhost(ctx context.Context, d *models.Domain) {
 	certPath, keyPath, ok := r.webmailSSLPaths(ctx, d.ID)
+	if !ok && d.IsPanelPrimary {
+		// The panel-primary domain (e.g. mx.jabali-panel.com) has no
+		// per-domain ssl_certificates row — its mail cert lives in the
+		// M32 panel-cert system on disk. Without this fallback the
+		// panel-hostname webmail vhost (mail.<panel-host>) is never
+		// built and the host falls to the default landing.
+		certPath, keyPath, ok = panelPrimaryWebmailSSLPaths()
+	}
 	if !ok {
 		// No live cert on disk yet — the domain's ACME issuance may be
 		// in-flight or M5 might not have run. Skip this tick; the next
