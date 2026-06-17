@@ -184,6 +184,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		databaseUserGrantRepo := repository.NewDatabaseUserGrantRepository(sharedDB)
 		dbAdminRepo := repository.NewDBAdminRepository(sharedDB)
 		mailboxRepo := repository.NewMailboxRepository(sharedDB)
+		mailGroupRepo := repository.NewMailGroupRepository(sharedDB)
 		mailboxSSOTokenRepo := repository.NewMailboxSSOTokenRepository(sharedDB)
 
 		phpMyAdminSSOTokenRepo := repository.NewPhpMyAdminSSOTokenRepository(sharedDB)
@@ -347,6 +348,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		deps.DatabaseUsers = databaseUserRepo
 		deps.DatabaseUserGrants = databaseUserGrantRepo
 		deps.Mailboxes = mailboxRepo
+		deps.MailGroups = mailGroupRepo
 		deps.MailboxSSOTokens = mailboxSSOTokenRepo
 		// M6.5 repos. Each step's wave adds the concrete constructor as
 		// it ships; Autoresponders ships in Step 3, Forwarders in Step 5,

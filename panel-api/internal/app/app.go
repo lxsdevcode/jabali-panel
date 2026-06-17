@@ -43,6 +43,7 @@ type Deps struct {
 	DatabaseUserGrants  repository.DatabaseUserGrantRepository
 	DBAdmin             repository.DBAdminRepository
 	Mailboxes           repository.MailboxRepository
+	MailGroups          repository.MailGroupRepository
 	MailboxSSOTokens    repository.MailboxSSOTokenRepository
 	PhpMyAdminSSOTokens repository.PhpMyAdminSSOTokenRepository
 	// M37 Phase 4: Adminer SSO bridge for both engines.
@@ -592,6 +593,14 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Agent:     deps.Agent,
 				SSOKey:    deps.SSOKey,
 				SSOTokens: deps.MailboxSSOTokens,
+			})
+		}
+		if deps.MailGroups != nil && deps.Mailboxes != nil && deps.Domains != nil {
+			api.RegisterMailGroupRoutes(v1, api.MailGroupHandlerConfig{
+				Groups:    deps.MailGroups,
+				Mailboxes: deps.Mailboxes,
+				Domains:   deps.Domains,
+				Agent:     deps.Agent,
 			})
 		}
 		if deps.Domains != nil {
