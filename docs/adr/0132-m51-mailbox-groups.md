@@ -1,8 +1,8 @@
 # ADR-0132: M51 Mailbox User Groups — DB-as-truth groups, Stalwart registry projection, native resource sharing
 
-**Date**: 2026-06-17
-**Status**: Proposed
-**Deciders**: shuki + Claude
+**Date**: 2026-06-17 (accepted 2026-06-18)
+**Status**: Accepted
+**Deciders**: shuki + Claude (receive mechanism via @johnnyq doc pointer, #200/#201)
 **Related**: ADR-0042 (mailbox schema), ADR-0045 (Stalwart v0.16 SQL-directory, registry-as-projection), ADR-0002 (DB is source of truth), ADR-0004 (reconciler-driven convergence), #199 alias-identity finding
 
 > Forward-looking. Blueprint: `plans/m51-mailbox-groups.md`. GitHub issue
@@ -132,3 +132,30 @@ calendar/addressbook/files, with the SMTP delivery confirmed in the live smoke.
   shared mailbox (one inbox, shared) not per-member fan-out.
 - **jabali-managed per-resource ACLs** — rejected: redundant with Stalwart's
   membership-grants-access model; more code, more drift.
+
+
+## Resolution — shared-mailbox RECEIVE (2026-06-18)
+
+The blueprint flagged inbound SMTP to a group as the one unverified leg. First
+probes suggested groups can't receive (Stalwart refused delivery to a `@type:Group`
+with "Account ID from directory does not correspond to a user account"). @johnnyq
+(#200) pointed at the Stalwart group `emails`/`members` model. That property is NOT
+settable via the JMAP management API on 0.16.9 (rejected), but the SQL directory
+resolves it. The working mechanism, verified live on .14:
+
+- `queryRecipient` expands a group address to its **member rows**
+  (`mail_groups ⋈ mail_group_members ⋈ mailboxes`). Returning real-user rows makes
+  Stalwart's recipient validation pass — returning the group's *own* address was the
+  cause of the earlier "not a user account" refusal.
+- Stalwart then delivers to the **group account's own inbox** (resolved from the
+  address; NOT fanned out to members). It's a SHARED INBOX, not a distribution list.
+- Members read it via `memberGroupIds`: the group account appears in their JMAP
+  session and they `Email/query` its inbox — same membership edge that grants the
+  shared calendar/address book/files + the send-as Identity.
+
+So Decision 3 (group-owned shared inbox) stands and is now proven. Decision 4 is
+amended: `queryRecipient` does member-expansion (not bare group-address resolution);
+`queryMemberOf` stays null (membership read-access comes from the registry, not the
+directory). The Stalwart ro-user also needs `SELECT` on `mail_group_members` (a
+missing grant surfaced as SMTP `451 Failed to verify address`). Receive + send-as +
+shared calendar/address book/files all work on one registry Group.
