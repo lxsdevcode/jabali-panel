@@ -364,15 +364,15 @@ func flarumInstallHandler(ctx context.Context, params json.RawMessage) (any, err
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
 
-	// baseUrl must be the FULL public forum URL, including the subdir.
+	// baseUrl is the FULL public forum URL. site_url already includes
+	// the subdir (buildSiteURL appends it panel-side), so DON'T append
+	// it again — doing so yields .../forum/forum and Flarum 404s its
+	// own homepage (the app mounts at a path nginx never serves).
 	dbHost := req.DBHost
 	if dbHost == "" {
 		dbHost = "localhost"
 	}
 	baseURL := strings.TrimRight(req.SiteURL, "/")
-	if subdir != "" {
-		baseURL = baseURL + "/" + subdir
-	}
 
 	configPath := filepath.Join(tmpDir, "flarum-install.yml")
 	if err := writeFlarumInstallerYAML(req, configPath, baseURL, dbHost); err != nil {
