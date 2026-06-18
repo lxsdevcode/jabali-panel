@@ -34,6 +34,9 @@ type ApplicationHandlerConfig struct {
 	Users               repository.UserRepository
 	Packages            repository.PackageRepository
 	Agent               agent.AgentInterface
+	// CronJobs lets app installers (ITFlow #206) create + tear down the
+	// app-managed cron jobs an app needs. Optional; nil disables auto-cron.
+	CronJobs            repository.CronJobRepository
 	// Apps is the M19 application registry. Nil-safe: the legacy
 	// /wordpress-installs handlers in this file don't read it (they
 	// hard-code the WordPress shape); only the new /applications
@@ -662,7 +665,7 @@ func (h *wordPressHandler) delete(c *gin.Context) {
 	// install_id is plumbed through so deleters that opt into the
 	// managed-data-dir contract (Moodle/Chamilo) can recompute the
 	// /home/<user>/<install_id>-data path and rm it.
-	go createDeleteAndKickAgent(ctx, installID, install.AppType, install.Subdirectory, install.DBIDOr(), dbUserID, osUser, domain.DocRoot, domain.Name, dbUserUsername, h.cfg)
+	go createDeleteAndKickAgent(ctx, installID, install.UserID, install.AppType, install.Subdirectory, install.DBIDOr(), dbUserID, osUser, domain.DocRoot, domain.Name, dbUserUsername, h.cfg)
 
 	c.JSON(http.StatusAccepted, gin.H{"status": "deleting"})
 }
@@ -1077,7 +1080,7 @@ func createInstallAndKickAgent(parentCtx context.Context, args installKickArgs, 
 // database user, grants, install record). If the agent file-removal
 // fails we flip status to failed but still allow a future retry.
 // Non-empty osUser+docroot are required; the handler pre-fills them.
-func createDeleteAndKickAgent(parentCtx context.Context, installID, appType, subdirectory, databaseID, dbUserID, osUser, docroot, domainName, dbUserUsername string, cfg ApplicationHandlerConfig) {
+func createDeleteAndKickAgent(parentCtx context.Context, installID, userID, appType, subdirectory, databaseID, dbUserID, osUser, docroot, domainName, dbUserUsername string, cfg ApplicationHandlerConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -1116,6 +1119,12 @@ func createDeleteAndKickAgent(parentCtx context.Context, installID, appType, sub
 		errMsg := truncateError(fmt.Sprintf("agent delete failed: %v", err), 1024)
 		cfg.ApplicationInstalls.UpdateStatus(ctx, installID, "failed", &errMsg, nil)
 		return
+	}
+
+	// ITFlow auto-creates 3 cron jobs at install — tear them down now
+	// (matched by command path; crons aren't FK-linked to the install).
+	if appType == "itflow" {
+		removeITFlowCrons(ctx, cfg, userID, osUser, itflowInstallPath(docroot, subdirectory))
 	}
 
 	// Best-effort DB-side cleanup. Drop the mariadb database + user on the

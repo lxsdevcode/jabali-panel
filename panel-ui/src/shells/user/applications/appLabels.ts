@@ -11,4 +11,5 @@ export const APP_TYPE_LABELS: Record<string, string> = {
   opencart: "OpenCart",
   prestashop: "PrestaShop",
   flarum: "Flarum",
+  itflow: "ITFlow",
 };

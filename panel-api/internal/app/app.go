@@ -978,6 +978,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Packages:            deps.Packages,
 				Agent:               deps.Agent,
 				Apps:                deps.Apps,
+				CronJobs:            deps.CronJobs,
 			}
 			api.RegisterApplicationRoutes(v1, appCfg)
 

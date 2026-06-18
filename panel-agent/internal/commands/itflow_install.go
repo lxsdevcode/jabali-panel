@@ -1,0 +1,242 @@
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+)
+
+// itflow_install.go — ITFlow (MSP ERP) one-click installer (GH #206).
+//
+// ITFlow is distributed via git (no release tarball; it self-updates from
+// the admin UI by `git pull`), so this is the first git-clone app. The
+// upstream headless flow (confirmed with the ITFlow maintainer on #206):
+//
+//   1. git clone master into the docroot (as the site user, so the .git
+//      tree the in-app updater pulls is user-owned).
+//   2. php scripts/setup_cli.php --non-interactive ... — writes config.php,
+//      IMPORTS db.sql itself, and creates the first admin. (We do NOT
+//      pre-import db.sql; the script does it.)
+//   3. Append DEFINE('CONST_GET_IP_METHOD','HTTP_X_FORWARDED_FOR') to
+//      config.php so ITFlow trusts X-Forwarded-For behind jabali's nginx.
+//
+// The three cron jobs ITFlow needs (cron.php daily, mail_queue.php +
+// ticket_email_parser.php per-minute) are created panel-side after this
+// returns ready (see api.createITFlowInstallAndKickAgent) — they're just
+// `php <docroot>/cron/<file>.php`, which the jabali cron allowlist accepts.
+
+type itflowInstallReq struct {
+	AppType      string `json:"app_type"`
+	OSUser       string `json:"os_user"`
+	Docroot      string `json:"docroot"`
+	Subdirectory string `json:"subdirectory"`
+	SiteURL      string `json:"site_url"`
+	UseWWW       bool   `json:"use_www"`
+	DBName       string `json:"db_name"`
+	DBUser       string `json:"db_user"`
+	DBPassword   string `json:"db_password"`
+	DBHost       string `json:"db_host"`
+	CompanyName  string `json:"company_name"`
+	AdminName    string `json:"admin_name"`
+	AdminEmail   string `json:"admin_email"`
+	AdminPass    string `json:"admin_pass"`
+}
+
+type itflowInstallResp struct {
+	Version string `json:"version"`
+}
+
+// itflowRepoURL is the upstream git repo. Branch master per the
+// maintainer (#206) — ITFlow self-updates along master via git pull from
+// its admin UI, so there's no release tag to pin.
+const itflowRepoURL = "https://github.com/itflow-org/itflow.git"
+const itflowBranch = "master"
+
+// itflowSafeText guards the free-text fields that setup_cli.php
+// interpolates UNESCAPED into SQL INSERTs (company_name, admin_name).
+// Reject quotes, backslash, and control chars so a crafted value can't
+// break the install or inject SQL. (Same reflex as the DokuWiki
+// admin_email guard.)
+var itflowSafeText = regexp.MustCompile(`^[^'"\\\x00-\x1f]{1,120}$`)
+
+func computeITFlowInstallPath(docroot, subdirectory string) string {
+	if subdirectory == "" {
+		return docroot
+	}
+	return filepath.Join(docroot, subdirectory)
+}
+
+// cloneITFlow clones master into installPath as the site user. git clone
+// needs an empty target, so clone into a staging dir then cp -a the whole
+// tree (INCLUDING .git — the in-app updater needs it) into installPath.
+func cloneITFlow(ctx context.Context, osUser, installPath string) error {
+	stagingDir, err := stagingMkdirTemp("itflow-clone-")
+	if err != nil {
+		return fmt.Errorf("staging mktemp: %w", err)
+	}
+	defer os.RemoveAll(stagingDir)
+	src := filepath.Join(stagingDir, "itflow")
+	// chown staging to the user so the as-user clone can write there.
+	if err := exec.CommandContext(ctx, "chown", "-R", osUser+":"+osUser, stagingDir).Run(); err != nil {
+		return fmt.Errorf("chown staging: %w", err)
+	}
+	cloneCmd := buildSystemdRunCmd(ctx, osUser,
+		"git", "clone", "--depth", "1", "--branch", itflowBranch, itflowRepoURL, src,
+	)
+	if out, err := runBoundedOutput(cloneCmd, 0); err != nil {
+		return fmt.Errorf("git clone: %w (output: %s)", err, truncateStr(string(out), 512))
+	}
+	cpCmd := buildSystemdRunCmd(ctx, osUser, "sh", "-c",
+		fmt.Sprintf("cp -a %s/. %s/", shellQuote(src), shellQuote(installPath)),
+	)
+	if out, err := runBoundedOutput(cpCmd, 0); err != nil {
+		return fmt.Errorf("copy itflow tree: %w (output: %s)", err, truncateStr(string(out), 512))
+	}
+	return nil
+}
+
+// runITFlowSetupCLI drives scripts/setup_cli.php headlessly. The script
+// chdir()s to its own dir and resolves ../config.php + ../db.sql, so cwd
+// only has to be installPath. Secrets land on /proc/<pid>/cmdline for the
+// install window — same exposure as wp-cli / drush, acceptable on a
+// single-tenant slice.
+func runITFlowSetupCLI(ctx context.Context, req itflowInstallReq, installPath, baseURL string) error {
+	dbHost := req.DBHost
+	if dbHost == "" {
+		dbHost = "localhost"
+	}
+	args := []string{
+		"--working-directory=" + installPath,
+		phpCLIFor(req.OSUser),
+		"scripts/setup_cli.php",
+		"--host=" + dbHost,
+		"--username=" + req.DBUser,
+		"--password=" + req.DBPassword,
+		"--database=" + req.DBName,
+		"--base-url=" + baseURL,
+		"--locale=en_US",
+		"--timezone=UTC",
+		"--currency=USD",
+		"--company-name=" + req.CompanyName,
+		"--country=United States",
+		"--user-name=" + req.AdminName,
+		"--user-email=" + req.AdminEmail,
+		"--user-password=" + req.AdminPass,
+		"--non-interactive",
+	}
+	cmd := buildSystemdRunCmd(ctx, req.OSUser, args...)
+	out, err := runBoundedOutput(cmd, 0)
+	if err != nil {
+		return fmt.Errorf("setup_cli.php: %w (output: %s)", err, truncateStr(string(out), 1024))
+	}
+	// setup_cli.php prints errors + exit 0 in some failure modes; scan
+	// for its DB-import / connection failure markers.
+	o := string(out)
+	if strings.Contains(o, "Database Connection Failed") ||
+		strings.Contains(o, "Database connection failed") ||
+		strings.Contains(o, "db.sql file not found") ||
+		strings.Contains(o, "Error performing query") {
+		return fmt.Errorf("setup_cli.php reported failure: %s", truncateStr(o, 512))
+	}
+	return nil
+}
+
+// appendITFlowConfigConst appends the CONST_GET_IP_METHOD define to
+// config.php (setup_cli writes the rest). Required so ITFlow reads the
+// real client IP from X-Forwarded-For behind jabali's nginx.
+func appendITFlowConfigConst(ctx context.Context, osUser, installPath string) error {
+	line := "\nDEFINE('CONST_GET_IP_METHOD','HTTP_X_FORWARDED_FOR');\n"
+	cmd := buildSystemdRunCmd(ctx, osUser, "tee", "-a", filepath.Join(installPath, "config.php"))
+	cmd.Stdin = strings.NewReader(line)
+	if out, err := runBoundedOutput(cmd, 0); err != nil {
+		return fmt.Errorf("append config.php const: %w (output: %s)", err, truncateStr(string(out), 256))
+	}
+	return nil
+}
+
+func itflowInstallHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var req itflowInstallReq
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("failed to parse params: %v", err)}
+	}
+	if req.OSUser == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "os_user is required"}
+	}
+	if req.Docroot == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "docroot is required"}
+	}
+	if req.DBName == "" || req.DBUser == "" || req.DBPassword == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "db_name, db_user, db_password are required"}
+	}
+	if !itflowSafeText.MatchString(req.CompanyName) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "company_name must be 1-120 chars with no quotes, backslash, or control characters"}
+	}
+	if !itflowSafeText.MatchString(req.AdminName) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_name must be 1-120 chars with no quotes, backslash, or control characters"}
+	}
+	if req.AdminEmail == "" || strings.ContainsAny(req.AdminEmail, "'\"\\\r\n ") || !strings.Contains(req.AdminEmail, "@") {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_email is required and must be a plain email address"}
+	}
+	if len(req.AdminPass) < 8 {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_pass must be at least 8 characters (ITFlow minimum)"}
+	}
+	if err := validateDocrootPath(req.OSUser, req.Docroot); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
+	}
+
+	installPath := computeITFlowInstallPath(req.Docroot, req.Subdirectory)
+	subdir := strings.Trim(req.Subdirectory, "/")
+
+	if subdir != "" {
+		mkdirCmd := buildSystemdRunCmd(ctx, req.OSUser, "mkdir", "-p", installPath)
+		if out, err := runBoundedOutput(mkdirCmd, 0); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("mkdir %s: %v (output: %s)", installPath, err, truncateStr(string(out), 256))}
+		}
+	}
+	removePlaceholderIndex(ctx, installPath)
+
+	cloneCtx, cloneCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cloneCancel()
+	if err := cloneITFlow(cloneCtx, req.OSUser, installPath); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+
+	// base-url is the public host (+ optional subdir), NO protocol —
+	// setup_cli wants "example.com" or "example.com/itflow".
+	baseURL := strings.TrimPrefix(strings.TrimPrefix(req.SiteURL, "https://"), "http://")
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	if err := runITFlowSetupCLI(ctx, req, installPath, baseURL); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+	if err := appendITFlowConfigConst(ctx, req.OSUser, installPath); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+	if err := normalizePermsToWwwData(ctx, installPath, req.OSUser); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+
+	// Subdir installs need the pretty-URL rewrite (generic vhost targets
+	// /index.php at the docroot). No-op for docroot installs.
+	if subdir != "" {
+		if domain, derr := DomainFromSiteURL(req.SiteURL); derr == nil {
+			if err := writeAppRewrite(ctx, "itflow", domain, req.OSUser, subdir); err != nil {
+				return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write nginx rewrite: %v", err)}
+			}
+		}
+	}
+
+	return itflowInstallResp{Version: itflowBranch}, nil
+}
+
+func init() {
+	RegisterAppInstaller("itflow", itflowInstallHandler)
+}

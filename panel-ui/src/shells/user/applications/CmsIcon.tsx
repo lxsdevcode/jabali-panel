@@ -1,5 +1,5 @@
 import { SiWordpress, SiWikipedia, SiDrupal, SiJoomla, SiPhpbb, SiPrestashop } from "react-icons/si";
-import { FaOpencart, FaRegComments } from "react-icons/fa6";
+import { FaOpencart, FaRegComments, FaBriefcase } from "react-icons/fa6";
 import { BookOutlined } from "@icons";
 import type { CSSProperties } from "react";
 
@@ -20,6 +20,7 @@ const BRAND_COLOR: Record<string, string> = {
   opencart: "#2AC2EF",
   prestashop: "#DF0067",
   flarum: "#5d61d6",
+  itflow: "#0d6efd",
 };
 
 // CmsIcon renders the brand logo for an app_type. Unknown app_type falls
@@ -58,6 +59,9 @@ export function CmsIcon({ appType, size = 18 }: CmsIconProps) {
   }
   if (key === "flarum") {
     return <FaRegComments style={style} />;
+  }
+  if (key === "itflow") {
+    return <FaBriefcase style={style} />;
   }
   return <BookOutlined style={style} />;
 }

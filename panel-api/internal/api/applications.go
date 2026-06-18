@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/cronops"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
@@ -873,6 +875,147 @@ func createFlarumInstallAndKickAgent(parentCtx context.Context, args flarumKickA
 		version = v
 	}
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
+}
+
+// itflowKickArgs is what the install-row kicker passes through to the
+// agent's itflow installer (via the app.install dispatcher).
+type itflowKickArgs struct {
+	InstallID    string
+	UserID       string
+	OSUser       string
+	DocRoot      string
+	Subdirectory string
+	SiteURL      string
+	DBName       string
+	DBUser       string
+	DBPassword   string
+	CompanyName  string
+	AdminName    string
+	AdminEmail   string
+	AdminPass    string
+	UseWWW       bool
+}
+
+// createITFlowInstallAndKickAgent flips the row to "installing", clones +
+// installs ITFlow via the agent, auto-creates the three ITFlow cron jobs,
+// and flips the row to "ready"/"failed". Clone + setup_cli can be slow, so
+// the timeout is generous.
+func createITFlowInstallAndKickAgent(parentCtx context.Context, args itflowKickArgs, cfg ApplicationHandlerConfig) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	if err := cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "installing", nil, nil); err != nil {
+		return
+	}
+	if cfg.Agent == nil {
+		errMsg := "agent not configured"
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+
+	agentResp, err := cfg.Agent.Call(ctx, "app.install", map[string]any{
+		"app_type":     "itflow",
+		"os_user":      args.OSUser,
+		"docroot":      args.DocRoot,
+		"subdirectory": args.Subdirectory,
+		"site_url":     args.SiteURL,
+		"db_name":      args.DBName,
+		"db_user":      args.DBUser,
+		"db_password":  args.DBPassword,
+		"db_host":      "localhost",
+		"company_name": args.CompanyName,
+		"admin_name":   args.AdminName,
+		"admin_email":  args.AdminEmail,
+		"admin_pass":   args.AdminPass,
+		"use_www":      args.UseWWW,
+	})
+	if err != nil {
+		errMsg := truncateError(fmt.Sprintf("agent install failed: %v", err), 1024)
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+
+	var respMap map[string]any
+	if err := json.Unmarshal(agentResp, &respMap); err != nil {
+		errMsg := truncateError(fmt.Sprintf("failed to parse agent response: %v", err), 1024)
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+	version := ""
+	if v, ok := respMap["version"].(string); ok {
+		version = v
+	}
+
+	// Auto-create the three ITFlow cron jobs. Best-effort: the app is
+	// already installed + usable; a cron failure is logged, not fatal.
+	createITFlowCrons(ctx, args, cfg)
+
+	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
+}
+
+// itflowInstallPath returns the on-disk install root for an ITFlow install.
+func itflowInstallPath(docRoot, subdirectory string) string {
+	if sub := strings.Trim(subdirectory, "/"); sub != "" {
+		return docRoot + "/" + sub
+	}
+	return docRoot
+}
+
+// itflowCronSpec is the fixed set of cron jobs ITFlow needs (#206).
+var itflowCronSpec = []struct {
+	name, schedule, file string
+}{
+	{"ITFlow Maintenance", "0 3 * * *", "cron.php"},
+	{"ITFlow Mail Queue", "* * * * *", "mail_queue.php"},
+	{"ITFlow Ticket Email Parser", "* * * * *", "ticket_email_parser.php"},
+}
+
+func createITFlowCrons(ctx context.Context, args itflowKickArgs, cfg ApplicationHandlerConfig) {
+	if cfg.CronJobs == nil || cfg.Users == nil || cfg.Domains == nil {
+		return
+	}
+	installPath := itflowInstallPath(args.DocRoot, args.Subdirectory)
+	deps := cronops.Deps{Users: cfg.Users, Domains: cfg.Domains, CronJobs: cfg.CronJobs, Agent: cfg.Agent}
+	for _, c := range itflowCronSpec {
+		cmd := fmt.Sprintf("php %s/cron/%s", installPath, c.file)
+		if _, err := cronops.Create(ctx, deps, cronops.CreateInput{
+			UserID:   args.UserID,
+			Name:     c.name,
+			Schedule: c.schedule,
+			Command:  cmd,
+			Enabled:  true,
+		}); err != nil {
+			slog.WarnContext(ctx, "itflow: create cron failed", "name", c.name, "command", cmd, "err", err)
+		}
+	}
+}
+
+// removeITFlowCrons tears down the ITFlow cron jobs for an install on
+// delete. Matches by command path (`php <installPath>/cron/`) since crons
+// aren't FK-linked to the install. Best-effort.
+func removeITFlowCrons(ctx context.Context, cfg ApplicationHandlerConfig, userID, osUser, installPath string) {
+	if cfg.CronJobs == nil || userID == "" {
+		return
+	}
+	jobs, err := cfg.CronJobs.ListByUserID(ctx, userID)
+	if err != nil {
+		return
+	}
+	marker := "php " + installPath + "/cron/"
+	for _, j := range jobs {
+		if !strings.HasPrefix(j.Command, marker) {
+			continue
+		}
+		if cfg.Agent != nil && osUser != "" {
+			_, _ = cfg.Agent.Call(ctx, "cron.remove", cronRemoveAgentParams{
+				UserID:    userID,
+				Username:  osUser,
+				JobID:     j.ID,
+				RunAsRoot: j.RunAsRoot,
+			})
+		}
+		_ = cfg.CronJobs.Delete(ctx, j.ID)
+	}
 }
 
 // opencartKickArgs and createOpenCartInstallAndKickAgent — e-commerce.

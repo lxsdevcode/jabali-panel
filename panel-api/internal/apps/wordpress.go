@@ -88,5 +88,8 @@ func RegisterDefaults(r *Registry) error {
 	if err := r.Register(Flarum); err != nil {
 		return err
 	}
+	if err := r.Register(ITFlow); err != nil {
+		return err
+	}
 	return nil
 }

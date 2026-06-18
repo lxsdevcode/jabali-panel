@@ -221,6 +221,7 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 
 	adminPassword = dispatchInstallKicker(ctx, descriptor.Name, kickContext{
 		InstallID:     installID,
+		UserID:        p.UserID,
 		OSUser:        osUser,
 		DocRoot:       domain.DocRoot,
 		Subdirectory:  install.Subdirectory,
@@ -245,6 +246,7 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 // AdminPassword to surface.
 type kickContext struct {
 	InstallID     string
+	UserID        string
 	OSUser        string
 	DocRoot       string
 	Subdirectory  string
@@ -371,6 +373,28 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			UseWWW:       k.UseWWW,
 		}, deps)
 		adminPassword = flarumPass
+	case "itflow":
+		itflowPass := paramOr(k.Params, "admin_password", "")
+		if itflowPass == "" {
+			itflowPass = ids.NewULID()
+		}
+		go createITFlowInstallAndKickAgent(ctx, itflowKickArgs{
+			InstallID:    k.InstallID,
+			UserID:       k.UserID,
+			OSUser:       k.OSUser,
+			DocRoot:      k.DocRoot,
+			Subdirectory: k.Subdirectory,
+			SiteURL:      k.SiteURL,
+			DBName:       k.Chain.DBName,
+			DBUser:       k.Chain.DBUsername,
+			DBPassword:   adminPassword,
+			CompanyName:  paramOr(k.Params, "company_name", "My Company"),
+			AdminName:    paramOr(k.Params, "admin_name", "Administrator"),
+			AdminEmail:   k.AdminEmail,
+			AdminPass:    itflowPass,
+			UseWWW:       k.UseWWW,
+		}, deps)
+		adminPassword = itflowPass
 	case "prestashop":
 		prestaPass := paramOr(k.Params, "admin_password", "")
 		if prestaPass == "" {
