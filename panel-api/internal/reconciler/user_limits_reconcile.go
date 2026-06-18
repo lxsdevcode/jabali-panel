@@ -104,7 +104,7 @@ func (r *Reconciler) ReconcileUserLimits(ctx context.Context) {
 
 	for i := range users {
 		u := &users[i]
-		if u.Username == nil || *u.Username == "" {
+		if u.Username == nil || *u.Username == "" || u.IsAdmin {
 			continue // no Linux account yet — skip, will pick up next pass
 		}
 

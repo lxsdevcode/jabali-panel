@@ -77,7 +77,7 @@ func (r *Reconciler) ReconcileSSHKeysForUser(ctx context.Context, userID string)
 	}
 
 	// Skip if user has no Linux username
-	if user.Username == nil || *user.Username == "" {
+	if user.Username == nil || *user.Username == "" || user.IsAdmin {
 		r.log.DebugContext(ctx, "reconcile ssh keys: skip (no username)", "user_id", userID)
 		return nil
 	}
@@ -260,7 +260,7 @@ func (r *Reconciler) reconcileSSHKeysForAllUsers(ctx context.Context) {
 
 	for i := range users {
 		user := &users[i]
-		if user.Username == nil || *user.Username == "" {
+		if user.Username == nil || *user.Username == "" || user.IsAdmin {
 			continue // Skip users without a Linux username
 		}
 

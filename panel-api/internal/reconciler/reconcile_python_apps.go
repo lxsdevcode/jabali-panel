@@ -43,7 +43,7 @@ func (r *Reconciler) reconcileOnePythonApp(ctx context.Context, app *models.Pyth
 		return // API allocates the port on create; nothing to converge yet
 	}
 	user, err := r.users.FindByID(ctx, app.UserID)
-	if err != nil || user == nil || user.Username == nil || *user.Username == "" {
+	if err != nil || user == nil || user.Username == nil || *user.Username == "" || user.IsAdmin {
 		r.failPythonApp(ctx, app.ID, "owner has no linux username")
 		return
 	}

@@ -43,7 +43,7 @@ func (r *Reconciler) reconcileCronJobs(ctx context.Context) {
 
 	for userID, userJobs := range byUser {
 		u, err := r.users.FindByID(ctx, userID)
-		if err != nil || u == nil || u.Username == nil || *u.Username == "" {
+		if err != nil || u == nil || u.Username == nil || *u.Username == "" || u.IsAdmin {
 			r.log.Warn("reconcile: skipping cron jobs — user missing or has no linux username",
 				"user_id", userID, "err", err)
 			continue

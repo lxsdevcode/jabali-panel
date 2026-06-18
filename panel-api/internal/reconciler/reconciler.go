@@ -866,7 +866,7 @@ func (r *Reconciler) ReconcilePHPPools(ctx context.Context) {
 		// no pool, slice, or apply. If a pool row exists (likely from
 		// an earlier buggy reconcile), mark it error so it stays visible
 		// instead of stuck pending forever.
-		if user.Username == nil || *user.Username == "" {
+		if user.Username == nil || *user.Username == "" || user.IsAdmin {
 			if pool != nil && pool.Status != "error" {
 				msg := "user has no Linux username; skipping pool provision"
 				_ = r.phpPools.SetStatus(ctx, pool.ID, "error", &msg)
@@ -950,7 +950,7 @@ func (r *Reconciler) reconcileMysqlAdminShadow(ctx context.Context) {
 	// Filter to users with a Linux username and no mysqladmin_username yet
 	for _, user := range users {
 		// Skip users with no Linux username (admins with empty username)
-		if user.Username == nil || *user.Username == "" {
+		if user.Username == nil || *user.Username == "" || user.IsAdmin {
 			continue
 		}
 
@@ -987,7 +987,7 @@ func (r *Reconciler) reconcileMysqlAdminShadow(ctx context.Context) {
 // applyPHPPool calls the agent to provision a PHP pool, waits for socket ready,
 // and triggers nginx regeneration for bound domains.
 func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *models.PHPPool) {
-	if user.Username == nil || *user.Username == "" {
+	if user.Username == nil || *user.Username == "" || user.IsAdmin {
 		errMsg := "user has no username"
 		r.phpPools.SetStatus(ctx, pool.ID, "error", &errMsg)
 		return
@@ -1135,7 +1135,7 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 	}
 
 	// Username should always be set for non-admin users hosting domains.
-	if user.Username == nil || *user.Username == "" {
+	if user.Username == nil || *user.Username == "" || user.IsAdmin {
 		r.log.Error("user has no username for domain", "domain_id", domain.ID, "user_id", domain.UserID)
 		return
 	}
