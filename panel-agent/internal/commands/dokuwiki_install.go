@@ -85,6 +85,13 @@ func dokuwikiInstallHandler(ctx context.Context, params json.RawMessage) (any, e
 	if req.AdminEmail == "" {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_email is required"}
 	}
+	// admin_email is interpolated into the colon-separated conf/users.auth.php
+	// record (user:hash:name:email:groups). A ':' or CR/LF would inject extra
+	// fields or a second auth line (rogue admin), so reject them at the agent
+	// boundary regardless of panel-side validation (the agent runs as root).
+	if len(req.AdminEmail) > 254 || strings.ContainsAny(req.AdminEmail, ":\r\n") {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_email contains illegal characters"}
+	}
 	if err := validateDocrootPath(req.OSUser, req.Docroot); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
 	}
