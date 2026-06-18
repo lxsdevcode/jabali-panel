@@ -9392,9 +9392,10 @@ install_stalwart_apply() {
     GRANT SELECT ON jabali_panel.domains           TO '${stalwart_db_user}'@'localhost';
     GRANT SELECT ON jabali_panel.email_forwarders  TO '${stalwart_db_user}'@'localhost';
     GRANT SELECT ON jabali_panel.mail_groups        TO '${stalwart_db_user}'@'localhost';
+    GRANT SELECT ON jabali_panel.mail_group_members TO '${stalwart_db_user}'@'localhost';
     FLUSH PRIVILEGES;
   "
-  _ok "Stalwart MariaDB user provisioned: ${stalwart_db_user} (SELECT on mailboxes, domains, email_forwarders, mail_groups)"
+  _ok "Stalwart MariaDB user provisioned: ${stalwart_db_user} (SELECT on mailboxes, domains, email_forwarders, mail_groups, mail_group_members)"
 
   local admin_token_file="/etc/jabali-panel/stalwart-admin.token"
   if [[ ! -f "$admin_token_file" ]]; then
