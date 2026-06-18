@@ -510,6 +510,70 @@ func createMediaWikiInstallAndKickAgent(parentCtx context.Context, args mediaWik
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
+// dokuWikiKickArgs is what the install-row kicker passes to the agent's
+// DokuWiki installer. No DB fields — DokuWiki is flat-file (RequiresDB
+// false), so the framework never provisions a schema.
+type dokuWikiKickArgs struct {
+	InstallID    string
+	OSUser       string
+	DocRoot      string
+	Subdirectory string
+	SiteURL      string
+	SiteTitle    string
+	AdminUser    string
+	AdminPass    string
+	AdminEmail   string
+	UseWWW       bool
+}
+
+// createDokuWikiInstallAndKickAgent flips the install row to "installing",
+// dispatches app.install with app_type="dokuwiki" (no DB params), and
+// updates the row to "ready"/"failed". Mirrors
+// createMediaWikiInstallAndKickAgent minus the DB fields.
+func createDokuWikiInstallAndKickAgent(parentCtx context.Context, args dokuWikiKickArgs, cfg ApplicationHandlerConfig) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	if err := cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "installing", nil, nil); err != nil {
+		return
+	}
+	if cfg.Agent == nil {
+		errMsg := "agent not configured"
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+
+	agentResp, err := cfg.Agent.Call(ctx, "app.install", map[string]any{
+		"app_type":     "dokuwiki",
+		"os_user":      args.OSUser,
+		"docroot":      args.DocRoot,
+		"subdirectory": args.Subdirectory,
+		"site_url":     args.SiteURL,
+		"site_title":   args.SiteTitle,
+		"admin_user":   args.AdminUser,
+		"admin_pass":   args.AdminPass,
+		"admin_email":  args.AdminEmail,
+		"use_www":      args.UseWWW,
+	})
+	if err != nil {
+		errMsg := truncateError(fmt.Sprintf("agent install failed: %v", err), 1024)
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+
+	var respMap map[string]any
+	if err := json.Unmarshal(agentResp, &respMap); err != nil {
+		errMsg := truncateError(fmt.Sprintf("failed to parse agent response: %v", err), 1024)
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+	version := ""
+	if v, ok := respMap["version"].(string); ok {
+		version = v
+	}
+	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
+}
+
 // drupalKickArgs is what the install-row kicker passes through to the
 // agent's drupal installer (via the app.install dispatcher). Mirrors
 // mediaWikiKickArgs (RequiresDB=true, same DB fields) plus a Profile

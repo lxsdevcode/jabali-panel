@@ -374,6 +374,24 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			UseWWW:         k.UseWWW,
 		}, deps)
 		adminPassword = prestaPass
+	case "dokuwiki":
+		dokuPass := paramOr(k.Params, "admin_password", "")
+		if dokuPass == "" {
+			dokuPass = ids.NewULID()
+		}
+		go createDokuWikiInstallAndKickAgent(ctx, dokuWikiKickArgs{
+			InstallID:    k.InstallID,
+			OSUser:       k.OSUser,
+			DocRoot:      k.DocRoot,
+			Subdirectory: k.Subdirectory,
+			SiteURL:      k.SiteURL,
+			SiteTitle:    paramOr(k.Params, "site_title", "My Wiki"),
+			AdminUser:    k.AdminUsername,
+			AdminPass:    dokuPass,
+			AdminEmail:   k.AdminEmail,
+			UseWWW:       k.UseWWW,
+		}, deps)
+		adminPassword = dokuPass
 	case "opencart":
 		opencartPass := paramOr(k.Params, "admin_password", "")
 		if opencartPass == "" {

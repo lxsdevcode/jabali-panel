@@ -1,0 +1,39 @@
+slug: dokuwiki
+name: DokuWiki
+version: "2024-02-06b"
+description: |
+  Simple, flat-file wiki — no database. Versioned plain-text pages,
+  fine-grained ACLs, plugins and templates. Single container; all
+  content and config live under /config.
+icon: icon.svg
+upstream: https://github.com/dokuwiki/dokuwiki
+documentation: https://www.dokuwiki.org/
+
+image_channel: lscr.io/linuxserver/dokuwiki:latest
+update_mode: manual
+
+resources:
+  cpu: "0.5"
+  memory: "256m"
+  pids: 200
+
+volumes:
+  - name: config
+    container_path: /config
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: PUID
+    value: "1000"
+  - name: PGID
+    value: "1000"
+  - name: TZ
+    value: "Etc/UTC"
