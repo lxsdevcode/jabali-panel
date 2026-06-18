@@ -37,3 +37,22 @@ func TestFitDBName(t *testing.T) {
 		t.Errorf("prefix/suffix lost: %q", got)
 	}
 }
+
+// TestAppDBToken — GH #215: each app's DB/user name carries its OWN
+// token, not a blanket "wp". WordPress stays "wp" for continuity.
+func TestAppDBToken(t *testing.T) {
+	cases := map[string]string{
+		"wordpress":  "wp",
+		"":           "wp",
+		"flarum":     "flarum",
+		"drupal":     "drupal",
+		"phpbb":      "phpbb",
+		"prestashop": "prestashop",
+		"opencart":   "opencart",
+	}
+	for in, want := range cases {
+		if got := appDBToken(in); got != want {
+			t.Errorf("appDBToken(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -162,7 +162,7 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 		if adminPassword == "" {
 			adminPassword = ids.NewULID()
 		}
-		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, domain.Name, p.Subdirectory, adminPassword)
+		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, descriptor.Name, domain.Name, p.Subdirectory, adminPassword)
 		if err != nil {
 			slog.ErrorContext(ctx, "applications create: provision db chain", "err", err)
 			return nil, newInstallErr(http.StatusBadGateway, "agent_failed", err.Error())

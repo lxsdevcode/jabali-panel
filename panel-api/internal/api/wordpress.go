@@ -243,7 +243,7 @@ func (h *wordPressHandler) create(c *gin.Context) {
 	// database. Unique by construction ((domain, subdirectory) is unique);
 	// a short suffix is appended only if truncation/sanitisation collides.
 	dbID := ids.NewULID()
-	dbName, dbUsername, nameErr := allocateAppDBNames(ctx, h.cfg.Databases, h.cfg.DatabaseUsers, targetUserID, osUser, domain.Name, req.Subdirectory)
+	dbName, dbUsername, nameErr := allocateAppDBNames(ctx, h.cfg.Databases, h.cfg.DatabaseUsers, targetUserID, osUser, "wordpress", domain.Name, req.Subdirectory)
 	if nameErr != nil {
 		slog.ErrorContext(ctx, "wordpress create: db name allocation failed", "err", nameErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
@@ -1338,6 +1338,20 @@ func isValidEmail(email string) bool {
 	return re.MatchString(email)
 }
 
+// appDBToken returns the short identifier embedded in an app's database
+// and user names (e.g. <osUser>_<token>_<fqdn>_db). WordPress keeps "wp"
+// for continuity; every other app uses its own type so a Flarum/Drupal/
+// etc. install no longer gets a misleading "_wp_" name (GH #215).
+func appDBToken(appType string) string {
+	if appType == "" || appType == "wordpress" {
+		return "wp"
+	}
+	if tok := sanitizeDBLabel(appType); tok != "" {
+		return tok
+	}
+	return "app"
+}
+
 // allocateAppDBNames builds the FQDN-based database + user names for a WordPress
 // install (GH #196): <osuser>_wp_<fqdn>[_<subdir>] with `_db` / `_user`
 // suffixes. Dots and any non-[a-z0-9] characters become underscores (the
@@ -1345,14 +1359,14 @@ func isValidEmail(email string) bool {
 // the 64-char MariaDB identifier limit. (domain, subdirectory) is unique so
 // the readable name is normally free; if a collision survives sanitisation
 // or truncation, a short random suffix is appended.
-func allocateAppDBNames(ctx context.Context, dbs repository.DatabaseRepository, users repository.DatabaseUserRepository, userID, osUser, fqdn, subdir string) (dbName, dbUser string, err error) {
+func allocateAppDBNames(ctx context.Context, dbs repository.DatabaseRepository, users repository.DatabaseUserRepository, userID, osUser, appType, fqdn, subdir string) (dbName, dbUser string, err error) {
 	label := sanitizeDBLabel(fqdn)
 	if subdir != "" {
 		if sub := sanitizeDBLabel(subdir); sub != "" {
 			label += "_" + sub
 		}
 	}
-	prefix := sanitizeDBLabel(osUser) + "_wp_"
+	prefix := sanitizeDBLabel(osUser) + "_" + appDBToken(appType) + "_"
 	for attempt := 0; attempt < 16; attempt++ {
 		l := label
 		if attempt > 0 {
