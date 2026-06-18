@@ -165,5 +165,21 @@
     "value": {
       "defaultDisplayName": "Personal"
     }
+  },
+
+  {
+    "@type": "update",
+    "object": "x:Email",
+    "id": "singleton",
+    "value": {
+      "defaultFolders": {
+        "inbox": { "name": "Inbox", "create": true, "subscribe": true },
+        "drafts": { "name": "Drafts", "create": true, "subscribe": true },
+        "sent": { "name": "Sent", "create": true, "subscribe": true },
+        "junk": { "name": "Junk", "create": true, "subscribe": true },
+        "trash": { "name": "Trash", "create": true, "subscribe": true },
+        "archive": { "name": "Archive", "create": true, "subscribe": true }
+      }
+    }
   }
 ]
