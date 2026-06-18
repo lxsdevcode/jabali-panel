@@ -236,7 +236,17 @@ type Domain struct {
 	// (ADR-0043). EmailEnabledAt is the last transition-to-enabled
 	// timestamp — useful for operator audit and the reconciler to
 	// re-publish DNS after a backup restore.
-	EmailEnabled    bool       `gorm:"type:tinyint(1);not null;default:1" json:"email_enabled"`
+	//
+	// No gorm `default:1` tag: GORM substitutes a defaulted field's
+	// DB default for a Go zero value on insert (even under Select), so
+	// `default:1` flipped an intentional EmailEnabled=false (mail_provider
+	// none/m365/google → DeriveMailFlags returns false) to email_enabled=1
+	// on create. The reconciler then read it as mail-on and backfilled the
+	// mail.<domain> cert + mail DNS for "No Mail" domains (GH #216; same
+	// GORM-zero-value scar as the cron default:1 fix). The DB column keeps
+	// its `DEFAULT 1` from migration 000123 for any non-API insert; the
+	// API always sets this field explicitly via DeriveMailFlags.
+	EmailEnabled    bool       `gorm:"type:tinyint(1);not null" json:"email_enabled"`
 	// SkipAutoSAN opts the domain out of ADR-0070 auto-added mail/
 	// autoconfig SAN entries on the LE cert. Set when the tenant runs
 	// mail elsewhere (or has no mail subdomain DNS) — without this the
