@@ -950,10 +950,13 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": err.Error()})
 		return
 	}
-	// Cap at 1 GB total — huge uploads are fine but runaway sizes
-	// would fill the staging dir. Check via stat AFTER the write to keep the
+	// Cap the assembled upload at the admin-configured limit
+	// (server_settings.upload_max_size_mb; #211). Was a hardcoded 1 GB
+	// that silently overrode the setting for the chunked path (every
+	// file > 100 MB), so raising Upload max size never took effect for
+	// large uploads. Check via stat AFTER the write to keep the
 	// per-chunk hot path simple.
-	const maxUploadSize = int64(1024 * 1024 * 1024)
+	maxUploadSize := h.resolveMaxUploadBytes(c.Request.Context())
 	written, copyErr := io.Copy(f, io.LimitReader(c.Request.Body, maxUploadSize-offset+1))
 	if cerr := f.Close(); copyErr == nil {
 		copyErr = cerr

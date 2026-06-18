@@ -91,6 +91,17 @@ func meHandlerWithConfig(cfg MeHandlerConfig) gin.HandlerFunc {
 			"email":    claims.Email,
 			"is_admin": claims.IsAdmin,
 		}
+		// Surface the file-manager upload ceiling so the uploader can
+		// reject oversize files client-side with an accurate message
+		// (server_settings.upload_max_size_mb; #211). Read-only — the
+		// admin sets it in Server Settings.
+		if cfg.ServerSettings != nil {
+			uploadMB := uint32(1024)
+			if ss, serr := cfg.ServerSettings.Get(c.Request.Context()); serr == nil && ss != nil && ss.UploadMaxSizeMB > 0 {
+				uploadMB = ss.UploadMaxSizeMB
+			}
+			resp["upload_max_size_mb"] = uploadMB
+		}
 		if cfg.Users == nil {
 			c.JSON(http.StatusOK, resp)
 			return

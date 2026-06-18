@@ -29,7 +29,8 @@ import {
 import { Button, Checkbox, Drawer, List, Modal, Progress, Space, Typography, Upload } from "antd";
 import type { UploadProps } from "antd";
 import { AxiosError } from "axios";
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { getIdentity } from "../../../identity";
 import { filesUpload, filesUploadChunked } from "./filesApi";
 import type { UploadOpts } from "./filesApi";
 
@@ -113,6 +114,21 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
 ) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [running, setRunning] = useState(false);
+  // File-manager upload ceiling from server_settings.upload_max_size_mb
+  // (#211). Defaults to 1 GB until /me resolves; admin raises it in
+  // Server Settings and it takes effect on the next drawer mount.
+  const [maxBytes, setMaxBytes] = useState<number>(HARD_CEILING);
+  useEffect(() => {
+    let alive = true;
+    getIdentity().then((id) => {
+      if (alive && id?.uploadMaxSizeMb && id.uploadMaxSizeMb > 0) {
+        setMaxBytes(id.uploadMaxSizeMb * 1024 * 1024);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // queue of items waiting to be processed; ref so the worker loop sees
   // the latest set without re-running on every state change
   const queueRef = useRef<UploadItem[]>([]);
@@ -150,8 +166,8 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
   const runOne = useCallback(
     async (item: UploadItem) => {
       try {
-        if (item.file.size > HARD_CEILING) {
-          throw new Error("exceeds 1 GB hard limit");
+        if (item.file.size > maxBytes) {
+          throw new Error(`exceeds the ${formatBytes(maxBytes)} upload limit`);
         }
         const doUpload = (opts?: UploadOpts) => {
           const onp = (frac: number) => updateItem(item.id, { progress: frac });
@@ -204,7 +220,7 @@ export const UploadDrawer = forwardRef<UploadDrawerHandle, UploadDrawerProps>(fu
         });
       }
     },
-    [currentPath, updateItem, askConflict],
+    [currentPath, updateItem, askConflict, maxBytes],
   );
 
   const processQueue = useCallback(async () => {

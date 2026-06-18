@@ -28,6 +28,9 @@ export type Identity = {
   createdAt?: string;
   packageId?: string;
   packageName?: string;
+  // server_settings.upload_max_size_mb — file-manager upload ceiling
+  // (read-only mirror; admin sets it in Server Settings). #211.
+  uploadMaxSizeMb?: number;
 };
 
 type MeResponse = {
@@ -41,6 +44,7 @@ type MeResponse = {
   created_at?: string;
   package_id?: string;
   package_name?: string;
+  upload_max_size_mb?: number;
 };
 
 let cached: Identity | null = null;
@@ -74,6 +78,7 @@ export async function getIdentity(): Promise<Identity | null> {
         createdAt: data.created_at,
         packageId: data.package_id,
         packageName: data.package_name,
+        uploadMaxSizeMb: data.upload_max_size_mb,
       };
       return cached;
     } catch {

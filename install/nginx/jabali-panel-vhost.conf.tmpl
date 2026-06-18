@@ -39,12 +39,14 @@ server {
   ssl_prefer_server_ciphers on;
 
   # Browser uploads: WordPress imports, file-manager uploads, etc.
-  # 1G matches the file-manager UI's hard ceiling (FileManagerPage
-  # rejects > 1 GB client-side). Chunked uploads (>100 MB) split into
-  # 10 MB chunks each, but the single-multipart path is still in
-  # range up to 1 GB. The nginx default of 1 MB would 413 anything
-  # above that.
-  client_max_body_size 1G;
+  # 10 GB = the ceiling of server_settings.upload_max_size_mb (1-10240).
+  # nginx is the coarse OUTER bound here; the panel API enforces the
+  # precise per-user limit via http.MaxBytesReader + the chunked-upload
+  # cap, both driven by upload_max_size_mb (#211). Chunked uploads
+  # (>100 MB) send 10 MB chunks so they never approach this; single-
+  # multipart is <=100 MB. Set to the ceiling so raising the admin
+  # setting "just works" without re-rendering this vhost.
+  client_max_body_size 10240m;
 
   access_log /var/log/nginx/jabali-panel.access.log;
   error_log  /var/log/nginx/jabali-panel.error.log;
