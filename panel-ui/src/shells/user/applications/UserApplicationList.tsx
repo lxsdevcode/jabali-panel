@@ -9,6 +9,7 @@ import {
   Card,
   Space,
   Table,
+  Tabs,
   Tag,
   Typography,
   Popconfirm,
@@ -38,6 +39,7 @@ import { useTableURL } from "../../../hooks/useTableURL";
 import { useMagicLink } from "../../../hooks/useMagicLink";
 import { InstallApplicationModal } from "./InstallApplicationModal";
 import { CloneApplicationModal } from "./CloneApplicationModal";
+import { CatalogTab } from "./CatalogTab";
 import { CmsIcon } from "./CmsIcon";
 
 type ApplicationInstall = {
@@ -175,6 +177,8 @@ export const UserApplicationList = () => {
   });
 
   const [installOpen, setInstallOpen] = useState(false);
+  const [presetAppType, setPresetAppType] = useState<string | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<string>("installed");
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloningId, setCloningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -305,7 +309,10 @@ export const UserApplicationList = () => {
           <Button
             type="primary"
             icon={<PlusSquareOutlined />}
-            onClick={() => setInstallOpen(true)}
+            onClick={() => {
+              setPresetAppType(undefined);
+              setInstallOpen(true);
+            }}
           >
             Install
           </Button>
@@ -314,8 +321,15 @@ export const UserApplicationList = () => {
 
       <InstallApplicationModal
         open={installOpen}
-        onClose={() => setInstallOpen(false)}
-        onSuccess={() => tableQuery.refetch()}
+        presetAppType={presetAppType}
+        onClose={() => {
+          setInstallOpen(false);
+          setPresetAppType(undefined);
+        }}
+        onSuccess={() => {
+          tableQuery.refetch();
+          setActiveTab("installed");
+        }}
         defaultAdminEmail={user?.email}
       />
 
@@ -329,7 +343,15 @@ export const UserApplicationList = () => {
         installId={cloningId ?? ""}
       />
 
-      <Card>
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: "installed",
+            label: "Installed",
+            children: (
+              <Card>
         <SearchableTableStringQ<ApplicationInstall>
           rowKey="id"
           loading={tableQuery.isLoading}
@@ -447,7 +469,23 @@ export const UserApplicationList = () => {
             }}
           />
         </SearchableTableStringQ>
-      </Card>
+              </Card>
+            ),
+          },
+          {
+            key: "catalog",
+            label: "Catalog",
+            children: (
+              <CatalogTab
+                onInstall={(appType) => {
+                  setPresetAppType(appType);
+                  setInstallOpen(true);
+                }}
+              />
+            ),
+          },
+        ]}
+      />
     </div>
   );
 };

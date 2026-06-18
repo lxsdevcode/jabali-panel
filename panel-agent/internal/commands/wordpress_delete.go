@@ -6,14 +6,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
 
 // wordpressDeleteReq is the input shape for wordpress.delete.
 type wordpressDeleteReq struct {
+	AppType string `json:"app_type"` // present, ignored
 	OSUser  string `json:"os_user"`  // domain owner (e.g. "shuki")
 	Docroot string `json:"docroot"`  // /home/shuki/domains/example.com/public_html
+	// Subdirectory pins the install root under the docroot for subdir
+	// installs (example.com/blog). Empty = the install owns the docroot.
+	// Without this the deleter rm'd docroot/wp-admin etc., never
+	// docroot/<subdir>/wp-admin — so a subdir WP "delete" removed the
+	// panel row but left every file on disk (the site stayed live).
+	Subdirectory string `json:"subdirectory,omitempty"`
 	// Domain is used to render the placeholder index.html after the
 	// WP files are removed (matches what domain.create writes on a
 	// fresh domain). Optional — if empty, the placeholder restore is
@@ -55,6 +63,29 @@ func wordpressDeleteHandler(ctx context.Context, params json.RawMessage) (any, e
 			Code:    agentwire.CodeInvalidArgument,
 			Message: fmt.Sprintf("invalid docroot: %v", err),
 		}
+	}
+
+	// Subdir install (example.com/blog): the subdirectory is dedicated to
+	// this WordPress, so remove it wholesale — mirrors every other app
+	// deleter (drupal/joomla/itflow/…). The selective wp-* removal below
+	// only exists to spare sibling files in a SHARED docroot; a subdir has
+	// none, and rm -rf catches wp-config.php + uploads + everything. The
+	// per-domain xmlrpc snippet and index.html restore are docroot-only
+	// (a sibling root install on the same domain may still rely on them).
+	if sub := strings.Trim(req.Subdirectory, "/"); sub != "" {
+		installPath := filepath.Join(req.Docroot, sub)
+		// Defense-in-depth: the join must stay inside the validated
+		// docroot (the subdir is validated at create, but never trust it).
+		if rel, err := filepath.Rel(req.Docroot, installPath); err != nil ||
+			rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInvalidArgument,
+				Message: fmt.Sprintf("subdirectory escapes docroot: %q", req.Subdirectory),
+			}
+		}
+		cmd := buildSystemdRunCmd(ctx, req.OSUser, "rm", "-rf", installPath)
+		_ = cmd.Run()
+		return wordpressDeleteResp{Status: "deleted"}, nil
 	}
 
 	// Targets to remove from the docroot. wp-*.php is glob-expanded

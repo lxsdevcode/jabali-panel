@@ -31,39 +31,24 @@ import { AppstoreOutlined, CheckCircleTwoTone, CheckOutlined, CloseOutlined, Cop
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
 import { PasswordInput } from "../../../components/PasswordInput";
+import {
+  useAppRegistry,
+  type AppDescriptor,
+  type ParamSpec,
+} from "./appRegistry";
+import { CmsIcon } from "./CmsIcon";
 
 type Domain = { id: string; name: string };
-
-// ParamSpec mirrors panel-api/internal/apps.ParamSpec. The closed Type
-// set keeps the renderer finite — adding a sixth type means updating
-// both this file and the server validator.
-type ParamSpec = {
-  type: "string" | "email" | "password" | "enum" | "bool";
-  required?: boolean;
-  pattern?: string;
-  values?: string[];
-  default?: string | boolean | number | null;
-  description?: string;
-};
-
-// AppDescriptor mirrors the JSON the server's GET /applications/registry
-// returns. We carry only the fields the UI renders today; new fields
-// can be added without breaking older bundles because Select reads
-// keys it knows.
-type AppDescriptor = {
-  name: string;
-  display_name: string;
-  description?: string;
-  default_subdirectory: string;
-  requires_db: boolean;
-  install_param_schema?: Record<string, ParamSpec>;
-};
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   defaultAdminEmail?: string;
+  // presetAppType pre-targets the drawer to one app (set when opened from
+  // a Catalog card). When provided, the in-drawer app picker is hidden and
+  // the chosen app_type wins over the wordpress default.
+  presetAppType?: string;
 };
 
 type CreatedResult = {
@@ -321,14 +306,34 @@ export const InstallApplicationModal = ({
   onClose,
   onSuccess,
   defaultAdminEmail,
+  presetAppType,
 }: Props) => {
   const [form] = Form.useForm<Record<string, unknown>>();
   const [submitting, setSubmitting] = useState(false);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(false);
-  const [apps, setApps] = useState<AppDescriptor[]>([]);
-  const [loadingApps, setLoadingApps] = useState(false);
   const [result, setResult] = useState<CreatedResult | null>(null);
+
+  // Registry comes from the shared TanStack query (same cache the Catalog
+  // tab reads) — fetched once, not per-drawer-open. On error we fall back
+  // to a WP-only list so a stale bundle still gets a working form.
+  const registry = useAppRegistry(open);
+  const loadingApps = registry.isLoading;
+  const apps = useMemo<AppDescriptor[]>(() => {
+    if (registry.data && registry.data.length > 0) return registry.data;
+    if (registry.isError) {
+      return [
+        {
+          name: "wordpress",
+          display_name: "WordPress",
+          default_subdirectory: "",
+          requires_db: true,
+          install_param_schema: FALLBACK_WP_SCHEMA,
+        },
+      ];
+    }
+    return [];
+  }, [registry.data, registry.isError]);
   const qc = useQueryClient();
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
@@ -358,12 +363,12 @@ export const InstallApplicationModal = ({
     onSuccess();
   };
 
-  // Load registry + domains when the modal opens.
+  // Load the domain list when the drawer opens (registry is the shared
+  // query above, so only domains need an on-open fetch).
   useEffect(() => {
     if (!open) return;
     let alive = true;
     setLoadingDomains(true);
-    setLoadingApps(true);
     apiClient
       .get<{ data: Domain[] }>("/domains", { params: { page: 1, page_size: 100 } })
       .then((resp) => {
@@ -377,37 +382,25 @@ export const InstallApplicationModal = ({
       .finally(() => {
         if (alive) setLoadingDomains(false);
       });
-    apiClient
-      .get<{ data: AppDescriptor[] }>("/applications/registry")
-      .then((resp) => {
-        if (!alive) return;
-        const list = resp.data?.data ?? [];
-        setApps(list);
-        const wp = list.find((a) => a.name === "wordpress");
-        const defaultName = wp?.name ?? list[0]?.name ?? "wordpress";
-        form.setFieldsValue({ app_type: defaultName });
-      })
-      .catch((err) => {
-        if (!alive) return;
-        message.error(extractError(err, "Failed to load app catalog"));
-        setApps([
-          {
-            name: "wordpress",
-            display_name: "WordPress",
-            default_subdirectory: "",
-            requires_db: true,
-            install_param_schema: FALLBACK_WP_SCHEMA,
-          },
-        ]);
-        form.setFieldsValue({ app_type: "wordpress" });
-      })
-      .finally(() => {
-        if (alive) setLoadingApps(false);
-      });
     return () => {
       alive = false;
     };
-  }, [open, form]);
+  }, [open]);
+
+  // Seed the selected app_type once the registry is available. presetAppType
+  // (from a Catalog card) wins over the wordpress default; falls back to
+  // wordpress, then the first descriptor. Re-runs on each open so reopening
+  // resets to the preset/default. `apps` is memoised, so this fires only on
+  // open / data / preset changes — not every render.
+  useEffect(() => {
+    if (!open || apps.length === 0) return;
+    const has = (n?: string) => !!n && apps.some((a) => a.name === n);
+    const wp = apps.find((a) => a.name === "wordpress");
+    const defaultName = has(presetAppType)
+      ? (presetAppType as string)
+      : (wp?.name ?? apps[0]?.name ?? "wordpress");
+    form.setFieldsValue({ app_type: defaultName });
+  }, [open, apps, presetAppType, form]);
 
   // When the user switches App, clear every per-app field and apply
   // the new descriptor's defaults. Without this, a "site_title" left
@@ -612,23 +605,47 @@ export const InstallApplicationModal = ({
               subdirectory: "",
             }}
           >
-            <Form.Item
-              label="Application"
-              name="app_type"
-              rules={[{ required: true, message: "Pick an application" }]}
-            >
-              <Select
-                placeholder="Select an application"
-                loading={loadingApps}
-                suffixIcon={<AppstoreOutlined />}
-                options={apps.map((a) => ({
-                  value: a.name,
-                  label: a.display_name,
-                }))}
-                showSearch
-                optionFilterProp="label"
-              />
-            </Form.Item>
+            {presetAppType ? (
+              // Opened from a Catalog card — app already chosen. Keep the
+              // value submitted via a hidden field, show a read-only header
+              // instead of the picker.
+              <>
+                <Form.Item name="app_type" hidden>
+                  <Input />
+                </Form.Item>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 16,
+                  }}
+                >
+                  <CmsIcon appType={presetAppType} size={24} />
+                  <Typography.Text strong style={{ fontSize: 16 }}>
+                    {selectedApp?.display_name ?? presetAppType}
+                  </Typography.Text>
+                </div>
+              </>
+            ) : (
+              <Form.Item
+                label="Application"
+                name="app_type"
+                rules={[{ required: true, message: "Pick an application" }]}
+              >
+                <Select
+                  placeholder="Select an application"
+                  loading={loadingApps}
+                  suffixIcon={<AppstoreOutlined />}
+                  options={apps.map((a) => ({
+                    value: a.name,
+                    label: a.display_name,
+                  }))}
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+            )}
 
             {selectedApp?.description && (
               <Form.Item style={{ marginTop: -8, marginBottom: 16 }}>
