@@ -109,7 +109,7 @@ func TestIssueSkippedWhenCertKept(t *testing.T) {
 	certbotPath := filepath.Join(tmp, "certbot")
 	script := fmt.Sprintf(`#!/bin/bash
 if [[ "$1" == "certonly" ]]; then
-  domain="${6}"
+  domain="${3}"  # value after --cert-name (now: certonly --cert-name <domain> ...)
   mkdir -p "%s/letsencrypt/live/$domain"
   cat > "%s/letsencrypt/live/$domain/fullchain.pem" << 'EOF'
 %s
@@ -256,29 +256,17 @@ func setupArgCapturingCertbot(t *testing.T, tmp string) *Runner {
 	script := fmt.Sprintf(`#!/bin/bash
 for a in "$@"; do echo "$a" >> %q; done
 echo "----" >> %q
-# Figure out the cert-name: for certonly, it's the first -d value.
-# For renew, it's the --cert-name value.
-action=$1
+# cert-name is passed explicitly via --cert-name for BOTH certonly
+# and renew, so derive it the same way for either action.
 cert_name=""
-if [[ "$action" == "certonly" ]]; then
-  i=1
-  for a in "$@"; do
-    if [[ "$a" == "-d" ]]; then
-      cert_name="${@:$((i+1)):1}"
-      break
-    fi
-    i=$((i+1))
-  done
-elif [[ "$action" == "renew" ]]; then
-  i=1
-  for a in "$@"; do
-    if [[ "$a" == "--cert-name" ]]; then
-      cert_name="${@:$((i+1)):1}"
-      break
-    fi
-    i=$((i+1))
-  done
-fi
+i=1
+for a in "$@"; do
+  if [[ "$a" == "--cert-name" ]]; then
+    cert_name="${@:$((i+1)):1}"
+    break
+  fi
+  i=$((i+1))
+done
 if [[ -n "$cert_name" ]]; then
   mkdir -p "%s/letsencrypt/live/$cert_name"
   cat > "%s/letsencrypt/live/$cert_name/fullchain.pem" <<'EOF'
@@ -434,6 +422,36 @@ func TestIssueSkipsExpandWhenExistingCertCovers(t *testing.T) {
 	}
 }
 
+// TestIssuePinsLineageWithCertName is the GH #213 regression gate.
+// certonly MUST pass --cert-name <domain> so certbot targets the
+// <domain> lineage explicitly and skips the cross-lineage overlap
+// search that otherwise prompts "expand and replace?" (non-interactive
+// death) when the mail.<domain> lineage already owns mail./autoconfig./
+// autodiscover. SANs.
+func TestIssuePinsLineageWithCertName(t *testing.T) {
+	tmp := t.TempDir()
+	r := setupArgCapturingCertbot(t, tmp)
+
+	if _, err := r.Issue("example.com", "/var/www/example", "a@b.com", false,
+		[]string{"mail.example.com", "autoconfig.example.com"}); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+
+	args := readCapturedArgs(t, tmp)[0]
+	found := false
+	for i, a := range args {
+		if a == "--cert-name" {
+			if i+1 >= len(args) || args[i+1] != "example.com" {
+				t.Fatalf("--cert-name must be followed by example.com; args=%v", args)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("certonly must emit --cert-name <domain> (GH #213); args=%v", args)
+	}
+}
+
 // createTestCertWithSANs builds a test PEM with the given DNSNames.
 // Kept out of setupFakeCertbot's default helper because the SAN
 // expansion tests need to control the cert's DNSNames explicitly.
@@ -466,8 +484,13 @@ func setupFakeCertbot(t *testing.T, tmp string, mode string) *Runner {
 # Fake certbot for testing
 action=$1
 if [[ "$action" == "certonly" ]]; then
-  domain="${6}"
-  webroot="${4}"
+  # domain = value after --cert-name (now: certonly --cert-name <domain> ...)
+  domain=""
+  i=1
+  for a in "$@"; do
+    if [[ "$a" == "--cert-name" ]]; then domain="${@:$((i+1)):1}"; break; fi
+    i=$((i+1))
+  done
   mkdir -p "%s/letsencrypt/live/$domain"
   # Create test certificate
   cat > "%s/letsencrypt/live/$domain/fullchain.pem" << 'EOF'

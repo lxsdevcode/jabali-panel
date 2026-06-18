@@ -54,6 +54,17 @@ func NewRunner() *Runner {
 func (r *Runner) Issue(domain, webroot, email string, staging bool, extraHostnames []string) (*Result, error) {
 	args := []string{
 		"certonly",
+		// --cert-name pins the lineage explicitly. Without it certbot
+		// derives the name from the first -d (also `domain`, so the
+		// name is UNCHANGED) — but it ALSO runs a cross-lineage overlap
+		// search, and when another lineage already holds some requested
+		// SANs (e.g. the mail.<domain> cert owns mail./autoconfig./
+		// autodiscover.) it prompts "expand and replace?" which dies
+		// under --non-interactive (GH #213: tenant cert stuck pending
+		// because the mail cert issued first). Naming the lineage skips
+		// that search; the overlap across the <domain> and mail.<domain>
+		// lineages is harmless redundancy.
+		"--cert-name", domain,
 		"--webroot",
 		"-w", webroot,
 		"-d", domain,
