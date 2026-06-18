@@ -70,7 +70,7 @@ server {
   # the body — sub_filter silently no-ops on gzipped payloads.
   sub_filter_types application/json;
   sub_filter_once off;
-  sub_filter "{{.PanelHostname}}" $host;
+  sub_filter "mail.{{.PanelHostname}}" $host;
 
 {{ end }}  # Intentionally no X-Forwarded-Proto on this location — Next.js
   # middleware-rewrite uses it to build internal proxy URLs, and with
