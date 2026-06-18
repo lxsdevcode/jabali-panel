@@ -350,6 +350,27 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			UseWWW:           k.UseWWW,
 		}, deps)
 		adminPassword = phpbbPass
+	case "flarum":
+		flarumPass := paramOr(k.Params, "admin_password", "")
+		if flarumPass == "" {
+			flarumPass = ids.NewULID()
+		}
+		go createFlarumInstallAndKickAgent(ctx, flarumKickArgs{
+			InstallID:    k.InstallID,
+			OSUser:       k.OSUser,
+			DocRoot:      k.DocRoot,
+			Subdirectory: k.Subdirectory,
+			SiteURL:      k.SiteURL,
+			DBName:       k.Chain.DBName,
+			DBUser:       k.Chain.DBUsername,
+			DBPassword:   adminPassword,
+			SiteTitle:    paramOr(k.Params, "site_title", "My Forum"),
+			AdminUser:    k.AdminUsername,
+			AdminPass:    flarumPass,
+			AdminEmail:   k.AdminEmail,
+			UseWWW:       k.UseWWW,
+		}, deps)
+		adminPassword = flarumPass
 	case "prestashop":
 		prestaPass := paramOr(k.Params, "admin_password", "")
 		if prestaPass == "" {

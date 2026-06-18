@@ -1,0 +1,52 @@
+slug: flarum
+name: Flarum
+version: "1.8"
+description: |
+  Modern, fast and free forum software. Clean mobile-first UI,
+  extensible via a large extension ecosystem. Two services: the
+  Flarum app container (nginx + PHP-FPM) plus a bundled MariaDB.
+icon: icon.svg
+upstream: https://github.com/flarum/flarum
+documentation: https://docs.flarum.org/
+
+image_channel: mondedie/flarum:stable
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 300
+
+volumes:
+  - name: assets
+    container_path: /flarum/app/public/assets
+  - name: extensions
+    container_path: /flarum/app/extensions
+  - name: storagelogs
+    container_path: /flarum/app/storage/logs
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 8888
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_PASS
+    secret: true
+    generate: password32
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  - name: FLARUM_ADMIN_USER
+    value: "jabali"
+  - name: FLARUM_ADMIN_PASS
+    secret: true
+    generate: password32
+  - name: FLARUM_TITLE
+    value: "My Forum"

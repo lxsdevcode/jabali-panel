@@ -10,4 +10,5 @@ export const APP_TYPE_LABELS: Record<string, string> = {
   phpbb: "phpBB",
   opencart: "OpenCart",
   prestashop: "PrestaShop",
+  flarum: "Flarum",
 };

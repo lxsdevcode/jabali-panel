@@ -1,0 +1,55 @@
+services:
+  flarum:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      FORUM_URL: "https://{{ .Domain }}"
+      DB_HOST: "db"
+      DB_NAME: "flarum"
+      DB_USER: "flarum"
+      DB_PASS: "{{ index .Env "DB_PASS" }}"
+      FLARUM_ADMIN_USER: "{{ index .Env "FLARUM_ADMIN_USER" }}"
+      FLARUM_ADMIN_PASS: "{{ index .Env "FLARUM_ADMIN_PASS" }}"
+      FLARUM_ADMIN_MAIL: "admin@{{ .Domain }}"
+      FLARUM_TITLE: "{{ index .Env "FLARUM_TITLE" }}"
+    volumes:
+      - {{ .DataRoot }}/assets:/flarum/app/public/assets
+      - {{ .DataRoot }}/extensions:/flarum/app/extensions
+      - {{ .DataRoot }}/storagelogs:/flarum/app/storage/logs
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8888/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  db:
+    image: mariadb:11
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --innodb-use-native-aio=0
+    environment:
+      MYSQL_DATABASE: "flarum"
+      MYSQL_USER: "flarum"
+      MYSQL_PASSWORD: "{{ index .Env "DB_PASS" }}"
+      MYSQL_ROOT_PASSWORD: "{{ index .Env "MYSQL_ROOT_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
