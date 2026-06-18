@@ -60,6 +60,30 @@ func TestWordPressDelete_InvalidInput(t *testing.T) {
 			wantError: true,
 			wantCode:  agentwire.CodeInvalidArgument,
 		},
+		{
+			name: "invalid: subdirectory escapes docroot",
+			input: wordpressDeleteReq{
+				OSUser:       "alice",
+				Docroot:      "/home/alice/domains/test.com/public_html",
+				Subdirectory: "../../../etc",
+			},
+			wantError: true,
+			wantCode:  agentwire.CodeInvalidArgument,
+		},
+		{
+			// Subdir install removes the whole subdir and returns
+			// "deleted" — the rm is best-effort, so the handler succeeds
+			// even when systemd-run is unavailable in the test env. This
+			// is the regression gate for the dropped-subdirectory bug
+			// (subdir WP "delete" left every file on disk).
+			name: "valid: subdir install",
+			input: wordpressDeleteReq{
+				OSUser:       "alice",
+				Docroot:      "/home/alice/domains/test.com/public_html",
+				Subdirectory: "blog",
+			},
+			wantError: false,
+		},
 	}
 
 	for _, tt := range tests {
