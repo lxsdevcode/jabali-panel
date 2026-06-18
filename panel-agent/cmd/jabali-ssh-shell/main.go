@@ -426,10 +426,17 @@ func execNologin(reason string) error {
 		fmt.Fprintf(os.Stderr, "jabali-ssh-shell: %s — falling back to nologin\n", reason)
 	}
 	if _, err := os.Stat(nologin); err != nil {
-		// Belt-and-braces — write 'no shell' to stdout so the
-		// SSH client sees an explicit message even when the
-		// system's nologin is broken.
-		_, _ = io.WriteString(os.Stdout, "This account is not configured for shell access.\n")
+		// Belt-and-braces — write 'no shell' to STDERR (never
+		// stdout) so the SSH client sees an explicit message even
+		// when the system's nologin is broken. Critically, stderr
+		// keeps this OFF the channel's data stream: an SFTP/scp
+		// client that ended up running the shell (server's
+		// `Subsystem sftp` didn't catch the request, so the client
+		// fell back to sftp-over-shell) would otherwise read this
+		// text as a binary protocol frame and die with "Received
+		// message too long" (GH #211). stderr → the transfer fails
+		// cleanly instead.
+		_, _ = io.WriteString(os.Stderr, "This account is not configured for shell access.\n")
 		return fmt.Errorf("nologin missing at %s: %w", nologin, err)
 	}
 	return syscall.Exec(nologin, []string{nologin}, os.Environ())
