@@ -1134,8 +1134,17 @@ func (h *dockerAppHandler) delete(c *gin.Context) {
 				continue
 			}
 			if dom.ManagedBy == models.DomainManagedByDockerApp {
-				// We created this row at install time -- nuke it.
+				// We created this row at install time -- nuke it, and
+				// tear down its proxy vhost (the reconciler can't, the
+				// row is gone after this).
+				domName := dom.Name
 				_ = h.cfg.Domains.Delete(ctx, dom.ID)
+				if h.cfg.Agent != nil && domName != "" {
+					rmCtx, rmCancel := context.WithTimeout(ctx, 30*time.Second)
+					_, _ = h.cfg.Agent.Call(rmCtx, "docker_app.vhost_remove",
+						map[string]string{"domain_name": domName})
+					rmCancel()
+				}
 			} else {
 				// Tenant-owned row that the install handler attached
 				// to. Don't delete it -- the tenant still owns the

@@ -556,6 +556,22 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// domains. Logged only when the domain is newly-added or disabled so
 	// the steady-state reconcile stays quiet.
 	for name, domain := range enabledDomains {
+		// Docker-app proxy domains (managed_by='docker_app') are
+		// admin-owned, docroot-less reverse proxies — they take a
+		// dedicated render path and skip EVERY tenant-only convergence
+		// step (DNS zone, PHP pool, mail, DKIM, MTA-STS, M6.5 phases,
+		// createDomainOnAgent). Branch out high, run only {SSL, proxy
+		// vhost}, like the IsPanelPrimary row below.
+		if domain.ManagedBy == models.DomainManagedByDockerApp {
+			if !agentSites[name] {
+				r.log.Info("reconcile: docker-app proxy domain", "domain", name)
+			}
+			sslCtx, sslCancel := context.WithTimeout(ctx, 2*time.Minute)
+			r.reconcileSSLForDomain(sslCtx, domain)
+			sslCancel()
+			r.reconcileDockerAppDomain(ctx, domain)
+			continue
+		}
 		// Panel-primary rows (is_panel_primary=1) are mail-only and
 		// intentionally skipped further down (the continue at the
 		// IsPanelPrimary branch) — they are NEVER added to the agent's
@@ -633,6 +649,12 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 
 	// 2. Disabled DB domain that IS in agent set -> call domain.create with is_enabled=false
 	for name, domain := range disabledDomains {
+		// Docker-app proxy domain disabled -> tear down its vhost
+		// (the dedicated path, not the tenant disable-placeholder).
+		if domain.ManagedBy == models.DomainManagedByDockerApp {
+			r.removeDockerAppVhost(ctx, name)
+			continue
+		}
 		if agentSites[name] {
 			r.log.Info("reconcile: disabling unwanted domain", "domain", name)
 			r.reconcileDNSZone(ctx, domain)
@@ -1320,6 +1342,98 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 			"domain_id", domain.ID,
 			"domain", domain.Name,
 			"err", err)
+	}
+}
+
+// reconcileDockerAppDomain renders the proxy-only nginx vhost for a
+// managed_by='docker_app' domain. These domains are admin-owned with an
+// empty docroot, so they CANNOT go through createDomainOnAgent (its
+// tenant username/docroot assumptions reject them outright — that was
+// the bug that left every docker-app reverse-proxy without a vhost).
+// This is the dedicated path: resolve the loopback upstream from the
+// domain's proxy_pass rule + the converged SSL cert, then dispatch
+// docker_app.vhost_apply. The caller's loop branch skips all tenant-only
+// convergence (PHP pool, mail, DKIM, DNS zone) by not running it.
+func (r *Reconciler) reconcileDockerAppDomain(ctx context.Context, domain *models.Domain) {
+	if !domain.IsEnabled {
+		r.removeDockerAppVhost(ctx, domain.Name)
+		return
+	}
+
+	// Upstream + websocket flag come from the proxy_pass rule the docker
+	// install handler attached (path "/").
+	upstream := ""
+	websocket := false
+	for _, rule := range domain.NginxRules {
+		if rule.Type == "proxy_pass" && rule.Target != "" {
+			upstream = rule.Target
+			if rule.Websocket != nil {
+				websocket = *rule.Websocket
+			}
+			break
+		}
+	}
+	if upstream == "" {
+		r.log.Warn("docker-app domain has no proxy_pass rule; skipping vhost",
+			"domain", domain.Name, "domain_id", domain.ID)
+		return
+	}
+
+	// Cert must be on disk before the :443 block renders.
+	// reconcileSSLForDomain (run by the loop before us) drops a
+	// self-signed fallback on every ACME failure, so this populates
+	// within a tick of the domain appearing.
+	var certPath, keyPath string
+	if r.sslCerts != nil {
+		sslCtx, sslCancel := context.WithTimeout(ctx, 10*time.Second)
+		cert, err := r.sslCerts.FindByDomainID(sslCtx, domain.ID)
+		sslCancel()
+		if err == nil && cert != nil && cert.Status != models.SSLStatusRevoked &&
+			cert.CertPath != nil && cert.KeyPath != nil {
+			certPath = *cert.CertPath
+			keyPath = *cert.KeyPath
+		}
+	}
+	if certPath == "" || keyPath == "" {
+		r.log.Info("docker-app domain awaiting SSL cert; vhost deferred", "domain", domain.Name)
+		return
+	}
+
+	params := map[string]any{
+		"domain_name":   domain.Name,
+		"upstream":      upstream,
+		"ssl_cert_path": certPath,
+		"ssl_key_path":  keyPath,
+		"websocket":     websocket,
+	}
+	if r.managedIPs != nil {
+		if v4 := r.resolveListenIPAddress(ctx, domain.ListenIPv4ID, "ipv4"); v4 != "" {
+			params["listen_ipv4"] = v4
+		}
+		if v6 := r.resolveListenIPAddress(ctx, domain.ListenIPv6ID, "ipv6"); v6 != "" {
+			params["listen_ipv6"] = v6
+		}
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if _, err := r.agent.Call(callCtx, "docker_app.vhost_apply", params); err != nil {
+		r.log.Error("docker-app vhost apply failed",
+			"domain", domain.Name, "domain_id", domain.ID, "err", err)
+	}
+}
+
+// removeDockerAppVhost tears down a docker-app proxy vhost (disabled or
+// deleted domain). Idempotent on the agent side.
+func (r *Reconciler) removeDockerAppVhost(ctx context.Context, domainName string) {
+	if domainName == "" {
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if _, err := r.agent.Call(callCtx, "docker_app.vhost_remove",
+		map[string]string{"domain_name": domainName}); err != nil {
+		r.log.Warn("docker-app vhost remove failed", "domain", domainName, "err", err)
 	}
 }
 
