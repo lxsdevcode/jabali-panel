@@ -299,7 +299,7 @@ func TestWebmailVhostApply_PanelHostnameEmitsSubFilter(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		`sub_filter "mx.jabali-panel.com" $host;`,
+		`sub_filter "mail.mx.jabali-panel.com" $host;`,
 		`sub_filter_types application/json;`,
 		`sub_filter_once off;`,
 		`proxy_set_header Accept-Encoding "";`,
