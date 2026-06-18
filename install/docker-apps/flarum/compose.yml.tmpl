@@ -4,7 +4,8 @@ services:
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       FORUM_URL: "https://{{ .Domain }}"
       DB_HOST: "db"
