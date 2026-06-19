@@ -17,6 +17,9 @@ import { useServerStatus } from "../../hooks/useServerStatus";
 interface UserRow {
   id: string;
   email: string;
+  username?: string | null;
+  name_first?: string;
+  name_last?: string;
   is_admin?: boolean;
   created_at?: string;
 }
@@ -221,7 +224,39 @@ export const Dashboard = () => {
                   dataSource={recentUsers.items}
                   locale={{ emptyText: "No users yet" }}
                   columns={[
-                    { title: "Email", dataIndex: "email", ellipsis: true },
+                    {
+                      title: "Username",
+                      key: "username",
+                      ellipsis: true,
+                      render: (_: unknown, r: UserRow) => {
+                        const name = [r.name_first, r.name_last]
+                          .filter(Boolean)
+                          .join(" ")
+                          .trim();
+                        return (
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {r.username || r.email}
+                            </div>
+                            {name && (
+                              <Typography.Text
+                                type="secondary"
+                                style={{ fontSize: 12 }}
+                                ellipsis
+                              >
+                                {name}
+                              </Typography.Text>
+                            )}
+                          </div>
+                        );
+                      },
+                    },
                     {
                       title: "Role",
                       dataIndex: "is_admin",
