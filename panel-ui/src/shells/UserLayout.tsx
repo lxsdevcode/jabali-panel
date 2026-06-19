@@ -13,6 +13,7 @@ import { ImpersonationBanner } from "../components/ImpersonationBanner";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { JabaliTitle } from "../components/JabaliTitle";
 import { selectedNavKey, userNav } from "../nav";
+import { apiClient } from "../apiClient";
 import { useThemeMode } from "../theme/ThemeModeContext";
 import { QuickStartModal } from "./user/QuickStartModal";
 
@@ -31,7 +32,28 @@ export function UserLayout() {
   // hamburger on initial paint rather than the desktop Sider.
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
 
-  const selected = selectedNavKey(userNav, location.pathname);
+  // Python Apps is opt-in (server setting python_apps_enabled, default off);
+  // hide its sidebar entry until an admin enables it (GH #229). Default to
+  // hidden so it never flashes in before the capability check returns.
+  const [pythonAppsEnabled, setPythonAppsEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<{ python_apps_enabled?: boolean }>("/me/server-capabilities")
+      .then((r) => {
+        if (!cancelled) setPythonAppsEnabled(!!r.data.python_apps_enabled);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visibleNav = userNav.filter(
+    (n) => n.key !== "python-apps" || pythonAppsEnabled,
+  );
+
+  const selected = selectedNavKey(visibleNav, location.pathname);
 
   const siderBg = mode === "dark" ? token.colorBgLayout : "#f9fafb";
 
@@ -66,7 +88,7 @@ export function UserLayout() {
         theme={mode}
         selectedKeys={selected ? [selected] : []}
         style={{ border: "none", background: siderBg }}
-        items={userNav.map((n) => ({
+        items={visibleNav.map((n) => ({
           key: n.key,
           icon: n.icon,
           label: n.label,
