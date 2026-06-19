@@ -12,7 +12,7 @@ type HostingPackage struct {
 	Name string `gorm:"type:varchar(100);uniqueIndex:ux_packages_name;not null" json:"name"`
 
 	// Quotas — zero means unlimited for that resource.
-	DiskQuotaMB       uint32 `gorm:"type:int unsigned;not null;default:0" json:"disk_quota_mb"`
+	DiskQuotaMB uint32 `gorm:"type:int unsigned;not null;default:0" json:"disk_quota_mb"`
 	// Resource limits (M18). Enforced via POSIX user quota (disk) +
 	// cgroups v2 drop-in on the per-user slice (cpu/memory/io/tasks).
 	// Zero = unlimited for every field — the agent omits the systemd
@@ -22,12 +22,11 @@ type HostingPackage struct {
 	IOReadMbps       uint32 `gorm:"type:int unsigned;not null;default:0" json:"io_read_mbps"`
 	IOWriteMbps      uint32 `gorm:"type:int unsigned;not null;default:0" json:"io_write_mbps"`
 	MaxTasks         uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_tasks"`
-	BandwidthQuotaMB  uint32 `gorm:"type:int unsigned;not null;default:0" json:"bandwidth_quota_mb"`
-	MaxDomains        uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_domains"`
-	MaxEmailAccounts  uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_email_accounts"`
-	MaxDatabases      uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_databases"`
-	MaxDatabaseUsers  uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_database_users"`
-	MaxFTPAccounts    uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_ftp_accounts"`
+	BandwidthQuotaMB uint32 `gorm:"type:int unsigned;not null;default:0" json:"bandwidth_quota_mb"`
+	MaxDomains       uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_domains"`
+	MaxEmailAccounts uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_email_accounts"`
+	MaxDatabases     uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_databases"`
+	MaxDatabaseUsers uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_database_users"`
 
 	// Feature toggles.
 	SSHEnabled bool `gorm:"type:tinyint(1);not null;default:0" json:"ssh_enabled"`

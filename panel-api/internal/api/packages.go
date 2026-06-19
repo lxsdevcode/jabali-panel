@@ -63,8 +63,8 @@ type packageHandler struct{ cfg PackageHandlerConfig }
 // ---- request / response ----
 
 type createPackageRequest struct {
-	Name             string `json:"name"               binding:"required"`
-	DiskQuotaMB      uint32 `json:"disk_quota_mb"`
+	Name        string `json:"name"               binding:"required"`
+	DiskQuotaMB uint32 `json:"disk_quota_mb"`
 	// M18 resource limits. Zero = unlimited on every field.
 	CPUQuotaPercent  uint32 `json:"cpu_quota_percent"`
 	MemoryLimitMB    uint32 `json:"memory_limit_mb"`
@@ -75,7 +75,6 @@ type createPackageRequest struct {
 	MaxDomains       uint32 `json:"max_domains"`
 	MaxEmailAccounts uint32 `json:"max_email_accounts"`
 	MaxDatabases     uint32 `json:"max_databases"`
-	MaxFTPAccounts   uint32 `json:"max_ftp_accounts"`
 	SSHEnabled       bool   `json:"ssh_enabled"`
 	CGIEnabled       bool   `json:"cgi_enabled"`
 	// M13: nspawn image pin (empty = use server default).
@@ -94,7 +93,6 @@ type updatePackageRequest struct {
 	MaxDomains         *uint32 `json:"max_domains"`
 	MaxEmailAccounts   *uint32 `json:"max_email_accounts"`
 	MaxDatabases       *uint32 `json:"max_databases"`
-	MaxFTPAccounts     *uint32 `json:"max_ftp_accounts"`
 	SSHEnabled         *bool   `json:"ssh_enabled"`
 	CGIEnabled         *bool   `json:"cgi_enabled"`
 	NspawnImageVersion *string `json:"nspawn_image_version"`
@@ -139,7 +137,6 @@ func (h *packageHandler) create(c *gin.Context) {
 		MaxDomains:       req.MaxDomains,
 		MaxEmailAccounts: req.MaxEmailAccounts,
 		MaxDatabases:     req.MaxDatabases,
-		MaxFTPAccounts:   req.MaxFTPAccounts,
 		SSHEnabled:       req.SSHEnabled,
 		CGIEnabled:       req.CGIEnabled,
 		CreatedAt:        now,
@@ -255,9 +252,6 @@ func (h *packageHandler) update(c *gin.Context) {
 	}
 	if req.MaxDatabases != nil {
 		pkg.MaxDatabases = *req.MaxDatabases
-	}
-	if req.MaxFTPAccounts != nil {
-		pkg.MaxFTPAccounts = *req.MaxFTPAccounts
 	}
 	if req.SSHEnabled != nil {
 		pkg.SSHEnabled = *req.SSHEnabled

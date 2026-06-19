@@ -28,7 +28,6 @@ export type MockPackage = {
   max_domains: number;
   max_email_accounts: number;
   max_databases: number;
-  max_ftp_accounts: number;
   ssh_enabled: boolean;
   cgi_enabled: boolean;
   created_at: string;
@@ -533,7 +532,6 @@ export async function mockApi(page: Page, initial: MockState): Promise<void> {
         max_domains: body.max_domains ?? 0,
         max_email_accounts: body.max_email_accounts ?? 0,
         max_databases: body.max_databases ?? 0,
-        max_ftp_accounts: body.max_ftp_accounts ?? 0,
         ssh_enabled: body.ssh_enabled ?? false,
         cgi_enabled: body.cgi_enabled ?? false,
         created_at: now,

@@ -89,7 +89,7 @@ func (r *packageRepo) List(ctx context.Context, opts ListOptions) ([]models.Host
 func (r *packageRepo) Update(ctx context.Context, p *models.HostingPackage) error {
 	if err := r.db.WithContext(ctx).Model(p).Where("id = ?", p.ID).Select(
 		"name", "disk_quota_mb", "bandwidth_quota_mb", "max_domains",
-		"max_email_accounts", "max_databases", "max_ftp_accounts",
+		"max_email_accounts", "max_databases",
 		"ssh_enabled", "cgi_enabled", "nspawn_image_version", "updated_at",
 	).Updates(p).Error; err != nil {
 		return translate(err)

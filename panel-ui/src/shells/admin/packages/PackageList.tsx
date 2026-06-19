@@ -23,7 +23,6 @@ type Package = {
   max_domains: number;
   max_email_accounts: number;
   max_databases: number;
-  max_ftp_accounts: number;
   ssh_enabled: boolean;
   cgi_enabled: boolean;
   created_at: string;

@@ -24,7 +24,6 @@ const TEST_PACKAGE = {
   max_domains: 2,
   max_email_accounts: 3,
   max_databases: 2,
-  max_ftp_accounts: 1,
 };
 
 const TEST_USER = {
@@ -160,7 +159,6 @@ async function createPackage(page: any, pkg: typeof TEST_PACKAGE) {
   await fillNumberInput(page, 'Max Domains', pkg.max_domains.toString());
   await fillNumberInput(page, 'Max Email Accounts', pkg.max_email_accounts.toString());
   await fillNumberInput(page, 'Max Databases', pkg.max_databases.toString());
-  await fillNumberInput(page, 'Max FTP Accounts', pkg.max_ftp_accounts.toString());
   
   // Submit form
   await page.click('button:has-text("Save")');
@@ -355,7 +353,6 @@ describe('Bug Hunting - Edge Cases', () => {
       max_domains: 0,
       max_email_accounts: 0,
       max_databases: 0,
-      max_ftp_accounts: 0,
     };
     
     await page.getByLabel('Name').fill(unlimitedPkg.name);
@@ -366,7 +363,6 @@ describe('Bug Hunting - Edge Cases', () => {
     await page.getByLabel('Bandwidth Quota (MB)').fill('0');
     await page.getByLabel('Max Email Accounts').fill('0');
     await page.getByLabel('Max Databases').fill('0');
-    await page.getByLabel('Max FTP Accounts').fill('0');
     
     await page.click('button:has-text("Save")');
     

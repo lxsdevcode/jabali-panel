@@ -81,7 +81,6 @@ func newPackageCreateCmd() *cobra.Command {
 		domains     uint32
 		emails      uint32
 		databases   uint32
-		ftp         uint32
 		cpuPercent  uint32
 		memoryMB    uint32
 		ioReadMbps  uint32
@@ -112,7 +111,6 @@ func newPackageCreateCmd() *cobra.Command {
 				MaxDomains:       domains,
 				MaxEmailAccounts: emails,
 				MaxDatabases:     databases,
-				MaxFTPAccounts:   ftp,
 				CPUQuotaPercent:  cpuPercent,
 				MemoryLimitMB:    memoryMB,
 				IOReadMbps:       ioReadMbps,
@@ -143,7 +141,6 @@ func newPackageCreateCmd() *cobra.Command {
 	cmd.Flags().Uint32Var(&domains, "domains", 0, "max domains (0=unlimited)")
 	cmd.Flags().Uint32Var(&emails, "emails", 0, "max email accounts (0=unlimited)")
 	cmd.Flags().Uint32Var(&databases, "databases", 0, "max databases (0=unlimited)")
-	cmd.Flags().Uint32Var(&ftp, "ftp", 0, "max FTP accounts (0=unlimited)")
 	cmd.Flags().Uint32Var(&cpuPercent, "cpu", 0, "CPU quota percent across all cores (0=unlimited)")
 	cmd.Flags().Uint32Var(&memoryMB, "memory-mb", 0, "memory limit in MB (0=unlimited)")
 	cmd.Flags().Uint32Var(&ioReadMbps, "io-read-mbps", 0, "disk read bandwidth limit in MB/s (0=unlimited)")
@@ -163,7 +160,6 @@ func newPackageEditCmd() *cobra.Command {
 		domains     uint32
 		emails      uint32
 		databases   uint32
-		ftp         uint32
 		cpuPercent  uint32
 		memoryMB    uint32
 		ioReadMbps  uint32
@@ -216,10 +212,6 @@ func newPackageEditCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("databases") {
 				p.MaxDatabases = databases
-				changed = true
-			}
-			if cmd.Flags().Changed("ftp") {
-				p.MaxFTPAccounts = ftp
 				changed = true
 			}
 			if cmd.Flags().Changed("cpu") {
@@ -277,7 +269,6 @@ func newPackageEditCmd() *cobra.Command {
 	cmd.Flags().Uint32Var(&domains, "domains", 0, "max domains")
 	cmd.Flags().Uint32Var(&emails, "emails", 0, "max emails")
 	cmd.Flags().Uint32Var(&databases, "databases", 0, "max databases")
-	cmd.Flags().Uint32Var(&ftp, "ftp", 0, "max FTP")
 	cmd.Flags().Uint32Var(&cpuPercent, "cpu", 0, "CPU quota percent")
 	cmd.Flags().Uint32Var(&memoryMB, "memory-mb", 0, "memory limit MB")
 	cmd.Flags().Uint32Var(&ioReadMbps, "io-read-mbps", 0, "io read MB/s")
