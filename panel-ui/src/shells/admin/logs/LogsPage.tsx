@@ -11,6 +11,7 @@ import { DomainLogsTab } from "./DomainLogsTab";
 import { AdminAuditList } from "../audit/AdminAuditList";
 import { BackupLogsTab } from "../backups/BackupLogsTab";
 import { LogsTab as MailLogsTab } from "../../user/mail/tabs/LogsTab";
+import { UpdatesLogTab } from "./UpdatesLogTab";
 
 const { Title } = Typography;
 
@@ -30,6 +31,7 @@ export const LogsPage = () => {
           { key: "domains", label: "Domains", children: <DomainLogsTab /> },
           { key: "audit", label: "Audit Log", children: <AdminAuditList /> },
           { key: "backups", label: "Backups", children: <BackupLogsTab /> },
+          { key: "updates", label: "Updates", children: <UpdatesLogTab /> },
           { key: "mail", label: "Mail", children: <MailLogsTab /> },
         ]}
       />
