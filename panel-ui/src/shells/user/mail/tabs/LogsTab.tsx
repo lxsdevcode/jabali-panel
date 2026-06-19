@@ -41,10 +41,7 @@ export const LogsTab = () => {
 
   return (
     <div>
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", rowGap: 8 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          Mail Logs
-        </Typography.Title>
+      <Space style={{ width: "100%", justifyContent: "flex-end", marginBottom: 12, flexWrap: "wrap", rowGap: 8 }}>
         <Space>
           <span
             role="button"
