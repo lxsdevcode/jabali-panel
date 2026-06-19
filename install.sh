@@ -10234,7 +10234,72 @@ _install_bulwark_systemd() {
   systemctl daemon-reload
   _ok "jabali-webmail.service installed (disabled — starts on first domain.email_enable)"
   _install_bulwark_env
+  _install_bulwark_libravatar_plugin
   _install_bulwark_impersonate_secrets
+}
+
+# _install_bulwark_libravatar_plugin ships the first-party Libravatar avatar
+# plugin into the webmail's PLUGIN_DEV_DIR and pre-approves it. Bulwark 1.7.x
+# gates dev-folder plugin bundles behind host Ed25519 signing + an admin
+# approval before they load; the signing key persists under ADMIN_CONFIG_DIR
+# (relocated onto the writable state volume since ProtectSystem=strict makes
+# /opt/jabali-webmail/data read-only), and the approval is pre-seeded here so
+# the plugin loads without a manual admin click. Idempotent; the approval is
+# re-stamped with the current bundle's sha256 every run so a plugin update
+# can't leave a stale (unapproved) hash. Best-effort: a failure here must not
+# break the webmail install (avatars are cosmetic).
+_install_bulwark_libravatar_plugin() {
+  local src_dir="${REPO_DIR}/install/jabali-webmail/plugins/libravatar"
+  local dev_dir="/opt/jabali-webmail/dev-plugins"
+  local plugin_dir="${dev_dir}/libravatar"
+  local cfg_dir="/var/lib/jabali-webmail/admin-config"
+  if [[ ! -f "${src_dir}/index.js" || ! -f "${src_dir}/manifest.json" ]]; then
+    _warn "Libravatar plugin source missing at ${src_dir} — skipping webmail avatar plugin"
+    return 0
+  fi
+  install -d -m 0755 -o jabali-webmail -g jabali-webmail "$dev_dir" "$plugin_dir" "${plugin_dir}/media"
+  install -d -m 0700 -o jabali-webmail -g jabali-webmail "$cfg_dir"
+  install -m 0644 -o jabali-webmail -g jabali-webmail "${src_dir}/manifest.json" "${plugin_dir}/manifest.json"
+  install -m 0644 -o jabali-webmail -g jabali-webmail "${src_dir}/index.js"     "${plugin_dir}/index.js"
+  [[ -f "${src_dir}/media/icon.svg" ]]   && install -m 0644 -o jabali-webmail -g jabali-webmail "${src_dir}/media/icon.svg"   "${plugin_dir}/media/icon.svg"
+  [[ -f "${src_dir}/media/banner.svg" ]] && install -m 0644 -o jabali-webmail -g jabali-webmail "${src_dir}/media/banner.svg" "${plugin_dir}/media/banner.svg"
+
+  local hash now approvals
+  hash=$(sha256sum "${plugin_dir}/index.js" | awk '{print $1}')
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  approvals="${cfg_dir}/plugin-approvals.json"
+  if ! python3 - "$approvals" "$hash" "$now" <<'PYEOF'
+import json, os, sys
+path, h, now = sys.argv[1], sys.argv[2], sys.argv[3]
+data = {"entries": []}
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+            data = {"entries": []}
+    except Exception:
+        data = {"entries": []}
+data["entries"] = [e for e in data["entries"]
+                   if not (isinstance(e, dict) and e.get("pluginId") == "libravatar")]
+data["entries"].append({
+    "pluginId": "libravatar", "bundleHash": h, "status": "approved",
+    "manifest": {"name": "Libravatar Avatars", "version": "1.0.0",
+                 "author": "Bulwark Mail Community", "permissions": ["email:read"]},
+    "requestedBy": "jabali-install", "requestedAt": now,
+    "decidedBy": "jabali-install", "decidedAt": now,
+})
+with open(path + ".tmp", "w") as f:
+    json.dump(data, f, indent=2)
+os.replace(path + ".tmp", path)
+PYEOF
+  then
+    _warn "failed to pre-approve Libravatar plugin (avatars will need a manual approve in Admin -> Plugins)"
+    return 0
+  fi
+  chown jabali-webmail:jabali-webmail "$approvals"
+  chmod 0600 "$approvals"
+  _ok "Libravatar webmail avatar plugin installed + pre-approved (sha256 ${hash:0:12})"
 }
 
 # _install_bulwark_env renders install/bulwark/bulwark.env.tmpl into
