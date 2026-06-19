@@ -1,6 +1,6 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
-import { App, Avatar, Button, Card, Col, Dropdown, Empty, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Dropdown, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { humanBytes } from "../../../utils/bytes";
 import { useState } from "react";
@@ -28,6 +28,7 @@ import { ExecDrawer } from "./ExecDrawer";
 import { BackupsDrawer } from "./BackupsDrawer";
 import { EditDrawer } from "./EditDrawer";
 import { MaintenanceTab } from "./MaintenanceTab";
+import { StatCard } from "../../../components/StatCard";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "default",
@@ -49,6 +50,7 @@ export const AdminDockerAppsPage = () => {
   const [editApp, setEditApp] = useState<InstalledApp | null>(null);
   const [activeTab, setActiveTab] = useState<string>("installed");
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
+  const [installedSearch, setInstalledSearch] = useState("");
 
   const catalog = useQuery({
     queryKey: ["docker-apps-catalog"],
@@ -111,83 +113,61 @@ export const AdminDockerAppsPage = () => {
                   const updateCount = rows.filter(r => r.available_digest && r.available_digest !== r.image_sha).length;
                   const catalogCount = (catalog.data ?? []).length;
                   const pct = (n: number) => installedCount > 0 ? Math.round((n / installedCount) * 100) : 0;
-                  const renderStat = (
-                    iconBg: string,
-                    iconColor: string,
-                    Icon: React.ComponentType<{ style?: React.CSSProperties }>,
-                    label: string,
-                    value: number,
-                    subtitle: React.ReactNode,
-                  ) => (
-                    <Card size="small">
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 10,
-                            background: iconBg,
-                            color: iconColor,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Icon style={{ fontSize: 20 }} />
-                        </div>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-                            {label}
-                          </Typography.Text>
-                          <Typography.Text strong style={{ fontSize: 22, lineHeight: 1.2, display: "block" }}>
-                            {value}
-                          </Typography.Text>
-                          <div style={{ fontSize: 11, marginTop: 2 }}>{subtitle}</div>
-                        </div>
-                      </div>
-                    </Card>
-                  );
                   return (
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                       <Col xs={24} sm={12} lg={6}>
-                        {renderStat(
-                          "rgba(207, 19, 34, 0.12)", "#cf1322", AppstoreOutlined,
-                          "Installed Apps", installedCount,
-                          <Typography.Text type="secondary">{catalogCount} in catalog</Typography.Text>,
-                        )}
+                        <StatCard
+                          iconBg="rgba(207, 19, 34, 0.12)" iconColor="#cf1322" Icon={AppstoreOutlined}
+                          label="Installed Apps" value={installedCount}
+                          subtitle={<Typography.Text type="secondary">{catalogCount} in catalog</Typography.Text>}
+                        />
                       </Col>
                       <Col xs={24} sm={12} lg={6}>
-                        {renderStat(
-                          "rgba(114, 46, 209, 0.12)", "#722ed1", SyncOutlined,
-                          "Updates Available", updateCount,
-                          updateCount > 0
+                        <StatCard
+                          iconBg="rgba(114, 46, 209, 0.12)" iconColor="#722ed1" Icon={SyncOutlined}
+                          label="Updates Available" value={updateCount}
+                          subtitle={updateCount > 0
                             ? <Typography.Text type="warning">Needs attention</Typography.Text>
-                            : <Typography.Text type="secondary">Up to date</Typography.Text>,
-                        )}
+                            : <Typography.Text type="secondary">Up to date</Typography.Text>}
+                        />
                       </Col>
                       <Col xs={24} sm={12} lg={6}>
-                        {renderStat(
-                          "rgba(63, 134, 0, 0.12)", "#3f8600", PlayCircleOutlined,
-                          "Running", runningCount,
-                          <Typography.Text type="secondary">{pct(runningCount)}% of installed</Typography.Text>,
-                        )}
+                        <StatCard
+                          iconBg="rgba(63, 134, 0, 0.12)" iconColor="#3f8600" Icon={PlayCircleOutlined}
+                          label="Running" value={runningCount}
+                          subtitle={<Typography.Text type="secondary">{pct(runningCount)}% of installed</Typography.Text>}
+                        />
                       </Col>
                       <Col xs={24} sm={12} lg={6}>
-                        {renderStat(
-                          "rgba(212, 107, 8, 0.12)", "#d46b08", PauseCircleOutlined,
-                          "Stopped", stoppedCount,
-                          <Typography.Text type="secondary">{pct(stoppedCount)}% of installed</Typography.Text>,
-                        )}
+                        <StatCard
+                          iconBg="rgba(212, 107, 8, 0.12)" iconColor="#d46b08" Icon={PauseCircleOutlined}
+                          label="Stopped" value={stoppedCount}
+                          subtitle={<Typography.Text type="secondary">{pct(stoppedCount)}% of installed</Typography.Text>}
+                        />
                       </Col>
                     </Row>
                   );
                 })()}
+              <Input.Search
+                allowClear
+                placeholder="Search by name"
+                value={installedSearch}
+                onChange={(e) => setInstalledSearch(e.target.value)}
+                style={{ marginBottom: 16, maxWidth: 360 }}
+              />
               <Table<InstalledApp>
                 rowKey="id"
                 size="small"
                 loading={installed.isLoading}
-                dataSource={installed.data ?? []}
+                dataSource={(installed.data ?? []).filter((r) => {
+                  const q = installedSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    r.name.toLowerCase().includes(q) ||
+                    r.slug.toLowerCase().includes(q) ||
+                    (r.domain ?? "").toLowerCase().includes(q)
+                  );
+                })}
                 scroll={{ x: 1100 }}
                 pagination={{
                   pageSize: 25,
