@@ -34,6 +34,7 @@ type systemUnitStatusResponse struct {
 var allowedStatusUnits = map[string]string{
 	"system.update_status": "jabali-update-oneshot.service",
 	"system.apt_status":    "jabali-apt-oneshot.service",
+	"system.repair_status": "jabali-repair-oneshot.service",
 }
 
 func systemUnitStatusFor(unit string) func(context.Context, json.RawMessage) (any, error) {

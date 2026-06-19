@@ -38,6 +38,7 @@ import {
 } from "@icons";
 
 import { JobLogTail } from "../../../components/JobLogTail";
+import { RepairCard } from "./RepairCard";
 import {
   useAptCheck,
   useAptRun,
@@ -119,6 +120,7 @@ export const SystemUpdatesPage = () => {
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={12}>
             <AutomaticUpdatesCard />
+            <RepairCard />
           </Col>
           <Col xs={24} xl={12}>
             <RecentHistoryCard />
