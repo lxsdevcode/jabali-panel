@@ -25,8 +25,9 @@ import (
 //   2. php scripts/setup_cli.php --non-interactive ... — writes config.php,
 //      IMPORTS db.sql itself, and creates the first admin. (We do NOT
 //      pre-import db.sql; the script does it.)
-//   3. Append DEFINE('CONST_GET_IP_METHOD','HTTP_X_FORWARDED_FOR') to
-//      config.php so ITFlow trusts X-Forwarded-For behind jabali's nginx.
+//   3. Append DEFINE('CONST_GET_IP_METHOD','REMOTE_ADDR') to config.php so
+//      ITFlow reads the real client IP from REMOTE_ADDR (jabali is
+//      nginx->FPM/FastCGI, not a reverse proxy — no XFF hop). GH #226.
 //
 // The three cron jobs ITFlow needs (cron.php daily, mail_queue.php +
 // ticket_email_parser.php per-minute) are created panel-side after this
@@ -150,10 +151,16 @@ func runITFlowSetupCLI(ctx context.Context, req itflowInstallReq, installPath, b
 }
 
 // appendITFlowConfigConst appends the CONST_GET_IP_METHOD define to
-// config.php (setup_cli writes the rest). Required so ITFlow reads the
-// real client IP from X-Forwarded-For behind jabali's nginx.
+// config.php (setup_cli writes the rest). Pinned to REMOTE_ADDR: jabali
+// serves PHP via nginx->FPM (FastCGI), NOT a reverse proxy, so no trusted
+// hop sets X-Forwarded-For and REMOTE_ADDR already carries the real client
+// IP. The earlier HTTP_X_FORWARDED_FOR value made ITFlow read an empty /
+// client-spoofable XFF header and reject every request with a "Potential
+// Security Violation" at login (GH #226). Defining the const explicitly
+// (rather than leaving ITFlow's default) keeps it correct if upstream ever
+// requires it to be set.
 func appendITFlowConfigConst(ctx context.Context, osUser, installPath string) error {
-	line := "\nDEFINE('CONST_GET_IP_METHOD','HTTP_X_FORWARDED_FOR');\n"
+	line := "\nDEFINE('CONST_GET_IP_METHOD','REMOTE_ADDR');\n"
 	cmd := buildSystemdRunCmd(ctx, osUser, "tee", "-a", filepath.Join(installPath, "config.php"))
 	cmd.Stdin = strings.NewReader(line)
 	if out, err := runBoundedOutput(cmd, 0); err != nil {

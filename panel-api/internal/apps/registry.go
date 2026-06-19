@@ -65,6 +65,11 @@ type App struct {
 	// schema + grant before dispatching the install command. Flat-file
 	// apps (DokuWiki) set this false.
 	RequiresDB bool `json:"requires_db"`
+	// EmailLogin marks apps whose admin signs in with their EMAIL, not a
+	// username (ITFlow #226). The framework still generates no username
+	// for these — it surfaces the admin email as the login credential so
+	// the post-install screen doesn't show a meaningless random username.
+	EmailLogin bool `json:"email_login,omitempty"`
 	// SupportedPHPVersions, if non-empty, is the closed set of PHP
 	// versions this app's installer can target. Empty = "any active
 	// pool". The UI uses this to filter the PHP-version picker.

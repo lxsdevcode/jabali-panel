@@ -178,6 +178,14 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 	if descriptor.Name == "mediawiki" && len(adminUsername) > 0 {
 		adminUsername = strings.ToUpper(adminUsername[:1]) + adminUsername[1:]
 	}
+	// Email-login apps (ITFlow #226) authenticate by admin email, not a
+	// username. Surface the email as the login so the post-install screen
+	// shows the real credential instead of a meaningless random username.
+	if descriptor.EmailLogin {
+		if em := paramOr(p.Params, "admin_email", ""); em != "" {
+			adminUsername = em
+		}
+	}
 
 	installID := ids.NewULID()
 	install := &models.ApplicationInstall{

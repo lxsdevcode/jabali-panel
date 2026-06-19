@@ -24,6 +24,7 @@ var ITFlow = App{
 	Description:          "Open-source MSP ERP — client management, ticketing, invoicing, documentation and assets for IT businesses.",
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
+	EmailLogin:           true,
 	SupportedPHPVersions: nil,
 	AgentInstallCmd:      "app.install",
 	AgentDeleteCmd:       "app.delete",
