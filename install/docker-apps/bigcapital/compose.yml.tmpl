@@ -1,0 +1,208 @@
+# Bigcapital — multi-tenant accounting platform. The Envoy proxy is the
+# single HTTP entry point (jabali's nginx vhost reverse-proxies to it): it
+# routes /api -> server (NestJS) and / -> webapp (React). One-shot
+# "migration" (system + tenants schema) and "createbucket" (MinIO bucket)
+# steps run to completion before the server starts. Self-signup onboarding
+# creates the first organization + owner; each org gets its own database,
+# which is why the DB user is granted global privileges (see db_grant).
+configs:
+  envoy_config:
+    content: |
+      static_resources:
+        listeners:
+          - name: listener_0
+            address:
+              socket_address: { address: 0.0.0.0, port_value: 80 }
+            filter_chains:
+              - filters:
+                  - name: envoy.filters.network.http_connection_manager
+                    typed_config:
+                      '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                      stat_prefix: ingress_http
+                      route_config:
+                        name: local_route
+                        virtual_hosts:
+                          - name: backend
+                            domains: ['*']
+                            routes:
+                              - match: { prefix: '/api' }
+                                route: { cluster: dynamic_server }
+                              - match: { prefix: '/' }
+                                route: { cluster: webapp }
+                      http_filters:
+                        - name: envoy.filters.http.router
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        clusters:
+          - name: dynamic_server
+            connect_timeout: 0.25s
+            type: STRICT_DNS
+            dns_lookup_family: V4_ONLY
+            lb_policy: ROUND_ROBIN
+            load_assignment:
+              cluster_name: dynamic_server
+              endpoints:
+                - lb_endpoints:
+                    - endpoint:
+                        address:
+                          socket_address: { address: server, port_value: 3000 }
+          - name: webapp
+            connect_timeout: 0.25s
+            type: STRICT_DNS
+            dns_lookup_family: V4_ONLY
+            lb_policy: ROUND_ROBIN
+            load_assignment:
+              cluster_name: webapp
+              endpoints:
+                - lb_endpoints:
+                    - endpoint:
+                        address:
+                          socket_address: { address: webapp, port_value: 80 }
+  db_grant:
+    # Multi-tenant: the app CREATEs a database per organization at runtime,
+    # so the DB user needs global privileges (mirrors upstream init.sql).
+    content: |
+      GRANT ALL PRIVILEGES ON *.* TO 'bigcapital'@'%' WITH GRANT OPTION;
+      FLUSH PRIVILEGES;
+
+services:
+  db:
+    image: mariadb:11
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "bigcapital_system"
+      MYSQL_USER: "bigcapital"
+      MYSQL_PASSWORD: "{{ index .Env "DB_PASSWORD" }}"
+      MYSQL_ROOT_PASSWORD: "{{ index .Env "DB_ROOT_PASSWORD" }}"
+    configs:
+      - source: db_grant
+        target: /docker-entrypoint-initdb.d/10-grant.sql
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  redis:
+    image: redis:7
+    container_name: jabali-app-{{ .Slug }}-redis
+    restart: unless-stopped
+    volumes:
+      - {{ .DataRoot }}/redis:/data
+
+  gotenberg:
+    image: gotenberg/gotenberg:7
+    container_name: jabali-app-{{ .Slug }}-gotenberg
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: jabali-app-{{ .Slug }}-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "bigcapital"
+      MINIO_ROOT_PASSWORD: "{{ index .Env "MINIO_ROOT_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  createbucket:
+    image: minio/mc:latest
+    container_name: jabali-app-{{ .Slug }}-createbucket
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - "mc alias set bc http://minio:9000 bigcapital '{{ index .Env "MINIO_ROOT_PASSWORD" }}' && mc mb --ignore-existing bc/bigcapital && echo bucket-ready"
+
+  migration:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}-migration
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: "db"
+      DB_USER: "bigcapital"
+      DB_PASSWORD: "{{ index .Env "DB_PASSWORD" }}"
+      DB_CHARSET: "utf8"
+      SYSTEM_DB_NAME: "bigcapital_system"
+      TENANT_DB_NAME_PERFIX: "bigcapital_tenant_"
+    entrypoint: ["sh", "-c", "cd packages/server && node dist/cli.js system:migrate:latest && node dist/cli.js tenants:migrate:latest"]
+
+  server:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}-server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      migration:
+        condition: service_completed_successfully
+      createbucket:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: "db"
+      DB_USER: "bigcapital"
+      DB_PASSWORD: "{{ index .Env "DB_PASSWORD" }}"
+      DB_CHARSET: "utf8"
+      SYSTEM_DB_NAME: "bigcapital_system"
+      TENANT_DB_NAME_PERFIX: "bigcapital_tenant_"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      QUEUE_HOST: "redis"
+      QUEUE_PORT: "6379"
+      JWT_SECRET: "{{ index .Env "JWT_SECRET" }}"
+      BASE_URL: "https://{{ .Domain }}"
+      SIGNUP_DISABLED: "false"
+      SIGNUP_EMAIL_CONFIRMATION: "false"
+      GOTENBERG_URL: "http://gotenberg:3000"
+      GOTENBERG_DOCS_URL: "http://server:3000/public/"
+      EXCHANGE_RATE_SERVICE: "open-exchange-rate"
+      S3_ENDPOINT: "http://minio:9000"
+      S3_REGION: "us-east-1"
+      S3_ACCESS_KEY_ID: "bigcapital"
+      S3_SECRET_ACCESS_KEY: "{{ index .Env "MINIO_ROOT_PASSWORD" }}"
+      S3_BUCKET: "bigcapital"
+      S3_FORCE_PATH_STYLE: "true"
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+
+  webapp:
+    image: bigcapitalhq/webapp:v0.25.20
+    container_name: jabali-app-{{ .Slug }}-webapp
+    restart: unless-stopped
+
+  proxy:
+    image: envoyproxy/envoy:v1.30-latest
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+      webapp:
+        condition: service_started
+    configs:
+      - source: envoy_config
+        target: /etc/envoy/envoy.yaml
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}

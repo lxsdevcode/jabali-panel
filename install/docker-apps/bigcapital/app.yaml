@@ -1,0 +1,60 @@
+slug: bigcapital
+name: Bigcapital
+version: "0.25.20"
+description: |
+  Open-source accounting and financial management — invoicing, expenses,
+  banking, inventory, and financial reports for small businesses. A
+  multi-service stack: a NestJS API (server), a React frontend (webapp),
+  an Envoy proxy that fronts both, MariaDB, Redis, MinIO (S3 storage for
+  attachments), a Gotenberg PDF service, plus one-shot DB-migration and
+  bucket-create steps. Multi-tenant: each organization gets its own
+  database. Open the app and use "Sign up" to create the first
+  organization and owner account (no admin is pre-created).
+icon: icon.svg
+upstream: https://github.com/bigcapitalhq/bigcapital
+documentation: https://docs.bigcapital.app
+
+# Primary image (drives the server + migration services). The webapp,
+# envoy, mariadb, redis, minio and gotenberg images are pinned in the
+# compose template; keep the webapp tag in sync with this version on bump.
+image_channel: bigcapitalhq/server:v0.25.20
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 1024
+
+volumes:
+  - name: db
+    container_path: /var/lib/mysql
+  - name: minio
+    container_path: /data
+  - name: redis
+    container_path: /data
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_PASSWORD
+    secret: true
+    generate: password32
+  - name: DB_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  # Signs auth tokens. Generated per-install so sessions can't be forged
+  # across installs.
+  - name: JWT_SECRET
+    secret: true
+    generate: password32
+  # MinIO (S3) root credential — also the server's S3_SECRET_ACCESS_KEY.
+  - name: MINIO_ROOT_PASSWORD
+    secret: true
+    generate: password32
