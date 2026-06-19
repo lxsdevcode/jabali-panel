@@ -6,10 +6,10 @@
 import { useMemo, useState } from "react";
 import {
   Button,
+  Dropdown,
   Empty,
   Form,
   Modal,
-  Popconfirm,
   Progress,
   Skeleton,
   Space,
@@ -19,11 +19,13 @@ import {
   Typography,
   message,
 } from "antd";
+import type { MenuProps } from "antd";
 import {
   DeleteOutlined,
   EditOutlined,
   KeyOutlined,
   MailOutlined,
+  MoreOutlined,
 } from "@icons";
 import { LibravatarAvatar } from "../../../../components/LibravatarAvatar";
 import { RowActionButton } from "../../../../components/RowActionButton";
@@ -267,58 +269,79 @@ export const MailboxesTab = () => {
           },
           {
             title: "Actions",
-            width: 180,
-            render: (_, row) => (
-              <Space>
-                <Tooltip title="Open webmail for this mailbox">
-                  <Button
-                    type="text"
-                    icon={<MailOutlined />}
-                    loading={
-                      ssoMutation.isPending && ssoMutation.variables?.id === row.id
-                    }
-                    onClick={() => openWebmail(row)}
-                  />
-                </Tooltip>
-                <Tooltip title="Edit mailbox">
-                  <Button
-                    type="text"
-                    icon={<EditOutlined />}
-                    onClick={() => setEditTarget(row)}
-                  />
-                </Tooltip>
-                <Tooltip title="Reset password">
-                  <Button
-                    type="text"
-                    icon={<KeyOutlined />}
-                    loading={rotatingId === row.id}
-                    onClick={() => openReset(row)}
-                  />
-                </Tooltip>
-                <Popconfirm
-                  title={`Delete ${row.email}?`}
-                  description="All mail in this mailbox will be removed. This cannot be undone."
-                  onConfirm={async () => {
-                    try {
-                      await deleteMutation.mutateAsync({
-                        id: row.id,
-                        domainId: row.domain_id,
-                      });
-                      message.success("Mailbox deleted");
-                    } catch (err) {
-                      const msg =
-                        (err as { response?: { data?: { detail?: string } } })
-                          ?.response?.data?.detail ?? "Failed to delete";
-                      message.error(msg);
-                    }
-                  }}
-                  okText="Delete"
-                  okType="danger"
-                >
-                  <RowActionButton danger icon={<DeleteOutlined />}>Remove</RowActionButton>
-                </Popconfirm>
-              </Space>
-            ),
+            width: 120,
+            render: (_, row) => {
+              const menuItems: MenuProps["items"] = [
+                {
+                  key: "edit",
+                  icon: <EditOutlined />,
+                  label: "Edit",
+                  onClick: () => setEditTarget(row),
+                },
+                {
+                  key: "resetpw",
+                  icon: <KeyOutlined />,
+                  label: "Reset password",
+                  onClick: () => openReset(row),
+                },
+                { type: "divider" },
+                {
+                  key: "remove",
+                  icon: <DeleteOutlined />,
+                  label: "Remove",
+                  danger: true,
+                  onClick: () => {
+                    Modal.confirm({
+                      title: `Delete ${row.email}?`,
+                      content:
+                        "All mail in this mailbox will be removed. This cannot be undone.",
+                      okText: "Delete",
+                      okType: "danger",
+                      onOk: async () => {
+                        try {
+                          await deleteMutation.mutateAsync({
+                            id: row.id,
+                            domainId: row.domain_id,
+                          });
+                          message.success("Mailbox deleted");
+                        } catch (err) {
+                          const msg =
+                            (err as { response?: { data?: { detail?: string } } })
+                              ?.response?.data?.detail ?? "Failed to delete";
+                          message.error(msg);
+                        }
+                      },
+                    });
+                  },
+                },
+              ];
+              return (
+                <Space>
+                  <Tooltip title="Open webmail for this mailbox">
+                    <Button
+                      type="text"
+                      icon={<MailOutlined />}
+                      loading={
+                        ssoMutation.isPending &&
+                        ssoMutation.variables?.id === row.id
+                      }
+                      onClick={() => openWebmail(row)}
+                    />
+                  </Tooltip>
+                  <Dropdown
+                    trigger={["click"]}
+                    placement="bottomRight"
+                    menu={{ items: menuItems }}
+                  >
+                    <RowActionButton
+                      icon={<MoreOutlined />}
+                      color="default"
+                      aria-label="Actions"
+                    />
+                  </Dropdown>
+                </Space>
+              );
+            },
           },
         ]}
       />
