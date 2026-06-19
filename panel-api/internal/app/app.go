@@ -434,6 +434,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Users:          deps.Users,
 			Packages:       deps.Packages,
 			ServerSettings: deps.ServerSettings,
+			UIPrefs:        repository.NewUserUIPrefRepository(deps.DB),
 		})
 
 		// ADR-0128 — admin act-as grant management (GH #183). Mounted on v1;

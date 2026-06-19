@@ -17,8 +17,9 @@ import {
 import { Link } from "react-router";
 
 import { useAuth } from "../../auth/AuthContext";
+import { apiClient } from "../../apiClient";
 
-const STORAGE_PREFIX = "jabali:quickstart-user:dismissed:";
+const PREF_KEY = "quickstart_user";
 
 interface Step {
   number: number;
@@ -99,26 +100,26 @@ export function QuickStartModal() {
 
   useEffect(() => {
     if (!user?.id) return;
-    try {
-      if (!localStorage.getItem(STORAGE_PREFIX + user.id)) {
-        setOpen(true);
-      }
-    } catch {
-      // localStorage unavailable — skip silently.
-    }
+    let cancelled = false;
+    // Server-side dismissal (GH #218) so it survives browsers that clear
+    // storage on close. On error, leave the modal closed — don't pester.
+    apiClient
+      .get<{ prefs: Record<string, string> }>("/me/ui-prefs")
+      .then(({ data }) => {
+        if (!cancelled && data.prefs?.[PREF_KEY] !== "1") setOpen(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id]);
 
   const close = () => setOpen(false);
 
   const dismissForever = () => {
-    if (user?.id) {
-      try {
-        localStorage.setItem(STORAGE_PREFIX + user.id, "1");
-      } catch {
-        // ignore
-      }
-    }
     setOpen(false);
+    // Fire-and-forget persist; failure just means it may reappear later.
+    apiClient.put(`/me/ui-prefs/${PREF_KEY}`, { value: "1" }).catch(() => {});
   };
 
   return (

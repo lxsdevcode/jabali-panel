@@ -20,6 +20,7 @@ type MeHandlerConfig struct {
 	Users          repository.UserRepository
 	Packages       repository.PackageRepository
 	ServerSettings repository.ServerSettingsRepository
+	UIPrefs        repository.UserUIPrefRepository
 }
 
 // RegisterMeRoutes wires GET /api/v1/me and GET /api/v1/me/ssh-connection.
@@ -34,6 +35,13 @@ func RegisterMeRoutes(g *gin.RouterGroup, cfg MeHandlerConfig) {
 		// only postgres_enabled — add fields here when more
 		// engine-/feature-gated UI lands.
 		g.GET("/me/server-capabilities", h.serverCapabilities)
+	}
+	// Server-side per-user UI prefs (GH #218) — independent of the repos
+	// above; only needs the UIPrefs store.
+	if cfg.UIPrefs != nil {
+		ph := &meExtHandler{cfg: cfg}
+		g.GET("/me/ui-prefs", ph.uiPrefsGet)
+		g.PUT("/me/ui-prefs/:key", ph.uiPrefsSet)
 	}
 }
 
@@ -206,4 +214,52 @@ func (h *meExtHandler) sshConnection(c *gin.Context) {
 		"username": *user.Username,
 		"command":  cmd,
 	})
+}
+
+// uiPrefsGet returns all server-side UI preferences for the current
+// principal as a {key: value} map (GH #218).
+func (h *meExtHandler) uiPrefsGet(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	prefs, err := h.cfg.UIPrefs.GetAll(c.Request.Context(), claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"prefs": prefs})
+}
+
+// uiPrefsSet upserts one UI preference for the current principal. Body:
+// {"value":"..."}. Key + value are length-bounded so this can't be abused
+// as arbitrary blob storage.
+func (h *meExtHandler) uiPrefsSet(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	key := c.Param("key")
+	if key == "" || len(key) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key"})
+		return
+	}
+	var body struct {
+		Value string `json:"value"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if len(body.Value) > 4096 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "value too long"})
+		return
+	}
+	if err := h.cfg.UIPrefs.Set(c.Request.Context(), claims.UserID, key, body.Value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
