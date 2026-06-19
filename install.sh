@@ -10097,6 +10097,12 @@ install_bulwark() {
   if [[ -f "$version_file" ]] && [[ "$(cat "$version_file")" == "$bulwark_version" ]]; then
     _ok "Bulwark $bulwark_version already installed"
     _install_bulwark_systemd
+    # Config steps are idempotent and must re-apply on every `jabali update`,
+    # not only on a Bulwark version bump — otherwise bulwark.env changes and
+    # the bundled Libravatar plugin never reach an already-current host.
+    _install_bulwark_env
+    _install_bulwark_libravatar_plugin
+    _install_bulwark_impersonate_secrets
     return
   fi
 
