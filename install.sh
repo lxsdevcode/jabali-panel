@@ -4258,8 +4258,9 @@ write_agent_systemd_unit() {
   # creates /run/jabali owned root:jabali 0750, and the agent itself
   # chowns its socket to root:jabali 0660 so only the panel (jabali group)
   # can connect. Hardening knobs that make sense for a root daemon:
-  #   - ProtectKernel*/RestrictSUIDSGID/LockPersonality keep the agent
-  #     out of kernel and exec-mode bystander state
+  #   - ProtectKernel*/LockPersonality keep the agent out of kernel and
+  #     exec-mode bystander state (RestrictSUIDSGID is NOT used — it would
+  #     block domain.create's setgid chmod on docroots, see below)
   #   - NoNewPrivileges stays false because future commands may need
   #     capabilities-aware subprocess spawns (package install etc).
   #
@@ -4315,7 +4316,13 @@ TimeoutStopSec=10
 # app.install's database create, webmail.start, dns.zone.upsert, and
 # every other agent command that touches systemd. Net hardening lost
 # is minimal — the agent runs as UID 0 with full capability set.
-RestrictSUIDSGID=yes
+# RestrictSUIDSGID intentionally OMITTED: domain.create chmods tenant
+# docroots to 2750 — the setgid bit makes PHP-FPM uploads inherit the
+# www-data group so nginx can read them (avoids 403 on fresh media).
+# RestrictSUIDSGID=yes blocks that setgid chmod, so domain.create aborts
+# BEFORE writing the vhost; fresh installs/reinstalls then have no website
+# vhost and ACME HTTP-01 challenges 404 (GH #213). Weak hardening for a
+# root daemon anyway.
 LockPersonality=yes
 
 [Install]
