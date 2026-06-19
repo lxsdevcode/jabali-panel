@@ -25,6 +25,7 @@ import {
   KeyOutlined,
   MailOutlined,
 } from "@icons";
+import { LibravatarAvatar } from "../../../../components/LibravatarAvatar";
 import { RowActionButton } from "../../../../components/RowActionButton";
 import { useQueries } from "@tanstack/react-query";
 
@@ -195,9 +196,14 @@ export const MailboxesTab = () => {
             ellipsis: true,
             sorter: (a, b) => a.email.localeCompare(b.email),
             render: (v: string) => (
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                {v}
-              </Typography.Text>
+              <span
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <LibravatarAvatar email={v} size={24} />
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  {v}
+                </Typography.Text>
+              </span>
             ),
           },
           {
