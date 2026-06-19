@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { apiClient } from "../../../apiClient";
+import { DockerEngineCard } from "./DockerEngineCard";
 
 interface DiskUsage {
   images_bytes: number;
@@ -91,6 +92,7 @@ export const MaintenanceTab = () => {
 
   return (
     <div>
+      <DockerEngineCard />
       <Card title="Disk usage" loading={usage.isLoading} style={{ marginBottom: 16 }}>
         <Row gutter={[16, 16]}>
           <Col xs={12} sm={6}>
