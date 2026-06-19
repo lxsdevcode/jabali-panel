@@ -7,6 +7,9 @@ import { useEffect, useState } from "react";
 import {
   Button,
   Card,
+  Col,
+  Empty,
+  Row,
   Space,
   Table,
   Tabs,
@@ -22,6 +25,7 @@ import {
   LoadingOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  SyncOutlined,
   DeleteOutlined,
   CopyOutlined,
   LoginOutlined,
@@ -41,6 +45,8 @@ import { InstallApplicationModal } from "./InstallApplicationModal";
 import { CloneApplicationModal } from "./CloneApplicationModal";
 import { CatalogTab } from "./CatalogTab";
 import { CmsIcon } from "./CmsIcon";
+import { useAppRegistry } from "./appRegistry";
+import { StatCard } from "../../../components/StatCard";
 
 type ApplicationInstall = {
   id: string;
@@ -175,6 +181,7 @@ export const UserApplicationList = () => {
     defaultSort: "domain_name",
     defaultOrder: "asc",
   });
+  const registry = useAppRegistry();
 
   const [installOpen, setInstallOpen] = useState(false);
   const [presetAppType, setPresetAppType] = useState<string | undefined>(undefined);
@@ -351,6 +358,53 @@ export const UserApplicationList = () => {
             key: "installed",
             label: "Installed",
             children: (
+              <div>
+                {(() => {
+                  const rows = tableQuery.items;
+                  const installedCount = tableQuery.total;
+                  const readyCount = rows.filter((r) => r.status === "ready").length;
+                  const inProgressCount = rows.filter((r) => TRANSITIONAL.has(r.status)).length;
+                  const failedCount = rows.filter((r) => r.status === "failed").length;
+                  const catalogCount = registry.data?.length ?? 0;
+                  const pct = (n: number) =>
+                    rows.length > 0 ? Math.round((n / rows.length) * 100) : 0;
+                  return (
+                    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                      <Col xs={24} sm={12} lg={6}>
+                        <StatCard
+                          iconBg="rgba(207, 19, 34, 0.12)" iconColor="#cf1322" Icon={AppstoreOutlined}
+                          label="Installed Apps" value={installedCount}
+                          subtitle={<Typography.Text type="secondary">{catalogCount} in catalog</Typography.Text>}
+                        />
+                      </Col>
+                      <Col xs={24} sm={12} lg={6}>
+                        <StatCard
+                          iconBg="rgba(63, 134, 0, 0.12)" iconColor="#3f8600" Icon={CheckCircleOutlined}
+                          label="Ready" value={readyCount}
+                          subtitle={<Typography.Text type="secondary">{pct(readyCount)}% of installed</Typography.Text>}
+                        />
+                      </Col>
+                      <Col xs={24} sm={12} lg={6}>
+                        <StatCard
+                          iconBg="rgba(22, 119, 255, 0.12)" iconColor="#1677ff" Icon={SyncOutlined}
+                          label="In Progress" value={inProgressCount}
+                          subtitle={inProgressCount > 0
+                            ? <Typography.Text type="warning">Working…</Typography.Text>
+                            : <Typography.Text type="secondary">Idle</Typography.Text>}
+                        />
+                      </Col>
+                      <Col xs={24} sm={12} lg={6}>
+                        <StatCard
+                          iconBg="rgba(212, 107, 8, 0.12)" iconColor="#d46b08" Icon={ExclamationCircleOutlined}
+                          label="Failed" value={failedCount}
+                          subtitle={failedCount > 0
+                            ? <Typography.Text type="danger">Needs attention</Typography.Text>
+                            : <Typography.Text type="secondary">All healthy</Typography.Text>}
+                        />
+                      </Col>
+                    </Row>
+                  );
+                })()}
               <Card>
         <SearchableTableStringQ<ApplicationInstall>
           rowKey="id"
@@ -358,6 +412,15 @@ export const UserApplicationList = () => {
           dataSource={tableQuery.items}
           initialSearch={tableQuery.params.q}
           searchPlaceholder="Search by domain"
+          locale={{
+            emptyText: (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No installed apps yet">
+                <Button type="primary" onClick={() => setActiveTab("catalog")}>
+                  Browse Catalog
+                </Button>
+              </Empty>
+            ),
+          }}
           onSearchChange={(q) => tableQuery.setParams({ q, page: 1 })}
           pagination={{
             current: tableQuery.params.page,
@@ -470,6 +533,7 @@ export const UserApplicationList = () => {
           />
         </SearchableTableStringQ>
               </Card>
+              </div>
             ),
           },
           {
