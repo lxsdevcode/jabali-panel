@@ -41,6 +41,13 @@ func TestRender_InvoiceShelf(t *testing.T) {
 		`"127.0.0.1:10090:8080/tcp"`,
 		"/var/lib/jabali/docker-apps/invoiceshelf/storage:/var/www/html/storage",
 		"/var/lib/jabali/docker-apps/invoiceshelf/db:/var/lib/mysql",
+		// One-shot storage seeder (see compose.yml.tmpl): seeds the
+		// image's storage skeleton into the bind mount before the app
+		// starts, so the empty mount doesn't mask framework/templates.
+		"init-storage:",
+		"/var/lib/jabali/docker-apps/invoiceshelf/storage:/seed",
+		"condition: service_completed_successfully",
+		"--skip-old-files",
 	} {
 		mustContain(t, out, n)
 	}

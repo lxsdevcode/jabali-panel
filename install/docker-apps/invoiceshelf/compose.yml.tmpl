@@ -1,10 +1,36 @@
 services:
+  # One-shot storage seeder. The InvoiceShelf image (serversideup/php,
+  # runs as www-data uid 82) ships a populated /var/www/html/storage:
+  # the Laravel framework skeleton (framework/{cache,sessions,views}),
+  # PDF fonts, and the bundled invoice/estimate templates under
+  # app/templates/pdf. A bind mount of an empty host dir MASKS all of
+  # that, so the app crash-loops ("valid cache path" / "templates/pdf
+  # does not exist"). Upstream sidesteps this with a named volume (Docker
+  # seeds it from the image on first mount); jabali bind-mounts to
+  # {{ .DataRoot }} for backup, so we seed the skeleton ourselves: tar the
+  # image's storage tree into the bind mount, --skip-old-files so a
+  # re-up never clobbers user data, then chown to the app's uid. Runs to
+  # completion before the app starts (service_completed_successfully).
+  init-storage:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}-init
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - "cd /var/www/html/storage && tar cf - . | tar xf - --skip-old-files -C /seed && chown -R 82:82 /seed"
+    volumes:
+      - {{ .DataRoot }}/storage:/seed
+
   invoiceshelf:
     image: {{ .ImageChannel }}
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     depends_on:
-      - db
+      init-storage:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     environment:
       APP_ENV: "production"
       APP_DEBUG: "false"
