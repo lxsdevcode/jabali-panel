@@ -1,0 +1,53 @@
+slug: invoiceshelf
+name: InvoiceShelf
+version: "2.4.1"
+description: |
+  Open-source, self-hosted invoicing and estimates for freelancers and
+  small businesses (a maintained fork of Crater). Clients, invoices,
+  estimates, payments, recurring billing, multi-company. Two services:
+  the Laravel app + a bundled MariaDB. Complete the one-time setup wizard
+  on first visit to create the admin account and company.
+icon: icon.svg
+upstream: https://github.com/InvoiceShelf/InvoiceShelf
+documentation: https://docs.invoiceshelf.com/
+
+image_channel: invoiceshelf/invoiceshelf:2.4.1
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "768m"
+  pids: 300
+
+volumes:
+  - name: storage
+    container_path: /var/www/html/storage
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_DATABASE
+    value: "invoiceshelf"
+  - name: DB_USERNAME
+    value: "invoiceshelf"
+  - name: DB_PASSWORD
+    secret: true
+    generate: password32
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  # Laravel APP_KEY: a raw 32-char key is a valid 32-byte AES-256 key
+  # (no base64: prefix needed). Set via env so it survives container
+  # recreation (the entrypoint writes env -> .env on every start).
+  - name: APP_KEY
+    secret: true
+    generate: password32
