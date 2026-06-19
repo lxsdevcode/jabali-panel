@@ -807,12 +807,26 @@ func fixCrowdSecBouncerKey(_ repairCtx) error {
 // profiles were accidentally removed.  Fix: copy profiles from the
 // repo and load them in complain mode.
 
-var jabaliAAProfiles = []string{
-	"usr.local.bin.jabali-panel-api",
-	"usr.local.bin.jabali-agent",
-	"usr.local.bin.jabali-bulwark",
-	"usr.local.bin.jabali-kratos",
-	"usr.local.bin.stalwart-mail",
+// jabaliAAProfiles returns the AppArmor profile names jabali actually ships,
+// derived from install/apparmor/ at runtime. The old static 5-name list
+// claimed usr.local.bin.jabali-agent + usr.local.bin.jabali-kratos, which
+// have NO source file under install/apparmor/ — so the missing-profiles
+// detector flagged them broken forever and fixAppArmorProfilesMissing could
+// never install them (it skips profiles with no source). Deriving the set
+// from the shipped files means the detector only checks what can actually be
+// installed, and auto-syncs if profiles are added/removed later.
+func jabaliAAProfiles(repoDir string) []string {
+	entries, err := os.ReadDir(filepath.Join(repoDir, "install", "apparmor"))
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "usr.local.bin.") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }
 
 func detectAppArmorProfilesMissing(ctx repairCtx) (bool, string, error) {
@@ -820,7 +834,7 @@ func detectAppArmorProfilesMissing(ctx repairCtx) (bool, string, error) {
 		return false, "", nil // AppArmor not installed
 	}
 	missing := []string{}
-	for _, p := range jabaliAAProfiles {
+	for _, p := range jabaliAAProfiles(ctx.repoDir) {
 		if _, err := os.Stat("/etc/apparmor.d/" + p); err != nil {
 			missing = append(missing, p)
 		}
@@ -837,7 +851,7 @@ func fixAppArmorProfilesMissing(ctx repairCtx) error {
 	if _, err := os.Stat(srcDir); err != nil {
 		return fmt.Errorf("AppArmor profile source dir %s not found: %w", srcDir, err)
 	}
-	for _, p := range jabaliAAProfiles {
+	for _, p := range jabaliAAProfiles(ctx.repoDir) {
 		src := filepath.Join(srcDir, p)
 		dst := "/etc/apparmor.d/" + p
 		if _, err := os.Stat(src); err != nil {
@@ -864,12 +878,12 @@ func fixAppArmorProfilesMissing(ctx repairCtx) error {
 // disk but not enforced.  Fix: remove the disable symlinks and reload
 // in complain mode.
 
-func detectAppArmorProfilesDisabled(_ repairCtx) (bool, string, error) {
+func detectAppArmorProfilesDisabled(ctx repairCtx) (bool, string, error) {
 	if _, err := exec.LookPath("aa-status"); err != nil {
 		return false, "", nil
 	}
 	disabled := []string{}
-	for _, p := range jabaliAAProfiles {
+	for _, p := range jabaliAAProfiles(ctx.repoDir) {
 		disablePath := "/etc/apparmor.d/disable/" + p
 		if _, err := os.Lstat(disablePath); err == nil {
 			disabled = append(disabled, p)
@@ -882,8 +896,8 @@ func detectAppArmorProfilesDisabled(_ repairCtx) (bool, string, error) {
 		len(disabled), strings.Join(disabled, ", ")), nil
 }
 
-func fixAppArmorProfilesDisabled(_ repairCtx) error {
-	for _, p := range jabaliAAProfiles {
+func fixAppArmorProfilesDisabled(ctx repairCtx) error {
+	for _, p := range jabaliAAProfiles(ctx.repoDir) {
 		disablePath := "/etc/apparmor.d/disable/" + p
 		profilePath := "/etc/apparmor.d/" + p
 		if _, err := os.Lstat(disablePath); err != nil {
