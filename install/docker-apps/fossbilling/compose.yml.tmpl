@@ -1,0 +1,100 @@
+services:
+  # One-shot seeder. FOSSBilling writes config.php + data/ into
+  # /var/www/html, and the installer self-deletes install/install.php on
+  # success — all of which must persist. A bind mount of an empty host dir
+  # masks the image's app code, so we tar the image's /var/www/html into
+  # the bind mount (--skip-old-files = no-clobber on re-up) and chown to
+  # the image's www-data uid (33). Runs before the app starts.
+  init-seed:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}-init
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - "cd /var/www/html && tar cf - . | tar xf - --skip-old-files -C /seed && chown -R 33:33 /seed"
+    volumes:
+      - {{ .DataRoot }}/html:/seed
+
+  fossbilling:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      init-seed:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    volumes:
+      - {{ .DataRoot }}/html:/var/www/html
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/install/install.php -o /dev/null || curl -fsS http://127.0.0.1/ -o /dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+
+  db:
+    image: mariadb:11
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "fossbilling"
+      MYSQL_USER: "fossbilling"
+      MYSQL_PASSWORD: "{{ index .Env "DB_PASSWORD" }}"
+      MYSQL_ROOT_PASSWORD: "{{ index .Env "MYSQL_ROOT_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+
+  # One-shot installer. Waits for the app to be healthy, then drives
+  # FOSSBilling's web installer headlessly (it has no CLI installer and
+  # refuses php-cli). Idempotent: skips if config.php already exists.
+  # trusted_proxy 172.16.0.0/12 covers the Docker bridge gateway so
+  # FOSSBilling trusts the nginx X-Forwarded-Proto: https header and does
+  # NOT enter a force_https redirect loop. The admin password gets an
+  # "Aa1" suffix to satisfy the policy (>=8, upper+lower+digit).
+  init-install:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}-install
+    user: "0:0"
+    depends_on:
+      fossbilling:
+        condition: service_healthy
+    volumes:
+      - {{ .DataRoot }}/html:/seed:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ -f /seed/config.php ]; then echo "config.php exists -> already installed, skipping"; exit 0; fi
+        curl -s -X POST "http://fossbilling/install/install.php?a=install" \
+          --data-urlencode "system_url=https://{{ .Domain }}/" \
+          --data-urlencode "database_hostname=db" \
+          --data-urlencode "database_port=3306" \
+          --data-urlencode "database_name=fossbilling" \
+          --data-urlencode "database_username=fossbilling" \
+          --data-urlencode "database_password={{ index .Env "DB_PASSWORD" }}" \
+          --data-urlencode "admin_name=Administrator" \
+          --data-urlencode "admin_email=admin@{{ .Domain }}" \
+          --data-urlencode "admin_password={{ index .Env "FOSSBILLING_ADMIN_PASSWORD" }}Aa1" \
+          --data-urlencode "currency_code=USD" \
+          --data-urlencode "error_reporting=0" \
+          --data-urlencode "trusted_proxy_enabled=1" \
+          --data-urlencode "trusted_proxy_proxies=172.16.0.0/12" \
+          --data-urlencode "trusted_proxy_headers=x_forwarded" \
+          -o /dev/null -w "fossbilling install: HTTP %{http_code}\n"

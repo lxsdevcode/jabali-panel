@@ -1,0 +1,52 @@
+slug: fossbilling
+name: FOSSBilling
+version: "0.8.2"
+description: |
+  Open-source billing and client management — invoices, orders, support
+  tickets, and a product catalog with hosting & domain integrations.
+  Runs in its own container (Apache + PHP), so the panel's PHP hardening
+  doesn't apply. Three services: the FOSSBilling app, a bundled MariaDB,
+  and a one-shot installer that completes setup automatically on first
+  boot. First login: admin@<your-domain> with the generated
+  FOSSBILLING_ADMIN_PASSWORD from the install .env, followed by the suffix
+  "Aa1" (e.g. <password>Aa1). Change it after signing in.
+icon: icon.svg
+upstream: https://github.com/FOSSBilling/FOSSBilling
+documentation: https://fossbilling.org/docs
+
+image_channel: fossbilling/fossbilling:0.8.2
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 200
+
+volumes:
+  - name: html
+    container_path: /var/www/html
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_PASSWORD
+    secret: true
+    generate: password32
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  # First-admin password. The one-shot installer appends an "Aa1" suffix
+  # to satisfy FOSSBilling's policy (>=8 chars, upper+lower+digit), so the
+  # real login is this value followed by "Aa1".
+  - name: FOSSBILLING_ADMIN_PASSWORD
+    secret: true
+    generate: password32
