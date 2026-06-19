@@ -39,6 +39,19 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/stalwart /etc/stalwart /etc/jabali-panel
 
+# Mail event logs (Stalwart Log file tracers): the delivery-log viewer
+# (GH #239, queue.message-queued events) and the CrowdSec mail brute-force
+# tap (ADR-0115). LogsDirectory makes systemd create /var/log/stalwart
+# (owned by User=, mode below) BEFORE ExecStart and mount it read-write
+# inside the ProtectSystem=strict sandbox. Using LogsDirectory rather than
+# a ReadWritePaths entry avoids the "dir missing -> namespace setup fails
+# -> mail server won't start" trap, and fixes the original breakage where
+# the directory was absent AND excluded from ReadWritePaths, so every
+# Stalwart file tracer silently wrote nothing (Mail > Logs was always
+# empty; CrowdSec saw no mail-auth events).
+LogsDirectory=stalwart
+LogsDirectoryMode=0750
+
 # Stalwart binds to ports 25, 465, 587, 993 (external mail protocols) and
 # 8446 (loopback JMAP). Only the loopback binding requires no capability;
 # binding to the mail ports as non-root needs CAP_NET_BIND_SERVICE.

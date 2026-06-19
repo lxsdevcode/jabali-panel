@@ -145,6 +145,23 @@
         "lossy": false,
         "ansi": false,
         "buffered": false
+      },
+      "#jabali-delivery-log": {
+        "@type": "Log",
+        "enable": true,
+        "level": "info",
+        "path": "/var/log/stalwart",
+        "prefix": "delivery",
+        "rotate": "daily",
+        "ansi": false,
+        "multiline": false,
+        "lossy": false,
+        "eventsPolicy": "include",
+        "events": {
+          "queue.message-queued": true,
+          "delivery.completed": true,
+          "delivery.failed": true
+        }
       }
     }
   },
