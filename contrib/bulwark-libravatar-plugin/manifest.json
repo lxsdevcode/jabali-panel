@@ -1,0 +1,10 @@
+{
+  "id": "libravatar",
+  "name": "Libravatar Avatars",
+  "version": "1.0.0",
+  "author": "jabali",
+  "description": "Resolve sender and recipient avatars from Libravatar — a federated, privacy-friendly Gravatar alternative — via the onAvatarResolve hook. Falls through to favicon/initials when an address has no avatar.",
+  "type": "hook",
+  "permissions": [],
+  "entrypoint": "index.js"
+}
