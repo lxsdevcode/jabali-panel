@@ -159,6 +159,41 @@ func TestApplications_CreateWordPress_HappyPath(t *testing.T) {
 	_ = ag
 }
 
+func TestApplications_CreateITFlow_SurfacesEmailAsLogin(t *testing.T) {
+	// GH #226: ITFlow logs in by EMAIL, not a username. The framework must
+	// surface the admin email as the login credential instead of the random
+	// generated username (which left users unable to sign in).
+	wpRepo, domainRepo, userRepo := wpUserAndDomain()
+	r, ag, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+
+	body := map[string]any{
+		"app_type":  "itflow",
+		"domain_id": "domain1",
+		"params": map[string]any{
+			"company_name": "Acme MSP",
+			"admin_name":   "Administrator",
+			"admin_email":  "boss@example.com",
+		},
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/api/v1/applications", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	var resp createApplicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.AdminUsername != "boss@example.com" {
+		t.Errorf("EmailLogin app should surface the admin email as the login, got AdminUsername=%q", resp.AdminUsername)
+	}
+	_ = ag
+}
+
 func TestApplications_CreateRequiresDBFalse_SkipsDBChain(t *testing.T) {
 	wpRepo, domainRepo, userRepo := wpUserAndDomain()
 	r, ag, dbRepo := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, func(reg *apps.Registry) {
