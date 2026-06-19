@@ -20,7 +20,6 @@ import {
   Typography,
 } from "antd";
 import { DeleteOutlined, EditOutlined, KeyOutlined, MailOutlined, PlusOutlined } from "@icons";
-import { LibravatarAvatar } from "../../../components/LibravatarAvatar";
 
 import {
   useAdminMailboxes,
@@ -187,10 +186,7 @@ export function AdminMailPage() {
               dataIndex: "email",
               sorter: (a, b) => a.email.localeCompare(b.email),
               render: (v: string) => (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <LibravatarAvatar email={v} size={24} />
-                  <Typography.Text style={{ fontFamily: "monospace" }}>{v}</Typography.Text>
-                </span>
+                <Typography.Text style={{ fontFamily: "monospace" }}>{v}</Typography.Text>
               ),
             },
             {

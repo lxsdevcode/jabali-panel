@@ -51,14 +51,20 @@ export function LibravatarAvatar({ email, size = 24 }: LibravatarAvatarProps) {
   }, [email, size]);
 
   const hasAvatar = src && !failed;
+  // Native <img> (via AntD Avatar's ReactNode src) so we can set
+  // referrerPolicy=no-referrer — otherwise the panel URL leaks to
+  // Libravatar/its CDN in the Referer header on every avatar fetch.
   const avatar = hasAvatar ? (
     <Avatar
       size={size}
-      src={src}
-      onError={() => {
-        setFailed(true);
-        return false;
-      }}
+      src={
+        <img
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      }
     />
   ) : (
     <Avatar size={size} icon={<UserOutlined />} />
@@ -68,8 +74,8 @@ export function LibravatarAvatar({ email, size = 24 }: LibravatarAvatarProps) {
     <Tooltip
       title={
         hasAvatar
-          ? "Libravatar photo — manage it at libravatar.org"
-          : "No Libravatar photo — add one at libravatar.org"
+          ? "Photo from libravatar.org — click to manage it"
+          : "Looks up a photo on libravatar.org (your address hash is sent there) — click to add one"
       }
     >
       <a
