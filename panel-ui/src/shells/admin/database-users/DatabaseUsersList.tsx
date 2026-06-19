@@ -168,6 +168,10 @@ export const DatabaseUsersList = () => {
             current: query.params.page,
             pageSize: query.params.pageSize,
             total: query.total,
+            showSizeChanger: true,
+            // GH #232: controlled pagination needs onChange or page/size
+            // clicks are inert (current/pageSize are pinned to query state).
+            onChange: (page, pageSize) => query.setParams({ page, pageSize }),
           }}
         >
           <Table.Column<DatabaseUser>
