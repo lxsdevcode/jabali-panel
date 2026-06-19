@@ -425,6 +425,23 @@ func buildPHPValueParam(memLimit, uploadMax, postMax string, maxInputVars, maxEx
 // This is the core logic shared by domain.create and domain.enable/disable.
 // If the config content is unchanged, nginx reload is skipped for efficiency.
 func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool) (string, error) {
+	// SSL cert may be referenced by the DB (ssl_cert_path set) but MISSING
+	// on disk — most commonly after a reinstall wiped /etc/letsencrypt while
+	// the panel DB kept the cert row. Emitting the 443 block with
+	// `ssl_certificate <missing-file>` makes `nginx -t` fail, and the
+	// rollback below then removes the WHOLE vhost — including the port-80
+	// ACME location — so the cert can never be re-obtained (GH #213: a full
+	// reinstall left the apex vhost absent, the HTTP-01 challenge 404'd, and
+	// the cert was stuck pending forever). Fall back to an HTTP-only vhost
+	// when the cert is absent; the reconciler's port-80 ACME location then
+	// re-issues the cert and the next reconcile pass restores the 443 block.
+	if sslCertPath != "" {
+		if _, statErr := os.Stat(sslCertPath); statErr != nil {
+			sslCertPath = ""
+			sslKeyPath = ""
+		}
+	}
+
 	// Generate vhost configuration
 	tmpl, err := template.New("vhost").Parse(vhostTemplate)
 	if err != nil {
