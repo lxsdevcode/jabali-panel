@@ -8,8 +8,7 @@
 // Timestamps render in the server timezone (Server Settings →
 // Timezone). Actor shows the resolved username (API batch-resolves the
 // ULID). The Action cell opens a modal with the full recorded detail.
-import { Card, Space, Table, Tag, Typography } from "antd";
-import { SafetyOutlined } from "@icons";
+import { Card, Table, Tag } from "antd";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import {
@@ -33,16 +32,6 @@ export const AdminAuditList = () => {
 
   return (
     <div>
-      <Space
-        wrap
-        align="center"
-        style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}
-      >
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          <SafetyOutlined /> Audit Log
-        </Typography.Title>
-      </Space>
-
       <Card>
         <SearchableTableStringQ<AuditRow>
           rowKey="id"
