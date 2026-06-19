@@ -214,12 +214,6 @@ export const adminNav: NavItem[] = [
     path: "/jabali-admin/logs",
   },
   {
-    key: "audit",
-    label: "Audit Log",
-    icon: navIcon(SafetyOutlined),
-    path: "/jabali-admin/audit",
-  },
-  {
     key: "cron",
     label: "Cron",
     icon: navIcon(CalendarCheckOutlined),
