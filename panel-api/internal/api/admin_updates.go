@@ -32,6 +32,7 @@ type AdminUpdatesHandlerConfig struct {
 const (
 	jabaliUpdateUnit = "jabali-update-oneshot.service"
 	aptUpdateUnit    = "jabali-apt-oneshot.service"
+	repairUnit       = "jabali-repair-oneshot.service"
 )
 
 // RegisterAdminUpdatesRoutes mounts the update endpoints. M29 proxy routes
@@ -56,6 +57,13 @@ func RegisterAdminUpdatesRoutes(g *gin.RouterGroup, cfg AdminUpdatesHandlerConfi
 	grp.GET("/history", h.history)
 	grp.GET("/autoupdate", h.autoupdateGet)
 	grp.PUT("/autoupdate", h.autoupdatePut)
+	// Repair Center (jabali repair). diagnose is read-only + synchronous;
+	// run fires `jabali repair --auto` as a transient unit (a safe fix can
+	// restart jabali-panel) and the UI polls /repair/status for output.
+	grp.POST("/repair/diagnose", h.repairDiagnose)
+	grp.POST("/repair/run", h.repairRun)
+	grp.GET("/repair/status", h.repairStatus)
+	grp.DELETE("/repair", h.repairStop)
 }
 
 type adminUpdatesHandler struct{ cfg AdminUpdatesHandlerConfig }
@@ -129,6 +137,29 @@ func (h *adminUpdatesHandler) jabaliStatus(c *gin.Context) {
 
 func (h *adminUpdatesHandler) jabaliStop(c *gin.Context) {
 	h.callAgent(c, "system.unit_stop", map[string]any{"unit": jabaliUpdateUnit}, 10*time.Second)
+}
+
+// --- repair ----------------------------------------------------------------
+
+// repairDiagnose runs `jabali repair --diagnose` (read-only) and returns the
+// detector text. Synchronous: it changes nothing, so it can't restart a
+// service mid-call. 120s ceiling covers the slowest detector sweep.
+func (h *adminUpdatesHandler) repairDiagnose(c *gin.Context) {
+	h.callAgent(c, "system.repair_diagnose", map[string]any{}, 120*time.Second)
+}
+
+// repairRun fires `jabali repair --auto` as a transient unit and returns the
+// unit + started_at; the UI polls repairStatus for progress + output.
+func (h *adminUpdatesHandler) repairRun(c *gin.Context) {
+	h.callAgent(c, "system.repair_run", map[string]any{}, 10*time.Second)
+}
+
+func (h *adminUpdatesHandler) repairStatus(c *gin.Context) {
+	h.callAgent(c, "system.repair_status", map[string]any{"since": c.Query("since")}, 15*time.Second)
+}
+
+func (h *adminUpdatesHandler) repairStop(c *gin.Context) {
+	h.callAgent(c, "system.unit_stop", map[string]any{"unit": repairUnit}, 10*time.Second)
 }
 
 // --- apt -------------------------------------------------------------------

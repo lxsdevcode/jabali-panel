@@ -226,3 +226,60 @@ export function useUpdateAutoupdate() {
 }
 
 
+
+// --- repair (Repair Center on the Updates page) ----------------------------
+
+export interface RepairDiagnoseResult {
+  output: string;
+  exit_code: number;
+}
+
+// useRepairDiagnose runs `jabali repair --diagnose` (read-only) and returns
+// the detector text. Synchronous on the server — no polling.
+export function useRepairDiagnose() {
+  return useMutation<RepairDiagnoseResult>({
+    mutationFn: async () => {
+      const r = await apiClient.post<RepairDiagnoseResult>(
+        "/admin/updates/repair/diagnose",
+      );
+      return r.data;
+    },
+  });
+}
+
+// useRepairRun fires `jabali repair --auto` as a transient unit; poll
+// useRepairStatus(started_at) for progress + output.
+export function useRepairRun() {
+  return useMutation<RunResult>({
+    mutationFn: async () => {
+      const r = await apiClient.post<RunResult>("/admin/updates/repair/run");
+      return r.data;
+    },
+  });
+}
+
+export function useRepairStatus(since: string | null) {
+  return useQuery<UnitStatus>({
+    queryKey: ["repair-status", since],
+    queryFn: async () => {
+      const r = await apiClient.get<UnitStatus>(
+        `/admin/updates/repair/status${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+      );
+      return r.data;
+    },
+    enabled: since !== null,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      return s === "active" || s === "activating" ? 2000 : false;
+    },
+  });
+}
+
+export function useRepairStop() {
+  return useMutation({
+    mutationFn: async () => {
+      const r = await apiClient.delete("/admin/updates/repair");
+      return r.data;
+    },
+  });
+}
