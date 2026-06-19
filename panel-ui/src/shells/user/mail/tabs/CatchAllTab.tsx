@@ -9,7 +9,6 @@ import {
   
   Empty,
   Form,
-  Input,
   message,
   Modal,
   Popconfirm,
@@ -23,7 +22,7 @@ import {
 } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@icons";
 import { RowActionButton } from "../../../../components/RowActionButton";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../../../../apiClient";
 import { useListQuery } from "../../../../hooks/useQueries";
@@ -33,6 +32,7 @@ import {
   type DomainCatchAll,
 } from "../../../../hooks/useCatchAll";
 import type { Domain } from "../../domains/UserDomainList";
+import type { Mailbox } from "../../../../hooks/useMailboxes";
 
 interface CatchAllRow {
   domain_id: string;
@@ -80,6 +80,21 @@ export const CatchAllTab = () => {
   const updateMut = useUpdateDomainCatchAll();
   const deleteMut = useDeleteDomainCatchAll();
 
+  // #234: the catch-all target must be an existing mailbox in the chosen
+  // domain — offer a picker instead of a free-text email field. Load the
+  // selected domain's mailboxes; the query re-runs as domain_id changes.
+  const watchedDomainID = Form.useWatch("domain_id", form);
+  const { data: domainMailboxes = [], isLoading: loadingMailboxes } = useQuery({
+    queryKey: ["catchall-mailboxes", watchedDomainID],
+    enabled: !!watchedDomainID,
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data: Mailbox[] }>(
+        `/domains/${watchedDomainID}/mailboxes?page=1&page_size=200&sort=local_part&order=asc`,
+      );
+      return data.data;
+    },
+  });
+
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
@@ -110,6 +125,13 @@ export const CatchAllTab = () => {
 
   if (emailEnabledDomains.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No email-enabled domains yet" />;
+  }
+
+  // Build the mailbox options; preserve a current target that isn't in
+  // the list (e.g. set before this picker existed) so editing never drops it.
+  const targetOptions = domainMailboxes.map((m) => ({ label: m.email, value: m.email }));
+  if (editing?.target && !targetOptions.some((o) => o.value === editing.target)) {
+    targetOptions.unshift({ label: `${editing.target} (current)`, value: editing.target });
   }
 
   return (
@@ -216,19 +238,25 @@ export const CatchAllTab = () => {
             <Select
               placeholder="Select email-enabled domain"
               disabled={!!editing}
+              onChange={() => form.setFieldValue("target", undefined)}
               options={emailEnabledDomains.map((d) => ({ label: d.name, value: d.id }))}
             />
           </Form.Item>
           <Form.Item
             name="target"
             label="Target mailbox"
-            rules={[
-              { required: true, message: "Enter an email address" },
-              { type: "email", message: "Invalid email" },
-            ]}
+            rules={[{ required: true, message: "Select a target mailbox" }]}
             extra="Mail sent to unknown addresses at this domain is delivered to this mailbox."
           >
-            <Input placeholder="admin@example.com" autoFocus />
+            <Select
+              showSearch
+              placeholder={watchedDomainID ? "Select a mailbox" : "Select a domain first"}
+              loading={loadingMailboxes}
+              disabled={!watchedDomainID}
+              options={targetOptions}
+              optionFilterProp="label"
+              notFoundContent={loadingMailboxes ? "Loading…" : "No mailboxes in this domain"}
+            />
           </Form.Item>
         </Form>
       </Modal>
