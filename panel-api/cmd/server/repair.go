@@ -276,6 +276,12 @@ func repairSteps() []repairStep {
 			fix:    fixUploadsDir,
 		},
 		{
+			id:     "etc-jabali-perms",
+			label:  "/etc/jabali not traversable by hosting users (SSH/SFTP locked out — sandbox-mode unreadable)",
+			detect: detectEtcJabaliPerms,
+			fix:    fixEtcJabaliPerms,
+		},
+		{
 			id:     "ondrej-nginx-ppa",
 			label:  "stale ondrej/nginx PPA in apt sources (404 on noble)",
 			detect: detectOndrejPPA,
@@ -1368,6 +1374,50 @@ func resyncBulwarkEnv(clean string) error {
 	}
 	if err := os.Rename(tmp, bulwarkEnvFile); err != nil {
 		return fmt.Errorf("rename bulwark.env: %w", err)
+	}
+	return nil
+}
+
+// ---------- etc-jabali-perms ----------
+//
+// Symptom: /etc/jabali is not world-traversable (e.g. an operator chmod'd
+// it 0700 to "protect" db-password), or ssh-sandbox-mode isn't world-
+// readable. The login wrapper reads /etc/jabali/ssh-sandbox-mode AS the
+// hosting user; if it can't, it falls back to nologin — locking EVERY
+// tenant out of SSH/SFTP (GH #211: a user was one chmod from reinstalling
+// Debian). The secrets in /etc/jabali (db-password, config.toml) are
+// protected at the FILE level (0640), so the directory is meant to stay
+// 0755. Fix: restore 0755 on the dir + 0644 on the mode file. Non-
+// destructive — only loosens to the install default.
+
+func detectEtcJabaliPerms(_ repairCtx) (bool, string, error) {
+	fi, err := os.Stat("/etc/jabali")
+	if err != nil {
+		return false, "", nil // dir absent — unrelated
+	}
+	issues := []string{}
+	if fi.Mode().Perm()&0o001 == 0 {
+		issues = append(issues, fmt.Sprintf("/etc/jabali is %#o (needs o+x so tenants can traverse)", fi.Mode().Perm()))
+	}
+	if mfi, merr := os.Stat("/etc/jabali/ssh-sandbox-mode"); merr == nil {
+		if mfi.Mode().Perm()&0o004 == 0 {
+			issues = append(issues, fmt.Sprintf("/etc/jabali/ssh-sandbox-mode is %#o (needs o+r)", mfi.Mode().Perm()))
+		}
+	}
+	if len(issues) == 0 {
+		return false, "", nil
+	}
+	return true, "hosting users can't read the SSH sandbox mode (login wrapper falls back to nologin — every tenant locked out of SSH/SFTP): " + strings.Join(issues, "; "), nil
+}
+
+func fixEtcJabaliPerms(_ repairCtx) error {
+	if err := os.Chmod("/etc/jabali", 0o755); err != nil {
+		return fmt.Errorf("chmod 0755 /etc/jabali: %w", err)
+	}
+	if _, err := os.Stat("/etc/jabali/ssh-sandbox-mode"); err == nil {
+		if err := os.Chmod("/etc/jabali/ssh-sandbox-mode", 0o644); err != nil {
+			return fmt.Errorf("chmod 0644 /etc/jabali/ssh-sandbox-mode: %w", err)
+		}
 	}
 	return nil
 }
