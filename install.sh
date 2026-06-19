@@ -4891,6 +4891,17 @@ install_nginx_panel_vhost() {
 
   ln -sf "$panel_vhost_file" "${nginx_enabled_dir}/jabali-panel.conf"
 
+  # The vhost template hard-`include`s the phpMyAdmin + Adminer snippets.
+  # nginx fails `nginx -t` on a missing literal include, so an optional
+  # component that hasn't installed yet (or failed — e.g. phpMyAdmin's CDN
+  # was unreachable) would otherwise take the whole :8443 panel vhost down
+  # with it (GH #217). Guarantee both include targets exist; an empty file
+  # is a no-op include that install_phpmyadmin / install_adminer overwrite
+  # with the real block when they run.
+  mkdir -p /etc/nginx/sites-available/includes /etc/nginx/snippets
+  [[ -f /etc/nginx/sites-available/includes/phpmyadmin.conf ]] || : > /etc/nginx/sites-available/includes/phpmyadmin.conf
+  [[ -f /etc/nginx/snippets/jabali-adminer.conf ]] || : > /etc/nginx/snippets/jabali-adminer.conf
+
   _log "testing nginx configuration"
   if ! nginx -t 2>&1 | grep -q "successful"; then
     nginx -t 2>&1 >&2 || true
@@ -5507,7 +5518,14 @@ install_phpmyadmin() {
     if ! curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
          --max-time 300 -o "$pma_archive" \
          "https://files.phpmyadmin.net/phpMyAdmin/${pma_version}/phpMyAdmin-${pma_version}-all-languages.tar.gz"; then
-      _die "failed to download phpMyAdmin $pma_version tarball after 5 retries — check network / upstream status at https://www.phpmyadmin.net/downloads/"
+      # Non-fatal: phpMyAdmin is optional and its CDN is flaky. Don't abort
+      # the whole install (and leave the panel down) over it — skip it,
+      # keep the placeholder include so the :8443 vhost stays valid, and
+      # let a later `jabali update` retry once upstream is reachable.
+      _warn "failed to download phpMyAdmin $pma_version after 5 retries — skipping (panel works without it; re-run 'jabali update' once https://www.phpmyadmin.net/downloads/ is reachable)"
+      mkdir -p /etc/nginx/sites-available/includes
+      [[ -f /etc/nginx/sites-available/includes/phpmyadmin.conf ]] || : > /etc/nginx/sites-available/includes/phpmyadmin.conf
+      return 0
     fi
 
     # Verify checksum
