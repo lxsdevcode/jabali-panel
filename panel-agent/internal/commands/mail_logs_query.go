@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,8 +44,10 @@ import (
 // jabali-mail:jabali-mail 0750 log files directly.
 
 const (
-	mailLogPrefix  = "delivery"
-	mailLogEventID = "(queue.message-queued)"
+	mailLogPrefix         = "delivery"
+	mailLogEventQueued    = "(queue.message-queued)"
+	mailLogEventCompleted = "(delivery.completed)"
+	mailLogEventFailed    = "(delivery.failed)"
 	// mailLogMaxScan bounds memory: at most this many matching lines are
 	// parsed across all log files before filtering. Newest files are read
 	// first, so the cap drops only the oldest history.
@@ -82,6 +85,7 @@ var (
 	reMailLogFrom = regexp.MustCompile(`\bfrom = "([^"]*)"`)
 	reMailLogTo   = regexp.MustCompile(`\bto = \[([^\]]*)\]`)
 	reMailLogSize = regexp.MustCompile(`\bsize = (\d+)`)
+	reMailLogQID  = regexp.MustCompile(`\bqueueId = (\d+)`)
 )
 
 // parsedMailLine is the parse result with recipients kept split for accurate
@@ -90,13 +94,18 @@ type parsedMailLine struct {
 	entry      mailLogEntry
 	recipients []string
 	ts         time.Time
+	queueID    string // for dedup across queued/completed lines of one message
+	queued     bool   // true = queue.message-queued (canonical, preferred on dedup)
 }
 
 // parseMailLogLine extracts a message record from a single Stalwart Log
 // tracer line. Returns ok=false for any non-message line (lifecycle events,
 // blank lines) so callers can skip them.
 func parseMailLogLine(line string) (parsedMailLine, bool) {
-	if !strings.Contains(line, mailLogEventID) {
+	queued := strings.Contains(line, mailLogEventQueued)
+	if !queued &&
+		!strings.Contains(line, mailLogEventCompleted) &&
+		!strings.Contains(line, mailLogEventFailed) {
 		return parsedMailLine{}, false
 	}
 	sp := strings.IndexByte(line, ' ')
@@ -129,6 +138,11 @@ func parseMailLogLine(line string) (parsedMailLine, bool) {
 		size, _ = strconv.Atoi(m[1])
 	}
 
+	qid := ""
+	if m := reMailLogQID.FindStringSubmatch(line); m != nil {
+		qid = m[1]
+	}
+
 	return parsedMailLine{
 		entry: mailLogEntry{
 			Timestamp: tsStr,
@@ -138,6 +152,8 @@ func parseMailLogLine(line string) (parsedMailLine, bool) {
 		},
 		recipients: recipients,
 		ts:         ts,
+		queueID:    qid,
+		queued:     queued,
 	}, true
 }
 
@@ -189,6 +205,14 @@ func mailLogsQueryHandler(ctx context.Context, params json.RawMessage) (any, err
 		p.Offset = 0
 	}
 
+	// GH #239: self-heal the delivery tracer. Installs that UPDATED (rather than
+	// fresh-installed after the tracer was added to the apply-plan) never got it,
+	// so /var/log/stalwart/delivery.<date> is never written and the tab stays
+	// empty. Create it if missing — best-effort; new mail then starts logging.
+	if err := ensureDeliveryTracer(ctx); err != nil {
+		slog.WarnContext(ctx, "mail logs: ensure delivery tracer failed", "err", err)
+	}
+
 	var fromBound, toBound time.Time
 	if p.FromDate != nil {
 		if t, ok := parseDateBound(*p.FromDate); ok {
@@ -215,6 +239,12 @@ func mailLogsQueryHandler(ctx context.Context, params json.RawMessage) (any, err
 	}
 
 	matched := make([]mailLogEntry, 0, 128)
+	// Dedup queued + completed lines of the same message by queueId. Stalwart
+	// emits queue.message-queued for relayed mail and delivery.completed for
+	// (some) local mail; a message may produce one or both. Prefer the queued
+	// line (canonical accept time/size) when both are present.
+	seen := map[string]int{}
+	matchedQueued := []bool{}
 	scanned := 0
 
 files:
@@ -253,7 +283,18 @@ files:
 			if len(p.DomainNames) > 0 && !mailLineInScope(pl, p.DomainNames) {
 				continue
 			}
+			if pl.queueID != "" {
+				if idx, dup := seen[pl.queueID]; dup {
+					if pl.queued && !matchedQueued[idx] {
+						matched[idx] = pl.entry
+						matchedQueued[idx] = true
+					}
+					continue
+				}
+				seen[pl.queueID] = len(matched)
+			}
 			matched = append(matched, pl.entry)
+			matchedQueued = append(matchedQueued, pl.queued)
 		}
 		fh.Close()
 	}
@@ -306,6 +347,49 @@ func containsDomain(addr, domain string) bool {
 		return false
 	}
 	return strings.EqualFold(addr[at+1:], domain)
+}
+
+// ensureDeliveryTracer creates the #jabali-delivery-log Stalwart Log tracer if
+// no tracer with prefix "delivery" exists. Mirrors install/stalwart/
+// apply-plan.json.tmpl. Idempotent + change-gated (reloads only on create).
+func ensureDeliveryTracer(ctx context.Context) error {
+	var qr jmapQueryResult
+	if err := jmapCall(ctx, "x:Tracer/query", map[string]any{}, &qr); err != nil {
+		return fmt.Errorf("tracer query: %w", err)
+	}
+	if len(qr.IDs) > 0 {
+		var gr jmapGetResult
+		if err := jmapCall(ctx, "x:Tracer/get", map[string]any{"ids": qr.IDs}, &gr); err != nil {
+			return fmt.Errorf("tracer get: %w", err)
+		}
+		for _, raw := range gr.List {
+			var t struct {
+				Prefix string `json:"prefix"`
+			}
+			if json.Unmarshal(raw, &t) == nil && t.Prefix == "delivery" {
+				return nil // already provisioned
+			}
+		}
+	}
+	args := map[string]any{"create": map[string]any{"jabali-delivery-log": map[string]any{
+		"@type": "Log", "enable": true, "level": "info",
+		"path": mailLogDir, "prefix": mailLogPrefix, "rotate": "daily",
+		"ansi": false, "multiline": false, "lossy": false,
+		"eventsPolicy": "include",
+		"events": map[string]any{
+			"queue.message-queued": true,
+			"delivery.completed":   true,
+			"delivery.failed":      true,
+		},
+	}}}
+	var res jmapSetResult
+	if err := jmapCall(ctx, "x:Tracer/set", args, &res); err != nil {
+		return fmt.Errorf("tracer create: %w", err)
+	}
+	if reason, bad := res.NotCreated["jabali-delivery-log"]; bad {
+		return fmt.Errorf("tracer create refused: %s", string(reason))
+	}
+	return reloadStalwartSettings(ctx)
 }
 
 func init() {

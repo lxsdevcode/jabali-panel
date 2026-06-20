@@ -50,16 +50,47 @@ func TestParseMailLogLine_MultiRecipient(t *testing.T) {
 	}
 }
 
-func TestParseMailLogLine_SkipsNonMessageEvents(t *testing.T) {
-	// delivery.completed is NOT the message record we key on.
-	if _, ok := parseMailLogLine(sampleCompleted); ok {
-		t.Error("delivery.completed should be skipped (not queue.message-queued)")
+func TestParseMailLogLine_Completed(t *testing.T) {
+	// GH #239: local deliveries emit ONLY delivery.completed (no queued line),
+	// so it must parse — deduped by queueId against any queued line.
+	pl, ok := parseMailLogLine(sampleCompleted)
+	if !ok {
+		t.Fatal("delivery.completed should now parse")
 	}
+	if pl.queued {
+		t.Error("completed line must report queued=false")
+	}
+	if pl.queueID != "313790779361329152" {
+		t.Errorf("queueID = %q", pl.queueID)
+	}
+	if pl.entry.From != "probe7@jabali.site" || pl.entry.Size != 1662 {
+		t.Errorf("entry = %+v", pl.entry)
+	}
+}
+
+func TestParseMailLogLine_SkipsNonMessageEvents(t *testing.T) {
 	if _, ok := parseMailLogLine(`2026-06-19T22:10:31Z INFO Starting Stalwart Server (server.startup) version = "0.16.6"`); ok {
 		t.Error("server.startup should be skipped")
 	}
 	if _, ok := parseMailLogLine(""); ok {
 		t.Error("blank line should be skipped")
+	}
+}
+
+// TestMailLogs_DedupAndCompleted: queued+completed for one message collapse to a
+// single entry; a completed-only message (local delivery) still shows.
+func TestMailLogs_DedupAndCompleted(t *testing.T) {
+	completedOnly := `2026-06-20T10:00:00Z INFO Delivery completed (delivery.completed) queueId = 777, from = "local@jabali.site", to = ["dest@jabali.site"], size = 500, total = 1`
+	content := sampleQueued + "\n" + sampleCompleted + "\n" + completedOnly + "\n"
+	withMailLogDir(t, "delivery.2026-06-20", content)
+	resp, err := mailLogsQueryHandler(context.Background(), mustJSON(t, map[string]any{"domain_names": []string{"jabali.site"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := resp.(mailLogsQueryResponse)
+	// queued+completed (queueId 313790779361329152) => 1; completedOnly (777) => 1.
+	if r.Total != 2 {
+		t.Fatalf("total = %d, want 2 (deduped queued+completed + completed-only)", r.Total)
 	}
 }
 
