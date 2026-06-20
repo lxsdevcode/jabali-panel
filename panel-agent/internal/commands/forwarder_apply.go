@@ -148,18 +148,58 @@ func buildExternalSieve(externals []forwarderExternal) string {
 
 func applyExternalSieve(ctx context.Context, acctID string, externals []forwarderExternal) error {
 	scriptName := "jabali-fwds"
+
+	// Find the existing jabali-fwds script id. JMAP update/destroy key by
+	// the object ID, NOT the name — keying by name silently no-ops, which
+	// froze the script at its first-ever content (GH #237). Read the id
+	// first so update/destroy target the real object. Note: the store is
+	// x:SieveUserScript (a Stalwart extension), NOT the standard
+	// SieveScript — they are different stores, so every call here must use
+	// the x: method.
+	existingID, err := existingFwdScriptID(ctx, acctID, scriptName)
+	if err != nil {
+		return err
+	}
+
 	if len(externals) == 0 {
-		// Destroy the script if it exists.
+		if existingID == "" {
+			return nil // nothing to remove
+		}
 		args := map[string]any{
 			"accountId": acctID,
-			"destroy":   []string{scriptName},
+			"destroy":   []string{existingID},
 		}
 		var result jmapSetResult
-		_ = jmapCall(ctx, "SieveScript/set", args, &result) // best-effort — may not exist
+		if err := jmapCall(ctx, "x:SieveUserScript/set", args, &result); err != nil {
+			return fmt.Errorf("sieve destroy: %w", err)
+		}
 		return nil
 	}
+
 	contents := buildExternalSieve(externals)
-	// Upsert + activate.
+
+	if existingID != "" {
+		// Update the existing script BY ID.
+		args := map[string]any{
+			"accountId": acctID,
+			"update": map[string]any{
+				existingID: map[string]any{
+					"contents": contents,
+					"isActive": true,
+				},
+			},
+		}
+		var result jmapSetResult
+		if err := jmapCall(ctx, "x:SieveUserScript/set", args, &result); err != nil {
+			return fmt.Errorf("sieve update: %w", err)
+		}
+		if reason, ok := result.NotUpdated[existingID]; ok {
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("sieve update refused: %s", string(reason))}
+		}
+		return nil
+	}
+
+	// No existing script → create.
 	args := map[string]any{
 		"accountId": acctID,
 		"create": map[string]any{
@@ -175,25 +215,32 @@ func applyExternalSieve(ctx context.Context, acctID string, externals []forwarde
 		return err
 	}
 	if reason, ok := result.NotCreated[scriptName]; ok {
-		// Probably already exists → update instead.
-		args = map[string]any{
-			"accountId": acctID,
-			"update": map[string]any{
-				scriptName: map[string]any{
-					"contents": contents,
-					"isActive": true,
-				},
-			},
-		}
-		var result2 jmapSetResult
-		if err := jmapCall(ctx, "x:SieveUserScript/set", args, &result2); err != nil {
-			return fmt.Errorf("sieve upsert: %w (first NotCreated: %s)", err, string(reason))
-		}
-		if reason2, ok2 := result2.NotUpdated[scriptName]; ok2 {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("sieve update refused: %s", string(reason2))}
-		}
+		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("sieve create refused: %s", string(reason))}
 	}
 	return nil
+}
+
+// existingFwdScriptID returns the object id of the account's jabali-fwds
+// Sieve script, or "" if it doesn't exist yet.
+func existingFwdScriptID(ctx context.Context, acctID, scriptName string) (string, error) {
+	args := map[string]any{"accountId": acctID}
+	var result jmapGetResult
+	if err := jmapCall(ctx, "x:SieveUserScript/get", args, &result); err != nil {
+		return "", fmt.Errorf("sieve get: %w", err)
+	}
+	for _, raw := range result.List {
+		var s struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &s); err != nil {
+			continue
+		}
+		if s.Name == scriptName {
+			return s.ID, nil
+		}
+	}
+	return "", nil
 }
 
 func init() {
