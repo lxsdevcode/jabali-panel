@@ -676,6 +676,8 @@ export const InstallApplicationModal = ({
 
             {domainSelected && (
               <>
+                {!selectedApp?.root_only && (
+                  <>
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                     <Form.Item name="use_www" valuePropName="checked" noStyle>
@@ -702,6 +704,8 @@ export const InstallApplicationModal = ({
                     autoComplete="off"
                   />
                 </Form.Item>
+                  </>
+                )}
 
                 {fieldOrder.map((name) =>
                   renderParamField(name, activeSchema[name], undefined),

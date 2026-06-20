@@ -94,6 +94,18 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 		return nil, newInstallErr(http.StatusBadRequest, "invalid_subdirectory", err.Error())
 	}
 
+	// RootOnly apps (ITFlow, GH #226) only work at the domain/subdomain
+	// root — reject a subdirectory or www prefix at the boundary so a
+	// hand-crafted request can't bypass the hidden UI controls.
+	if descriptor.RootOnly {
+		if p.Subdirectory != "" {
+			return nil, newInstallErr(http.StatusBadRequest, "subdirectory_not_allowed", descriptor.DisplayName+" must be installed at the domain root")
+		}
+		if p.UseWWW {
+			return nil, newInstallErr(http.StatusBadRequest, "www_not_allowed", descriptor.DisplayName+" cannot use a www prefix")
+		}
+	}
+
 	if err := validateInstallParams(p.Params, descriptor.InstallParamSchema); err != nil {
 		return nil, newInstallErr(http.StatusBadRequest, "invalid_params", err.Error())
 	}

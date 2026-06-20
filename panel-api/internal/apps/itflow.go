@@ -25,6 +25,7 @@ var ITFlow = App{
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
 	EmailLogin:           true,
+	RootOnly:             true,
 	SupportedPHPVersions: nil,
 	AgentInstallCmd:      "app.install",
 	AgentDeleteCmd:       "app.delete",

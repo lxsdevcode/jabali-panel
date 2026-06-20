@@ -548,3 +548,51 @@ var _ ApplicationHandlerConfig = ApplicationHandlerConfig{}
 
 // Use context to keep imports tight in case future tests need it.
 var _ = context.Background
+
+// TestApplications_Create_RootOnly_Rejects covers GH #226: ITFlow only works at
+// the domain root, so a subdirectory or www prefix must be rejected at the API.
+func TestApplications_Create_RootOnly_Rejects(t *testing.T) {
+	mkReq := func(extra map[string]any) map[string]any {
+		body := map[string]any{
+			"app_type":  "itflow",
+			"domain_id": "domain1",
+			"params": map[string]any{
+				"company_name":   "Acme",
+				"admin_name":     "Admin",
+				"admin_email":    "admin@example.com",
+				"admin_password": "password1",
+			},
+		}
+		for k, v := range extra {
+			body[k] = v
+		}
+		return body
+	}
+	cases := []struct {
+		name    string
+		extra   map[string]any
+		wantErr string
+	}{
+		{"subdirectory", map[string]any{"subdirectory": "itflow"}, "subdirectory_not_allowed"},
+		{"www", map[string]any{"use_www": true}, "www_not_allowed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wpRepo, domainRepo, userRepo := wpUserAndDomain()
+			r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, func(reg *apps.Registry) {
+				_ = reg.Register(apps.ITFlow)
+			})
+			bodyBytes, _ := json.Marshal(mkReq(tc.extra))
+			req := httptest.NewRequest("POST", "/api/v1/applications", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tc.wantErr) {
+				t.Errorf("body missing %s: %s", tc.wantErr, w.Body.String())
+			}
+		})
+	}
+}

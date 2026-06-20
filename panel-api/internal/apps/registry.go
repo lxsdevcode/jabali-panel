@@ -70,6 +70,12 @@ type App struct {
 	// for these — it surfaces the admin email as the login credential so
 	// the post-install screen doesn't show a meaningless random username.
 	EmailLogin bool `json:"email_login,omitempty"`
+	// RootOnly marks apps that only work when served from the domain (or
+	// subdomain) root: no subdirectory and no www-prefix vhost. ITFlow
+	// breaks in a subdir and with www (GH #226). The UI hides the
+	// subdirectory + "create www" controls for these apps and the API
+	// rejects a non-empty subdirectory / use_www.
+	RootOnly bool `json:"root_only,omitempty"`
 	// SupportedPHPVersions, if non-empty, is the closed set of PHP
 	// versions this app's installer can target. Empty = "any active
 	// pool". The UI uses this to filter the PHP-version picker.
