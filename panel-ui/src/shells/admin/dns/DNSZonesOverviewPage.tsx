@@ -50,7 +50,7 @@ const ZonesTab = () => {
           const res = await apiClient.get(`/domains/${domain.id}/dns/zone`);
           return {
             domainId: domain.id,
-            provisioned: !!res.data?.data?.id,
+            provisioned: !!res.data?.zone?.id,
           };
         } catch {
           return { domainId: domain.id, provisioned: false };
