@@ -1,6 +1,13 @@
 # ADR-0052: Disclaimer — Sieve System Script (Spike A Passed, HTML Covered)
 
-**Status:** ACCEPTED (2026-04-23) — sieve path handles text/plain AND text/html.
+**Status:** CORRECTED (2026-06-20, GH #233) — the original "ACCEPTED" verdict
+was wrong: the feature never applied a disclaimer to any delivered message.
+Spike A verified only that the script *compiled* and *persisted* (it says so:
+"Delivery: to be observed in production"); delivery was never tested and was
+broken on four independent counts. See the **GH #233 correction** at the
+bottom for the root causes + the fix, live-verified on Stalwart 0.16.6.
+
+**Status (original):** ACCEPTED (2026-04-23) — sieve path handles text/plain AND text/html.
 MtaHook fallback no longer needed.
 **Supersedes:** provisional form of this ADR (shipped in M6.5 commit 6674ee3).
 **Related:** ADR-0051 (M6.5 DB-as-truth), ADR-0045 (Stalwart v0.16 pivot), M25 unix socket lockdown.
@@ -92,3 +99,51 @@ The follow-up fix (this commit):
 
 Live multipart/alternative delivery observation on first production send.
 Runbook updated to drop "text/plain-only" caveat.
+
+---
+
+## GH #233 correction (2026-06-20) — "disclaimer not working"
+
+The shipped feature appended a disclaimer to **zero** delivered messages.
+Four independent bugs, all surfaced by a live send-and-inspect (authenticated
+SMTP submit on :587 → read the delivered copy via JMAP) on Stalwart 0.16.6:
+
+1. **The DATA-stage script was never bound.** Stalwart runs a Sieve script at
+   the SMTP DATA stage only when `MtaStageData.script` selects one; it
+   defaults to `false` (= run nothing). The agent created per-domain
+   `x:SieveSystemScript` objects with `isActive:true` but never set the
+   binding, so the scripts were dormant. Verified: a trivial `addheader`
+   probe script did not run until `MtaStageData.script` was bound **and** a
+   `ReloadSettings` action was issued (the setting is cached until reload).
+
+2. **`:is` Content-Type match never fired.** The sieve used
+   `header :mime :contenttype :is "Content-Type" "text/plain"`. The real
+   header is `text/plain; charset="utf-8"`, so the exact `:is` comparison
+   never matched. Fixed to `:contains`.
+
+3. **`extracttext` was used as a test.** The code wrote
+   `if extracttext "x" { replace ... }`, but `extracttext` is a Sieve
+   **action** (RFC 5703), not a test — the body was never captured, so
+   `replace` had nothing to append to. Fixed to a bare action.
+
+4. **Per-domain script selection by expression fails on dots.** The first fix
+   attempt bound `MtaStageData.script` to `'jabali-disclaimer-' + sender_domain`
+   and named scripts `jabali-disclaimer-<domain>`. Stalwart's script-name
+   resolution chokes on the dots in a domain name (a dash-named script
+   resolved; the dotted name did not). 
+
+**Final design:** ONE global system script named `jabali-disclaimer` (dot-free,
+so the binding resolves) holding a marker-delimited section per domain
+(`# jabali-disclaimer-begin <domain>` … `# <<< end`). Each `domain.disclaimer_apply`
+splices that domain's section in/out, upserts the global script **by id**
+(name-keyed updates silently no-op — same class of bug as the forwarder Sieve,
+GH #237), binds `MtaStageData.script` to the constant `'jabali-disclaimer'`,
+and issues `ReloadSettings`. All writes are change-gated (GET + compare) so the
+per-tick reconcile is a no-op once converged.
+
+**Live-verified:** plain and HTML-multipart messages from a disclaimer-enabled
+domain get the disclaimer appended to both parts; disabling removes it (and
+destroys the script when the last domain is removed); re-apply is idempotent;
+mail from domains with no disclaimer is unaffected (missing-section no-op).
+
+Implementation: `panel-agent/internal/commands/domain_disclaimer_apply.go`.
