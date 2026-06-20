@@ -13,6 +13,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -117,6 +118,50 @@ func (h *forwarderHandler) listAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": items, "total": int64(len(items)), "page": 1, "page_size": len(items)})
 }
 
+// applyForwarders re-lists a mailbox's forwarders and pushes the full
+// desired state to Stalwart via forwarder.apply. Best-effort: the DB is
+// truth, so a transient agent failure is logged and retried on the next
+// mutation. GH #237 — until this was added, forwarders were written to the
+// DB but NEVER converged: the only caller of forwarder.apply was the
+// dormant phases.forwardersPhase (registered via no init(), reached only by
+// the never-called ReconcileMailboxAll). Mirrors the inline autoresponder.set
+// dispatch.
+func (h *forwarderHandler) applyForwarders(ctx context.Context, mb *models.Mailbox, dom *models.Domain) {
+	if h.cfg.Agent == nil {
+		return
+	}
+	rows, _, err := h.cfg.Forwarders.ListByMailboxID(ctx, mb.ID, repository.ListOptions{Limit: 500})
+	if err != nil {
+		slog.Warn("forwarder.apply: list failed", "mailbox_id", mb.ID, "err", err)
+		return
+	}
+	aliases := []map[string]string{}
+	externals := []string{}
+	for _, f := range rows {
+		if !f.Enabled {
+			continue
+		}
+		switch f.Type {
+		case "alias":
+			if f.LocalPart != nil {
+				aliases = append(aliases, map[string]string{"local_part": *f.LocalPart})
+			}
+		case "external":
+			externals = append(externals, f.Target)
+		}
+	}
+	params := map[string]any{
+		"mailbox_email": mb.LocalPart + "@" + dom.Name,
+		"aliases":       aliases,
+		"externals":     externals,
+	}
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if _, err := h.cfg.Agent.Call(cctx, "forwarder.apply", params); err != nil {
+		slog.Warn("forwarder.apply: agent push failed", "mailbox_id", mb.ID, "err", err)
+	}
+}
+
 func (h *forwarderHandler) create(c *gin.Context) {
 	ctx := c.Request.Context()
 	claims := ginctx.Claims(c)
@@ -158,6 +203,7 @@ func (h *forwarderHandler) create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
+	h.applyForwarders(ctx, mb, dom)
 	c.JSON(http.StatusCreated, h.resolve(ctx, *f, mb, dom))
 }
 
@@ -177,7 +223,7 @@ func (h *forwarderHandler) del(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "domain_scoped_forwarder"})
 		return
 	}
-	_, _, err = h.loadMailbox(ctx, *f.MailboxID, claims)
+	mb, dom, err := h.loadMailbox(ctx, *f.MailboxID, claims)
 	if err != nil {
 		h.writeErr(c, err)
 		return
@@ -186,6 +232,7 @@ func (h *forwarderHandler) del(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
+	h.applyForwarders(ctx, mb, dom)
 	c.JSON(http.StatusNoContent, nil)
 }
 
