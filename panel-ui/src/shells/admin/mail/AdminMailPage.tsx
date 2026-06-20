@@ -31,7 +31,6 @@ import {
 import { useListQuery } from "../../../hooks/useQueries";
 import type { Domain } from "../../user/domains/UserDomainList";
 import { EditMailboxModal } from "../../../components/mail/EditMailboxModal";
-import { LibravatarAvatar } from "../../../components/LibravatarAvatar";
 import { AdminGroupsTab } from "./AdminGroupsTab";
 import { CreateMailboxWizardModal } from "../../user/mail/CreateMailboxWizardModal";
 import { DatabaseUserPasswordModal } from "../../../components/DatabaseUserPasswordModal";
@@ -187,10 +186,7 @@ export function AdminMailPage() {
               dataIndex: "email",
               sorter: (a, b) => a.email.localeCompare(b.email),
               render: (v: string) => (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <LibravatarAvatar email={v} size={24} />
-                  <Typography.Text style={{ fontFamily: "monospace" }}>{v}</Typography.Text>
-                </span>
+                <Typography.Text style={{ fontFamily: "monospace" }}>{v}</Typography.Text>
               ),
             },
             {
