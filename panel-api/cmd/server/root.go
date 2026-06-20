@@ -88,6 +88,7 @@ func newRootCmd() *cobra.Command {
 		newUpdateCmd(),
 		newLimitsCmd(),
 		newMailboxCmd(),
+		newSharedResourceCmd(),
 		newPdnsCmd(),
 		newPanelPrimaryCmd(),
 		newNspawnCmd(),

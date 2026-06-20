@@ -617,13 +617,18 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// M6.5 Email features: forwarders, autoresponders, catch-all, disclaimer,
 		// shared folders, logs. All sub-routes live in routes_m65.go and are
 		// filled in by Wave B/C steps (ADR-0051).
+		var srRepo repository.SharedResourceRepository
+		if deps.DB != nil {
+			srRepo = repository.NewSharedResourceRepository(deps.DB)
+		}
 		api.RegisterM65Routes(v1, api.M65RouteDeps{
-			Agent:          deps.Agent,
-			Domains:        deps.Domains,
-			Mailboxes:      deps.Mailboxes,
-			Autoresponders: deps.Autoresponders,
-			Forwarders:     deps.Forwarders,
-			MailboxShares:  deps.MailboxShares,
+			Agent:           deps.Agent,
+			Domains:         deps.Domains,
+			Mailboxes:       deps.Mailboxes,
+			Autoresponders:  deps.Autoresponders,
+			Forwarders:      deps.Forwarders,
+			MailboxShares:   deps.MailboxShares,
+			SharedResources: srRepo,
 		})
 		// DNSSEC per-domain (ADR-0076). Standalone mount; not part of M6.5.
 		api.RegisterDomainDNSSECRoutes(v1, api.DomainDNSSECHandlerConfig{

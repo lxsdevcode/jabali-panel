@@ -16,6 +16,7 @@ type M65RouteDeps struct {
 	Autoresponders repository.EmailAutoresponderRepository
 	Forwarders     repository.EmailForwarderRepository
 	MailboxShares  repository.MailboxShareRepository
+	SharedResources repository.SharedResourceRepository
 }
 
 // RegisterM65Routes registers all M6.5 email feature routes.
@@ -28,6 +29,7 @@ func RegisterM65Routes(g *gin.RouterGroup, deps M65RouteDeps) {
 	registerDisclaimerRoutes(g, deps)
 	registerSharedFolderRoutes(g, deps)
 	registerMailLogRoutes(g, deps)
+	registerSharedResourceRoutes(g, deps)
 }
 
 // Wave B: forwarders.
@@ -81,5 +83,14 @@ func registerMailLogRoutes(g *gin.RouterGroup, deps M65RouteDeps) {
 	RegisterMailLogsRoutes(g, MailLogsHandlerConfig{
 		Domains: deps.Domains,
 		Agent:   deps.Agent,
+	})
+}
+
+// M52 (ADR-0133): standalone shared resources + grants.
+func registerSharedResourceRoutes(g *gin.RouterGroup, deps M65RouteDeps) {
+	RegisterSharedResourceRoutes(g, SharedResourceHandlerConfig{
+		Resources: deps.SharedResources,
+		Domains:   deps.Domains,
+		Agent:     deps.Agent,
 	})
 }
