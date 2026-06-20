@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Skeleton, Space, Switch, Tag, Tooltip, message } from "antd";
-import { CheckOutlined, CloseOutlined, ReloadOutlined } from "@icons";
+import { Alert, Button, Input, Modal, Select, Skeleton, Space, Tag, Tooltip, message } from "antd";
+import { ReloadOutlined } from "@icons";
 import { Link } from "react-router";
 
 import { apiClient } from "../../../apiClient";
@@ -60,9 +60,14 @@ export const DomainSSLSection = ({ domainId, sslEnabled, onToggled }: Props) => 
   const [cert, setCert] = useState<SSLCertificate | null>(null);
   const [certMissing, setCertMissing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState(false);
   const [renewing, setRenewing] = useState(false);
   const [adminEmail, setAdminEmail] = useState<string | undefined>(undefined);
+  const [sslMode, setSslMode] = useState<string>("le");
+  const [modeChanging, setModeChanging] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [certPem, setCertPem] = useState("");
+  const [keyPem, setKeyPem] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const fetchCert = useCallback(async () => {
     setLoading(true);
@@ -89,31 +94,56 @@ export const DomainSSLSection = ({ domainId, sslEnabled, onToggled }: Props) => 
       .get<{ settings: ServerSettings }>("/system/settings")
       .then((res) => setAdminEmail(res.data?.settings?.admin_email))
       .catch(() => undefined);
-  }, [fetchCert]);
+    apiClient
+      .get<{ ssl_mode?: string }>(`/domains/${domainId}`)
+      .then((res) => setSslMode(res.data?.ssl_mode ?? "le"))
+      .catch(() => undefined);
+  }, [fetchCert, domainId]);
 
-  const onFlip = async (next: boolean) => {
-    setToggling(true);
+
+  const applyMode = async (mode: string) => {
+    if (mode === "custom") {
+      setCustomOpen(true);
+      return;
+    }
+    setModeChanging(true);
     try {
-      if (next) {
-        await apiClient.post(`/domains/${domainId}/ssl`);
-        message.success("SSL issuance scheduled");
-      } else {
-        await apiClient.delete(`/domains/${domainId}/ssl`);
-        message.success("SSL revocation scheduled");
-      }
+      await apiClient.patch(`/domains/${domainId}`, { ssl_mode: mode });
+      setSslMode(mode);
+      message.success("Certificate mode updated");
       onToggled();
       await fetchCert();
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
-      if (resp?.error === "missing_admin_email") {
-        message.error(
-          resp.detail ?? "Set an admin email in Server Settings before enabling SSL.",
-        );
-      } else {
-        message.error("Failed to toggle SSL");
-      }
+      message.error(resp?.detail ?? "Failed to change certificate mode");
     } finally {
-      setToggling(false);
+      setModeChanging(false);
+    }
+  };
+
+  const uploadCustom = async () => {
+    if (!certPem.trim() || !keyPem.trim()) {
+      message.error("Paste both the certificate and the private key");
+      return;
+    }
+    setUploading(true);
+    try {
+      await apiClient.put(`/domains/${domainId}/ssl/custom`, {
+        cert_pem: certPem,
+        key_pem: keyPem,
+      });
+      setSslMode("custom");
+      setCustomOpen(false);
+      setCertPem("");
+      setKeyPem("");
+      message.success("Custom certificate installed");
+      onToggled();
+      await fetchCert();
+    } catch (err: unknown) {
+      const resp = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
+      message.error(resp?.detail ?? "Failed to install custom certificate");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -195,13 +225,19 @@ export const DomainSSLSection = ({ domainId, sslEnabled, onToggled }: Props) => 
       ) : null}
 
       <Space size="middle" align="center">
-        <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />}
-          checked={sslEnabled}
-          loading={toggling}
-          onChange={onFlip}
-          disabled={!adminEmail && !sslEnabled}
+        <Select
+          value={sslMode}
+          loading={modeChanging}
+          style={{ width: 220 }}
+          onChange={applyMode}
+          options={[
+            { value: "le", label: "Let's Encrypt", disabled: !adminEmail && sslMode !== "le" },
+            { value: "self", label: "Self-signed" },
+            { value: "custom", label: "Custom (upload)" },
+            { value: "none", label: "None (HTTP only)" },
+          ]}
         />
-        <span>HTTPS / Let&apos;s Encrypt</span>
+        <span>TLS certificate</span>
 
         {certMissing && sslEnabled && (
           <Tag color="default">pending issuance</Tag>
@@ -230,6 +266,45 @@ export const DomainSSLSection = ({ domainId, sslEnabled, onToggled }: Props) => 
           </Button>
         )}
       </Space>
+
+      <Modal
+        open={customOpen}
+        title="Upload custom certificate"
+        okText="Install"
+        confirmLoading={uploading}
+        onOk={uploadCustom}
+        onCancel={() => setCustomOpen(false)}
+        width={640}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Paste the full-chain certificate (leaf + intermediates) and the matching private key in PEM format. The key is stored on the server and never shown again."
+          />
+          <div>
+            <div style={{ marginBottom: 4 }}>Certificate (PEM)</div>
+            <Input.TextArea
+              rows={6}
+              value={certPem}
+              onChange={(e) => setCertPem(e.target.value)}
+              placeholder="-----BEGIN CERTIFICATE-----"
+              style={{ fontFamily: "monospace" }}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4 }}>Private key (PEM)</div>
+            <Input.TextArea
+              rows={6}
+              value={keyPem}
+              onChange={(e) => setKeyPem(e.target.value)}
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              style={{ fontFamily: "monospace" }}
+            />
+          </div>
+        </Space>
+      </Modal>
     </Space>
   );
 };
