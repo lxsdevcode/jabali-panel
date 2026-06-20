@@ -71,6 +71,7 @@ func TestMailGroup_Create(t *testing.T) {
 	g := &models.MailGroup{
 		ID: "grp1", DomainID: "dom1", LocalPart: "marketing",
 		DisplayName: "Marketing", Description: "Team",
+		GroupKind: "resource",
 		HasMailbox: true, HasCalendar: true, HasAddressbook: true, HasFiles: true,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -80,6 +81,7 @@ func TestMailGroup_Create(t *testing.T) {
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

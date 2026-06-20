@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 )
@@ -35,6 +36,11 @@ type SharedResourceRepository interface {
 	// PruneGranteeGrants removes every grant pointing at a deleted grantee
 	// (called on mailbox/group delete — the grantee has no FK).
 	PruneGranteeGrants(ctx context.Context, granteeKind, granteeID string) error
+
+	// Tombstones — durable host teardown after a resource is deleted.
+	AddTombstone(ctx context.Context, email string) error
+	ListTombstones(ctx context.Context) ([]string, error)
+	DeleteTombstone(ctx context.Context, email string) error
 }
 
 type sharedResourceRepo struct{ db *gorm.DB }
@@ -167,4 +173,25 @@ func (r *sharedResourceRepo) PruneGranteeGrants(ctx context.Context, granteeKind
 	return r.db.WithContext(ctx).
 		Where("grantee_kind = ? AND grantee_id = ?", granteeKind, granteeID).
 		Delete(&models.SharedResourceGrant{}).Error
+}
+
+func (r *sharedResourceRepo) AddTombstone(ctx context.Context, email string) error {
+	t := &models.SharedResourceTombstone{Email: email, CreatedAt: time.Now().UTC()}
+	// Idempotent: ignore a duplicate tombstone for the same address.
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(t).Error
+}
+
+func (r *sharedResourceRepo) ListTombstones(ctx context.Context) ([]string, error) {
+	var emails []string
+	err := r.db.WithContext(ctx).Model(&models.SharedResourceTombstone{}).
+		Pluck("email", &emails).Error
+	return emails, err
+}
+
+func (r *sharedResourceRepo) DeleteTombstone(ctx context.Context, email string) error {
+	return r.db.WithContext(ctx).
+		Where("email = ?", email).
+		Delete(&models.SharedResourceTombstone{}).Error
 }

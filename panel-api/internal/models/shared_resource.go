@@ -47,3 +47,14 @@ type SharedResourceGrant struct {
 }
 
 func (SharedResourceGrant) TableName() string { return "shared_resource_grants" }
+
+// SharedResourceTombstone records a deleted shared resource's host address so
+// the reconciler can durably tear down the Stalwart host principal (and clear
+// the tombstone on success), even if the synchronous delete-time teardown
+// failed (agent down).
+type SharedResourceTombstone struct {
+	Email     string    `gorm:"type:varchar(320);primaryKey" json:"email"`
+	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
+}
+
+func (SharedResourceTombstone) TableName() string { return "shared_resource_tombstones" }

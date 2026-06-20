@@ -54,6 +54,30 @@ func (r *Reconciler) reconcileSharedResources(ctx context.Context) {
 	for i := range resources {
 		r.reconcileOneSharedResource(ctx, &resources[i])
 	}
+	r.reconcileSharedResourceTombstones(ctx)
+}
+
+// reconcileSharedResourceTombstones tears down host principals for deleted
+// resources. Each tombstone is destroyed (idempotent) and cleared on success;
+// a still-down agent leaves the tombstone for the next pass.
+func (r *Reconciler) reconcileSharedResourceTombstones(ctx context.Context) {
+	emails, err := r.sharedResources.ListTombstones(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "shared_resources: list tombstones", "err", err)
+		return
+	}
+	for _, email := range emails {
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := r.agent.Call(callCtx, "sharedresource.destroy", map[string]any{"email": email})
+		cancel()
+		if err != nil {
+			slog.WarnContext(ctx, "shared_resources: tombstone destroy", "email", email, "err", err)
+			continue // retry next pass
+		}
+		if err := r.sharedResources.DeleteTombstone(ctx, email); err != nil {
+			slog.WarnContext(ctx, "shared_resources: clear tombstone", "email", email, "err", err)
+		}
+	}
 }
 
 func (r *Reconciler) reconcileOneSharedResource(ctx context.Context, res *models.SharedResource) {
@@ -91,6 +115,7 @@ func (r *Reconciler) reconcileOneSharedResource(ctx context.Context, res *models
 			if err := r.sharedResources.UpdateProjection(ctx, res.ID, ar.HostAccountID, res.CollectionID); err != nil {
 				slog.WarnContext(ctx, "shared_resources: cache projection", "resource", res.ID, "err", err)
 			}
+			res.HostAccountID = ar.HostAccountID // keep in-memory in sync for downstream caching
 		}
 	}
 
@@ -134,7 +159,21 @@ func (r *Reconciler) reconcileOneSharedResource(ctx context.Context, res *models
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if _, err := r.agent.Call(callCtx, cmd, params); err != nil {
+	raw, err := r.agent.Call(callCtx, cmd, params)
+	if err != nil {
 		slog.WarnContext(ctx, "shared_resources: share_set", "resource", res.ID, "cmd", cmd, "err", err)
+		return
+	}
+	// file.share_set returns the find-or-created folder node id; cache it as
+	// the collection id so the panel can reference the exact shared folder.
+	if res.Kind == "files" && res.CollectionID == "" {
+		var fr struct {
+			NodeID string `json:"node_id"`
+		}
+		if json.Unmarshal(raw, &fr) == nil && fr.NodeID != "" {
+			if err := r.sharedResources.UpdateProjection(ctx, res.ID, res.HostAccountID, fr.NodeID); err != nil {
+				slog.WarnContext(ctx, "shared_resources: cache node id", "resource", res.ID, "err", err)
+			}
+		}
 	}
 }

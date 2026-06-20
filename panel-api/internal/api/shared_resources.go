@@ -195,9 +195,17 @@ func (h *sharedResourceHandler) update(c *gin.Context) {
 		return
 	}
 	if req.DisplayName != nil {
-		if err := h.cfg.Resources.UpdateMeta(c.Request.Context(), sr.ID, strings.TrimSpace(*req.DisplayName)); err != nil {
+		dn := strings.TrimSpace(*req.DisplayName)
+		if err := h.cfg.Resources.UpdateMeta(c.Request.Context(), sr.ID, dn); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 			return
+		}
+		// Propagate the rename to Stalwart (collection / From name). The
+		// reconciler gates apply on first-projection, so push it here.
+		if sr.EmailCached != nil && *sr.EmailCached != "" {
+			h.notifyAgent(c.Request.Context(), "sharedresource.apply", map[string]any{
+				"email": *sr.EmailCached, "display_name": dn, "kind": sr.Kind,
+			})
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -253,6 +261,9 @@ func (h *sharedResourceHandler) delete(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if sr.EmailCached != nil && *sr.EmailCached != "" {
+		// Tombstone first (durable teardown), then best-effort instant destroy.
+		// The reconciler GC retries destroy until it succeeds, then clears it.
+		_ = h.cfg.Resources.AddTombstone(ctx, *sr.EmailCached)
 		h.notifyAgent(ctx, "sharedresource.destroy", map[string]any{"email": *sr.EmailCached})
 	}
 	if err := h.cfg.Resources.Delete(ctx, sr.ID); err != nil {

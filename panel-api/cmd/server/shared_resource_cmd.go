@@ -260,9 +260,12 @@ func newSharedResourceRemoveCmd() *cobra.Command {
 			// Tear down the Stalwart host principal first (mirrors the REST
 			// delete handler). The reconciler does NOT garbage-collect orphaned
 			// hosts, so the row delete alone would leave the principal behind.
-			if sr, err := repo.FindByID(ctx, resourceID); err == nil && sr.EmailCached != nil && *sr.EmailCached != "" && sharedAgent != nil {
-				if _, derr := sharedAgent.Call(ctx, "sharedresource.destroy", map[string]any{"email": *sr.EmailCached}); derr != nil {
-					fmt.Fprintf(os.Stderr, "warning: host teardown failed (%v); deleting row anyway\n", derr)
+			if sr, err := repo.FindByID(ctx, resourceID); err == nil && sr.EmailCached != nil && *sr.EmailCached != "" {
+				_ = repo.AddTombstone(ctx, *sr.EmailCached) // durable backstop for the reconciler GC
+				if sharedAgent != nil {
+					if _, derr := sharedAgent.Call(ctx, "sharedresource.destroy", map[string]any{"email": *sr.EmailCached}); derr != nil {
+						fmt.Fprintf(os.Stderr, "warning: host teardown failed (%v); reconciler will retry\n", derr)
+					}
 				}
 			}
 			if err := repo.Delete(ctx, resourceID); err != nil {
