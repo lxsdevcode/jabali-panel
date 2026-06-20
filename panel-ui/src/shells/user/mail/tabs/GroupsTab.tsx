@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import {
   App,
   Button,
-  Checkbox,
   Drawer,
   Empty,
   Form,
@@ -224,19 +223,11 @@ export function GroupDrawer({
               name: group.local_part,
               display_name: group.display_name,
               description: group.description,
-              has_mailbox: group.has_mailbox,
-              has_calendar: group.has_calendar,
-              has_addressbook: group.has_addressbook,
-              has_files: group.has_files,
             }
           : {
               name: "",
               display_name: "",
               description: "",
-              has_mailbox: true,
-              has_calendar: true,
-              has_addressbook: true,
-              has_files: true,
             },
       );
     }
@@ -253,10 +244,6 @@ export function GroupDrawer({
           input: {
             display_name: v.display_name,
             description: v.description,
-            has_mailbox: v.has_mailbox,
-            has_calendar: v.has_calendar,
-            has_addressbook: v.has_addressbook,
-            has_files: v.has_files,
           },
         });
         message.success("Group updated");
@@ -268,10 +255,6 @@ export function GroupDrawer({
             name: v.name,
             display_name: v.display_name,
             description: v.description,
-            has_mailbox: v.has_mailbox,
-            has_calendar: v.has_calendar,
-            has_addressbook: v.has_addressbook,
-            has_files: v.has_files,
           },
         });
         message.success("Group created");
@@ -313,22 +296,10 @@ export function GroupDrawer({
           <Input.TextArea placeholder="Optional note" rows={2} maxLength={255} />
         </Form.Item>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Shared resources — every member gets access in their webmail:
+          Members of this group automatically share the group's mailbox, calendar,
+          contacts and files in their webmail. For a single calendar, address book or
+          file folder shared with specific people, use the <b>Shared Resources</b> tab.
         </Typography.Text>
-        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-          <Form.Item name="has_mailbox" valuePropName="checked" noStyle>
-            <Checkbox>Shared mailbox (send &amp; receive on the group address)</Checkbox>
-          </Form.Item>
-          <Form.Item name="has_calendar" valuePropName="checked" noStyle>
-            <Checkbox>Shared calendar</Checkbox>
-          </Form.Item>
-          <Form.Item name="has_addressbook" valuePropName="checked" noStyle>
-            <Checkbox>Shared address book</Checkbox>
-          </Form.Item>
-          <Form.Item name="has_files" valuePropName="checked" noStyle>
-            <Checkbox>Shared file folder</Checkbox>
-          </Form.Item>
-        </div>
       </Form>
     </Drawer>
   );
