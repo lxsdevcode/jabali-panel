@@ -132,6 +132,27 @@ func (n *NginxRules) Scan(src any) error {
 // Domain represents a hosted domain bound to a user account. Each domain
 // gets an nginx vhost config managed by the agent and a document root
 // under the user's home directory.
+// SSL certificate modes (GH #246).
+const (
+	SSLModeLE     = "le"
+	SSLModeSelf   = "self"
+	SSLModeCustom = "custom"
+	SSLModeNone   = "none"
+)
+
+// ValidSSLMode reports whether s is a recognised TLS cert mode.
+func ValidSSLMode(s string) bool {
+	switch s {
+	case SSLModeLE, SSLModeSelf, SSLModeCustom, SSLModeNone:
+		return true
+	}
+	return false
+}
+
+// SSLEnabledForMode derives the legacy ssl_enabled shadow from the mode:
+// TLS is "on" for every mode except none.
+func SSLEnabledForMode(mode string) bool { return mode != SSLModeNone }
+
 type Domain struct {
 	ID     string `gorm:"type:char(26);primaryKey" json:"id"`
 	UserID string `gorm:"type:char(26);not null;index:ix_domains_user_id" json:"user_id"`
@@ -191,6 +212,14 @@ type Domain struct {
 	// When true, the reconciler attempts to issue or renew a cert; when false,
 	// the cert (if any) is not updated but may remain installed.
 	SSLEnabled bool `gorm:"type:tinyint(1);not null;default:1" json:"ssl_enabled"`
+
+	// SSLMode (GH #246, migration 000179) is the authoritative per-domain TLS
+	// cert mode: 'le' (ACME + self-signed fallback), 'self' (self-signed only),
+	// 'custom' (operator-supplied cert/key, no auto-renew), 'none' (HTTP only).
+	// SSLEnabled is a derived shadow (mode != 'none') kept in sync on every
+	// write; the reconciler switches on SSLMode. Pinned column tag to match
+	// the other toggles.
+	SSLMode string `gorm:"column:ssl_mode;type:enum('le','self','custom','none');not null;default:'le'" json:"ssl_mode"`
 
 	// SSLState is a computed field (not persisted) that represents the actual SSL
 	// certificate state. Values: "active_le" (valid LE cert), "self_signed", "pending",

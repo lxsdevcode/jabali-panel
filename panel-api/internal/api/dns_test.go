@@ -91,6 +91,8 @@ func (m *mockDomainRepo) UpdateMailProvider(_ context.Context, _ string, _ repos
 	return nil
 }
 
+func (m *mockDomainRepo) UpdateSSLMode(context.Context, string, string) error { return nil }
+
 func (m *mockDomainRepo) UpdateEmailState(ctx context.Context, id string, state repository.DomainEmailState) error {
 	d, ok := m.domains[id]
 	if !ok {

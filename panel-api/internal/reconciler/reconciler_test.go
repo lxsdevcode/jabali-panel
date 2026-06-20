@@ -153,6 +153,8 @@ func (f *fakeDomainRepo) UpdateMailProvider(_ context.Context, _ string, _ repos
 	return nil
 }
 
+func (f *fakeDomainRepo) UpdateSSLMode(context.Context, string, string) error { return nil }
+
 func (f *fakeDomainRepo) UpdateEmailState(ctx context.Context, id string, state repository.DomainEmailState) error {
 	for i, d := range f.domains {
 		if d.ID == id {
@@ -1238,6 +1240,7 @@ func TestReconcile_BootstrapsAndPushesZone(t *testing.T) {
 		Name:      "example.com",
 		DocRoot:   "/home/alice/domains/example.com/public_html",
 		IsEnabled: true,
+		CreateWWW: true, // GH #225: www is opt-in now; this test covers the with-www path (8 records)
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -1282,10 +1285,9 @@ func TestReconcile_BootstrapsAndPushesZone(t *testing.T) {
 	// Verify that bootstrap records were created
 	records, err := dnsRecordRepo.ListByZoneID(ctx, zone.ID)
 	require.NoError(t, err)
-	// Bootstrap: A/@, A/mail, AAAA/@, AAAA/mail, CNAME/www,
-	// MX, SPF, DMARC = 8 records. www was A (×2 with v6) before the
-	// CNAME-to-apex change; mail stays A because MX targets can't be
-	// CNAMEs (RFC 2181 §10.3).
+	// Bootstrap: A/@, A/mail, AAAA/@, AAAA/mail, CNAME/www (opt-in via
+	// CreateWWW, GH #225), MX, SPF, DMARC = 8 records. mail stays A because
+	// MX targets can't be CNAMEs (RFC 2181 §10.3).
 	require.Len(t, records, 8)
 }
 

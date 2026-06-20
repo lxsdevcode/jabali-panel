@@ -51,6 +51,8 @@ func (f *fakeSSLCertRepo) ListByUserID(context.Context, string) ([]repository.SS
 func (f *fakeSSLCertRepo) UpdateSelfSigned(context.Context, string, string, string, time.Time) error {
 	return nil
 }
+
+func (f *fakeSSLCertRepo) UpdateCustom(context.Context, string, string, string, time.Time) error { return nil }
 func (f *fakeSSLCertRepo) UpdateAfterACMEFailure(context.Context, string, string, time.Time, int, *string, *string, *time.Time) error {
 	return nil
 }

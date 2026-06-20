@@ -2,12 +2,17 @@ package api
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
@@ -30,6 +35,7 @@ type SSLHandlerConfig struct {
 	ServerSettings repository.ServerSettingsRepository
 	Reconciler     SSLScheduler
 	Config         *config.Config
+	Agent          agent.AgentInterface
 }
 
 // sslHandler provides HTTP handlers for SSL certificate endpoints.
@@ -65,6 +71,7 @@ func RegisterSSLRoutes(g *gin.RouterGroup, cfg SSLHandlerConfig) {
 		domains.POST("/ssl", h.enableSSL)
 		domains.DELETE("/ssl", h.disableSSL)
 		domains.POST("/ssl/renew", h.renewSSL)
+		domains.PUT("/ssl/custom", h.installCustomSSL)
 		domains.POST("/ssl/retry", h.retrySSL)
 	}
 
@@ -163,12 +170,13 @@ func (h *sslHandler) enableSSL(c *gin.Context) {
 		}
 	}
 
-	// Set domain.ssl_enabled = true
-	domain.SSLEnabled = true
-	if err := h.cfg.Domains.Update(ctx, domain); err != nil {
+	// Set TLS mode = le (GH #246; this legacy endpoint is "enable ACME").
+	if err := h.cfg.Domains.UpdateSSLMode(ctx, domain.ID, models.SSLModeLE); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
+	domain.SSLMode = models.SSLModeLE
+	domain.SSLEnabled = true
 
 	// Create or update certificate row with status=pending
 	if cert == nil {
@@ -223,12 +231,13 @@ func (h *sslHandler) disableSSL(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Set domain.ssl_enabled = false
-	domain.SSLEnabled = false
-	if err := h.cfg.Domains.Update(ctx, domain); err != nil {
+	// Set TLS mode = none (GH #246; this legacy endpoint is "disable TLS").
+	if err := h.cfg.Domains.UpdateSSLMode(ctx, domain.ID, models.SSLModeNone); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
+	domain.SSLMode = models.SSLModeNone
+	domain.SSLEnabled = false
 
 	// Mark certificate row as revoked (if it exists)
 	cert, err := h.cfg.SSLCerts.FindByDomainID(ctx, domainID)
@@ -572,4 +581,133 @@ func mailCertSANsForBase(base string, mtastsEnabled bool) []string {
 		sans = append(sans, "mta-sts."+base)
 	}
 	return sans
+}
+
+// customCertRequest is the body for PUT /domains/:id/ssl/custom (GH #246).
+type customCertRequest struct {
+	CertPEM string `json:"cert_pem"`
+	KeyPEM  string `json:"key_pem"`
+}
+
+// installCustomSSL installs an operator-supplied cert+key for a domain and
+// switches it to ssl_mode=custom (GH #246). The agent validates the cert/key
+// pair and writes them 0600; panel-api parses not-after for the cert row.
+// The private key is never logged or echoed back.
+func (h *sslHandler) installCustomSSL(c *gin.Context) {
+	domainID := c.Param("id")
+	domain := h.loadDomainOwned(c, domainID)
+	if domain == nil {
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	var req customCertRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "validation_failed", "detail": err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.CertPEM) == "" || strings.TrimSpace(req.KeyPEM) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cert_and_key_required"})
+		return
+	}
+
+	// Parse not-after + check the cert covers the domain (warn-only via 400
+	// when it clearly doesn't, so an operator can't pin a wrong cert).
+	leaf, notAfter, err := parseLeafNotAfter(req.CertPEM)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_cert", "detail": err.Error()})
+		return
+	}
+	if leaf.VerifyHostname(domain.Name) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "cert_domain_mismatch",
+			"detail": fmt.Sprintf("certificate does not cover %s", domain.Name),
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	raw, err := h.cfg.Agent.Call(ctx, "ssl.install_custom", map[string]any{
+		"domain":   domain.Name,
+		"cert_pem": req.CertPEM,
+		"key_pem":  req.KeyPEM,
+	})
+	if err != nil {
+		// Agent validation errors (bad pair, parse) are the caller's fault.
+		c.JSON(http.StatusBadRequest, gin.H{"error": "install_failed", "detail": firstLineSSL(err.Error())})
+		return
+	}
+	var res struct {
+		CertPath string `json:"cert_path"`
+		KeyPath  string `json:"key_path"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil || res.CertPath == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+
+	// Authoritative: switch mode to custom (sets ssl_enabled shadow too).
+	if err := h.cfg.Domains.UpdateSSLMode(ctx, domain.ID, models.SSLModeCustom); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	// Upsert the cert row (status=custom, paths, parsed expiry).
+	cert, _ := h.cfg.SSLCerts.FindByDomainID(ctx, domain.ID)
+	if cert == nil {
+		cert = &models.SSLCertificate{
+			ID:        ids.NewULID(),
+			DomainID:  domain.ID,
+			Status:    models.SSLStatusCustom,
+			CertPath:  &res.CertPath,
+			KeyPath:   &res.KeyPath,
+			ExpiresAt: &notAfter,
+		}
+		if err := h.cfg.SSLCerts.Create(ctx, cert); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+	} else if err := h.cfg.SSLCerts.UpdateCustom(ctx, cert.ID, res.CertPath, res.KeyPath, notAfter); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+
+	if h.cfg.Reconciler != nil {
+		h.cfg.Reconciler.Schedule(domain.ID)
+	}
+	c.JSON(http.StatusOK, gin.H{"ssl": gin.H{
+		"status":     models.SSLStatusCustom,
+		"cert_path":  res.CertPath,
+		"key_path":   res.KeyPath,
+		"expires_at": notAfter,
+	}})
+}
+
+// parseLeafNotAfter extracts the leaf certificate + its NotAfter from a PEM
+// chain. Never logs the input.
+func parseLeafNotAfter(certPEM string) (*x509.Certificate, time.Time, error) {
+	rest := []byte(certPEM)
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return nil, time.Time{}, fmt.Errorf("no CERTIFICATE PEM block found")
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		leaf, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, time.Time{}, fmt.Errorf("parse certificate: %w", err)
+		}
+		return leaf, leaf.NotAfter, nil
+	}
+}
+
+func firstLineSSL(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }

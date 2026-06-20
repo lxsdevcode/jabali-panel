@@ -57,6 +57,8 @@ func (f *fakeDomainRepo) UpdateMailProvider(_ context.Context, _ string, _ repos
 	return nil
 }
 
+func (f *fakeDomainRepo) UpdateSSLMode(context.Context, string, string) error { return nil }
+
 func (f *fakeDomainRepo) UpdateEmailState(_ context.Context, id string, state repository.DomainEmailState) error {
 	if f.updateErr != nil {
 		return f.updateErr

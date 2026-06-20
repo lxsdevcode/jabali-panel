@@ -11,6 +11,7 @@ type UserDomainCreateInput = {
   m365_onmicrosoft?: string;
   google_dkim?: string;
   create_www?: boolean;
+  ssl_mode?: string;
 };
 type DomainCreated = { id: string };
 
@@ -103,6 +104,21 @@ export const UserDomainDrawer = ({ open, onClose }: UserDomainDrawerProps) => {
             <Input.TextArea rows={2} placeholder="v=DKIM1; k=rsa; p=... (optional)" />
           </Form.Item>
         )}
+
+        <Form.Item
+          label="TLS certificate"
+          name="ssl_mode"
+          initialValue="le"
+          tooltip="Let's Encrypt issues a free trusted certificate automatically (recommended). Self-signed works without DNS/ACME but browsers warn. None serves over HTTP only."
+        >
+          <Select
+            options={[
+              { value: "le", label: "Let's Encrypt (recommended)" },
+              { value: "self", label: "Self-signed" },
+              { value: "none", label: "None (HTTP only)" },
+            ]}
+          />
+        </Form.Item>
 
         <Form.Item
           name="create_www"

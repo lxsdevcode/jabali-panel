@@ -43,6 +43,7 @@ type SSLCertificateRepository interface {
 	ListAll(ctx context.Context) ([]SSLCertificateWithDomain, error)
 	ListByUserID(ctx context.Context, userID string) ([]SSLCertificateWithDomain, error)
 	UpdateSelfSigned(ctx context.Context, id string, certPath, keyPath string, expiresAt time.Time) error
+	UpdateCustom(ctx context.Context, id string, certPath, keyPath string, expiresAt time.Time) error
 	UpdateAfterACMEFailure(ctx context.Context, id string, lastError string, nextRetryAt time.Time, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error
 	UpdateAfterACMEFailureCapped(ctx context.Context, id string, lastError string, retryCount int, fallbackCertPath, fallbackKeyPath *string, fallbackExpiresAt *time.Time) error
 	MarkFailed(ctx context.Context, id string, lastError string) error
@@ -216,6 +217,21 @@ func (r *sslCertificateRepo) UpdateSelfSigned(ctx context.Context, id string, ce
 			"last_error":       nil,
 			"last_attempt_at":  time.Now(),
 			"updated_at":       time.Now(),
+		}).Error
+}
+
+// UpdateCustom sets the certificate to operator-supplied 'custom' status with
+// the installed paths + parsed expiry (GH #246). No auto-renew.
+func (r *sslCertificateRepo) UpdateCustom(ctx context.Context, id string, certPath, keyPath string, expiresAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&models.SSLCertificate{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"status":          models.SSLStatusCustom,
+			"cert_path":       certPath,
+			"key_path":        keyPath,
+			"expires_at":      expiresAt,
+			"last_error":      nil,
+			"last_attempt_at": time.Now(),
+			"updated_at":      time.Now(),
 		}).Error
 }
 

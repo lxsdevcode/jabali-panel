@@ -11,6 +11,7 @@ const (
 	SSLStatusRevoked          = "revoked"
 	SSLStatusRenewing         = "renewing"
 	SSLStatusSelfSigned       = "self_signed"
+	SSLStatusCustom           = "custom"
 	SSLStatusPendingACMERetry = "pending_acme_retry"
 )
 

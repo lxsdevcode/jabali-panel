@@ -54,6 +54,11 @@ type DomainRepository interface {
 	// derived email_enabled + skip_auto_san. Dedicated method (not the
 	// Select-allowlist Update) so the columns can't be silently dropped.
 	UpdateMailProvider(ctx context.Context, id string, mp DomainMailProvider) error
+
+	// UpdateSSLMode writes ssl_mode + the derived ssl_enabled shadow together
+	// (GH #246). Dedicated method, not the Select-allowlist Update, to avoid
+	// silent column drops.
+	UpdateSSLMode(ctx context.Context, id string, mode string) error
 	// FindPanelPrimary returns the single is_panel_primary=1 row, or
 	// ErrPanelPrimaryNotFound if no such row exists. ADR-0048.
 	FindPanelPrimary(ctx context.Context) (*models.Domain, error)
@@ -467,6 +472,24 @@ type DomainMailProvider struct {
 	SkipAutoSAN     bool
 	M365Onmicrosoft *string
 	GoogleDKIM      *string
+}
+
+func (r *domainRepo) UpdateSSLMode(ctx context.Context, id string, mode string) error {
+	updates := map[string]interface{}{
+		"ssl_mode":    mode,
+		"ssl_enabled": models.SSLEnabledForMode(mode),
+		"updated_at":  time.Now().UTC(),
+	}
+	res := r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Updates(updates)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *domainRepo) UpdateMailProvider(ctx context.Context, id string, mp DomainMailProvider) error {

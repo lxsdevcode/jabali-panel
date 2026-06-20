@@ -89,6 +89,10 @@ type createDomainRequest struct {
 	// CreateWWW (GH #225) opts the domain into the bootstrap www CNAME.
 	// Omitted/false => no www record (the new default).
 	CreateWWW bool `json:"create_www"`
+	// SSLMode (GH #246) — le|self|none at create. 'custom' is rejected here:
+	// it needs a cert upload, set via PUT /domains/:id/ssl/custom after create.
+	// Empty defaults to 'le'.
+	SSLMode string `json:"ssl_mode"`
 }
 
 // validateDomainName validates domain name for security and RFC compliance
@@ -167,6 +171,9 @@ type updateDomainRequest struct {
 	// behaviour exactly.
 	ListenIPv4ID nullableUint64 `json:"listen_ipv4_id,omitempty"`
 	ListenIPv6ID nullableUint64 `json:"listen_ipv6_id,omitempty"`
+	// SSLMode (GH #246) — switch TLS mode. 'custom' is set only via
+	// PUT /domains/:id/ssl/custom (needs the cert), not here.
+	SSLMode *string `json:"ssl_mode,omitempty"`
 }
 
 // nullableUint64 is the M24 wrapper that lets a PATCH body distinguish
@@ -596,7 +603,25 @@ func (h *domainHandler) create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_google_dkim", "detail": err.Error()})
 		return
 	}
+	sslMode := req.SSLMode
+	if sslMode == "" {
+		sslMode = models.SSLModeLE
+	}
+	if !models.ValidSSLMode(sslMode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_ssl_mode"})
+		return
+	}
+	if sslMode == models.SSLModeCustom {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ssl_mode_custom_requires_upload", "detail": "create the domain with le/self/none, then upload a custom cert via the SSL settings"})
+		return
+	}
+
 	mailEnabled, mailSkipSAN := models.DeriveMailFlags(mailProvider)
+	// Email-enabled + no TLS is contradictory (MTA-STS / autoconfig need HTTPS).
+	if sslMode == models.SSLModeNone && mailEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ssl_none_with_email", "detail": "a mail-enabled domain needs TLS; choose le/self or set mail provider to none"})
+		return
+	}
 
 	now := time.Now().UTC()
 	domain := &models.Domain{
@@ -605,7 +630,8 @@ func (h *domainHandler) create(c *gin.Context) {
 		Name:       req.Name,
 		DocRoot:    docRoot,
 		IsEnabled:  true,
-		SSLEnabled: true,
+		SSLMode:    sslMode,
+		SSLEnabled: models.SSLEnabledForMode(sslMode),
 		// ADR-0080: email on by default for new domains. Set explicitly
 		// rather than relying on the DB default so GORM emits
 		// email_enabled=1 in the INSERT (a Go zero-value bool would be
@@ -859,6 +885,35 @@ func (h *domainHandler) update(c *gin.Context) {
 		domain.SkipAutoSAN = skipSAN
 		domain.M365Onmicrosoft = strPtrOrNil(m365Tenant)
 		domain.GoogleDKIM = strPtrOrNil(gdkim)
+	}
+
+	// GH #246: TLS cert mode switch. Dedicated repo method (Domain.Update's
+	// allowlist excludes ssl_mode). Invariants guarded: the panel-primary
+	// domain must keep TLS, and a mail-enabled domain can't go to 'none'.
+	if req.SSLMode != nil {
+		mode := *req.SSLMode
+		if !models.ValidSSLMode(mode) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_ssl_mode"})
+			return
+		}
+		if mode == models.SSLModeCustom {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ssl_mode_custom_via_upload", "detail": "upload a custom cert via the SSL settings to switch to custom"})
+			return
+		}
+		if domain.IsPanelPrimary && mode == models.SSLModeNone {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ssl_none_panel_primary", "detail": "the panel hostname must keep TLS"})
+			return
+		}
+		if mode == models.SSLModeNone && domain.EmailEnabled {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ssl_none_with_email", "detail": "disable mail before removing TLS"})
+			return
+		}
+		if err := h.cfg.Domains.UpdateSSLMode(ctx, domain.ID, mode); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		domain.SSLMode = mode
+		domain.SSLEnabled = models.SSLEnabledForMode(mode)
 	}
 
 	// Schedule reconciliation to sync the domain state with the agent.
