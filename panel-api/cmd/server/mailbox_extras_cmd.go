@@ -25,6 +25,37 @@ import (
 
 // ---- repo helpers ---------------------------------------------------------
 
+// applyForwardersCLI pushes a mailbox's full forwarder state to Stalwart
+// via forwarder.apply — the same convergence the HTTP handler does. The CLI
+// previously poked domain.email_apply, which does NOT converge forwarders,
+// so CLI-created aliases/forwards never reached Stalwart (GH #237).
+func applyForwardersCLI(ctx context.Context, mbID, mailboxEmail string) {
+	rows, _, err := forwarderRepoFromDB().ListByMailboxID(ctx, mbID, repository.ListOptions{Limit: 500})
+	if err != nil {
+		return
+	}
+	aliases := []map[string]string{}
+	externals := []map[string]any{}
+	for _, f := range rows {
+		if !f.Enabled {
+			continue
+		}
+		switch f.Type {
+		case "alias":
+			if f.LocalPart != nil {
+				aliases = append(aliases, map[string]string{"local_part": *f.LocalPart})
+			}
+		case "external":
+			externals = append(externals, map[string]any{"target": f.Target, "keep_copy": f.KeepCopy})
+		}
+	}
+	notifyAgentMailbox(ctx, "forwarder.apply", map[string]any{
+		"mailbox_email": mailboxEmail,
+		"aliases":       aliases,
+		"externals":     externals,
+	})
+}
+
 func forwarderRepoFromDB() repository.EmailForwarderRepository {
 	return repository.NewEmailForwarderRepository(sharedDB)
 }
@@ -268,6 +299,7 @@ func newMailboxForwarderAddCmd() *cobra.Command {
 		fwdType   string
 		localPart string
 		target    string
+		keepCopy  bool
 	)
 	cmd := &cobra.Command{
 		Use:     "add <email>",
@@ -310,14 +342,12 @@ func newMailboxForwarderAddCmd() *cobra.Command {
 				f.Target = mb.LocalPart + "@" + dom.Name
 			} else {
 				f.Target = target
+				f.KeepCopy = keepCopy
 			}
 			if err := forwarderRepoFromDB().Create(ctx, f); err != nil {
 				return fmt.Errorf("create forwarder: %w", err)
 			}
-			notifyAgentMailbox(ctx, "domain.email_apply", map[string]any{
-				"domain_id":   dom.ID,
-				"domain_name": dom.Name,
-			})
+			applyForwardersCLI(ctx, mb.ID, mb.LocalPart+"@"+dom.Name)
 			if jsonOutput {
 				return printJSON(f)
 			}
@@ -333,6 +363,7 @@ func newMailboxForwarderAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&fwdType, "type", "", "alias | external (required)")
 	cmd.Flags().StringVar(&localPart, "local", "", "Alias local part (required for type=alias)")
 	cmd.Flags().StringVar(&target, "target", "", "External destination email (required for type=external)")
+	cmd.Flags().BoolVar(&keepCopy, "keep-copy", false, "type=external: keep a copy in the mailbox (Sieve redirect :copy)")
 	_ = cmd.MarkFlagRequired("type")
 	return cmd
 }
@@ -406,10 +437,11 @@ func newMailboxForwarderRemoveCmd() *cobra.Command {
 			if err := forwarderRepoFromDB().Delete(ctx, id); err != nil {
 				return fmt.Errorf("delete forwarder: %w", err)
 			}
-			notifyAgentMailbox(ctx, "domain.email_apply", map[string]any{
-				"domain_id":   dom.ID,
-				"domain_name": dom.Name,
-			})
+			if f.MailboxID != nil {
+				if mb, merrr := mailboxRepoFromDB().FindByID(ctx, *f.MailboxID); merrr == nil {
+					applyForwardersCLI(ctx, mb.ID, mb.LocalPart+"@"+dom.Name)
+				}
+			}
 			fmt.Printf("Forwarder %s deleted\n", id)
 			return nil
 		},
