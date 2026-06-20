@@ -144,7 +144,7 @@ Each collection type rejects keys from other types (`invalidProperties`). The
 | Mailbox | `mayReadItems, mayAddItems, mayRemoveItems, mayCreateChild, mayRename, mayDelete, mayShare, maySubmit` |
 | Calendar | `mayReadFreeBusy, mayReadItems, mayWriteAll, mayWriteOwn, mayUpdatePrivate, mayRSVP, mayShare, mayDelete` |
 | AddressBook | `mayRead, mayWrite, mayDelete, mayShare` |
-| FileNode | TBD — no root node until first use; nail when building `file.share_set` |
+| FileNode | `mayRead, mayAddChildren, mayModifyContent, mayRename, mayDelete, mayShare` (host has NO node until created — `file.share_set` find-or-creates a top-level folder, then shares it) |
 
 (Mailbox keys already encoded in `mailbox_share.go` `toStalwartACL`; existing
 `mayRead`→`mayReadItems`, `mayAdmin`→`mayShare` mapping is Mailbox-specific.)
