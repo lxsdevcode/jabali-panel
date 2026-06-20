@@ -12,6 +12,7 @@ export interface Forwarder {
   type: "alias" | "external";
   local_part?: string;
   target: string;
+  keep_copy: boolean;
   enabled: boolean;
   created_at: string;
 }
@@ -36,15 +37,17 @@ export function useCreateForwarder() {
       type,
       localPart,
       target,
+      keepCopy,
     }: {
       mailboxID: string;
       type: "alias" | "external";
       localPart?: string;
       target: string;
+      keepCopy?: boolean;
     }) => {
       const { data } = await apiClient.post<Forwarder>(
         `/mailboxes/${mailboxID}/forwarders`,
-        { type, local_part: localPart, target },
+        { type, local_part: localPart, target, keep_copy: keepCopy ?? false },
       );
       return data;
     },

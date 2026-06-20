@@ -16,6 +16,11 @@ type EmailForwarder struct {
 	LocalPart *string   `gorm:"type:varchar(64)" json:"local_part"` // NULL for type='external'
 	Target    string    `gorm:"type:varchar(255);not null" json:"target"`
 	Enabled   bool      `gorm:"type:tinyint(1);not null;default:1" json:"enabled"`
+	// KeepCopy (GH #237, migration 000177) applies to type='external':
+	// when true the agent emits Sieve `redirect :copy` so a copy is kept
+	// in the mailbox; when false it's a plain forward. No gorm `default`
+	// tag — the API always sets it (alias rows store false).
+	KeepCopy  bool      `gorm:"column:keep_copy;type:tinyint(1);not null" json:"keep_copy"`
 	ManagedBy string    `gorm:"type:varchar(16);default:'m6.5'" json:"managed_by"`
 	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null" json:"updated_at"`

@@ -34,6 +34,7 @@ import { useQueries } from "@tanstack/react-query";
 
 import { AutoReplyModal } from "../AutoReplyModal";
 import { type Autoresponder } from "../../../../hooks/useAutoresponders";
+import { useForwarders } from "../../../../hooks/useForwarders";
 
 import { apiClient } from "../../../../apiClient";
 import {
@@ -148,6 +149,25 @@ export const MailboxesTab = () => {
     return out;
   }, [arResults]);
 
+  // Aliases + external forwards per mailbox (GH #237). One bulk query
+  // across all the caller's mailboxes; grouped client-side so each row can
+  // show its aliases under the address and a forwarding indicator.
+  const { data: forwarders = [] } = useForwarders();
+  const fwdByMailbox = useMemo(() => {
+    const out: Record<
+      string,
+      { aliases: string[]; forwards: { target: string; keep_copy: boolean }[] }
+    > = {};
+    for (const f of forwarders) {
+      if (!f.enabled) continue;
+      const bucket = (out[f.mailbox_id] ??= { aliases: [], forwards: [] });
+      if (f.type === "alias" && f.local_part) bucket.aliases.push(f.local_part);
+      else if (f.type === "external")
+        bucket.forwards.push({ target: f.target, keep_copy: f.keep_copy });
+    }
+    return out;
+  }, [forwarders]);
+
 
   const [passwordModal, setPasswordModal] = useState<{
     email: string;
@@ -259,16 +279,36 @@ export const MailboxesTab = () => {
             dataIndex: "email",
             ellipsis: true,
             sorter: (a, b) => a.email.localeCompare(b.email),
-            render: (v: string) => (
-              <span
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              >
-                <LibravatarAvatar email={v} size={24} />
-                <Typography.Text style={{ fontFamily: "monospace" }}>
-                  {v}
-                </Typography.Text>
-              </span>
-            ),
+            render: (v: string, record: MailboxRow) => {
+              const fwd = fwdByMailbox[record.id];
+              return (
+                <span
+                  style={{ display: "inline-flex", alignItems: "flex-start", gap: 8 }}
+                >
+                  <LibravatarAvatar email={v} size={24} />
+                  <span style={{ display: "inline-flex", flexDirection: "column" }}>
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      {v}
+                    </Typography.Text>
+                    {fwd?.aliases.length ? (
+                      <Typography.Text
+                        type="secondary"
+                        style={{ fontSize: 12, fontFamily: "monospace" }}
+                      >
+                        {fwd.aliases.map((a) => `+${a}`).join("  ")}
+                      </Typography.Text>
+                    ) : null}
+                    {fwd?.forwards.length ? (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        →{" "}
+                        {fwd.forwards.map((f) => f.target).join(", ")}
+                        {fwd.forwards.some((f) => f.keep_copy) ? " (keeps copy)" : ""}
+                      </Typography.Text>
+                    ) : null}
+                  </span>
+                </span>
+              );
+            },
           },
           {
             title: "Name",

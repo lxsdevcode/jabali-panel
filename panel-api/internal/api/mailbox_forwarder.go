@@ -43,6 +43,7 @@ type forwarderResponse struct {
 	Type         string `json:"type"`
 	LocalPart    string `json:"local_part,omitempty"`
 	Target       string `json:"target"`
+	KeepCopy     bool   `json:"keep_copy"`
 	Enabled      bool   `json:"enabled"`
 	CreatedAt    string `json:"created_at"`
 }
@@ -51,6 +52,7 @@ type forwarderCreateRequest struct {
 	Type      string `json:"type"`       // alias | external
 	LocalPart string `json:"local_part"` // for alias
 	Target    string `json:"target"`     // for external (email); for alias (mailbox@domain)
+	KeepCopy  bool   `json:"keep_copy"`  // external only: keep a copy in the mailbox
 }
 
 type forwarderHandler struct {
@@ -136,7 +138,7 @@ func (h *forwarderHandler) applyForwarders(ctx context.Context, mb *models.Mailb
 		return
 	}
 	aliases := []map[string]string{}
-	externals := []string{}
+	externals := []map[string]any{}
 	for _, f := range rows {
 		if !f.Enabled {
 			continue
@@ -147,7 +149,7 @@ func (h *forwarderHandler) applyForwarders(ctx context.Context, mb *models.Mailb
 				aliases = append(aliases, map[string]string{"local_part": *f.LocalPart})
 			}
 		case "external":
-			externals = append(externals, f.Target)
+			externals = append(externals, map[string]any{"target": f.Target, "keep_copy": f.KeepCopy})
 		}
 	}
 	params := map[string]any{
@@ -198,6 +200,9 @@ func (h *forwarderHandler) create(c *gin.Context) {
 	if req.Type == "alias" {
 		lp := req.LocalPart
 		f.LocalPart = &lp
+	}
+	if req.Type == "external" {
+		f.KeepCopy = req.KeepCopy
 	}
 	if err := h.cfg.Forwarders.Create(ctx, f); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
@@ -250,6 +255,7 @@ func (h *forwarderHandler) resolve(_ context.Context, f models.EmailForwarder, m
 		Type:         f.Type,
 		LocalPart:    lp,
 		Target:       f.Target,
+		KeepCopy:     f.KeepCopy,
 		Enabled:      f.Enabled,
 		CreatedAt:    f.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}

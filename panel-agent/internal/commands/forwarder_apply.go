@@ -17,9 +17,17 @@ import (
 // entries (Stalwart allows only one active sieve script per account —
 // schema SieveScript.isActive).
 type forwarderApplyParams struct {
-	MailboxEmail string           `json:"mailbox_email"`
-	Aliases      []forwarderAlias `json:"aliases"`   // local parts within the mailbox's own domain
-	Externals    []string         `json:"externals"` // target emails
+	MailboxEmail string              `json:"mailbox_email"`
+	Aliases      []forwarderAlias    `json:"aliases"`   // local parts within the mailbox's own domain
+	Externals    []forwarderExternal `json:"externals"` // external forward targets
+}
+
+// forwarderExternal is one external forward target. KeepCopy controls
+// whether a copy is also delivered to the mailbox (Sieve redirect :copy)
+// — GH #237's "Keep a copy of forwarded email in this mailbox".
+type forwarderExternal struct {
+	Target   string `json:"target"`
+	KeepCopy bool   `json:"keep_copy"`
 }
 
 type forwarderAlias struct {
@@ -109,7 +117,36 @@ func applyAccountAliases(ctx context.Context, acctID, domainID string, aliases [
 	return nil
 }
 
-func applyExternalSieve(ctx context.Context, acctID string, externals []string) error {
+// buildExternalSieve renders the concatenated jabali-fwds Sieve script for a
+// mailbox's external forwards. GH #237: `redirect :copy` keeps a copy in the
+// mailbox, plain `redirect` does not. The "copy" extension is required only
+// when at least one target keeps a copy.
+func buildExternalSieve(externals []forwarderExternal) string {
+	hasCopy := false
+	for _, e := range externals {
+		if e.KeepCopy {
+			hasCopy = true
+			break
+		}
+	}
+	var body strings.Builder
+	if hasCopy {
+		body.WriteString(`require ["copy"];` + "\n")
+	}
+	for _, e := range externals {
+		if e.Target == "" {
+			continue
+		}
+		if e.KeepCopy {
+			fmt.Fprintf(&body, "redirect :copy %q;\n", e.Target)
+		} else {
+			fmt.Fprintf(&body, "redirect %q;\n", e.Target)
+		}
+	}
+	return body.String()
+}
+
+func applyExternalSieve(ctx context.Context, acctID string, externals []forwarderExternal) error {
 	scriptName := "jabali-fwds"
 	if len(externals) == 0 {
 		// Destroy the script if it exists.
@@ -121,14 +158,7 @@ func applyExternalSieve(ctx context.Context, acctID string, externals []string) 
 		_ = jmapCall(ctx, "SieveScript/set", args, &result) // best-effort — may not exist
 		return nil
 	}
-	var body strings.Builder
-	body.WriteString(`require ["copy"];` + "\n")
-	for _, target := range externals {
-		if target == "" {
-			continue
-		}
-		fmt.Fprintf(&body, "redirect :copy %q;\n", target)
-	}
+	contents := buildExternalSieve(externals)
 	// Upsert + activate.
 	args := map[string]any{
 		"accountId": acctID,
@@ -136,7 +166,7 @@ func applyExternalSieve(ctx context.Context, acctID string, externals []string) 
 			scriptName: map[string]any{
 				"name":     scriptName,
 				"isActive": true,
-				"contents": body.String(),
+				"contents": contents,
 			},
 		},
 	}
@@ -150,7 +180,7 @@ func applyExternalSieve(ctx context.Context, acctID string, externals []string) 
 			"accountId": acctID,
 			"update": map[string]any{
 				scriptName: map[string]any{
-					"contents": body.String(),
+					"contents": contents,
 					"isActive": true,
 				},
 			},

@@ -5,6 +5,7 @@ import { App, Form, InputNumber, Input, Modal, Switch, Typography } from "antd";
 import { useEffect } from "react";
 
 import { useUpdateMailbox, type Mailbox } from "../../hooks/useMailboxes";
+import { MailboxForwardingSection } from "./MailboxForwardingSection";
 
 const MIB = 1024 * 1024;
 const QUOTA_MIN_MIB = 16;
@@ -110,6 +111,12 @@ export function EditMailboxModal({ open, mailbox, onClose }: EditMailboxModalPro
           A display-name change applies to webmail on the mailbox&apos;s next login;
           an existing webmail identity may keep the old name until then.
         </Typography.Text>
+        {mailbox ? (
+          <MailboxForwardingSection
+            mailboxId={mailbox.id}
+            domainName={mailbox.email.split("@")[1] ?? ""}
+          />
+        ) : null}
       </Form>
     </Modal>
   );
