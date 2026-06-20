@@ -38,6 +38,7 @@ import {
 interface Domain {
   id: string;
   user_id: string;
+  username?: string | null;
   name: string;
   created_at: string;
   updated_at: string;
@@ -88,13 +89,15 @@ export function DNSSECTable({ showOwner }: Props) {
             />
             {showOwner && (
               <Table.Column<Domain>
-                dataIndex="user_id"
+                dataIndex="username"
                 title="Owner"
-                render={(v: string) => (
-                  <Typography.Text type="secondary" code>
-                    {v.substring(0, 8)}
-                  </Typography.Text>
-                )}
+                render={(username: string | null | undefined, record: Domain) =>
+                  username ?? (
+                    <Typography.Text type="secondary" code>
+                      {record.user_id.substring(0, 8)}
+                    </Typography.Text>
+                  )
+                }
               />
             )}
             <Table.Column<Domain>

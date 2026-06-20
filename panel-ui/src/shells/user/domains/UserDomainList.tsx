@@ -114,6 +114,7 @@ const getSSLTagLabel = (state?: string): string => {
 export type Domain = {
   id: string;
   user_id: string;
+  username?: string | null;
   name: string;
   doc_root: string;
   is_enabled: boolean;

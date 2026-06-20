@@ -18,6 +18,7 @@ import { useTableURL } from "../../../hooks/useTableURL";
 interface Domain {
   id: string;
   user_id: string;
+  username?: string | null;
   name: string;
   created_at: string;
   updated_at: string;
@@ -113,9 +114,11 @@ const ZonesTab = () => {
             })}
           />
           <Table.Column<Domain>
-            dataIndex="user_id"
+            dataIndex="username"
             title="Owner"
-            render={(value: string) => value.substring(0, 8)}
+            render={(username: string | null | undefined, record: Domain) =>
+              username ?? record.user_id.substring(0, 8)
+            }
           />
           <Table.Column<Domain>
             title="Zone Status"
