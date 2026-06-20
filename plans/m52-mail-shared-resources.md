@@ -71,15 +71,27 @@ As `m52proof` (with the group inbox shared incl. `maySubmit`):
 - `Identity/set create {email: prooftest@jabali.site}` in the member's own account →
   **rejected**: "E-mail address not configured for this account."
 - `Identity/get accountId=<group>` → **forbidden**.
-So `maySubmit` on a shared mailbox does **not** confer send-as. Remaining candidates:
-  1. **membership** (`memberGroupIds`) — works, but all-or-nothing (pulls in every resource).
-  2. `aliases/<groupaddr>` on the member — Stalwart aliases are *delivery* aliases (mail to
-     the alias lands in the member's own inbox), conflicting with a shared inbox. Verify
-     whether it ALSO authorises send-as and whether delivery can be suppressed.
-  3. A Stalwart `enabledPermissions` send-as grant scoped to the address — research.
-**Likely outcome:** a shared mailbox whose members **send-as** the group keeps `memberGroupIds`
-(accept all-grant for that case); pure calendar/contacts/files sharing stays selective via
-`shareWith`. Close this in Wave A before committing the mailbox path.
+So `maySubmit` on a shared mailbox does **not** confer send-as.
+
+**Stalwart directory model (Context7 — `/docs/auth/backend/sql`):** an account may send-as an
+address only if that address is in its `emails` (primary/alias) OR it is a member of that
+group/list via `queryMemberOf`/`members`. There is **no decoupled "send-as only"** mechanism;
+an `emails` alias is also a *delivery* alias (`queryRecipient` resolves it → delivery to the
+account). Candidates, narrowed:
+  1. **Registry membership** (`memberGroupIds`) — works, but grants ALL collections
+     (ADR-0132). All-or-nothing.
+  2. **SQL `queryMemberOf`** — jabali currently leaves it NULL (membership lives in the
+     registry; mig 000170 comment). **KEY WAVE A EXPERIMENT:** wire `queryMemberOf` from
+     `mail_group_members` and test whether SQL-directory membership grants **mail-only**
+     (recipient-expansion + send-as) WITHOUT calendar/file collection access (collections may
+     require the *registry* `memberGroupIds` or `shareWith`). If mail-only → the clean win:
+     `queryMemberOf` drives send-as + distribution, `shareWith` drives selective
+     calendars/contacts/files, registry `memberGroupIds` is retired.
+  3. `emails` alias for the group addr on the member — rejected (delivery side-effect).
+**Likely outcome (pending the Gate-2 experiment):** if SQL `queryMemberOf` is mail-only, a
+send-as shared mailbox + selective collections is achievable; otherwise a send-as shared
+mailbox keeps registry membership (all-grant) and only receive-only shared mailboxes +
+calendars/contacts/files are selective. Close in Wave A before the mailbox path.
 
 ## 3. Target model
 
