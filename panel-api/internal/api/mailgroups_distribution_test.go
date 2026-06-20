@@ -22,6 +22,8 @@ type mgGroupsFake struct {
 func (f *mgGroupsFake) FindByID(context.Context, string) (*models.MailGroup, error) { return f.group, nil }
 func (f *mgGroupsFake) ListMemberEmails(context.Context, string) ([]string, error)  { return nil, nil }
 func (f *mgGroupsFake) SetMembers(context.Context, string, []string) error          { return nil }
+func (f *mgGroupsFake) AddMember(context.Context, string, string) error             { return nil }
+func (f *mgGroupsFake) RemoveMember(context.Context, string, string) error          { return nil }
 
 type mgMbFake struct {
 	repository.MailboxRepository
@@ -62,4 +64,23 @@ func TestSetMembers_ResourceProjectsMemberGroupIds(t *testing.T) {
 	w := do(t, r, "PUT", "/api/v1/mailgroups/grp1/members", map[string]any{"mailbox_ids": []string{"mb1"}})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Contains(t, ag.calls, "mailgroup.members_set", "resource group must project membership")
+}
+
+
+// GH #238: removeMember drops one mailbox. Distribution groups don't project to
+// the agent; resource (shared) groups do, with the mailbox in remove_emails.
+func TestRemoveMember_DistributionNoProjection(t *testing.T) {
+	ag := &srAgentFake{}
+	r := mgRouter(t, "distribution", ag)
+	w := do(t, r, "DELETE", "/api/v1/mailgroups/grp1/members/mb1", nil)
+	require.Equal(t, http.StatusNoContent, w.Code, w.Body.String())
+	require.NotContains(t, ag.calls, "mailgroup.members_set")
+}
+
+func TestRemoveMember_ResourceProjectsRemoval(t *testing.T) {
+	ag := &srAgentFake{}
+	r := mgRouter(t, "resource", ag)
+	w := do(t, r, "DELETE", "/api/v1/mailgroups/grp1/members/mb1", nil)
+	require.Equal(t, http.StatusNoContent, w.Code, w.Body.String())
+	require.Contains(t, ag.calls, "mailgroup.members_set")
 }

@@ -32,6 +32,7 @@ type MailGroupRepository interface {
 	ListMemberEmails(ctx context.Context, groupID string) ([]string, error)
 	SetMembers(ctx context.Context, groupID string, mailboxIDs []string) error
 	AddMember(ctx context.Context, groupID, mailboxID string) error
+	RemoveMember(ctx context.Context, groupID, mailboxID string) error
 
 	// ListMembershipsByDomain returns every (mailbox -> group) edge in a
 	// domain, joined with the group's display name + address — for the mail
@@ -219,6 +220,14 @@ func (r *mailGroupRepo) SetMembers(ctx context.Context, groupID string, mailboxI
 func (r *mailGroupRepo) AddMember(ctx context.Context, groupID, mailboxID string) error {
 	row := models.MailGroupMember{GroupID: groupID, MailboxID: mailboxID, CreatedAt: time.Now().UTC()}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+}
+
+// RemoveMember drops a single mailbox↔group edge. Idempotent — removing a
+// mailbox that isn't a member is a no-op (GH #238).
+func (r *mailGroupRepo) RemoveMember(ctx context.Context, groupID, mailboxID string) error {
+	return r.db.WithContext(ctx).
+		Where("group_id = ? AND mailbox_id = ?", groupID, mailboxID).
+		Delete(&models.MailGroupMember{}).Error
 }
 
 func (r *mailGroupRepo) ListMembershipsByDomain(ctx context.Context, domainID string) ([]MailboxGroupMembership, error) {

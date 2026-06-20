@@ -112,6 +112,10 @@ function invalidateGroups(qc: ReturnType<typeof useQueryClient>, domainId?: stri
   qc.invalidateQueries({ queryKey: ["admin", "mailgroups"] });
 }
 
+function invalidateMemberships(qc: ReturnType<typeof useQueryClient>, domainId?: string) {
+  qc.invalidateQueries({ queryKey: ["list", "mailbox-group-memberships", domainId] });
+}
+
 export function useCreateMailGroup(): UseMutationResult<
   MailGroup,
   unknown,
@@ -181,6 +185,27 @@ export function useAddMailboxToGroup(): UseMutationResult<
     },
     onSuccess: (_d, { groupId, domainId }) => {
       invalidateGroups(qc, domainId);
+      invalidateMemberships(qc, domainId);
+      qc.invalidateQueries({ queryKey: ["one", "mailgroup", groupId] });
+    },
+  });
+}
+
+// useRemoveMailboxFromGroup drops a single mailbox from a group (GH #238 —
+// managed from the edit-mailbox modal). DELETE /mailgroups/:gid/members/:mbid.
+export function useRemoveMailboxFromGroup(): UseMutationResult<
+  void,
+  unknown,
+  { groupId: string; mailboxId: string; domainId?: string }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, mailboxId }) => {
+      await apiClient.delete(`/mailgroups/${groupId}/members/${mailboxId}`);
+    },
+    onSuccess: (_d, { groupId, domainId }) => {
+      invalidateGroups(qc, domainId);
+      invalidateMemberships(qc, domainId);
       qc.invalidateQueries({ queryKey: ["one", "mailgroup", groupId] });
     },
   });

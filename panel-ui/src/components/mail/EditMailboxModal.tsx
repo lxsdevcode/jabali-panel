@@ -6,6 +6,7 @@ import { useEffect } from "react";
 
 import { useUpdateMailbox, type Mailbox } from "../../hooks/useMailboxes";
 import { MailboxForwardingSection } from "./MailboxForwardingSection";
+import { MailboxGroupsSection } from "./MailboxGroupsSection";
 
 const MIB = 1024 * 1024;
 const QUOTA_MIN_MIB = 16;
@@ -116,6 +117,9 @@ export function EditMailboxModal({ open, mailbox, onClose }: EditMailboxModalPro
             mailboxId={mailbox.id}
             domainName={mailbox.email.split("@")[1] ?? ""}
           />
+        ) : null}
+        {mailbox ? (
+          <MailboxGroupsSection mailboxId={mailbox.id} domainId={mailbox.domain_id} />
         ) : null}
       </Form>
     </Modal>
