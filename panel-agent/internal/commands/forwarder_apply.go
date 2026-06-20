@@ -84,36 +84,19 @@ func forwarderApplyHandler(ctx context.Context, params json.RawMessage) (any, er
 	return forwarderApplyResponse{Ok: true}, nil
 }
 
-func applyAccountAliases(ctx context.Context, acctID, domainID string, aliases []forwarderAlias) error {
-	entries := make([]map[string]any, 0, len(aliases))
-	for _, a := range aliases {
-		if a.LocalPart == "" {
-			continue
-		}
-		entries = append(entries, map[string]any{
-			"name":     a.LocalPart,
-			"domainId": domainID,
-			"enabled":  true,
-		})
-	}
-	args := map[string]any{
-		"update": map[string]any{
-			acctID: map[string]any{
-				"aliases": entries,
-			},
-		},
-	}
-	// Best-effort: on Stalwart 0.16.7 the legacy `x:Account/User/set`
-	// method is gone (returns unknownMethod), AND jabali serves aliases
-	// from its SQL directory (queryEmailAliases on email_forwarders), not
-	// the principal's `aliases` property — which stays empty by design.
-	// The receiving alias and Stalwart's auto-created sending Identity both
-	// come from the directory, so this call is unnecessary; we keep it
-	// (now via the current `x:Account/set` method) but never fail
-	// forwarder.apply on it. Before this, every alias made forwarder.apply
-	// error on the dead method (GH #199 investigation).
-	var result jmapSetResult
-	_ = jmapCall(ctx, "x:Account/set", args, &result)
+func applyAccountAliases(_ context.Context, _, _ string, _ []forwarderAlias) error {
+	// No-op by design. jabali serves alias delivery from its SQL directory
+	// (queryEmailAliases reads the email_forwarders table directly), and
+	// Stalwart auto-creates the sending Identity from the directory too, so
+	// the principal's `aliases` property is unnecessary for both receive
+	// and send-as (GH #199). Writing it is not just redundant but harmful:
+	// once forwarder.apply actually runs (GH #237), a non-empty write sets
+	// the property, but Stalwart rejects the empty-array patch needed to
+	// clear it (invalidPatch) — so removed aliases would leave stale,
+	// uncleanable ghost entries on the principal. Delivery is unaffected:
+	// an alias whose email_forwarders row is gone returns "550 Mailbox does
+	// not exist" regardless of the stale property (verified on the test
+	// server). So we leave the principal property empty, as designed.
 	return nil
 }
 
