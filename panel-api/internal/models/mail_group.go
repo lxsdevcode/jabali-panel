@@ -24,6 +24,7 @@ type MailGroup struct {
 	EmailCached  string `gorm:"type:varchar(320);not null;uniqueIndex:ux_mail_groups_email_cached" json:"email"`
 	DisplayName  string `gorm:"column:display_name;type:varchar(255);not null;default:''" json:"display_name"`
 	Description  string `gorm:"type:varchar(255);not null;default:''" json:"description"`
+	GroupKind    string `gorm:"column:group_kind;type:varchar(16);not null;default:'resource'" json:"group_kind"`
 	HasMailbox   bool   `gorm:"column:has_mailbox;type:tinyint(1);not null;default:1" json:"has_mailbox"`
 	HasCalendar  bool   `gorm:"column:has_calendar;type:tinyint(1);not null;default:1" json:"has_calendar"`
 	HasAddressbook bool `gorm:"column:has_addressbook;type:tinyint(1);not null;default:1" json:"has_addressbook"`

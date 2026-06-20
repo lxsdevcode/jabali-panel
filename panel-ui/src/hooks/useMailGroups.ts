@@ -29,6 +29,7 @@ export interface MailGroup {
   email: string;
   display_name: string;
   description: string;
+  group_kind: string;
   has_mailbox: boolean;
   has_calendar: boolean;
   has_addressbook: boolean;
@@ -56,6 +57,7 @@ export interface CreateMailGroupInput {
   name: string;
   display_name?: string;
   description?: string;
+  group_kind?: string;
   has_mailbox?: boolean;
   has_calendar?: boolean;
   has_addressbook?: boolean;

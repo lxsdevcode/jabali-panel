@@ -72,6 +72,7 @@ type createMailGroupRequest struct {
 	Name           string `json:"name" binding:"required"` // local part; email = name@domain
 	DisplayName    string `json:"display_name"`
 	Description    string `json:"description"`
+	GroupKind      string `json:"group_kind"`
 	HasMailbox     *bool  `json:"has_mailbox"`
 	HasCalendar    *bool  `json:"has_calendar"`
 	HasAddressbook *bool  `json:"has_addressbook"`
@@ -98,6 +99,7 @@ type mailGroupResponse struct {
 	Email          string    `json:"email"`
 	DisplayName    string    `json:"display_name"`
 	Description    string    `json:"description"`
+	GroupKind      string    `json:"group_kind"`
 	HasMailbox     bool      `json:"has_mailbox"`
 	HasCalendar    bool      `json:"has_calendar"`
 	HasAddressbook bool      `json:"has_addressbook"`
@@ -125,6 +127,7 @@ func toMailGroupResponse(g models.MailGroup, memberCount int64) mailGroupRespons
 		Email:          g.EmailCached,
 		DisplayName:    g.DisplayName,
 		Description:    g.Description,
+		GroupKind:      g.GroupKind,
 		HasMailbox:     g.HasMailbox,
 		HasCalendar:    g.HasCalendar,
 		HasAddressbook: g.HasAddressbook,
@@ -133,6 +136,15 @@ func toMailGroupResponse(g models.MailGroup, memberCount int64) mailGroupRespons
 		CreatedAt:      g.CreatedAt,
 		UpdatedAt:      g.UpdatedAt,
 	}
+}
+
+// normalizeGroupKind defaults blank/unknown kinds to "resource" (the M51
+// behaviour) and only accepts the two valid values.
+func normalizeGroupKind(k string) string {
+	if k == "distribution" {
+		return "distribution"
+	}
+	return "resource"
 }
 
 func boolOr(p *bool, def bool) bool {
@@ -242,6 +254,7 @@ func (h *mailGroupHandler) create(c *gin.Context) {
 		LocalPart:      canonLocal,
 		DisplayName:    strings.TrimSpace(req.DisplayName),
 		Description:    strings.TrimSpace(req.Description),
+		GroupKind:      normalizeGroupKind(req.GroupKind),
 		HasMailbox:     boolOr(req.HasMailbox, true),
 		HasCalendar:    boolOr(req.HasCalendar, true),
 		HasAddressbook: boolOr(req.HasAddressbook, true),
@@ -426,11 +439,17 @@ func (h *mailGroupHandler) setMembers(c *gin.Context) {
 		return
 	}
 
-	h.notifyAgent(ctx, "mailgroup.members_set", map[string]any{
-		"group_email":   g.EmailCached,
-		"member_emails": desiredEmails,
-		"remove_emails": removed,
-	})
+	// Distribution groups are mailing lists — members receive mail via the
+	// SQL directory's queryRecipient fan-out (driven by the DB rows). They do
+	// NOT join memberGroupIds, so they don't get the group's shared
+	// collections. Only resource (collaboration) groups project membership.
+	if g.GroupKind != "distribution" {
+		h.notifyAgent(ctx, "mailgroup.members_set", map[string]any{
+			"group_email":   g.EmailCached,
+			"member_emails": desiredEmails,
+			"remove_emails": removed,
+		})
+	}
 	_ = dom
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"member_count": len(desiredIDs)}})
 }
@@ -462,11 +481,13 @@ func (h *mailGroupHandler) addMember(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
-	h.notifyAgent(ctx, "mailgroup.members_set", map[string]any{
-		"group_email":   g.EmailCached,
-		"member_emails": []string{mb.EmailCached},
-		"remove_emails": []string{},
-	})
+	if g.GroupKind != "distribution" {
+		h.notifyAgent(ctx, "mailgroup.members_set", map[string]any{
+			"group_email":   g.EmailCached,
+			"member_emails": []string{mb.EmailCached},
+			"remove_emails": []string{},
+		})
+	}
 	c.Status(http.StatusNoContent)
 }
 

@@ -16,6 +16,7 @@ import {
   Space,
   Table,
   Tag,
+  Radio,
   Tooltip,
   Typography,
 } from "antd";
@@ -40,12 +41,6 @@ import {
   type MailGroup,
 } from "../../../../hooks/useMailGroups";
 
-const RESOURCE_TAGS: { key: keyof MailGroup; label: string; color: string }[] = [
-  { key: "has_mailbox", label: "Mailbox", color: "blue" },
-  { key: "has_calendar", label: "Calendar", color: "green" },
-  { key: "has_addressbook", label: "Contacts", color: "purple" },
-  { key: "has_files", label: "Files", color: "gold" },
-];
 
 export function GroupsTab() {
   const { message } = App.useApp();
@@ -117,17 +112,15 @@ export function GroupsTab() {
               ),
             },
             {
-              title: "Resources",
-              key: "resources",
-              render: (_, row) => (
-                <Space size={4} wrap>
-                  {RESOURCE_TAGS.filter((r) => row[r.key]).map((r) => (
-                    <Tag key={r.label} color={r.color}>
-                      {r.label}
-                    </Tag>
-                  ))}
-                </Space>
-              ),
+              title: "Type",
+              key: "group_kind",
+              width: 150,
+              render: (_, row) =>
+                row.group_kind === "distribution" ? (
+                  <Tag color="cyan">Distribution list</Tag>
+                ) : (
+                  <Tag color="geekblue">Shared workspace</Tag>
+                ),
             },
             {
               title: "Members",
@@ -222,11 +215,13 @@ export function GroupDrawer({
           ? {
               name: group.local_part,
               display_name: group.display_name,
+              group_kind: group.group_kind,
               description: group.description,
             }
           : {
               name: "",
               display_name: "",
+              group_kind: "resource",
               description: "",
             },
       );
@@ -255,6 +250,7 @@ export function GroupDrawer({
             name: v.name,
             display_name: v.display_name,
             description: v.description,
+            group_kind: v.group_kind,
           },
         });
         message.success("Group created");
@@ -292,13 +288,24 @@ export function GroupDrawer({
         <Form.Item label="Display name" name="display_name">
           <Input placeholder="Marketing" autoComplete="off" />
         </Form.Item>
+        <Form.Item label="Type" name="group_kind" tooltip="Distribution list = a mailing list (mail to the address reaches every member). Shared workspace = members also share the group's calendar, contacts and files.">
+          <Radio.Group
+            disabled={editing}
+            optionType="button"
+            options={[
+              { label: "Shared workspace", value: "resource" },
+              { label: "Distribution list", value: "distribution" },
+            ]}
+          />
+        </Form.Item>
         <Form.Item label="Description" name="description">
           <Input.TextArea placeholder="Optional note" rows={2} maxLength={255} />
         </Form.Item>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Members of this group automatically share the group's mailbox, calendar,
-          contacts and files in their webmail. For a single calendar, address book or
-          file folder shared with specific people, use the <b>Shared Resources</b> tab.
+          <b>Shared workspace</b>: members also share the group's calendar, contacts and
+          files in webmail. <b>Distribution list</b>: mail to the address simply reaches
+          every member (a mailing list). For a single calendar, address book or file
+          folder shared with specific people, use the <b>Shared Resources</b> tab.
         </Typography.Text>
       </Form>
     </Drawer>
