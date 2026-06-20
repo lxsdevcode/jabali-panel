@@ -3857,6 +3857,7 @@ build_backend() {
   local tmp_panel="$REPO_DIR/bin/jabali-panel.new"
   local tmp_agent="$REPO_DIR/bin/jabali-agent.new"
   local tmp_sshshell="$REPO_DIR/bin/jabali-ssh-shell.new"
+  local tmp_mailhook="$REPO_DIR/bin/jabali-mailhook.new"
 
   # Build-info ldflags: panel-api exposes api.Version (short SHA),
   # api.Commit (full SHA) and api.BuildTime (RFC3339) through
@@ -3877,7 +3878,8 @@ build_backend() {
     bash -c "cd '$REPO_DIR' && \
       go build -trimpath -ldflags '$panel_ld' -o '$tmp_panel' ./panel-api/cmd/server && \
       go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_agent' ./panel-agent/cmd/jabali-agent && \
-      go build -trimpath -ldflags '-s -w' -o '$tmp_sshshell' ./panel-agent/cmd/jabali-ssh-shell"
+      go build -trimpath -ldflags '-s -w' -o '$tmp_sshshell' ./panel-agent/cmd/jabali-ssh-shell && \
+      go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_mailhook' ./panel-agent/cmd/jabali-mailhook"
 
   install -m 0755 "$tmp_panel" "$BIN_PATH"
   install -m 0755 "$tmp_agent" "$AGENT_BIN_PATH"
@@ -3885,7 +3887,8 @@ build_backend() {
   # falls back to /usr/sbin/nologin when sandbox dispatch isn't
   # wired (Step 1 = skeleton; Step 2 + 3 wire bwrap + nspawn argv).
   install -m 0755 "$tmp_sshshell" /usr/local/bin/jabali-ssh-shell
-  rm -f "$tmp_panel" "$tmp_agent" "$tmp_sshshell"
+  install -m 0755 "$tmp_mailhook" /usr/local/bin/jabali-mailhook
+  rm -f "$tmp_panel" "$tmp_agent" "$tmp_sshshell" "$tmp_mailhook"
 
   # M48: sync the docker-app catalog tree into the production path
   # the panel-api reads at startup. Without this the marketplace
@@ -3909,6 +3912,59 @@ build_backend() {
   _ok "installed $AGENT_BIN_PATH (version=$version)"
   _ok "installed /usr/local/bin/jabali-ssh-shell (M13 Step 1 wrapper)"
   _ok "symlinked /usr/local/bin/jabali -> $BIN_PATH"
+}
+
+# install_jabali_mailhook — loopback MTA-hook service that appends per-domain
+# disclaimers by rewriting the MIME body in Go (GH #233, ADR-0143). It is the
+# one TCP-loopback exception to M25 (ADR-0050): bound to 127.0.0.1, Bearer-token
+# authenticated, single POST endpoint, read-only DB access. Sieve could not
+# append to HTML without corrupting it.
+install_jabali_mailhook() {
+  local token_file="/etc/jabali-panel/mailhook.token"
+  if [[ ! -s "$token_file" ]]; then
+    install -m 0640 -o root -g "$SERVICE_USER" /dev/null "$token_file"
+    head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 43 > "$token_file"
+    chmod 0640 "$token_file"
+    chown root:"$SERVICE_USER" "$token_file"
+    _ok "generated mailhook bearer token at $token_file"
+  fi
+
+  local unit="/etc/systemd/system/jabali-mailhook.service"
+  cat > "$unit" <<EOF
+[Unit]
+Description=Jabali mail disclaimer MTA hook (loopback, ADR-0143)
+After=network.target mariadb.service jabali-stalwart.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+# jabali-mail group: read /etc/jabali-panel/stalwart-mariadb.password (root:jabali-mail 0640).
+# SupplementaryGroups (not Group=) so the jabali primary group — which owns
+# mailhook.token — is retained (systemd-Group-drops-primary scar).
+SupplementaryGroups=jabali-mail
+ExecStart=/usr/local/bin/jabali-mailhook
+Environment=MAILHOOK_ADDR=127.0.0.1:8462
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable jabali-mailhook.service >/dev/null 2>&1 || true
+  systemctl restart jabali-mailhook.service
+  _ok "jabali-mailhook.service installed (127.0.0.1:8462)"
 }
 
 # ---------- M13 SSH shell sandbox prerequisites (ADR-pending) ------------
@@ -11857,6 +11913,10 @@ main() {
   # to exist, which the panel service creates via migration 000054 on its
   # first start (inside start_and_verify). Must run after, never before.
   install_stalwart_apply
+  # GH #233 / ADR-0143: loopback MTA-hook that appends disclaimers by
+  # rewriting the MIME body. Needs the stalwart-ro DB creds + jabali_panel
+  # schema (install_stalwart_apply) to be in place first.
+  install_jabali_mailhook
   # M6.4 (ADR-0048): auto-register the panel hostname as an email-enabled
   # domain. Ordering: after start_and_verify (admin user exists via
   # BootstrapAdmin) AND after bootstrap_pdns_self_zone (pdns zone row

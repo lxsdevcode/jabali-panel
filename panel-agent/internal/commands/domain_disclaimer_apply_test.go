@@ -1,127 +1,15 @@
 package commands
 
 import (
-	"strings"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestBuildDisclaimerScript_Requires(t *testing.T) {
-	got := buildDisclaimerScript(map[string]string{"example.com": renderDisclaimerSection("example.com", "Confidential.")})
-	want := `require ["envelope","variables","mime","foreverypart","extracttext","replace"];`
-	if !strings.Contains(got, want) {
-		t.Fatalf("build missing required extensions line.\nfirst line: %q\nwant: %q", firstLine(got), want)
-	}
-}
-
-func TestParseRebuildRoundTrip(t *testing.T) {
-	// A built script must parse back to the same sections (idempotent splice).
-	secs := map[string]string{
-		"a.com": renderDisclaimerSection("a.com", "A"),
-		"b.com": renderDisclaimerSection("b.com", "B"),
-	}
-	built := buildDisclaimerScript(secs)
-	parsed := parseDisclaimerSections(built)
-	if len(parsed) != 2 {
-		t.Fatalf("expected 2 sections after round-trip, got %d", len(parsed))
-	}
-	if buildDisclaimerScript(parsed) != built {
-		t.Fatalf("round-trip not stable:\n%s", built)
-	}
-	// Dropping one domain removes only its section.
-	delete(parsed, "a.com")
-	if strings.Contains(buildDisclaimerScript(parsed), "a.com") {
-		t.Fatalf("a.com section leaked after delete")
-	}
-}
-
-func TestRenderDisclaimerSieve_EnvelopeGuard(t *testing.T) {
-	got := renderDisclaimerSection("example.com", "hi")
-	if !strings.Contains(got, `if envelope :domain "from" "example.com" {`) {
-		t.Fatalf("missing envelope :domain guard.\n%s", got)
-	}
-}
-
-func TestRenderDisclaimerSieve_BothBranches(t *testing.T) {
-	got := renderDisclaimerSection("example.com", "hi")
-	if !strings.Contains(got, `if header :mime :contenttype :contains "Content-Type" "text/plain"`) {
-		t.Fatalf("missing text/plain branch.\n%s", got)
-	}
-	if !strings.Contains(got, `elsif header :mime :contenttype :contains "Content-Type" "text/html"`) {
-		t.Fatalf("missing text/html branch.\n%s", got)
-	}
-}
-
-func TestRenderDisclaimerSieve_ExtracttextReplace(t *testing.T) {
-	got := renderDisclaimerSection("example.com", "hi")
-	// Must extract body before replace, both branches.
-	if strings.Count(got, `extracttext "jabali_orig"`) != 2 {
-		t.Fatalf("expected 2 extracttext calls (plain + html).\n%s", got)
-	}
-	if !strings.Contains(got, `replace "${jabali_orig}\n\n-- \nhi\n"`) {
-		t.Fatalf("text/plain replace line malformed.\n%s", got)
-	}
-	if !strings.Contains(got, `replace "${jabali_orig}<hr><p>hi</p>"`) {
-		t.Fatalf("text/html replace line malformed.\n%s", got)
-	}
-}
-
-func TestSieveEscape(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{`plain`, `plain`},
-		{`a"b`, `a\"b`},
-		{`a\b`, `a\\b`},
-		{"line1\nline2", `line1\nline2`},
-		{"mix \"both\"\nplus\\back", `mix \"both\"\nplus\\back`},
-	}
-	for _, c := range cases {
-		if got := sieveEscape(c.in); got != c.want {
-			t.Errorf("sieveEscape(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestHTMLEscape(t *testing.T) {
-	got := htmlEscape(`<img src="x" onerror=alert(1)>`)
-	want := `&lt;img src=&quot;x&quot; onerror=alert(1)&gt;`
-	if got != want {
-		t.Fatalf("htmlEscape = %q, want %q", got, want)
-	}
-}
-
-func TestRenderDisclaimerSieve_InjectionResistance(t *testing.T) {
-	// Operator text must not be able to inject HTML tags into the html
-	// branch. Sieve-string escapes are covered by TestSieveEscape.
-	got := renderDisclaimerSection("example.com", `"; stop; "<script>alert(1)</script>`)
-	// Isolate the html branch (from `elsif` onward).
-	elsifIdx := strings.Index(got, "elsif")
-	if elsifIdx < 0 {
-		t.Fatalf("render missing elsif html branch.\n%s", got)
-	}
-	htmlBranch := got[elsifIdx:]
-	// HTML branch must have `<script>` escaped — it must not appear literally.
-	if strings.Contains(htmlBranch, `<script>`) {
-		t.Fatalf("unescaped <script> reached html replace.\n%s", htmlBranch)
-	}
-	if !strings.Contains(htmlBranch, `&lt;script&gt;alert(1)&lt;/script&gt;`) {
-		t.Fatalf("expected HTML-escaped script in html branch.\n%s", htmlBranch)
-	}
-	// Sieve branch must have the quote escaped (presence of \" preceding
-	// the injected semicolons) in BOTH branches.
-	if !strings.Contains(got, `\"; stop; \"`) {
-		t.Fatalf("expected sieve-escaped quotes around injected text.\n%s", got)
-	}
-}
-
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
+// TestDisclaimerDomainRe keeps the strict DNS-name guard at this privileged
+// trust boundary (input validation; ADR-0143 moved rendering to the hook).
 func TestDisclaimerDomainRe(t *testing.T) {
 	valid := []string{"example.com", "sub.domain.co.uk", "a-b.example.org", "x1.y2.z3.io"}
 	for _, d := range valid {
@@ -129,22 +17,56 @@ func TestDisclaimerDomainRe(t *testing.T) {
 			t.Errorf("valid domain rejected: %q", d)
 		}
 	}
-	// Sieve-injection / marker-pollution attempts must all be rejected.
 	bad := []string{
 		``,
-		`example`,                                   // no dot (FQDN required)
-		`Example.com`,                               // uppercase
-		"evil.com\"; discard; \"",                   // breaks the sieve string literal
-		"evil.com\n# jabali-disclaimer-end other",   // pollutes another section
-		`evil.com\inject`,                           // backslash
-		`evil#.com`,                                  // marker comment char
-		`-bad.com`,                                   // leading dash
-		`bad-.com`,                                   // trailing dash on label
-		`a..b.com`,                                   // empty label
+		`example`,     // no dot (FQDN required)
+		`Example.com`, // uppercase
+		`-bad.com`,    // leading dash
+		`bad-.com`,    // trailing dash on label
+		`a..b.com`,    // empty label
+		"evil.com\n",  // newline
 	}
 	for _, d := range bad {
 		if disclaimerDomainRe.MatchString(d) {
-			t.Errorf("injection/invalid domain accepted: %q", d)
+			t.Errorf("invalid domain accepted: %q", d)
 		}
+	}
+}
+
+func TestDisclaimerApply_RejectsBadParams(t *testing.T) {
+	cases := []json.RawMessage{
+		nil,
+		json.RawMessage(`{}`),                       // missing domain_name
+		json.RawMessage(`{"domain_name":"nope"}`),   // not an FQDN
+		json.RawMessage(`{"domain_name":"BAD.COM"}`), // uppercase
+	}
+	for _, c := range cases {
+		if _, err := domainDisclaimerApplyHandler(context.Background(), c); err == nil {
+			t.Errorf("expected error for params %s", string(c))
+		}
+	}
+}
+
+func TestReadMailhookToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mailhook.token")
+	if err := os.WriteFile(path, []byte("  sekret-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAILHOOK_TOKEN_PATH", path)
+	tok, err := readMailhookToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != "sekret-token" {
+		t.Fatalf("token not trimmed: %q", tok)
+	}
+
+	// Empty file → error.
+	if err := os.WriteFile(path, []byte("   \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readMailhookToken(); err == nil {
+		t.Fatal("expected error for empty token file")
 	}
 }
