@@ -3,9 +3,9 @@
 // inadyn knows how to talk. Translates `GET /nic/update?hostname=&
 // myip=` + HTTP Basic auth into a panel-internal DNS record update.
 //
-//   GET /nic/update?hostname=vpn.example.com[&myip=1.2.3.4]
+//	GET /nic/update?hostname=vpn.example.com[&myip=1.2.3.4]
 //
-//   Authorization: Basic base64(<anything>:jat_<43-char-base64url>)
+//	Authorization: Basic base64(<anything>:jat_<43-char-base64url>)
 //
 // The username half of the Basic credentials is ignored — every
 // router DDNS dialog asks for "username + password" so we accept any
@@ -20,12 +20,12 @@
 // Response format mirrors the No-IP / DynDNS / Cloudflare-DDNS
 // spec so existing clients understand it:
 //
-//   good <ip>     update succeeded; record now points at <ip>
-//   nochg <ip>    record already pointed at that IP; no change
-//   badauth       Authorization header missing or token invalid
-//   nohost        hostname doesn't resolve to a record this token can update
-//   notfqdn       hostname is not a valid FQDN
-//   911           server-side error (don't retry for a while)
+//	good <ip>     update succeeded; record now points at <ip>
+//	nochg <ip>    record already pointed at that IP; no change
+//	badauth       Authorization header missing or token invalid
+//	nohost        hostname doesn't resolve to a record this token can update
+//	notfqdn       hostname is not a valid FQDN
+//	911           server-side error (don't retry for a while)
 //
 // Each response is a single line, content-type text/plain, with the
 // status text on stdout. ddclient looks for the literal "good" or
@@ -52,10 +52,10 @@ import (
 // /nic/update request rather than reusing the middleware's claim
 // pipeline because Basic auth needs a different parser.
 type DDNSConfig struct {
-	Tokens   repository.UserAPITokenRepository
-	Domains  repository.DomainRepository
-	Zones    repository.DNSZoneRepository
-	Records  repository.DNSRecordRepository
+	Tokens  repository.UserAPITokenRepository
+	Domains repository.DomainRepository
+	Zones   repository.DNSZoneRepository
+	Records repository.DNSRecordRepository
 	// Reconciler nudges a per-domain reconcile after the record
 	// changes so PDNS picks up the new content within seconds.
 	// Optional — the next regular tick converges anyway.
@@ -94,6 +94,12 @@ func (h *ddnsHandler) handle(c *gin.Context) {
 	}
 	if !tok.IsActive(timeNow()) {
 		ddnsReply(c, http.StatusUnauthorized, "badauth")
+		return
+	}
+	// GH #245: a scope-restricted token may use the DDNS shim only if it
+	// holds `ddns` (router-only) or `write:dns`. Empty scopes = full access.
+	if len(tok.Scopes) > 0 && !tok.Scopes.Has(ScopeDDNS) && !tok.Scopes.Has(ScopeWriteDNS) {
+		ddnsReply(c, http.StatusForbidden, "badauth")
 		return
 	}
 
@@ -162,11 +168,11 @@ func (h *ddnsHandler) handle(c *gin.Context) {
 // hostname. Returns ErrNotFound on any failure (caller maps to nohost).
 //
 // Matching:
-//   1. Walk every domain the user owns; longest .Name that is a suffix
-//      of hostname wins (so vpn.foo.bar matches `foo.bar` not just `bar`).
-//   2. Within that domain's zone, find a record whose .Name + .Type
-//      match. .Name in dns_records is RELATIVE to the zone apex (e.g.
-//      "vpn" for vpn.foo.bar in zone foo.bar; "@" for the apex itself).
+//  1. Walk every domain the user owns; longest .Name that is a suffix
+//     of hostname wins (so vpn.foo.bar matches `foo.bar` not just `bar`).
+//  2. Within that domain's zone, find a record whose .Name + .Type
+//     match. .Name in dns_records is RELATIVE to the zone apex (e.g.
+//     "vpn" for vpn.foo.bar in zone foo.bar; "@" for the apex itself).
 func (h *ddnsHandler) resolveDDNSRecord(ctx context.Context, userID, hostname, wantType string) (*models.DNSZone, *models.DNSRecord, error) {
 	// List ALL user domains. The per-tenant universe is small (10s,
 	// not 10ks) so the linear scan is fine and avoids a fragile LIKE
@@ -251,6 +257,5 @@ func clientSourceIP(c *gin.Context) string {
 	}
 	return c.Request.RemoteAddr
 }
-
 
 var timeNow = func() time.Time { return time.Now().UTC() }

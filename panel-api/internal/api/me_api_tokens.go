@@ -96,8 +96,8 @@ type createTokenRequest struct {
 	// ExpiresIn is an optional lifetime in seconds. Omit / 0 for an
 	// infinite-lifetime API key the user rotates manually. Capped
 	// at one year so a typo doesn't produce a never-rotated token.
-	ExpiresInSeconds int64                  `json:"expires_in_seconds,omitempty"`
-	Scopes           models.UserAPIScopes   `json:"scopes,omitempty"`
+	ExpiresInSeconds int64                `json:"expires_in_seconds,omitempty"`
+	Scopes           models.UserAPIScopes `json:"scopes,omitempty"`
 }
 
 type createTokenResponse struct {
@@ -154,6 +154,14 @@ func (h *meAPITokensHandler) create(c *gin.Context) {
 		}
 		t := time.Now().UTC().Add(time.Duration(req.ExpiresInSeconds) * time.Second)
 		expiresAt = &t
+	}
+
+	if bad, ok := validateUserScopes(req.Scopes); !ok {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_scope",
+			"message": "unknown scope: " + bad,
+		})
+		return
 	}
 
 	tok := &models.UserAPIToken{

@@ -20,6 +20,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Table,
   Tabs,
@@ -29,6 +30,21 @@ import {
   notification,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+
+// GH #245: permission presets map a friendly choice to API token scopes.
+// Empty scopes = full access (the historical default).
+const PERMISSION_PRESETS: { key: string; label: string; scopes: string[] }[] = [
+  { key: "full", label: "Full access — everything you can do", scopes: [] },
+  { key: "dns_rw", label: "DNS — read & write records", scopes: ["read:dns", "write:dns"] },
+  { key: "dns_ro", label: "DNS — read only", scopes: ["read:dns"] },
+  { key: "ddns", label: "DDNS only — update DNS records from a router", scopes: ["ddns"] },
+];
+
+const SCOPE_LABELS: Record<string, string> = {
+  "read:dns": "DNS read",
+  "write:dns": "DNS write",
+  ddns: "DDNS",
+};
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -89,6 +105,7 @@ export function UserAPITokensPage(): JSX.Element {
   const [createForm] = Form.useForm<{
     name: string;
     expires_in_seconds?: number;
+    permission?: string;
   }>();
 
   const load = async () => {
@@ -116,11 +133,15 @@ export function UserAPITokensPage(): JSX.Element {
   const onCreate = async () => {
     try {
       const values = await createForm.validateFields();
-      const body: { name: string; expires_in_seconds?: number } = {
+      const body: { name: string; expires_in_seconds?: number; scopes?: string[] } = {
         name: values.name,
       };
       if (values.expires_in_seconds && values.expires_in_seconds > 0) {
         body.expires_in_seconds = values.expires_in_seconds;
+      }
+      const preset = PERMISSION_PRESETS.find((p) => p.key === (values.permission ?? "full"));
+      if (preset && preset.scopes.length > 0) {
+        body.scopes = preset.scopes;
       }
       const resp = await apiClient.post<CreateResponse>("/me/api-tokens", body);
       setSecret({ secret: resp.data.secret, name: resp.data.token.name });
@@ -178,6 +199,19 @@ export function UserAPITokensPage(): JSX.Element {
             </Typography.Text>
           </Space>
         ),
+      },
+      {
+        title: "Permissions",
+        render: (_: unknown, row) =>
+          row.scopes && row.scopes.length > 0 ? (
+            <Space size={[0, 4]} wrap>
+              {row.scopes.map((sc) => (
+                <Tag key={sc}>{SCOPE_LABELS[sc] ?? sc}</Tag>
+              ))}
+            </Space>
+          ) : (
+            <Tag color="blue">Full access</Tag>
+          ),
       },
       {
         title: "Status",
@@ -317,6 +351,14 @@ export function UserAPITokensPage(): JSX.Element {
               style={{ width: "100%" }}
               placeholder="e.g. 86400 for 1 day"
             />
+          </Form.Item>
+          <Form.Item
+            label="Permissions"
+            name="permission"
+            initialValue="full"
+            tooltip="Restrict what this token can do. 'DDNS only' is safe to put in a router — it can update DNS records and nothing else."
+          >
+            <Select options={PERMISSION_PRESETS.map((p) => ({ value: p.key, label: p.label }))} />
           </Form.Item>
         </Form>
       </Modal>

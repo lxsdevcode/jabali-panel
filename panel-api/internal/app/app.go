@@ -383,7 +383,9 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// path. Token-authed callers populate claims the same way Kratos
 		// does, so every ownership check downstream Just Works.
 		combinedAuth := middleware.RequireUserAuth(deps.UserAPITokens, deps.Users, authMiddleware)
-		v1 := r.Group("/api/v1", combinedAuth)
+		// GH #245: scope-restricted API tokens are fail-closed here; full
+		// tokens + browser sessions pass through.
+		v1 := r.Group("/api/v1", combinedAuth, api.EnforceUserTokenScopes())
 		// Register the user-facing token management endpoints. These
 		// reject token-auth callers themselves (you can't mint new
 		// tokens from a token), so even though v1 accepts both auth
