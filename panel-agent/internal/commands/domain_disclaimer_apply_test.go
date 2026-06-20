@@ -5,33 +5,54 @@ import (
 	"testing"
 )
 
-func TestRenderDisclaimerSieve_Requires(t *testing.T) {
-	got := renderDisclaimerSieve("example.com", "Confidential.")
+func TestBuildDisclaimerScript_Requires(t *testing.T) {
+	got := buildDisclaimerScript(map[string]string{"example.com": renderDisclaimerSection("example.com", "Confidential.")})
 	want := `require ["envelope","variables","mime","foreverypart","extracttext","replace"];`
 	if !strings.Contains(got, want) {
-		t.Fatalf("render missing required extensions line.\nfirst line: %q\nwant: %q", firstLine(got), want)
+		t.Fatalf("build missing required extensions line.\nfirst line: %q\nwant: %q", firstLine(got), want)
+	}
+}
+
+func TestParseRebuildRoundTrip(t *testing.T) {
+	// A built script must parse back to the same sections (idempotent splice).
+	secs := map[string]string{
+		"a.com": renderDisclaimerSection("a.com", "A"),
+		"b.com": renderDisclaimerSection("b.com", "B"),
+	}
+	built := buildDisclaimerScript(secs)
+	parsed := parseDisclaimerSections(built)
+	if len(parsed) != 2 {
+		t.Fatalf("expected 2 sections after round-trip, got %d", len(parsed))
+	}
+	if buildDisclaimerScript(parsed) != built {
+		t.Fatalf("round-trip not stable:\n%s", built)
+	}
+	// Dropping one domain removes only its section.
+	delete(parsed, "a.com")
+	if strings.Contains(buildDisclaimerScript(parsed), "a.com") {
+		t.Fatalf("a.com section leaked after delete")
 	}
 }
 
 func TestRenderDisclaimerSieve_EnvelopeGuard(t *testing.T) {
-	got := renderDisclaimerSieve("example.com", "hi")
+	got := renderDisclaimerSection("example.com", "hi")
 	if !strings.Contains(got, `if envelope :domain "from" "example.com" {`) {
 		t.Fatalf("missing envelope :domain guard.\n%s", got)
 	}
 }
 
 func TestRenderDisclaimerSieve_BothBranches(t *testing.T) {
-	got := renderDisclaimerSieve("example.com", "hi")
-	if !strings.Contains(got, `if header :mime :contenttype :is "Content-Type" "text/plain"`) {
+	got := renderDisclaimerSection("example.com", "hi")
+	if !strings.Contains(got, `if header :mime :contenttype :contains "Content-Type" "text/plain"`) {
 		t.Fatalf("missing text/plain branch.\n%s", got)
 	}
-	if !strings.Contains(got, `elsif header :mime :contenttype :is "Content-Type" "text/html"`) {
+	if !strings.Contains(got, `elsif header :mime :contenttype :contains "Content-Type" "text/html"`) {
 		t.Fatalf("missing text/html branch.\n%s", got)
 	}
 }
 
 func TestRenderDisclaimerSieve_ExtracttextReplace(t *testing.T) {
-	got := renderDisclaimerSieve("example.com", "hi")
+	got := renderDisclaimerSection("example.com", "hi")
 	// Must extract body before replace, both branches.
 	if strings.Count(got, `extracttext "jabali_orig"`) != 2 {
 		t.Fatalf("expected 2 extracttext calls (plain + html).\n%s", got)
@@ -72,7 +93,7 @@ func TestHTMLEscape(t *testing.T) {
 func TestRenderDisclaimerSieve_InjectionResistance(t *testing.T) {
 	// Operator text must not be able to inject HTML tags into the html
 	// branch. Sieve-string escapes are covered by TestSieveEscape.
-	got := renderDisclaimerSieve("example.com", `"; stop; "<script>alert(1)</script>`)
+	got := renderDisclaimerSection("example.com", `"; stop; "<script>alert(1)</script>`)
 	// Isolate the html branch (from `elsif` onward).
 	elsifIdx := strings.Index(got, "elsif")
 	if elsifIdx < 0 {
@@ -93,19 +114,6 @@ func TestRenderDisclaimerSieve_InjectionResistance(t *testing.T) {
 	}
 }
 
-func TestSanitizeScriptName(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"example.com", "example-com"},
-		{"MyDomain.Com", "mydomain-com"},
-		{"a_b_c", "a-b-c"},
-		{"sub.domain.co.uk", "sub-domain-co-uk"},
-	}
-	for _, c := range cases {
-		if got := sanitizeScriptName(c.in); got != c.want {
-			t.Errorf("sanitizeScriptName(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {

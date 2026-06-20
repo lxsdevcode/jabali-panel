@@ -9,16 +9,25 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
 
-// domainDisclaimerApplyParams is the panel → agent request.
+// domainDisclaimerApplyParams is the panel → agent request (one domain at a
+// time; the reconciler/API call it per domain).
 //
-// Upserts a system sieve script jabali-disclaimer-<domain_name> that
-// appends the disclaimer text to matching outbound mail body parts.
-// When Enabled=false, destroys any existing script.
+// GH #233: the disclaimer never worked. Two stacked bugs, both fixed here:
 //
-// Body-rewrite on HTML parts is a known Stalwart sieve limitation
-// (ADR-0052). First implementation: text/plain only via `body` +
-// `replace` + `foreverypart`. HTML coverage deferred to M6.6 behind
-// Spike A/B verification on live VM.
+//  1. The SMTP DATA-stage script binding (`MtaStageData.script`) was left at
+//     its default `false`, so Stalwart ran NO sieve at the DATA stage — the
+//     per-domain SieveSystemScript objects existed but were never invoked.
+//  2. The sieve matched Content-Type with `:is "text/plain"`, which never
+//     fires against the real `text/plain; charset="utf-8"` header.
+//
+// The model is also reworked: instead of one SieveSystemScript per domain
+// (selected by a data-stage expression — which fails because script-name
+// lookup chokes on the dots in a domain name), we keep ONE global script
+// named `jabali-disclaimer` (dot-free, so the binding resolves) that holds a
+// marker-delimited section per domain. Each apply rebuilds the global script
+// with that domain's section spliced in or out, binds MtaStageData.script to
+// the constant `'jabali-disclaimer'`, and reloads settings. All verified
+// end-to-end on the test server (Stalwart 0.16.6).
 type domainDisclaimerApplyParams struct {
 	DomainName string `json:"domain_name"`
 	Enabled    bool   `json:"enabled"`
@@ -28,6 +37,15 @@ type domainDisclaimerApplyParams struct {
 type domainDisclaimerApplyResponse struct {
 	Ok bool `json:"ok"`
 }
+
+const (
+	// disclaimerScriptName is the single global system sieve script holding
+	// every domain's disclaimer section. Dot-free so the data-stage binding
+	// expression resolves it (Stalwart script-name lookup fails on dots).
+	disclaimerScriptName = "jabali-disclaimer"
+	// dataStageDisclaimerExpr binds the DATA stage to the global script.
+	dataStageDisclaimerExpr = "'jabali-disclaimer'"
+)
 
 func domainDisclaimerApplyHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	if len(params) == 0 {
@@ -40,115 +58,237 @@ func domainDisclaimerApplyHandler(ctx context.Context, params json.RawMessage) (
 	if p.DomainName == "" {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "domain_name required"}
 	}
-	scriptName := "jabali-disclaimer-" + sanitizeScriptName(p.DomainName)
 
-	if !p.Enabled || strings.TrimSpace(p.Text) == "" {
-		// Tear down: destroy takes server-assigned ids, not names, so look
-		// up the existing id first. Best-effort (absent → nothing to do).
-		existingID, _ := findSieveSystemScriptID(ctx, scriptName)
-		if existingID != "" {
-			args := map[string]any{"destroy": []string{existingID}}
-			var result jmapSetResult
-			_ = jmapCall(ctx, "x:SieveSystemScript/set", args, &result)
-		}
-		return domainDisclaimerApplyResponse{Ok: true}, nil
-	}
-
-	body := renderDisclaimerSieve(p.DomainName, p.Text)
-
-	// Resolve existing script id by name so update/create is dispatched correctly.
-	// Stalwart `Set` uses server-assigned ids for `update` keys; using the
-	// script's name as key silently no-ops (no `updated`, no `notUpdated`).
-	existingID, err := findSieveSystemScriptID(ctx, scriptName)
+	existingID, existingContents, err := getSieveSystemScript(ctx, disclaimerScriptName)
 	if err != nil {
 		return nil, err
 	}
 
-	var result jmapSetResult
-	if existingID == "" {
-		createArgs := map[string]any{
-			"create": map[string]any{
-				scriptName: map[string]any{
-					"name":     scriptName,
-					"isActive": true,
-					"contents": body,
-				},
-			},
-		}
-		if err := jmapCall(ctx, "x:SieveSystemScript/set", createArgs, &result); err != nil {
-			return nil, err
-		}
-		if reason, bad := result.NotCreated[scriptName]; bad {
-			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("disclaimer sieve create refused: %s", string(reason)),
+	// Parse the current global script into per-domain sections, drop this
+	// domain's, then re-add it if enabled.
+	sections := parseDisclaimerSections(existingContents)
+	delete(sections, p.DomainName)
+	if p.Enabled && strings.TrimSpace(p.Text) != "" {
+		sections[p.DomainName] = renderDisclaimerSection(p.DomainName, p.Text)
+	}
+
+	changed := false
+
+	if len(sections) == 0 {
+		// No disclaimers left → destroy the global script. The binding can
+		// stay (a missing script is a safe DATA-stage no-op).
+		if existingID != "" {
+			var result jmapSetResult
+			if err := jmapCall(ctx, "x:SieveSystemScript/set", map[string]any{"destroy": []string{existingID}}, &result); err != nil {
+				return nil, fmt.Errorf("disclaimer sieve destroy: %w", err)
 			}
+			changed = true
 		}
 	} else {
-		updateArgs := map[string]any{
-			"update": map[string]any{
-				existingID: map[string]any{
-					"contents": body,
-					"isActive": true,
-				},
-			},
-		}
-		if err := jmapCall(ctx, "x:SieveSystemScript/set", updateArgs, &result); err != nil {
-			return nil, fmt.Errorf("disclaimer sieve update: %w", err)
-		}
-		if reason, bad := result.NotUpdated[existingID]; bad {
-			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("disclaimer sieve update refused: %s", string(reason)),
+		body := buildDisclaimerScript(sections)
+		if existingID == "" {
+			var result jmapSetResult
+			args := map[string]any{"create": map[string]any{disclaimerScriptName: map[string]any{
+				"name": disclaimerScriptName, "isActive": true, "contents": body,
+			}}}
+			if err := jmapCall(ctx, "x:SieveSystemScript/set", args, &result); err != nil {
+				return nil, err
 			}
+			if reason, bad := result.NotCreated[disclaimerScriptName]; bad {
+				return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("disclaimer sieve create refused: %s", string(reason))}
+			}
+			changed = true
+		} else if existingContents != body {
+			// Update BY ID (name-keyed updates silently no-op).
+			var result jmapSetResult
+			args := map[string]any{"update": map[string]any{existingID: map[string]any{
+				"contents": body, "isActive": true,
+			}}}
+			if err := jmapCall(ctx, "x:SieveSystemScript/set", args, &result); err != nil {
+				return nil, fmt.Errorf("disclaimer sieve update: %w", err)
+			}
+			if reason, bad := result.NotUpdated[existingID]; bad {
+				return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("disclaimer sieve update refused: %s", string(reason))}
+			}
+			changed = true
+		}
+
+		bound, err := ensureDataStageDisclaimerBinding(ctx)
+		if err != nil {
+			return nil, err
+		}
+		changed = changed || bound
+	}
+
+	// Reload only when something changed — the reconciler calls this every
+	// tick for every domain, and an unconditional reload would be a
+	// settings-reload storm (per-tick-idempotent-loops rule).
+	if changed {
+		if err := reloadStalwartSettings(ctx); err != nil {
+			return nil, err
 		}
 	}
 	return domainDisclaimerApplyResponse{Ok: true}, nil
 }
 
-// findSieveSystemScriptID returns the Stalwart-assigned id for a system sieve
-// script matching `name` exactly, or "" if none exists.
-func findSieveSystemScriptID(ctx context.Context, name string) (string, error) {
-	args := map[string]any{"filter": map[string]any{"name": name}}
-	var qr jmapQueryResult
-	if err := jmapCall(ctx, "x:SieveSystemScript/query", args, &qr); err != nil {
-		return "", err
+const (
+	disclaimerSectBegin = "# jabali-disclaimer-begin "
+	disclaimerSectEnd   = "# jabali-disclaimer-end "
+)
+
+// parseDisclaimerSections extracts the per-domain sections from an existing
+// global disclaimer script, keyed by domain. The require header and anything
+// outside the begin/end markers is discarded (regenerated on build).
+func parseDisclaimerSections(contents string) map[string]string {
+	out := map[string]string{}
+	if contents == "" {
+		return out
 	}
-	if len(qr.IDs) == 0 {
-		return "", nil
+	lines := strings.Split(contents, "\n")
+	var curDomain string
+	var cur []string
+	for _, ln := range lines {
+		switch {
+		case strings.HasPrefix(ln, disclaimerSectBegin):
+			curDomain = strings.TrimSpace(strings.TrimPrefix(ln, disclaimerSectBegin))
+			cur = nil
+		case strings.HasPrefix(ln, disclaimerSectEnd):
+			if curDomain != "" {
+				out[curDomain] = strings.Join(cur, "\n")
+			}
+			curDomain = ""
+			cur = nil
+		default:
+			if curDomain != "" {
+				cur = append(cur, ln)
+			}
+		}
 	}
-	return qr.IDs[0], nil
+	return out
 }
 
-// renderDisclaimerSieve builds a sieve that appends `text` to outbound mail
-// from `domain`. It uses RFC 5173 (body), RFC 5229 (variables), RFC 5173
-// foreverypart + RFC 5703 mime/extracttext/replace to capture each part's
-// body and rewrite it with the disclaimer appended. Covers both text/plain
-// and text/html parts.
+// buildDisclaimerScript assembles the global script from per-domain sections:
+// one require header, then each domain's marker-wrapped section in sorted
+// order (stable output → idempotent content compare).
+func buildDisclaimerScript(sections map[string]string) string {
+	domains := make([]string, 0, len(sections))
+	for d := range sections {
+		domains = append(domains, d)
+	}
+	// Insertion sort keeps output stable without importing sort just for this.
+	for i := 1; i < len(domains); i++ {
+		for j := i; j > 0 && domains[j-1] > domains[j]; j-- {
+			domains[j-1], domains[j] = domains[j], domains[j-1]
+		}
+	}
+	var b strings.Builder
+	b.WriteString(`require ["envelope","variables","mime","foreverypart","extracttext","replace"];` + "\n")
+	for _, d := range domains {
+		b.WriteString(disclaimerSectBegin + d + "\n")
+		b.WriteString(sections[d])
+		if !strings.HasSuffix(sections[d], "\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString(disclaimerSectEnd + d + "\n")
+	}
+	return b.String()
+}
+
+// renderDisclaimerSection builds the per-domain body (no require line — that
+// lives once at the top of the global script). Appends the disclaimer to
+// text/plain and text/html parts.
 //
-// Spike A verified on Stalwart v1.0.0 (2026-04-23): required extensions
-// compile, and per-part replace with an extracted body variable works for
-// both MIME types.
-func renderDisclaimerSieve(domain, text string) string {
+// GH #233: the Content-Type match uses `:contains`, NOT `:is` — the real
+// header is `text/plain; charset="utf-8"`, so an exact `:is "text/plain"`
+// never fires.
+func renderDisclaimerSection(domain, text string) string {
 	plainText := sieveEscape(text)
 	htmlText := sieveEscape(htmlEscape(text))
 	var b strings.Builder
-	b.WriteString(`require ["envelope","variables","mime","foreverypart","extracttext","replace"];` + "\n")
-	fmt.Fprintf(&b, "# jabali-managed disclaimer for %s — do not edit; overwritten by reconciler\n", domain)
 	fmt.Fprintf(&b, "if envelope :domain \"from\" \"%s\" {\n", domain)
 	b.WriteString("  foreverypart {\n")
-	b.WriteString("    if header :mime :contenttype :is \"Content-Type\" \"text/plain\" {\n")
-	b.WriteString("      if extracttext \"jabali_orig\" {\n")
-	fmt.Fprintf(&b, "        replace \"${jabali_orig}\\n\\n-- \\n%s\\n\";\n", plainText)
-	b.WriteString("      }\n")
-	b.WriteString("    } elsif header :mime :contenttype :is \"Content-Type\" \"text/html\" {\n")
-	b.WriteString("      if extracttext \"jabali_orig\" {\n")
-	fmt.Fprintf(&b, "        replace \"${jabali_orig}<hr><p>%s</p>\";\n", htmlText)
-	b.WriteString("      }\n")
+	b.WriteString("    if header :mime :contenttype :contains \"Content-Type\" \"text/plain\" {\n")
+	b.WriteString("      extracttext \"jabali_orig\";\n")
+	fmt.Fprintf(&b, "      replace \"${jabali_orig}\\n\\n-- \\n%s\\n\";\n", plainText)
+	b.WriteString("    } elsif header :mime :contenttype :contains \"Content-Type\" \"text/html\" {\n")
+	b.WriteString("      extracttext \"jabali_orig\";\n")
+	fmt.Fprintf(&b, "      replace \"${jabali_orig}<hr><p>%s</p>\";\n", htmlText)
 	b.WriteString("    }\n")
 	b.WriteString("  }\n")
-	b.WriteString("}\n")
+	b.WriteString("}")
 	return b.String()
+}
+
+// getSieveSystemScript returns the id + contents of the named system sieve
+// script, or ("", "", nil) if it doesn't exist.
+func getSieveSystemScript(ctx context.Context, name string) (string, string, error) {
+	var qr jmapQueryResult
+	if err := jmapCall(ctx, "x:SieveSystemScript/query", map[string]any{"filter": map[string]any{"name": name}}, &qr); err != nil {
+		return "", "", err
+	}
+	if len(qr.IDs) == 0 {
+		return "", "", nil
+	}
+	id := qr.IDs[0]
+	var gr jmapGetResult
+	if err := jmapCall(ctx, "x:SieveSystemScript/get", map[string]any{"ids": []string{id}}, &gr); err != nil {
+		return "", "", err
+	}
+	for _, raw := range gr.List {
+		var s struct {
+			ID       string `json:"id"`
+			Contents string `json:"contents"`
+		}
+		if err := json.Unmarshal(raw, &s); err != nil {
+			continue
+		}
+		if s.ID == id {
+			return id, s.Contents, nil
+		}
+	}
+	return id, "", nil
+}
+
+// ensureDataStageDisclaimerBinding sets MtaStageData.script to the global
+// disclaimer script if it isn't already. Returns whether a write happened.
+// Patches ONLY the `script` field.
+func ensureDataStageDisclaimerBinding(ctx context.Context) (bool, error) {
+	var gr jmapGetResult
+	if err := jmapCall(ctx, "x:MtaStageData/get", map[string]any{"ids": []string{"singleton"}}, &gr); err != nil {
+		return false, fmt.Errorf("disclaimer binding get: %w", err)
+	}
+	if len(gr.List) > 0 {
+		var cur struct {
+			Script struct {
+				Else string `json:"else"`
+			} `json:"script"`
+		}
+		if err := json.Unmarshal(gr.List[0], &cur); err == nil && cur.Script.Else == dataStageDisclaimerExpr {
+			return false, nil
+		}
+	}
+	args := map[string]any{"update": map[string]any{"singleton": map[string]any{
+		"script": map[string]any{"match": map[string]any{}, "else": dataStageDisclaimerExpr},
+	}}}
+	var sr jmapSetResult
+	if err := jmapCall(ctx, "x:MtaStageData/set", args, &sr); err != nil {
+		return false, fmt.Errorf("disclaimer binding set: %w", err)
+	}
+	if reason, bad := sr.NotUpdated["singleton"]; bad {
+		return false, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("disclaimer binding refused: %s", string(reason))}
+	}
+	return true, nil
+}
+
+// reloadStalwartSettings asks Stalwart to reload its settings so a config
+// write takes effect without a service restart.
+func reloadStalwartSettings(ctx context.Context) error {
+	args := map[string]any{"create": map[string]any{"reload": map[string]any{"@type": "ReloadSettings"}}}
+	var sr jmapSetResult
+	if err := jmapCall(ctx, "x:Action/set", args, &sr); err != nil {
+		return fmt.Errorf("reload settings: %w", err)
+	}
+	return nil
 }
 
 // sieveEscape escapes a string for inclusion inside a sieve double-quoted
@@ -170,20 +310,6 @@ func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, `>`, `&gt;`)
 	s = strings.ReplaceAll(s, `"`, `&quot;`)
 	return s
-}
-
-func sanitizeScriptName(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		} else if r >= 'A' && r <= 'Z' {
-			b.WriteRune(r + 32)
-		} else {
-			b.WriteRune('-')
-		}
-	}
-	return b.String()
 }
 
 func init() {
