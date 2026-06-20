@@ -76,6 +76,10 @@ echo "==> go build jabali-ssh-shell"
 $GO_BIN build -trimpath -ldflags "-s -w" \
   -o "$STAGE/bin/jabali-ssh-shell" ./panel-agent/cmd/jabali-ssh-shell
 
+echo "==> go build jabali-mailhook"
+$GO_BIN build -trimpath -ldflags "$LDFLAGS_AGENT" \
+  -o "$STAGE/bin/jabali-mailhook" ./panel-agent/cmd/jabali-mailhook
+
 chmod 0755 "$STAGE"/bin/*
 
 # 3. MANIFEST: machine-readable, single line per key. update.go parses

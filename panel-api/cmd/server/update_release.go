@@ -65,9 +65,9 @@ const (
 // consume. Extra fields are ignored — Gitea adds them over time and we
 // don't want to break on schema growth.
 type releaseAsset struct {
-	Name              string `json:"name"`
+	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
-	Size              int64  `json:"size"`
+	Size               int64  `json:"size"`
 }
 
 type releaseResponse struct {
@@ -175,7 +175,7 @@ func installFromRelease(ctx context.Context, log func(string, ...any)) (installe
 	//    uses (atomic rename, mode 0755, owner root). Caller is
 	//    responsible for restarting services + running migrations
 	//    AFTER we return so it can sequence with its own steps.
-	for _, binName := range []string{"jabali-panel", "jabali-agent", "jabali-ssh-shell"} {
+	for _, binName := range []string{"jabali-panel", "jabali-agent", "jabali-ssh-shell", "jabali-mailhook"} {
 		src := filepath.Join(extractDir, "bin", binName)
 		if _, err := os.Stat(src); err != nil {
 			return false, "", fmt.Errorf("release: tarball missing bin/%s", binName)
@@ -401,7 +401,6 @@ func installBinaryAtomic(src, dst string) error {
 	}
 	return os.Rename(tmp, dst)
 }
-
 
 // findReleaseForCommit scans the repo's releases and returns the one
 // whose target_commitish (the commit the tag points at) matches the

@@ -34,6 +34,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications/senders"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/reconciler/phases"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
@@ -285,6 +286,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 				QueueLen: 100,
 			},
 		)
+		// GH #233: register the disclaimer reconcile phase so the Stalwart
+		// MTA hook + per-domain disclaimer state self-heal every tick. The
+		// handler path alone left the hook unregistered after a fresh update
+		// until the operator re-saved the disclaimer.
+		phases.RegisterPhase(phases.NewDisclaimerPhase(sharedAgent))
 		rec.WithDNSRepos(dnsZoneRepo, dnsRecordRepo, serverSettingsRepo)
 		rec.WithSSLCerts(sslCertRepo)
 		rec.WithPHPPools(phpPoolRepo)

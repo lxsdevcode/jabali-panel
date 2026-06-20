@@ -1050,6 +1050,17 @@ test -x node_modules/.bin/tsc || {
 						"-o", repoDir+"/bin/jabali-ssh-shell.new", "./panel-agent/cmd/jabali-ssh-shell")
 				}()
 			}
+			// jabali-mailhook: the loopback MTA-hook service (disclaimers, GH #233).
+			// Same panel-agent module; rebuild alongside the agent/ssh-shell.
+			var mailhookErr error
+			if !agentSkip {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					mailhookErr = asUser(repoDir, goBin, "build", "-trimpath", "-ldflags", ldflagsAgent,
+						"-o", repoDir+"/bin/jabali-mailhook.new", "./panel-agent/cmd/jabali-mailhook")
+				}()
+			}
 			wg.Wait()
 			if apiErr != nil {
 				return fmt.Errorf("panel-api: %w", apiErr)
@@ -1059,6 +1070,9 @@ test -x node_modules/.bin/tsc || {
 			}
 			if sshShellErr != nil {
 				return fmt.Errorf("jabali-ssh-shell: %w", sshShellErr)
+			}
+			if mailhookErr != nil {
+				return fmt.Errorf("jabali-mailhook: %w", mailhookErr)
 			}
 			// Persist the sha only on the side we just rebuilt; skipped
 			// side keeps its existing sha file untouched.
@@ -1099,10 +1113,35 @@ test -x node_modules/.bin/tsc || {
 				}
 				_ = os.Remove(sshShellNew)
 			}
+			mailhookNew := repoDir + "/bin/jabali-mailhook.new"
+			if _, err := os.Stat(mailhookNew); err == nil {
+				if err := run("", "install", "-m", "0755", "-o", "root", "-g", "root", mailhookNew, "/usr/local/bin/jabali-mailhook"); err != nil {
+					return err
+				}
+				_ = os.Remove(mailhookNew)
+			}
 			// Idempotent ergonomic alias: `jabali` → `jabali-panel`.
 			// install.sh creates this on fresh installs; update.go refreshes it
 			// on every upgrade in case it got clobbered.
 			_ = run("", "ln", "-sf", defaultPanelBinPath, "/usr/local/bin/jabali")
+			return nil
+		}},
+		{"setup jabali-mailhook service", func() error {
+			// The MTA-hook disclaimer service (GH #233) is set up only in
+			// install.sh main() on fresh installs; run its idempotent
+			// installer here too so existing hosts get the token + unit +
+			// service on update. Must run AFTER the binary is installed
+			// (above) — provision_new_software runs before binaries, so it
+			// can't do this. Best-effort: a failure shouldn't abort the
+			// update (the reconciler registers the Stalwart hook once the
+			// service is up).
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil // dev environment, no install.sh
+			}
+			if err := run("", "bash", "-c", "source "+installSh+" && install_jabali_mailhook"); err != nil {
+				fmt.Printf("  (install_jabali_mailhook failed: %v — continuing)\n", err)
+			}
 			return nil
 		}},
 		{"run migrations", func() error {
