@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 )
 
@@ -17,6 +19,11 @@ type PackageRepository interface {
 	List(ctx context.Context, opts ListOptions) ([]models.HostingPackage, int64, error)
 	Update(ctx context.Context, p *models.HostingPackage) error
 	Delete(ctx context.Context, id string) error
+
+	// EnsureDefaults seeds the three default Tier 1/2/3 packages on a
+	// fresh install (GH #231). No-op once any package row exists, so it
+	// never fights an operator who renamed or deleted the defaults.
+	EnsureDefaults(ctx context.Context) error
 }
 
 type packageRepo struct{ db *gorm.DB }
@@ -106,4 +113,54 @@ func (r *packageRepo) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// defaultPackages are the Tier 1/2/3 starter plans seeded on first boot
+// (GH #231). Values are deliberately modest, cPanel-style tiers; operators
+// edit or delete them from the admin Packages page. Zero = unlimited per
+// the model contract, so every limit here is an explicit non-zero cap.
+func defaultPackages(now time.Time) []models.HostingPackage {
+	mk := func(name string, diskMB, bwMB, cpu, memMB, tasks, domains, email, dbs, dbUsers uint32, ssh bool) models.HostingPackage {
+		return models.HostingPackage{
+			ID:               ids.NewULID(),
+			Name:             name,
+			DiskQuotaMB:      diskMB,
+			BandwidthQuotaMB: bwMB,
+			CPUQuotaPercent:  cpu,
+			MemoryLimitMB:    memMB,
+			MaxTasks:         tasks,
+			MaxDomains:       domains,
+			MaxEmailAccounts: email,
+			MaxDatabases:     dbs,
+			MaxDatabaseUsers: dbUsers,
+			SSHEnabled:       ssh,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+	}
+	return []models.HostingPackage{
+		//      name        disk    bw      cpu  mem   tasks dom email db dbu  ssh
+		mk("Tier 1", 5_000, 50_000, 50, 512, 100, 1, 5, 1, 1, false),
+		mk("Tier 2", 20_000, 200_000, 100, 1024, 200, 5, 25, 5, 5, false),
+		mk("Tier 3", 50_000, 500_000, 200, 2048, 400, 25, 100, 25, 25, true),
+	}
+}
+
+func (r *packageRepo) EnsureDefaults(ctx context.Context) error {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&models.HostingPackage{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil // already populated — never re-seed
+	}
+	defaults := defaultPackages(time.Now().UTC())
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i := range defaults {
+			if err := tx.Create(&defaults[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

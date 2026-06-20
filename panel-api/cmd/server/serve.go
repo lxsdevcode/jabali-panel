@@ -554,6 +554,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// can re-run install.sh after fixing the upstream issue.
 		bootstrapTenantFromEnv(log)
 
+		// GH #231: seed the default Tier 1/2/3 hosting packages on a fresh
+		// install. EnsureDefaults is a no-op once any package exists, so
+		// upgrades and operator-curated package lists are untouched.
+		func() {
+			seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer seedCancel()
+			if err := packageRepo.EnsureDefaults(seedCtx); err != nil {
+				log.Error("failed to seed default hosting packages", "err", err)
+			}
+		}()
+
 		// Merge-seed server_settings from config.toml [server] block on
 		// every boot. Operator edits via the admin API win — once a field
 		// has a non-empty value in the DB, config won't overwrite it. But

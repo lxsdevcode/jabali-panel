@@ -1,0 +1,77 @@
+package repository
+
+import (
+	"context"
+	"regexp"
+	"testing"
+	"time"
+
+	"database/sql"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+func newMockPackageDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, *sql.DB) {
+	t.Helper()
+	raw, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT VERSION()")).
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("10.11.6-MariaDB"))
+	gdb, err := gorm.Open(mysql.New(mysql.Config{Conn: raw, SkipInitializeWithVersion: false}),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	return gdb, mock, raw
+}
+
+func TestPackage_EnsureDefaults_NoOpWhenPopulated(t *testing.T) {
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewPackageRepository(db)
+
+	// One existing package -> EnsureDefaults must not INSERT anything.
+	mock.ExpectQuery("SELECT count.* FROM .hosting_packages.").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+	require.NoError(t, repo.EnsureDefaults(context.Background()))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPackage_EnsureDefaults_SeedsThreeWhenEmpty(t *testing.T) {
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewPackageRepository(db)
+
+	mock.ExpectQuery("SELECT count.* FROM .hosting_packages.").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectBegin()
+	for i := 0; i < 3; i++ {
+		mock.ExpectExec("INSERT INTO .hosting_packages.").
+			WillReturnResult(sqlmock.NewResult(int64(i+1), 1))
+	}
+	mock.ExpectCommit()
+
+	require.NoError(t, repo.EnsureDefaults(context.Background()))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPackage_defaultPackages_ShapeAndTiers(t *testing.T) {
+	defs := defaultPackages(time.Now().UTC())
+	require.Len(t, defs, 3)
+	require.Equal(t, "Tier 1", defs[0].Name)
+	require.Equal(t, "Tier 2", defs[1].Name)
+	require.Equal(t, "Tier 3", defs[2].Name)
+	// Tiers must be strictly increasing on disk so the UI sorts sensibly.
+	require.Less(t, defs[0].DiskQuotaMB, defs[1].DiskQuotaMB)
+	require.Less(t, defs[1].DiskQuotaMB, defs[2].DiskQuotaMB)
+	// Every default sets a real (non-zero) cap — zero means unlimited.
+	for _, d := range defs {
+		require.NotZero(t, d.DiskQuotaMB)
+		require.NotZero(t, d.MaxDomains)
+		require.NotEmpty(t, d.ID)
+		require.False(t, d.CreatedAt.IsZero())
+	}
+}
