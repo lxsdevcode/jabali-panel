@@ -15,12 +15,13 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
-  Select,
+  Radio,
   Space,
   Table,
   Tabs,
@@ -31,20 +32,29 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 
-// GH #245: permission presets map a friendly choice to API token scopes.
-// Empty scopes = full access (the historical default).
-const PERMISSION_PRESETS: { key: string; label: string; scopes: string[] }[] = [
-  { key: "full", label: "Full access — everything you can do", scopes: [] },
-  { key: "dns_rw", label: "DNS — read & write records", scopes: ["read:dns", "write:dns"] },
-  { key: "dns_ro", label: "DNS — read only", scopes: ["read:dns"] },
-  { key: "ddns", label: "DDNS only — update DNS records from a router", scopes: ["ddns"] },
+// GH #245 / ADR-0144: per-area permissions. Empty scopes = full access (the
+// historical default). AREAS mirrors the panel-api scope vocabulary.
+const AREAS: { key: string; label: string }[] = [
+  { key: "dns", label: "DNS" },
+  { key: "mail", label: "Mail" },
+  { key: "files", label: "Files" },
+  { key: "databases", label: "Databases" },
+  { key: "apps", label: "Applications" },
+  { key: "domains", label: "Domains" },
+  { key: "ssl", label: "SSL" },
+  { key: "php", label: "PHP" },
+  { key: "cron", label: "Cron" },
+  { key: "ssh", label: "SSH keys" },
+  { key: "backups", label: "Backups" },
+  { key: "logs", label: "Logs" },
+  { key: "notifications", label: "Notifications" },
 ];
 
-const SCOPE_LABELS: Record<string, string> = {
-  "read:dns": "DNS read",
-  "write:dns": "DNS write",
-  ddns: "DDNS",
-};
+const SCOPE_LABELS: Record<string, string> = { ddns: "DDNS" };
+for (const a of AREAS) {
+  SCOPE_LABELS["read:" + a.key] = a.label + " read";
+  SCOPE_LABELS["write:" + a.key] = a.label + " write";
+}
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -105,8 +115,10 @@ export function UserAPITokensPage(): JSX.Element {
   const [createForm] = Form.useForm<{
     name: string;
     expires_in_seconds?: number;
-    permission?: string;
   }>();
+  const [accessMode, setAccessMode] = useState<"full" | "custom">("full");
+  const [scopeSel, setScopeSel] = useState<Record<string, string[]>>({});
+  const [ddnsSel, setDdnsSel] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -130,6 +142,14 @@ export function UserAPITokensPage(): JSX.Element {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (createOpen) {
+      setAccessMode("full");
+      setScopeSel({});
+      setDdnsSel(false);
+    }
+  }, [createOpen]);
+
   const onCreate = async () => {
     try {
       const values = await createForm.validateFields();
@@ -139,9 +159,20 @@ export function UserAPITokensPage(): JSX.Element {
       if (values.expires_in_seconds && values.expires_in_seconds > 0) {
         body.expires_in_seconds = values.expires_in_seconds;
       }
-      const preset = PERMISSION_PRESETS.find((p) => p.key === (values.permission ?? "full"));
-      if (preset && preset.scopes.length > 0) {
-        body.scopes = preset.scopes;
+      if (accessMode === "custom") {
+        const scopes: string[] = [];
+        for (const a of AREAS) {
+          for (const act of scopeSel[a.key] ?? []) scopes.push(`${act}:${a.key}`);
+        }
+        if (ddnsSel) scopes.push("ddns");
+        if (scopes.length === 0) {
+          notification.error({
+            message: "Select at least one permission",
+            description: "Pick some permissions, or choose Full access.",
+          });
+          return;
+        }
+        body.scopes = scopes;
       }
       const resp = await apiClient.post<CreateResponse>("/me/api-tokens", body);
       setSecret({ secret: resp.data.secret, name: resp.data.token.name });
@@ -354,11 +385,56 @@ export function UserAPITokensPage(): JSX.Element {
           </Form.Item>
           <Form.Item
             label="Permissions"
-            name="permission"
-            initialValue="full"
-            tooltip="Restrict what this token can do. 'DDNS only' is safe to put in a router — it can update DNS records and nothing else."
+            tooltip="Full access can do anything you can. A custom token is restricted to exactly the areas you tick and is rejected everywhere else."
           >
-            <Select options={PERMISSION_PRESETS.map((p) => ({ value: p.key, label: p.label }))} />
+            <Radio.Group
+              value={accessMode}
+              onChange={(e) => setAccessMode(e.target.value)}
+              style={{ marginBottom: accessMode === "custom" ? 12 : 0 }}
+            >
+              <Radio value="full">Full access</Radio>
+              <Radio value="custom">Custom</Radio>
+            </Radio.Group>
+            {accessMode === "custom" && (
+              <div
+                style={{
+                  maxHeight: 280,
+                  overflowY: "auto",
+                  border: "1px solid #f0f0f0",
+                  borderRadius: 6,
+                  padding: 12,
+                }}
+              >
+                <div style={{ marginBottom: 10 }}>
+                  <Checkbox checked={ddnsSel} onChange={(e) => setDdnsSel(e.target.checked)}>
+                    DDNS only — update DNS records from a router (safe for router config)
+                  </Checkbox>
+                </div>
+                {AREAS.map((a) => (
+                  <div
+                    key={a.key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <span style={{ width: 120 }}>{a.label}</span>
+                    <Checkbox.Group
+                      options={[
+                        { label: "Read", value: "read" },
+                        { label: "Write", value: "write" },
+                      ]}
+                      value={scopeSel[a.key] ?? []}
+                      onChange={(v) =>
+                        setScopeSel((prev) => ({ ...prev, [a.key]: v as string[] }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </Form.Item>
         </Form>
       </Modal>

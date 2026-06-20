@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,30 +13,39 @@ import (
 // User API token scopes (GH #245, ADR-0144). A token with an EMPTY scope set
 // has full per-user access (every existing token — no migration). A token with
 // a non-empty set is capability-restricted: it may only reach routes whose
-// required scope it Has(), and is denied everywhere else (fail-closed).
+// required scope it Has(), and is denied everywhere else (FAIL-CLOSED).
 //
-// Phase 1+2 maps the DNS area + the DDNS shim. Other areas are intentionally
-// unmapped: a scoped token is denied there until a later phase maps them — safe
-// because scoped tokens are brand new. Full tokens are unaffected throughout.
+// Scopes are `<action>:<area>` (action ∈ read|write; `read:*`/`write:*`
+// wildcards via UserAPIScopes.Has), plus the narrow `ddns` grant for the DynDNS
+// shim only. Areas are resolved from the route by resolveUserScope.
+const ScopeDDNS = "ddns"
+
+// userScopeAreas is the full vocabulary. read:<area> / write:<area> for each,
+// plus ddns, are the scopes a token may carry.
+var userScopeAreas = []string{
+	"dns", "mail", "files", "databases", "apps",
+	"domains", "cron", "ssl", "php", "ssh", "logs",
+	"notifications", "backups",
+}
+
+// Convenience constants for the routes/tests that reference DNS directly.
 const (
 	ScopeReadDNS  = "read:dns"
 	ScopeWriteDNS = "write:dns"
-	// ScopeDDNS is the narrowest grant: it permits ONLY the DynDNS shim
-	// (/nic/update), not the DNS REST API — ideal for a router credential.
-	ScopeDDNS = "ddns"
 )
 
 // knownUserScopes is the closed set the token-create API accepts. Rejecting
-// unknown scopes stops a typo'd scope from silently fail-closing a token, and
-// keeps the vocabulary reviewable as areas are added.
-var knownUserScopes = map[string]bool{
-	ScopeReadDNS:  true,
-	ScopeWriteDNS: true,
-	ScopeDDNS:     true,
+// unknown scopes stops a typo'd scope from silently fail-closing a token.
+var knownUserScopes = map[string]bool{}
+
+func init() {
+	for _, a := range userScopeAreas {
+		knownUserScopes["read:"+a] = true
+		knownUserScopes["write:"+a] = true
+	}
+	knownUserScopes[ScopeDDNS] = true
 }
 
-// validateUserScopes returns false (with the offending value) if any requested
-// scope is outside the known vocabulary.
 func validateUserScopes(scopes models.UserAPIScopes) (string, bool) {
 	for _, s := range scopes {
 		if !knownUserScopes[s] {
@@ -45,17 +55,96 @@ func validateUserScopes(scopes models.UserAPIScopes) (string, bool) {
 	return "", true
 }
 
-// userTokenScopeMap maps "<METHOD> <route-pattern>" (gin's c.FullPath, so
-// :params match exactly with no manual parsing) to the scope a restricted token
-// must hold. Only routes in this map are reachable by a scoped token.
-var userTokenScopeMap = map[string]string{
-	"GET /api/v1/domains/:id/dns/zone":           ScopeReadDNS,
-	"PATCH /api/v1/domains/:id/dns/zone":         ScopeWriteDNS,
-	"GET /api/v1/domains/:id/dns/records":        ScopeReadDNS,
-	"POST /api/v1/domains/:id/dns/records":       ScopeWriteDNS,
-	"GET /api/v1/domains/:id/dns/system-records": ScopeReadDNS,
-	"PATCH /api/v1/dns/records/:recordId":        ScopeWriteDNS,
-	"DELETE /api/v1/dns/records/:recordId":       ScopeWriteDNS,
+// userScopeExact maps a bare route pattern (gin c.FullPath) to its area. Used
+// for the domain-collection + bare-domain routes, which would otherwise be
+// shadowed by a loose /domains/:id prefix (there is deliberately NO such
+// catch-all prefix, so a sub-resource we forgot fails CLOSED, never opens up).
+var userScopeExact = map[string]string{
+	"/api/v1/domains":     "domains",
+	"/api/v1/domains/:id": "domains",
+}
+
+type areaRule struct{ prefix, area string }
+
+// userScopePrefixes maps a route-pattern sub-tree to an area. A request matches
+// a rule when its FullPath equals the prefix or sits under it on a segment
+// boundary (prefix+"/"). The longest matching prefix wins, so the per-feature
+// sub-trees under /domains/:id beat each other unambiguously and nothing falls
+// back to a bare-domain grant.
+var userScopePrefixes = []areaRule{
+	{"/api/v1/domains/:id/dnssec", "dns"},
+	{"/api/v1/domains/:id/dns", "dns"},
+	{"/api/v1/dns/records", "dns"},
+
+	{"/api/v1/domains/:id/mailboxes", "mail"},
+	{"/api/v1/domains/:id/mailbox-group-memberships", "mail"},
+	{"/api/v1/domains/:id/mail-certificate", "mail"},
+	{"/api/v1/domains/:id/mta-sts", "mail"},
+	{"/api/v1/domains/:id/disclaimer", "mail"},
+	{"/api/v1/domains/:id/catchall", "mail"},
+	{"/api/v1/domains/:id/autoresponders", "mail"},
+	{"/api/v1/domains/:id/shared-resources", "mail"},
+	{"/api/v1/mailboxes", "mail"},
+	{"/api/v1/mailgroups", "mail"},
+	{"/api/v1/shared-resources", "mail"},
+	{"/api/v1/mail", "mail"},
+
+	{"/api/v1/domains/:id/php-settings", "php"},
+	{"/api/v1/domains/:id/php", "php"},
+
+	{"/api/v1/domains/:id/ssl", "ssl"},
+
+	{"/api/v1/files", "files"},
+	{"/api/v1/domains/:id/directory-privacy", "files"},
+	{"/api/v1/domains/:id/browse", "files"},
+
+	{"/api/v1/databases", "databases"},
+	{"/api/v1/database-users", "databases"},
+	{"/api/v1/database-user-grants", "databases"},
+
+	{"/api/v1/applications", "apps"},
+	{"/api/v1/python-apps", "apps"},
+
+	{"/api/v1/cron", "cron"},
+	{"/api/v1/ssh-keys", "ssh"},
+
+	{"/api/v1/domains/:id/acls", "domains"},
+	{"/api/v1/domains/:id/cache", "domains"},
+	{"/api/v1/domains/:id/ip", "domains"},
+	{"/api/v1/domains/:id/bandwidth", "domains"},
+	{"/api/v1/user/ips", "domains"},
+
+	{"/api/v1/logs", "logs"},
+	{"/api/v1/notifications", "notifications"},
+
+	{"/api/v1/me/backups", "backups"},
+	{"/api/v1/backups", "backups"},
+	{"/api/v1/backup-destinations", "backups"},
+	{"/api/v1/backup-schedules", "backups"},
+	{"/api/v1/backup-encryption", "backups"},
+}
+
+// resolveUserScope returns the scope a restricted token must hold for a route,
+// or ok=false when the route is unmapped (caller fail-closes).
+func resolveUserScope(method, fullPath string) (string, bool) {
+	area, ok := userScopeExact[fullPath]
+	if !ok {
+		best := ""
+		for _, r := range userScopePrefixes {
+			if fullPath == r.prefix || strings.HasPrefix(fullPath, r.prefix+"/") {
+				if len(r.prefix) > len(best) {
+					best, area = r.prefix, r.area
+				}
+			}
+		}
+		if best == "" {
+			return "", false
+		}
+	}
+	if method == http.MethodGet || method == http.MethodHead {
+		return "read:" + area, true
+	}
+	return "write:" + area, true
 }
 
 // EnforceUserTokenScopes gates the /api/v1 group for restricted API tokens.
@@ -75,7 +164,7 @@ func EnforceUserTokenScopes() gin.HandlerFunc {
 			c.Next() // full token
 			return
 		}
-		want, mapped := userTokenScopeMap[c.Request.Method+" "+c.FullPath()]
+		want, mapped := resolveUserScope(c.Request.Method, c.FullPath())
 		if !mapped {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error":   "scope_not_permitted",

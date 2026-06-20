@@ -83,3 +83,47 @@ func TestValidateUserScopes(t *testing.T) {
 		t.Errorf("unknown scope should fail, got bad=%q ok=%v", bad, ok)
 	}
 }
+
+// TestResolveUserScope audits the phase-3 area mapping: representative routes
+// resolve to the expected scope, sub-trees under /domains/:id don't leak into
+// the bare-domain grant, and unmapped routes fail closed.
+func TestResolveUserScope(t *testing.T) {
+	cases := []struct {
+		method, path, want string
+		ok                 bool
+	}{
+		{"GET", "/api/v1/domains", "read:domains", true},
+		{"POST", "/api/v1/domains", "write:domains", true},
+		{"GET", "/api/v1/domains/:id", "read:domains", true},
+		{"DELETE", "/api/v1/domains/:id", "write:domains", true},
+		{"GET", "/api/v1/domains/:id/dns/records", "read:dns", true},
+		{"PATCH", "/api/v1/dns/records/:recordId", "write:dns", true},
+		{"GET", "/api/v1/domains/:id/dnssec", "read:dns", true},
+		{"POST", "/api/v1/domains/:id/mailboxes", "write:mail", true},
+		{"PATCH", "/api/v1/mailboxes/:mbid", "write:mail", true},
+		{"GET", "/api/v1/mail/forwarders", "read:mail", true},
+		{"GET", "/api/v1/domains/:id/mail-certificate", "read:mail", true}, // not domains
+		{"GET", "/api/v1/domains/:id/php-settings", "read:php", true},
+		{"PATCH", "/api/v1/domains/:id/php", "write:php", true},
+		{"DELETE", "/api/v1/domains/:id/ssl", "write:ssl", true},
+		{"GET", "/api/v1/files", "read:files", true},
+		{"POST", "/api/v1/files/upload", "write:files", true},
+		{"GET", "/api/v1/databases", "read:databases", true},
+		{"POST", "/api/v1/database-users", "write:databases", true},
+		{"GET", "/api/v1/applications", "read:apps", true},
+		{"POST", "/api/v1/cron", "write:cron", true},
+		{"GET", "/api/v1/ssh-keys", "read:ssh", true},
+		{"GET", "/api/v1/logs/access", "read:logs", true},
+		{"GET", "/api/v1/me/backups", "read:backups", true},
+		// fail-closed
+		{"GET", "/api/v1/me/api-tokens", "", false},
+		{"GET", "/api/v1/branding", "", false},
+		{"GET", "/api/v1/domains/:id/unmapped-feature", "", false},
+	}
+	for _, c := range cases {
+		got, ok := resolveUserScope(c.method, c.path)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("%s %s: got (%q,%v) want (%q,%v)", c.method, c.path, got, ok, c.want, c.ok)
+		}
+	}
+}
