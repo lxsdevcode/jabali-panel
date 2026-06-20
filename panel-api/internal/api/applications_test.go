@@ -596,3 +596,56 @@ func TestApplications_Create_RootOnly_Rejects(t *testing.T) {
 		})
 	}
 }
+
+// TestApplications_DBPasswordSeparateFromAdmin covers GH #226 item 3: the
+// MariaDB password must be its own generated secret, never the admin password.
+func TestApplications_DBPasswordSeparateFromAdmin(t *testing.T) {
+	wpRepo, domainRepo, userRepo := wpUserAndDomain()
+	r, ag, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+
+	var dbPass string
+	ag.callFn = func(_ context.Context, command string, params any) (json.RawMessage, error) {
+		if command == "db_user.create" {
+			if m, ok := params.(map[string]any); ok {
+				if pw, ok := m["password"].(string); ok {
+					dbPass = pw
+				}
+			}
+		}
+		return json.RawMessage(`{}`), nil
+	}
+
+	body := map[string]any{
+		"app_type":     "wordpress",
+		"domain_id":    "domain1",
+		"subdirectory": "blog",
+		"params": map[string]any{
+			"admin_email":    "admin@example.com",
+			"admin_password": "s3cret-pw",
+			"site_title":     "X",
+		},
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/api/v1/applications", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	var resp createApplicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// db_user.create runs synchronously in provisionDBChain, before the
+	// async kicker — safe to read here.
+	if dbPass == "" {
+		t.Fatal("db_user.create password was not captured")
+	}
+	if dbPass == "s3cret-pw" {
+		t.Fatal("DB password must NOT equal the supplied admin password (GH #226)")
+	}
+	if dbPass == resp.AdminPassword {
+		t.Fatalf("DB password must differ from the surfaced admin password (both %q)", dbPass)
+	}
+}

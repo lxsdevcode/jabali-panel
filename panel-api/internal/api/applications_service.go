@@ -174,7 +174,11 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 		if adminPassword == "" {
 			adminPassword = ids.NewULID()
 		}
-		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, descriptor.Name, domain.Name, p.Subdirectory, adminPassword)
+		// DB password is ALWAYS its own generated secret, never the admin
+		// password (GH #226). The admin password (above) is only for the
+		// app's admin account; the DB credential is independent.
+		dbPassword := ids.NewULID()
+		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, descriptor.Name, domain.Name, p.Subdirectory, dbPassword)
 		if err != nil {
 			slog.ErrorContext(ctx, "applications create: provision db chain", "err", err)
 			return nil, newInstallErr(http.StatusBadGateway, "agent_failed", err.Error())
@@ -252,7 +256,9 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 		UseWWW:        install.UseWWW,
 		Chain:         chain,
 		Params:        p.Params,
-		DBPassword:    adminPassword,
+		// Admin-password seed for the kicker (WordPress reuses it for the
+		// admin account); the DB password is carried separately on Chain.
+		DBPassword: adminPassword,
 	}, deps)
 
 	return &InstallResult{Install: &snapshot, AdminPassword: adminPassword}, nil
@@ -294,7 +300,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			DocRoot:       k.DocRoot,
 			DBName:        k.Chain.DBName,
 			DBUser:        k.Chain.DBUsername,
-			DBPassword:    adminPassword,
+			DBPassword:    k.Chain.DBPassword,
 			SiteURL:       k.SiteURL,
 			SiteTitle:     paramOr(k.Params, "site_title", "My WordPress Site"),
 			AdminUsername: k.AdminUsername,
@@ -317,7 +323,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:      k.SiteURL,
 			DBName:       k.Chain.DBName,
 			DBUser:       k.Chain.DBUsername,
-			DBPassword:   adminPassword,
+			DBPassword:   k.Chain.DBPassword,
 			SiteTitle:    paramOr(k.Params, "site_title", "My Drupal Site"),
 			AdminUser:    k.AdminUsername,
 			AdminPass:    drupalPass,
@@ -340,7 +346,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:       k.SiteURL,
 			DBName:        k.Chain.DBName,
 			DBUser:        k.Chain.DBUsername,
-			DBPassword:    adminPassword,
+			DBPassword:    k.Chain.DBPassword,
 			SiteTitle:     paramOr(k.Params, "site_title", "My Joomla Site"),
 			AdminUser:     k.AdminUsername,
 			AdminPass:     joomlaPass,
@@ -362,7 +368,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:          k.SiteURL,
 			DBName:           k.Chain.DBName,
 			DBUser:           k.Chain.DBUsername,
-			DBPassword:       adminPassword,
+			DBPassword:       k.Chain.DBPassword,
 			SiteTitle:        paramOr(k.Params, "site_title", "My Forum"),
 			BoardDescription: paramOr(k.Params, "board_description", "A discussion forum"),
 			AdminUser:        k.AdminUsername,
@@ -385,7 +391,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:      k.SiteURL,
 			DBName:       k.Chain.DBName,
 			DBUser:       k.Chain.DBUsername,
-			DBPassword:   adminPassword,
+			DBPassword:   k.Chain.DBPassword,
 			SiteTitle:    paramOr(k.Params, "site_title", "My Forum"),
 			AdminUser:    k.AdminUsername,
 			AdminPass:    flarumPass,
@@ -407,7 +413,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:      k.SiteURL,
 			DBName:       k.Chain.DBName,
 			DBUser:       k.Chain.DBUsername,
-			DBPassword:   adminPassword,
+			DBPassword:   k.Chain.DBPassword,
 			CompanyName:  paramOr(k.Params, "company_name", "My Company"),
 			AdminName:    paramOr(k.Params, "admin_name", "Administrator"),
 			AdminEmail:   k.AdminEmail,
@@ -428,7 +434,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:        k.SiteURL,
 			DBName:         k.Chain.DBName,
 			DBUser:         k.Chain.DBUsername,
-			DBPassword:     adminPassword,
+			DBPassword:     k.Chain.DBPassword,
 			SiteTitle:      paramOr(k.Params, "site_title", "My Shop"),
 			AdminEmail:     k.AdminEmail,
 			AdminPass:      prestaPass,
@@ -476,7 +482,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:      k.SiteURL,
 			DBName:       k.Chain.DBName,
 			DBUser:       k.Chain.DBUsername,
-			DBPassword:   adminPassword,
+			DBPassword:   k.Chain.DBPassword,
 			AdminUser:    k.AdminUsername,
 			AdminPass:    opencartPass,
 			AdminEmail:   k.AdminEmail,
@@ -496,7 +502,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			SiteURL:      k.SiteURL,
 			DBName:       k.Chain.DBName,
 			DBUser:       k.Chain.DBUsername,
-			DBPassword:   adminPassword,
+			DBPassword:   k.Chain.DBPassword,
 			SiteTitle:    paramOr(k.Params, "site_title", "My MediaWiki"),
 			AdminUser:    paramOr(k.Params, "admin_username", "Admin"),
 			AdminPass:    mwPass,

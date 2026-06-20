@@ -313,6 +313,10 @@ type provisionedDB struct {
 	GrantID    string
 	DBName     string
 	DBUsername string
+	// DBPassword is the generated MariaDB password for DBUsername. It is
+	// ALWAYS a fresh secret, distinct from any app admin password (GH #226)
+	// — the app installer writes it into the app's DB config.
+	DBPassword string
 }
 
 // provisionDBChain mirrors the inline DB-create chain in
@@ -381,6 +385,7 @@ func provisionDBChain(ctx context.Context, cfg ApplicationHandlerConfig, userID,
 		GrantID:    grantID,
 		DBName:     dbName,
 		DBUsername: dbUsername,
+		DBPassword: dbPassword,
 	}
 
 	if cfg.Agent != nil {
