@@ -32,6 +32,19 @@ type MailGroupRepository interface {
 	ListMemberEmails(ctx context.Context, groupID string) ([]string, error)
 	SetMembers(ctx context.Context, groupID string, mailboxIDs []string) error
 	AddMember(ctx context.Context, groupID, mailboxID string) error
+
+	// ListMembershipsByDomain returns every (mailbox -> group) edge in a
+	// domain, joined with the group's display name + address — for the mail
+	// users "Groups" column (#238).
+	ListMembershipsByDomain(ctx context.Context, domainID string) ([]MailboxGroupMembership, error)
+}
+
+// MailboxGroupMembership is one mailbox->group edge with the group's label.
+type MailboxGroupMembership struct {
+	MailboxID  string `gorm:"column:mailbox_id" json:"mailbox_id"`
+	GroupID    string `gorm:"column:group_id" json:"group_id"`
+	GroupName  string `gorm:"column:group_name" json:"group_name"`
+	GroupEmail string `gorm:"column:group_email" json:"group_email"`
 }
 
 // MailGroupWithCount is a group plus its member count, for list views.
@@ -206,4 +219,16 @@ func (r *mailGroupRepo) SetMembers(ctx context.Context, groupID string, mailboxI
 func (r *mailGroupRepo) AddMember(ctx context.Context, groupID, mailboxID string) error {
 	row := models.MailGroupMember{GroupID: groupID, MailboxID: mailboxID, CreatedAt: time.Now().UTC()}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+}
+
+func (r *mailGroupRepo) ListMembershipsByDomain(ctx context.Context, domainID string) ([]MailboxGroupMembership, error) {
+	var rows []MailboxGroupMembership
+	err := r.db.WithContext(ctx).
+		Table("mail_group_members m").
+		Select("m.mailbox_id, g.id AS group_id, g.display_name AS group_name, g.email_cached AS group_email").
+		Joins("JOIN mail_groups g ON g.id = m.group_id").
+		Where("g.domain_id = ?", domainID).
+		Order("g.display_name ASC").
+		Scan(&rows).Error
+	return rows, err
 }

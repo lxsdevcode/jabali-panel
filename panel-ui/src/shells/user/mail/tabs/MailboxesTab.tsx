@@ -45,6 +45,11 @@ import { PasswordInput } from "../../../../components/PasswordInput";
 import { EditMailboxModal } from "../../../../components/mail/EditMailboxModal";
 
 type MailboxRow = Mailbox & { domain_name: string };
+type GroupMembership = {
+  group_id: string;
+  group_name: string;
+  group_email: string;
+};
 
 function formatBytes(n: number): string {
   if (n === 0) return "0 B";
@@ -76,6 +81,29 @@ export const MailboxesTab = () => {
       },
     })),
   });
+
+  const membershipResults = useQueries({
+    queries: emailEnabledDomains.map((d) => ({
+      queryKey: ["list", "mailbox-group-memberships", d.id],
+      queryFn: async () => {
+        const { data } = await apiClient.get<{
+          data: Record<string, GroupMembership[]>;
+        }>(`/domains/${d.id}/mailbox-group-memberships`);
+        return data.data ?? {};
+      },
+    })),
+  });
+
+  const groupsByMailbox = useMemo(() => {
+    const out: Record<string, GroupMembership[]> = {};
+    for (const r of membershipResults) {
+      if (!r.data) continue;
+      for (const [mbID, groups] of Object.entries(r.data)) {
+        out[mbID] = groups;
+      }
+    }
+    return out;
+  }, [membershipResults]);
 
   const rows: MailboxRow[] = useMemo(() => {
     const out: MailboxRow[] = [];
@@ -224,6 +252,23 @@ export const MailboxesTab = () => {
             dataIndex: "domain_name",
             sorter: (a, b) => a.domain_name.localeCompare(b.domain_name),
             width: 220,
+          },
+          {
+            title: "Groups",
+            key: "groups",
+            width: 200,
+            render: (_: unknown, record: MailboxRow) => {
+              const groups = groupsByMailbox[record.id] ?? [];
+              if (groups.length === 0)
+                return <Typography.Text type="secondary">—</Typography.Text>;
+              return (
+                <Space size={[0, 4]} wrap>
+                  {groups.map((g) => (
+                    <Tag key={g.group_id}>{g.group_name}</Tag>
+                  ))}
+                </Space>
+              );
+            },
           },
           {
             title: "Quota",

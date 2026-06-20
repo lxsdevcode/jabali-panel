@@ -53,6 +53,7 @@ func RegisterMailGroupRoutes(g *gin.RouterGroup, cfg MailGroupHandlerConfig) {
 
 	g.GET("/domains/:id/mailgroups", h.list)
 	g.POST("/domains/:id/mailgroups", h.create)
+	g.GET("/domains/:id/mailbox-group-memberships", h.listMemberships)
 
 	g.GET("/admin/mailgroups", middleware.RequireAdmin(), h.listAllAdmin)
 
@@ -200,6 +201,27 @@ func (h *mailGroupHandler) listAllAdmin(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
+}
+
+// listMemberships returns, per mailbox in the domain, the groups it belongs to
+// (#238 — the mail users "Groups" column). Shape: { data: { <mailbox_id>:
+// [{group_id, group_name, group_email}] } }.
+func (h *mailGroupHandler) listMemberships(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	dom, ok := h.loadDomainWithAuth(c, c.Param("id"), claims)
+	if !ok {
+		return
+	}
+	rows, err := h.cfg.Groups.ListMembershipsByDomain(c.Request.Context(), dom.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	out := map[string][]repository.MailboxGroupMembership{}
+	for _, r := range rows {
+		out[r.MailboxID] = append(out[r.MailboxID], r)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 func (h *mailGroupHandler) create(c *gin.Context) {
