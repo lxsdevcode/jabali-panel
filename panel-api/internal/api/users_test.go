@@ -317,6 +317,10 @@ func (m *memPackageRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (m *memPackageRepo) EnsureDefaults(_ context.Context) error {
+	return nil
+}
+
 // ---------- test harness ----------
 
 // buildRouter wires a minimal Gin engine with users routes mounted behind a

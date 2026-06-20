@@ -245,6 +245,10 @@ func (m *mockPackageRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (m *mockPackageRepo) EnsureDefaults(ctx context.Context) error {
+	return nil
+}
+
 // Mock agent for testing
 type mockAgent struct {
 	callFn      func(ctx context.Context, command string, params any) (json.RawMessage, error)
