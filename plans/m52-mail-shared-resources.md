@@ -134,6 +134,21 @@ Entity types (panel DB-as-truth, reconciler projects to Stalwart):
 Assignment is many-to-many: a shared resource → many groups/members; a group → many shared
 resources. ACL reconciliation diffs desired (DB) vs actual (`shareWith` on the collection).
 
+## 3b. Per-resource `shareWith` rights vocabulary (nailed on mx 2026-06-20)
+
+Each collection type rejects keys from other types (`invalidProperties`). The
+`share_set` agent commands must map jabali's internal Rights to these exact keys:
+
+| Resource | Valid `shareWith` rights |
+|---|---|
+| Mailbox | `mayReadItems, mayAddItems, mayRemoveItems, mayCreateChild, mayRename, mayDelete, mayShare, maySubmit` |
+| Calendar | `mayReadFreeBusy, mayReadItems, mayWriteAll, mayWriteOwn, mayUpdatePrivate, mayRSVP, mayShare, mayDelete` |
+| AddressBook | `mayRead, mayWrite, mayDelete, mayShare` |
+| FileNode | TBD — no root node until first use; nail when building `file.share_set` |
+
+(Mailbox keys already encoded in `mailbox_share.go` `toStalwartACL`; existing
+`mayRead`→`mayReadItems`, `mayAdmin`→`mayShare` mapping is Mailbox-specific.)
+
 ## 4. Schema (migration 000174)
 
 - New `shared_resources` table: `id, domain_id, kind ENUM('mailbox','calendar','addressbook','files'),
