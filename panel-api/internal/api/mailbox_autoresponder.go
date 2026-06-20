@@ -64,6 +64,7 @@ func RegisterMailboxAutoresponderRoutes(g *gin.RouterGroup, cfg MailboxAutorespo
 	g.GET("/mailboxes/:mbid/autoresponder", h.get)
 	g.PUT("/mailboxes/:mbid/autoresponder", h.put)
 	g.DELETE("/mailboxes/:mbid/autoresponder", h.del)
+	g.GET("/domains/:id/autoresponders", h.listByDomain)
 }
 
 func (h *mailboxAutoresponderHandler) loadMailboxWithAuth(ctx context.Context, id string, claims *auth.AccessClaims) (*models.Mailbox, *models.Domain, error) {
@@ -79,6 +80,47 @@ func (h *mailboxAutoresponderHandler) loadMailboxWithAuth(ctx context.Context, i
 		return nil, nil, errMailboxForbidden
 	}
 	return mb, dom, nil
+}
+
+// listByDomain returns every autoresponder for the domain's mailboxes,
+// keyed by mailbox id (GH #240). The Mailboxes tab fans this out once per
+// domain rather than one GET per mailbox.
+func (h *mailboxAutoresponderHandler) listByDomain(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	dom, err := h.cfg.Domains.FindByID(ctx, c.Param("id"))
+	if err != nil {
+		if isNotFound(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	if !claims.IsAdmin && dom.UserID != claims.UserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	rows, err := h.cfg.Autoresponders.ListByDomain(ctx, dom.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	out := make(map[string]autoresponderResponse, len(rows))
+	for i := range rows {
+		ar := rows[i]
+		out[ar.MailboxID] = autoresponderResponse{
+			MailboxID: ar.MailboxID,
+			Enabled:   ar.Enabled,
+			FromDate:  ar.FromDate,
+			ToDate:    ar.ToDate,
+			Subject:   ar.Subject,
+			TextBody:  ar.TextBody,
+			HTMLBody:  ar.HTMLBody,
+			UpdatedAt: ar.UpdatedAt,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 func (h *mailboxAutoresponderHandler) get(c *gin.Context) {

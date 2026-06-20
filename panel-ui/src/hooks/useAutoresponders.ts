@@ -53,6 +53,9 @@ export function useUpdateAutoresponder() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: QK(data.mailbox_id) });
+      // GH #240: the Mailboxes tab "Auto replies" column reads a
+      // per-domain bulk query; invalidate the whole family so it refreshes.
+      qc.invalidateQueries({ queryKey: ["autoresponders"] });
     },
   });
 }
@@ -65,6 +68,7 @@ export function useDeleteAutoresponder() {
     },
     onSuccess: (_void, mailboxID) => {
       qc.invalidateQueries({ queryKey: QK(mailboxID) });
+      qc.invalidateQueries({ queryKey: ["autoresponders"] });
     },
   });
 }

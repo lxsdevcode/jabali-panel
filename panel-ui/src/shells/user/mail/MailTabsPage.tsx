@@ -11,7 +11,6 @@ import type { Domain } from "../domains/UserDomainList";
 import { MailboxesTab } from "./tabs/MailboxesTab";
 import { GroupsTab } from "./tabs/GroupsTab";
 import { ForwardersTab } from "./tabs/ForwardersTab";
-import { AutorespondersTab } from "./tabs/AutorespondersTab";
 import { CatchAllTab } from "./tabs/CatchAllTab";
 import { DisclaimerTab } from "./tabs/DisclaimerTab";
 import { SharedFoldersTab } from "./tabs/SharedFoldersTab";
@@ -19,7 +18,7 @@ import { SharedResourcesTab } from "./tabs/SharedResourcesTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { CreateMailboxWizardModal } from "./CreateMailboxWizardModal";
 
-const TAB_KEYS = ["mailboxes", "groups", "forwarders", "autoresponders", "catchall", "disclaimer", "shared", "resources", "logs"] as const;
+const TAB_KEYS = ["mailboxes", "groups", "forwarders", "catchall", "disclaimer", "shared", "resources", "logs"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 const DEFAULT_TAB: TabKey = "mailboxes";
 
@@ -27,7 +26,6 @@ const TAB_LABELS: Record<TabKey, string> = {
   mailboxes: "Mailboxes",
   groups: "Groups",
   forwarders: "Forwarders",
-  autoresponders: "Autoresponders",
   catchall: "Catch-All",
   disclaimer: "Disclaimer",
   shared: "Shared Folders",
@@ -58,8 +56,6 @@ export const MailTabsPage = () => {
         return <GroupsTab />;
       case "forwarders":
         return <ForwardersTab />;
-      case "autoresponders":
-        return <AutorespondersTab />;
       case "catchall":
         return <CatchAllTab />;
       case "disclaimer":

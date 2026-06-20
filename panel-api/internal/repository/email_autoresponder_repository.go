@@ -17,6 +17,11 @@ type EmailAutoresponderRepository interface {
 	FindByMailboxID(ctx context.Context, mailboxID string) (*models.EmailAutoresponder, error)
 	Update(ctx context.Context, autoresponder *models.EmailAutoresponder) error
 	Delete(ctx context.Context, mailboxID string) error
+
+	// ListByDomain returns every autoresponder row for the domain's
+	// mailboxes (GH #240 — the Mailboxes tab "Auto replies" column fans
+	// out one bulk call per domain instead of one GET per mailbox).
+	ListByDomain(ctx context.Context, domainID string) ([]models.EmailAutoresponder, error)
 }
 
 type emailAutoresponderRepo struct {
@@ -54,4 +59,15 @@ func (r *emailAutoresponderRepo) Delete(ctx context.Context, mailboxID string) e
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *emailAutoresponderRepo) ListByDomain(ctx context.Context, domainID string) ([]models.EmailAutoresponder, error) {
+	var rows []models.EmailAutoresponder
+	err := r.db.WithContext(ctx).
+		Table("email_autoresponders a").
+		Select("a.*").
+		Joins("JOIN mailboxes m ON m.id = a.mailbox_id").
+		Where("m.domain_id = ?", domainID).
+		Find(&rows).Error
+	return rows, err
 }

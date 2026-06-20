@@ -23,6 +23,7 @@ import type { MenuProps } from "antd";
 import {
   DeleteOutlined,
   EditOutlined,
+  ClockCircleOutlined,
   KeyOutlined,
   MailOutlined,
   MoreOutlined,
@@ -30,6 +31,9 @@ import {
 import { LibravatarAvatar } from "../../../../components/LibravatarAvatar";
 import { RowActionButton } from "../../../../components/RowActionButton";
 import { useQueries } from "@tanstack/react-query";
+
+import { AutoReplyModal } from "../AutoReplyModal";
+import { type Autoresponder } from "../../../../hooks/useAutoresponders";
 
 import { apiClient } from "../../../../apiClient";
 import {
@@ -105,6 +109,7 @@ export const MailboxesTab = () => {
     return out;
   }, [membershipResults]);
 
+
   const rows: MailboxRow[] = useMemo(() => {
     const out: MailboxRow[] = [];
     for (const r of mailboxResults) {
@@ -116,6 +121,34 @@ export const MailboxesTab = () => {
     return out;
   }, [mailboxResults]);
 
+  // Per-mailbox automatic-replies (autoresponder) fanout — one GET each,
+  // shares the cache with useAutoresponder via the matching query key.
+  // GH #240: surfaced as a column + kebab action on this tab (the
+  // standalone Autoresponders tab was removed).
+  const arResults = useQueries({
+    queries: emailEnabledDomains.map((d) => ({
+      queryKey: ["autoresponders", "by-domain", d.id],
+      queryFn: async () => {
+        const { data } = await apiClient.get<{
+          data: Record<string, Autoresponder>;
+        }>(`/domains/${d.id}/autoresponders`);
+        return data.data ?? {};
+      },
+    })),
+  });
+
+  const arByMailbox = useMemo(() => {
+    const out: Record<string, Autoresponder> = {};
+    for (const r of arResults) {
+      if (!r.data) continue;
+      for (const [mbID, ar] of Object.entries(r.data)) {
+        out[mbID] = ar;
+      }
+    }
+    return out;
+  }, [arResults]);
+
+
   const [passwordModal, setPasswordModal] = useState<{
     email: string;
     password: string;
@@ -124,6 +157,7 @@ export const MailboxesTab = () => {
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<MailboxRow | null>(null);
   const [editTarget, setEditTarget] = useState<MailboxRow | null>(null);
+  const [arTarget, setArTarget] = useState<MailboxRow | null>(null);
   const [resetForm] = Form.useForm<{ password?: string }>();
 
   const deleteMutation = useDeleteMailbox();
@@ -271,6 +305,48 @@ export const MailboxesTab = () => {
             },
           },
           {
+            title: "Auto replies",
+            key: "auto_replies",
+            width: 110,
+            align: "center" as const,
+            render: (_: unknown, record: MailboxRow) => {
+              const ar = arByMailbox[record.id];
+              if (!ar?.enabled)
+                return <Typography.Text type="secondary">—</Typography.Text>;
+              const fmt = (d: string | null) =>
+                d ? new Date(d).toLocaleDateString() : "—";
+              const dates =
+                ar.from_date || ar.to_date
+                  ? `${fmt(ar.from_date)} → ${fmt(ar.to_date)}`
+                  : "always on";
+              return (
+                <Tooltip
+                  title={
+                    <span>
+                      <strong>{ar.subject || "(default subject)"}</strong>
+                      <br />
+                      {dates}
+                      {ar.text_body ? (
+                        <>
+                          <br />
+                          {ar.text_body.slice(0, 140)}
+                          {ar.text_body.length > 140 ? "…" : ""}
+                        </>
+                      ) : null}
+                    </span>
+                  }
+                >
+                  <Button
+                    type="text"
+                    icon={<ClockCircleOutlined style={{ color: "#52c41a" }} />}
+                    aria-label="Automatic replies active"
+                    onClick={() => setArTarget(record)}
+                  />
+                </Tooltip>
+              );
+            },
+          },
+          {
             title: "Quota",
             dataIndex: "quota_bytes",
             width: 220,
@@ -328,6 +404,12 @@ export const MailboxesTab = () => {
                   icon: <KeyOutlined />,
                   label: "Reset password",
                   onClick: () => openReset(row),
+                },
+                {
+                  key: "autoreply",
+                  icon: <ClockCircleOutlined />,
+                  label: "Automatic replies",
+                  onClick: () => setArTarget(row),
                 },
                 { type: "divider" },
                 {
@@ -395,6 +477,14 @@ export const MailboxesTab = () => {
         open={editTarget !== null}
         mailbox={editTarget}
         onClose={() => setEditTarget(null)}
+      />
+
+      <AutoReplyModal
+        open={arTarget !== null}
+        mailboxId={arTarget?.id ?? ""}
+        email={arTarget?.email ?? ""}
+        current={arTarget ? arByMailbox[arTarget.id] ?? null : null}
+        onClose={() => setArTarget(null)}
       />
 
       <Modal
