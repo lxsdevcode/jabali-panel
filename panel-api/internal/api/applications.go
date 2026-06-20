@@ -94,6 +94,7 @@ type registryEntry struct {
 	Description          string                    `json:"description,omitempty"`
 	DefaultSubdirectory  string                    `json:"default_subdirectory"`
 	RequiresDB           bool                      `json:"requires_db"`
+	EmailLogin           bool                      `json:"email_login,omitempty"`
 	SupportedPHPVersions []string                  `json:"supported_php_versions,omitempty"`
 	InstallParamSchema   map[string]apps.ParamSpec `json:"install_param_schema,omitempty"`
 }
@@ -109,6 +110,7 @@ func (h *applicationsHandler) registry(c *gin.Context) {
 			Description:          d.Description,
 			DefaultSubdirectory:  d.DefaultSubdirectory,
 			RequiresDB:           d.RequiresDB,
+			EmailLogin:           d.EmailLogin,
 			SupportedPHPVersions: d.SupportedPHPVersions,
 			InstallParamSchema:   d.InstallParamSchema,
 		})

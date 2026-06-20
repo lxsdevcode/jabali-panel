@@ -58,6 +58,7 @@ type CreatedResult = {
   adminEmail: string;
   adminPassword: string;
   dbId: string;
+  emailLogin: boolean;
 };
 
 type ApiError = {
@@ -485,6 +486,7 @@ export const InstallApplicationModal = ({
         adminEmail: resp.data.admin_email,
         adminPassword: resp.data.admin_password,
         dbId: resp.data.db_id,
+        emailLogin: !!selectedApp?.email_login,
       });
       refreshLists();
     } catch (err) {
@@ -723,22 +725,24 @@ export const InstallApplicationModal = ({
             <Typography.Text strong>Domain</Typography.Text>
             <Input readOnly value={result.domainName} />
           </div>
-          <div>
-            <Typography.Text strong>Admin username</Typography.Text>
-            <Input
-              readOnly
-              value={result.adminUsername}
-              addonAfter={
-                <Tooltip title="Copy">
-                  <Button
-                    type="text"
-                    icon={<CopyOutlined />}
-                    onClick={() => copy("Username", result.adminUsername)}
-                  />
-                </Tooltip>
-              }
-            />
-          </div>
+          {!result.emailLogin && (
+            <div>
+              <Typography.Text strong>Admin username</Typography.Text>
+              <Input
+                readOnly
+                value={result.adminUsername}
+                addonAfter={
+                  <Tooltip title="Copy">
+                    <Button
+                      type="text"
+                      icon={<CopyOutlined />}
+                      onClick={() => copy("Username", result.adminUsername)}
+                    />
+                  </Tooltip>
+                }
+              />
+            </div>
+          )}
           <div>
             <Typography.Text strong>Admin email</Typography.Text>
             <Input readOnly value={result.adminEmail} />

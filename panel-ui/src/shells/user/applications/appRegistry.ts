@@ -26,6 +26,7 @@ export type AppDescriptor = {
   description?: string;
   default_subdirectory: string;
   requires_db: boolean;
+  email_login?: boolean;
   install_param_schema?: Record<string, ParamSpec>;
 };
 
