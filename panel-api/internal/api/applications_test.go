@@ -649,3 +649,54 @@ func TestApplications_DBPasswordSeparateFromAdmin(t *testing.T) {
 		t.Fatalf("DB password must differ from the surfaced admin password (both %q)", dbPass)
 	}
 }
+
+// TestApplications_AdminUsername covers GH #228: an optional admin_username
+// field — used when supplied, randomly generated when blank.
+func TestApplications_AdminUsername(t *testing.T) {
+	mk := func(params map[string]any) string {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		body := map[string]any{"app_type": "wordpress", "domain_id": "domain1", "subdirectory": "blog", "params": params}
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/api/v1/applications", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+		}
+		var resp createApplicationResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.AdminUsername
+	}
+
+	base := map[string]any{"admin_email": "a@example.com", "admin_password": "pw", "site_title": "X"}
+
+	// Supplied username is used verbatim.
+	withName := map[string]any{}
+	for k, v := range base {
+		withName[k] = v
+	}
+	withName["admin_username"] = "custombob"
+	if got := mk(withName); got != "custombob" {
+		t.Errorf("custom admin_username not used: got %q", got)
+	}
+
+	// Blank → a random username is generated (non-empty, not the literal).
+	blank := map[string]any{}
+	for k, v := range base {
+		blank[k] = v
+	}
+	blank["admin_username"] = ""
+	g := mk(blank)
+	if g == "" || g == "custombob" {
+		t.Errorf("blank admin_username should generate a random one, got %q", g)
+	}
+
+	// Absent → also generated.
+	if g2 := mk(base); g2 == "" {
+		t.Error("absent admin_username should generate a random one")
+	}
+}

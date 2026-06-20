@@ -175,15 +175,15 @@ func TestRegisterDefaults_RegistersMediaWiki(t *testing.T) {
 	if mw.AgentInstallCmd != "app.install" || mw.AgentDeleteCmd != "app.delete" {
 		t.Errorf("mediawiki dispatcher commands = (%q, %q)", mw.AgentInstallCmd, mw.AgentDeleteCmd)
 	}
-	// admin_username deliberately NOT in the schema — auto-generated
+	// admin_username is now an optional field (GH #228) — present but not required
 	// server-side per the operator's directive.
 	for _, want := range []string{"site_title", "admin_email", "admin_password", "language"} {
 		if _, ok := mw.InstallParamSchema[want]; !ok {
 			t.Errorf("mediawiki schema missing %q", want)
 		}
 	}
-	if _, present := mw.InstallParamSchema["admin_username"]; present {
-		t.Error("mediawiki schema should NOT include admin_username — it's auto-generated server-side")
+	if _, present := mw.InstallParamSchema["admin_username"]; !present {
+		t.Error("mediawiki schema should include the optional admin_username field (GH #228)")
 	}
 }
 
@@ -210,8 +210,8 @@ func TestRegisterDefaults_RegistersDrupal(t *testing.T) {
 			t.Errorf("drupal schema missing %q", want)
 		}
 	}
-	if _, present := d.InstallParamSchema["admin_username"]; present {
-		t.Error("drupal schema should NOT include admin_username — it's auto-generated server-side")
+	if _, present := d.InstallParamSchema["admin_username"]; !present {
+		t.Error("drupal schema should include the optional admin_username field (GH #228)")
 	}
 	profileSpec, ok := d.InstallParamSchema["profile"]
 	if !ok {
@@ -248,8 +248,8 @@ func TestRegisterDefaults_RegistersJoomla(t *testing.T) {
 			t.Errorf("joomla schema missing %q", want)
 		}
 	}
-	if _, present := j.InstallParamSchema["admin_username"]; present {
-		t.Error("joomla schema should NOT include admin_username — it's auto-generated server-side")
+	if _, present := j.InstallParamSchema["admin_username"]; !present {
+		t.Error("joomla schema should include the optional admin_username field (GH #228)")
 	}
 }
 

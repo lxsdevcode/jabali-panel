@@ -32,6 +32,7 @@ var WordPress = App{
 	// in api.applications.go's create handler; the response surfaces
 	// the generated value in the reveal-once panel.
 	InstallParamSchema: map[string]ParamSpec{
+		"admin_username": AdminUsernameParam,
 		"admin_email": {
 			Type:        "email",
 			Required:    true,

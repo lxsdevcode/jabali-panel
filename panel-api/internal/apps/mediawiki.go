@@ -23,11 +23,11 @@ var MediaWiki = App{
 	AgentInstallCmd:      "app.install",
 	AgentDeleteCmd:       "app.delete",
 	AgentCloneCmd:        "",
-	// admin_username intentionally NOT in this schema — the API
-	// generates a 6-letter username server-side and uppercases the
-	// first letter to satisfy MediaWiki's username-must-start-with-
-	// uppercase rule. See WordPress descriptor for the rationale.
+	// admin_username is optional (GH #228): blank → the API generates a
+	// 6-letter username; either way the first letter is uppercased to
+	// satisfy MediaWiki's username-must-start-with-uppercase rule.
 	InstallParamSchema: map[string]ParamSpec{
+		"admin_username": AdminUsernameParam,
 		"site_title": {
 			Type:        "string",
 			Required:    true,

@@ -24,6 +24,7 @@ var PhpBB = App{
 	// admin_username intentionally NOT in this schema — see WordPress
 	// descriptor for the rationale.
 	InstallParamSchema: map[string]ParamSpec{
+		"admin_username": AdminUsernameParam,
 		"site_title": {
 			Type:        "string",
 			Required:    true,

@@ -191,6 +191,11 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 	// generated"). For MediaWiki we uppercase the first letter to
 	// satisfy its "username must start with capital" rule.
 	adminUsername := generateAdminUsername(6)
+	// Operator may optionally choose the admin username (GH #228); blank keeps
+	// the generated random one. Apps opt in via the AdminUsernameParam field.
+	if v := strings.TrimSpace(paramOr(p.Params, "admin_username", "")); v != "" {
+		adminUsername = v
+	}
 	if descriptor.Name == "mediawiki" && len(adminUsername) > 0 {
 		adminUsername = strings.ToUpper(adminUsername[:1]) + adminUsername[1:]
 	}
@@ -504,7 +509,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			DBUser:       k.Chain.DBUsername,
 			DBPassword:   k.Chain.DBPassword,
 			SiteTitle:    paramOr(k.Params, "site_title", "My MediaWiki"),
-			AdminUser:    paramOr(k.Params, "admin_username", "Admin"),
+			AdminUser:    k.AdminUsername,
 			AdminPass:    mwPass,
 			AdminEmail:   k.AdminEmail,
 			Language:     paramOr(k.Params, "language", "en"),

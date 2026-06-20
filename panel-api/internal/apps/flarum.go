@@ -38,6 +38,7 @@ var Flarum = App{
 	// other apps. The generated value surfaces once in the reveal
 	// panel on install.
 	InstallParamSchema: map[string]ParamSpec{
+		"admin_username": AdminUsernameParam,
 		"site_title": {
 			Type:        "string",
 			Required:    true,

@@ -21,10 +21,10 @@ var DokuWiki = App{
 	AgentInstallCmd:      "app.install",
 	AgentDeleteCmd:       "app.delete",
 	AgentCloneCmd:        "",
-	// admin_username intentionally omitted — the API generates a
-	// 6-letter username server-side (generateAdminUsername), same as
-	// the other apps, so the UI never prompts for it.
+	// admin_username is optional (GH #228): leave it blank and the API
+	// generates a 6-letter username; fill it to choose one.
 	InstallParamSchema: map[string]ParamSpec{
+		"admin_username": AdminUsernameParam,
 		"site_title": {
 			Type:        "string",
 			Required:    true,

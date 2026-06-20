@@ -201,7 +201,12 @@ function renderParamField(
           rules={baseRules}
           extra={spec.description}
         >
-          <Input autoComplete="off" />
+          <Input
+            autoComplete="off"
+            placeholder={
+              name === "admin_username" && !required ? "(auto-generated)" : undefined
+            }
+          />
         </Form.Item>
       );
     case "email":

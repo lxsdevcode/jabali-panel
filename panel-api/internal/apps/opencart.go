@@ -19,6 +19,7 @@ var OpenCart = App{
 	AgentDeleteCmd:       "app.delete",
 	AgentCloneCmd:        "",
 	InstallParamSchema: map[string]ParamSpec{
+		"admin_username": AdminUsernameParam,
 		"admin_email": {
 			Type:        "email",
 			Required:    true,
