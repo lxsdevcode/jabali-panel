@@ -1531,7 +1531,7 @@ func (r *Reconciler) reconcileDNSZone(ctx context.Context, domain *models.Domain
 			// their mail rows. GH #189: a "No mail" domain never even briefly
 			// has mail DNS.
 			includeMail := domain.MailProvider == "" || domain.MailProvider == models.MailProviderJabali
-			boots := dnscompile.BootstrapRecords(zone.ID, zone.Name, srv, ids.NewULID, includeMail)
+			boots := dnscompile.BootstrapRecords(zone.ID, zone.Name, srv, ids.NewULID, includeMail, domain.CreateWWW)
 			for i := range boots {
 				if err := r.dnsRecords.Create(ctx, &boots[i]); err != nil {
 					r.log.Error("bootstrap record failed", "err", err)

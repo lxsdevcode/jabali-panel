@@ -1,6 +1,6 @@
 // UserDomainDrawer — tenant Add-domain Drawer (replaces the
 // /jabali-panel/domains/create page route).
-import { Button, Drawer, Form, Grid, Input, Select, Space, message } from "antd";
+import { Button, Checkbox, Drawer, Form, Grid, Input, Select, Space, message } from "antd";
 import { useEffect } from "react";
 
 import { useCreateMutation } from "../../../hooks/useQueries";
@@ -10,6 +10,7 @@ type UserDomainCreateInput = {
   mail_provider?: string;
   m365_onmicrosoft?: string;
   google_dkim?: string;
+  create_www?: boolean;
 };
 type DomainCreated = { id: string };
 
@@ -102,6 +103,15 @@ export const UserDomainDrawer = ({ open, onClose }: UserDomainDrawerProps) => {
             <Input.TextArea rows={2} placeholder="v=DKIM1; k=rsa; p=... (optional)" />
           </Form.Item>
         )}
+
+        <Form.Item
+          name="create_www"
+          valuePropName="checked"
+          initialValue={false}
+          tooltip="Adds a www CNAME pointing at the domain apex. Off by default — leave unchecked for subdomains or domains that don't serve a www host."
+        >
+          <Checkbox>Create www record</Checkbox>
+        </Form.Item>
 
         <Form.Item>
           <Space>

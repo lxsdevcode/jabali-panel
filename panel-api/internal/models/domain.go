@@ -350,6 +350,17 @@ type Domain struct {
 	ManagedBy   string  `gorm:"column:managed_by;type:varchar(32);not null;default:'tenant';index:ix_domains_managed_by" json:"managed_by"`
 	DockerAppID *string `gorm:"column:docker_app_id;type:char(26);null" json:"docker_app_id,omitempty"`
 
+	// CreateWWW (GH #225, migration 000176) is the per-domain opt-in for
+	// the bootstrap `www` CNAME. Unchecked by default in the create form;
+	// especially useful for subdomain entries that don't want a
+	// www.<sub>.<domain> alias. Read by the reconciler when it bootstraps
+	// the zone (BootstrapRecords). No gorm `default` tag on purpose: GORM
+	// elides a defaulted false bool from the INSERT and lets the DB default
+	// kick in (the EmailEnabled scar) — the API always sets this field
+	// explicitly, so we want the real value on the wire. The DB column
+	// keeps DEFAULT 1 for any non-API insert (docker-app etc.).
+	CreateWWW bool `gorm:"column:create_www;type:tinyint(1);not null" json:"create_www"`
+
 	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null" json:"updated_at"`
 }

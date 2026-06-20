@@ -32,7 +32,7 @@ import (
 //     sent from the apex IP (not just from the mail host's A record)
 //     still passes SPF checks — e.g. panel-local scripts sending via
 //     the local stalwart over the apex bind.
-func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew func() string, includeMail bool) []models.DNSRecord {
+func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew func() string, includeMail, includeWWW bool) []models.DNSRecord {
 	now := time.Now().UTC()
 	mk := func(name, typ, content string, priority int) models.DNSRecord {
 		return models.DNSRecord{
@@ -74,7 +74,10 @@ func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew
 	// the reconciler's wire-to-pdns pass a pure passthrough — Compile
 	// doesn't expand CNAME content today and adding that expansion
 	// would implicitly rewrite operator-edited CNAMEs too.
-	if zoneName != "" {
+	// www CNAME is opt-in per domain (GH #225). Unchecked by default at
+	// create — the operator ticks "Create www record" when they want it.
+	// Gated on zoneName for the same broken-content reason as the MX row.
+	if includeWWW && zoneName != "" {
 		out = append(out, mk("www", "CNAME", zoneName, 0))
 	}
 

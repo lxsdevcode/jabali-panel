@@ -3,7 +3,7 @@
 // Intentionally thin: name + user id + optional doc root. The server
 // auto-generates doc_root when blank. Post-M21: Form.useForm +
 // useCreateMutation, no Refine wrappers.
-import { Button, Card, Form, Input, Select, Typography, message } from "antd";
+import { Button, Card, Checkbox, Form, Input, Select, Typography, message } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
 import { useNavigate } from "react-router";
@@ -17,6 +17,7 @@ export type DomainCreateInput = {
   mail_provider?: string;
   m365_onmicrosoft?: string;
   google_dkim?: string;
+  create_www?: boolean;
 };
 
 type DomainCreated = { id: string };
@@ -135,6 +136,15 @@ export const DomainCreate = () => {
             <Input.TextArea rows={2} placeholder="v=DKIM1; k=rsa; p=... (optional)" />
           </Form.Item>
         )}
+
+        <Form.Item
+          name="create_www"
+          valuePropName="checked"
+          initialValue={false}
+          tooltip="Adds a www CNAME pointing at the domain apex. Off by default — leave unchecked for subdomains or domains that don't serve a www host."
+        >
+          <Checkbox>Create www record</Checkbox>
+        </Form.Item>
 
         <Form.Item>
           <Button

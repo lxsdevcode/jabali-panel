@@ -86,6 +86,9 @@ type createDomainRequest struct {
 	MailProvider    string `json:"mail_provider"`
 	M365Onmicrosoft string `json:"m365_onmicrosoft"`
 	GoogleDKIM      string `json:"google_dkim"`
+	// CreateWWW (GH #225) opts the domain into the bootstrap www CNAME.
+	// Omitted/false => no www record (the new default).
+	CreateWWW bool `json:"create_www"`
 }
 
 // validateDomainName validates domain name for security and RFC compliance
@@ -615,6 +618,7 @@ func (h *domainHandler) create(c *gin.Context) {
 		GoogleDKIM:      strPtrOrNil(googleDKIM),
 		EmailEnabled:    mailEnabled,
 		SkipAutoSAN:     mailSkipSAN,
+		CreateWWW:       req.CreateWWW,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
