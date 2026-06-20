@@ -254,9 +254,18 @@ func newSharedResourceRemoveCmd() *cobra.Command {
 			if resourceID == "" {
 				return errors.New("--resource <id> required")
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 			defer cancel()
-			if err := sharedResourceRepoFromDB().Delete(ctx, resourceID); err != nil {
+			repo := sharedResourceRepoFromDB()
+			// Tear down the Stalwart host principal first (mirrors the REST
+			// delete handler). The reconciler does NOT garbage-collect orphaned
+			// hosts, so the row delete alone would leave the principal behind.
+			if sr, err := repo.FindByID(ctx, resourceID); err == nil && sr.EmailCached != nil && *sr.EmailCached != "" && sharedAgent != nil {
+				if _, derr := sharedAgent.Call(ctx, "sharedresource.destroy", map[string]any{"email": *sr.EmailCached}); derr != nil {
+					fmt.Fprintf(os.Stderr, "warning: host teardown failed (%v); deleting row anyway\n", derr)
+				}
+			}
+			if err := repo.Delete(ctx, resourceID); err != nil {
 				return fmt.Errorf("delete: %w", err)
 			}
 			fmt.Printf("removed %s\n", resourceID)
