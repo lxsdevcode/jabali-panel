@@ -1,9 +1,9 @@
 # M52 — Mail Shared Resources & Groups redesign (Wave 3)
 
-**Status:** DRAFT blueprint — reviewed once; **model NOT yet validated.** Two Wave A gates
-(read-side `shareWith` effect + send-as) must pass through the real provisioning path before
-the model is proven. Write-side (`shareWith` is settable) is confirmed; member-side effect
-is not.
+**Status:** DRAFT blueprint — reviewed; **Gate 1 (read-side) VALIDATED end-to-end on mx
+2026-06-20**; Gate 2 (send-as) narrowed — the easy hypothesis is disproven. Also found:
+jabali **already ships** the mailbox-share primitive (`mailbox.share_set`, the "Shared
+Folders" feature) — the redesign extends proven infra, not greenfield.
 **Issues:** #236 (selective group resources), #241 (Shared Mailboxes vs Shared Folders),
 #242 (Shared Calendars/Contacts/Files tab), #235 (Distribution Email Groups).
 Adjacent (separable, mailbox-UX): #237 (alias/forwarding under mailbox), #238 (show
@@ -45,35 +45,41 @@ Proven live (WRITE side, as admin):
   are separate. Per docs, membership grants **all** collections, so you **cannot mix**: any
   resource granted via membership pulls in all of them.
 
-**NOT yet proven — two co-equal Wave A gates** (both are "admin/write side verified,
-member/effect side NOT"; do NOT start Wave B reconciler work until both pass):
+**Existing infra to reuse (found 2026-06-20):** jabali already has
+`mailbox.share_set` (`panel-agent/.../mailbox_share.go`) — the **Shared Folders** feature.
+It writes `Mailbox/set shareWith` with a battle-tested Rights→Stalwart ACL mapping
+(`mayRead`→`mayReadItems`, `mayAdmin`→`mayShare`, plus `maySubmit`), idempotent whole-map
+replace, target-principal resolution by email. M52 extends this exact pattern to
+Calendar/AddressBook/FileNode share_set — NOT greenfield.
 
-  **Gate 1 — read-side effect (MORE foundational than send-as).** That a `shareWith` grant
-  actually makes the collection *readable to that member*, and removing it revokes access.
-  Only the *set* call was confirmed; member-side read was **inferred**, not tested (the
-  earlier "as shuki" query hit shuki's OWN account, where the group calendar correctly never
-  appears; querying `accountId=<group>` was only ever done as *admin*, who always has
-  access). The whole "retire `memberGroupIds`, compose via `shareWith`" model rests on this.
-  - **Blocker found 2026-06-20:** jabali uses Stalwart's **external (SQL) directory**, so
-    `x:Account/set` cannot create a throwaway member with a password
-    ("Cannot set credentials for accounts in an external directory"). So this gate CANNOT be
-    tested via raw JMAP — it requires a **real provisioned mailbox** (panel→agent→reconciler
-    → MariaDB hash + registry projection) with a known password. Test: as that member,
-    `Calendar/get accountId=<group> ids=[<cal>]` → returns the calendar with `myRights` when
-    granted, FORBIDDEN/empty when not; and the member's `/jmap/session` `accounts` map should
-    expose the shared account. If the sharee must *subscribe/accept* the share first, or it
-    surfaces only via the session `accounts` map, the reconciler model changes shape — find
-    that here, not deep in Wave A.
+**Gate 1 — read-side effect: VALIDATED end-to-end (mx, 2026-06-20).** Provisioned a real
+test mailbox (`m52proof@jabali.site`, bcrypt hash inserted into `mailboxes`, projected via
+`mailbox.create`; the external SQL directory means this is the only way — raw `x:Account/set`
+can't set credentials). Shared a group calendar with it via `Calendar/set shareWith/<id>`,
+then **from the member's own authenticated session**:
+- `/jmap/session` `accounts` map automatically gained the group account (`prooftest@…`) —
+  **no subscribe/accept step**.
+- `Calendar/get accountId=<group> ids=[<cal>]` → returned the calendar with
+  `myRights.mayReadItems=true`. **The grant grants real, immediate access.**
+Mailbox `shareWith` is independently proven by the shipped Shared Folders feature. Calendar
+proven here; AddressBook/FileNode use the same JMAP Sharing mechanism (low risk; confirm in
+Wave A). **The "retire `memberGroupIds`, compose via `shareWith`" model holds for
+calendars/contacts/files.**
 
-  **Gate 2 — send-as.** Membership also authorises *send-as the group address* — a
-  **send-time check**, not a stored Identity/alias (confirmed: a member's `Identity`/`aliases`
-  are unchanged after joining). Decoupling needs a spike. Candidates:
-  1. `aliases/<groupaddr>` on the member — **rejected hypothesis**: Stalwart aliases are
-     *delivery* aliases (mail to the alias lands in the member's own inbox), breaking the
-     shared-inbox semantics. Verify it doesn't gate send-as cleanly anyway.
-  2. An `Identity` in the member's account for the group address, authorised by a Mailbox
-     `shareWith` submit right rather than membership — **preferred if it works**.
-  3. A dedicated `enabledPermissions` send-as grant — fallback.
+**Gate 2 — send-as: still OPEN; the easy hypothesis is DISPROVEN (mx, 2026-06-20).**
+As `m52proof` (with the group inbox shared incl. `maySubmit`):
+- `Identity/set create {email: prooftest@jabali.site}` in the member's own account →
+  **rejected**: "E-mail address not configured for this account."
+- `Identity/get accountId=<group>` → **forbidden**.
+So `maySubmit` on a shared mailbox does **not** confer send-as. Remaining candidates:
+  1. **membership** (`memberGroupIds`) — works, but all-or-nothing (pulls in every resource).
+  2. `aliases/<groupaddr>` on the member — Stalwart aliases are *delivery* aliases (mail to
+     the alias lands in the member's own inbox), conflicting with a shared inbox. Verify
+     whether it ALSO authorises send-as and whether delivery can be suppressed.
+  3. A Stalwart `enabledPermissions` send-as grant scoped to the address — research.
+**Likely outcome:** a shared mailbox whose members **send-as** the group keeps `memberGroupIds`
+(accept all-grant for that case); pure calendar/contacts/files sharing stays selective via
+`shareWith`. Close this in Wave A before committing the mailbox path.
 
 ## 3. Target model
 
@@ -124,20 +130,18 @@ enabled `has_*` flag + grants for current members.
 
 ## 5. Waves
 
-**Wave A — prove the primitive end-to-end, then foundation (gating, sequential, NOT
-parallel-dispatchable). Both gates below MUST pass before any reconciler work.**
-- **Gate 1 (read-side effect)** and **Gate 2 (send-as)** from §2 — verified through the
-  REAL provisioning path from a member's own session (raw JMAP can't create members under
-  the external SQL directory). Provision a throwaway mailbox via the panel/agent with a
-  known password, set/clear a `shareWith` grant on a host collection, and confirm the member
-  can/can't read it + can send-as. Record the chosen send-as mechanism + the read-side
-  semantics (immediate vs subscribe/accept) in ADR-0133. If Gate 1 fails, STOP — the model
-  needs rework before Wave B.
+**Wave A — close the send-as gate, then foundation (gating, sequential).**
+- **Gate 1 is DONE** (§2, validated on mx). **Gate 2 (send-as) is the only remaining
+  unknown** — resolve it first (candidates §2): pick membership-for-send-as-mailboxes vs an
+  alias/permission mechanism, record in ADR-0133. If only membership works, the mailbox path
+  accepts all-grant; calendar/contacts/files stay selective. Do NOT start the mailbox
+  reconciler until this is decided.
+- Confirm AddressBook + FileNode `shareWith` behave like Calendar (quick, same mechanism).
 - Decide the host-principal model (§3 ownership).
 - Migration 000174 + repositories + backfill.
-- Agent: new `sharedresource.apply` / `sharedresource.grant_set` / `sharedresource.destroy`
-  commands using `Calendar/set`/`Mailbox/set`/`AddressBook/set`/`FileNode/set` shareWith.
-  Nail the exact rights-key vocabulary per resource (Wave A spike artifact).
+- Agent: extend the existing `mailbox.share_set` pattern (reuse its Rights→Stalwart ACL
+  mapping) into `calendar.share_set` / `addressbook.share_set` / `file.share_set` — same
+  idempotent whole-`shareWith`-map replace, target-by-email resolution.
 - Reconciler: desired-grants vs actual-`shareWith` diff + converge (idempotent, gate
   side-effects behind a no-change compare — per the per-tick-idempotent-loops scar).
 
@@ -162,15 +166,15 @@ parallel-dispatchable). Both gates below MUST pass before any reconciler work.**
 5. M51 `has_*` columns deprecated + backfilled, not hard-dropped (one-release grace).
 
 ## 7. Risks
-- **Gate 1 (read-side `shareWith` effect) is the model's foundation** — only the write side
-  is proven. If a grant does NOT make the collection member-readable (e.g. Stalwart needs a
-  subscribe/accept step, or surfaces shares only via the session `accounts` map), the
-  reconciler + UX change shape. Close it FIRST in Wave A, via a real provisioned mailbox
-  (external-directory blocks raw-JMAP member creation).
-- **Send-as (Gate 2)** is the second unknown — close before Wave B. If none of the three
-  mechanisms work cleanly, fall back: resource groups keep `memberGroupIds` for the
-  mailbox/send-as ONLY and accept that such groups grant all (document the limitation); pure
-  calendar/contacts/files sharing still goes selective via `shareWith`.
+- **Gate 1 (read-side `shareWith` effect): RESOLVED** — validated end-to-end on mx; grants
+  give immediate member access, no accept step. Calendar proven; confirm AddressBook/FileNode
+  in Wave A (low risk, same mechanism). No longer a blocker.
+- **Send-as (Gate 2): the remaining unknown** — `maySubmit`-on-shared-mailbox is DISPROVEN.
+  Close before the mailbox path. Fallback: shared mailboxes whose members send-as keep
+  `memberGroupIds` (accept all-grant for that case); calendar/contacts/files stay selective.
+  This means a "fully selective shared mailbox with send-as" may not be achievable — the
+  Shared Mailboxes UX (#241) must reflect that (e.g. send-as ⇒ member also gets the group's
+  other resources, OR offer receive-only shared mailboxes as the selective option).
 - `shareWith` reconciliation must be idempotent (no-change compare) — Stalwart `Foo/set`
   every tick would churn. Gate on diff.
 - Backfill must not brick fresh/existing installs (migration = schema + static backfill only).
