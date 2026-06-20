@@ -42,6 +42,10 @@ func (f *fakeAgent) Call(ctx context.Context, method string, params interface{})
 		})
 	case "domain.create":
 		return json.Marshal(map[string]string{"domain": "", "status": "created"})
+	case "sharedresource.apply":
+		return json.Marshal(map[string]string{"host_account_id": "hostAcct1"})
+	case "file.share_set":
+		return json.Marshal(map[string]any{"ok": true, "node_id": "node1"})
 	default:
 		return nil, nil
 	}
