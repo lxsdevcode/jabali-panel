@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/cronvalidate"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
@@ -698,5 +699,41 @@ func TestApplications_AdminUsername(t *testing.T) {
 	// Absent → also generated.
 	if g2 := mk(base); g2 == "" {
 		t.Error("absent admin_username should generate a random one")
+	}
+}
+
+// TestAppCronSpecs verifies the auto-created cron commands for WordPress,
+// Joomla and MediaWiki are well-formed AND pass the wp/php cron allowlist
+// (internal/cronvalidate) — the constraint that makes them installable.
+func TestAppCronSpecs(t *testing.T) {
+	const installPath = "/home/u1/domains/site.com/public_html"
+	owned := []string{installPath}
+
+	for _, app := range []string{"wordpress", "joomla", "mediawiki"} {
+		specs := appCronSpecs(app, installPath)
+		if len(specs) == 0 {
+			t.Fatalf("%s: expected at least one cron spec", app)
+		}
+		for _, c := range specs {
+			if c.name == "" || c.command == "" {
+				t.Errorf("%s: empty name/command", app)
+			}
+			if err := cronvalidate.ValidateSchedule(c.schedule); err != nil {
+				t.Errorf("%s: bad schedule %q: %v", app, c.schedule, err)
+			}
+			if err := cronvalidate.ValidateCronName(c.name); err != nil {
+				t.Errorf("%s: bad cron name %q: %v", app, c.name, err)
+			}
+			if _, err := cronvalidate.ValidateCommand(c.command, owned); err != nil {
+				t.Errorf("%s: command rejected by allowlist %q: %v", app, c.command, err)
+			}
+		}
+	}
+
+	// Email-login / unsupported apps get no auto-cron.
+	for _, app := range []string{"itflow", "dokuwiki", "flarum", "unknown"} {
+		if specs := appCronSpecs(app, installPath); len(specs) != 0 {
+			t.Errorf("%s: expected no auto-cron, got %d", app, len(specs))
+		}
 	}
 }

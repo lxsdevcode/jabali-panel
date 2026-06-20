@@ -448,6 +448,7 @@ func rollbackDBChain(ctx context.Context, cfg ApplicationHandlerConfig, chain pr
 // Mirrors installKickArgs (DB fields included, since MediaWiki is
 // RequiresDB=true) plus a Language param.
 type mediaWikiKickArgs struct {
+	UserID       string
 	InstallID    string
 	OSUser       string
 	DocRoot      string
@@ -516,6 +517,7 @@ func createMediaWikiInstallAndKickAgent(parentCtx context.Context, args mediaWik
 	if v, ok := respMap["version"].(string); ok {
 		version = v
 	}
+	createAppCrons(ctx, cfg, args.UserID, "mediawiki", appInstallPath(args.DocRoot, args.Subdirectory))
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
@@ -669,6 +671,7 @@ func createDrupalInstallAndKickAgent(parentCtx context.Context, args drupalKickA
 // drupalKickArgs minus profile/site_mail; Joomla wants a display name
 // (admin_full_name) distinct from the login username.
 type joomlaKickArgs struct {
+	UserID        string
 	InstallID     string
 	OSUser        string
 	DocRoot       string
@@ -739,6 +742,7 @@ func createJoomlaInstallAndKickAgent(parentCtx context.Context, args joomlaKickA
 	if v, ok := respMap["version"].(string); ok {
 		version = v
 	}
+	createAppCrons(ctx, cfg, args.UserID, "joomla", appInstallPath(args.DocRoot, args.Subdirectory))
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
@@ -960,8 +964,9 @@ func createITFlowInstallAndKickAgent(parentCtx context.Context, args itflowKickA
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
-// itflowInstallPath returns the on-disk install root for an ITFlow install.
-func itflowInstallPath(docRoot, subdirectory string) string {
+// appInstallPath returns the on-disk install root for an app install
+// (docroot, or docroot/<subdir> for a subdirectory install).
+func appInstallPath(docRoot, subdirectory string) string {
 	if sub := strings.Trim(subdirectory, "/"); sub != "" {
 		return docRoot + "/" + sub
 	}
@@ -981,7 +986,7 @@ func createITFlowCrons(ctx context.Context, args itflowKickArgs, cfg Application
 	if cfg.CronJobs == nil || cfg.Users == nil || cfg.Domains == nil {
 		return
 	}
-	installPath := itflowInstallPath(args.DocRoot, args.Subdirectory)
+	installPath := appInstallPath(args.DocRoot, args.Subdirectory)
 	deps := cronops.Deps{Users: cfg.Users, Domains: cfg.Domains, CronJobs: cfg.CronJobs, Agent: cfg.Agent}
 	for _, c := range itflowCronSpec {
 		cmd := fmt.Sprintf("php %s/cron/%s", installPath, c.file)
@@ -1011,6 +1016,81 @@ func removeITFlowCrons(ctx context.Context, cfg ApplicationHandlerConfig, userID
 	marker := "php " + installPath + "/cron/"
 	for _, j := range jobs {
 		if !strings.HasPrefix(j.Command, marker) {
+			continue
+		}
+		if cfg.Agent != nil && osUser != "" {
+			_, _ = cfg.Agent.Call(ctx, "cron.remove", cronRemoveAgentParams{
+				UserID:    userID,
+				Username:  osUser,
+				JobID:     j.ID,
+				RunAsRoot: j.RunAsRoot,
+			})
+		}
+		_ = cfg.CronJobs.Delete(ctx, j.ID)
+	}
+}
+
+// appCron is one auto-created system cron job for an app.
+type appCron struct{ name, schedule, command string }
+
+// appCronSpecs returns the system cron jobs an app needs so its scheduled work
+// runs reliably without depending on web traffic (WP-Cron, Joomla scheduler,
+// MediaWiki job queue). installPath is the on-disk app root. Every command
+// stays inside the wp/php cron allowlist (internal/cronvalidate).
+func appCronSpecs(appType, installPath string) []appCron {
+	switch appType {
+	case "wordpress":
+		return []appCron{{"WordPress Cron", "*/15 * * * *",
+			fmt.Sprintf("wp cron event run --due-now --path=%s", installPath)}}
+	case "joomla":
+		return []appCron{{"Joomla Scheduler", "*/15 * * * *",
+			fmt.Sprintf("php %s/cli/joomla.php scheduler:run --all", installPath)}}
+	case "mediawiki":
+		return []appCron{{"MediaWiki Job Queue", "*/15 * * * *",
+			fmt.Sprintf("php %s/maintenance/run.php runJobs", installPath)}}
+	}
+	return nil
+}
+
+// createAppCrons auto-creates the app's system cron jobs at install time.
+// Best-effort: the app is already usable, so a cron failure is logged, not fatal.
+func createAppCrons(ctx context.Context, cfg ApplicationHandlerConfig, userID, appType, installPath string) {
+	specs := appCronSpecs(appType, installPath)
+	if len(specs) == 0 || userID == "" || cfg.CronJobs == nil || cfg.Users == nil || cfg.Domains == nil {
+		return
+	}
+	deps := cronops.Deps{Users: cfg.Users, Domains: cfg.Domains, CronJobs: cfg.CronJobs, Agent: cfg.Agent}
+	for _, c := range specs {
+		if _, err := cronops.Create(ctx, deps, cronops.CreateInput{
+			UserID:   userID,
+			Name:     c.name,
+			Schedule: c.schedule,
+			Command:  c.command,
+			Enabled:  true,
+		}); err != nil {
+			slog.WarnContext(ctx, "app: create cron failed", "app", appType, "name", c.name, "command", c.command, "err", err)
+		}
+	}
+}
+
+// removeAppCrons tears down an app's auto-created cron jobs on delete. Matches
+// by EXACT command (rebuilt from installPath) so a docroot install can't sweep
+// a subdir install's jobs. Best-effort.
+func removeAppCrons(ctx context.Context, cfg ApplicationHandlerConfig, userID, osUser, appType, installPath string) {
+	specs := appCronSpecs(appType, installPath)
+	if len(specs) == 0 || userID == "" || cfg.CronJobs == nil {
+		return
+	}
+	want := make(map[string]bool, len(specs))
+	for _, c := range specs {
+		want[c.command] = true
+	}
+	jobs, err := cfg.CronJobs.ListByUserID(ctx, userID)
+	if err != nil {
+		return
+	}
+	for _, j := range jobs {
+		if !want[j.Command] {
 			continue
 		}
 		if cfg.Agent != nil && osUser != "" {

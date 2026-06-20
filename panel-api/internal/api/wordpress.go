@@ -36,7 +36,7 @@ type ApplicationHandlerConfig struct {
 	Agent               agent.AgentInterface
 	// CronJobs lets app installers (ITFlow #206) create + tear down the
 	// app-managed cron jobs an app needs. Optional; nil disables auto-cron.
-	CronJobs            repository.CronJobRepository
+	CronJobs repository.CronJobRepository
 	// Apps is the M19 application registry. Nil-safe: the legacy
 	// /wordpress-installs handlers in this file don't read it (they
 	// hard-code the WordPress shape); only the new /applications
@@ -976,6 +976,7 @@ func (h *wordPressHandler) health(c *gin.Context) {
 // It exists because the agent contract has many required fields and we
 // do not want a 14-arg function signature.
 type installKickArgs struct {
+	UserID        string
 	InstallID     string
 	OSUser        string
 	DocRoot       string
@@ -1072,6 +1073,7 @@ func createInstallAndKickAgent(parentCtx context.Context, args installKickArgs, 
 	}
 
 	// Update status to 'ready' with version
+	createAppCrons(ctx, cfg, args.UserID, "wordpress", appInstallPath(args.DocRoot, args.Subdirectory))
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
@@ -1121,10 +1123,13 @@ func createDeleteAndKickAgent(parentCtx context.Context, installID, userID, appT
 		return
 	}
 
-	// ITFlow auto-creates 3 cron jobs at install — tear them down now
-	// (matched by command path; crons aren't FK-linked to the install).
-	if appType == "itflow" {
-		removeITFlowCrons(ctx, cfg, userID, osUser, itflowInstallPath(docroot, subdirectory))
+	// Apps that auto-create cron jobs at install — tear them down now
+	// (crons aren't FK-linked to the install).
+	switch appType {
+	case "itflow":
+		removeITFlowCrons(ctx, cfg, userID, osUser, appInstallPath(docroot, subdirectory))
+	case "wordpress", "joomla", "mediawiki":
+		removeAppCrons(ctx, cfg, userID, osUser, appType, appInstallPath(docroot, subdirectory))
 	}
 
 	// Best-effort DB-side cleanup. Drop the mariadb database + user on the

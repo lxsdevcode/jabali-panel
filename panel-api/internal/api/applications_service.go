@@ -301,6 +301,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 	case "wordpress":
 		go createInstallAndKickAgent(ctx, installKickArgs{
 			InstallID:     k.InstallID,
+			UserID:        k.UserID,
 			OSUser:        k.OSUser,
 			DocRoot:       k.DocRoot,
 			DBName:        k.Chain.DBName,
@@ -345,6 +346,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 		}
 		go createJoomlaInstallAndKickAgent(ctx, joomlaKickArgs{
 			InstallID:     k.InstallID,
+			UserID:        k.UserID,
 			OSUser:        k.OSUser,
 			DocRoot:       k.DocRoot,
 			Subdirectory:  k.Subdirectory,
@@ -501,6 +503,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 		}
 		go createMediaWikiInstallAndKickAgent(ctx, mediaWikiKickArgs{
 			InstallID:    k.InstallID,
+			UserID:       k.UserID,
 			OSUser:       k.OSUser,
 			DocRoot:      k.DocRoot,
 			Subdirectory: k.Subdirectory,
