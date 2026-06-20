@@ -610,7 +610,7 @@ func validateDNSRecord(r *models.DNSRecord) error {
 		return fmt.Errorf("name has invalid whitespace / control chars")
 	}
 	if r.TTL == 0 {
-		r.TTL = 3600
+		r.TTL = 300
 	}
 	if r.TTL < 60 || r.TTL > 604800 {
 		return fmt.Errorf("ttl must be between 60 and 604800 seconds")
@@ -728,11 +728,11 @@ func checkDNSRecordConflict(ctx context.Context, records repository.DNSRecordRep
 // record creation. ADR-0140 introduced this column.
 func (h *dnsHandler) defaultRecordTTL(ctx context.Context) int {
 	if h.cfg.ServerSettings == nil {
-		return 3600
+		return 300
 	}
 	s, err := h.cfg.ServerSettings.Get(ctx)
 	if err != nil || s == nil || s.DefaultDNSTTL == 0 {
-		return 3600
+		return 300
 	}
 	return int(s.DefaultDNSTTL)
 }

@@ -41,7 +41,7 @@ func BootstrapRecords(zoneID, zoneName string, srv *models.ServerSettings, idNew
 			Name:      name,
 			Type:      typ,
 			Content:   content,
-			TTL:       3600,
+			TTL:       300,
 			Priority:  priority,
 			Managed:   true,
 			IsEnabled: true,

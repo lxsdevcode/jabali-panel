@@ -208,7 +208,7 @@ export const DNSRecordsPage = () => {
   const [formName, setFormName] = useState("");
   const [formContent, setFormContent] = useState("");
   const [formPriority, setFormPriority] = useState<number | null>(null);
-  const [formTTL, setFormTTL] = useState(3600);
+  const [formTTL, setFormTTL] = useState(300);
   const [submitting, setSubmitting] = useState(false);
 
   // Load domain data
@@ -298,7 +298,7 @@ export const DNSRecordsPage = () => {
     setFormName("");
     setFormContent("");
     setFormPriority(null);
-    setFormTTL(3600);
+    setFormTTL(300);
     setDrawerOpen(true);
   };
 
@@ -905,7 +905,7 @@ export const DNSRecordsPage = () => {
             <InputNumber
               min={0}
               value={formTTL}
-              onChange={(v) => setFormTTL(v ?? 3600)}
+              onChange={(v) => setFormTTL(v ?? 300)}
               style={{ width: "100%" }}
             />
           </Col>

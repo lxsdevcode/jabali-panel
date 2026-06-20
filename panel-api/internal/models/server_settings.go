@@ -23,7 +23,7 @@ type ServerSettings struct {
 	// Server Settings → DNS in the admin UI. Range 60–86400 enforced
 	// at the API layer; column default 3600 matches the pre-2026-06
 	// hardcoded value so existing installs see no behaviour change.
-	DefaultDNSTTL uint32 `gorm:"column:default_dns_ttl;type:int unsigned;not null;default:3600" json:"default_dns_ttl"`
+	DefaultDNSTTL uint32 `gorm:"column:default_dns_ttl;type:int unsigned;not null;default:300" json:"default_dns_ttl"`
 	// DefaultPHPVersion is the PHP version new user pools are seeded with
 	// (reconciler default-pool path) and the version the admin UI pre-selects.
 	// Admin changes it via POST /admin/php/versions/:version/default; agent
