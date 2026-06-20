@@ -8,6 +8,7 @@ require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/creack/pty v1.1.24
+	github.com/emersion/go-message v0.18.2
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-sql-driver/mysql v1.9.3
