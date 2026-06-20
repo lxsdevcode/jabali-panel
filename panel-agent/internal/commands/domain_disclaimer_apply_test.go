@@ -121,3 +121,30 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+func TestDisclaimerDomainRe(t *testing.T) {
+	valid := []string{"example.com", "sub.domain.co.uk", "a-b.example.org", "x1.y2.z3.io"}
+	for _, d := range valid {
+		if !disclaimerDomainRe.MatchString(d) {
+			t.Errorf("valid domain rejected: %q", d)
+		}
+	}
+	// Sieve-injection / marker-pollution attempts must all be rejected.
+	bad := []string{
+		``,
+		`example`,                                   // no dot (FQDN required)
+		`Example.com`,                               // uppercase
+		"evil.com\"; discard; \"",                   // breaks the sieve string literal
+		"evil.com\n# jabali-disclaimer-end other",   // pollutes another section
+		`evil.com\inject`,                           // backslash
+		`evil#.com`,                                  // marker comment char
+		`-bad.com`,                                   // leading dash
+		`bad-.com`,                                   // trailing dash on label
+		`a..b.com`,                                   // empty label
+	}
+	for _, d := range bad {
+		if disclaimerDomainRe.MatchString(d) {
+			t.Errorf("injection/invalid domain accepted: %q", d)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
@@ -47,6 +48,14 @@ const (
 	dataStageDisclaimerExpr = "'jabali-disclaimer'"
 )
 
+// disclaimerDomainRe is a strict DNS-name guard. The agent is a privileged
+// trust boundary: even though the panel validates domains at create time, a
+// malformed domain reaching this handler could break out of the sieve string
+// literal (`"`, `\`) or pollute another domain's marker section (`\n`, `#`)
+// — i.e. Sieve-script injection / cross-domain section pollution. Reject
+// anything that isn't a plain lowercase FQDN before it touches the script.
+var disclaimerDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)+$`)
+
 func domainDisclaimerApplyHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "params required"}
@@ -57,6 +66,9 @@ func domainDisclaimerApplyHandler(ctx context.Context, params json.RawMessage) (
 	}
 	if p.DomainName == "" {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "domain_name required"}
+	}
+	if !disclaimerDomainRe.MatchString(p.DomainName) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "invalid domain_name"}
 	}
 
 	existingID, existingContents, err := getSieveSystemScript(ctx, disclaimerScriptName)
@@ -205,7 +217,7 @@ func renderDisclaimerSection(domain, text string) string {
 	plainText := sieveEscape(text)
 	htmlText := sieveEscape(htmlEscape(text))
 	var b strings.Builder
-	fmt.Fprintf(&b, "if envelope :domain \"from\" \"%s\" {\n", domain)
+	fmt.Fprintf(&b, "if envelope :domain \"from\" \"%s\" {\n", sieveEscape(domain))
 	b.WriteString("  foreverypart {\n")
 	b.WriteString("    if header :mime :contenttype :contains \"Content-Type\" \"text/plain\" {\n")
 	b.WriteString("      extracttext \"jabali_orig\";\n")
