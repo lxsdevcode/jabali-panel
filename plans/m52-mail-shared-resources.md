@@ -1,9 +1,20 @@
 # M52 — Mail Shared Resources & Groups redesign (Wave 3)
 
-**Status:** DRAFT blueprint — reviewed; **Gate 1 (read-side) VALIDATED end-to-end on mx
-2026-06-20**; Gate 2 (send-as) narrowed — the easy hypothesis is disproven. Also found:
-jabali **already ships** the mailbox-share primitive (`mailbox.share_set`, the "Shared
-Folders" feature) — the redesign extends proven infra, not greenfield.
+**Status:** DRAFT blueprint — reviewed; **Gate 1 (read-side) VALIDATED on mx 2026-06-20**;
+**Gate 2 (send-as) RESOLVED by architecture** — use **one single-collection principal per
+shared resource** so membership/`shareWith` grants only that resource (selectivity is
+inherent; no all-or-nothing, no `queryMemberOf` experiment). jabali **already ships** the
+mailbox-share primitive (`mailbox.share_set`, "Shared Folders") — extends proven infra.
+
+**Key architectural decision (resolves the whole cluster):** Context7
+(`/docs/collaboration/sharing`) is explicit — "group membership alone grants access" to ALL
+of a group's calendars/address books/files; there is no mail-only membership. Rather than
+fight that, **stop bundling resources on one group principal.** Each shared resource is its
+OWN principal hosting exactly ONE collection. Membership/`shareWith` on a single-collection
+principal therefore grants only that one resource. Send-as a shared mailbox = membership in a
+mailbox-only principal (its empty calendar/files don't matter). This matches the user's
+#241/#242 model directly and makes the M51 "one group owns one of each, all-or-nothing"
+obsolete.
 **Issues:** #236 (selective group resources), #241 (Shared Mailboxes vs Shared Folders),
 #242 (Shared Calendars/Contacts/Files tab), #235 (Distribution Email Groups).
 Adjacent (separable, mailbox-UX): #237 (alias/forwarding under mailbox), #238 (show
@@ -142,18 +153,17 @@ enabled `has_*` flag + grants for current members.
 
 ## 5. Waves
 
-**Wave A — close the send-as gate, then foundation (gating, sequential).**
-- **Gate 1 is DONE** (§2, validated on mx). **Gate 2 (send-as) is the only remaining
-  unknown** — resolve it first (candidates §2): pick membership-for-send-as-mailboxes vs an
-  alias/permission mechanism, record in ADR-0133. If only membership works, the mailbox path
-  accepts all-grant; calendar/contacts/files stay selective. Do NOT start the mailbox
-  reconciler until this is decided.
-- Confirm AddressBook + FileNode `shareWith` behave like Calendar (quick, same mechanism).
-- Decide the host-principal model (§3 ownership).
-- Migration 000174 + repositories + backfill.
+**Wave A — foundation (gates resolved; sequential).**
+- Gates 1 + 2 are resolved (§2 / status). Model = one single-collection principal per shared
+  resource + `shareWith` grants. No live `queryMemberOf` experiment needed.
+- Confirm AddressBook + FileNode `shareWith` behave like Calendar (quick, same mechanism) —
+  via the real-mailbox recipe (Gate 1 method).
+- Migration 000174: `shared_resources` + `shared_resource_grants` (+ `mail_groups.group_kind`,
+  deprecate `has_*`) + backfill (§4).
 - Agent: extend the existing `mailbox.share_set` pattern (reuse its Rights→Stalwart ACL
   mapping) into `calendar.share_set` / `addressbook.share_set` / `file.share_set` — same
-  idempotent whole-`shareWith`-map replace, target-by-email resolution.
+  idempotent whole-`shareWith`-map replace, target-by-email resolution. Plus a
+  `sharedresource.apply`/`destroy` that provisions/removes the one-collection host principal.
 - Reconciler: desired-grants vs actual-`shareWith` diff + converge (idempotent, gate
   side-effects behind a no-change compare — per the per-tick-idempotent-loops scar).
 
