@@ -314,6 +314,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if sc, ok := deps.StalwartAdmin.(*stalwartadmin.Client); ok {
 			rec.WithMailThrottles(mailOutboundPolicyRepo, sc)
 		}
+		// M52 (ADR-0133) — shared resources convergence (host principals +
+		// per-collection shareWith). Grant grantees resolve via the mailbox +
+		// mail-group repos.
+		rec.WithSharedResources(repository.NewSharedResourceRepository(sharedDB), mailboxRepo, mailGroupRepo)
 		deps.ManagedIPs = managedIPRepo
 		deps.Reconciler = rec
 		deps.DNSZones = dnsZoneRepo

@@ -83,6 +83,12 @@ type Reconciler struct {
 	// M47 Wave 3 — outbound throttle reconcile.
 	outboundPolicies repository.MailOutboundPolicyRepository
 	stalwartAdmin    ThrottleStalwartClient
+	// M52 (ADR-0133) — shared resources convergence. All three required for
+	// reconcileSharedResources; nil on any disables the pass. srMailboxes +
+	// srMailGroups resolve a grant's polymorphic grantee → target email(s).
+	sharedResources repository.SharedResourceRepository
+	srMailboxes     repository.MailboxRepository
+	srMailGroups    repository.MailGroupRepository
 	// M13.1.1 — bandwidth quota auto-suspend. Both required for the
 	// reconcileBandwidthQuotaEnforce loop; nil on either disables the
 	// feature regardless of server_settings toggle.
@@ -455,6 +461,7 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// M6.6 — per-domain mail TLS. Sits next to panel-cert so the
 	// two cert flows share the same admin email/public IP context.
 	r.reconcileMailCertificates(ctx)
+	r.reconcileSharedResources(ctx)
 
 	// M34: per-user PHP-FPM egress firewall. Cheap noop when the repo
 	// isn't wired (test fixtures) or when there are zero policies.
