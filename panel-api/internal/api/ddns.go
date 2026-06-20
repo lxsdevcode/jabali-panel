@@ -149,6 +149,11 @@ func (h *ddnsHandler) handle(c *gin.Context) {
 	// 4. Update only when content actually changed. nochg matches
 	//    what every other DDNS provider returns; ddclient throttles
 	//    based on it.
+	// GH #245 phase 5: a record-scoped token may only touch its record(s).
+	if !tokenAllowsRecord(tok.Scopes, record.ID) {
+		ddnsReply(c, http.StatusForbidden, "nohost")
+		return
+	}
 	if record.Content == parsedIP.String() {
 		ddnsReply(c, http.StatusOK, "nochg "+parsedIP.String())
 		return

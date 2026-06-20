@@ -127,3 +127,29 @@ func TestResolveUserScope(t *testing.T) {
 		}
 	}
 }
+
+// TestTokenAllowsRecord — per-record DDNS constraint (GH #245 phase 5).
+func TestTokenAllowsRecord(t *testing.T) {
+	const recA = "01AAAAAAAAAAAAAAAAAAAAAAAA"
+	const recB = "01BBBBBBBBBBBBBBBBBBBBBBBB"
+	// No record: constraint → any record allowed.
+	if !tokenAllowsRecord(models.UserAPIScopes{"ddns"}, recA) {
+		t.Error("unconstrained token should update any record")
+	}
+	// Constrained to recA.
+	sc := models.UserAPIScopes{"ddns", "record:" + recA}
+	if !tokenAllowsRecord(sc, recA) {
+		t.Error("constrained token should update its record")
+	}
+	if tokenAllowsRecord(sc, recB) {
+		t.Error("constrained token must NOT update a different record")
+	}
+
+	// validate accepts well-formed record scopes, rejects malformed.
+	if _, ok := validateUserScopes(models.UserAPIScopes{"ddns", "record:" + recA}); !ok {
+		t.Error("valid record scope should pass")
+	}
+	if _, ok := validateUserScopes(models.UserAPIScopes{"record:short"}); ok {
+		t.Error("malformed record scope should fail")
+	}
+}

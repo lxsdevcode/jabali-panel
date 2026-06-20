@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -46,13 +47,40 @@ func init() {
 	knownUserScopes[ScopeDDNS] = true
 }
 
+// recordScopeRe matches a per-record DDNS constraint scope (GH #245 phase 5):
+// `record:<26-char DNS record ULID>`. A token carrying one or more of these may
+// update ONLY those DNS records via the DDNS shim.
+var recordScopeRe = regexp.MustCompile(`^record:[0-9A-Za-z]{26}$`)
+
 func validateUserScopes(scopes models.UserAPIScopes) (string, bool) {
 	for _, s := range scopes {
+		if strings.HasPrefix(s, "record:") {
+			if !recordScopeRe.MatchString(s) {
+				return s, false
+			}
+			continue
+		}
 		if !knownUserScopes[s] {
 			return s, false
 		}
 	}
 	return "", true
+}
+
+// tokenAllowsRecord reports whether a token may update the given DNS record.
+// A token with NO record: constraint may update any of the owner's records;
+// one with record: constraints may update only the listed record(s).
+func tokenAllowsRecord(scopes models.UserAPIScopes, recordID string) bool {
+	constrained := false
+	for _, s := range scopes {
+		if strings.HasPrefix(s, "record:") {
+			constrained = true
+			if s[len("record:"):] == recordID {
+				return true
+			}
+		}
+	}
+	return !constrained
 }
 
 // userScopeExact maps a bare route pattern (gin c.FullPath) to its area. Used

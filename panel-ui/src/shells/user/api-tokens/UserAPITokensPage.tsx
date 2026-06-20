@@ -119,6 +119,7 @@ export function UserAPITokensPage(): JSX.Element {
   const [accessMode, setAccessMode] = useState<"full" | "custom">("full");
   const [scopeSel, setScopeSel] = useState<Record<string, string[]>>({});
   const [ddnsSel, setDdnsSel] = useState(false);
+  const [ddnsRecordId, setDdnsRecordId] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -147,6 +148,7 @@ export function UserAPITokensPage(): JSX.Element {
       setAccessMode("full");
       setScopeSel({});
       setDdnsSel(false);
+      setDdnsRecordId("");
     }
   }, [createOpen]);
 
@@ -165,6 +167,7 @@ export function UserAPITokensPage(): JSX.Element {
           for (const act of scopeSel[a.key] ?? []) scopes.push(`${act}:${a.key}`);
         }
         if (ddnsSel) scopes.push("ddns");
+        if (ddnsSel && ddnsRecordId.trim()) scopes.push(`record:${ddnsRecordId.trim()}`);
         if (scopes.length === 0) {
           notification.error({
             message: "Select at least one permission",
@@ -409,6 +412,20 @@ export function UserAPITokensPage(): JSX.Element {
                   <Checkbox checked={ddnsSel} onChange={(e) => setDdnsSel(e.target.checked)}>
                     DDNS only — update DNS records from a router (safe for router config)
                   </Checkbox>
+                  {ddnsSel && (
+                    <div style={{ marginTop: 6, marginLeft: 24 }}>
+                      <Input
+                        size="small"
+                        placeholder="Limit to one DNS record ID (optional)"
+                        value={ddnsRecordId}
+                        onChange={(e) => setDdnsRecordId(e.target.value)}
+                        allowClear
+                      />
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        Leave blank to allow updating any of your DNS records. The record ID is shown on the domain&apos;s DNS page.
+                      </Typography.Text>
+                    </div>
+                  )}
                 </div>
                 {AREAS.map((a) => (
                   <div
