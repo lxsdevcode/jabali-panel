@@ -373,7 +373,7 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
         />
       ) : null}
 
-      {since && status.data ? (
+      {status.data && (running || since) ? (
         <JobLogTail
           status={status.data.status}
           logTail={status.data.log_tail}
@@ -527,7 +527,7 @@ function SystemPackagesCard({ check }: { check: ReturnType<typeof useAptCheck> }
           }
         />
       ) : null}
-      {since && status.data ? (
+      {status.data && (running || since) ? (
         <JobLogTail
           status={status.data.status}
           logTail={status.data.log_tail}

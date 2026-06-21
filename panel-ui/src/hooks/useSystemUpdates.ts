@@ -81,7 +81,10 @@ export function useJabaliStatus(since: string | null) {
       );
       return r.data;
     },
-    enabled: !!since,
+    // Always enabled (not gated on `since`): a run started elsewhere — CLI,
+    // tasks indicator, or a reload mid-update — still surfaces its log. With
+    // no `since` the agent returns the last 15m of the unit.
+    enabled: true,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
       // Poll while the unit is alive — 2s gives a snappy log tail. Stop
@@ -131,7 +134,10 @@ export function useAptStatus(since: string | null) {
       );
       return r.data;
     },
-    enabled: !!since,
+    // Always enabled (not gated on `since`): a run started elsewhere — CLI,
+    // tasks indicator, or a reload mid-update — still surfaces its log. With
+    // no `since` the agent returns the last 15m of the unit.
+    enabled: true,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
       return s === "active" || s === "activating" ? 2000 : false;
