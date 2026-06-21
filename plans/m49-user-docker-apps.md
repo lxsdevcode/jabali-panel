@@ -33,7 +33,7 @@ own, under hard resource + count limits enforced by their hosting package.
 - No custom/tenant-submitted catalog entries; admin curates `tenant_installable`.
 
 ### Memory pointers
-- [[project_m18_resource_limits]] — per-user cgroup-v2 slice (`jabali-user-<uid>.slice`)
+- [[project_m18_resource_limits]] — per-user cgroup-v2 slice (`jabali-user-<username>.slice`)
   + POSIX quota + nginx limit_req. **Load-bearing for M49**: tenant container
   cgroups nest under this slice so package CPU/mem caps already apply.
 - [[project_control_plane]] — DB-as-truth, reconciler owns convergence.
@@ -54,7 +54,7 @@ Phase 0 (cgroup-nesting SPIKE on mx)               ── GATES THE ARCHITECTURE
                                       └─> Phase 7 (E2E + security review + runbook + ADR accept)
 ```
 
-**Phase 0 gates everything** (§7): the whole resource story (§5 "no per-app
+**Phase 0 gated everything — ✅ PASSED on mx 2026-06-21** (§7): the whole resource story (§5 "no per-app
 accounting") rests on a rootful-docker container's cgroup actually nesting
 under, and being capped by, the tenant's *systemd-managed* M18 slice. systemd
 and docker fighting over a slice systemd thinks it owns is a known conflict —
@@ -87,7 +87,7 @@ surface a tenant docker app adds:
 |---|---|
 | docker.sock reach | None added — agent mediates every verb; tenant REST never speaks to docker (ADR-0116 D2 unchanged). |
 | Container escape → host **root** | Rootful daemon = residual risk. Mitigations: mandatory `no-new-privileges`, `cap_drop: ALL`, non-root `user:`, no `privileged`, no host bind-mounts; **recommend daemon `userns-remap`** on tenant-enabled hosts (§3, §9 open decision). |
-| Resource exhaustion (CPU/mem/pids) | Container cgroup nests in `jabali-user-<uid>.slice` (M18) → package caps apply to the SUM of the tenant's processes + containers. Per-app `--pids-limit`. |
+| Resource exhaustion (CPU/mem/pids) | Container cgroup nests in `jabali-user-<username>.slice` (M18) → package caps apply to the SUM of the tenant's processes + containers. Per-app `--pids-limit`. |
 | Disk exhaustion | App data dir footprint (`data_bytes`, mig 162) counted against the package disk quota at install + on the reconciler size poll (§5). |
 | Port / IP grab | Tenant installs are **loopback-only**, auto-allocated 10000–19999. No public bind, no host-port pinning. |
 | Cross-tenant domain hijack | Install attaches only to a domain the caller owns (`dom.UserID == claims.UserID`); reuse the existing guard (docker_apps.go:465). |
@@ -126,7 +126,7 @@ services:
     cap_drop: ["ALL"]
     cap_add: [<app's verified minimal allowlist from app.yaml>]   # see below
     pids_limit: <from package/app>
-    cgroup_parent: jabali-user-<uid>.slice     # M18 binding — package CPU/mem applies
+    cgroup_parent: jabali-user-<username>.slice  # leaf slice; systemd resolves /jabali.slice/jabali-user.slice/…     # M18 binding — package CPU/mem applies
 ```
 
 - `cgroup_parent` is the load-bearing line: it nests the container's cgroup
@@ -269,13 +269,31 @@ POST   /docker-apps/:id/backup          own only; destination MUST be tenant-own
 
 ## 7. Phase steps
 
-### Phase 0 — cgroup-nesting spike on mx (GATES THE ARCHITECTURE)
-The discriminating fact none of the design can assume. On mx, by hand:
-1. Pick a real tenant uid with an active `jabali-user-<uid>.slice`.
-2. `docker run -d --cgroup-parent=jabali-user-<uid>.slice --name spike <small image>`.
+### Phase 0 — cgroup-nesting spike on mx — ✅ PASS (run 2026-06-21, Docker 29.5.3, systemd driver, cgroup v2)
+**Result: the architecture holds. §5 stands — no per-app accounting needed.** Evidence:
+- A rootful container launched with `--cgroup-parent=jabali-user-shukivaknin.slice`
+  nests as a systemd **scope**, not a raw dir:
+  `/jabali.slice/jabali-user.slice/jabali-user-shukivaknin.slice/docker-<id>.scope`.
+- **Survives `systemctl daemon-reload`** — systemd does NOT evict the docker
+  scope (the eviction fear was the gating risk; disproven). The systemd cgroup
+  driver makes the container a scope unit systemd itself manages.
+- **Slice cap bounds the container**: `systemctl set-property <slice>
+  MemoryMax=64M` → a `tail /dev/zero` anon-mem hog in the container hit "out of
+  memory", `memory.peak` pinned at exactly 64M, `memory.events max` incremented
+  (ceiling enforced); the container's main proc survived, host unaffected.
+- Naming correction folded throughout: slice keyed by **username**
+  (`jabali-user-<username>.slice`), full path `/jabali.slice/jabali-user.slice/…`;
+  `--cgroup-parent` takes the leaf slice name.
+- Gotcha: docker's default container `/dev/shm` is 64M tmpfs and counts against
+  the memory cgroup — don't size a tenant app's shm expecting the slice cap to be
+  the only memory ceiling.
+
+Re-run recipe (kept for the record / future driver changes):
+1. Pick a real tenant uid with an active `jabali-user-<username>.slice`.
+2. `docker run -d --cgroup-parent=jabali-user-<username>.slice --name spike <small image>`.
 3. Confirm nesting: the container's cgroup path is **under** the slice
-   (`systemd-cgls` / `cat /sys/fs/cgroup/system.slice/.../jabali-user-<uid>.slice/...`).
-4. Confirm capping: `systemctl set-property jabali-user-<uid>.slice MemoryMax=128M`,
+   (`systemd-cgls` / `cat /sys/fs/cgroup/system.slice/.../jabali-user-<username>.slice/...`).
+4. Confirm capping: `systemctl set-property jabali-user-<username>.slice MemoryMax=128M`,
    stress the container past it, confirm the **container** OOMs and the host is fine.
 5. Confirm systemd doesn't evict the docker-created child on `daemon-reload` /
    slice restart.
@@ -314,7 +332,7 @@ The discriminating fact none of the design can assume. On mx, by hand:
   any bind-mount whose source is outside the app data tree.
 - Agent verb params gain `owner_uid`. Reconciler passes it from `docker_apps.user_id`.
 - **Live-verify on a tenant slice** (mx): install a tenant app, confirm the
-  container's cgroup path is under `jabali-user-<uid>.slice`, confirm
+  container's cgroup path is under `jabali-user-<username>.slice`, confirm
   `systemctl set-property` mem cap throttles it, confirm no added caps
   (`docker inspect` CapAdd empty, no-new-privileges true).
 
@@ -358,8 +376,8 @@ The discriminating fact none of the design can assume. On mx, by hand:
 
 | Check | How |
 |---|---|
-| Container nests in tenant slice | `cat /sys/fs/cgroup/.../jabali-user-<uid>.slice/.../docker-<id>/cgroup.procs` |
-| Package mem cap throttles container | install app → `systemctl set-property jabali-user-<uid>.slice MemoryMax` → stress → OOM in container, host fine |
+| Container nests in tenant slice | `cat /sys/fs/cgroup/.../jabali-user-<username>.slice/.../docker-<id>/cgroup.procs` |
+| Package mem cap throttles container | install app → `systemctl set-property jabali-user-<username>.slice MemoryMax` → stress → OOM in container, host fine |
 | No added privilege | `docker inspect` → CapAdd empty, no-new-privileges true, Privileged false |
 | privesc compose rejected | craft a `tenant_installable` app with `privileged: true` → install 400, nothing started |
 | Quota gate | package max=1 → 2nd install 409; package max=0 → 403 |
@@ -376,9 +394,10 @@ The discriminating fact none of the design can assume. On mx, by hand:
    (shifts ownership of **existing** admin-install bind-mount data → retrofit)
    with no clean per-container range. Resolved in ADR-0117, not deferred —
    because it's the one control covering the single new risk.
-2. **cgroup nesting — now Phase 0**, not an open item: it can invalidate §5, so
-   it's spiked before anything else (see §7 Phase 0). Requires the systemd
-   cgroup driver.
+2. **cgroup nesting — Phase 0, ✅ RESOLVED** (spike passed on mx 2026-06-21, see
+   §7 Phase 0): container nests as a systemd scope under the M18 slice, survives
+   daemon-reload, slice MemoryMax caps it. §5 stands. Requires the systemd cgroup
+   driver (mx already uses it; install.sh must guarantee it on tenant-enabled hosts).
 3. **Disk hard-quota.** App data lives on a root-owned tree, not the tenant's
    POSIX-quota'd home, so overage is *metered + flagged*, not hard-blocked at
    write time. Hard enforcement would need either a per-tenant XFS project
