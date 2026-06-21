@@ -821,11 +821,37 @@ type settingsUpdateResponse struct {
 // Returns a freshly-minted gateway credential only on first enable.
 func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings, regenerate bool) (*webadminCredential, error) {
 	cidrs := splitCIDRList(s.StalwartWebadminAllowCIDRs)
+	serverName := "admin." + s.Hostname
+
+	// The panel cert covers the panel hostname, NOT admin.<hostname>, so
+	// serving it on the WebAdmin subdomain trips a TLS name mismatch the
+	// browser won't bypass (GH #243). Mint a self-signed cert that MATCHES
+	// admin.<hostname> so the subdomain is reachable (a self-signed warning
+	// the operator can accept). Falls back to the panel cert if self-sign
+	// fails, or when disabling (cert irrelevant then).
+	certPath, keyPath := "/etc/jabali/tls/panel.crt", "/etc/jabali/tls/panel.key"
+	if s.StalwartWebadminEnabled && h.cfg.Agent != nil {
+		ssCtx, ssCancel := context.WithTimeout(ctx, 30*time.Second)
+		ssRaw, ssErr := h.cfg.Agent.Call(ssCtx, "ssl.self_sign", map[string]any{
+			"domain": serverName, "days": 825,
+		})
+		ssCancel()
+		if ssErr == nil {
+			var ss struct {
+				CertPath string `json:"cert_path"`
+				KeyPath  string `json:"key_path"`
+			}
+			if json.Unmarshal(ssRaw, &ss) == nil && ss.CertPath != "" {
+				certPath, keyPath = ss.CertPath, ss.KeyPath
+			}
+		}
+	}
+
 	params := map[string]any{
 		"enabled":       s.StalwartWebadminEnabled,
-		"server_name":   "admin." + s.Hostname,
-		"ssl_cert_path": "/etc/jabali/tls/panel.crt",
-		"ssl_key_path":  "/etc/jabali/tls/panel.key",
+		"server_name":   serverName,
+		"ssl_cert_path": certPath,
+		"ssl_key_path":  keyPath,
 		"allow_cidrs":   cidrs,
 		"regenerate":    regenerate,
 	}

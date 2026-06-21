@@ -47,6 +47,12 @@ export function TasksIndicator() {
   const tasks = q.data?.tasks ?? [];
   const count = tasks.length;
 
+  // Hidden when nothing is running — the query above keeps polling (idle
+  // cadence) so the icon reappears the moment a task starts.
+  if (count === 0) {
+    return null;
+  }
+
   const items: MenuProps["items"] =
     count === 0
       ? [
