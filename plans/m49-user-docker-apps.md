@@ -86,7 +86,7 @@ surface a tenant docker app adds:
 | Threat | M49 control |
 |---|---|
 | docker.sock reach | None added — agent mediates every verb; tenant REST never speaks to docker (ADR-0116 D2 unchanged). |
-| Container escape → host **root** | Rootful daemon = residual risk. Mitigations: mandatory `no-new-privileges`, `cap_drop: ALL`, non-root `user:`, no `privileged`, no host bind-mounts; **recommend daemon `userns-remap`** on tenant-enabled hosts (§3, §9 open decision). |
+| Container escape → host **root** | **Mandatory daemon `userns-remap`** on tenant-enabled hosts (DECIDED): container-root escape lands as the unprivileged `dockremap` subuid, not host root. Plus `no-new-privileges`, `cap_drop: ALL`+`tenant_caps`, non-root `user:`, no `privileged`, no host bind-mounts. |
 | Resource exhaustion (CPU/mem/pids) | Container cgroup nests in `jabali-user-<username>.slice` (M18) → package caps apply to the SUM of the tenant's processes + containers. Per-app `--pids-limit`. |
 | Disk exhaustion | App data dir footprint (`data_bytes`, mig 162) counted against the package disk quota at install + on the reconciler size poll (§5). |
 | Port / IP grab | Tenant installs are **loopback-only**, auto-allocated 10000–19999. No public bind, no host-port pinning. |
@@ -112,6 +112,18 @@ preserved; non-NULL = tenant-owned). Every tenant verb filters
 catalog endpoint returns only entries with `tenant_installable: true` AND that
 declare no `default_bind: public` port (loopback-only requirement). Admin
 catalog is unchanged (sees everything).
+
+### Isolation: mandatory userns-remap (DECIDED)
+Tenant-enabled hosts run dockerd with daemon-wide `userns-remap` ("default" →
+the `dockremap` user + `/etc/subuid`/`subgid` ranges). Container root maps to an
+unprivileged host subuid, so a container-root breakout is NOT host root — it is
+the marginal new risk (§2) neutralised. The host flag
+`/etc/jabali/docker-tenant-enabled` (written only after remap is live + the
+existing-admin-app retrofit succeeds, Phase 2) gates `max_docker_apps>0`: no
+remap, no tenant docker. Orthogonal to the cgroup nesting proven in Phase 0
+(remap shifts uids, not cgroup placement). v1 uses the single shared `dockremap`
+range (all containers share it — enough for escape-to-root containment;
+per-tenant subuid ranges are §10/v2).
 
 ### Hardening overlay (Phase 2 — the core)
 Catalog `compose.yml.tmpl` stays shared between admin and tenant installs. For
@@ -215,7 +227,10 @@ M48 derivation (`<slug>-<name>`). The agent already keys all on-disk identity of
 ## 5. Quota enforcement (where `max_docker_apps` bites)
 
 On `POST /docker-apps` (tenant):
-1. Resolve caller's package. `max_docker_apps == 0` → **403 `docker_apps_not_in_package`**.
+1. Host gate: `/etc/jabali/docker-tenant-enabled` absent → **403
+   `docker_tenant_not_enabled`** (host has no userns-remap; tenant docker off).
+   Then resolve caller's package; `max_docker_apps == 0` → **403
+   `docker_apps_not_in_package`**.
 2. `COUNT(*) FROM docker_apps WHERE user_id = :caller` ≥ `max_docker_apps` →
    **409 `docker_app_quota_exceeded`**.
 3. Disk: `SUM(data_bytes) WHERE user_id=:caller` + the new app's catalog
@@ -315,17 +330,43 @@ Re-run recipe (kept for the record / future driver changes):
   `tenant_installable: true`. An app that needs a writable rootfs or a cap you're
   unwilling to grant stays admin-only. Gitea (ssh), n8n, immich, onlyoffice stay
   admin-only.
-- **GATING DECISION — userns-remap** (§2, §9): decide v1 posture and record it in
-  ADR-0117: (a) mandatory daemon `userns-remap` on tenant-enabled hosts (accept
-  the existing-bind-mount ownership retrofit), gated by a host flag the operator
-  sets before `max_docker_apps>0` takes effect; OR (b) v1 ships rootful without
-  remap for operators who explicitly accept the escape-to-host-root residual.
-  Default recommendation: (a) with the host-flag gate.
+- **DECIDED — userns-remap MANDATORY on tenant-enabled hosts** (§2, §3, §9;
+  recorded in ADR-0117). Daemon-wide `userns-remap` so a container-root escape
+  lands as the unprivileged `dockremap` subuid, never host root — the one control
+  covering the single new risk (§2). Tenant docker is **gated on it**: a host
+  flag (`/etc/jabali/docker-tenant-enabled`) is set ONLY after remap is live +
+  verified, and `max_docker_apps>0` has no effect until that flag exists. The
+  daemon-wide retrofit cost (existing admin-app data ownership) is handled in
+  Phase 2 by a one-time migration, not waved off.
 - ADR-0117 (Proposed): rootful-Docker-+-hardening stance, curated-catalog +
   `tenant_caps` gate, package quota, the Phase-0 cgroup result, the userns
   decision, and the deferred rootless-podman v2.
 
-### Phase 2 — agent hardening overlay + cgroup binding (WAVE GATE)
+### Phase 2 — host userns-remap + agent hardening overlay + cgroup binding (WAVE GATE)
+
+**2a. Enable userns-remap on the host (install.sh + one-time migration).**
+- `daemon.json`: `"userns-remap": "default"` (docker creates the `dockremap`
+  user + `/etc/subuid`,`/etc/subgid` ranges, base e.g. 100000). Confirm the
+  systemd cgroup driver is also set here (Phase 0 dependency).
+- **Retrofit for existing admin apps** (the daemon-wide cost): enabling remap
+  shifts container-root → `dockremap` base, so EXISTING M48 admin-app data
+  (`/var/lib/jabali/docker-apps/*`, owned root:jabali) becomes unreadable to the
+  remapped container user. A one-time `jabali docker enable-tenant` step:
+  1. `docker compose down` every installed app,
+  2. write `daemon.json` remap + restart dockerd,
+  3. `chown -R <dockremap_base>:<dockremap_base>` each app data tree (shift into
+     the remap range; the agent computes the base from `/etc/subuid`),
+  4. `docker compose up` every app, health-check,
+  5. on full success, write `/etc/jabali/docker-tenant-enabled` (the flag that
+     ungates `max_docker_apps`).
+  If any app fails health post-remap, STOP and leave the flag unset (tenant
+  docker stays off; admin apps are rolled back to pre-remap state).
+- Greenfield hosts (no admin apps yet) skip the chown — just remap + flag.
+- **Verify on mx**: enable remap, confirm `docker inspect` shows the container's
+  root mapped (`/proc/<pid>/uid_map` base ≠ 0 on host), confirm an existing
+  admin app still serves after the retrofit.
+
+**2b. Agent hardening overlay + cgroup binding.**
 - `docker_lifecycle.go` (compose up): when params carry `OwnerUID`, write +
   merge `compose.tenant-hardening.yml` (security_opt/cap_drop/pids/cgroup_parent).
 - Validate merged `docker compose config`: reject `privileged`, any `cap_add`,
@@ -379,6 +420,9 @@ Re-run recipe (kept for the record / future driver changes):
 | Container nests in tenant slice | `cat /sys/fs/cgroup/.../jabali-user-<username>.slice/.../docker-<id>/cgroup.procs` |
 | Package mem cap throttles container | install app → `systemctl set-property jabali-user-<username>.slice MemoryMax` → stress → OOM in container, host fine |
 | No added privilege | `docker inspect` → CapAdd empty, no-new-privileges true, Privileged false |
+| Container root is remapped | `/proc/<container-pid>/uid_map` base ≠ 0 on host; a file the container writes is owned by the `dockremap` subuid, not root |
+| Tenant docker gated on remap | flag absent → install 403; flag present only after enable-tenant migration succeeded |
+| Admin app survives remap retrofit | existing M48 app still serves after `jabali docker enable-tenant` |
 | privesc compose rejected | craft a `tenant_installable` app with `privileged: true` → install 400, nothing started |
 | Quota gate | package max=1 → 2nd install 409; package max=0 → 403 |
 | Domain ownership | install onto another tenant's domain → 409 |
@@ -388,12 +432,15 @@ Re-run recipe (kept for the record / future driver changes):
 
 ## 9. Risks + open decisions
 
-1. **userns-remap — now a Phase-1 GATING decision, not open** (moved to §7
-   Phase 1; see §2 reframe). Daemon-wide remap maps container root →
-   unprivileged host uid, the strongest escape mitigation, but it is daemon-wide
-   (shifts ownership of **existing** admin-install bind-mount data → retrofit)
-   with no clean per-container range. Resolved in ADR-0117, not deferred —
-   because it's the one control covering the single new risk.
+1. **userns-remap — ✅ DECIDED: mandatory on tenant-enabled hosts** (§2, §3, §7
+   Phase 2; ADR-0117). Container-root escape → unprivileged `dockremap` subuid,
+   not host root. Cost owned, not waved: daemon-wide remap breaks existing
+   admin-app data ownership, so Phase 2 ships a one-time `jabali docker
+   enable-tenant` migration (down → remap → chown app trees into the subuid
+   range → up → health → set host flag), with rollback if any app fails health.
+   Residual: v1 uses the single shared `dockremap` range (no cross-container uid
+   isolation between tenants — acceptable since apps are separate + slice-capped;
+   per-tenant ranges are v2, §10).
 2. **cgroup nesting — Phase 0, ✅ RESOLVED** (spike passed on mx 2026-06-21, see
    §7 Phase 0): container nests as a systemd scope under the M18 slice, survives
    daemon-reload, slice MemoryMax caps it. §5 stands. Requires the systemd cgroup
@@ -412,6 +459,8 @@ Re-run recipe (kept for the record / future driver changes):
 
 ## 10. Out of scope (queued)
 - Rootless Podman per tenant (v2 isolation ceiling).
+- Per-tenant subuid/subgid ranges (v1 uses the single shared `dockremap` range;
+  per-tenant ranges add cross-container uid isolation — lands with the podman v2).
 - Tenant custom/uploaded catalog entries.
 - Tenant exec shell / edit compose (admin-only, permanent).
 - Public-bind / raw-TCP/UDP ports for tenant apps.
