@@ -1,0 +1,31 @@
+services:
+  open-webui:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      # Public URL Open WebUI uses when building absolute links.
+      WEBUI_URL: "https://{{ .Domain }}/"
+      WEBUI_SECRET_KEY: "{{ index .Env "WEBUI_SECRET_KEY" }}"
+    volumes:
+      - {{ .DataRoot }}/data:/app/backend/data
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      # The image ships python (curl is not guaranteed); hit /health with it.
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)\" || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

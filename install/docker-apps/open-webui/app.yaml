@@ -1,0 +1,40 @@
+slug: open-webui
+name: Open WebUI
+version: "0.9.6"
+description: |
+  Extensible, self-hosted AI chat interface that runs entirely offline.
+  Talks to local LLM runners (Ollama) and any OpenAI-compatible API, with
+  RAG, document chat, and multi-user workspaces. Point it at your model
+  backend in Settings after install. Single container with its own
+  datastore.
+icon: icon.svg
+upstream: https://github.com/open-webui/open-webui
+documentation: https://docs.openwebui.com/
+
+image_channel: ghcr.io/open-webui/open-webui:0.9.6
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 500
+
+volumes:
+  - name: data
+    container_path: /app/backend/data
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /health
+
+env:
+  # Signs session tokens; generated once at install so sessions survive a
+  # container restart.
+  - name: WEBUI_SECRET_KEY
+    secret: true
+    generate: password64
