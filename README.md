@@ -1,30 +1,44 @@
-<p align="center">
-  <img src="panel-ui/public/images/jabali_logo.svg" alt="Jabali Panel" width="140">
-</p>
-<h1 align="center">Jabali Panel</h1>
+<div align="center">
 
-<p align="center">
+  <img src="panel-ui/public/images/jabali_logo.svg" alt="Jabali Panel" width="120">
+
+# Jabali Panel
+
+**A modern hosting control panel for WordPress and PHP hosting, built with Go and React.**
+
+<p>
+  <a href="https://jabali-panel.com/">Website</a>
+  &nbsp;|&nbsp;
+  <a href="https://jabali-panel.com/demo/">Live demo</a>
+  &nbsp;|&nbsp;
+  <a href="#installation">Install</a>
+  &nbsp;|&nbsp;
+  <a href="#architecture">Architecture</a>
+  &nbsp;|&nbsp;
+  <a href="#cli">CLI</a>
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/status-release_candidate-f59e0b" alt="Release candidate">
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white" alt="Go 1.25">
-  <img src="https://img.shields.io/badge/Gin-HTTP-009688?logo=gin&logoColor=white" alt="Gin">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
   <img src="https://img.shields.io/badge/Ant_Design-5-0170FE?logo=antdesign&logoColor=white" alt="Ant Design 5">
-  <img src="https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white" alt="Vite 5">
   <img src="https://img.shields.io/badge/MariaDB-11-003545?logo=mariadb&logoColor=white" alt="MariaDB 11">
-  <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="AGPL-3.0">
   <img src="https://img.shields.io/badge/Debian-13-A81D33?logo=debian&logoColor=white" alt="Debian 13">
+  <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="AGPL-3.0">
 </p>
 
-A modern web hosting control panel for WordPress and general PHP hosting,
-rewritten end-to-end in Go + React. Jabali focuses on clean multi-tenant
-isolation, safe automation, and a consistent admin/user experience. A single
-Go process serves the panel API and the embedded SPA; a separate root-owned
-agent receives privileged operations over a Unix socket (no panel process
-ever runs as root). State lives in MariaDB as the single source of truth; an
-in-process reconciler converges host config to match the DB on every tick,
-so the box self-heals after restart, crash, or restore.
+<p>
+  Multi-tenant isolation. Root-safe automation. Database-driven reconciliation.
+  A single panel binary serves the API and embedded SPA, while privileged host
+  operations are delegated to a root-owned Unix-socket agent.
+</p>
 
-This is a release candidate. Expect rapid iteration and breaking changes
-until 1.0.
+</div>
+
+> [!NOTE]
+> Jabali Panel is currently a release candidate. Expect rapid iteration and
+> breaking changes until 1.0.
 
 ## Demo and Website
 
