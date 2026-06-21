@@ -38,9 +38,9 @@ export function TasksIndicator() {
       const { data } = await apiClient.get<ActiveTasksResponse>("/admin/active-tasks");
       return data;
     },
-    // Poll fast while tasks run, slow when idle, so a finishing task clears
-    // promptly without hammering the agent (malware check) when nothing's up.
-    refetchInterval: (query) => ((query.state.data?.count ?? 0) > 0 ? 5000 : 15000),
+    // Poll every 3s so a task that starts (or finishes) shows/clears
+    // promptly. Cheap: two DB queries + one systemctl glob.
+    refetchInterval: 3000,
     retry: false,
   });
 

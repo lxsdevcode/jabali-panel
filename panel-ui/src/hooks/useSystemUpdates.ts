@@ -68,6 +68,8 @@ export function useJabaliRun() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["jabali-status"] });
+      qc.invalidateQueries({ queryKey: ["admin-active-tasks"] }); // pop the tasks icon now
+
     },
   });
 }
@@ -121,7 +123,10 @@ export function useAptRun() {
       const r = await apiClient.post<RunResult>("/admin/updates/apt/run");
       return r.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["apt-status"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["apt-status"] });
+      qc.invalidateQueries({ queryKey: ["admin-active-tasks"] }); // pop the tasks icon now
+    },
   });
 }
 
