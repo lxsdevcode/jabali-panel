@@ -2113,15 +2113,16 @@ func (r *Reconciler) sslRenewForDomain(ctx context.Context, domain *models.Domai
 
 // sslRevokeForDomain revokes an issued cert when ssl_enabled flips off.
 func (r *Reconciler) sslRevokeForDomain(ctx context.Context, domain *models.Domain, cert *models.SSLCertificate) {
-	_, err := r.agent.Call(ctx, "ssl.revoke", map[string]any{
+	if _, err := r.agent.Call(ctx, "ssl.revoke", map[string]any{
 		"domain": domain.Name,
 		"reason": "superseded",
-	})
-	if err != nil {
-		msg := firstLine(err.Error())
-		_ = r.sslCerts.UpdateStatus(ctx, cert.ID, models.SSLStatusFailed, &msg)
-		r.log.Error("ssl: ssl.revoke failed", "domain", domain.Name, "err", err)
-		return
+	}); err != nil {
+		// LE-side revoke is best-effort. Log it, but STILL clear the local
+		// cert below — the operator's intent (stop serving TLS, e.g. SSL mode
+		// None) must hold even when the ACME revoke call fails, otherwise the
+		// vhost keeps the :443 block + http->https redirect and the site is
+		// unreachable (GH #246).
+		r.log.Error("ssl: ssl.revoke failed (clearing local cert anyway)", "domain", domain.Name, "err", err)
 	}
 	// Mark revoked AND clear paths so createDomainOnAgent stops emitting
 	// the 443 server block next time it runs.

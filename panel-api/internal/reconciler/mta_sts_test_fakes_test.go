@@ -13,10 +13,11 @@ import (
 // satisfy the interface with zero-value returns.
 type fakeSSLCertRepo struct {
 	byDomain map[string]*models.SSLCertificate
+	revoked  map[string]bool
 }
 
 func newFakeSSLCertRepo() *fakeSSLCertRepo {
-	return &fakeSSLCertRepo{byDomain: map[string]*models.SSLCertificate{}}
+	return &fakeSSLCertRepo{byDomain: map[string]*models.SSLCertificate{}, revoked: map[string]bool{}}
 }
 
 func (f *fakeSSLCertRepo) Create(context.Context, *models.SSLCertificate) error { return nil }
@@ -37,7 +38,10 @@ func (f *fakeSSLCertRepo) UpdateAfterIssuance(context.Context, string, time.Time
 func (f *fakeSSLCertRepo) UpdateAfterRenewal(context.Context, string, time.Time, time.Time, string, string) error {
 	return nil
 }
-func (f *fakeSSLCertRepo) MarkRevoked(context.Context, string) error      { return nil }
+func (f *fakeSSLCertRepo) MarkRevoked(_ context.Context, id string) error {
+	f.revoked[id] = true
+	return nil
+}
 func (f *fakeSSLCertRepo) DeleteByDomainID(context.Context, string) error { return nil }
 func (f *fakeSSLCertRepo) ListDueForRenewal(context.Context, time.Duration) ([]models.SSLCertificate, error) {
 	return nil, nil
@@ -52,7 +56,9 @@ func (f *fakeSSLCertRepo) UpdateSelfSigned(context.Context, string, string, stri
 	return nil
 }
 
-func (f *fakeSSLCertRepo) UpdateCustom(context.Context, string, string, string, time.Time) error { return nil }
+func (f *fakeSSLCertRepo) UpdateCustom(context.Context, string, string, string, time.Time) error {
+	return nil
+}
 func (f *fakeSSLCertRepo) UpdateAfterACMEFailure(context.Context, string, string, time.Time, int, *string, *string, *time.Time) error {
 	return nil
 }

@@ -60,3 +60,28 @@ func TestReconcileSSL_ModeRouting(t *testing.T) {
 		require.False(t, hasCall(ag, "ssl.revoke"), "custom is operator-managed; reconciler must not revoke it")
 	})
 }
+
+// TestReconcileSSL_NoneClearsEvenIfRevokeFails covers GH #246: switching to
+// None must clear the local cert (so the vhost drops :443 + the http->https
+// redirect) even when the LE ssl.revoke agent call fails. Previously a failed
+// revoke left the cert with its path set, so the site kept redirecting to a
+// dead :443.
+func TestReconcileSSL_NoneClearsEvenIfRevokeFails(t *testing.T) {
+	ag := &fakeAgent{failMethod: "ssl.revoke"}
+	dr := &fakeDomainRepo{domains: map[string]*models.Domain{}}
+	sc := newFakeSSLCertRepo()
+	certPath, keyPath := "/etc/x/cert.pem", "/etc/x/key.pem"
+	sc.byDomain["d1"] = &models.SSLCertificate{
+		ID: "c1", DomainID: "d1", Status: models.SSLStatusIssued,
+		CertPath: &certPath, KeyPath: &keyPath,
+	}
+	r := New(dr, nil, ag, slog.Default(), Config{}).WithSSLCerts(sc)
+	r.serverSettings = &fakeServerSettingsRepo{settings: &models.ServerSettings{Hostname: "host.example.com"}}
+	dom := &models.Domain{ID: "d1", Name: "example.com", SSLMode: models.SSLModeNone}
+
+	r.reconcileSSLForDomain(context.Background(), dom)
+
+	if !sc.revoked["c1"] {
+		t.Fatal("None mode must MarkRevoked (clear local cert) even when ssl.revoke fails")
+	}
+}
