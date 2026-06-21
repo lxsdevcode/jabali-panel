@@ -737,3 +737,43 @@ func TestAppCronSpecs(t *testing.T) {
 		}
 	}
 }
+
+// TestApplications_Registry_ExposesRootOnly is the regression guard for the
+// GH #226 follow-up: the install form hides Use-www-prefix + Directory based on
+// the descriptor's root_only flag, so GET /applications/registry MUST surface
+// it. It was dropped from the response DTO, so the UI never hid the controls
+// for ITFlow even though RootOnly was set + the API rejected the values.
+func TestApplications_Registry_ExposesRootOnly(t *testing.T) {
+	wpRepo := &mockWordPressInstallRepo{}
+	domainRepo := &mockDomainRepo{}
+	userRepo := &mockUserRepo{}
+	r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, func(reg *apps.Registry) {
+		_ = reg.Register(apps.ITFlow)
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/applications/registry", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d", w.Code)
+	}
+	var resp struct {
+		Data []registryEntry `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	var itflow *registryEntry
+	for i := range resp.Data {
+		if resp.Data[i].Name == "itflow" {
+			itflow = &resp.Data[i]
+			break
+		}
+	}
+	if itflow == nil {
+		t.Fatalf("registry missing itflow entry: %+v", resp.Data)
+	}
+	if !itflow.RootOnly {
+		t.Error("itflow registry entry must advertise root_only=true so the UI hides www/Directory")
+	}
+}
