@@ -66,6 +66,12 @@ type dockerAppInstallParams struct {
 	WaitHealth  bool              `json:"wait_healthy,omitempty"`
 	HealthTO    int               `json:"healthcheck_timeout_seconds,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"` // free-form tags; written into a sidecar JSON for ops
+	// M49 (GH #170): when TenantValidate is true the agent runs the tenant
+	// safety gate (docker compose config -> validateTenantCompose) before
+	// `up`, rejecting privileged / out-of-allowlist caps / host bind-mounts.
+	// TenantCaps is the catalog-verified capability allowlist for this app.
+	TenantValidate bool     `json:"tenant_validate,omitempty"`
+	TenantCaps     []string `json:"tenant_caps,omitempty"`
 }
 
 type dockerAppInstallResponse struct {
@@ -161,6 +167,15 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 	if len(p.Metadata) > 0 {
 		metaBytes, _ := json.MarshalIndent(p.Metadata, "", "  ")
 		_ = writeAtomicDockerApp(filepath.Join(dir, ".jabali-meta.json"), metaBytes, 0o644)
+	}
+
+	// M49 tenant safety gate: validate the RESOLVED compose before up, so a
+	// privileged container / foreign capability / host bind-mount can never be
+	// brought up for a tenant even if the rendered compose was wrong.
+	if p.TenantValidate {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "tenant compose rejected: " + err.Error()}
+		}
 	}
 
 	// docker compose up -d. ctx covers the whole operation incl.

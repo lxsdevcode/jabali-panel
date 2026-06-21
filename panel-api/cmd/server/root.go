@@ -98,6 +98,7 @@ func newRootCmd() *cobra.Command {
 		newMalwarePurgeCmd(),
 		newBackupCmd(),
 		newRepairCmd(),
+		newDockerCmd(),
 		newPerUserEgressCmd(),
 		newAppSecCmd(),
 		newAppArmorCmd(),

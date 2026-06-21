@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"gopkg.in/yaml.v3"
 )
 
 // RenderParams holds everything the compose template needs.
@@ -34,6 +36,27 @@ type RenderParams struct {
 	// Env is the materialised env-var set: catalog defaults + any
 	// auto-generated secrets (e.g. ADMIN_TOKEN for vaultwarden).
 	Env map[string]string
+	// TenantHardening, when non-nil, applies the M49 (GH #170) tenant
+	// hardening profile to every service AFTER template render: cap_drop
+	// ALL + the verified cap allowlist, no-new-privileges, a pids cap, and
+	// cgroup_parent nesting under the tenant's M18 slice. Nil = admin/
+	// server-level install (M48 behaviour — no hardening injected).
+	TenantHardening *TenantHardening
+}
+
+// TenantHardening is the per-service security profile injected into a tenant
+// install's rendered compose (M49). All fields are computed by panel-api from
+// the owner + catalog; never tenant-supplied.
+type TenantHardening struct {
+	// CgroupParent is the tenant's M18 slice, e.g.
+	// jabali-user-<username>.slice, so the container nests under it and the
+	// package CPU/mem caps apply (proven in the Phase 0 spike).
+	CgroupParent string
+	// Caps is the catalog-declared verified minimal allowlist (tenant_caps)
+	// added back after cap_drop:ALL. Empty = the app needs no caps.
+	Caps []string
+	// PIDsLimit caps fork-bombs per service. 0 = leave unset.
+	PIDsLimit int
 }
 
 // RuntimePort is the resolved binding for one published port.
@@ -71,7 +94,56 @@ func Render(entry Entry, params RenderParams) (string, error) {
 	if err := tmpl.Execute(&buf, params); err != nil {
 		return "", fmt.Errorf("execute compose template for %q: %w", entry.Slug, err)
 	}
+	if params.TenantHardening != nil {
+		return applyTenantHardening(buf.String(), *params.TenantHardening)
+	}
 	return buf.String(), nil
+}
+
+// applyTenantHardening re-parses the rendered compose and injects the M49
+// security profile into EVERY service: no-new-privileges, cap_drop ALL +
+// the verified cap allowlist, an optional pids cap, and cgroup_parent so the
+// container nests in the tenant's M18 slice. Operates on the rendered YAML
+// (not the template) so the shared catalog templates stay admin/tenant-neutral.
+// Key order is not preserved (Go map) — compose is order-insensitive.
+func applyTenantHardening(composeYAML string, h TenantHardening) (string, error) {
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(composeYAML), &doc); err != nil {
+		return "", fmt.Errorf("parse rendered compose for hardening: %w", err)
+	}
+	svcsRaw, ok := doc["services"]
+	if !ok {
+		return "", fmt.Errorf("rendered compose has no services block")
+	}
+	svcs, ok := svcsRaw.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("compose services block is not a mapping")
+	}
+	capAdd := make([]any, len(h.Caps))
+	for i, c := range h.Caps {
+		capAdd[i] = c
+	}
+	for name, sRaw := range svcs {
+		s, ok := sRaw.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("compose service %q is not a mapping", name)
+		}
+		s["security_opt"] = []any{"no-new-privileges:true"}
+		s["cap_drop"] = []any{"ALL"}
+		if len(capAdd) > 0 {
+			s["cap_add"] = capAdd
+		}
+		if h.PIDsLimit > 0 {
+			s["pids_limit"] = h.PIDsLimit
+		}
+		s["cgroup_parent"] = h.CgroupParent
+		svcs[name] = s
+	}
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("re-marshal hardened compose: %w", err)
+	}
+	return string(out), nil
 }
 
 // clampCPULimit caps the requested cpus value to the host's logical

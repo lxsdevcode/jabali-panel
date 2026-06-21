@@ -343,7 +343,8 @@ Done: mig 000180 (validated up+down on real MariaDB) + DockerApp.UserID/HostingP
   `tenant_caps` gate, package quota, the Phase-0 cgroup result, the userns
   decision, and the deferred rootless-podman v2.
 
-### Phase 2 — host userns-remap + agent hardening overlay + cgroup binding (WAVE GATE)
+### Phase 2 — host userns-remap + agent hardening overlay + cgroup binding (WAVE GATE) — ✅ LANDED 2026-06-21
+Live-proven on mx: userns-remap mapped container root → host uid 100000 (`uid_map: 0 100000 65536`), a hardened container showed `CapDrop=[ALL]` + only `CAP_CHOWN`, `no-new-privileges:true`, `Privileged=false`, nested in the slice scope; mx daemon.json reverted after. Shipped: panel-api render injects per-service hardening (`TenantHardening`), agent `validateTenantCompose` gate (rejects privileged/foreign-cap/host-bind-mount) wired into install behind `tenant_validate`, `jabali docker enable-tenant` retrofit CLI (down→remap→chown→up→health→flag, flag written last). NOTE: hardening overlay implemented as panel-side render injection (not an agent-written `-f` overlay) — functionally equivalent, keeps catalog templates shared, avoids agent YAML parsing. install.sh systemd-cgroup-driver guarantee deferred (docker 29 default, proven on mx).
 
 **2a. Enable userns-remap on the host (install.sh + one-time migration).**
 - `daemon.json`: `"userns-remap": "default"` (docker creates the `dockremap`
