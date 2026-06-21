@@ -2,7 +2,7 @@
 // Stalwart's WebAdmin UI through an nginx reverse-proxy (TLS + basic-auth +
 // optional IP allowlist). Stalwart itself stays loopback-bound; this is the
 // only door. Default off. Lives on the Server Settings → Email tab.
-import { App, Alert, Card, Input, Modal, Space, Switch, Typography } from "antd";
+import { App, Alert, Button, Card, Input, Modal, Space, Switch, Typography } from "antd";
 import { useEffect, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
@@ -89,8 +89,34 @@ export function StalwartWebadminCard() {
     }
   };
 
+  const saveAllowlist = async () => {
+    setBusy(true);
+    try {
+      await patch({ stalwart_webadmin_allow_cidrs: cidrs });
+      message.success("Allowlist saved");
+    } catch (err) {
+      const e = err as { response?: { data?: { detail?: string; error?: string } } };
+      message.error(e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to save allowlist");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const regenerate = async () => {
+    setBusy(true);
+    try {
+      await patch({ stalwart_webadmin_regenerate: true });
+      message.success("New gateway credential generated");
+    } catch (err) {
+      const e = err as { response?: { data?: { detail?: string; error?: string } } };
+      message.error(e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to regenerate");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <Card title="Stalwart WebAdmin (advanced)" size="small">
+    <Card title="Stalwart WebAdmin (advanced)" size="small" style={{ marginTop: 16 }}>
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
           Exposes Stalwart&apos;s native admin UI (queues, tracing, fine-grained
@@ -106,27 +132,34 @@ export function StalwartWebadminCard() {
 
         <div>
           <Typography.Text>Source IP allowlist (optional)</Typography.Text>
-          <Input
-            placeholder="e.g. 203.0.113.0/24, 198.51.100.5  (empty = any IP that passes auth)"
-            value={cidrs}
-            onChange={(e) => setCidrs(e.target.value)}
-            disabled={busy}
-            onBlur={() => {
-              if (enabled) void patch({ stalwart_webadmin_allow_cidrs: cidrs }).then(refresh);
-            }}
-          />
+          <Space.Compact style={{ width: "100%" }}>
+            <Input
+              placeholder="e.g. 203.0.113.0/24, 198.51.100.5  (empty = any IP that passes auth)"
+              value={cidrs}
+              onChange={(e) => setCidrs(e.target.value)}
+              disabled={busy}
+            />
+            <Button onClick={saveAllowlist} loading={busy} disabled={!enabled}>
+              Save
+            </Button>
+          </Space.Compact>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Comma/space-separated IPs or CIDRs. Applied when set; saved on blur while exposed.
+            Comma/space-separated IPs or CIDRs. Empty = any IP that passes the gateway auth.
           </Typography.Text>
         </div>
 
         {enabled && (
-          <Alert
-            type="warning"
-            showIcon
-            message={`Live at https://admin.${hostname}/`}
-            description="The full mail-server admin is reachable. Restrict by IP and disable when not in use."
-          />
+          <>
+            <Alert
+              type="warning"
+              showIcon
+              message={`Live at https://admin.${hostname}/`}
+              description="The full mail-server admin is reachable. Restrict by IP and disable when not in use."
+            />
+            <Button onClick={regenerate} loading={busy}>
+              Regenerate gateway credential
+            </Button>
+          </>
         )}
 
         <Modal

@@ -115,8 +115,10 @@ type updateServerSettingsRequest struct {
 	// ADR-0131: Python Application Manager opt-in.
 	PythonAppsEnabled *bool `json:"python_apps_enabled,omitempty"`
 	// GH #243 (ADR-0142): opt-in Stalwart WebAdmin exposure + IP allowlist.
-	StalwartWebadminEnabled       *bool   `json:"stalwart_webadmin_enabled,omitempty"`
-	StalwartWebadminAllowCIDRs    *string `json:"stalwart_webadmin_allow_cidrs,omitempty"`
+	StalwartWebadminEnabled    *bool   `json:"stalwart_webadmin_enabled,omitempty"`
+	StalwartWebadminAllowCIDRs *string `json:"stalwart_webadmin_allow_cidrs,omitempty"`
+	// Transient (not persisted): force a fresh gateway credential.
+	StalwartWebadminRegenerate    *bool   `json:"stalwart_webadmin_regenerate,omitempty"`
 	PostgresMaxConnectionsPerUser *uint16 `json:"postgres_max_connections_per_user,omitempty"`
 
 	// M35 SSRF override. When true, migrate.ValidateHost accepts
@@ -608,10 +610,11 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	// toggle or allowlist changed, so a freshly-minted gateway credential can be
 	// returned to the operator once. Stalwart itself stays loopback-pinned.
 	var webadminCred *webadminCredential
+	regenWebadmin := req.StalwartWebadminRegenerate != nil && *req.StalwartWebadminRegenerate
 	webadminChanged := current.StalwartWebadminEnabled != prevWebadminEnabled ||
 		current.StalwartWebadminAllowCIDRs != prevWebadminCIDRs
-	if webadminChanged && h.cfg.Agent != nil {
-		cred, aerr := h.applyStalwartWebadmin(ctx, current)
+	if (webadminChanged || regenWebadmin) && h.cfg.Agent != nil {
+		cred, aerr := h.applyStalwartWebadmin(ctx, current, regenWebadmin)
 		if aerr != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "webadmin_apply_failed", "detail": firstLineString(aerr.Error())})
 			return
@@ -816,7 +819,7 @@ type settingsUpdateResponse struct {
 // applyStalwartWebadmin dispatches mail.webadmin.apply with the effective
 // state. server_name is admin.<panel-hostname>; the proxy uses the panel cert.
 // Returns a freshly-minted gateway credential only on first enable.
-func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings) (*webadminCredential, error) {
+func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings, regenerate bool) (*webadminCredential, error) {
 	cidrs := splitCIDRList(s.StalwartWebadminAllowCIDRs)
 	params := map[string]any{
 		"enabled":       s.StalwartWebadminEnabled,
@@ -824,6 +827,7 @@ func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *mo
 		"ssl_cert_path": "/etc/jabali/tls/panel.crt",
 		"ssl_key_path":  "/etc/jabali/tls/panel.key",
 		"allow_cidrs":   cidrs,
+		"regenerate":    regenerate,
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()

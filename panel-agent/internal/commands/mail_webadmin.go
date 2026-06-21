@@ -84,6 +84,9 @@ type webadminApplyParams struct {
 	SSLCertPath string   `json:"ssl_cert_path"`
 	SSLKeyPath  string   `json:"ssl_key_path"`
 	AllowCIDRs  []string `json:"allow_cidrs,omitempty"`
+	// Regenerate forces a fresh gateway credential (drops the existing
+	// htpasswd first). Used by the "reset credential" action.
+	Regenerate bool `json:"regenerate,omitempty"`
 }
 
 type webadminVhostTemplateData struct {
@@ -144,6 +147,11 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		if !validCIDROrIP(c) {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("invalid allow_cidr %q", c)}
 		}
+	}
+
+	// Regenerate drops the existing credential so the block below mints a new one.
+	if p.Regenerate {
+		_ = os.Remove(stalwartAdminHtpasswd)
 	}
 
 	// Generate the gateway credential on first enable (no htpasswd yet).

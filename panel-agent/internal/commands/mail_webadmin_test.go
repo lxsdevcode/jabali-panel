@@ -80,3 +80,35 @@ func TestMailWebadminApply_RejectsBadCIDR(t *testing.T) {
 		t.Fatal("bad CIDR must be rejected")
 	}
 }
+
+func TestMailWebadminApply_Regenerate(t *testing.T) {
+	sa, se := t.TempDir(), t.TempDir()
+	oldA, oldE := mailVhostSitesAvailable, mailVhostSitesEnabled
+	mailVhostSitesAvailable, mailVhostSitesEnabled = sa, se
+	defer func() { mailVhostSitesAvailable, mailVhostSitesEnabled = oldA, oldE }()
+	stalwartAdminHtpasswd = filepath.Join(t.TempDir(), "htpasswd")
+	oldReload := nginxTestAndReload
+	nginxTestAndReload = func(context.Context) error { return nil }
+	defer func() { nginxTestAndReload = oldReload }()
+
+	base := map[string]any{"enabled": true, "server_name": "admin.mx.example.com", "ssl_cert_path": "/c", "ssl_key_path": "/k"}
+	p1, _ := json.Marshal(base)
+	r1, _ := mailWebadminApplyHandler(context.Background(), p1)
+	first := r1.(webadminApplyResponse).GatewayPassword
+	if first == "" {
+		t.Fatal("first enable should mint a credential")
+	}
+	// Re-apply without regenerate → no new credential.
+	r2, _ := mailWebadminApplyHandler(context.Background(), p1)
+	if r2.(webadminApplyResponse).GatewayPassword != "" {
+		t.Fatal("re-apply must NOT mint a new credential")
+	}
+	// Regenerate → a fresh, different credential.
+	base["regenerate"] = true
+	p3, _ := json.Marshal(base)
+	r3, _ := mailWebadminApplyHandler(context.Background(), p3)
+	second := r3.(webadminApplyResponse).GatewayPassword
+	if second == "" || second == first {
+		t.Fatalf("regenerate must mint a NEW credential: first=%q second=%q", first, second)
+	}
+}
