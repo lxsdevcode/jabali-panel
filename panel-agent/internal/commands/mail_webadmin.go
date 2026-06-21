@@ -64,6 +64,12 @@ server {
 
     client_max_body_size 25m;
 
+    # Stalwart serves its WebAdmin SPA at /admin/ (base href=/admin/); the bare
+    # root returns a JSON 404. Send / there so the panel-surfaced URL just works.
+    location = / {
+        return 302 /admin/;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8446;
         proxy_set_header Host $host;
