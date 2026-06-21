@@ -21,6 +21,7 @@ import { NetworkTable } from "./NetworkTable";
 import { ProcessesCard } from "./ProcessesCard";
 import { QueuesCard } from "./QueuesCard";
 import { ServicesSummaryCard } from "./ServicesSummaryCard";
+import { SpeedTestCard } from "./SpeedTestCard";
 import { SystemInfoCard } from "./SystemInfoCard";
 import { UserSlicesCard } from "./UserSlicesCard";
 
@@ -52,6 +53,7 @@ export const ServerStatusPage = () => {
     { key: "user_slices", data: null, children: <UserSlicesCard data={env?.user_slices ?? null} /> },
     { key: "processes", data: null, children: <ProcessesCard processes={env?.processes ?? null} /> },
     { key: "queues", data: null, children: <QueuesCard queues={env?.queues ?? null} /> },
+    { key: "speedtest", data: null, children: <SpeedTestCard /> },
   ];
 
   return (

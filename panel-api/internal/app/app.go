@@ -679,6 +679,9 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Agent: deps.Agent,
 			Redis: deps.Redis,
 		})
+		// Admin: connection Speed Test endpoints backing the Server Status
+		// card (GH #252). No deps — pure HTTP, RequireAdmin-gated.
+		api.RegisterAdminSpeedtestRoutes(v1)
 		// Admin: Service controls (M31). Mounts POST /admin/services/:name/:action.
 		api.RegisterAdminServicesRoutes(v1, api.AdminServicesHandlerConfig{
 			Agent: deps.Agent,
