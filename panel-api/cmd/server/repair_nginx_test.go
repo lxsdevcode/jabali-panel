@@ -16,8 +16,8 @@ func TestNginxVersionLT1251(t *testing.T) {
 		{"1.25.3", false},
 		{"1.26.0", false},
 		{"1.27.4", false},
-		{"", false},          // unknown -> conservative, do not flag
-		{"garbage", false},   // unparseable -> conservative
+		{"", false},        // unknown -> conservative, do not flag
+		{"garbage", false}, // unparseable -> conservative
 		{"nginx/2.0.0", false},
 	}
 	for _, c := range cases {
@@ -90,5 +90,33 @@ func TestFoldHTTP2(t *testing.T) {
 	plain := "server {\n    listen 80;\n    root /var/www;\n}\n"
 	if g, ch := foldHTTP2(plain); ch || g != plain {
 		t.Errorf("foldHTTP2(plain) changed=%v, want false/unchanged", ch)
+	}
+}
+
+func TestMissingPlaceholderTargets(t *testing.T) {
+	vhost := `server {
+  listen 8443 ssl http2;
+  include /etc/nginx/sites-available/includes/phpmyadmin.conf;
+  include /etc/nginx/snippets/jabali-adminer.conf;
+}
+`
+	// phpMyAdmin include present but file missing; adminer file present.
+	present := map[string]bool{"/etc/nginx/snippets/jabali-adminer.conf": true}
+	got := missingPlaceholderTargets(vhost, func(p string) bool { return present[p] })
+	if len(got) != 1 || got[0] != "/etc/nginx/sites-available/includes/phpmyadmin.conf" {
+		t.Errorf("got %v, want only the phpmyadmin include", got)
+	}
+
+	// Both present -> nothing missing.
+	all := func(string) bool { return true }
+	if g := missingPlaceholderTargets(vhost, all); len(g) != 0 {
+		t.Errorf("both present: got %v, want none", g)
+	}
+
+	// A vhost that doesn't reference a target must never flag it, even if absent.
+	noRef := "server {\n  listen 8443 ssl http2;\n}\n"
+	none := func(string) bool { return false }
+	if g := missingPlaceholderTargets(noRef, none); len(g) != 0 {
+		t.Errorf("unreferenced targets must not be flagged: got %v", g)
 	}
 }

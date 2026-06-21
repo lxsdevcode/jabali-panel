@@ -338,6 +338,12 @@ func repairSteps() []repairStep {
 			fix:    fixNginxConfigInvalid,
 		},
 		{
+			id:     "nginx-missing-includes",
+			label:  "panel :8443 vhost includes a missing optional snippet (phpMyAdmin/Adminer) — nginx -t fails, nothing on 8443 (GH #217)",
+			detect: detectNginxMissingIncludes,
+			fix:    fixNginxMissingIncludes,
+		},
+		{
 			id:          "docroot-www-data-group",
 			label:       "web docroot files not group www-data / dirs not setgid (nginx 403 on newly uploaded media)",
 			destructive: true,

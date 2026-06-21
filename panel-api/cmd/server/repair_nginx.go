@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -147,6 +148,90 @@ func fixNginxConfigInvalid(_ repairCtx) error {
 	}
 	if out, err := exec.Command("nginx", "-t").CombinedOutput(); err != nil {
 		return fmt.Errorf("nginx -t still failing after fold (not reloading):\n%s", string(out))
+	}
+	if out, err := exec.Command("systemctl", "reload", "nginx").CombinedOutput(); err != nil {
+		return fmt.Errorf("nginx -t passed but reload failed: %v\n%s", err, string(out))
+	}
+	return nil
+}
+
+// ---------- nginx-missing-includes ----------
+//
+// Scar (GH #217, webquest-nz): the panel :8443 vhost hard-`include`s two
+// optional snippets — phpMyAdmin and Adminer. nginx fails `nginx -t` on a
+// missing literal include, so when an optional component's install didn't
+// run (phpMyAdmin's CDN was unreachable → its download died), the snippet
+// was never written and the WHOLE :8443 vhost failed nginx -t → nothing
+// listened on 8443 after a fresh install. install.sh now pre-creates empty
+// placeholders (commit 2bbe85fd), but a host installed before that fix — or
+// one whose include dir was wiped — stays down, and `jabali update` does not
+// re-render the vhost. This detector self-heals that exact state by creating
+// the empty placeholder targets the jabali vhost references.
+//
+// Scope is a fixed allowlist of the two include paths jabali owns, so we can
+// never mask a genuinely-broken third-party include. ADR-0077.
+
+var managedNginxIncludePlaceholders = []string{
+	"/etc/nginx/sites-available/includes/phpmyadmin.conf",
+	"/etc/nginx/snippets/jabali-adminer.conf",
+}
+
+const jabaliPanelVhost = "/etc/nginx/sites-available/jabali-panel.conf"
+
+// missingPlaceholderTargets returns the subset of our managed include
+// placeholders that the vhost `include`s but that `exists` reports absent.
+// Pure (vhost text + exists predicate) so it is unit-testable without
+// touching /etc/nginx.
+func missingPlaceholderTargets(vhost string, exists func(string) bool) []string {
+	var missing []string
+	for _, target := range managedNginxIncludePlaceholders {
+		if !strings.Contains(vhost, "include "+target+";") {
+			continue // vhost doesn't reference it — leave alone
+		}
+		if !exists(target) {
+			missing = append(missing, target)
+		}
+	}
+	return missing
+}
+
+// vhostIncludesMissingTargets returns the subset of our managed include
+// placeholders that the panel vhost `include`s but that are absent on disk.
+func vhostIncludesMissingTargets() []string {
+	b, err := os.ReadFile(jabaliPanelVhost)
+	if err != nil {
+		return nil // no panel vhost — not applicable
+	}
+	return missingPlaceholderTargets(string(b), func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	})
+}
+
+func detectNginxMissingIncludes(_ repairCtx) (bool, string, error) {
+	if _, err := exec.LookPath("nginx"); err != nil {
+		return false, "", nil // no nginx on this host — not applicable
+	}
+	missing := vhostIncludesMissingTargets()
+	if len(missing) == 0 {
+		return false, "", nil
+	}
+	return true, fmt.Sprintf("panel :8443 vhost includes missing file(s): %s — nginx -t fails, nothing listens on 8443", strings.Join(missing, ", ")), nil
+}
+
+func fixNginxMissingIncludes(_ repairCtx) error {
+	for _, target := range vhostIncludesMissingTargets() {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return fmt.Errorf("mkdir for %s: %w", target, err)
+		}
+		// Empty file = a no-op include; install_phpmyadmin / install_adminer
+		// overwrite it with the real block when they next run.
+		if err := os.WriteFile(target, []byte{}, 0o644); err != nil {
+			return fmt.Errorf("create placeholder %s: %w", target, err)
+		}
+	}
+	if out, err := exec.Command("nginx", "-t").CombinedOutput(); err != nil {
+		return fmt.Errorf("nginx -t still failing after placeholders (not reloading):\n%s", string(out))
 	}
 	if out, err := exec.Command("systemctl", "reload", "nginx").CombinedOutput(); err != nil {
 		return fmt.Errorf("nginx -t passed but reload failed: %v\n%s", err, string(out))
