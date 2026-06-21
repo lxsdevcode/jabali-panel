@@ -27,6 +27,14 @@ type DockerAppRepository interface {
 	FindBySlugName(ctx context.Context, slug, name string) (*models.DockerApp, error)
 	ListAll(ctx context.Context) ([]*models.DockerApp, error)
 	ListByStatus(ctx context.Context, status string) ([]*models.DockerApp, error)
+	// --- M49 tenant scoping (GH #170) ---
+	// ListByUserID returns a tenant's installs (newest first).
+	ListByUserID(ctx context.Context, userID string) ([]*models.DockerApp, error)
+	// CountByUserID counts a tenant's non-deleted installs (quota gate).
+	CountByUserID(ctx context.Context, userID string) (int64, error)
+	// FindByIDForUser returns the app only if owned by userID (else ErrNotFound,
+	// so a tenant can't probe another tenant's app IDs).
+	FindByIDForUser(ctx context.Context, id, userID string) (*models.DockerApp, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
 	UpdateDataSize(ctx context.Context, id string, dataBytes int64) error
 	UpdateImageSHA(ctx context.Context, id, imageSHA string) error
@@ -111,6 +119,36 @@ func (r *dockerAppRepo) ListByStatus(ctx context.Context, status string) ([]*mod
 	return apps, nil
 }
 
+// ListByUserID returns a tenant's installs, newest first. Excludes the
+// deleted tombstone status so the tenant UI + quota count see live apps only.
+func (r *dockerAppRepo) ListByUserID(ctx context.Context, userID string) ([]*models.DockerApp, error) {
+	var apps []*models.DockerApp
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND status <> ?", userID, models.DockerAppStatusDeleted).
+		Order("created_at DESC").Find(&apps).Error
+	return apps, translate(err)
+}
+
+// CountByUserID counts a tenant's live (non-deleted) installs for the quota gate.
+func (r *dockerAppRepo) CountByUserID(ctx context.Context, userID string) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&models.DockerApp{}).
+		Where("user_id = ? AND status <> ?", userID, models.DockerAppStatusDeleted).
+		Count(&n).Error
+	return n, translate(err)
+}
+
+// FindByIDForUser returns the app only when owned by userID. A miss (wrong
+// owner or absent) is ErrNotFound — no existence leak across tenants.
+func (r *dockerAppRepo) FindByIDForUser(ctx context.Context, id, userID string) (*models.DockerApp, error) {
+	var app models.DockerApp
+	err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).First(&app).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	return &app, nil
+}
+
 func (r *dockerAppRepo) UpdateStatus(ctx context.Context, id, status string, lastError *string) error {
 	updates := map[string]interface{}{
 		"status":     status,
@@ -149,7 +187,6 @@ func (r *dockerAppRepo) UpdateImageSHA(ctx context.Context, id, imageSHA string)
 			"updated_at": time.Now(),
 		}).Error
 }
-
 
 // UpdateCatalogVersion refreshes the stored catalog_version after an update
 // re-renders the install from the current catalog template, so the UI

@@ -1,0 +1,75 @@
+package repository
+
+import (
+	"context"
+	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
+)
+
+// M49 (GH #170): the tenant-scoped reads must filter on user_id AND exclude the
+// deleted tombstone, and FindByIDForUser must scope by owner so a tenant can't
+// probe another tenant's app IDs.
+
+func TestDockerApp_ListByUserID_FiltersOwnerAndNotDeleted(t *testing.T) {
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewDockerAppRepository(db)
+
+	mock.ExpectQuery(`SELECT \* FROM .docker_apps. WHERE user_id = \? AND status <> \?.*ORDER BY created_at DESC`).
+		WithArgs("u1", "deleted").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "slug", "name"}).
+			AddRow("a1", "u1", "memos", "notes"))
+
+	apps, err := repo.ListByUserID(context.Background(), "u1")
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+	require.Equal(t, "a1", apps[0].ID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDockerApp_CountByUserID_ExcludesDeleted(t *testing.T) {
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewDockerAppRepository(db)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM .docker_apps. WHERE user_id = \? AND status <> \?`).
+		WithArgs("u1", "deleted").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+	n, err := repo.CountByUserID(context.Background(), "u1")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDockerApp_FindByIDForUser_ScopesByOwner(t *testing.T) {
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewDockerAppRepository(db)
+
+	mock.ExpectQuery(`SELECT \* FROM .docker_apps. WHERE id = \? AND user_id = \?`).
+		WithArgs("a1", "u1", 1). // First appends LIMIT 1
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).AddRow("a1", "u1"))
+
+	app, err := repo.FindByIDForUser(context.Background(), "a1", "u1")
+	require.NoError(t, err)
+	require.Equal(t, "a1", app.ID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDockerApp_FindByIDForUser_WrongOwnerIsNotFound(t *testing.T) {
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewDockerAppRepository(db)
+
+	mock.ExpectQuery(`SELECT \* FROM .docker_apps. WHERE id = \? AND user_id = \?`).
+		WithArgs("a1", "intruder", 1).
+		WillReturnError(sqlmock.ErrCancelled) // any miss -> translated error, nil app
+
+	app, err := repo.FindByIDForUser(context.Background(), "a1", "intruder")
+	require.Error(t, err)
+	require.Nil(t, app)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

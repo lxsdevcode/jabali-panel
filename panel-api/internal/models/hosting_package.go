@@ -27,6 +27,9 @@ type HostingPackage struct {
 	MaxEmailAccounts uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_email_accounts"`
 	MaxDatabases     uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_databases"`
 	MaxDatabaseUsers uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_database_users"`
+	// MaxDockerApps caps simultaneous tenant docker-app installs for users on
+	// this plan. 0 = docker apps NOT included (safe default, opt-in per plan).
+	MaxDockerApps uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_docker_apps"`
 
 	// Feature toggles.
 	SSHEnabled bool `gorm:"type:tinyint(1);not null;default:0" json:"ssh_enabled"`

@@ -38,13 +38,26 @@ type Entry struct {
 	Volumes       []Volume   `yaml:"volumes"`
 	Ports         []PortSpec `yaml:"ports"`
 	Env           []EnvVar   `yaml:"env,omitempty"`
+	// TenantInstallable (M49, GH #170): when true, this app appears in the
+	// TENANT catalog and a tenant may install it. Default false — admin-only,
+	// the M48 behaviour. Only flip true for an app verified to run under the
+	// tenant hardening profile (cap_drop ALL + TenantCaps, no-new-privileges,
+	// loopback-only, no host mounts). Apps with a default_bind:public port can
+	// never be tenant_installable (loopback-only requirement, enforced by the
+	// tenant catalog filter).
+	TenantInstallable bool `yaml:"tenant_installable,omitempty"`
+	// TenantCaps is the verified minimal Linux capability allowlist added back
+	// after cap_drop:ALL for tenant installs (e.g. ["CHOWN","SETUID","SETGID",
+	// "DAC_OVERRIDE"] for images that chown-then-drop). Established by actually
+	// running the app under drop-ALL, NOT guessed. Empty = needs no caps.
+	TenantCaps []string `yaml:"tenant_caps,omitempty"`
 	// VolumeOwner is an optional "uid:gid" pair the agent applies
 	// to /var/lib/jabali/docker-apps/<slug>/<volume>/ before docker
 	// compose up runs. Empty = leave the dirs root:root. Set for
 	// images whose entrypoint runs as a non-root UID and reads from
 	// the bind-mounted volume on first launch (Gitea, Nextcloud,
 	// Linkwarden, ...) -- without this they crash-loop on EACCES.
-	VolumeOwner   string     `yaml:"volume_owner,omitempty"`
+	VolumeOwner string `yaml:"volume_owner,omitempty"`
 
 	// composeTmpl is the raw text of compose.yml.tmpl alongside the
 	// app.yaml. Held in memory so the agent verb that renders the

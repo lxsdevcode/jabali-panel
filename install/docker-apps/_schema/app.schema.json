@@ -4,7 +4,15 @@
   "title": "Jabali Docker App catalog entry",
   "description": "Schema for install/docker-apps/<slug>/app.yaml. See ADR-0116 for the decision rationale.",
   "type": "object",
-  "required": ["slug", "name", "version", "description", "image_channel", "ports", "volumes"],
+  "required": [
+    "slug",
+    "name",
+    "version",
+    "description",
+    "image_channel",
+    "ports",
+    "volumes"
+  ],
   "additionalProperties": false,
   "properties": {
     "slug": {
@@ -12,17 +20,34 @@
       "description": "Catalog slug; must match the parent directory name. URL-safe.",
       "pattern": "^[a-z][a-z0-9-]{1,31}$"
     },
-    "name": { "type": "string", "minLength": 1, "maxLength": 64 },
-    "version": { "type": "string", "minLength": 1, "maxLength": 32 },
-    "description": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
     "icon": {
       "type": "string",
       "description": "Path to icon file (relative to this app.yaml); defaults to 'icon.svg'.",
       "default": "icon.svg"
     },
-    "upstream": { "type": "string", "format": "uri" },
-    "documentation": { "type": "string", "format": "uri" },
-
+    "upstream": {
+      "type": "string",
+      "format": "uri"
+    },
+    "documentation": {
+      "type": "string",
+      "format": "uri"
+    },
     "image_channel": {
       "type": "string",
       "description": "Docker image reference. Use a stable tag (e.g. 'vaultwarden/server:latest') not a digest; the panel pins the digest at install time and tracks updates separately.",
@@ -30,35 +55,54 @@
     },
     "update_mode": {
       "type": "string",
-      "enum": ["manual", "auto"],
+      "enum": [
+        "manual",
+        "auto"
+      ],
       "default": "manual",
       "description": "Default update mode shown in the install drawer; operator can override."
     },
-
     "resources": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "cpu":    { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
-        "memory": { "type": "string", "pattern": "^[0-9]+[kKmMgG]$" },
-        "pids":   { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "cpu": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        "memory": {
+          "type": "string",
+          "pattern": "^[0-9]+[kKmMgG]$"
+        },
+        "pids": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
-
     "volumes": {
       "type": "array",
       "description": "Subdirectories created under /var/lib/jabali/docker-apps/<slug>/ at install time, bind-mounted into the container at the catalog's chosen path.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "container_path"],
+        "required": [
+          "name",
+          "container_path"
+        ],
         "properties": {
-          "name":           { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
-          "container_path": { "type": "string", "pattern": "^/[a-zA-Z0-9_./-]+$" }
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "container_path": {
+            "type": "string",
+            "pattern": "^/[a-zA-Z0-9_./-]+$"
+          }
         }
       }
     },
-
     "ports": {
       "type": "array",
       "description": "Container ports the catalog entry can expose. Admin install drawer renders one editable row per entry. ADR-0116 Decision 5.",
@@ -66,33 +110,94 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "container_port", "protocol", "default_enabled", "default_bind", "default_reverse_proxy"],
+        "required": [
+          "name",
+          "container_port",
+          "protocol",
+          "default_enabled",
+          "default_bind",
+          "default_reverse_proxy"
+        ],
         "properties": {
-          "name":                  { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
-          "container_port":        { "type": "integer", "minimum": 1, "maximum": 65535 },
-          "protocol":              { "type": "string", "enum": ["tcp", "udp"] },
-          "default_enabled":       { "type": "boolean" },
-          "default_bind":          { "type": "string", "enum": ["loopback", "public"] },
-          "default_reverse_proxy": { "type": "boolean" },
-          "health_path":           { "type": "string", "pattern": "^/[a-zA-Z0-9_./-]*$" }
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "container_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "tcp",
+              "udp"
+            ]
+          },
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "default_bind": {
+            "type": "string",
+            "enum": [
+              "loopback",
+              "public"
+            ]
+          },
+          "default_reverse_proxy": {
+            "type": "boolean"
+          },
+          "health_path": {
+            "type": "string",
+            "pattern": "^/[a-zA-Z0-9_./-]*$"
+          }
         }
       }
     },
-
     "env": {
       "type": "array",
       "description": "Environment variables exposed to the compose template. catalog declares the keys + defaults; admin install drawer can override secrets.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name":        { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
-          "value":       { "type": "string" },
-          "secret":      { "type": "boolean", "default": false, "description": "Mask in UI; never log; persist to .env (mode 0600) not compose.yml." },
-          "generate":    { "type": "string", "enum": ["password32", "password64"], "description": "Auto-generate at install time if value not supplied." }
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "value": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "boolean",
+            "default": false,
+            "description": "Mask in UI; never log; persist to .env (mode 0600) not compose.yml."
+          },
+          "generate": {
+            "type": "string",
+            "enum": [
+              "password32",
+              "password64"
+            ],
+            "description": "Auto-generate at install time if value not supplied."
+          }
         }
       }
+    },
+    "tenant_installable": {
+      "type": "boolean",
+      "description": "M49: when true the app is tenant-installable (default false, admin-only)."
+    },
+    "tenant_caps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "M49: verified minimal capability allowlist added back after cap_drop:ALL for tenant installs."
     }
   }
 }
