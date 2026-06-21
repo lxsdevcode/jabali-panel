@@ -113,7 +113,10 @@ type updateServerSettingsRequest struct {
 	// disables docker units (data kept).
 	DockerMarketplaceEnabled *bool `json:"docker_marketplace_enabled,omitempty"`
 	// ADR-0131: Python Application Manager opt-in.
-	PythonAppsEnabled             *bool   `json:"python_apps_enabled,omitempty"`
+	PythonAppsEnabled *bool `json:"python_apps_enabled,omitempty"`
+	// GH #243 (ADR-0142): opt-in Stalwart WebAdmin exposure + IP allowlist.
+	StalwartWebadminEnabled       *bool   `json:"stalwart_webadmin_enabled,omitempty"`
+	StalwartWebadminAllowCIDRs    *string `json:"stalwart_webadmin_allow_cidrs,omitempty"`
 	PostgresMaxConnectionsPerUser *uint16 `json:"postgres_max_connections_per_user,omitempty"`
 
 	// M35 SSRF override. When true, migrate.ValidateHost accepts
@@ -190,6 +193,8 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevPanelBrandText := current.PanelBrandText
 	prevDockerEnabled := current.DockerMarketplaceEnabled
 	prevPythonEnabled := current.PythonAppsEnabled
+	prevWebadminEnabled := current.StalwartWebadminEnabled
+	prevWebadminCIDRs := current.StalwartWebadminAllowCIDRs
 	prevTimezone := current.Timezone
 	prevSSHPort := current.SSHPort
 	prevSSHPasswordAuth := current.SSHPasswordAuth
@@ -309,6 +314,12 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.PythonAppsEnabled != nil {
 		current.PythonAppsEnabled = *req.PythonAppsEnabled
+	}
+	if req.StalwartWebadminEnabled != nil {
+		current.StalwartWebadminEnabled = *req.StalwartWebadminEnabled
+	}
+	if req.StalwartWebadminAllowCIDRs != nil {
+		current.StalwartWebadminAllowCIDRs = strings.TrimSpace(*req.StalwartWebadminAllowCIDRs)
 	}
 	if req.MigrationAllowPrivateHosts != nil {
 		current.MigrationAllowPrivateHosts = *req.MigrationAllowPrivateHosts
@@ -593,6 +604,25 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 
 	h.cfg.Log.Info("event=audit kind=server_settings_updated actor_id=" + claims.UserID)
+	// GH #243: apply the Stalwart WebAdmin reverse-proxy SYNCHRONOUSLY when the
+	// toggle or allowlist changed, so a freshly-minted gateway credential can be
+	// returned to the operator once. Stalwart itself stays loopback-pinned.
+	var webadminCred *webadminCredential
+	webadminChanged := current.StalwartWebadminEnabled != prevWebadminEnabled ||
+		current.StalwartWebadminAllowCIDRs != prevWebadminCIDRs
+	if webadminChanged && h.cfg.Agent != nil {
+		cred, aerr := h.applyStalwartWebadmin(ctx, current)
+		if aerr != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "webadmin_apply_failed", "detail": firstLineString(aerr.Error())})
+			return
+		}
+		webadminCred = cred
+	}
+
+	if webadminCred != nil {
+		c.JSON(http.StatusOK, settingsUpdateResponse{ServerSettings: current, WebadminCredential: webadminCred})
+		return
+	}
 	c.JSON(http.StatusOK, current)
 }
 
@@ -764,4 +794,65 @@ func (h *serverSettingsHandler) pythonRuntimeStatus(c *gin.Context) {
 		return
 	}
 	c.Data(http.StatusOK, "application/json", raw)
+}
+
+// --- GH #243: Stalwart WebAdmin reverse-proxy ---
+
+// webadminCredential is the one-time gateway basic-auth credential returned to
+// the operator when the WebAdmin proxy is first enabled.
+type webadminCredential struct {
+	User     string `json:"user"`
+	Password string `json:"password"`
+	URL      string `json:"url"`
+}
+
+// settingsUpdateResponse embeds the settings (so the body is unchanged for
+// existing callers) and adds the one-time WebAdmin credential when present.
+type settingsUpdateResponse struct {
+	*models.ServerSettings
+	WebadminCredential *webadminCredential `json:"stalwart_webadmin_credential,omitempty"`
+}
+
+// applyStalwartWebadmin dispatches mail.webadmin.apply with the effective
+// state. server_name is admin.<panel-hostname>; the proxy uses the panel cert.
+// Returns a freshly-minted gateway credential only on first enable.
+func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings) (*webadminCredential, error) {
+	cidrs := splitCIDRList(s.StalwartWebadminAllowCIDRs)
+	params := map[string]any{
+		"enabled":       s.StalwartWebadminEnabled,
+		"server_name":   "admin." + s.Hostname,
+		"ssl_cert_path": "/etc/jabali/tls/panel.crt",
+		"ssl_key_path":  "/etc/jabali/tls/panel.key",
+		"allow_cidrs":   cidrs,
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "mail.webadmin.apply", params)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		GatewayUser     string `json:"gateway_user"`
+		GatewayPassword string `json:"gateway_password"`
+	}
+	_ = json.Unmarshal(raw, &resp)
+	if resp.GatewayPassword == "" {
+		return nil, nil
+	}
+	return &webadminCredential{
+		User:     resp.GatewayUser,
+		Password: resp.GatewayPassword,
+		URL:      "https://admin." + s.Hostname + "/",
+	}, nil
+}
+
+// splitCIDRList parses a comma/space-separated allowlist into a clean slice.
+func splitCIDRList(in string) []string {
+	out := []string{}
+	for _, f := range strings.FieldsFunc(in, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' }) {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }

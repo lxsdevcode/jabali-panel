@@ -57,6 +57,7 @@ import { PythonAppsCard } from "./PythonAppsCard";
 import { DatabaseAdminSections } from "./DatabaseAdminSections";
 import { DNSResolversCard } from "./DNSResolversCard";
 import { EmailCard } from "./EmailCard";
+import { StalwartWebadminCard } from "./StalwartWebadminCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
 import { PanelSSLCard } from "./PanelSSLCard";
 import { NginxSettingsCard } from "./NginxSettingsCard";
@@ -955,7 +956,12 @@ export const ServerSettingsPage = () => {
         {activeTab === "general" && <GeneralSettingsTab />}
         {activeTab === "storage" && <StorageSettingsTab />}
         {activeTab === "dns" && <DNSSettingsTab />}
-        {activeTab === "email" && <EmailCard />}
+        {activeTab === "email" && (
+          <>
+            <EmailCard />
+            <StalwartWebadminCard />
+          </>
+        )}
         {activeTab === "databases" && (
           <>
             <DatabasesCard />
