@@ -1871,8 +1871,22 @@ install_php_pool_template() {
   if [[ ! -f "$template_src" ]]; then
     _die "pool template missing at $template_src (is the repo clone complete?)"
   fi
+  local template_changed=0
+  if [[ ! -f "$template_dst" ]] || ! cmp -s "$template_src" "$template_dst"; then
+    template_changed=1
+  fi
   install -m 0644 "$template_src" "$template_dst"
   _ok "installed pool config template at $template_dst"
+  # GH #253: when the template content changed, flag existing pools so the
+  # reconciler re-renders them with the new defaults — otherwise ReconcilePHPPools
+  # skips already-active pools and only NEW pools would pick up the change.
+  if [[ "$template_changed" == 1 ]] && command -v mariadb >/dev/null 2>&1; then
+    if mariadb -N -e "SELECT 1 FROM information_schema.tables WHERE table_schema='jabali_panel' AND table_name='php_pools' LIMIT 1" 2>/dev/null | grep -q 1; then
+      mariadb jabali_panel -e "UPDATE php_pools SET status='pending' WHERE status='active';" 2>/dev/null \
+        && _ok "pool template changed — flagged active pools for re-render" \
+        || _warn "could not flag pools for re-render (non-fatal)"
+    fi
+  fi
 }
 
 # ---------- step 1c: disabled page -------------------------------------------
@@ -11391,6 +11405,12 @@ provision_new_software() {
   # anything else in the provision chain touches PHP.
   ensure_jabali_panel_dir_traversable
   ensure_snuffleupagus_loadable
+
+  # GH #253: refresh the per-user PHP-FPM pool template so updated installs pick
+  # up new shared-hosting defaults (memory_limit, upload sizes, etc.). Idempotent
+  # copy; the reconciler re-renders each pool from the installed template on its
+  # next tick. Without this, only fresh installs would get the new defaults.
+  declare -f install_php_pool_template >/dev/null 2>&1 && install_php_pool_template
 
   # Libexec helpers (fpm-pre-start, fpm-exec, cron-precheck) — generated
   # systemd units reference these by absolute path. The fresh-install

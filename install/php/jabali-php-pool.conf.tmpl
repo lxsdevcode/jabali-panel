@@ -26,6 +26,17 @@ php_admin_value[open_basedir] = /home/{{.User}}:/run/mysqld/mysqld.sock:/tmp:/va
 ; Opcache SHM cap. Conservative 32MB per pool keeps total bounded on
 ; shared-host boxes (20 users × 32MB = 640MB). Tune in the runbook.
 php_admin_value[opcache.memory_consumption] = 32
+; Shared-hosting PHP defaults (GH #253). php_value (not php_admin_value) so a
+; per-domain override below takes precedence; these apply only when the domain
+; sets nothing. Stock PHP defaults (128M / 2M / 8M / 1000) are too small for
+; most apps.
+php_value[memory_limit] = 512M
+php_value[upload_max_filesize] = 512M
+php_value[post_max_size] = 512M
+php_value[max_execution_time] = 300
+php_value[max_input_time] = 300
+php_value[max_input_vars] = 10000
+php_value[max_file_uploads] = 100
 {{- range .AdminValues }}
 php_admin_value[{{.Name}}] = {{.Value}}
 {{- end }}
