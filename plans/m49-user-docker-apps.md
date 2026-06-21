@@ -379,7 +379,8 @@ Live-proven on mx: userns-remap mapped container root → host uid 100000 (`uid_
   `systemctl set-property` mem cap throttles it, confirm no added caps
   (`docker inspect` CapAdd empty, no-new-privileges true).
 
-### Phase 3 — tenant REST + guards + scope
+### Phase 3 — tenant REST + guards + scope — ✅ LANDED 2026-06-21
+Shipped docker_apps_user.go: /docker-apps catalog(filtered)/list/get/install/delete/start/stop/restart, flag-gate middleware (/etc/jabali/docker-tenant-enabled), package max_docker_apps quota (403/409), domain-ownership (409), loopback-only (resolvePorts with empty overrides), owner-scoped reads (404 no leak), per-install TenantHardening + tenant_validate dispatch, owner-namespaced instance_slug, scope rule /docker-apps→apps. 9 guard/helper tests (embedded-interface fakes + temp catalog). Deferred to a follow-up: tenant logs/env verbs + backup (pending the M30 dest-scoping decision, §6).
 - New `docker_apps_user.go` handler (or shared body + tenant guard middleware).
 - Quota/ownership/loopback-force guards (§5, §6). Scope rule added.
 - Table-driven handler tests: quota=0 → 403; over count → 409; foreign domain →

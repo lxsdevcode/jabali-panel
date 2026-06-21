@@ -1,0 +1,455 @@
+// docker_apps_user.go — TENANT (user-shell) docker-app surface (M49, GH #170).
+//
+// Mirrors the admin handler but constrained: only tenant_installable catalog
+// entries, loopback-only ports (no public bind, no host-port pinning), owner-
+// scoped reads, package-quota + domain-ownership gated, and every install gets
+// the hardening profile (cap_drop ALL + tenant_caps + no-new-privileges +
+// cgroup_parent under the caller's M18 slice) plus the agent compose-config
+// safety gate. No exec, no edit-compose (ADR-0117 Decision 8).
+//
+// Routes (auth-only base group, subject-scoped):
+//
+//	GET    /docker-apps/catalog              tenant_installable subset
+//	GET    /docker-apps/catalog/:slug/icon
+//	GET    /docker-apps                       caller's installs
+//	GET    /docker-apps/:id                   own only (404 otherwise)
+//	POST   /docker-apps                       install (gated)
+//	DELETE /docker-apps/:id                   own only
+//	POST   /docker-apps/:id/(start|stop|restart)
+package api
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/oklog/ulid/v2"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+)
+
+// defaultTenantDockerFlag is the host flag written by `jabali docker
+// enable-tenant`; its presence means userns-remap is live and tenant docker is
+// permitted on this host. Overridable in tests.
+const defaultTenantDockerFlag = "/etc/jabali/docker-tenant-enabled"
+
+// UserDockerAppHandlerConfig bundles tenant-handler dependencies.
+type UserDockerAppHandlerConfig struct {
+	Repo     repository.DockerAppRepository
+	Catalog  *dockerapp.Catalog
+	Domains  repository.DomainRepository
+	Agent    agent.AgentInterface
+	Users    repository.UserRepository
+	Packages repository.PackageRepository
+	Log      *slog.Logger
+	// TenantFlagPath gates the whole surface. Empty = the production default.
+	TenantFlagPath string
+}
+
+type userDockerAppHandler struct {
+	cfg   UserDockerAppHandlerConfig
+	admin *dockerAppHandler // for resolvePorts reuse only (loopback allocation)
+}
+
+// RegisterUserDockerAppRoutes mounts the tenant docker-app surface.
+func RegisterUserDockerAppRoutes(g *gin.RouterGroup, cfg UserDockerAppHandlerConfig) {
+	if cfg.Repo == nil || cfg.Catalog == nil {
+		return
+	}
+	if cfg.TenantFlagPath == "" {
+		cfg.TenantFlagPath = defaultTenantDockerFlag
+	}
+	h := &userDockerAppHandler{
+		cfg:   cfg,
+		admin: &dockerAppHandler{cfg: DockerAppHandlerConfig{Repo: cfg.Repo}},
+	}
+	grp := g.Group("/docker-apps")
+	grp.Use(h.requireTenantDockerEnabled)
+	grp.GET("/catalog", h.listCatalog)
+	grp.GET("/catalog/:slug/icon", h.catalogIcon)
+	grp.GET("", h.list)
+	grp.GET("/:id", h.get)
+	grp.POST("", h.install)
+	grp.DELETE("/:id", h.delete)
+	grp.POST("/:id/start", h.lifecycle(models.DockerAppStatusRunning, "up", "-d"))
+	grp.POST("/:id/stop", h.lifecycle(models.DockerAppStatusStopped, "stop"))
+	grp.POST("/:id/restart", h.lifecycle(models.DockerAppStatusRunning, "restart"))
+}
+
+// requireTenantDockerEnabled gates every verb on the host flag. No userns-remap
+// (no flag) → tenant docker is off, full stop.
+func (h *userDockerAppHandler) requireTenantDockerEnabled(c *gin.Context) {
+	if _, err := os.Stat(h.cfg.TenantFlagPath); err != nil {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "docker_tenant_not_enabled"})
+		return
+	}
+	if ginctx.Claims(c) == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	c.Next()
+}
+
+// tenantInstallable reports whether a catalog entry may be exposed to tenants:
+// the flag is set AND it declares no default-public port (loopback-only rule).
+func tenantInstallable(e dockerapp.Entry) bool {
+	if !e.TenantInstallable {
+		return false
+	}
+	for _, p := range e.Ports {
+		if p.DefaultBind == "public" {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *userDockerAppHandler) listCatalog(c *gin.Context) {
+	out := make([]catalogEntryResponse, 0)
+	for _, e := range h.cfg.Catalog.All() {
+		if tenantInstallable(e) {
+			out = append(out, catalogEntryToResponse(e))
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out})
+}
+
+func (h *userDockerAppHandler) catalogIcon(c *gin.Context) {
+	e, ok := h.cfg.Catalog.Get(c.Param("slug"))
+	if !ok || !tenantInstallable(e) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	name := e.Icon
+	if name == "" {
+		name = "icon.svg"
+	}
+	if strings.ContainsAny(name, "/\\") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_icon"})
+		return
+	}
+	body, err := os.ReadFile(filepath.Join(e.Dir(), name))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	ctype := "image/svg+xml"
+	if strings.EqualFold(filepath.Ext(name), ".png") {
+		ctype = "image/png"
+	}
+	c.Data(http.StatusOK, ctype, body)
+}
+
+func (h *userDockerAppHandler) list(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	apps, err := h.cfg.Repo.ListByUserID(c.Request.Context(), claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "list_failed"})
+		return
+	}
+	out := make([]installedResponse, 0, len(apps))
+	for _, a := range apps {
+		ports, _ := h.cfg.Repo.ListPortsForApp(c.Request.Context(), a.ID)
+		out = append(out, installedResponse{DockerApp: *a, Ports: ports})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out})
+}
+
+// loadOwned fetches an app scoped to the caller; writes 404 on a miss (no
+// cross-tenant existence leak) and returns nil.
+func (h *userDockerAppHandler) loadOwned(c *gin.Context) *models.DockerApp {
+	claims := ginctx.Claims(c)
+	app, err := h.cfg.Repo.FindByIDForUser(c.Request.Context(), c.Param("id"), claims.UserID)
+	if err != nil || app == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return nil
+	}
+	return app
+}
+
+func (h *userDockerAppHandler) get(c *gin.Context) {
+	app := h.loadOwned(c)
+	if app == nil {
+		return
+	}
+	ports, _ := h.cfg.Repo.ListPortsForApp(c.Request.Context(), app.ID)
+	c.JSON(http.StatusOK, installedResponse{DockerApp: *app, Ports: ports})
+}
+
+func (h *userDockerAppHandler) lifecycle(statusOnSuccess string, composeArgs ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		app := h.loadOwned(c)
+		if app == nil {
+			return
+		}
+		if h.cfg.Agent != nil {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(ctx, "docker_app."+composeArgs[0], map[string]any{"slug": app.EffectiveSlug()}); err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "detail": firstLineString(err.Error())})
+				return
+			}
+		}
+		_ = h.cfg.Repo.UpdateStatus(c.Request.Context(), app.ID, statusOnSuccess, nil)
+		c.JSON(http.StatusOK, gin.H{"id": app.ID, "status": statusOnSuccess})
+	}
+}
+
+func (h *userDockerAppHandler) delete(c *gin.Context) {
+	app := h.loadOwned(c)
+	if app == nil {
+		return
+	}
+	ctx := c.Request.Context()
+	if h.cfg.Agent != nil {
+		actx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		_, _ = h.cfg.Agent.Call(actx, "docker_app.delete", map[string]any{"slug": app.EffectiveSlug()})
+	}
+	_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusDeleted, nil)
+	c.JSON(http.StatusOK, gin.H{"id": app.ID, "status": "deleted"})
+}
+
+// ---- install ----------------------------------------------------------------
+
+func (h *userDockerAppHandler) install(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+
+	var req installRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if !nameRE.MatchString(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_name", "detail": "must match ^[a-z0-9-]{1,32}$"})
+		return
+	}
+	if strings.TrimSpace(req.Domain) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "domain_required", "detail": "a tenant docker app must be attached to a domain you own"})
+		return
+	}
+
+	entry, ok := h.cfg.Catalog.Get(req.Slug)
+	if !ok || !tenantInstallable(entry) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown_slug", "detail": "not installable by tenants"})
+		return
+	}
+
+	// Resolve the caller + package quota gate.
+	user, err := h.cfg.Users.FindByID(ctx, claims.UserID)
+	if err != nil || user == nil || user.Username == nil || user.PackageID == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no_package", "detail": "account has no hosting package"})
+		return
+	}
+	pkg, err := h.cfg.Packages.FindByID(ctx, *user.PackageID)
+	if err != nil || pkg == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no_package"})
+		return
+	}
+	if pkg.MaxDockerApps == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "docker_apps_not_in_package", "detail": "your hosting package does not include Docker apps"})
+		return
+	}
+	count, err := h.cfg.Repo.CountByUserID(ctx, claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "quota_check_failed"})
+		return
+	}
+	if count >= int64(pkg.MaxDockerApps) {
+		c.JSON(http.StatusConflict, gin.H{"error": "docker_app_quota_exceeded", "detail": "you have reached your Docker app limit"})
+		return
+	}
+
+	// Domain ownership: must be a domain the caller owns, or a free hostname
+	// we create under their ownership. Never another user's domain.
+	if dom, _ := h.cfg.Domains.FindByName(ctx, req.Domain); dom != nil && dom.UserID != claims.UserID {
+		c.JSON(http.StatusConflict, gin.H{"error": "domain_in_use", "detail": "domain belongs to another user"})
+		return
+	}
+
+	username := *user.Username
+	instanceSlug := tenantInstanceSlug(req.Slug, claims.UserID, req.Name)
+
+	// Per-app limits, clamped to the package memory ceiling.
+	mem := strings.TrimSpace(req.Memory)
+	if mem == "" {
+		mem = entry.Resources.Memory
+	}
+	cpu := strings.TrimSpace(req.CPULimit)
+	if cpu == "" {
+		cpu = entry.Resources.CPU
+	}
+	pids := entry.Resources.PIDs
+	if req.PIDsLimit != nil {
+		pids = *req.PIDsLimit
+	}
+
+	app := &models.DockerApp{
+		ID:             ulid.Make().String(),
+		UserID:         &claims.UserID,
+		Slug:           req.Slug,
+		InstanceSlug:   instanceSlug,
+		Name:           req.Name,
+		CatalogVersion: entry.Version,
+		Status:         models.DockerAppStatusPending,
+		UpdateMode:     models.DockerAppUpdateModeManual,
+	}
+	if cpu != "" {
+		app.CPULimit = &cpu
+	}
+	if mem != "" {
+		app.MemoryLimit = &mem
+	}
+	if pids > 0 {
+		app.PIDsLimit = &pids
+	}
+	if err := h.cfg.Repo.Create(ctx, app); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist_failed", "detail": err.Error()})
+		return
+	}
+
+	// Loopback-only ports: empty override list -> catalog defaults, which for
+	// a tenant_installable app are all loopback+reverse_proxy (enforced by the
+	// tenantInstallable filter rejecting any public-default port).
+	resolvedPorts, runtimePorts, err := h.admin.resolvePorts(ctx, entry, nil, app.ID)
+	if err != nil {
+		_ = h.cfg.Repo.Delete(ctx, app.ID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "port_resolution_failed", "detail": err.Error()})
+		return
+	}
+	for _, p := range resolvedPorts {
+		if err := h.cfg.Repo.CreatePort(ctx, p); err != nil {
+			_ = h.cfg.Repo.Delete(ctx, app.ID)
+			c.JSON(http.StatusConflict, gin.H{"error": "port_persist_failed", "detail": err.Error()})
+			return
+		}
+	}
+
+	// Attach / create the domain under the caller's ownership.
+	var loopbackPort *models.DockerAppPublishedPort
+	for _, p := range resolvedPorts {
+		if p.ReverseProxy && p.Protocol == "tcp" {
+			loopbackPort = p
+			break
+		}
+	}
+	if h.cfg.Domains != nil && loopbackPort != nil {
+		truePtr := true
+		rules := models.NginxRules{{Type: "proxy_pass", Path: "/", Target: "http://127.0.0.1:" + intToStr(loopbackPort.HostPort), Websocket: &truePtr}}
+		if existing, _ := h.cfg.Domains.FindByName(ctx, req.Domain); existing != nil {
+			if aerr := h.cfg.Domains.AttachDockerApp(ctx, existing.ID, app.ID, rules); aerr != nil {
+				h.failInstall(c, app.ID, "domain_attach_failed", aerr)
+				return
+			}
+		} else {
+			dom := &models.Domain{
+				ID: ulid.Make().String(), UserID: claims.UserID, Name: req.Domain,
+				IsEnabled: true, SSLEnabled: true, NginxRules: rules,
+				ManagedBy: models.DomainManagedByDockerApp, DockerAppID: &app.ID,
+			}
+			if derr := h.cfg.Domains.Create(ctx, dom); derr != nil {
+				h.failInstall(c, app.ID, "domain_create_failed", derr)
+				return
+			}
+		}
+	}
+
+	envMap, err := dockerapp.MaterialiseEnv(entry, req.EnvOverride)
+	if err != nil {
+		_ = h.cfg.Repo.Delete(ctx, app.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "env_materialise_failed", "detail": err.Error()})
+		return
+	}
+
+	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
+		Slug:         instanceSlug,
+		Name:         req.Name,
+		Domain:       req.Domain,
+		ImageChannel: entry.ImageChannel,
+		DataRoot:     "/var/lib/jabali/docker-apps/" + instanceSlug,
+		CPULimit:     cpu,
+		MemoryLimit:  mem,
+		Ports:        runtimePorts,
+		Env:          envMap,
+		TenantHardening: &dockerapp.TenantHardening{
+			CgroupParent: "jabali-user-" + username + ".slice",
+			Caps:         entry.TenantCaps,
+			PIDsLimit:    pids,
+		},
+	})
+	if err != nil {
+		_ = h.cfg.Repo.Delete(ctx, app.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "render_failed", "detail": err.Error()})
+		return
+	}
+
+	if h.cfg.Agent != nil {
+		_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusInstalling, nil)
+		volumeNames := make([]string, 0, len(entry.Volumes))
+		for _, v := range entry.Volumes {
+			volumeNames = append(volumeNames, v.Name)
+		}
+		installParams := map[string]any{
+			"slug":                        instanceSlug,
+			"compose_yml":                 composeYML,
+			"env_file":                    buildEnvFile(envMap),
+			"volumes":                     volumeNames,
+			"volume_owner":                entry.VolumeOwner,
+			"wait_healthy":                true,
+			"healthcheck_timeout_seconds": 300,
+			// M49: agent safety gate before `up`.
+			"tenant_validate": true,
+			"tenant_caps":     entry.TenantCaps,
+		}
+		appID := app.ID
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+			defer cancel()
+			_, agentErr := h.cfg.Agent.Call(bgCtx, "docker_app.install", installParams)
+			persistCtx, persistCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer persistCancel()
+			if agentErr != nil {
+				msg := firstLineString(agentErr.Error())
+				_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusFailed, &msg)
+				return
+			}
+			_ = h.cfg.Repo.UpdateStatus(persistCtx, appID, models.DockerAppStatusRunning, nil)
+		}()
+	}
+
+	fresh, _ := h.cfg.Repo.FindByID(ctx, app.ID)
+	ports, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
+	if fresh != nil {
+		c.JSON(http.StatusCreated, installedResponse{DockerApp: *fresh, Ports: ports})
+		return
+	}
+	c.JSON(http.StatusCreated, installedResponse{DockerApp: *app, Ports: ports})
+}
+
+func (h *userDockerAppHandler) failInstall(c *gin.Context, appID, code string, err error) {
+	msg := firstLineString(err.Error())
+	_ = h.cfg.Repo.UpdateStatus(c.Request.Context(), appID, models.DockerAppStatusFailed, &msg)
+	c.JSON(http.StatusConflict, gin.H{"error": code, "detail": err.Error(), "id": appID})
+}
+
+// tenantInstanceSlug namespaces the on-disk / container identity by owner so
+// two tenants can install the same catalog app: <slug>-<short_uid>-<name>,
+// lower-cased to satisfy the agent's slug regex.
+func tenantInstanceSlug(slug, userID, name string) string {
+	short := strings.ToLower(userID)
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	return strings.ToLower(slug + "-" + short + "-" + name)
+}

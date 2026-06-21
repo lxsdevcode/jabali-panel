@@ -131,6 +131,7 @@ var userScopePrefixes = []areaRule{
 	{"/api/v1/database-user-grants", "databases"},
 
 	{"/api/v1/applications", "apps"},
+	{"/api/v1/docker-apps", "apps"},
 	{"/api/v1/python-apps", "apps"},
 
 	{"/api/v1/cron", "cron"},

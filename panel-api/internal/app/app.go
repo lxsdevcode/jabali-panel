@@ -1051,6 +1051,20 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Log:            deps.Log,
 			})
 		}
+		// M49 (GH #170): tenant docker apps. Mounts /docker-apps on the
+		// authed base group; gated by the /etc/jabali/docker-tenant-enabled
+		// host flag (written by `jabali docker enable-tenant`).
+		if deps.DockerApps != nil && deps.DockerCatalog != nil && deps.Agent != nil {
+			api.RegisterUserDockerAppRoutes(v1, api.UserDockerAppHandlerConfig{
+				Repo:     deps.DockerApps,
+				Catalog:  deps.DockerCatalog,
+				Domains:  deps.Domains,
+				Agent:    deps.Agent,
+				Users:    deps.Users,
+				Packages: deps.Packages,
+				Log:      deps.Log,
+			})
+		}
 		if deps.PythonApps != nil && deps.Agent != nil && deps.Domains != nil {
 			api.RegisterPythonAppRoutes(v1, api.PythonAppHandlerConfig{
 				Apps:       deps.PythonApps,
