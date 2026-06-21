@@ -40,6 +40,7 @@ type PackageEditInput = {
   max_domains: number;
   max_email_accounts: number;
   max_databases: number;
+  max_docker_apps: number;
   ssh_enabled: boolean;
   cgi_enabled: boolean;
   nspawn_image_version?: string | null;
@@ -247,6 +248,15 @@ export const PackageEdit = () => {
               name="max_databases"
               rules={[{ required: true, message: "Max databases is required" }]}
               tooltip="0 = unlimited"
+            >
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Form.Item
+              label="Max Docker Apps"
+              name="max_docker_apps"
+              tooltip="0 = Docker apps not included in this package"
             >
               <InputNumber min={0} style={{ width: "100%" }} />
             </Form.Item>

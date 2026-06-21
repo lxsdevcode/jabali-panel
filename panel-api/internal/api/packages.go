@@ -75,6 +75,7 @@ type createPackageRequest struct {
 	MaxDomains       uint32 `json:"max_domains"`
 	MaxEmailAccounts uint32 `json:"max_email_accounts"`
 	MaxDatabases     uint32 `json:"max_databases"`
+	MaxDockerApps    uint32 `json:"max_docker_apps"`
 	SSHEnabled       bool   `json:"ssh_enabled"`
 	CGIEnabled       bool   `json:"cgi_enabled"`
 	// M13: nspawn image pin (empty = use server default).
@@ -93,6 +94,7 @@ type updatePackageRequest struct {
 	MaxDomains         *uint32 `json:"max_domains"`
 	MaxEmailAccounts   *uint32 `json:"max_email_accounts"`
 	MaxDatabases       *uint32 `json:"max_databases"`
+	MaxDockerApps      *uint32 `json:"max_docker_apps"`
 	SSHEnabled         *bool   `json:"ssh_enabled"`
 	CGIEnabled         *bool   `json:"cgi_enabled"`
 	NspawnImageVersion *string `json:"nspawn_image_version"`
@@ -137,6 +139,7 @@ func (h *packageHandler) create(c *gin.Context) {
 		MaxDomains:       req.MaxDomains,
 		MaxEmailAccounts: req.MaxEmailAccounts,
 		MaxDatabases:     req.MaxDatabases,
+		MaxDockerApps:    req.MaxDockerApps,
 		SSHEnabled:       req.SSHEnabled,
 		CGIEnabled:       req.CGIEnabled,
 		CreatedAt:        now,
@@ -252,6 +255,9 @@ func (h *packageHandler) update(c *gin.Context) {
 	}
 	if req.MaxDatabases != nil {
 		pkg.MaxDatabases = *req.MaxDatabases
+	}
+	if req.MaxDockerApps != nil {
+		pkg.MaxDockerApps = *req.MaxDockerApps
 	}
 	if req.SSHEnabled != nil {
 		pkg.SSHEnabled = *req.SSHEnabled

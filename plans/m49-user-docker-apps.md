@@ -393,7 +393,8 @@ Shipped panel-ui/src/shells/user/docker-apps/ (api.ts + UserDockerAppsPage): cat
   domains) → resource within package → install. Status polling reuses admin
   hook. No port/exec/compose controls.
 
-### Phase 5 — package admin UI + disk accounting
+### Phase 5 — package admin UI + disk accounting — ✅ LANDED (UI/API) 2026-06-21; disk-meter DEFERRED
+Shipped max_docker_apps end-to-end: packages.go create/update request + handlers; "Max Docker Apps" field in PackageCreate + PackageEdit (0 = not included). Completes the package count-limit (the real gate, enforced in Phase 3). DEFERRED to a follow-up: the disk-accounting meter (reconciler per-user SUM(data_bytes) vs disk_quota_mb -> over_quota status + M14 notify) — a soft meter, not the load-bearing limit.
 - Add `max_docker_apps` to the hosting-package create/edit form + the model/repo
   + the package detail view.
 - Reconciler size poll: on `SUM(data_bytes) > disk_quota_mb` for a user, set the
