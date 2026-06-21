@@ -185,6 +185,8 @@ func (m *mockUserRepo) Update(ctx context.Context, u *models.User) error {
 	return nil
 }
 
+func (m *mockUserRepo) UpdateCLIPHPVersion(context.Context, string, *string) error { return nil }
+
 func (m *mockUserRepo) LinkKratosIdentity(ctx context.Context, userID, kratosID string) error {
 	if m.users != nil {
 		if u, ok := m.users[userID]; ok {
@@ -313,11 +315,11 @@ func databaseRouter(userID string, isAdmin bool) (*gin.Engine, *mockDatabaseRepo
 	}
 
 	RegisterDatabaseRoutes(v1, DatabaseHandlerConfig{
-		Databases:      dbRepo,
-		DatabaseUsers:  &mockDatabaseUserRepo{},
-		Users:          userRepo,
-		Packages:       pkgRepo,
-		Agent:          &mockAgent{},
+		Databases:     dbRepo,
+		DatabaseUsers: &mockDatabaseUserRepo{},
+		Users:         userRepo,
+		Packages:      pkgRepo,
+		Agent:         &mockAgent{},
 	})
 
 	return r, dbRepo
@@ -367,11 +369,11 @@ func databaseRouterWithAgent(userID string, isAdmin bool, agent *mockAgent) (*gi
 	}
 
 	cfg := DatabaseHandlerConfig{
-		Databases:      dbRepo,
-		DatabaseUsers:  &mockDatabaseUserRepo{},
-		Users:          userRepo,
-		Packages:       pkgRepo,
-		Agent:          agent,
+		Databases:     dbRepo,
+		DatabaseUsers: &mockDatabaseUserRepo{},
+		Users:         userRepo,
+		Packages:      pkgRepo,
+		Agent:         agent,
 	}
 	RegisterDatabaseRoutes(v1, cfg)
 
@@ -534,7 +536,7 @@ func TestDatabaseCreateInvalidName(t *testing.T) {
 	agent := &mockAgent{}
 	r, _ := databaseRouterWithAgent("user1", false, agent)
 
-	req := httptest.NewRequest("POST", "/api/v1/databases", 
+	req := httptest.NewRequest("POST", "/api/v1/databases",
 		strings.NewReader(`{"name":"123invalid"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -550,7 +552,7 @@ func TestDatabaseCreateNameTooLong(t *testing.T) {
 	agent := &mockAgent{}
 	r, _ := databaseRouterWithAgent("user1", false, agent)
 
-	req := httptest.NewRequest("POST", "/api/v1/databases", 
+	req := httptest.NewRequest("POST", "/api/v1/databases",
 		strings.NewReader(`{"name":"verylongdatabasenamethatexceedsthirtychars123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -585,7 +587,7 @@ func TestDatabaseCreateAgentFailure(t *testing.T) {
 	agent := &mockAgent{callErr: errors.New("agent connection failed")}
 	r, _ := databaseRouterWithAgent("user1", false, agent)
 
-	req := httptest.NewRequest("POST", "/api/v1/databases", 
+	req := httptest.NewRequest("POST", "/api/v1/databases",
 		strings.NewReader(`{"name":"testdb"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -601,7 +603,7 @@ func TestDatabaseCreateUnauthenticated(t *testing.T) {
 	agent := &mockAgent{}
 	r, _ := databaseRouterWithAgent("", false, agent)
 
-	req := httptest.NewRequest("POST", "/api/v1/databases", 
+	req := httptest.NewRequest("POST", "/api/v1/databases",
 		strings.NewReader(`{"name":"testdb"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

@@ -120,6 +120,8 @@ func (m *mockUsersForSSO) Update(ctx context.Context, u *models.User) error {
 	return nil
 }
 
+func (m *mockUsersForSSO) UpdateCLIPHPVersion(context.Context, string, *string) error { return nil }
+
 func (m *mockUsersForSSO) LinkKratosIdentity(ctx context.Context, userID, kratosID string) error {
 	if u, ok := m.users[userID]; ok {
 		u.KratosIdentityID = &kratosID
@@ -139,7 +141,9 @@ func (m *mockUsersForSSO) FindAdminsByEmail(ctx context.Context) ([]*models.User
 	return nil, nil
 }
 
-func (m *mockUsersForSSO) SetSuspended(_ context.Context, _ string, _ bool, _ string) error { return nil }
+func (m *mockUsersForSSO) SetSuspended(_ context.Context, _ string, _ bool, _ string) error {
+	return nil
+}
 
 func (m *mockUsersForSSO) Delete(ctx context.Context, id string) error {
 	return nil

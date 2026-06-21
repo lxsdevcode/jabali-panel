@@ -109,6 +109,8 @@ export function UserPHPSettingsPage() {
   const [phpSettings, setPhpSettings] = useState<DomainPHPSettings | null>(null);
   const [availableVersions, setAvailableVersions] = useState<string[]>([]);
   const [versionSaving, setVersionSaving] = useState(false);
+  const [cliVersion, setCliVersion] = useState<string>(""); // "" = auto
+  const [cliSaving, setCliSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<PHPSettingsFormData>();
@@ -136,8 +138,37 @@ export function UserPHPSettingsPage() {
       } catch (err) {
         // Non-fatal: PHP version selector falls back to "Default only".
       }
+
+      try {
+        const resp = await apiClient.get<{ version: string }>(
+          "/me/php-cli-version",
+        );
+        setCliVersion(resp.data?.version ?? "");
+      } catch {
+        // Non-fatal: account may have no shell user.
+      }
     })();
   }, []);
+
+  const onChangeCliVersion = async (version: string) => {
+    setCliSaving(true);
+    try {
+      await apiClient.put("/me/php-cli-version", { version });
+      setCliVersion(version);
+      message.success(
+        version
+          ? `CLI default set to PHP ${version}`
+          : "CLI default reverted to automatic",
+      );
+    } catch (err) {
+      const e = err as { response?: { data?: { detail?: string; error?: string } } };
+      message.error(
+        e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to set CLI PHP version",
+      );
+    } finally {
+      setCliSaving(false);
+    }
+  };
 
   const onChangePHPVersion = async (version: string | null) => {
     if (!selectedDomain) return;
@@ -259,6 +290,25 @@ export function UserPHPSettingsPage() {
           type="warning"
           showIcon
         />
+
+        <Card title="CLI / Terminal default PHP version" size="small">
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+            Sets which PHP version a bare <code>php</code> (and composer / wp-cli)
+            uses in your SSH/terminal sessions. This is separate from each
+            domain&apos;s web PHP version. You can always pick a specific version
+            per command with <code>php8.3</code>, <code>php8.4</code>, etc.
+          </Typography.Paragraph>
+          <Select
+            style={{ minWidth: 280 }}
+            value={cliVersion}
+            loading={cliSaving}
+            onChange={onChangeCliVersion}
+            options={[
+              { value: "", label: "Automatic (follow domain pool)" },
+              ...availableVersions.map((v) => ({ value: v, label: `PHP ${v}` })),
+            ]}
+          />
+        </Card>
 
         <Card>
           <Form<PHPSettingsFormData>

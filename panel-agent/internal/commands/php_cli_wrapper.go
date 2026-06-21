@@ -77,12 +77,28 @@ func ensureUserCLIPHP(username, version string) error {
 	if !phpPoolUsernameRegex.MatchString(username) {
 		return fmt.Errorf("ensureUserCLIPHP: invalid username %q", username)
 	}
-	if !phpVersionRegex.MatchString(version) {
-		return fmt.Errorf("ensureUserCLIPHP: invalid version %q", version)
+	// GH #256: an explicit user CLI choice (set via the panel) overrides the
+	// pool-derived version for the bare `php`. Resolution: choice file >
+	// passed pool version > the user-phpver pin file. The versioned phpX.Y
+	// wrappers below are created regardless.
+	if ch := readUserCLIChoice(username); ch != "" {
+		version = ch
+	} else if version == "" {
+		version = readUserPhpverPin(username)
 	}
-	target := "/usr/bin/php" + version
-	if fi, err := os.Stat(target); err != nil || fi.IsDir() {
-		return fmt.Errorf("ensureUserCLIPHP: target %s missing", target)
+	// An empty version (e.g. choice cleared on a user with no pool pin) is
+	// allowed: we still refresh the versioned phpX.Y wrappers below and leave
+	// `php` untouched. But a NON-empty version must be valid + installed —
+	// garbage input is a caller error.
+	bareTarget := ""
+	if version != "" {
+		if !phpVersionRegex.MatchString(version) {
+			return fmt.Errorf("ensureUserCLIPHP: invalid version %q", version)
+		}
+		bareTarget = "/usr/bin/php" + version
+		if fi, err := os.Stat(bareTarget); err != nil || fi.IsDir() {
+			return fmt.Errorf("ensureUserCLIPHP: target %s missing", bareTarget)
+		}
 	}
 
 	home := filepath.Join("/home", username)
@@ -104,8 +120,10 @@ func ensureUserCLIPHP(username, version string) error {
 	if err := ensureRootDir(binDir); err != nil {
 		return err
 	}
-	if err := replaceCLISymlink(filepath.Join(binDir, "php"), target); err != nil {
-		return err
+	if bareTarget != "" {
+		if err := replaceCLISymlink(filepath.Join(binDir, "php"), bareTarget); err != nil {
+			return err
+		}
 	}
 	// GH #256: PHP version is per-DOMAIN, but a user has a single `php` CLI.
 	// A user with domains on different versions (8.3/8.4/8.5) can't get them
@@ -124,6 +142,47 @@ func ensureUserCLIPHP(username, version string) error {
 // (e.g. /usr/bin/php8.3) and returns version -> absolute path. Excludes the
 // suffixed variants (php8.3-fpm) via the strict glob. Pure on srcDir so it is
 // unit-testable without /usr/bin.
+// userCLIChoiceRoot holds per-user explicit CLI default PHP version choices
+// (GH #256). Separate from user-phpver (the pool-derived auto pin) so a user's
+// explicit choice survives a domain version change. Overridable for tests.
+func userCLIChoiceRoot() string {
+	if r := os.Getenv("JABALI_PHP_CLI_CHOICE_ROOT"); r != "" {
+		return r
+	}
+	return "/etc/jabali-panel/user-phpcli"
+}
+
+// readUserCLIChoice returns the user's explicit CLI PHP version ("8.3") or ""
+// when unset/invalid.
+func readUserCLIChoice(username string) string {
+	b, err := os.ReadFile(filepath.Join(userCLIChoiceRoot(), username))
+	if err != nil {
+		return ""
+	}
+	v := strings.TrimSpace(string(b))
+	if !phpVersionRegex.MatchString(v) {
+		return ""
+	}
+	return v
+}
+
+// readUserPhpverPin returns the pool-derived auto pin ("8.4") or "".
+func readUserPhpverPin(username string) string {
+	root := os.Getenv("JABALI_PHP_VER_PIN_ROOT")
+	if root == "" {
+		root = "/etc/jabali-panel/user-phpver"
+	}
+	b, err := os.ReadFile(filepath.Join(root, username))
+	if err != nil {
+		return ""
+	}
+	v := strings.TrimSpace(string(b))
+	if !phpVersionRegex.MatchString(v) {
+		return ""
+	}
+	return v
+}
+
 func installedPHPCLIVersions(srcDir string) map[string]string {
 	out := map[string]string{}
 	matches, _ := filepath.Glob(filepath.Join(srcDir, "php[0-9].[0-9]"))

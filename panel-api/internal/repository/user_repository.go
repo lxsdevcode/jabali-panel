@@ -33,6 +33,10 @@ type UserRepository interface {
 	FindByKratosIdentityID(ctx context.Context, kratosID string) (*models.User, error)
 	List(ctx context.Context, opts ListOptions) ([]models.User, int64, error)
 	Update(ctx context.Context, u *models.User) error
+	// UpdateCLIPHPVersion sets the per-user CLI default PHP version (GH #256).
+	// Dedicated method: the Select-allowlist Update would silently drop it, and
+	// a *string lets NULL (auto) be written.
+	UpdateCLIPHPVersion(ctx context.Context, id string, version *string) error
 	// LinkKratosIdentity writes kratos_identity_id on the row. Deliberately
 	// separate from Update — Update's column allowlist excludes this field so
 	// a profile-edit handler can't accidentally overwrite it, but the M20
@@ -155,6 +159,11 @@ func (r *userRepo) List(ctx context.Context, opts ListOptions) ([]models.User, i
 		return nil, 0, translate(err)
 	}
 	return out, total, nil
+}
+
+func (r *userRepo) UpdateCLIPHPVersion(ctx context.Context, id string, version *string) error {
+	return translate(r.db.WithContext(ctx).Model(&models.User{}).
+		Where("id = ?", id).Update("cli_php_version", version).Error)
 }
 
 func (r *userRepo) Update(ctx context.Context, u *models.User) error {

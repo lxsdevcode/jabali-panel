@@ -23,6 +23,9 @@ type User struct {
 	// (panel-only, no OS account). Must match POSIX regex
 	// ^[a-z_][a-z0-9_-]{0,31}$. Unique across the panel.
 	Username *string `gorm:"type:varchar(32);uniqueIndex:ux_users_username" json:"username,omitempty"`
+	// CLIPHPVersion is the user's chosen default PHP version for shell/CLI
+	// (bare `php`, composer, wp-cli). NULL = auto (follow the pool pin). GH #256.
+	CLIPHPVersion *string `gorm:"column:cli_php_version;type:varchar(8)" json:"cli_php_version,omitempty"`
 
 	NameFirst    string `gorm:"type:varchar(100);not null;default:''"                 json:"name_first"`
 	NameLast     string `gorm:"type:varchar(100);not null;default:''"                 json:"name_last"`
@@ -77,9 +80,9 @@ type User struct {
 	// domains.is_enabled=0 (reconciler drops the nginx symlink so sites
 	// serve 404). SuspendedAt + SuspendReason are operator-facing audit
 	// fields surfaced in the admin UI.
-	Suspended      bool       `gorm:"column:suspended;type:tinyint(1);not null;default:0;index:idx_users_suspended" json:"suspended"`
-	SuspendedAt    *time.Time `gorm:"column:suspended_at;type:datetime(6)"                                            json:"suspended_at,omitempty"`
-	SuspendReason  string     `gorm:"column:suspend_reason;type:varchar(255);not null;default:''"                     json:"suspend_reason"`
+	Suspended     bool       `gorm:"column:suspended;type:tinyint(1);not null;default:0;index:idx_users_suspended" json:"suspended"`
+	SuspendedAt   *time.Time `gorm:"column:suspended_at;type:datetime(6)"                                            json:"suspended_at,omitempty"`
+	SuspendReason string     `gorm:"column:suspend_reason;type:varchar(255);not null;default:''"                     json:"suspend_reason"`
 
 	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null" json:"updated_at"`

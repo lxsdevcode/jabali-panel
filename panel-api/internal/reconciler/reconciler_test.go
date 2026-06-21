@@ -490,6 +490,8 @@ func (f *fakeUserRepo) Update(ctx context.Context, u *models.User) error {
 	return nil
 }
 
+func (f *fakeUserRepo) UpdateCLIPHPVersion(context.Context, string, *string) error { return nil }
+
 func (f *fakeUserRepo) LinkKratosIdentity(ctx context.Context, userID, kratosID string) error {
 	u, ok := f.users[userID]
 	if !ok {

@@ -165,7 +165,7 @@ func TestValidate_ReplayToken(t *testing.T) {
 	mockDBs := &mockDatabaseRepoValidate{}
 	mockUsers := &mockUserRepoValidate{}
 	mockTokens := &mockSSOTokenRepoValidate{
-		tokens: make(map[string]*models.PhpMyAdminSSOToken),
+		tokens:       make(map[string]*models.PhpMyAdminSSOToken),
 		consumeError: repository.ErrNotFound, // Simulate already consumed
 	}
 
@@ -301,6 +301,10 @@ func (m *mockUserRepoValidate) Update(ctx context.Context, u *models.User) error
 	return nil
 }
 
+func (m *mockUserRepoValidate) UpdateCLIPHPVersion(context.Context, string, *string) error {
+	return nil
+}
+
 func (m *mockUserRepoValidate) LinkKratosIdentity(ctx context.Context, userID, kratosID string) error {
 	return nil
 }
@@ -317,7 +321,9 @@ func (m *mockUserRepoValidate) FindAdminsByEmail(ctx context.Context) ([]*models
 	return nil, nil
 }
 
-func (m *mockUserRepoValidate) SetSuspended(_ context.Context, _ string, _ bool, _ string) error { return nil }
+func (m *mockUserRepoValidate) SetSuspended(_ context.Context, _ string, _ bool, _ string) error {
+	return nil
+}
 
 func (m *mockUserRepoValidate) Delete(ctx context.Context, id string) error {
 	return nil

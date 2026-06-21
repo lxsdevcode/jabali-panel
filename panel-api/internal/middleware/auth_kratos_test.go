@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
@@ -58,6 +58,8 @@ func (f *fakeUsersRepo) List(context.Context, repository.ListOptions) ([]models.
 func (f *fakeUsersRepo) Update(context.Context, *models.User) error {
 	panic("Update not expected from middleware")
 }
+
+func (f *fakeUsersRepo) UpdateCLIPHPVersion(context.Context, string, *string) error { return nil }
 func (f *fakeUsersRepo) LinkKratosIdentity(context.Context, string, string) error {
 	panic("LinkKratosIdentity not expected from middleware")
 }
@@ -325,4 +327,3 @@ func TestRequireKratosSession_KratosUnreachable_Returns503(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	assert.Contains(t, rec.Body.String(), "identity_service_unavailable")
 }
-

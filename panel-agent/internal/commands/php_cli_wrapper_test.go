@@ -123,3 +123,28 @@ func TestInstalledPHPCLIVersions(t *testing.T) {
 		t.Error("php8.4-fpm must be excluded")
 	}
 }
+
+// GH #256: the explicit CLI choice file overrides, the pin file is the
+// fallback, and garbage is ignored.
+func TestUserCLIChoiceResolution(t *testing.T) {
+	choiceRoot := t.TempDir()
+	pinRoot := t.TempDir()
+	t.Setenv("JABALI_PHP_CLI_CHOICE_ROOT", choiceRoot)
+	t.Setenv("JABALI_PHP_VER_PIN_ROOT", pinRoot)
+
+	if readUserCLIChoice("alice") != "" {
+		t.Error("no choice file → empty")
+	}
+	os.WriteFile(filepath.Join(pinRoot, "alice"), []byte("8.4\n"), 0o644)
+	if readUserPhpverPin("alice") != "8.4" {
+		t.Error("pin file should read 8.4")
+	}
+	os.WriteFile(filepath.Join(choiceRoot, "alice"), []byte("8.3\n"), 0o644)
+	if readUserCLIChoice("alice") != "8.3" {
+		t.Error("choice file should read 8.3 (overrides pin)")
+	}
+	os.WriteFile(filepath.Join(choiceRoot, "bob"), []byte("garbage; rm -rf\n"), 0o644)
+	if readUserCLIChoice("bob") != "" {
+		t.Error("garbage choice must be ignored")
+	}
+}

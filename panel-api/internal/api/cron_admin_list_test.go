@@ -167,6 +167,10 @@ func (u *userRepoAdapterForCronAdminTest) Update(context.Context, *models.User) 
 func (u *userRepoAdapterForCronAdminTest) LinkKratosIdentity(context.Context, string, string) error {
 	return nil
 }
+
+func (u *userRepoAdapterForCronAdminTest) UpdateCLIPHPVersion(context.Context, string, *string) error {
+	return nil
+}
 func (u *userRepoAdapterForCronAdminTest) SetAdmin(context.Context, string, bool) error { return nil }
 func (u *userRepoAdapterForCronAdminTest) CountAdmins(context.Context) (int64, error) {
 	return 0, nil

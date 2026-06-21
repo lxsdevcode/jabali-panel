@@ -55,14 +55,17 @@ func (*fakeRebuildUserRepo) FindByIDs(context.Context, []string) ([]models.User,
 func (*fakeRebuildUserRepo) List(context.Context, repository.ListOptions) ([]models.User, int64, error) {
 	return nil, 0, nil
 }
-func (*fakeRebuildUserRepo) Update(context.Context, *models.User) error        { return nil }
-func (*fakeRebuildUserRepo) SetAdmin(context.Context, string, bool) error      { return nil }
-func (*fakeRebuildUserRepo) CountAdmins(context.Context) (int64, error)        { return 0, nil }
+func (*fakeRebuildUserRepo) Update(context.Context, *models.User) error { return nil }
+func (*fakeRebuildUserRepo) UpdateCLIPHPVersion(context.Context, string, *string) error {
+	return nil
+}
+func (*fakeRebuildUserRepo) SetAdmin(context.Context, string, bool) error { return nil }
+func (*fakeRebuildUserRepo) CountAdmins(context.Context) (int64, error)   { return 0, nil }
 func (*fakeRebuildUserRepo) FindAdminsByEmail(context.Context) ([]*models.User, error) {
 	return nil, nil
 }
 func (*fakeRebuildUserRepo) SetSuspended(context.Context, string, bool, string) error { return nil }
-func (*fakeRebuildUserRepo) Delete(context.Context, string) error { return nil }
+func (*fakeRebuildUserRepo) Delete(context.Context, string) error                     { return nil }
 
 // fakeKratos routes POST /admin/identities → returns a new UUID; POST
 // /admin/recovery/code → returns a recovery link. Both paths are optional

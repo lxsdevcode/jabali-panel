@@ -96,6 +96,8 @@ func (f *fakeUserRepo) Update(_ context.Context, u *models.User) error {
 	return nil
 }
 
+func (f *fakeUserRepo) UpdateCLIPHPVersion(context.Context, string, *string) error { return nil }
+
 func (f *fakeUserRepo) LinkKratosIdentity(_ context.Context, userID, kratosID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

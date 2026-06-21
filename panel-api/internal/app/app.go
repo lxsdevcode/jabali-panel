@@ -438,6 +438,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			ServerSettings: deps.ServerSettings,
 			UIPrefs:        repository.NewUserUIPrefRepository(deps.DB),
 		})
+		// GH #256: per-user CLI default PHP version (self-service).
+		api.RegisterMePhpCliRoutes(v1, api.MePhpCliConfig{
+			Users: deps.Users,
+			Agent: deps.Agent,
+		})
 
 		// ADR-0128 — admin act-as grant management (GH #183). Mounted on v1;
 		// ResolveImpersonation skips this path so it always runs as the real

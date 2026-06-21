@@ -33,6 +33,7 @@ func TestUserRepository_Create(t *testing.T) {
 			u.ID,
 			u.Email,
 			nil,              // username
+			nil,              // cli_php_version (GH #256)
 			"",               // name_first default
 			"",               // name_last default
 			u.PasswordHash,
