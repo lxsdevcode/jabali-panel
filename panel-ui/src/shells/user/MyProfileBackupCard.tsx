@@ -40,7 +40,7 @@ export const MyProfileBackupCard = () => {
   const handleCreate = async () => {
     setSubmitting(true);
     try {
-      await apiClient.post("/api/v1/me/backups");
+      await apiClient.post("/me/backups");
       message.success("Backup queued");
       query.refetch();
     } catch (err) {
@@ -100,7 +100,7 @@ export const MyProfileBackupCard = () => {
                   <Button
                     size="small"
                     icon={<DownloadOutlined />}
-                    href={`/api/v1/admin/backups/${row.id}/download`}
+                    href={`/api/v1/me/backups/${row.id}/download`}
                   >
                     Download
                   </Button>
