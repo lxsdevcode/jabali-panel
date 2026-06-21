@@ -317,7 +317,8 @@ Re-run recipe (kept for the record / future driver changes):
   (or a docker `--cpus/--memory` per-app mirror of the package budget) before
   any code. Record the result in ADR-0117.
 
-### Phase 1 — schema + catalog flags + gating decisions + ADR-0117 (additive)
+### Phase 1 — schema + catalog flags + gating decisions + ADR-0117 (additive) — ✅ LANDED 2026-06-21 (a744e2cd)
+Done: mig 000180 (validated up+down on real MariaDB) + DockerApp.UserID/HostingPackage.MaxDockerApps + repo ListByUserID/CountByUserID/FindByIDForUser (+sqlmock tests) + catalog tenant_installable/tenant_caps + schema + ADR-0117. All apps remain tenant_installable=false (no exposure until tenant_caps verified pre-Phase-3). userns decision recorded; cap-discovery for the starter set is the remaining Phase-1 empirical task before any app is flipped true.
 - Migration 000180 (above) incl. the owner-scoped unique key. Repo
   `DockerAppRepository`: add `UserID` + `ListByUserID`, `CountByUserID`,
   `FindByIDForUser`; tenant `instance_slug` derivation.
