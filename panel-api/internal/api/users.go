@@ -34,6 +34,7 @@ type UserHandlerConfig struct {
 	Domains         repository.DomainRepository
 	Databases       repository.DatabaseRepository
 	DatabaseUsers   repository.DatabaseUserRepository
+	DockerApps      repository.DockerAppRepository
 	Mailboxes       repository.MailboxRepository
 	Packages        repository.PackageRepository
 	Reconciler      *reconciler.Reconciler
@@ -611,6 +612,26 @@ func (h *userHandler) delete(c *gin.Context) {
 			}
 			if len(dbus) < batchSize {
 				break
+			}
+		}
+	}
+
+	// Cascade-tear-down the user's docker apps (M49, GH #170) BEFORE the panel
+	// row CASCADEs the docker_apps metadata. The FK drops the rows, but the
+	// CONTAINERS + data trees on the host outlive the DB without an explicit
+	// agent teardown. Best-effort: a failure is logged, never blocks the delete.
+	if h.cfg.DockerApps != nil && h.cfg.Agent != nil {
+		apps, derr := h.cfg.DockerApps.ListByUserID(c.Request.Context(), id)
+		if derr != nil {
+			slog.Warn("cascade delete: list user docker apps failed", "user_id", id, "err", derr)
+		}
+		for _, app := range apps {
+			agentCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
+			_, delErr := h.cfg.Agent.Call(agentCtx, "docker_app.delete", map[string]any{"slug": app.EffectiveSlug()})
+			cancel()
+			if delErr != nil {
+				slog.Warn("cascade delete: docker_app.delete failed",
+					"user_id", id, "slug", app.EffectiveSlug(), "err", delErr)
 			}
 		}
 	}

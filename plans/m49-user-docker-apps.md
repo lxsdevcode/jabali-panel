@@ -400,7 +400,8 @@ Shipped max_docker_apps end-to-end: packages.go create/update request + handlers
 - Reconciler size poll: on `SUM(data_bytes) > disk_quota_mb` for a user, set the
   newest over-budget app `status='over_quota'` + M14 notify the tenant.
 
-### Phase 6 — user-delete cascade teardown
+### Phase 6 — user-delete cascade teardown — ✅ LANDED 2026-06-21
+UserHandlerConfig.DockerApps wired; user delete() now dispatches docker_app.delete (container + data tree) for every ListByUserID app BEFORE the FK cascade drops the rows, best-effort (logged, never blocks). Regression test asserts docker_app.delete fires for the victim's install on user delete.
 - Inline user-delete cascade: before the DB cascade nulls/deletes, enqueue
   `app.delete` (container + data tree) for each `docker_apps WHERE user_id=:u`.
   Without this the FK drops the row but leaves containers + bytes on the host.

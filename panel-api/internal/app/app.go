@@ -467,6 +467,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:         deps.Domains,
 				Databases:       deps.Databases,
 				DatabaseUsers:   deps.DatabaseUsers,
+				DockerApps:      deps.DockerApps,
 				Mailboxes:       deps.Mailboxes,
 				Packages:        deps.Packages,
 				Reconciler:      deps.Reconciler,
