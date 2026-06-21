@@ -1,9 +1,15 @@
 openapi: 3.0.3
 info:
-  title: Jabali Panel API
+  title: Jabali Automation API
   version: "v1"
   description: |
-    The Jabali Panel REST API. Two authentication paths:
+    The **stable, documented subset** of the Jabali Panel REST API intended for
+    programmatic / token automation (scripts, CI, routers). It is **not** an
+    exhaustive reference for every backend endpoint the web UI calls — the panel
+    has many more internal, session-only endpoints (server status, security,
+    backups, notifications, apps, …) intentionally outside this contract.
+
+    Two authentication paths:
 
     - **Browser sessions** (Kratos cookie) — interactive UI use
     - **Bearer tokens** (`Authorization: Bearer jat_…`) — programmatic access

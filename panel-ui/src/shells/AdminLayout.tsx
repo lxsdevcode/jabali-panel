@@ -8,7 +8,7 @@ import { LeftOutlined, RightOutlined } from "@icons";
 import { Drawer, Grid, Layout, Menu, theme } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
-import { apiClient } from "../apiClient";
+import { useServerCapabilities } from "../hooks/useServerCapabilities";
 import { JabaliFooter } from "../components/JabaliFooter";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { JabaliTitle } from "../components/JabaliTitle";
@@ -34,14 +34,8 @@ export function AdminLayout() {
   // M48: hide the Docker Apps nav entry until the operator opts in
   // via Server Settings -> Apps. /me/server-capabilities is cached
   // per-session; UI ergonomics outweigh staleness here.
-  const [dockerEnabled, setDockerEnabled] = useState<boolean>(false);
-  useEffect(() => {
-    apiClient
-      .get<{ docker_marketplace_enabled?: boolean }>("/me/server-capabilities")
-      .then((r) => setDockerEnabled(!!r.data.docker_marketplace_enabled))
-      .catch(() => setDockerEnabled(false));
-  }, []);
-  const visibleNav = dockerEnabled
+  const { data: caps } = useServerCapabilities();
+  const visibleNav = caps?.docker_marketplace_enabled
     ? adminNav
     : adminNav.filter((n) => n.key !== "docker-apps");
 

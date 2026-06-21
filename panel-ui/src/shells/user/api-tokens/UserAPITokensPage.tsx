@@ -339,7 +339,7 @@ export function UserAPITokensPage(): JSX.Element {
         defaultActiveKey="tokens"
         items={[
           { key: "tokens", label: "Tokens", children: tokensCard },
-          { key: "docs", label: "API Docs", children: <APIDocsPage /> },
+          { key: "docs", label: "Automation API", children: <APIDocsPage /> },
         ]}
       />
 

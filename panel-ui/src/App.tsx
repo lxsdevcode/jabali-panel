@@ -70,6 +70,7 @@ import { SSLManagerPage } from "./shells/admin/ssl/SSLManagerPage";
 import { UserSSLManagerPage } from "./shells/user/ssl/UserSSLManagerPage";
 import { UserPHPSettingsPage } from "./shells/user/php-settings/UserPHPSettingsPage";
 import { UserApplicationList } from "./shells/user/applications/UserApplicationList";
+import { CapabilityRoute } from "./components/CapabilityRoute";
 import { PythonAppsPage } from "./shells/user/python-apps/PythonAppsPage";
 import { UserDockerAppsPage } from "./shells/user/docker-apps/UserDockerAppsPage";
 import { UserBackupsPage } from "./shells/user/backups/UserBackupsPage";
@@ -183,7 +184,14 @@ const ThemedApp = () => {
             </Route>
             <Route path="mail" element={<AdminMailPage />} />
             <Route path="applications" element={<AdminApplicationList />} />
-            <Route path="docker-apps" element={<AdminDockerAppsPage />} />
+            <Route
+              path="docker-apps"
+              element={
+                <CapabilityRoute cap="docker_marketplace_enabled" fallback="/jabali-admin/dashboard">
+                  <AdminDockerAppsPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="logs" element={<LogsPage />} />
             <Route path="audit" element={<AdminAuditList />} />
             <Route path="cron" element={<AdminCronList />} />
@@ -254,8 +262,22 @@ const ThemedApp = () => {
             <Route path="logs" element={<UserLogsPage />} />
             <Route path="activity" element={<AccountActivity />} />
             <Route path="applications" element={<UserApplicationList />} />
-            <Route path="python-apps" element={<PythonAppsPage />} />
-            <Route path="docker-apps" element={<UserDockerAppsPage />} />
+            <Route
+              path="python-apps"
+              element={
+                <CapabilityRoute cap="python_apps_enabled" fallback="/jabali-panel/dashboard">
+                  <PythonAppsPage />
+                </CapabilityRoute>
+              }
+            />
+            <Route
+              path="docker-apps"
+              element={
+                <CapabilityRoute cap="docker_marketplace_enabled" fallback="/jabali-panel/dashboard">
+                  <UserDockerAppsPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="ssh-keys" element={<UserSSHKeysPage />} />
             <Route path="api-tokens" element={<UserAPITokensPage />} />
             <Route path="api-docs" element={<APIDocsPage />} />

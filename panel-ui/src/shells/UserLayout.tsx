@@ -13,8 +13,8 @@ import { ImpersonationBanner } from "../components/ImpersonationBanner";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { JabaliTitle } from "../components/JabaliTitle";
 import { selectedNavKey, userNav } from "../nav";
-import { apiClient } from "../apiClient";
 import { useThemeMode } from "../theme/ThemeModeContext";
+import { useServerCapabilities } from "../hooks/useServerCapabilities";
 import { QuickStartModal } from "./user/QuickStartModal";
 
 const { Sider, Content } = Layout;
@@ -33,24 +33,11 @@ export function UserLayout() {
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
 
   // Python Apps is opt-in (server setting python_apps_enabled, default off);
-  // hide its sidebar entry until an admin enables it (GH #229). Default to
-  // hidden so it never flashes in before the capability check returns.
-  const [pythonAppsEnabled, setPythonAppsEnabled] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    apiClient
-      .get<{ python_apps_enabled?: boolean }>("/me/server-capabilities")
-      .then((r) => {
-        if (!cancelled) setPythonAppsEnabled(!!r.data.python_apps_enabled);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  // hide its sidebar entry until an admin enables it (GH #229). The same
+  // cached capability gates the route itself (CapabilityRoute, gap-audit #1).
+  const { data: caps } = useServerCapabilities();
   const visibleNav = userNav.filter(
-    (n) => n.key !== "python-apps" || pythonAppsEnabled,
+    (n) => n.key !== "python-apps" || !!caps?.python_apps_enabled,
   );
 
   const selected = selectedNavKey(visibleNav, location.pathname);
