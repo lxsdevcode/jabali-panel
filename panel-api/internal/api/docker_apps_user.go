@@ -20,6 +20,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"os"
@@ -444,12 +446,17 @@ func (h *userDockerAppHandler) failInstall(c *gin.Context, appID, code string, e
 }
 
 // tenantInstanceSlug namespaces the on-disk / container identity by owner so
-// two tenants can install the same catalog app: <slug>-<short_uid>-<name>,
+// two tenants can install the same catalog app: <slug>-<owner_hash>-<name>,
 // lower-cased to satisfy the agent's slug regex.
+//
+// owner_hash is a hex SHA-256 prefix of the FULL user ID, NOT a raw slice of
+// it: jabali user IDs are ULIDs whose first 10 chars are a millisecond
+// timestamp (near-zero entropy), so a `userID[:8]` prefix collides for any two
+// users created in the same ~minute — same instance_slug -> same data dir +
+// container name (jabali-app-<x>), a tenant cross-contamination bug. Hashing
+// the whole ID spreads the entropy so the namespace is actually unique.
 func tenantInstanceSlug(slug, userID, name string) string {
-	short := strings.ToLower(userID)
-	if len(short) > 8 {
-		short = short[:8]
-	}
+	sum := sha256.Sum256([]byte(userID))
+	short := hex.EncodeToString(sum[:])[:10]
 	return strings.ToLower(slug + "-" + short + "-" + name)
 }

@@ -30,6 +30,14 @@ func TestTenantInstanceSlug_NamespacedByOwner(t *testing.T) {
 	if !strings.HasPrefix(a, "memos-") || strings.ToLower(a) != a {
 		t.Errorf("instance slug %q not lowercased/prefixed", a)
 	}
+	// Regression: ULID user IDs share a millisecond-timestamp PREFIX, so two
+	// users created in the same window must NOT collide (the userID[:8] bug).
+	// These two differ only in their random tail.
+	p1 := tenantInstanceSlug("memos", "01HXYZ0000AAAAAAAAAAAAAAAA", "notes")
+	p2 := tenantInstanceSlug("memos", "01HXYZ0000BBBBBBBBBBBBBBBB", "notes")
+	if p1 == p2 {
+		t.Fatalf("same-timestamp-prefix users collided: %q == %q (entropy must come from the whole ID)", p1, p2)
+	}
 }
 
 func TestTenantInstallable_Filter(t *testing.T) {
