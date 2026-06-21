@@ -19,6 +19,13 @@ interface WebadminCredential {
   url: string;
 }
 
+interface AdminCredential {
+  user: string;
+  password: string;
+  rotated: boolean;
+  url: string;
+}
+
 export function StalwartWebadminCard() {
   const { message } = App.useApp();
   const [enabled, setEnabled] = useState(false);
@@ -26,6 +33,8 @@ export function StalwartWebadminCard() {
   const [hostname, setHostname] = useState("");
   const [busy, setBusy] = useState(false);
   const [cred, setCred] = useState<WebadminCredential | null>(null);
+  const [adminCred, setAdminCred] = useState<AdminCredential | null>(null);
+  const [adminBusy, setAdminBusy] = useState(false);
 
   const refresh = async () => {
     try {
@@ -115,6 +124,36 @@ export function StalwartWebadminCard() {
     }
   };
 
+  const manageAdminCred = async (action: "reveal" | "rotate") => {
+    setAdminBusy(true);
+    try {
+      const r = await apiClient.post<AdminCredential>("/admin/settings/stalwart-admin-credential", {
+        action,
+      });
+      setAdminCred(r.data);
+      if (action === "rotate") {
+        message.success("Stalwart admin password rotated");
+      }
+    } catch (err) {
+      const e = err as { response?: { data?: { detail?: string; error?: string } } };
+      message.error(e.response?.data?.detail ?? e.response?.data?.error ?? `Failed to ${action}`);
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const confirmRotateAdmin = () =>
+    Modal.confirm({
+      title: "Rotate the Stalwart admin password?",
+      okText: "Rotate",
+      okButtonProps: { danger: true },
+      content:
+        "This is also the panel's own management credential. Rotating it restarts " +
+        "the mail server and the panel API (a few-second blip) and signs you out of " +
+        "any open WebAdmin session. The new password is shown once.",
+      onOk: () => manageAdminCred("rotate"),
+    });
+
   return (
     <Card title="Stalwart WebAdmin (advanced)" size="small" style={{ marginTop: 16 }}>
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
@@ -159,6 +198,23 @@ export function StalwartWebadminCard() {
             <Button onClick={regenerate} loading={busy}>
               Regenerate gateway credential
             </Button>
+
+            <div>
+              <Typography.Text strong>Stalwart admin login</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: "2px 0 8px" }}>
+                The second prompt (Stalwart&apos;s own sign-in) after the gateway. This is also
+                the panel&apos;s management credential — rotating it restarts the mail server and
+                panel API briefly.
+              </Typography.Paragraph>
+              <Space>
+                <Button onClick={() => manageAdminCred("reveal")} loading={adminBusy}>
+                  Reveal admin login
+                </Button>
+                <Button danger onClick={confirmRotateAdmin} loading={adminBusy}>
+                  Rotate admin password
+                </Button>
+              </Space>
+            </div>
           </>
         )}
 
@@ -180,6 +236,31 @@ export function StalwartWebadminCard() {
             User: <Typography.Text copyable>{cred?.user}</Typography.Text>
             <br />
             Password: <Typography.Text copyable code>{cred?.password}</Typography.Text>
+          </Typography.Paragraph>
+        </Modal>
+
+        <Modal
+          open={!!adminCred}
+          title={adminCred?.rotated ? "New Stalwart admin password" : "Stalwart admin login"}
+          onOk={() => setAdminCred(null)}
+          onCancel={() => setAdminCred(null)}
+          okText="Done"
+          cancelButtonProps={{ style: { display: "none" } }}
+        >
+          <Typography.Paragraph>
+            Use this at Stalwart&apos;s own sign-in (the second prompt, after the nginx gateway).
+            {adminCred?.rotated && (
+              <>
+                {" "}
+                <strong>It won&apos;t be shown again</strong> — the mail server and panel API are
+                restarting to apply it.
+              </>
+            )}
+          </Typography.Paragraph>
+          <Typography.Paragraph>
+            User: <Typography.Text copyable>{adminCred?.user}</Typography.Text>
+            <br />
+            Password: <Typography.Text copyable code>{adminCred?.password}</Typography.Text>
           </Typography.Paragraph>
         </Modal>
       </Space>

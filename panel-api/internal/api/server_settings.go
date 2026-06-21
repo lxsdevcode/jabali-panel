@@ -37,6 +37,8 @@ func RegisterServerSettingsRoutes(g *gin.RouterGroup, cfg ServerSettingsHandlerC
 	admin.GET("", h.get)
 	admin.PATCH("", h.update)
 	admin.GET("/python-runtime", h.pythonRuntimeStatus)
+	// GH #243: reveal / rotate the Stalwart admin GUI login (admin:<token>).
+	admin.POST("/stalwart-admin-credential", h.stalwartAdminCredential)
 }
 
 type serverSettingsHandler struct{ cfg ServerSettingsHandlerConfig }
@@ -818,6 +820,63 @@ type webadminCredential struct {
 type settingsUpdateResponse struct {
 	*models.ServerSettings
 	WebadminCredential *webadminCredential `json:"stalwart_webadmin_credential,omitempty"`
+}
+
+// stalwartAdminCredentialResponse carries the Stalwart admin GUI login. The
+// password is the recovery-admin token — the same credential the panel uses to
+// manage Stalwart — so a rotate restarts jabali-stalwart + jabali-panel.
+type stalwartAdminCredentialResponse struct {
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Rotated  bool   `json:"rotated"`
+	URL      string `json:"url"`
+}
+
+// stalwartAdminCredential reveals or rotates the Stalwart admin GUI login.
+// POST /admin/settings/stalwart-admin-credential {action:"reveal"|"rotate"}.
+func (h *serverSettingsHandler) stalwartAdminCredential(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	if req.Action != "reveal" && req.Action != "rotate" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_action", "detail": "action must be reveal or rotate"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(callCtx, "mail.admin_cred.manage", map[string]any{"action": req.Action})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "admin_cred_failed", "detail": firstLineString(err.Error())})
+		return
+	}
+	var resp struct {
+		User     string `json:"user"`
+		Password string `json:"password"`
+		Rotated  bool   `json:"rotated"`
+	}
+	if uerr := json.Unmarshal(raw, &resp); uerr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "admin_cred_decode"})
+		return
+	}
+	hostname := ""
+	if s, gerr := h.cfg.Repo.Get(ctx); gerr == nil && s != nil {
+		hostname = s.Hostname
+	}
+	c.JSON(http.StatusOK, stalwartAdminCredentialResponse{
+		User:     resp.User,
+		Password: resp.Password,
+		Rotated:  resp.Rotated,
+		URL:      fmt.Sprintf("https://%s:%d/", hostname, stalwartWebadminPort),
+	})
 }
 
 // applyStalwartWebadmin dispatches mail.webadmin.apply with the effective

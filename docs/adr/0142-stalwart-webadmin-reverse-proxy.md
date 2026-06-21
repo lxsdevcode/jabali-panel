@@ -78,6 +78,41 @@ panel-api — flagged dicey in the plan; basic-auth is self-contained).
       credentials → 401; with the gateway credential → 200 (SPA loads, assets
       200); allowlist `deny all` confirmed present after restore.
 
+## Admin-login reveal / rotate (follow-up, shipped)
+
+The WebAdmin's *second* prompt is Stalwart's own admin login — the recovery
+admin seeded as `STALWART_RECOVERY_ADMIN=admin:<token>` in
+`/etc/jabali-panel/stalwart.env`, whose token also lives in
+`/etc/jabali-panel/stalwart-admin.token`. That same token is the **panel's
+management credential**: `panel-agent` reads the `.token` file fresh on every
+`mail.*` call; `panel-api` caches the env value at boot. So there is one shared
+secret, not a GUI-only password.
+
+Agent verb `mail.admin_cred.manage {action:"reveal"|"rotate"}` (panel route
+`POST /admin/settings/stalwart-admin-credential`, card buttons "Reveal admin
+login" / "Rotate admin password"):
+
+- **reveal** returns `admin:<current token>` so the operator needn't SSH.
+- **rotate** is **self-protecting**, ordered for crash-safety because the agent
+  reads the `.token` file per call:
+  1. back up `stalwart.env`, rewrite the `STALWART_RECOVERY_ADMIN` line,
+  2. restart `jabali-stalwart`,
+  3. **poll-verify** the new password authenticates against loopback
+     `:8446/jmap/session` — a transport error is "not ready yet" (Stalwart
+     rebinding), retried to a 25s deadline; only a live `401` is a real fail,
+  4. **only then** publish the new token to `stalwart-admin.token` (the file
+     `panel-agent` reads),
+  5. schedule a `jabali-panel` restart via `systemd-run --on-active=3s` so the
+     PATCH response (carrying the new password) returns before panel-api bounces.
+  On any failure before step 4 the env is restored + Stalwart restarted, leaving
+  the still-valid old token file untouched — the mail plane never breaks.
+
+Verified live on 10.0.3.14 (2026-06-22): rotate → Stalwart accepts NEW, rejects
+OLD (401), `domain.list` via the agent succeeds post-rotate, all three services
+active. Confirmed (the dangerous case) that `STALWART_RECOVERY_ADMIN` is
+re-read from env each boot, **not** persisted — so an env rewrite + restart is
+sufficient to change the accepted password.
+
 ## Consequences
 
 - New opt-in attack surface, but gated four ways and off by default. Net posture
