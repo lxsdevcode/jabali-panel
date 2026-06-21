@@ -136,6 +136,7 @@ var userScopePrefixes = []areaRule{
 	{"/api/v1/cron", "cron"},
 	{"/api/v1/ssh-keys", "ssh"},
 
+	{"/api/v1/domains/:id/whois", "domains"},
 	{"/api/v1/domains/:id/acls", "domains"},
 	{"/api/v1/domains/:id/cache", "domains"},
 	{"/api/v1/domains/:id/ip", "domains"},

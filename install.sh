@@ -983,6 +983,7 @@ POLICYEOF
       pdns-server pdns-backend-mysql pdns-recursor \
       bind9-dnsutils \
       ufw yq \
+      whois \
       redis-server redis-tools \
       bubblewrap debootstrap systemd-container \
       yara \
@@ -11411,6 +11412,16 @@ provision_new_software() {
   # copy; the reconciler re-renders each pool from the installed template on its
   # next tick. Without this, only fresh installs would get the new defaults.
   declare -f install_php_pool_template >/dev/null 2>&1 && install_php_pool_template
+
+  # GH #254: whois binary backs the admin Domain "Information" modal
+  # (domain.whois agent command). Fresh installs get it from
+  # install_base_packages; existing hosts pick it up here on `jabali update`
+  # so the new handler doesn't shell out to a missing binary. Idempotent.
+  if ! command -v whois >/dev/null 2>&1; then
+    _log "provision: whois missing — installing for Domain Information (#254)"
+    apt-get install -y -qq --no-install-recommends whois \
+      || _warn "provision: whois install had issues"
+  fi
 
   # Libexec helpers (fpm-pre-start, fpm-exec, cron-precheck) — generated
   # systemd units reference these by absolute path. The fresh-install

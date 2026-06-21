@@ -47,6 +47,7 @@ import {
   FilePlay,
   FileVolume,
   FileText,
+  Info,
   MonitorPlay,
   FlaskConical,
   Folder,
@@ -263,6 +264,7 @@ export const FilePlayOutlined = shim(FilePlay);
 export const FileVolumeOutlined = shim(FileVolume);
 export const MonitorPlayOutlined = shim(MonitorPlay);
 export const FileTextOutlined = shim(FileText);
+export const InfoCircleOutlined = shim(Info);
 export const ExportOutlined = shim(ExternalLink);
 
 // --- Misc ---

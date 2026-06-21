@@ -638,6 +638,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Domains: deps.Domains,
 			Keys:    deps.DNSSECKeys,
 		})
+		// Domain WHOIS lookup backing the admin "Information" modal (GH #254).
+		api.RegisterDomainWhoisRoutes(v1, api.DomainWhoisHandlerConfig{
+			Agent:   deps.Agent,
+			Domains: deps.Domains,
+		})
 		// Per-domain nginx FastCGI micro-cache toggle (ADR-0108).
 		api.RegisterDomainCacheRoutes(v1, api.DomainCacheHandlerConfig{
 			Agent:      deps.Agent,

@@ -8,6 +8,7 @@ import {
   DownOutlined,
   EditOutlined,
   FileTextOutlined,
+  InfoCircleOutlined,
   GlobalOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -30,8 +31,12 @@ import { useTableURL } from "../../../hooks/useTableURL";
 import { DomainSettingsButton } from "../../DomainSettingsButton";
 import { DomainRedirectsButton } from "../../DomainRedirectsButton";
 import { DomainIndexButton } from "../../DomainIndexButton";
+import { DomainInfoButton } from "../../DomainInfoButton";
 
-type ActiveModal = { domain: Domain; type: "redirects" | "index" | "settings" } | null;
+type ActiveModal = {
+  domain: Domain;
+  type: "redirects" | "index" | "settings" | "info";
+} | null;
 
 const stripHomePrefix = (path: string): string => {
   if (path.startsWith("/home/")) {
@@ -292,6 +297,12 @@ export const DomainList = () => {
                   menu={{
                     items: [
                       {
+                        key: "info",
+                        icon: <InfoCircleOutlined />,
+                        label: "Information",
+                        onClick: () => setActiveModal({ domain: r, type: "info" }),
+                      },
+                      {
                         key: "redirects",
                         icon: <SwapOutlined />,
                         label: "Redirects",
@@ -360,6 +371,13 @@ export const DomainList = () => {
                 )}
                 {activeModal?.domain.id === r.id && activeModal.type === "settings" && (
                   <DomainSettingsButton
+                    domain={r}
+                    open={true}
+                    onClose={() => setActiveModal(null)}
+                  />
+                )}
+                {activeModal?.domain.id === r.id && activeModal.type === "info" && (
+                  <DomainInfoButton
                     domain={r}
                     open={true}
                     onClose={() => setActiveModal(null)}
