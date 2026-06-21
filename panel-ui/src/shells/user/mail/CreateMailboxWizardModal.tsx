@@ -10,10 +10,11 @@
 // The modal calls POST /domains/:id/mailboxes on submit and surfaces
 // the reveal-once password via the onCreated callback — the parent
 // page pops the DatabaseUserPasswordModal with it.
-import { Alert, Button, Drawer, Form, Grid, Input, InputNumber, Select, Space } from "antd";
+import { Alert, Button, Checkbox, Drawer, Form, Grid, Input, InputNumber, Select, Space } from "antd";
 
 import { PasswordInput } from "../../../components/PasswordInput";
 import { useMailGroups, useAddMailboxToGroup } from "../../../hooks/useMailGroups";
+import { useCreateForwarder } from "../../../hooks/useForwarders";
 import {
   useCreateMailbox,
   type CreateMailboxResponse,
@@ -47,6 +48,9 @@ type FormValues = {
   password?: string;
   quota_mib?: number;
   group_ids?: string[];
+  aliases?: string;
+  forward_target?: string;
+  forward_keep_copy?: boolean;
 };
 
 export const CreateMailboxWizardModal = ({
@@ -67,6 +71,7 @@ export const CreateMailboxWizardModal = ({
   const chosenDomain = domains.find((d) => d.id === watchedDomainId);
   const { data: domainGroups } = useMailGroups(watchedDomainId);
   const addToGroup = useAddMailboxToGroup();
+  const createForwarder = useCreateForwarder();
 
   const onOk = async () => {
     // validateFields rejects when required rules fail; AntD surfaces
@@ -97,6 +102,31 @@ export const CreateMailboxWizardModal = ({
               .catch(() => {}),
           ),
         );
+      }
+
+      // GH #237: create aliases + an optional external forward at create time.
+      const mbEmail = `${values.local_part}@${chosenDomain?.name ?? ""}`;
+      const aliasParts = (values.aliases ?? "")
+        .split(/[\n,]/)
+        .map((a) => a.trim().toLowerCase())
+        .filter((a) => a.length > 0);
+      await Promise.all(
+        aliasParts.map((localPart) =>
+          createForwarder
+            .mutateAsync({ mailboxID: resp.id, type: "alias", localPart, target: mbEmail })
+            .catch(() => {}),
+        ),
+      );
+      const fwd = values.forward_target?.trim();
+      if (fwd) {
+        await createForwarder
+          .mutateAsync({
+            mailboxID: resp.id,
+            type: "external",
+            target: fwd,
+            keepCopy: values.forward_keep_copy ?? false,
+          })
+          .catch(() => {});
       }
       form.resetFields();
       onCreated(resp);
@@ -231,6 +261,29 @@ export const CreateMailboxWizardModal = ({
                 />
               </Form.Item>
             )}
+
+            <Form.Item
+              label="Aliases (optional)"
+              name="aliases"
+              tooltip="Extra addresses that deliver to this mailbox. One local-part per line or comma-separated — e.g. sales, info."
+            >
+              <Input.TextArea
+                rows={2}
+                placeholder={chosenDomain ? `sales, info  (→ @${chosenDomain.name})` : "sales, info"}
+                autoComplete="off"
+              />
+            </Form.Item>
+            <Form.Item
+              label="Forward to (optional)"
+              name="forward_target"
+              tooltip="Redirect a copy of incoming mail to an external address."
+              rules={[{ type: "email", message: "Must be a valid email" }]}
+            >
+              <Input placeholder="external@example.com" autoComplete="off" />
+            </Form.Item>
+            <Form.Item name="forward_keep_copy" valuePropName="checked" noStyle>
+              <Checkbox>Keep a copy in this mailbox when forwarding</Checkbox>
+            </Form.Item>
           </>
         )}
 
