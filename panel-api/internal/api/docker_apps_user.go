@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ func RegisterUserDockerAppRoutes(g *gin.RouterGroup, cfg UserDockerAppHandlerCon
 	}
 	h := &userDockerAppHandler{
 		cfg:   cfg,
-		admin: &dockerAppHandler{cfg: DockerAppHandlerConfig{Repo: cfg.Repo}},
+		admin: &dockerAppHandler{cfg: DockerAppHandlerConfig{Repo: cfg.Repo, Agent: cfg.Agent, Catalog: cfg.Catalog}},
 	}
 	grp := g.Group("/docker-apps")
 	grp.Use(h.requireTenantDockerEnabled)
@@ -85,6 +86,8 @@ func RegisterUserDockerAppRoutes(g *gin.RouterGroup, cfg UserDockerAppHandlerCon
 	grp.POST("/:id/start", h.lifecycle(models.DockerAppStatusRunning, "up", "-d"))
 	grp.POST("/:id/stop", h.lifecycle(models.DockerAppStatusStopped, "stop"))
 	grp.POST("/:id/restart", h.lifecycle(models.DockerAppStatusRunning, "restart"))
+	grp.GET("/:id/logs", h.logs)
+	grp.GET("/:id/env", h.getEnv)
 }
 
 // requireTenantDockerEnabled gates every verb on the host flag. No userns-remap
@@ -443,6 +446,65 @@ func (h *userDockerAppHandler) failInstall(c *gin.Context, appID, code string, e
 	msg := firstLineString(err.Error())
 	_ = h.cfg.Repo.UpdateStatus(c.Request.Context(), appID, models.DockerAppStatusFailed, &msg)
 	c.JSON(http.StatusConflict, gin.H{"error": code, "detail": err.Error(), "id": appID})
+}
+
+// logs streams the owner's app container logs (read-only). Owner-scoped.
+func (h *userDockerAppHandler) logs(c *gin.Context) {
+	app := h.loadOwned(c)
+	if app == nil {
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	params := map[string]any{"slug": app.EffectiveSlug()}
+	if l := c.Query("lines"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			params["lines"] = n
+		}
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(ctx, "docker_app.logs", params)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": firstLineString(err.Error())})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+}
+
+// getEnv reveals the owner's app .env (secrets included — it's their own app,
+// they need the generated admin/DB credentials). Owner-scoped, read-only;
+// editing env is admin-only in v1 (a tenant recreate must re-inject the
+// hardening overlay first — deferred).
+func (h *userDockerAppHandler) getEnv(c *gin.Context) {
+	app := h.loadOwned(c)
+	if app == nil {
+		return
+	}
+	entry, ok := h.cfg.Catalog.Get(app.Slug)
+	if !ok {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "catalog_entry_missing"})
+		return
+	}
+	env, err := h.admin.readInstallEnv(c.Request.Context(), app.EffectiveSlug())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "read_env_failed", "detail": firstLineString(err.Error())})
+		return
+	}
+	out := make([]envVarView, 0, len(env))
+	seen := make(map[string]bool, len(entry.Env))
+	for _, ev := range entry.Env {
+		seen[ev.Name] = true
+		out = append(out, envVarView{Name: ev.Name, Value: env[ev.Name], Secret: ev.Secret, Generated: ev.Generate != ""})
+	}
+	for k, v := range env {
+		if !seen[k] {
+			out = append(out, envVarView{Name: k, Value: v})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"env": out})
 }
 
 // tenantInstanceSlug namespaces the on-disk / container identity by owner so

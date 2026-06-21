@@ -41,3 +41,25 @@ export async function lifecycleAction(
 export function catalogIconUrl(slug: string): string {
   return `/api/v1${BASE}/catalog/${slug}/icon`;
 }
+
+export interface LogsResponse {
+  slug: string;
+  logs: string;
+}
+
+export async function fetchLogs(id: string, lines = 200): Promise<LogsResponse> {
+  const { data } = await apiClient.get<LogsResponse>(`${BASE}/${id}/logs?lines=${lines}`);
+  return data;
+}
+
+export interface EnvVarView {
+  name: string;
+  value: string;
+  secret?: boolean;
+  generated?: boolean;
+}
+
+export async function fetchEnv(id: string): Promise<EnvVarView[]> {
+  const { data } = await apiClient.get<{ env: EnvVarView[] }>(`${BASE}/${id}/env`);
+  return data.env || [];
+}

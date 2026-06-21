@@ -8,6 +8,7 @@ import {
   Alert,
   Button,
   Card,
+  Descriptions,
   Form,
   Input,
   Modal,
@@ -20,6 +21,8 @@ import {
 import {
   AppstoreOutlined,
   DeleteOutlined,
+  FileTextOutlined,
+  KeyOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
@@ -31,11 +34,14 @@ import type { CatalogEntry, InstalledApp } from "../../admin/docker-apps/types";
 import {
   catalogIconUrl,
   deleteApp,
+  fetchEnv,
+  fetchLogs,
   installApp,
   lifecycleAction,
   listCatalog,
   listInstalled,
 } from "./api";
+import type { EnvVarView } from "./api";
 
 const statusColor = (s: InstalledApp["status"]) =>
   s === "running"
@@ -49,6 +55,8 @@ const statusColor = (s: InstalledApp["status"]) =>
 export const UserDockerAppsPage = () => {
   const qc = useQueryClient();
   const [installFor, setInstallFor] = useState<CatalogEntry | null>(null);
+  const [logsFor, setLogsFor] = useState<InstalledApp | null>(null);
+  const [credsFor, setCredsFor] = useState<InstalledApp | null>(null);
 
   const catalog = useQuery({ queryKey: ["user-docker-catalog"], queryFn: listCatalog });
   const installed = useQuery({
@@ -190,6 +198,8 @@ export const UserDockerAppsPage = () => {
                   icon={<ReloadOutlined />}
                   onClick={() => lifecycle.mutate({ id: r.id, action: "restart" })}
                 />
+                <Button size="small" icon={<FileTextOutlined />} onClick={() => setLogsFor(r)} />
+                <Button size="small" icon={<KeyOutlined />} onClick={() => setCredsFor(r)} />
                 <Button
                   size="small"
                   danger
@@ -209,6 +219,9 @@ export const UserDockerAppsPage = () => {
           },
         ]}
       />
+
+      <LogsModal app={logsFor} onClose={() => setLogsFor(null)} />
+      <CredentialsModal app={credsFor} onClose={() => setCredsFor(null)} />
 
       <InstallModal
         entry={installFor}
@@ -276,6 +289,72 @@ const InstallModal = ({
           <Input placeholder="notes.example.com" />
         </Form.Item>
       </Form>
+    </Modal>
+  );
+};
+
+const LogsModal = ({ app, onClose }: { app: InstalledApp | null; onClose: () => void }) => {
+  const q = useQuery({
+    queryKey: ["user-docker-logs", app?.id],
+    queryFn: () => fetchLogs(app!.id),
+    enabled: !!app,
+  });
+  return (
+    <Modal
+      open={!!app}
+      title={app ? `Logs — ${app.name}` : ""}
+      onCancel={onClose}
+      onOk={onClose}
+      width={760}
+      footer={null}
+    >
+      {q.isLoading ? (
+        "Loading…"
+      ) : (
+        <pre
+          style={{
+            maxHeight: 460,
+            overflow: "auto",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            margin: 0,
+            fontSize: 12,
+          }}
+        >
+          {q.data?.logs || "(no output)"}
+        </pre>
+      )}
+    </Modal>
+  );
+};
+
+const CredentialsModal = ({ app, onClose }: { app: InstalledApp | null; onClose: () => void }) => {
+  const q = useQuery({
+    queryKey: ["user-docker-env", app?.id],
+    queryFn: () => fetchEnv(app!.id),
+    enabled: !!app,
+  });
+  return (
+    <Modal
+      open={!!app}
+      title={app ? `Credentials — ${app.name}` : ""}
+      onCancel={onClose}
+      onOk={onClose}
+      width={640}
+      footer={null}
+    >
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        Generated secrets for this install (admin password, DB password, keys).
+      </Typography.Paragraph>
+      <Descriptions size="small" column={1} bordered>
+        {(q.data ?? []).map((e: EnvVarView) => (
+          <Descriptions.Item key={e.name} label={e.name}>
+            <Typography.Text copyable={!!e.value} code>
+              {e.value || "—"}
+            </Typography.Text>
+          </Descriptions.Item>
+        ))}
+      </Descriptions>
     </Modal>
   );
 };

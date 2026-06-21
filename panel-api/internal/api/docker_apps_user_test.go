@@ -251,3 +251,16 @@ func TestTenantDocker_CatalogFilteredToInstallable(t *testing.T) {
 		t.Fatalf("tenant catalog should list tdemo: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestTenantDocker_LogsEnvNotOwned404(t *testing.T) {
+	cfg := UserDockerAppHandlerConfig{Repo: &fakeDockerRepo{owned: map[string]*models.DockerApp{}}, Catalog: tenantCatalog(t)}
+	r := tenantRouter(t, cfg, true)
+	for _, path := range []string{"/api/v1/docker-apps/x/logs", "/api/v1/docker-apps/x/env"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: want 404 for non-owned, got %d", path, rec.Code)
+		}
+	}
+}
