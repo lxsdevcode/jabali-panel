@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"text/template"
 
@@ -132,6 +133,7 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 				return nil, err
 			}
 		}
+		ufwSetWebadminPort(ctx, 0, false) // best-effort: close the port
 		return webadminApplyResponse{Ok: true, Changed: changed}, nil
 	}
 
@@ -204,6 +206,9 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		}
 		changed = true
 	}
+	// Open the WebAdmin port in UFW so it is reachable (best-effort; a no-op
+	// when UFW is inactive). The basic-auth + allowlist remain the real gate.
+	ufwSetWebadminPort(ctx, p.Port, true)
 	if changed || freshPass != "" {
 		if err := nginxTestAndReload(ctx); err != nil {
 			return nil, err
@@ -230,6 +235,27 @@ func validCIDROrIP(s string) bool {
 	_, _, err := net.ParseCIDR(s)
 	return err == nil
 }
+
+// ufwSetWebadminPort opens (open=true) or closes the WebAdmin port in UFW.
+// Best-effort: errors (UFW inactive, not installed) are ignored — the
+// basic-auth + IP allowlist are the security gate, not the firewall.
+func ufwSetWebadminPort(ctx context.Context, port int, open bool) {
+	if _, err := exec.LookPath("ufw"); err != nil {
+		return
+	}
+	rule := stalwartAdminUFWPort
+	if port > 0 {
+		rule = fmt.Sprintf("%d/tcp", port)
+	}
+	args := []string{"--force", "delete", "allow", rule}
+	if open {
+		args = []string{"allow", rule}
+	}
+	_ = exec.CommandContext(ctx, "ufw", args...).Run()
+}
+
+// stalwartAdminUFWPort is used by the close path when no port is supplied.
+var stalwartAdminUFWPort = "8449/tcp"
 
 func init() {
 	Default.Register("mail.webadmin.apply", mailWebadminApplyHandler)
