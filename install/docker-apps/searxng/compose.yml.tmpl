@@ -1,0 +1,30 @@
+services:
+  searxng:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    environment:
+      # SearXNG generates /etc/searxng/settings.yml on first boot when the
+      # config volume is empty, seeding secret_key from SEARXNG_SECRET and
+      # base_url from SEARXNG_BASE_URL.
+      SEARXNG_BASE_URL: "https://{{ .Domain }}/"
+      SEARXNG_SECRET: "{{ index .Env "SEARXNG_SECRET" }}"
+    volumes:
+      - {{ .DataRoot }}/config:/etc/searxng
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      # SearXNG ships a /healthz endpoint; the image is Alpine-based so busybox
+      # wget is present.
+      test: ["CMD-SHELL", "wget -q -O /dev/null --timeout=5 http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

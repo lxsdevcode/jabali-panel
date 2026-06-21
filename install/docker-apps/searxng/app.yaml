@@ -1,0 +1,39 @@
+slug: searxng
+name: SearXNG
+version: "2026.6.20"
+description: |
+  Privacy-respecting metasearch engine — aggregates results from 70+ search
+  services with no user tracking or profiling. Single service; open it and
+  start searching, then tune engines and preferences in-app. Optionally
+  reachable over Tor for anonymity.
+icon: icon.svg
+upstream: https://github.com/searxng/searxng
+documentation: https://docs.searxng.org/
+
+image_channel: docker.io/searxng/searxng:2026.6.20-fd42d4fda
+update_mode: manual
+
+resources:
+  cpu: "1.0"
+  memory: "512m"
+  pids: 200
+
+volumes:
+  - name: config
+    container_path: /etc/searxng
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /healthz
+
+env:
+  # SearXNG writes secret_key into the auto-generated /etc/searxng/settings.yml
+  # from this env on first boot; required for the limiter + session signing.
+  - name: SEARXNG_SECRET
+    secret: true
+    generate: password64
