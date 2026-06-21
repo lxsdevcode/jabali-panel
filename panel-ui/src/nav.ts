@@ -253,6 +253,12 @@ export const userNav: NavItem[] = [
     path: "/jabali-panel/python-apps",
   },
   {
+    key: "docker-apps",
+    label: "Docker Apps",
+    icon: navIcon(AppstoreOutlined),
+    path: "/jabali-panel/docker-apps",
+  },
+  {
     key: "databases",
     label: "Databases",
     icon: navIcon(DatabaseOutlined),

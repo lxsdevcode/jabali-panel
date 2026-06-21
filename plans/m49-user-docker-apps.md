@@ -386,7 +386,8 @@ Shipped docker_apps_user.go: /docker-apps catalog(filtered)/list/get/install/del
 - Table-driven handler tests: quota=0 → 403; over count → 409; foreign domain →
   409; public-bind request → 400; non-owner GET/:id → 404.
 
-### Phase 4 — tenant "Apps" UI
+### Phase 4 — tenant "Apps" UI — ✅ LANDED 2026-06-21
+Shipped panel-ui/src/shells/user/docker-apps/ (api.ts + UserDockerAppsPage): catalog card grid (tenant_installable) + install modal (name + own-domain) + installed table with start/stop/restart/delete + 8s install polling; self-degrades to a "not enabled on this server" notice on the host-flag 403. Nav entry + /jabali-panel/docker-apps route. tsc clean. No port/exec/compose controls (constrained per ADR-0117 D8).
 - `panel-ui/src/shells/user/apps/` — SearchableTable list (own apps) + catalog
   grid (tenant_installable) + install Drawer: app pick → domain pick (own
   domains) → resource within package → install. Status polling reuses admin

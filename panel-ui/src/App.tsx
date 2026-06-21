@@ -71,6 +71,7 @@ import { UserSSLManagerPage } from "./shells/user/ssl/UserSSLManagerPage";
 import { UserPHPSettingsPage } from "./shells/user/php-settings/UserPHPSettingsPage";
 import { UserApplicationList } from "./shells/user/applications/UserApplicationList";
 import { PythonAppsPage } from "./shells/user/python-apps/PythonAppsPage";
+import { UserDockerAppsPage } from "./shells/user/docker-apps/UserDockerAppsPage";
 import { UserBackupsPage } from "./shells/user/backups/UserBackupsPage";
 import { UserLogsPage } from "./shells/user/logs/UserLogsPage";
 import { UserSSHKeysPage } from "./shells/user/ssh-keys/UserSSHKeysPage";
@@ -254,6 +255,7 @@ const ThemedApp = () => {
             <Route path="activity" element={<AccountActivity />} />
             <Route path="applications" element={<UserApplicationList />} />
             <Route path="python-apps" element={<PythonAppsPage />} />
+            <Route path="docker-apps" element={<UserDockerAppsPage />} />
             <Route path="ssh-keys" element={<UserSSHKeysPage />} />
             <Route path="api-tokens" element={<UserAPITokensPage />} />
             <Route path="api-docs" element={<APIDocsPage />} />
