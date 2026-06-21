@@ -104,7 +104,39 @@ func ensureUserCLIPHP(username, version string) error {
 	if err := ensureRootDir(binDir); err != nil {
 		return err
 	}
-	return replaceCLISymlink(filepath.Join(binDir, "php"), target)
+	if err := replaceCLISymlink(filepath.Join(binDir, "php"), target); err != nil {
+		return err
+	}
+	// GH #256: PHP version is per-DOMAIN, but a user has a single `php` CLI.
+	// A user with domains on different versions (8.3/8.4/8.5) can't get them
+	// all from a bare `php`. Expose EVERY installed version as `php<X.Y>` in
+	// the same on-PATH dir so they can select per project — `php8.3 composer
+	// install`, `php8.5 -v` — while `php` stays their pinned default. Mirrors
+	// cPanel's ea-phpNN wrappers. Best-effort per version (a bad one is
+	// skipped, never fails the default-pin write above).
+	for ver, src := range installedPHPCLIVersions("/usr/bin") {
+		_ = replaceCLISymlink(filepath.Join(binDir, "php"+ver), src)
+	}
+	return nil
+}
+
+// installedPHPCLIVersions scans srcDir for php<major>.<minor> CLI binaries
+// (e.g. /usr/bin/php8.3) and returns version -> absolute path. Excludes the
+// suffixed variants (php8.3-fpm) via the strict glob. Pure on srcDir so it is
+// unit-testable without /usr/bin.
+func installedPHPCLIVersions(srcDir string) map[string]string {
+	out := map[string]string{}
+	matches, _ := filepath.Glob(filepath.Join(srcDir, "php[0-9].[0-9]"))
+	for _, m := range matches {
+		ver := strings.TrimPrefix(filepath.Base(m), "php")
+		if !phpVersionRegex.MatchString(ver) {
+			continue
+		}
+		if fi, err := os.Stat(m); err == nil && !fi.IsDir() {
+			out[ver] = m
+		}
+	}
+	return out
 }
 
 // replaceCLISymlink points `link` at `target` idempotently and safely: an

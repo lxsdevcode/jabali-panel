@@ -104,3 +104,22 @@ func TestEnsureRootDir_RefusesSymlink(t *testing.T) {
 		t.Error("expected refusal for a symlink standing in for a directory")
 	}
 }
+
+// GH #256: every installed php<X.Y> CLI binary must be enumerated (so a user
+// with multiple domains on different versions gets php8.3/php8.4/... wrappers),
+// while suffixed variants (php8.4-fpm) are excluded.
+func TestInstalledPHPCLIVersions(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"php8.3", "php8.4", "php8.4-fpm", "php", "phpize"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := installedPHPCLIVersions(dir)
+	if len(got) != 2 || got["8.3"] == "" || got["8.4"] == "" {
+		t.Fatalf("want {8.3,8.4}, got %v", got)
+	}
+	if _, ok := got["8.4-fpm"]; ok {
+		t.Error("php8.4-fpm must be excluded")
+	}
+}
