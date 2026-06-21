@@ -88,6 +88,7 @@ func RegisterUserDockerAppRoutes(g *gin.RouterGroup, cfg UserDockerAppHandlerCon
 	grp.POST("/:id/restart", h.lifecycle(models.DockerAppStatusRunning, "restart"))
 	grp.GET("/:id/logs", h.logs)
 	grp.GET("/:id/env", h.getEnv)
+	grp.GET("/usage", h.usage)
 }
 
 // requireTenantDockerEnabled gates every verb on the host flag. No userns-remap
@@ -446,6 +447,32 @@ func (h *userDockerAppHandler) failInstall(c *gin.Context, appID, code string, e
 	msg := firstLineString(err.Error())
 	_ = h.cfg.Repo.UpdateStatus(c.Request.Context(), appID, models.DockerAppStatusFailed, &msg)
 	c.JSON(http.StatusConflict, gin.H{"error": code, "detail": err.Error(), "id": appID})
+}
+
+// usage reports the tenant's docker-app disk footprint vs their package disk
+// quota (M49 soft meter). over_quota is advisory — the UI warns; it does not
+// block a running app (the load-bearing gate is the install-time count quota).
+func (h *userDockerAppHandler) usage(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	used, err := h.cfg.Repo.SumDataBytesByUserID(ctx, claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "usage_failed"})
+		return
+	}
+	var quotaBytes int64
+	if h.cfg.Users != nil && h.cfg.Packages != nil {
+		if user, _ := h.cfg.Users.FindByID(ctx, claims.UserID); user != nil && user.PackageID != nil {
+			if pkg, _ := h.cfg.Packages.FindByID(ctx, *user.PackageID); pkg != nil {
+				quotaBytes = int64(pkg.DiskQuotaMB) * 1024 * 1024
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"used_bytes":  used,
+		"quota_bytes": quotaBytes,
+		"over_quota":  quotaBytes > 0 && used > quotaBytes,
+	})
 }
 
 // logs streams the owner's app container logs (read-only). Owner-scoped.

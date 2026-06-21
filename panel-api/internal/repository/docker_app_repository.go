@@ -35,6 +35,9 @@ type DockerAppRepository interface {
 	// FindByIDForUser returns the app only if owned by userID (else ErrNotFound,
 	// so a tenant can't probe another tenant's app IDs).
 	FindByIDForUser(ctx context.Context, id, userID string) (*models.DockerApp, error)
+	// SumDataBytesByUserID totals a tenant's live docker-app disk footprint
+	// (the per-user disk meter, M49).
+	SumDataBytesByUserID(ctx context.Context, userID string) (int64, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
 	UpdateDataSize(ctx context.Context, id string, dataBytes int64) error
 	UpdateImageSHA(ctx context.Context, id, imageSHA string) error
@@ -147,6 +150,16 @@ func (r *dockerAppRepo) FindByIDForUser(ctx context.Context, id, userID string) 
 		return nil, translate(err)
 	}
 	return &app, nil
+}
+
+// SumDataBytesByUserID totals data_bytes across a tenant's live (non-deleted)
+// installs — the per-user docker disk meter (M49).
+func (r *dockerAppRepo) SumDataBytesByUserID(ctx context.Context, userID string) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).Model(&models.DockerApp{}).
+		Where("user_id = ? AND status <> ?", userID, models.DockerAppStatusDeleted).
+		Select("COALESCE(SUM(data_bytes), 0)").Scan(&total).Error
+	return total, translate(err)
 }
 
 func (r *dockerAppRepo) UpdateStatus(ctx context.Context, id, status string, lastError *string) error {

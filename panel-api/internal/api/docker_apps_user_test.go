@@ -58,8 +58,13 @@ func TestTenantInstallable_Filter(t *testing.T) {
 
 type fakeDockerRepo struct {
 	repository.DockerAppRepository
-	count int64
-	owned map[string]*models.DockerApp
+	count    int64
+	sumBytes int64
+	owned    map[string]*models.DockerApp
+}
+
+func (f *fakeDockerRepo) SumDataBytesByUserID(context.Context, string) (int64, error) {
+	return f.sumBytes, nil
 }
 
 func (f *fakeDockerRepo) CountByUserID(context.Context, string) (int64, error) { return f.count, nil }
@@ -262,5 +267,37 @@ func TestTenantDocker_LogsEnvNotOwned404(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: want 404 for non-owned, got %d", path, rec.Code)
 		}
+	}
+}
+
+func TestTenantDocker_UsageOverQuota(t *testing.T) {
+	cfg := UserDockerAppHandlerConfig{
+		Repo:     &fakeDockerRepo{sumBytes: 600 * 1024 * 1024}, // 600 MiB used
+		Catalog:  tenantCatalog(t),
+		Users:    &fakeUserRepo{user: &models.User{ID: "u1", Username: uname("alice"), PackageID: uname("p1")}},
+		Packages: &fakePkgRepo{pkg: &models.HostingPackage{ID: "p1", DiskQuotaMB: 500}}, // 500 MiB quota
+	}
+	r := tenantRouter(t, cfg, true)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/docker-apps/usage", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"over_quota":true`) {
+		t.Fatalf("want over_quota true (600>500 MiB): %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTenantDocker_UsageUnderQuota(t *testing.T) {
+	cfg := UserDockerAppHandlerConfig{
+		Repo:     &fakeDockerRepo{sumBytes: 100 * 1024 * 1024},
+		Catalog:  tenantCatalog(t),
+		Users:    &fakeUserRepo{user: &models.User{ID: "u1", Username: uname("alice"), PackageID: uname("p1")}},
+		Packages: &fakePkgRepo{pkg: &models.HostingPackage{ID: "p1", DiskQuotaMB: 500}},
+	}
+	r := tenantRouter(t, cfg, true)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/docker-apps/usage", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"over_quota":false`) {
+		t.Fatalf("want over_quota false: %d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -36,6 +36,7 @@ import {
   deleteApp,
   fetchEnv,
   fetchLogs,
+  fetchUsage,
   installApp,
   lifecycleAction,
   listCatalog,
@@ -68,6 +69,8 @@ export const UserDockerAppsPage = () => {
         ? 8000
         : false,
   });
+
+  const usage = useQuery({ queryKey: ["user-docker-usage"], queryFn: fetchUsage, retry: false });
 
   // The host-flag 403 surfaces on the installed-list query; treat it as the
   // "tenant docker disabled on this server" state.
@@ -111,6 +114,15 @@ export const UserDockerAppsPage = () => {
         <AppstoreOutlined /> Docker Apps
       </Typography.Title>
 
+      {usage.data?.over_quota && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Docker apps are over your disk quota"
+          description="Your installed apps exceed your package disk allowance. Delete an app or ask your administrator to raise the quota."
+        />
+      )}
       <Typography.Title level={5}>Available apps</Typography.Title>
       <Space wrap size={[16, 16]} style={{ marginBottom: 24 }}>
         {(catalog.data ?? []).map((e) => (

@@ -63,3 +63,14 @@ export async function fetchEnv(id: string): Promise<EnvVarView[]> {
   const { data } = await apiClient.get<{ env: EnvVarView[] }>(`${BASE}/${id}/env`);
   return data.env || [];
 }
+
+export interface DockerUsage {
+  used_bytes: number;
+  quota_bytes: number;
+  over_quota: boolean;
+}
+
+export async function fetchUsage(): Promise<DockerUsage> {
+  const { data } = await apiClient.get<DockerUsage>(`${BASE}/usage`);
+  return data;
+}
