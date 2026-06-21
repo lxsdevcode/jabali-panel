@@ -1,7 +1,7 @@
 # ADR-0117: M49 User-Level Docker Apps — Architectural Decisions
 
 **Date:** 2026-06-21
-**Status:** Proposed (Phase 1 landing; flip to Accepted after the Phase 2/7 live verification)
+**Status:** Accepted (2026-06-21) — all 7 phases landed; Phase 0 cgroup nesting + Phase 2 userns-remap/hardening live-verified on mx. Remaining: full tenant-install Playwright E2E on a tenant-docker-enabled host.
 **Owner:** shuki
 **Companion plan:** [`plans/m49-user-docker-apps.md`](../../plans/m49-user-docker-apps.md)
 **Supersedes scope of:** ADR-0116 Decision 1 (which scoped Docker apps admin-only and queued per-tenant)

@@ -408,7 +408,8 @@ UserHandlerConfig.DockerApps wired; user delete() now dispatches docker_app.dele
 - Test: delete a tenant with an installed app → container gone, data dir gone,
   domain row + vhost gone.
 
-### Phase 7 — E2E + security review + runbook + ADR accept
+### Phase 7 — E2E + security review + runbook + ADR accept — ✅ MOSTLY LANDED 2026-06-21
+Runbook plans/m49-user-docker-apps-runbook.md written; ADR-0117 → Accepted; security gate (validateTenantCompose) heavily unit-tested + the privesc/remap path live-proven on mx (Phase 0+2). REMAINING: full tenant-install Playwright E2E (install→reachable-over-TLS→stop/start→delete + quota/cross-tenant paths) on a tenant-docker-enabled host — needs the destructive userns-remap flip on a dedicated VM (not the shared mx).
 - Playwright: tenant installs from catalog → reachable over TLS on own domain →
   stop/start → delete. Quota-exceeded path. Cross-tenant 404/409 paths.
 - `security-reviewer` pass on the hardening overlay + the compose-config
