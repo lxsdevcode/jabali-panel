@@ -64,6 +64,14 @@ server {
 
     client_max_body_size 25m;
 
+    # This door is already gated four ways (TLS + IP allowlist + dedicated
+    # basic-auth credential + Stalwart's own admin login). The global CrowdSec
+    # nginx bouncer / AppSec WAF false-positives on the WebAdmin's own admin
+    # paths (/admin, /login, /webadmin, /api/auth read as admin-panel scans),
+    # returning 403. A no-op server-scope access_by_lua override exempts only
+    # this vhost from the bouncer; every other server still runs CrowdSec.
+    access_by_lua_block { return }
+
     # Stalwart serves its WebAdmin SPA at /admin/ (base href=/admin/); the bare
     # root returns a JSON 404. Send / there so the panel-surfaced URL just works.
     location = / {
