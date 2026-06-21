@@ -10,7 +10,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"text/template"
 
 	"golang.org/x/crypto/bcrypt"
@@ -170,6 +172,12 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		if werr := os.WriteFile(stalwartAdminHtpasswd, []byte(line), 0o640); werr != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write htpasswd: %v", werr)}
 		}
+		// nginx workers run as www-data and must READ the auth file; a
+		// root:root 0640 file gives them "Permission denied" -> 500. Group it
+		// to www-data (the bcrypt hash, not a plaintext secret).
+		if gid := wwwDataGID(); gid >= 0 {
+			_ = os.Chown(stalwartAdminHtpasswd, 0, gid)
+		}
 		freshUser, freshPass = stalwartAdminUser, pass
 	}
 
@@ -256,6 +264,19 @@ func ufwSetWebadminPort(ctx context.Context, port int, open bool) {
 
 // stalwartAdminUFWPort is used by the close path when no port is supplied.
 var stalwartAdminUFWPort = "8449/tcp"
+
+// wwwDataGID resolves the www-data group id (nginx worker group). Returns -1
+// when the group is absent.
+func wwwDataGID() int {
+	g, err := user.LookupGroup("www-data")
+	if err != nil {
+		return -1
+	}
+	if gid, perr := strconv.Atoi(g.Gid); perr == nil {
+		return gid
+	}
+	return -1
+}
 
 func init() {
 	Default.Register("mail.webadmin.apply", mailWebadminApplyHandler)
