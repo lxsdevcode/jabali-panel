@@ -676,6 +676,12 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			History:    deps.UpdateHistory,
 			Autoupdate: deps.UpdateAutoupdate,
 		})
+		// Tasks indicator: running update/backup/malware tasks for the top bar.
+		api.RegisterAdminActiveTasksRoutes(v1, api.AdminActiveTasksConfig{
+			Updates:    deps.UpdateHistory,
+			BackupJobs: deps.BackupJobs,
+			Agent:      deps.Agent,
+		})
 		// Admin: Support diagnostic report (M29, ADR-0064).
 		api.RegisterAdminSupportRoutes(v1, api.AdminSupportHandlerConfig{
 			Agent: deps.Agent,

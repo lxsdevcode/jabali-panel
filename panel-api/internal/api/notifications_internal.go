@@ -64,34 +64,36 @@ type enqueueRequest struct {
 // defense-in-depth check — the same validation runs here so that any
 // future non-agent localhost caller (eventsources) benefits.
 var enqueueAllowedEventKinds = map[string]struct{}{
-	"cert.renew.ok":       {},
-	"cert.renew.fail":     {},
-	"disk.full.warn":      {},
-	"disk.full.crit":      {},
-	"service.down":        {},
-	"crowdsec.ban.spike":  {},
-	"backup.fail":         {},
-	"admin.login":         {},
+	"cert.renew.ok":      {},
+	"cert.renew.fail":    {},
+	"disk.full.warn":     {},
+	"disk.full.crit":     {},
+	"service.down":       {},
+	"crowdsec.ban.spike": {},
+	"backup.fail":        {},
+	"admin.login":        {},
 	// Additional events that Step 2+ already emits from panel-api
 	// itself land via direct Queue.Publish — not this handler — but
 	// keep the list aligned with history.event_kind values so the
 	// admin API's filter dropdown stays coherent.
-	"domain.expiry.7d":             {},
-	"domain.expiry.1d":             {},
+	"domain.expiry.7d":                    {},
+	"domain.expiry.1d":                    {},
 	"notifications.channel.auto_disabled": {},
 	// M37 PostgreSQL parity (ADR-0091).
 	"postgres.service_down":          {},
 	"postgres.disk_high":             {},
 	"postgres.connections_exhausted": {},
 	// log-tail event source emits these from journalctl scan.
-	"agent.dispatch.failure":  {},
-	"reconciler.error":        {},
-	"agent.unreachable":       {},
+	"agent.dispatch.failure":    {},
+	"reconciler.error":          {},
+	"agent.unreachable":         {},
 	"notifications.dlq.nonzero": {},
-	"panel.api.error":         {},
+	"panel.api.error":           {},
 	// M13.1 bandwidth quota events (in-process publisher; allowed
 	// here so a future external poster can hit the same envelopes).
 	"bandwidth.quota.warn": {},
+	// GH: update-completed (panel jabali or apt system packages).
+	"update.completed":     {},
 	"bandwidth.quota.crit": {},
 }
 

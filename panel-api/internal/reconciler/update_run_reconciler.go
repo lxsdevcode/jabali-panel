@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
 )
 
 // M53 Updates Center — run reconciler (ADR-0118).
@@ -84,6 +85,34 @@ func (r *Reconciler) reconcileUpdateRuns(ctx context.Context) {
 		}
 		if err := r.updateRunHistory.MarkFinished(ctx, row.ID, status, summary, excerpt); err != nil {
 			r.log.Warn("update-run reconcile: mark finished failed", "id", row.ID, "error", err)
+			continue
 		}
+		r.publishUpdateCompleted(ctx, row.Kind, status)
+	}
+}
+
+// publishUpdateCompleted broadcasts an M14 notification when an update run
+// finishes (panel `jabali` or `apt` system packages). Best-effort; a nil
+// queue (notifications not wired) or publish error is logged, never fatal.
+func (r *Reconciler) publishUpdateCompleted(ctx context.Context, kind, status string) {
+	if r.notificationQueue == nil {
+		return
+	}
+	what := "Panel"
+	if kind == models.UpdateKindApt {
+		what = "System packages"
+	}
+	sev, verb := "info", "updated"
+	if status == models.UpdateStatusFailed {
+		sev, verb = "warning", "update failed"
+	}
+	if _, err := r.notificationQueue.Publish(ctx, notifications.Envelope{
+		EventKind: "update.completed",
+		Severity:  sev,
+		Title:     what + " " + verb,
+		Body:      what + " " + verb + " on this server.",
+		Deeplink:  "/jabali-admin/updates",
+	}); err != nil {
+		r.log.Warn("update-run reconcile: publish update.completed failed", "kind", kind, "error", err)
 	}
 }
