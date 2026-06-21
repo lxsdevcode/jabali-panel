@@ -22,7 +22,8 @@ func TestMailWebadminApply_RenderAndGate(t *testing.T) {
 
 	params, _ := json.Marshal(map[string]any{
 		"enabled":       true,
-		"server_name":   "admin.mail.mx.example.com",
+		"server_name":   "mx.example.com",
+		"port":          8449,
 		"ssl_cert_path": "/etc/jabali/tls/panel.crt",
 		"ssl_key_path":  "/etc/jabali/tls/panel.key",
 		"allow_cidrs":   []string{"203.0.113.0/24", "198.51.100.5"},
@@ -39,11 +40,11 @@ func TestMailWebadminApply_RenderAndGate(t *testing.T) {
 	conf, _ := os.ReadFile(filepath.Join(sa, stalwartAdminVhostName))
 	cs := string(conf)
 	for _, want := range []string{
-		"server_name admin.mail.mx.example.com;",
+		"server_name mx.example.com;",
+		"listen 8449 ssl;",
 		"proxy_pass http://127.0.0.1:8446;", // Stalwart stays loopback
 		"auth_basic", "auth_basic_user_file",
 		"allow 203.0.113.0/24;", "allow 198.51.100.5;", "deny all;",
-		"return 301 https://",
 	} {
 		if !strings.Contains(cs, want) {
 			t.Errorf("vhost missing %q\n%s", want, cs)
@@ -91,7 +92,7 @@ func TestMailWebadminApply_Regenerate(t *testing.T) {
 	nginxTestAndReload = func(context.Context) error { return nil }
 	defer func() { nginxTestAndReload = oldReload }()
 
-	base := map[string]any{"enabled": true, "server_name": "admin.mx.example.com", "ssl_cert_path": "/c", "ssl_key_path": "/k"}
+	base := map[string]any{"enabled": true, "server_name": "mx.example.com", "port": 8449, "ssl_cert_path": "/c", "ssl_key_path": "/k"}
 	p1, _ := json.Marshal(base)
 	r1, _ := mailWebadminApplyHandler(context.Background(), p1)
 	first := r1.(webadminApplyResponse).GatewayPassword

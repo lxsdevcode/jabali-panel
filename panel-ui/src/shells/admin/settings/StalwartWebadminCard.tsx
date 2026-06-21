@@ -72,8 +72,8 @@ export function StalwartWebadminCard() {
         okText: "Enable",
         okButtonProps: { danger: true },
         content:
-          "This publishes the full mail-server admin UI at admin." +
-          (hostname || "<panel-hostname>") +
+          "This publishes the full mail-server admin UI at " +
+          (hostname ? `${hostname}:8449` : "<panel-hostname>:8449") +
           " behind TLS + a basic-auth gateway. It is the highest-value target on the box — anyone who gets past the gateway can read all mail and send as any domain. Use the IP allowlist, keep the gateway credential safe, and turn this off when you are done.",
         onOk: doEnable,
       });
@@ -153,7 +153,7 @@ export function StalwartWebadminCard() {
             <Alert
               type="warning"
               showIcon
-              message={`Live at https://admin.${hostname}/`}
+              message={`Live at https://${hostname}:8449/`}
               description="The full mail-server admin is reachable. Restrict by IP and disable when not in use."
             />
             <Button onClick={regenerate} loading={busy}>

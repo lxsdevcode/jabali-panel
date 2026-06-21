@@ -801,6 +801,10 @@ func (h *serverSettingsHandler) pythonRuntimeStatus(c *gin.Context) {
 
 // --- GH #243: Stalwart WebAdmin reverse-proxy ---
 
+// stalwartWebadminPort is the dedicated HTTPS port the WebAdmin proxy listens
+// on (panel hostname, panel cert). Distinct from the panel :8443.
+const stalwartWebadminPort = 8449
+
 // webadminCredential is the one-time gateway basic-auth credential returned to
 // the operator when the WebAdmin proxy is first enabled.
 type webadminCredential struct {
@@ -821,37 +825,19 @@ type settingsUpdateResponse struct {
 // Returns a freshly-minted gateway credential only on first enable.
 func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings, regenerate bool) (*webadminCredential, error) {
 	cidrs := splitCIDRList(s.StalwartWebadminAllowCIDRs)
-	serverName := "admin." + s.Hostname
 
-	// The panel cert covers the panel hostname, NOT admin.<hostname>, so
-	// serving it on the WebAdmin subdomain trips a TLS name mismatch the
-	// browser won't bypass (GH #243). Mint a self-signed cert that MATCHES
-	// admin.<hostname> so the subdomain is reachable (a self-signed warning
-	// the operator can accept). Falls back to the panel cert if self-sign
-	// fails, or when disabling (cert irrelevant then).
-	certPath, keyPath := "/etc/jabali/tls/panel.crt", "/etc/jabali/tls/panel.key"
-	if s.StalwartWebadminEnabled && h.cfg.Agent != nil {
-		ssCtx, ssCancel := context.WithTimeout(ctx, 30*time.Second)
-		ssRaw, ssErr := h.cfg.Agent.Call(ssCtx, "ssl.self_sign", map[string]any{
-			"domain": serverName, "days": 825,
-		})
-		ssCancel()
-		if ssErr == nil {
-			var ss struct {
-				CertPath string `json:"cert_path"`
-				KeyPath  string `json:"key_path"`
-			}
-			if json.Unmarshal(ssRaw, &ss) == nil && ss.CertPath != "" {
-				certPath, keyPath = ss.CertPath, ss.KeyPath
-			}
-		}
-	}
-
+	// Serve on a dedicated port of the PANEL hostname (not an admin.<host>
+	// subdomain): reuse the panel cert (it already covers the panel hostname
+	// and is the cert the operator already trusts for the panel), and let
+	// Stalwart own the origin root — its admin SPA uses absolute /api, /logo
+	// and /webadmin paths that would collide under a sub-path on the panel
+	// host (GH #243).
 	params := map[string]any{
 		"enabled":       s.StalwartWebadminEnabled,
-		"server_name":   serverName,
-		"ssl_cert_path": certPath,
-		"ssl_key_path":  keyPath,
+		"server_name":   s.Hostname,
+		"port":          stalwartWebadminPort,
+		"ssl_cert_path": "/etc/jabali/tls/panel.crt",
+		"ssl_key_path":  "/etc/jabali/tls/panel.key",
 		"allow_cidrs":   cidrs,
 		"regenerate":    regenerate,
 	}
@@ -872,7 +858,7 @@ func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *mo
 	return &webadminCredential{
 		User:     resp.GatewayUser,
 		Password: resp.GatewayPassword,
-		URL:      "https://admin." + s.Hostname + "/",
+		URL:      fmt.Sprintf("https://%s:%d/", s.Hostname, stalwartWebadminPort),
 	}, nil
 }
 

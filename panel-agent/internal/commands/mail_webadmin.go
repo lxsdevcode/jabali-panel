@@ -40,17 +40,14 @@ const (
 var stalwartAdminHtpasswd = "/etc/nginx/.jabali-stalwart-admin.htpasswd"
 
 var stalwartAdminVhostTemplate = `# Rendered by panel-agent mail.webadmin.apply (GH #243, ADR-0142).
-# Stalwart WebAdmin reverse-proxy. Stalwart stays on 127.0.0.1:8446; this is
-# the only externally reachable door, behind TLS + basic-auth{{if .AllowCIDRs}} + IP allowlist{{end}}.
+# Stalwart WebAdmin reverse-proxy on a dedicated port of the PANEL hostname, so
+# it reuses the panel cert (name matches; already trusted) and Stalwart owns
+# the origin root (its admin SPA uses absolute /api, /logo, /webadmin paths).
+# Stalwart stays on 127.0.0.1:8446; this is the only externally reachable door,
+# behind TLS + basic-auth{{if .AllowCIDRs}} + IP allowlist{{end}}.
 server {
-    listen 80;
-    listen [::]:80;
-    server_name {{.ServerName}};
-    return 301 https://$host$request_uri;
-}
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
+    listen {{.Port}} ssl;
+    listen [::]:{{.Port}} ssl;
     http2 on;
     server_name {{.ServerName}};
 
@@ -81,6 +78,7 @@ server {
 type webadminApplyParams struct {
 	Enabled     bool     `json:"enabled"`
 	ServerName  string   `json:"server_name"`
+	Port        int      `json:"port"`
 	SSLCertPath string   `json:"ssl_cert_path"`
 	SSLKeyPath  string   `json:"ssl_key_path"`
 	AllowCIDRs  []string `json:"allow_cidrs,omitempty"`
@@ -91,6 +89,7 @@ type webadminApplyParams struct {
 
 type webadminVhostTemplateData struct {
 	ServerName   string
+	Port         int
 	SSLCertPath  string
 	SSLKeyPath   string
 	AllowCIDRs   []string
@@ -172,8 +171,12 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		freshUser, freshPass = stalwartAdminUser, pass
 	}
 
+	if p.Port < 1 || p.Port > 65535 {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "port out of range"}
+	}
 	data := webadminVhostTemplateData{
 		ServerName:   p.ServerName,
+		Port:         p.Port,
 		SSLCertPath:  p.SSLCertPath,
 		SSLKeyPath:   p.SSLKeyPath,
 		AllowCIDRs:   p.AllowCIDRs,
