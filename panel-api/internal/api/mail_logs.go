@@ -30,6 +30,7 @@ type mailLogEntry struct {
 	From      string `json:"from"`
 	To        string `json:"to"`
 	Size      int    `json:"size"`
+	Status    string `json:"status"` // GH #262: delivered/failed/queued
 }
 
 type mailLogsResponse struct {

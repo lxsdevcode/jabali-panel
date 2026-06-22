@@ -3,11 +3,11 @@
 import { useState } from "react";
 import {
   Alert,
-  
   DatePicker,
   Input,
   Space,
   Table,
+  Tag,
   Typography,
 } from "antd";
 import { ReloadOutlined } from "@icons";
@@ -130,6 +130,22 @@ export const LogsTab = () => {
             dataIndex: "size",
             width: 100,
             render: (n: number) => `${(n / 1024).toFixed(1)} KB`,
+          },
+          {
+            // GH #262: delivery outcome, correlated from Stalwart's
+            // queue.message-queued + delivery.completed/failed events.
+            title: "Status",
+            dataIndex: "status",
+            width: 110,
+            render: (v: string | undefined) => {
+              const map: Record<string, { color: string; label: string }> = {
+                delivered: { color: "green", label: "Delivered" },
+                failed: { color: "red", label: "Failed" },
+                queued: { color: "blue", label: "Queued" },
+              };
+              const m = map[v ?? ""] ?? { color: "default", label: v || "—" };
+              return <Tag color={m.color}>{m.label}</Tag>;
+            },
           },
         ]}
       />

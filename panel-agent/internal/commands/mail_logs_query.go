@@ -74,6 +74,10 @@ type mailLogEntry struct {
 	From      string `json:"from"`
 	To        string `json:"to"` // recipients joined with ", "
 	Size      int    `json:"size"`
+	// Status (GH #262): delivery outcome correlated by queueId across the
+	// queued + delivery.completed/failed tracer events. "delivered" /
+	// "failed" / "queued" (queued = accepted, no terminal event seen yet).
+	Status string `json:"status"`
 }
 
 type mailLogsQueryResponse struct {
@@ -96,6 +100,7 @@ type parsedMailLine struct {
 	ts         time.Time
 	queueID    string // for dedup across queued/completed lines of one message
 	queued     bool   // true = queue.message-queued (canonical, preferred on dedup)
+	rank       int    // status precedence: 0 queued < 1 failed < 2 delivered (GH #262)
 }
 
 // parseMailLogLine extracts a message record from a single Stalwart Log
@@ -143,6 +148,12 @@ func parseMailLogLine(line string) (parsedMailLine, bool) {
 		qid = m[1]
 	}
 
+	rank := 0 // queued
+	if strings.Contains(line, mailLogEventCompleted) {
+		rank = 2 // delivered
+	} else if strings.Contains(line, mailLogEventFailed) {
+		rank = 1 // failed
+	}
 	return parsedMailLine{
 		entry: mailLogEntry{
 			Timestamp: tsStr,
@@ -154,6 +165,7 @@ func parseMailLogLine(line string) (parsedMailLine, bool) {
 		ts:         ts,
 		queueID:    qid,
 		queued:     queued,
+		rank:       rank,
 	}, true
 }
 
@@ -245,6 +257,7 @@ func mailLogsQueryHandler(ctx context.Context, params json.RawMessage) (any, err
 	// line (canonical accept time/size) when both are present.
 	seen := map[string]int{}
 	matchedQueued := []bool{}
+	statusRank := []int{} // parallel to matched; max delivery rank per row (GH #262)
 	scanned := 0
 
 files:
@@ -285,6 +298,9 @@ files:
 			}
 			if pl.queueID != "" {
 				if idx, dup := seen[pl.queueID]; dup {
+					if pl.rank > statusRank[idx] {
+						statusRank[idx] = pl.rank
+					}
 					if pl.queued && !matchedQueued[idx] {
 						matched[idx] = pl.entry
 						matchedQueued[idx] = true
@@ -295,8 +311,21 @@ files:
 			}
 			matched = append(matched, pl.entry)
 			matchedQueued = append(matchedQueued, pl.queued)
+			statusRank = append(statusRank, pl.rank)
 		}
 		fh.Close()
+	}
+
+	// Stamp the correlated delivery status (GH #262) before sorting.
+	for i := range matched {
+		switch statusRank[i] {
+		case 2:
+			matched[i].Status = "delivered"
+		case 1:
+			matched[i].Status = "failed"
+		default:
+			matched[i].Status = "queued"
+		}
 	}
 
 	// Newest first. Files are already newest-first and Stalwart appends in

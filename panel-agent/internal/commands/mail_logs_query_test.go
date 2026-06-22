@@ -192,3 +192,39 @@ func TestMailLogsHandler_MissingDirIsEmpty(t *testing.T) {
 		t.Errorf("missing dir should yield empty, got total=%d", resp.Total)
 	}
 }
+
+// GH #262: parseMailLogLine ranks the delivery outcome (queued < failed <
+// delivered) so the query can stamp a per-message status correlated by queueId.
+func TestParseMailLogLine_StatusRank(t *testing.T) {
+	const sampleFailed = `2026-06-19T22:12:00Z INFO Delivery failed (delivery.failed) queueId = 313790779361329152, queueName = "remote", from = "probe7@jabali.site", to = ["x@dead.test"], size = 1662, total = 1`
+	cases := []struct {
+		name string
+		line string
+		want int
+	}{
+		{"queued", sampleQueued, 0},
+		{"failed", sampleFailed, 1},
+		{"completed", sampleCompleted, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pl, ok := parseMailLogLine(c.line)
+			if !ok {
+				t.Fatalf("parseMailLogLine(%s) ok=false", c.name)
+			}
+			if pl.rank != c.want {
+				t.Errorf("%s: rank = %d, want %d", c.name, pl.rank, c.want)
+			}
+		})
+	}
+	// Sanity: queued + completed share the queueId, so a real query dedups
+	// them into one delivered row (the completed line outranks queued).
+	q, _ := parseMailLogLine(sampleQueued)
+	d, _ := parseMailLogLine(sampleCompleted)
+	if q.queueID != d.queueID {
+		t.Fatalf("fixtures must share queueId: %q vs %q", q.queueID, d.queueID)
+	}
+	if d.rank <= q.rank {
+		t.Errorf("completed rank %d must outrank queued rank %d", d.rank, q.rank)
+	}
+}

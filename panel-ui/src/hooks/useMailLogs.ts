@@ -8,6 +8,8 @@ export interface MailLogEntry {
   from: string;
   to: string;
   size: number;
+  /** GH #262: delivery outcome — "delivered" | "failed" | "queued". */
+  status?: string;
 }
 
 export interface MailLogsQuery {
