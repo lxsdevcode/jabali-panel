@@ -47,7 +47,20 @@ type Command struct {
 	// Argv is the fully-parsed argv slice, ready to be single-quoted and
 	// emitted as ExecStart= in a systemd unit file.
 	Argv []string
+
+	// Kind distinguishes the validated command shape. Empty ("") is the
+	// default wp/php exec form (ValidateCommand). KindHTTPTrigger is a
+	// constrained curl/wget self-domain HTTP ping (ValidateHTTPTrigger),
+	// whose Argv is rewritten to invoke the rebind-safe wrapper
+	// `jabali cron http-trigger <url>` instead of the raw curl/wget.
+	Kind string
+
+	// URL is the validated http(s) target, set only for Kind==KindHTTPTrigger.
+	URL string
 }
+
+// KindHTTPTrigger marks a Command produced by ValidateHTTPTrigger.
+const KindHTTPTrigger = "http_trigger"
 
 // metacharSet is the set of bytes that must be rejected in the raw command
 // string unless they appear inside matched quotes. These are shell metacharacters

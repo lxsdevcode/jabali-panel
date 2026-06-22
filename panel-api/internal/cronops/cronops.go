@@ -99,6 +99,7 @@ type applyParams struct {
 	Command       string   `json:"command"`
 	Schedule      string   `json:"schedule"`
 	OwnedDocroots []string `json:"owned_docroots"`
+	OwnedDomains  []string `json:"owned_domains"`
 	RunAsRoot     bool     `json:"run_as_root,omitempty"`
 }
 
@@ -147,27 +148,35 @@ func resolveLinuxUser(ctx context.Context, d Deps, userID string) (string, error
 	return uname, nil
 }
 
-func ownedDocroots(ctx context.Context, d Deps, userID string) ([]string, error) {
-	domains, _, err := d.Domains.ListByUserID(ctx, userID, repository.ListOptions{Limit: 1000})
+// ownedTargets returns the account's docroots (wp/php --path gate) AND its
+// domain names (curl/wget http-trigger self-domain gate, GH #400) from a
+// single domains query.
+func ownedTargets(ctx context.Context, d Deps, userID string) (docroots, domains []string, err error) {
+	doms, _, err := d.Domains.ListByUserID(ctx, userID, repository.ListOptions{Limit: 1000})
 	if err != nil {
-		return nil, fmt.Errorf("%w: resolve docroots: %v", ErrInternal, err)
+		return nil, nil, fmt.Errorf("%w: resolve docroots: %v", ErrInternal, err)
 	}
-	out := make([]string, 0, len(domains))
-	for _, dm := range domains {
+	docroots = make([]string, 0, len(doms))
+	domains = make([]string, 0, len(doms))
+	for _, dm := range doms {
 		if dm.DocRoot != "" {
-			out = append(out, dm.DocRoot)
+			docroots = append(docroots, dm.DocRoot)
+		}
+		if dm.Name != "" {
+			domains = append(domains, dm.Name)
 		}
 	}
-	return out, nil
+	return docroots, domains, nil
 }
 
-func apply(ctx context.Context, d Deps, job *models.CronJob, username string, docroots []string) error {
+func apply(ctx context.Context, d Deps, job *models.CronJob, username string, docroots, domains []string) error {
 	actx, cancel := context.WithTimeout(ctx, agentTimeout)
 	defer cancel()
 	_, err := d.Agent.Call(actx, "cron.apply", applyParams{
 		UserID: job.UserID, Username: username, JobID: job.ID,
 		Name: job.Name, Command: job.Command, Schedule: job.Schedule,
 		OwnedDocroots: docroots,
+		OwnedDomains:  domains,
 		RunAsRoot:     job.RunAsRoot,
 	})
 	if err != nil {
@@ -199,11 +208,11 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*models.CronJob, error
 	if err := cronvalidate.ValidateSchedule(in.Schedule); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrScheduleInvalid, err)
 	}
-	docroots, err := ownedDocroots(ctx, d, in.UserID)
+	docroots, domains, err := ownedTargets(ctx, d, in.UserID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := cronvalidate.ValidateCommand(in.Command, docroots); err != nil {
+	if _, err := cronvalidate.ValidateAny(in.Command, docroots, domains); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCommandInvalid, err)
 	}
 
@@ -220,7 +229,7 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*models.CronJob, error
 		return nil, fmt.Errorf("%w: persist: %v", ErrInternal, err)
 	}
 	if job.Enabled {
-		if err := apply(ctx, d, job, username, docroots); err != nil {
+		if err := apply(ctx, d, job, username, docroots, domains); err != nil {
 			_ = d.CronJobs.Delete(ctx, job.ID) // roll back — REST contract
 			return nil, err
 		}
@@ -245,13 +254,13 @@ func Update(ctx context.Context, d Deps, jobID string, patch UpdatePatch) (*mode
 		return nil, fmt.Errorf("%w: load job: %v", ErrInternal, err)
 	}
 	username := "root"
-	var docroots []string
+	var docroots, domains []string
 	if !job.RunAsRoot {
 		username, err = resolveLinuxUser(ctx, d, job.UserID)
 		if err != nil {
 			return nil, err
 		}
-		docroots, err = ownedDocroots(ctx, d, job.UserID)
+		docroots, domains, err = ownedTargets(ctx, d, job.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +272,7 @@ func Update(ctx context.Context, d Deps, jobID string, patch UpdatePatch) (*mode
 		job.Name = *patch.Name
 	}
 	if patch.Command != nil {
-		if _, err := cronvalidate.ValidateCommand(*patch.Command, docroots); err != nil {
+		if _, err := cronvalidate.ValidateAny(*patch.Command, docroots, domains); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrCommandInvalid, err)
 		}
 		job.Command = *patch.Command
@@ -281,7 +290,7 @@ func Update(ctx context.Context, d Deps, jobID string, patch UpdatePatch) (*mode
 		return nil, fmt.Errorf("%w: persist: %v", ErrInternal, err)
 	}
 	if job.Enabled {
-		if err := apply(ctx, d, job, username, docroots); err != nil {
+		if err := apply(ctx, d, job, username, docroots, domains); err != nil {
 			return nil, err
 		}
 	} else {

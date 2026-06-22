@@ -42,6 +42,7 @@ func newCronCmd() *cobra.Command {
 		newCronUpdateCmd(),
 		newCronDeleteCmd(),
 		newCronRunNowCmd(),
+		newCronHTTPTriggerCmd(),
 	)
 	return cmd
 }

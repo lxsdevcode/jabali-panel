@@ -332,3 +332,23 @@ func TestFileExists(t *testing.T) {
 	}
 }
 
+
+// TestBuildCronServiceContent_HTTPTrigger locks the GH #400 Part B unit
+// shape: a curl/wget self-domain cron is emitted as the rebind-safe
+// wrapper invocation, single-quoted, with NO docroot ExecStartPre.
+func TestBuildCronServiceContent_HTTPTrigger(t *testing.T) {
+	cmd := &cronvalidate.Command{
+		Kind: cronvalidate.KindHTTPTrigger,
+		URL:  "https://own.example.com/wp-cron.php?doing_wp_cron",
+		Argv: []string{"/usr/local/bin/jabali", "cron", "http-trigger", "https://own.example.com/wp-cron.php?doing_wp_cron"},
+	}
+	content := buildCronServiceContent("job1", "Trigger", cmd, "testuser", nil)
+
+	if !contains(content, "ExecStart='/usr/local/bin/jabali' 'cron' 'http-trigger' 'https://own.example.com/wp-cron.php?doing_wp_cron'") {
+		t.Errorf("ExecStart not the wrapper invocation:\n%s", content)
+	}
+	// No docroot in Argv -> no precheck ExecStartPre.
+	if contains(content, "cron-precheck") {
+		t.Errorf("http-trigger unit must not have a docroot ExecStartPre:\n%s", content)
+	}
+}

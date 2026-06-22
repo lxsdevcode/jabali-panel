@@ -189,7 +189,7 @@ func TestCronWireShape(t *testing.T) {
 		want    []string
 	}{
 		{"cron.apply", applyParams{UserID: "u", Username: "s", JobID: "j", Name: "n", Command: "wp cron", Schedule: "0 * * * *", OwnedDocroots: []string{"/x"}},
-			[]string{"command", "job_id", "name", "owned_docroots", "schedule", "user_id", "username"}},
+			[]string{"command", "job_id", "name", "owned_docroots", "owned_domains", "schedule", "user_id", "username"}},
 		{"cron.remove", removeParams{UserID: "u", Username: "s", JobID: "j"},
 			[]string{"job_id", "user_id", "username"}},
 	} {

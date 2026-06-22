@@ -21,6 +21,7 @@ type cronRunNowParams struct {
 	JobID         string   `json:"job_id"`
 	Command       string   `json:"command"`
 	OwnedDocroots []string `json:"owned_docroots"`
+	OwnedDomains  []string `json:"owned_domains"`
 }
 
 // cronRunNowResponse is the output from cron.run_now.
@@ -44,7 +45,7 @@ type cronRunNowResponse struct {
 //   - --pipe captures stdout/stderr, --wait blocks until the unit
 //     finishes and propagates its exit code, --collect garbage-collects
 //     the transient unit. So the operator gets the REAL command exit code
-//     + output, independent of whether the persistent timer/service unit
+//   - output, independent of whether the persistent timer/service unit
 //     happens to be loaded.
 func cronRunNowHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p cronRunNowParams
@@ -67,7 +68,7 @@ func cronRunNowHandler(ctx context.Context, params json.RawMessage) (any, error)
 	// Defense-in-depth: re-validate the command against the user's owned
 	// docroots (same gate as cron.apply) before executing it. Never trust
 	// the stored command blindly.
-	validated, vErr := cronvalidate.ValidateCommand(p.Command, p.OwnedDocroots)
+	validated, vErr := cronvalidate.ValidateAny(p.Command, p.OwnedDocroots, p.OwnedDomains)
 	if vErr != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,

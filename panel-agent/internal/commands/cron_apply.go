@@ -25,6 +25,7 @@ type cronApplyParams struct {
 	Command       string   `json:"command"`
 	Schedule      string   `json:"schedule"`
 	OwnedDocroots []string `json:"owned_docroots"`
+	OwnedDomains  []string `json:"owned_domains"`
 	RunAsRoot     bool     `json:"run_as_root,omitempty"`
 }
 
@@ -79,8 +80,11 @@ func cronApplyHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Re-validate command and schedule (defense-in-depth per spec §3 invariant)
-	cmd, err := cronvalidate.ValidateCommand(p.Command, p.OwnedDocroots)
+	// Re-validate command and schedule (defense-in-depth per spec §3 invariant).
+	// ValidateAny routes curl/wget self-domain crons (GH #400 Part B) to the
+	// http-trigger validator (gated on OwnedDomains); everything else stays
+	// the wp/php closed set (gated on OwnedDocroots).
+	cmd, err := cronvalidate.ValidateAny(p.Command, p.OwnedDocroots, p.OwnedDomains)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,

@@ -12,13 +12,13 @@ import (
 // reconcileCronJobs converges cron_jobs DB rows -> systemd-user timers on disk.
 //
 // Per plan section 1 step 5 / section 3 invariants:
-//   1. Fetch every cron_jobs row.
-//   2. Group by user_id; resolve Linux username.
-//   3. Compute owned docroots (Domains.ListByUserID) once per user.
-//   4. Ask the agent which jabali-cron-<id>.timer files already exist on disk.
-//   5. For each enabled DB row -> cron.apply (idempotent, agent skips no-op).
-//   6. For each disabled DB row -> cron.remove.
-//   7. For every on-disk ID that has no DB row -> cron.remove as orphan.
+//  1. Fetch every cron_jobs row.
+//  2. Group by user_id; resolve Linux username.
+//  3. Compute owned docroots (Domains.ListByUserID) once per user.
+//  4. Ask the agent which jabali-cron-<id>.timer files already exist on disk.
+//  5. For each enabled DB row -> cron.apply (idempotent, agent skips no-op).
+//  6. For each disabled DB row -> cron.remove.
+//  7. For every on-disk ID that has no DB row -> cron.remove as orphan.
 //
 // First agent error per user is logged and the user is skipped; the rest of the
 // pass continues. Mirrors the shape of reconcileWordPressInstalls.
@@ -50,7 +50,7 @@ func (r *Reconciler) reconcileCronJobs(ctx context.Context) {
 		}
 		username := *u.Username
 
-		docroots, err := r.ownedDocrootsFor(ctx, userID)
+		docroots, domains, err := r.ownedTargetsFor(ctx, userID)
 		if err != nil {
 			r.log.Warn("reconcile: failed to list owned docroots for cron", "user_id", userID, "err", err)
 			continue
@@ -66,7 +66,7 @@ func (r *Reconciler) reconcileCronJobs(ctx context.Context) {
 			if !job.Enabled {
 				continue
 			}
-			if err := r.cronApplyOne(ctx, userID, username, job, docroots); err != nil {
+			if err := r.cronApplyOne(ctx, userID, username, job, docroots, domains); err != nil {
 				r.log.Error("reconcile: agent cron.apply failed", "job_id", job.ID, "err", err)
 				continue
 			}
@@ -112,21 +112,25 @@ func (r *Reconciler) reconcileCronJobs(ctx context.Context) {
 	}
 }
 
-func (r *Reconciler) ownedDocrootsFor(ctx context.Context, userID string) ([]string, error) {
+func (r *Reconciler) ownedTargetsFor(ctx context.Context, userID string) (docroots, domainNames []string, err error) {
 	if r.domains == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	domains, _, err := r.domains.ListByUserID(ctx, userID, repository.ListOptions{Limit: 1000})
+	doms, _, err := r.domains.ListByUserID(ctx, userID, repository.ListOptions{Limit: 1000})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := make([]string, 0, len(domains))
-	for _, d := range domains {
+	docroots = make([]string, 0, len(doms))
+	domainNames = make([]string, 0, len(doms))
+	for _, d := range doms {
 		if d.DocRoot != "" {
-			out = append(out, d.DocRoot)
+			docroots = append(docroots, d.DocRoot)
+		}
+		if d.Name != "" {
+			domainNames = append(domainNames, d.Name)
 		}
 	}
-	return out, nil
+	return docroots, domainNames, nil
 }
 
 func (r *Reconciler) cronListOnDisk(ctx context.Context, userID, username string) (map[string]struct{}, error) {
@@ -194,7 +198,7 @@ func (r *Reconciler) cronHarvestLastRun(ctx context.Context, userID, username st
 	}
 }
 
-func (r *Reconciler) cronApplyOne(ctx context.Context, userID, username string, job *models.CronJob, docroots []string) error {
+func (r *Reconciler) cronApplyOne(ctx context.Context, userID, username string, job *models.CronJob, docroots, domains []string) error {
 	agentCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	_, err := r.agent.Call(agentCtx, "cron.apply", map[string]any{
@@ -205,6 +209,7 @@ func (r *Reconciler) cronApplyOne(ctx context.Context, userID, username string, 
 		"command":        job.Command,
 		"schedule":       job.Schedule,
 		"owned_docroots": docroots,
+		"owned_domains":  domains,
 	})
 	return err
 }
