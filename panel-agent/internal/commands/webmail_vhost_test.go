@@ -338,7 +338,7 @@ func TestWebmailVhostApply_EmptyPanelHostnameOmitsSubFilter(t *testing.T) {
 // the panel-cert reconciler (ssl.panel.issue), not per-domain ACME,
 // so dropping the ACME location entirely is safe. Regression test
 // for the 60s reconciler error loop on .14 (2026-06-01).
-func TestWebmailVhostApply_EmptyDocRootSkipsACMELocation(t *testing.T) {
+func TestWebmailVhostApply_EmptyDocRootServesPanelACME(t *testing.T) {
 	avail, _ := wireMailVhostPaths(t)
 	wireNginxReload(t)
 
@@ -356,16 +356,24 @@ func TestWebmailVhostApply_EmptyDocRootSkipsACMELocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	// MUST NOT contain the broken `root ;` directive.
+	// MUST NOT contain the broken `root ;` directive (no docroot fallback).
 	if strings.Contains(s, "root ;") || strings.Contains(s, "root  ;") {
 		t.Errorf("vhost emitted invalid `root ;` directive:\n%s", s)
 	}
-	// MUST NOT contain the ACME challenge block when DocRoot empty.
-	if strings.Contains(s, "/.well-known/acme-challenge/") {
-		t.Errorf("vhost should skip ACME location when DocRoot empty:\n%s", s)
+	// GH #268: panel-primary mail vhost MUST serve the panel mail cert's
+	// HTTP-01 webroot on :80, or ssl.panel.issue kind=mail 404s on the
+	// mail.<panel> challenge and the cert never validates.
+	if !strings.Contains(s, "/.well-known/acme-challenge/") {
+		t.Errorf("panel-primary vhost must serve ACME challenges:\n%s", s)
 	}
-	// MUST still emit the :80 → :443 redirect so plain-HTTP hits the
-	// mail vhost get bounced to TLS rather than 404.
+	if !strings.Contains(s, "root /var/www/jabali-panel-acme;") {
+		t.Errorf("panel-primary ACME location must serve /var/www/jabali-panel-acme:\n%s", s)
+	}
+	// Must NOT emit the docroot fallback location (there is no docroot).
+	if strings.Contains(s, "location @acme_docroot {") {
+		t.Errorf("panel-primary vhost must not emit @acme_docroot location:\n%s", s)
+	}
+	// MUST still emit the :80 → :443 redirect for non-ACME plain-HTTP.
 	if !strings.Contains(s, "return 301 https://$host$request_uri;") {
 		t.Errorf("vhost missing :80 → :443 redirect:\n%s", s)
 	}

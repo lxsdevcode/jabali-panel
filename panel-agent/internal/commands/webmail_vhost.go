@@ -144,11 +144,13 @@ server {
   # jabali.site cert failed because mail.<domain>:80 redirected to
   # https where the mail vhost served 404 for /.well-known/acme.
   #
-  # Panel-primary rows (M6.4 / ADR-0048) are mail-only — no docroot,
-  # no per-domain ACME. The panel-cert reconciler (ssl.panel.issue)
-  # owns mail.<panel-hostname> cert renewal via its own pipeline.
-  # Skip the ACME location entirely when DocRoot is empty so the
-  # template doesn't emit a bare root directive that trips nginx -t.
+  # Panel-primary rows (M6.4 / ADR-0048) are mail-only — no docroot.
+  # The panel-cert reconciler (ssl.panel.issue kind=mail) owns
+  # mail.<panel-hostname> cert renewal and validates HTTP-01 with
+  # -w /var/www/jabali-panel-acme, so the empty-DocRoot branch below
+  # serves THAT webroot (it must not fall through to the 301, or the
+  # challenge redirects to https and 404s — GH #268). It omits the
+  # {{.DocRoot}} fallback (no docroot) to avoid a bare root directive.
   #
   # When DocRoot IS set (tenant domain) the location serves TWO
   # webroots in priority order:
@@ -179,7 +181,19 @@ server {
   location / {
     return 301 https://$host$request_uri;
   }
-{{ else }}  location / {
+{{ else }}  # Panel-primary mail vhost (M6.4 / ADR-0048): mail-only, no per-domain
+  # docroot. The panel mail cert (ssl.panel.issue kind=mail) validates
+  # mail.<panel-hostname> over HTTP-01 with -w /var/www/jabali-panel-acme,
+  # so this :80 block MUST serve that webroot — otherwise the challenge
+  # falls through to the 301 below, redirects to https, and 404s on the
+  # mail vhost, parking the panel mail cert in failed/attempt-N (GH #268).
+  location ^~ /.well-known/acme-challenge/ {
+    default_type "text/plain";
+    root /var/www/jabali-panel-acme;
+    try_files $uri =404;
+  }
+
+  location / {
     return 301 https://$host$request_uri;
   }
 {{ end }}}
