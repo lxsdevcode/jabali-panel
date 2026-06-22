@@ -164,3 +164,32 @@ func TestSanitizeWebmailHosts(t *testing.T) {
 		}
 	}
 }
+
+// GH #404: WordPress page-builder exemption. /wp-json/elementor/ is plain-
+// allowed; the dual-purpose /wp-admin/{admin-ajax,post}.php are exempt ONLY
+// when the WordPress login cookie is present (unauthenticated nopriv surface
+// stays inspected).
+func TestRender_WordPressAllowlist(t *testing.T) {
+	out := Render(Opts{
+		Mode:               "off",
+		Inband:             []string{"crowdsecurity/vpatch-*"},
+		AdminAllowlist:     true,
+		WordPressAllowlist: true,
+	})
+	mustContain(t, out, `req.URL.Path startsWith "/wp-json/elementor/"`, "elementor REST plain-allow")
+	mustContain(t, out, `req.URL.Path == "/wp-admin/admin-ajax.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"})`, "admin-ajax cookie-gated")
+	mustContain(t, out, `req.URL.Path == "/wp-admin/post.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"})`, "post.php cookie-gated")
+	// Security regression guards: never blanket-allow public-surface paths.
+	mustNotContain(t, out, `startsWith "/wp-json/wp/v2/"`, "must NOT exempt public wp/v2 REST")
+	mustNotContain(t, out, `startsWith "/wp-admin/admin-ajax.php"`, "admin-ajax must be exact+cookie, not a prefix-allow")
+	// /api/v1/ block still first + intact.
+	if strings.Index(out, `startsWith "/api/v1/"`) > strings.Index(out, `startsWith "/wp-json/elementor/"`) {
+		t.Fatal("/api/v1/ block must precede the WP block")
+	}
+}
+
+// Off by default: no WordPressAllowlist flag => no WP exemption emitted.
+func TestRender_WordPressAllowlistOptOut(t *testing.T) {
+	out := Render(Opts{Mode: "off", Inband: []string{"x"}, AdminAllowlist: false})
+	mustNotContain(t, out, "wp-json/elementor", "no WP exemption when flag unset")
+}

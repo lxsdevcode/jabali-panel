@@ -93,11 +93,12 @@ gate a 'systemctl reload crowdsec' on real diffs.`,
 			}
 
 			body := appseccfg.Render(appseccfg.Opts{
-				Mode:           mode,
-				Countries:      countries,
-				Inband:         inband,
-				AdminAllowlist: true,
-				WebmailHosts:   webmailHosts,
+				Mode:               mode,
+				Countries:          countries,
+				Inband:             inband,
+				AdminAllowlist:     true,
+				WordPressAllowlist: true, // GH #404: default-on WP page-builder exemption
+				WebmailHosts:       webmailHosts,
 			})
 
 			// Write-on-diff: cheap before any nginx/crowdsec reload

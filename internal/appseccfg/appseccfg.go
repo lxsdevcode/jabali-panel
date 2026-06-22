@@ -27,6 +27,20 @@ type Opts struct {
 	Countries      []string
 	Inband         []string
 	AdminAllowlist bool
+	// WordPressAllowlist (GH #404) exempts the WordPress page-builder
+	// endpoints that CRS false-positive-bans on legitimate admin edits
+	// (Elementor save -> 942550 JSON-SQLi / 932370 RCE / 911100 method ->
+	// 949110 anomaly block -> ~4h ban on the editor's IP). A page builder
+	// POSTs arbitrary HTML/CSS/URLs in JSON, indistinguishable from
+	// injection at the WAF, so a per-rule-ID exclusion is whack-a-mole.
+	// Instead: plain-allow the plugin-namespaced /wp-json/elementor/ REST
+	// (own permission callbacks, like our /api/v1/ bypass), and for the
+	// dual-purpose /wp-admin/{admin-ajax,post}.php gate the exemption on
+	// the WordPress login cookie so the UNAUTHENTICATED nopriv surface stays
+	// fully inspected. Cookie presence != validation (an attacker can add
+	// the header), so not a hard boundary, but it keeps drive-by/automated
+	// scanning -- the bulk of WAF value -- inspected.
+	WordPressAllowlist bool
 	// WebmailHosts is the explicit allowlist of FQDNs exempted from
 	// CrowdSec AppSec. These are the dedicated webmail/autodiscover
 	// vhosts served exclusively by Bulwark + Stalwart, both of which
@@ -190,11 +204,19 @@ func Render(o Opts) string {
 	// controlled header and nginx falls back to default_server (which
 	// serves phpMyAdmin) when no vhost matches.
 	hosts := sanitizeWebmailHosts(o.WebmailHosts)
-	if o.AdminAllowlist || len(hosts) > 0 {
+	if o.AdminAllowlist || o.WordPressAllowlist || len(hosts) > 0 {
 		b.WriteString("on_match:\n")
 	}
 	if o.AdminAllowlist {
 		b.WriteString(` - filter: req.URL.Path startsWith "/api/v1/"
+   apply:
+    - CancelEvent()
+    - CancelAlert()
+    - SetRemediation("allow")
+`)
+	}
+	if o.WordPressAllowlist {
+		b.WriteString(` - filter: req.URL.Path startsWith "/wp-json/elementor/" || (req.URL.Path == "/wp-admin/admin-ajax.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"})) || (req.URL.Path == "/wp-admin/post.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"}))
    apply:
     - CancelEvent()
     - CancelAlert()

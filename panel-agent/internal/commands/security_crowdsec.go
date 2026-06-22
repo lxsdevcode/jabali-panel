@@ -911,8 +911,9 @@ func renderAppSecGeoblockRule(mode string, countries []string) string {
 			"crowdsecurity/vpatch-*",
 			"crowdsecurity/generic-*",
 		},
-		AdminAllowlist: true,
-		WebmailHosts:   webmailHosts,
+		AdminAllowlist:     true,
+		WordPressAllowlist: true, // GH #404: keep WP page-builder exemption on agent re-render
+		WebmailHosts:       webmailHosts,
 	})
 }
 
