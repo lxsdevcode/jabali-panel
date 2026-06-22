@@ -393,6 +393,15 @@ func (r *Reconciler) Start(ctx context.Context) {
 	pruneTicker := time.NewTicker(5 * time.Minute)
 	defer pruneTicker.Stop()
 
+	// Update-run finish ticker: poll running `jabali update` / apt transient
+	// units every 5s so a finished run's update_history row flips to
+	// success/failed promptly. ReconcileAll already calls reconcileUpdateRuns,
+	// but its 60s cadence left the top-bar Tasks indicator spinning for up to
+	// a minute after the update actually finished. Cheap: ListRunning is a
+	// no-op when idle, and the agent status call only fires for a running row.
+	updateRunTicker := time.NewTicker(5 * time.Second)
+	defer updateRunTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -420,6 +429,11 @@ func (r *Reconciler) Start(ctx context.Context) {
 				continue
 			}
 			r.RetrySSLDueForACME(ctx)
+		case <-updateRunTicker.C:
+			if r.IsPaused() {
+				continue
+			}
+			r.reconcileUpdateRuns(ctx)
 		case <-pruneTicker.C:
 			if r.ssoTokens != nil {
 				if count, err := r.ssoTokens.PurgeExpired(ctx); err != nil {
