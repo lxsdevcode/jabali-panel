@@ -94,10 +94,17 @@ func (r *packageRepo) List(ctx context.Context, opts ListOptions) ([]models.Host
 }
 
 func (r *packageRepo) Update(ctx context.Context, p *models.HostingPackage) error {
+	// Allowlist MUST list every column the API update handler can set, or that
+	// field silently never persists (GH #170 docker_app_slugs + #402
+	// php_exec_enabled + the M18 resource limits were all dropped this way).
+	// See feedback_domain_update_allowlist_silent_drop.
 	if err := r.db.WithContext(ctx).Model(p).Where("id = ?", p.ID).Select(
 		"name", "disk_quota_mb", "bandwidth_quota_mb", "max_domains",
 		"max_email_accounts", "max_databases",
-		"ssh_enabled", "cgi_enabled", "nspawn_image_version", "updated_at",
+		"cpu_quota_percent", "memory_limit_mb", "io_read_mbps", "io_write_mbps",
+		"max_tasks", "max_docker_apps", "docker_app_slugs",
+		"ssh_enabled", "cgi_enabled", "php_exec_enabled",
+		"nspawn_image_version", "updated_at",
 	).Updates(p).Error; err != nil {
 		return translate(err)
 	}

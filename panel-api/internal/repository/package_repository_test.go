@@ -8,6 +8,7 @@ import (
 
 	"database/sql"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
@@ -74,4 +75,39 @@ func TestPackage_defaultPackages_ShapeAndTiers(t *testing.T) {
 		require.NotEmpty(t, d.ID)
 		require.False(t, d.CreatedAt.IsZero())
 	}
+}
+
+// Regression (GH #170 / #402): the Update Select allowlist must carry every
+// column the API handler can set. docker_app_slugs and php_exec_enabled were
+// both silently dropped — selecting apps / toggling PHP-exec on edit never
+// persisted. Guard each critical column appears in the emitted UPDATE.
+func updatePersistsColumn(t *testing.T, colRegex string) {
+	t.Helper()
+	db, mock, raw := newMockPackageDB(t)
+	defer raw.Close()
+	repo := NewPackageRepository(db)
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE .hosting_packages. SET .*" + colRegex).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	pkg := &models.HostingPackage{
+		ID:             "01HXPKG0000000000000000000",
+		Name:           "p",
+		DockerAppSlugs: "wordpress,ghost",
+		PHPExecEnabled: true,
+		MaxDockerApps:  5,
+		UpdatedAt:      time.Now().UTC(),
+	}
+	require.NoError(t, repo.Update(context.Background(), pkg))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPackage_Update_PersistsDockerAppSlugs(t *testing.T) {
+	updatePersistsColumn(t, "docker_app_slugs")
+}
+
+func TestPackage_Update_PersistsPHPExecEnabled(t *testing.T) {
+	updatePersistsColumn(t, "php_exec_enabled")
 }
