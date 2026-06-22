@@ -1,7 +1,7 @@
 # M267 — Tenant Self-Service Selective Restore
 
 **Issue:** GH #267 ("No Tenant Restore Functionality under Tenant Panel")
-**Status:** BLUEPRINT (not yet built)
+**Status:** Wave 1 SHIPPED (read-only manifest preview, `c31bf675`); Waves 2–5 pending
 **Target ADR:** ADR-0148
 **Depends on:** M30/M30.1 backup foundation, ADR-0075/0078/0080; #245 RBAC scopes (ADR-0144)
 
@@ -154,7 +154,7 @@ iteration — do NOT promise lossless DNS restore for backups taken today.
 
 0. **(optional, gates lossless DNS)** capture `dns_records` at backup time
    (option B above) — bumps manifest `schema_version`. Skip for a managed-only v1.
-1. **Manifest preview** — `backup.manifest_read` agent cmd + `GET /me/backups/:id/manifest`
+1. **Manifest preview** — ✅ SHIPPED (`c31bf675`): agent `backup.manifest_read` + `GET /me/backups/:id/manifest`, owner-scoped, live-verified (home/db×3/mail/meta with item names). Original text: — `backup.manifest_read` agent cmd + `GET /me/backups/:id/manifest`
    + owner/scope checks. Read-only; ship + verify first (no mutation risk).
 2. **Selective restore API** — `POST /me/backups/:id/restore`, validation,
    job creation, dispatch. Agent stub returns "not implemented" per stage.
