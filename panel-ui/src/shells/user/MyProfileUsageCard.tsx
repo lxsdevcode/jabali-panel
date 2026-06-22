@@ -1,11 +1,8 @@
-// MyProfileUsageCard — M18 live resource usage for the signed-in user.
-//
-// Hits GET /api/v1/users/:id/usage which returns { effective, current }.
-// effective is the resolved limits (always present), current is the agent's
-// live report (may be absent if the agent is down or the slice has no
-// running processes). Refreshes on 10s polling — adequate for a user
-// self-view; a websocket stream would be overkill.
-import { Card, Progress, Space, Typography } from "antd";
+// MyProfileUsageCard — M18 live resource usage for the signed-in user, shown as
+// a row of small metric cards. Hits GET /api/v1/users/:id/usage which returns
+// { effective, current }. effective is the resolved limits (always present),
+// current is the agent's live report (may be absent). Polls every 10s.
+import { Card, Col, Progress, Row, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -44,6 +41,56 @@ type UsageResponse = {
   current?: Current;
 };
 
+function MetricCard({
+  icon,
+  color,
+  label,
+  value,
+  pct,
+}: {
+  icon: ReactNode;
+  color: string;
+  label: string;
+  value: string;
+  pct?: number;
+}) {
+  return (
+    <Card size="small" styles={{ body: { padding: 12 } }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            flex: "0 0 auto",
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            background: `${color}22`,
+            color,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 16,
+          }}
+        >
+          {icon}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color, fontSize: 12, fontWeight: 600 }}>{label}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>{value}</div>
+        </div>
+      </div>
+      {pct != null && (
+        <Progress
+          percent={pct}
+          status={pct >= 95 ? "exception" : "active"}
+          showInfo={false}
+          size="small"
+          style={{ marginTop: 8, marginBottom: 0 }}
+        />
+      )}
+    </Card>
+  );
+}
+
 export function MyProfileUsageCard({ userId }: { userId: string }) {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,8 +107,7 @@ export function MyProfileUsageCard({ userId }: { userId: string }) {
       } catch (err) {
         if (alive) {
           setError(
-            (err as { response?: { data?: { error?: string } } }).response?.data
-              ?.error ?? "unavailable",
+            (err as { response?: { data?: { error?: string } } }).response?.data?.error ?? "unavailable",
           );
         }
       }
@@ -74,178 +120,68 @@ export function MyProfileUsageCard({ userId }: { userId: string }) {
     };
   }, [userId]);
 
-  if (error) {
-    return (
-      <Card title="Resource usage">
-        <Typography.Text type="secondary">
-          Usage data is currently unavailable.
-        </Typography.Text>
-      </Card>
-    );
-  }
+  const heading = (
+    <Typography.Title level={5} style={{ margin: "0 0 12px" }}>
+      Resource usage
+    </Typography.Title>
+  );
 
-  if (!data) {
-    return <Card title="Resource usage" loading />;
+  if (error || !data) {
+    return (
+      <div>
+        {heading}
+        <Typography.Text type="secondary">
+          {error ? "Usage data is currently unavailable." : "Loading…"}
+        </Typography.Text>
+      </div>
+    );
   }
 
   const { effective, current } = data;
 
-  const diskUsedKB = current?.disk?.used_kb ?? 0;
+  const diskUsed = (current?.disk?.used_kb ?? 0) * 1024;
   const diskLimitKB =
-    (current?.disk?.limit_kb ?? 0) > 0
-      ? (current?.disk?.limit_kb ?? 0)
-      : effective.DiskQuotaMB * 1024;
-  const memUsedB = current?.memory?.current_bytes ?? 0;
-  const memLimitB =
-    current?.memory?.max_bytes ?? effective.MemoryLimitMB * 1024 * 1024;
+    (current?.disk?.limit_kb ?? 0) > 0 ? (current?.disk?.limit_kb ?? 0) : effective.DiskQuotaMB * 1024;
+  const diskLimit = diskLimitKB * 1024;
+  const memUsed = current?.memory?.current_bytes ?? 0;
+  const memLimit = current?.memory?.max_bytes ?? effective.MemoryLimitMB * 1024 * 1024;
+
+  const pctOf = (used: number, limit: number) =>
+    limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : undefined;
+  const usedOf = (used: number, limit: number) =>
+    limit > 0 ? `${humanBytes(used)} / ${humanBytes(limit)}` : `${humanBytes(used)} · ∞`;
 
   const cpuValue =
     effective.CPUQuotaPercent > 0
-      ? `${effective.CPUQuotaPercent}% (${(effective.CPUQuotaPercent / 100).toFixed(1)} cores)`
+      ? `${(effective.CPUQuotaPercent / 100).toFixed(1)} cores`
       : "Unlimited";
   const procValue = current?.tasks
     ? `${current.tasks.current}${current.tasks.max ? ` / ${current.tasks.max}` : ""}`
     : effective.MaxTasks > 0
       ? `Limit ${effective.MaxTasks}`
       : "Unlimited";
-  const ioReadValue =
-    effective.IOReadMbps > 0 ? `${effective.IOReadMbps} MB/s` : "Unlimited";
-  const ioWriteValue =
-    effective.IOWriteMbps > 0 ? `${effective.IOWriteMbps} MB/s` : "Unlimited";
+  const ioReadValue = effective.IOReadMbps > 0 ? `${effective.IOReadMbps} MB/s` : "Unlimited";
+  const ioWriteValue = effective.IOWriteMbps > 0 ? `${effective.IOWriteMbps} MB/s` : "Unlimited";
+
+  const metrics = [
+    { icon: <HddOutlined />, color: "#1677ff", label: "Disk", value: usedOf(diskUsed, diskLimit), pct: pctOf(diskUsed, diskLimit) },
+    { icon: <DatabaseOutlined />, color: "#9254de", label: "Memory", value: usedOf(memUsed, memLimit), pct: pctOf(memUsed, memLimit) },
+    { icon: <ThunderboltOutlined />, color: "#52c41a", label: "CPU quota", value: cpuValue },
+    { icon: <AppstoreLayoutOutlined />, color: "#fa8c16", label: "Processes", value: procValue },
+    { icon: <DownloadOutlined />, color: "#13c2c2", label: "I/O read", value: ioReadValue },
+    { icon: <UploadOutlined />, color: "#eb2f96", label: "I/O write", value: ioWriteValue },
+  ];
 
   return (
-    <Card title="Resource usage">
-      <Space direction="vertical" size={20} style={{ width: "100%" }}>
-        <UsageRow
-          icon={<HddOutlined />}
-          iconBg="rgba(22, 119, 255, 0.12)"
-          iconColor="#1677ff"
-          label="Disk"
-          used={diskUsedKB * 1024}
-          limit={diskLimitKB * 1024}
-        />
-        <UsageRow
-          icon={<DatabaseOutlined />}
-          iconBg="rgba(146, 84, 222, 0.14)"
-          iconColor="#9254de"
-          label="Memory"
-          used={memUsedB}
-          limit={memLimitB}
-        />
-        <SimpleRow
-          icon={<ThunderboltOutlined />}
-          iconBg="rgba(82, 196, 26, 0.14)"
-          iconColor="#52c41a"
-          label="CPU quota"
-          value={cpuValue}
-        />
-        <SimpleRow
-          icon={<AppstoreLayoutOutlined />}
-          iconBg="rgba(250, 140, 22, 0.14)"
-          iconColor="#fa8c16"
-          label="Processes"
-          value={procValue}
-        />
-        <SimpleRow
-          icon={<DownloadOutlined />}
-          iconBg="rgba(19, 194, 194, 0.14)"
-          iconColor="#13c2c2"
-          label="I/O read"
-          value={ioReadValue}
-        />
-        <SimpleRow
-          icon={<UploadOutlined />}
-          iconBg="rgba(235, 47, 150, 0.14)"
-          iconColor="#eb2f96"
-          label="I/O write"
-          value={ioWriteValue}
-        />
-      </Space>
-    </Card>
+    <div>
+      {heading}
+      <Row gutter={[12, 12]}>
+        {metrics.map((m) => (
+          <Col xs={12} sm={8} lg={4} key={m.label}>
+            <MetricCard {...m} />
+          </Col>
+        ))}
+      </Row>
+    </div>
   );
 }
-
-interface IconBoxProps {
-  icon: ReactNode;
-  iconBg: string;
-  iconColor: string;
-}
-
-const IconBox = ({ icon, iconBg, iconColor }: IconBoxProps) => (
-  <div
-    style={{
-      width: 36,
-      height: 36,
-      borderRadius: 10,
-      background: iconBg,
-      color: iconColor,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 16,
-      flex: "0 0 36px",
-    }}
-  >
-    {icon}
-  </div>
-);
-
-interface UsageRowProps extends IconBoxProps {
-  label: string;
-  used: number;
-  limit: number;
-}
-
-function UsageRow({ icon, iconBg, iconColor, label, used, limit }: UsageRowProps) {
-  const limited = limit > 0;
-  const pct = limited ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  const status = pct >= 95 ? "exception" : pct >= 80 ? "active" : "normal";
-  return (
-    <Space align="start" size={12} style={{ width: "100%" }}>
-      <IconBox icon={icon} iconBg={iconBg} iconColor={iconColor} />
-      <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 8,
-            marginBottom: 4,
-          }}
-        >
-          <Typography.Text strong>{label}</Typography.Text>
-          <Typography.Text type="secondary">
-            {limited
-              ? `${humanBytes(used)} / ${humanBytes(limit)}`
-              : `${humanBytes(used)} · Unlimited`}
-          </Typography.Text>
-        </div>
-        {limited && <Progress percent={pct} status={status} showInfo size="small" />}
-      </div>
-    </Space>
-  );
-}
-
-interface SimpleRowProps extends IconBoxProps {
-  label: string;
-  value: string;
-}
-
-function SimpleRow({ icon, iconBg, iconColor, label, value }: SimpleRowProps) {
-  return (
-    <Space align="center" size={12} style={{ width: "100%" }}>
-      <IconBox icon={icon} iconBg={iconBg} iconColor={iconColor} />
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        <Typography.Text strong>{label}</Typography.Text>
-        <Typography.Text type="secondary">{value}</Typography.Text>
-      </div>
-    </Space>
-  );
-}
-

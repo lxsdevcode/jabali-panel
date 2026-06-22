@@ -118,15 +118,6 @@ export function UserDashboard() {
 
   const items = [
     {
-      key: "usage",
-      data: null,
-      children: me ? (
-        <MyProfileUsageCard userId={me.id} />
-      ) : (
-        <Card title="Resource usage" loading />
-      ),
-    },
-    {
       key: "domains",
       data: null,
       children: (
@@ -301,6 +292,12 @@ export function UserDashboard() {
           />
         </Col>
       </Row>
+
+      {me && (
+        <div style={{ marginBottom: 16 }}>
+          <MyProfileUsageCard userId={me.id} />
+        </div>
+      )}
 
       <Masonry
         columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}
