@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Popconfirm, Skeleton, Space, Switch, message } from "antd";
 import { CheckOutlined, CloseOutlined, ThunderboltOutlined } from "@icons";
 
-import { apiClient } from "../../../apiClient";
+import { apiClient } from "../apiClient";
 
 type CacheState = {
   domain_id: string;

@@ -15,6 +15,7 @@ import {
   PlusOutlined,
   SettingOutlined,
   SwapOutlined,
+  ThunderboltOutlined,
 } from "@icons";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,12 +31,13 @@ import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { DomainSettingsButton } from "../../DomainSettingsButton";
 import { DomainRedirectsButton } from "../../DomainRedirectsButton";
+import { DomainCacheButton } from "../../../components/DomainCacheButton";
 import { DomainIndexButton } from "../../DomainIndexButton";
 import { DomainInfoButton } from "../../DomainInfoButton";
 
 type ActiveModal = {
   domain: Domain;
-  type: "redirects" | "index" | "settings" | "info";
+  type: "redirects" | "index" | "settings" | "info" | "caching";
 } | null;
 
 const stripHomePrefix = (path: string): string => {
@@ -352,6 +354,12 @@ export const DomainList = () => {
                         onClick: () => setActiveModal({ domain: r, type: "settings" }),
                       },
                       {
+                        key: "caching",
+                        icon: <ThunderboltOutlined />,
+                        label: "Caching",
+                        onClick: () => setActiveModal({ domain: r, type: "caching" }),
+                      },
+                      {
                         key: "toggle",
                         icon: r.is_enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />,
                         label: r.is_enabled ? "Disable" : "Enable",
@@ -410,6 +418,14 @@ export const DomainList = () => {
                 {activeModal?.domain.id === r.id && activeModal.type === "info" && (
                   <DomainInfoButton
                     domain={r}
+                    open={true}
+                    onClose={() => setActiveModal(null)}
+                  />
+                )}
+                {activeModal?.domain.id === r.id && activeModal.type === "caching" && (
+                  <DomainCacheButton
+                    domainId={r.id}
+                    domainName={r.name}
                     open={true}
                     onClose={() => setActiveModal(null)}
                   />
