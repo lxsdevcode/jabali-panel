@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -54,7 +55,7 @@ func (h *meExtHandler) serverCapabilities(c *gin.Context) {
 	settings, err := h.cfg.ServerSettings.Get(ctx)
 	if errors.Is(err, repository.ErrNotFound) {
 		// Pre-seed install — every flag defaults to false.
-		c.JSON(http.StatusOK, gin.H{"postgres_enabled": false, "docker_marketplace_enabled": false, "python_apps_enabled": false})
+		c.JSON(http.StatusOK, gin.H{"postgres_enabled": false, "docker_marketplace_enabled": false, "docker_apps_user_enabled": false, "python_apps_enabled": false})
 		return
 	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
@@ -63,6 +64,7 @@ func (h *meExtHandler) serverCapabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"postgres_enabled":           settings.PostgresEnabled,
 		"docker_marketplace_enabled": settings.DockerMarketplaceEnabled,
+		"docker_apps_user_enabled":   settings.DockerMarketplaceEnabled && settings.DockerAppsForUsersEnabled && tenantDockerHostReady(),
 		"python_apps_enabled":        settings.PythonAppsEnabled,
 	})
 }
@@ -263,4 +265,14 @@ func (h *meExtHandler) uiPrefsSet(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// tenantDockerHostReady reports whether the host has been made tenant-ready
+// (userns-remap done, flag written by `jabali docker enable-tenant`). The
+// capability ANDs this so the user Docker Apps tab only appears once the host
+// op has actually completed — a failed/aborted enable leaves the tab hidden
+// rather than showing it over a tenant API that still 403s.
+func tenantDockerHostReady() bool {
+	_, err := os.Stat(defaultTenantDockerFlag)
+	return err == nil
 }

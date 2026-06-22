@@ -10,6 +10,7 @@ import { apiClient } from "../apiClient";
 export interface ServerCapabilities {
   postgres_enabled: boolean;
   docker_marketplace_enabled: boolean;
+  docker_apps_user_enabled: boolean;
   python_apps_enabled: boolean;
 }
 
@@ -21,6 +22,7 @@ export function useServerCapabilities() {
       return {
         postgres_enabled: !!data.postgres_enabled,
         docker_marketplace_enabled: !!data.docker_marketplace_enabled,
+        docker_apps_user_enabled: !!data.docker_apps_user_enabled,
         python_apps_enabled: !!data.python_apps_enabled,
       };
     },

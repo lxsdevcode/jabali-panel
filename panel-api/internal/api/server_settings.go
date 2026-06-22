@@ -114,6 +114,8 @@ type updateServerSettingsRequest struct {
 	// docker via install_docker_engine; flip false -> agent stops +
 	// disables docker units (data kept).
 	DockerMarketplaceEnabled *bool `json:"docker_marketplace_enabled,omitempty"`
+	// Admin opt-in: expose tenant Docker Apps to users (GH docker-opt-in).
+	DockerAppsForUsersEnabled *bool `json:"docker_apps_for_users_enabled,omitempty"`
 	// ADR-0131: Python Application Manager opt-in.
 	PythonAppsEnabled *bool `json:"python_apps_enabled,omitempty"`
 	// GH #243 (ADR-0142): opt-in Stalwart WebAdmin exposure + IP allowlist.
@@ -195,6 +197,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevPostgresEnabled := current.PostgresEnabled
 	prevPanelBrandText := current.PanelBrandText
 	prevDockerEnabled := current.DockerMarketplaceEnabled
+	prevDockerForUsers := current.DockerAppsForUsersEnabled
 	prevPythonEnabled := current.PythonAppsEnabled
 	prevWebadminEnabled := current.StalwartWebadminEnabled
 	prevWebadminCIDRs := current.StalwartWebadminAllowCIDRs
@@ -315,6 +318,9 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	if req.DockerMarketplaceEnabled != nil {
 		current.DockerMarketplaceEnabled = *req.DockerMarketplaceEnabled
 	}
+	if req.DockerAppsForUsersEnabled != nil {
+		current.DockerAppsForUsersEnabled = *req.DockerAppsForUsersEnabled
+	}
 	if req.PythonAppsEnabled != nil {
 		current.PythonAppsEnabled = *req.PythonAppsEnabled
 	}
@@ -399,6 +405,15 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 		return
 	}
 
+	// Admin opt-in for tenant Docker apps. Enabling requires the engine; the
+	// host tenant setup itself is dispatched AFTER persist (below), detached
+	// from this request — see the background goroutine.
+	if current.DockerAppsForUsersEnabled != prevDockerForUsers &&
+		current.DockerAppsForUsersEnabled && !current.DockerMarketplaceEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "docker_not_installed", "detail": "enable the Docker marketplace first"})
+		return
+	}
+
 	if err := h.cfg.Repo.Upsert(ctx, current); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
@@ -473,6 +488,21 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 					"method", method, "err", err)
 			}
 		}(current.DockerMarketplaceEnabled)
+	}
+
+	// Tenant Docker opt-in: run the host tenant setup (userns-remap, ~minutes)
+	// or teardown DETACHED from this request, so a client disconnect can't kill
+	// a half-done docker retrofit. The host flag the agent writes is the source
+	// of truth for the docker_apps_user_enabled capability, so a failed enable
+	// simply leaves the tab hidden (no DB/host drift to reconcile).
+	if current.DockerAppsForUsersEnabled != prevDockerForUsers && h.cfg.Agent != nil {
+		go func(target bool) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "docker.tenant_set", map[string]any{"enabled": target}); err != nil {
+				h.cfg.Log.Error("agent docker.tenant_set failed", "enabled", target, "err", err)
+			}
+		}(current.DockerAppsForUsersEnabled)
 	}
 
 	// ADR-0131: install the Python app runtime prerequisites on enable

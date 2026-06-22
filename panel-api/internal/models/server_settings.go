@@ -196,6 +196,14 @@ type ServerSettings struct {
 	// the units; per-app data under /var/lib/jabali/docker-apps/ is
 	// left intact for a future re-enable.
 	DockerMarketplaceEnabled bool `gorm:"column:docker_marketplace_enabled;type:tinyint(1);not null;default:0" json:"docker_marketplace_enabled"`
+	// DockerAppsForUsersEnabled is the admin opt-in that exposes tenant Docker
+	// Apps to users (separate from DockerMarketplaceEnabled, which only
+	// installs the engine). Default off. When flipped on, panel-api dispatches
+	// docker.tenant_set on the agent to run `jabali docker enable-tenant`
+	// (userns-remap host setup); off removes the host tenant flag so the
+	// tenant docker surface is gated off. Drives the user-panel Docker Apps
+	// tab visibility via /me/server-capabilities.
+	DockerAppsForUsersEnabled bool `gorm:"column:docker_apps_for_users_enabled;type:tinyint(1);not null;default:0" json:"docker_apps_for_users_enabled"`
 	// PythonAppsEnabled gates the Python Application Manager (ADR-0131 / GH
 	// #203): hidden + endpoints 403 when off (default). Enabling installs the
 	PythonAppsEnabled bool `gorm:"column:python_apps_enabled;type:tinyint(1);not null;default:0" json:"python_apps_enabled"`

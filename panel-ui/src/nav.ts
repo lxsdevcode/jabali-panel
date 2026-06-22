@@ -284,12 +284,6 @@ export const userNav: NavItem[] = [
     path: "/jabali-panel/logs",
   },
   {
-    key: "activity",
-    label: "Account Activity",
-    icon: navIcon(FileTextOutlined),
-    path: "/jabali-panel/activity",
-  },
-  {
     key: "ssh-keys",
     label: "SSH Keys",
     icon: navIcon(KeyOutlined),

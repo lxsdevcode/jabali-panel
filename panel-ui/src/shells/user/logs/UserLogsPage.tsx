@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Typography, Button, Space, Table, message } from "antd";
+import { Card, Typography, Button, Space, Table, Tabs, message } from "antd";
 import {
   ReloadOutlined,
   FileTextOutlined,
@@ -9,6 +9,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
 import { LogStreamModal } from "../../admin/logs/LogStreamModal";
+import { AccountActivity } from "../activity/AccountActivity";
+import { useSearchParams } from "react-router";
 
 const { Title, Text } = Typography;
 
@@ -33,6 +35,8 @@ const labelFor: Record<LogType, string> = {
 };
 
 export const UserLogsPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") === "activity" ? "activity" : "domains";
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [streamKey, setStreamKey] = useState<string | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -124,12 +128,9 @@ export const UserLogsPage = () => {
     },
   ];
 
-  return (
-    <div>
-      <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
-        <Title level={2} style={{ margin: 0 }}>
-          Logs & Statistics
-        </Title>
+  const domainLogsTab = (
+    <>
+      <Space style={{ marginBottom: 16, width: "100%", justifyContent: "flex-end" }}>
         <Button
           type="primary"
           icon={<ReloadOutlined />}
@@ -138,7 +139,6 @@ export const UserLogsPage = () => {
           Refresh
         </Button>
       </Space>
-
       <Card>
         <Table
           columns={columns}
@@ -150,6 +150,23 @@ export const UserLogsPage = () => {
           scroll={{ x: "max-content" }}
         />
       </Card>
+    </>
+  );
+
+  return (
+    <div>
+      <Title level={2} style={{ marginTop: 0 }}>
+        Logs & Statistics
+      </Title>
+
+      <Tabs
+        activeKey={activeTab}
+        onChange={(k) => setSearchParams(k === "activity" ? { tab: "activity" } : {}, { replace: true })}
+        items={[
+          { key: "domains", label: "Domain logs", children: domainLogsTab },
+          { key: "activity", label: "Account activity", children: <AccountActivity /> },
+        ]}
+      />
 
       <LogStreamModal
         visible={modalVisible}
