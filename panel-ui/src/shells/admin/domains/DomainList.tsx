@@ -82,6 +82,10 @@ const renderSSL = (ssl: SSLBadge | null | undefined) => {
   switch (ssl.status) {
     case "issued":
       return <Tag color="green">{ssl.issuer || "Let's Encrypt"}</Tag>;
+    case "none":
+      return <Tag>None</Tag>;
+    case "provisioning":
+      return <Tag color="orange">Self-signed…</Tag>;
     case "self_signed":
       return <Tag color="orange">Self-signed</Tag>;
     case "pending":

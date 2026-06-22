@@ -167,3 +167,43 @@ func TestDomainList_EmbedsSSLBadge(t *testing.T) {
 		t.Errorf("d3 (no cert): got %+v, want no ssl", byID["d3"])
 	}
 }
+
+// GH #246 follow-up: the badge must reflect ssl_mode, not just the cert row —
+// a None-mode domain keeps a revoked cert; a Self/None domain with no usable
+// cert must not read as "pending".
+func TestSSLBadgeForDomain_ModeAware(t *testing.T) {
+	dom := func(mode string) *models.Domain { return &models.Domain{ID: "d", Name: "x.com", SSLMode: mode} }
+	revoked := &models.SSLCertificate{Status: models.SSLStatusRevoked}
+	issued := &models.SSLCertificate{Status: models.SSLStatusIssued}
+	self := &models.SSLCertificate{Status: models.SSLStatusSelfSigned}
+
+	cases := []struct {
+		name       string
+		d          *models.Domain
+		cert       *models.SSLCertificate
+		wantNil    bool
+		wantStatus string
+	}{
+		{"none+revoked", dom(models.SSLModeNone), revoked, false, "none"},
+		{"none+nocert", dom(models.SSLModeNone), nil, false, "none"},
+		{"none+issued", dom(models.SSLModeNone), issued, false, "none"}, // mode wins
+		{"self+nocert", dom(models.SSLModeSelf), nil, false, "provisioning"},
+		{"self+revoked", dom(models.SSLModeSelf), revoked, false, "provisioning"},
+		{"self+selfsigned", dom(models.SSLModeSelf), self, false, "self_signed"},
+		{"le+nocert", dom(models.SSLModeLE), nil, true, ""},
+		{"le+revoked", dom(models.SSLModeLE), revoked, true, ""},
+		{"le+issued", dom(models.SSLModeLE), issued, false, "issued"},
+	}
+	for _, tc := range cases {
+		b := sslBadgeForDomain(tc.d, tc.cert)
+		if tc.wantNil {
+			if b != nil {
+				t.Errorf("%s: want nil badge, got %+v", tc.name, b)
+			}
+			continue
+		}
+		if b == nil || b.Status != tc.wantStatus {
+			t.Errorf("%s: want status %q, got %+v", tc.name, tc.wantStatus, b)
+		}
+	}
+}

@@ -176,6 +176,7 @@ func (r *sslCertificateRepo) ListAll(ctx context.Context) ([]SSLCertificateWithD
 		Table("ssl_certificates sc").
 		Joins("JOIN domains d ON sc.domain_id = d.id").
 		Joins("JOIN users u ON d.user_id = u.id").
+		Where("sc.status <> ?", models.SSLStatusRevoked).
 		Order("sc.created_at DESC").
 		Scan(&results).Error
 	if err != nil {
@@ -197,6 +198,7 @@ func (r *sslCertificateRepo) ListByUserID(ctx context.Context, userID string) ([
 		Joins("JOIN domains d ON sc.domain_id = d.id").
 		Joins("JOIN users u ON d.user_id = u.id").
 		Where("d.user_id = ?", userID).
+		Where("sc.status <> ?", models.SSLStatusRevoked).
 		Order("sc.created_at DESC").
 		Scan(&results).Error
 	if err != nil {
@@ -210,13 +212,13 @@ func (r *sslCertificateRepo) ListByUserID(ctx context.Context, userID string) ([
 func (r *sslCertificateRepo) UpdateSelfSigned(ctx context.Context, id string, certPath, keyPath string, expiresAt time.Time) error {
 	return r.db.WithContext(ctx).Model(&models.SSLCertificate{}).Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"status":           models.SSLStatusSelfSigned,
-			"cert_path":        certPath,
-			"key_path":         keyPath,
-			"expires_at":       expiresAt,
-			"last_error":       nil,
-			"last_attempt_at":  time.Now(),
-			"updated_at":       time.Now(),
+			"status":          models.SSLStatusSelfSigned,
+			"cert_path":       certPath,
+			"key_path":        keyPath,
+			"expires_at":      expiresAt,
+			"last_error":      nil,
+			"last_attempt_at": time.Now(),
+			"updated_at":      time.Now(),
 		}).Error
 }
 

@@ -286,9 +286,7 @@ func (h *domainHandler) list(c *gin.Context) {
 				certMap[certs[i].DomainID] = &certs[i]
 			}
 			for i := range rows {
-				if cert := certMap[rows[i].ID]; cert != nil {
-					rows[i].SSL = sslBadgeFromCert(cert)
-				}
+				rows[i].SSL = sslBadgeForDomain(&rows[i].Domain, certMap[rows[i].ID])
 			}
 		}
 		// On SSL lookup error we drop the badge silently — list response
@@ -400,12 +398,14 @@ func (h *domainHandler) enrichDomainResponse(ctx context.Context, d models.Domai
 	if h.cfg.SSLCerts != nil {
 		certs, err := h.cfg.SSLCerts.FindByDomainIDs(ctx, []string{d.ID})
 		if err == nil {
+			var cert *models.SSLCertificate
 			for i := range certs {
 				if certs[i].DomainID == d.ID {
-					row.SSL = sslBadgeFromCert(&certs[i])
+					cert = &certs[i]
 					break
 				}
 			}
+			row.SSL = sslBadgeForDomain(&d, cert)
 		}
 	}
 	if h.cfg.ManagedIPs != nil {
@@ -439,6 +439,28 @@ func (h *domainHandler) resolveListenSummary(ctx context.Context, id *uint64, fa
 
 // sslBadgeFromCert maps a cert row to the nested badge, filling Issuer
 // based on status so the UI doesn't have to encode the label logic.
+// sslBadgeForDomain derives the SSL badge from the domain's TLS mode AND its
+// cert row (GH #246). The cert status alone is misleading: a None-mode domain
+// keeps a revoked cert row, and a Self/None domain with no usable cert should
+// not read as "pending". Mode wins.
+func sslBadgeForDomain(d *models.Domain, cert *models.SSLCertificate) *sslBadge {
+	if d.SSLMode == models.SSLModeNone {
+		none := "None"
+		return &sslBadge{Status: "none", Issuer: &none}
+	}
+	// No usable cert yet (no row, or revoked after a mode switch).
+	if cert == nil || cert.Status == models.SSLStatusRevoked {
+		if d.SSLMode == models.SSLModeSelf {
+			iss := "Self-signed"
+			return &sslBadge{Status: "provisioning", Issuer: &iss}
+		}
+		// LE / custom with no cert yet: leave the badge off (UI shows its
+		// own issuing state) — unchanged behaviour.
+		return nil
+	}
+	return sslBadgeFromCert(cert)
+}
+
 func sslBadgeFromCert(cert *models.SSLCertificate) *sslBadge {
 	b := &sslBadge{
 		Status:    cert.Status,

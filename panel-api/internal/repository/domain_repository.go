@@ -776,12 +776,18 @@ func (r *domainRepo) populateSSLStates(ctx context.Context, domains *[]models.Do
 
 // computeSSLState determines the SSL certificate state for a domain
 func (r *domainRepo) computeSSLState(domain *models.Domain, cert *models.SSLCertificate) string {
-	if !domain.SSLEnabled {
+	// None mode never serves TLS regardless of any lingering cert row (GH #246).
+	if domain.SSLMode == models.SSLModeNone || !domain.SSLEnabled {
 		return "off"
 	}
 
 	if cert == nil {
 		return "pending"
+	}
+
+	// A revoked cert (e.g. left over after a mode switch) is NOT "pending".
+	if cert.Status == models.SSLStatusRevoked {
+		return "off"
 	}
 
 	if cert.Status == models.SSLStatusIssued {

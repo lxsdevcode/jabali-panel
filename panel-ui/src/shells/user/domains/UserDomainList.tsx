@@ -69,6 +69,8 @@ const getSSLTagColor = (state?: string): string => {
       return "gold"; // Let's Encrypt rendered yellow per operator request
     case "active":
       return "green";
+    case "provisioning":
+      return "orange";
     case "self_signed":
       return "orange";
     case "pending":
@@ -91,6 +93,10 @@ const getSSLTagLabel = (state?: string): string => {
       return "Let's Encrypt";
     case "active":
       return "Active";
+    case "none":
+      return "None";
+    case "provisioning":
+      return "Self-signed…";
     case "self_signed":
       return "Self-signed";
     case "pending":
