@@ -1,10 +1,11 @@
 // RestoreDrawer — GH #267 Wave 4. Tenant self-service restore UI.
 //
-// DB-ONLY in v1 (matches the backend): preview the backup's databases, pick a
-// subset, explicitly confirm the destructive overwrite, then POST the restore.
-// Home / mail / DNS are intentionally not offered — see
-// plans/m267-tenant-selective-restore.md (mail is RocksDB-unsafe via file
-// apply; home rsync uses --delete; custom DNS records aren't captured).
+// Restores databases and/or the home directory from one of the caller's own
+// backups (matches the backend). DB restore drops+reloads the chosen databases;
+// home restore is additive (overwrites from the backup, never deletes files
+// added since). Mail / DNS are not offered — see
+// plans/m267-tenant-selective-restore.md (mail is RocksDB-unsafe via file apply;
+// custom DNS records aren't captured).
 import { useEffect, useState } from "react";
 
 import {
@@ -12,7 +13,6 @@ import {
   Button,
   Checkbox,
   Drawer,
-  Empty,
   Space,
   Spin,
   Typography,
@@ -48,6 +48,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   const [databases, setDatabases] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  const [restoreHome, setRestoreHome] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RestoreResult | null>(null);
 
@@ -57,6 +58,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
     setDatabases([]);
     setSelected([]);
     setConfirmOverwrite(false);
+    setRestoreHome(false);
     setResult(null);
     apiClient
       .get<ManifestResponse>(`/me/backups/${backupId}/manifest`)
@@ -75,17 +77,17 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   }, [open, backupId]);
 
   const handleRestore = async () => {
-    if (!backupId || selected.length === 0) return;
+    if (!backupId || (selected.length === 0 && !restoreHome)) return;
     setSubmitting(true);
     setResult(null);
     try {
       const resp = await apiClient.post<RestoreResult>(
         `/me/backups/${backupId}/restore`,
-        { databases: selected, overwrite: true },
+        { databases: selected, home: restoreHome, overwrite: true },
       );
       setResult(resp.data);
       const n = resp.data.applied?.length ?? 0;
-      if (n > 0) message.success(`Restored ${n} database${n === 1 ? "" : "s"}`);
+      if (n > 0) message.success(`Restored ${n} item${n === 1 ? "" : "s"}`);
       else message.warning("Nothing was restored — see details");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Restore failed");
@@ -109,19 +111,31 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
       ) : (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            Select the databases to restore from this backup. Restoring a
-            database <strong>replaces its current contents</strong> with the
-            backed-up copy — anything created since the backup is lost. Other
-            databases, your files, and mail are not touched.
+            Choose what to restore from this backup. Restoring a database
+            <strong> replaces its contents</strong> with the backed-up copy.
+            Restoring the home directory <strong>overwrites</strong> files from
+            the backup but does not delete files you added since. Mail isn't
+            restorable here.
           </Typography.Paragraph>
 
+          <Checkbox
+            checked={restoreHome}
+            onChange={(e) => setRestoreHome(e.target.checked)}
+          >
+            Home directory{" "}
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              (adds/overwrites files from the backup; does not delete files you
+              added since)
+            </Typography.Text>
+          </Checkbox>
+
           {databases.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="This backup contains no databases"
-            />
+            <Typography.Text type="secondary">
+              This backup contains no databases.
+            </Typography.Text>
           ) : (
             <>
+              <Typography.Text strong>Databases</Typography.Text>
               <Checkbox.Group
                 value={selected}
                 onChange={(v) => setSelected(v as string[])}
@@ -129,33 +143,34 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
                 options={databases.map((d) => ({ label: d, value: d }))}
               />
 
-              {selected.length > 0 && (
-                <Alert
-                  type="warning"
-                  showIcon
-                  message="This is destructive"
-                  description={`The selected database${
-                    selected.length === 1 ? "" : "s"
-                  } will be dropped and reloaded from the backup.`}
-                />
-              )}
+            </>
+          )}
 
+          {(selected.length > 0 || restoreHome) && (
+            <Alert
+              type="warning"
+              showIcon
+              message="This is destructive"
+              description="The selected items will be overwritten with the backed-up copy."
+            />
+          )}
+
+          {(selected.length > 0 || restoreHome) && (
+            <>
               <Checkbox
                 checked={confirmOverwrite}
                 onChange={(e) => setConfirmOverwrite(e.target.checked)}
               >
-                I understand this replaces the selected database(s).
+                I understand this overwrites the selected item(s).
               </Checkbox>
-
               <Button
                 type="primary"
                 danger
                 loading={submitting}
-                disabled={selected.length === 0 || !confirmOverwrite}
+                disabled={!confirmOverwrite}
                 onClick={handleRestore}
               >
-                Restore {selected.length || ""} database
-                {selected.length === 1 ? "" : "s"}
+                Restore selected
               </Button>
             </>
           )}

@@ -1,16 +1,18 @@
 // backup_restore_selective.go — GH #267 Wave 2 (tenant selective restore).
 //
-// DESTRUCTIVE, fail-closed, DATABASES ONLY. Restores a chosen subset of an
-// account backup's databases into the owner's existing DBs by reusing the exact
+// DESTRUCTIVE, fail-closed. Restores a chosen subset (databases and/or the home
+// directory) of an account backup's databases into the owner's existing DBs by reusing the exact
 // proven apply path (applyAccountRestore) — but with the manifest stage list
 // FILTERED to only the requested db stages, so home / mail / meta are never in
 // the apply set and cannot be touched. That filtering is the whole selectivity
 // guarantee: the negative round-trip (restore one DB, assert the others + home
 // are byte-unchanged) is the ship gate.
 //
-// Why DB-only (see plans/m267-tenant-selective-restore.md):
-//   - home rsync uses --delete (removes live files absent from the backup) —
-//     deferred to a later wave with explicit overwrite-flag design.
+// Scopes (see plans/m267-tenant-selective-restore.md):
+//   - databases: drop+reload via applyAccountRestore with a db-only stage list.
+//   - home: ADDITIVE rsync WITHOUT --delete — restores the backup files over the
+//     live home but NEVER removes files created since the backup (safer than the
+//     admin whole-account path, which mirrors with --delete).
 //   - mail is NOT auto-appliable (stalwart-cli over a running spool corrupts
 //     RocksDB) — the admin path refuses too; safe path is JMAP import (future).
 //   - DNS managed records re-derive from domain config; custom records aren't
@@ -29,7 +31,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
@@ -40,6 +45,7 @@ type backupRestoreSelectiveParams struct {
 	ManifestSnapshotID string   `json:"manifest_snapshot_id"`
 	TargetUsername     string   `json:"target_username"`
 	Databases          []string `json:"databases"`
+	RestoreHome        bool     `json:"home"`
 	Overwrite          bool     `json:"overwrite"`
 	// Restic dest (optional; empty = default local repo, like materialize).
 	RepoURL        string   `json:"repo_url,omitempty"`
@@ -69,8 +75,8 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 	if p.TargetUsername == "" {
 		return nil, bkInvalidArg("target_username required")
 	}
-	if len(p.Databases) == 0 {
-		return nil, bkInvalidArg("databases must be non-empty (DB-only restore in v1)")
+	if len(p.Databases) == 0 && !p.RestoreHome {
+		return nil, bkInvalidArg("select at least one database and/or home")
 	}
 
 	out := backupRestoreSelectiveResult{JobID: p.JobID}
@@ -123,7 +129,7 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 		want[d] = true
 	}
 	inManifest := map[string]bool{}
-	var filtered []backup.ManifestStage
+	var dbStages []backup.ManifestStage
 	for _, st := range manifest.Stages {
 		if st.Name != backup.StageDB || st.Status != backup.StageStatusOK || len(st.Items) == 0 {
 			continue
@@ -131,7 +137,7 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 		db := st.Items[0]
 		inManifest[db] = true
 		if want[db] {
-			filtered = append(filtered, st)
+			dbStages = append(dbStages, st)
 		}
 	}
 	for _, d := range p.Databases {
@@ -139,52 +145,115 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 			out.Warnings = append(out.Warnings, fmt.Sprintf("database %q is not in this backup — skipped", d))
 		}
 	}
-	if len(filtered) == 0 {
-		out.Warnings = append(out.Warnings, "no requested database matched the backup — nothing to do")
+
+	var homeStage *backup.ManifestStage
+	if p.RestoreHome {
+		for i := range manifest.Stages {
+			st := manifest.Stages[i]
+			if st.Name == backup.StageHome && st.Status == backup.StageStatusOK && st.SnapshotID != "" {
+				homeStage = &manifest.Stages[i]
+				break
+			}
+		}
+		if homeStage == nil {
+			out.Warnings = append(out.Warnings, "home directory is not in this backup — skipped")
+		}
+	}
+
+	if len(dbStages) == 0 && homeStage == nil {
+		out.Warnings = append(out.Warnings, "nothing selected matched the backup — nothing to do")
 		return out, nil
 	}
 
-	// Fail-closed: DB restore drops + reloads. Do nothing unless the caller
-	// explicitly opted into overwrite.
+	// Fail-closed: restore overwrites live data. Do nothing unless overwrite.
 	if !p.Overwrite {
-		for _, st := range filtered {
+		for _, st := range dbStages {
 			out.Skipped = append(out.Skipped, st.Items[0])
 		}
+		if homeStage != nil {
+			out.Skipped = append(out.Skipped, "home")
+		}
 		out.Warnings = append(out.Warnings,
-			"overwrite=false: nothing applied. Restoring a database drops and reloads it; "+
-				"re-send with overwrite=true to replace the selected database(s).")
+			"overwrite=false: nothing applied. Restore overwrites live data; "+
+				"re-send with overwrite=true to apply.")
 		return out, nil
 	}
 
-	// Restic-restore ONLY the filtered db stages into a per-job staging dir,
-	// then hand the SAME filtered list to applyAccountRestore — which walks
-	// exactly the stages it is given, so only these databases are written.
 	stagingRoot := filepath.Join("/var/lib/jabali-backups/restore-staging", p.JobID+"-sel")
 	defer os.RemoveAll(stagingRoot)
 
-	var stageResults []backupRestoreStage
-	for _, st := range filtered {
-		target := filepath.Join(stagingRoot, st.Name)
-		if err := os.MkdirAll(target, 0o750); err != nil {
-			stageResults = append(stageResults, backupRestoreStage{
-				Name: st.Name, Status: backup.StageStatusFailed,
-				Error: fmt.Sprintf("mkdir staging: %v", err),
-			})
-			continue
+	// Databases — reuse the proven applyAccountRestore with a db-only stage list.
+	if len(dbStages) > 0 {
+		var stageResults []backupRestoreStage
+		for _, st := range dbStages {
+			target := filepath.Join(stagingRoot, st.Name)
+			if err := os.MkdirAll(target, 0o750); err != nil {
+				stageResults = append(stageResults, backupRestoreStage{
+					Name: st.Name, Status: backup.StageStatusFailed,
+					Error: fmt.Sprintf("mkdir staging: %v", err),
+				})
+				continue
+			}
+			rerr := c.Restore(ctx, backup.RestoreOpts{SnapshotID: st.SnapshotID, Target: target})
+			sr := backupRestoreStage{Name: st.Name, Status: backup.StageStatusOK}
+			if rerr != nil {
+				sr.Status = backup.StageStatusFailed
+				sr.Error = rerr.Error()
+			}
+			stageResults = append(stageResults, sr)
 		}
-		rerr := c.Restore(ctx, backup.RestoreOpts{SnapshotID: st.SnapshotID, Target: target})
-		sr := backupRestoreStage{Name: st.Name, Status: backup.StageStatusOK}
-		if rerr != nil {
-			sr.Status = backup.StageStatusFailed
-			sr.Error = rerr.Error()
-		}
-		stageResults = append(stageResults, sr)
+		applied, warnings := applyAccountRestore(ctx, stagingRoot, p.TargetUsername, manifest.User, dbStages, stageResults)
+		out.Applied = append(out.Applied, applied...)
+		out.Warnings = append(out.Warnings, warnings...)
 	}
 
-	applied, warnings := applyAccountRestore(ctx, stagingRoot, p.TargetUsername, manifest.User, filtered, stageResults)
-	out.Applied = applied
-	out.Warnings = append(out.Warnings, warnings...)
+	// Home — ADDITIVE rsync (NO --delete): restores backup files over the live
+	// home but never removes files created since the backup (unlike the admin
+	// whole-account restore, which mirrors with --delete). overwrite-gated above.
+	if homeStage != nil {
+		if hwarn := applySelectiveHome(ctx, stagingRoot, p.TargetUsername, homeStage, c); hwarn != "" {
+			out.Warnings = append(out.Warnings, hwarn)
+		} else {
+			out.Applied = append(out.Applied, "home → /home/"+p.TargetUsername+" (additive, no delete)")
+		}
+	}
+
 	return out, nil
+}
+
+// applySelectiveHome restores the home stage additively. Returns "" on success
+// or a warning string. NO --delete: a file the tenant created after the backup
+// stays put; the backup's files are written over the top.
+func applySelectiveHome(ctx context.Context, stagingRoot, username string, st *backup.ManifestStage, c *backup.Client) string {
+	target := filepath.Join(stagingRoot, "home")
+	if err := os.MkdirAll(target, 0o750); err != nil {
+		return "home: mkdir staging: " + err.Error()
+	}
+	if err := c.Restore(ctx, backup.RestoreOpts{SnapshotID: st.SnapshotID, Target: target}); err != nil {
+		return "home: restic restore: " + err.Error()
+	}
+	u, uerr := user.Lookup(username)
+	if uerr != nil {
+		return "home: user lookup: " + uerr.Error()
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	gid, _ := strconv.Atoi(u.Gid)
+	// Restic preserves the absolute path: staged tree at target/home/<user>/.
+	src := filepath.Join(target, "home", username) + "/"
+	dst := "/home/" + username + "/"
+	if _, err := os.Stat(filepath.Clean(src)); err != nil {
+		return "home: staged source missing: " + err.Error()
+	}
+	if err := exec.CommandContext(ctx, "rsync", "-aHAX", src, dst).Run(); err != nil {
+		return "home: rsync: " + err.Error()
+	}
+	if err := chownTreeRecursive(dst, uid, gid); err != nil {
+		return "home: chown: " + err.Error()
+	}
+	if err := restoreDocrootGroup(username); err != nil {
+		return "home: docroot group: " + err.Error()
+	}
+	return ""
 }
 
 func init() {

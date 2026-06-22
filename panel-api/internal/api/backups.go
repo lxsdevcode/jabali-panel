@@ -985,6 +985,7 @@ func (h *meBackupHandler) list(c *gin.Context) {
 
 type meRestoreSelectiveRequest struct {
 	Databases []string `json:"databases"`
+	Home      bool     `json:"home"`
 	Overwrite bool     `json:"overwrite"`
 }
 
@@ -1022,9 +1023,9 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "validation_failed", "detail": err.Error()})
 		return
 	}
-	if len(req.Databases) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "databases_required",
-			"detail": "v1 restores databases only; pass a non-empty databases[]"})
+	if len(req.Databases) == 0 && !req.Home {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "nothing_selected",
+			"detail": "select at least one database and/or home"})
 		return
 	}
 
@@ -1078,6 +1079,7 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 		"manifest_snapshot_id": job.SnapshotID,
 		"target_username":      *owner.Username,
 		"databases":            req.Databases,
+		"home":                 req.Home,
 		"overwrite":            req.Overwrite,
 	})
 	if aerr != nil {
