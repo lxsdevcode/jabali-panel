@@ -2045,3 +2045,79 @@ func (*fakeDomainRepo) AttachDockerApp(context.Context, string, string, models.N
 func (*fakeDomainRepo) DetachDockerApp(context.Context, string, bool) error {
 	return nil
 }
+
+// fakePackageRepoMin is a minimal PackageRepository for the GH #402
+// disable_functions param test — only FindByID is exercised.
+type fakePackageRepoMin struct {
+	pkgs map[string]*models.HostingPackage
+}
+
+func (f *fakePackageRepoMin) Create(context.Context, *models.HostingPackage) error { return nil }
+func (f *fakePackageRepoMin) FindByID(_ context.Context, id string) (*models.HostingPackage, error) {
+	if p, ok := f.pkgs[id]; ok {
+		return p, nil
+	}
+	return nil, repository.ErrNotFound
+}
+func (f *fakePackageRepoMin) FindByName(context.Context, string) (*models.HostingPackage, error) {
+	return nil, repository.ErrNotFound
+}
+func (f *fakePackageRepoMin) List(context.Context, repository.ListOptions) ([]models.HostingPackage, int64, error) {
+	return nil, 0, nil
+}
+func (f *fakePackageRepoMin) Update(context.Context, *models.HostingPackage) error { return nil }
+func (f *fakePackageRepoMin) Delete(context.Context, string) error                 { return nil }
+func (f *fakePackageRepoMin) EnsureDefaults(context.Context) error                 { return nil }
+
+func applyCallParams(t *testing.T, agent *fakeAgent) map[string]any {
+	t.Helper()
+	for _, call := range agent.calls {
+		if call.method == "php.pool.apply" {
+			p, ok := call.params.(map[string]any)
+			if !ok {
+				t.Fatalf("php.pool.apply params not a map: %T", call.params)
+			}
+			return p
+		}
+	}
+	t.Fatal("no php.pool.apply call")
+	return nil
+}
+
+func newPoolReconcilerWithPkg(pkg *models.HostingPackage, packageID *string) (*Reconciler, *fakeAgent, *fakePHPPoolRepo) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	agent := &fakeAgent{}
+	userRepo := &fakeUserRepo{users: make(map[string]*models.User)}
+	phpPoolRepo := &fakePHPPoolRepo{pools: make(map[string]*models.PHPPool)}
+	username := "u1"
+	userRepo.users["user-1"] = &models.User{ID: "user-1", Email: "u1@example.com", Username: &username, PackageID: packageID}
+	phpPoolRepo.pools["pool-1"] = &models.PHPPool{ID: "pool-1", UserID: "user-1", PHPVersion: "8.4", PmMode: "ondemand", Status: "pending"}
+	r := New(&fakeDomainRepo{domains: make(map[string]*models.Domain)}, userRepo, agent, log, Config{Interval: time.Second}).
+		WithPHPPools(phpPoolRepo)
+	if pkg != nil {
+		r.WithPackages(&fakePackageRepoMin{pkgs: map[string]*models.HostingPackage{pkg.ID: pkg}})
+	}
+	r.socketReady = func(context.Context, string, time.Duration, time.Duration) bool { return true }
+	return r, agent, phpPoolRepo
+}
+
+// GH #402: a package with php_exec_enabled=1 sends disable_functions="" (opt-out);
+// a default package (or none) omits the key so the agent applies the #401 default.
+func TestApplyPHPPool_DisableFunctionsByPackage(t *testing.T) {
+	pkgID := "pkg-1"
+
+	// exec-enabled package -> explicit "" opt-out
+	r, agent, _ := newPoolReconcilerWithPkg(&models.HostingPackage{ID: pkgID, Name: "exec", PHPExecEnabled: true}, &pkgID)
+	r.ReconcilePHPPools(context.Background())
+	p := applyCallParams(t, agent)
+	v, ok := p["disable_functions"]
+	require.True(t, ok, "exec-enabled package must send disable_functions key")
+	require.Equal(t, "", v, "exec-enabled package must send empty disable_functions (opt-out)")
+
+	// default package -> key absent (agent applies its safe default)
+	r2, agent2, _ := newPoolReconcilerWithPkg(&models.HostingPackage{ID: pkgID, Name: "std", PHPExecEnabled: false}, &pkgID)
+	r2.ReconcilePHPPools(context.Background())
+	p2 := applyCallParams(t, agent2)
+	_, ok2 := p2["disable_functions"]
+	require.False(t, ok2, "default package must NOT send disable_functions (agent uses safe default)")
+}

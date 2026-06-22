@@ -35,6 +35,12 @@ type HostingPackage struct {
 	SSHEnabled bool `gorm:"type:tinyint(1);not null;default:0" json:"ssh_enabled"`
 	CGIEnabled bool `gorm:"type:tinyint(1);not null;default:0" json:"cgi_enabled"`
 
+	// PHPExecEnabled (GH #402) opts pools on this package OUT of the #401
+	// disable_functions command-exec lockdown — emits no disable_functions
+	// line so exec/proc_open/shell_exec/... work for apps that need them.
+	// Admin-only (packages are admin-assigned); default 0 keeps the lockdown.
+	PHPExecEnabled bool `gorm:"column:php_exec_enabled;type:tinyint(1);not null;default:0" json:"php_exec_enabled"`
+
 	// NspawnImageVersion (M13 / ADR-0067) pins users on this package to a
 	// specific systemd-nspawn rootfs at /var/lib/jabali-nspawn/images/<v>/.
 	// NULL → reconciler stamps from server_settings.default_nspawn_image_version

@@ -1013,6 +1013,33 @@ func (r *Reconciler) reconcileMysqlAdminShadow(ctx context.Context) {
 	}
 }
 
+// ReapplyPHPPoolForUser re-renders a single user's pool from the current
+// template + package state (GH #402 per-package disable_functions opt-out).
+// Used by the package-update fan-out so an admin flipping php_exec_enabled
+// takes effect immediately instead of waiting for the next sweep. No-op when
+// the user has no pool. Implements api.PackagePHPPoolReconciler.
+func (r *Reconciler) ReapplyPHPPoolForUser(ctx context.Context, userID string) error {
+	if r.phpPools == nil || r.users == nil {
+		return nil
+	}
+	user, err := r.users.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return err
+	}
+	pool, err := r.phpPools.FindByUserID(ctx, userID)
+	if err != nil {
+		if err == repository.ErrNotFound {
+			return nil
+		}
+		return err
+	}
+	if pool == nil {
+		return nil
+	}
+	r.applyPHPPool(ctx, user, pool)
+	return nil
+}
+
 // applyPHPPool calls the agent to provision a PHP pool, waits for socket ready,
 // and triggers nginx regeneration for bound domains.
 func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *models.PHPPool) {
@@ -1035,6 +1062,17 @@ func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *
 		"pm_mode":                      pool.PmMode,
 		"pm_max_children":              pool.PmMaxChildren,
 		"process_idle_timeout_seconds": pool.ProcessIdleTimeoutSeconds,
+	}
+
+	// GH #402: if the user's package opts out of the #401 command-exec
+	// lockdown, send disable_functions="" (explicit opt-out -> agent emits no
+	// line). Omitting the key entirely (the default) lets the agent apply its
+	// safe default. Only an admin-assigned package can flip this; a tenant has
+	// no path to it.
+	if r.packages != nil && user.PackageID != nil && *user.PackageID != "" {
+		if pkg, perr := r.packages.FindByID(ctx, *user.PackageID); perr == nil && pkg != nil && pkg.PHPExecEnabled {
+			params["disable_functions"] = ""
+		}
 	}
 
 	agentCtx, cancel := context.WithTimeout(ctx, 30*time.Second)

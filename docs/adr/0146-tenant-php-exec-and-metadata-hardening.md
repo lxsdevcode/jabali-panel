@@ -86,5 +86,11 @@ after the per-user dispatch). The file now opens with `add table` +
 - IPv6 ULA metadata (`fd00:ec2::254`) is not blocked — would require dropping
   all `fc00::/7` for tenants, which could break legitimate v6 ULA use; revisit
   if v6 metadata becomes a concern.
-- Per-package `disable_functions` opt-out (for the rare app needing `proc_open`)
-  is not built; the default is currently absolute like `open_basedir`.
+- ~~Per-package `disable_functions` opt-out~~ — **shipped (GH #402)**:
+  `hosting_packages.php_exec_enabled` (admin-only, default 0). When set, the
+  reconciler sends `disable_functions=""` for that package's pools so the agent
+  emits no lockdown line. `disable_functions` is now spec-driven
+  (`defaultDisableFunctions` const, single source) — the template renders
+  `{{.DisableFunctions}}`, not a hard-coded list. The tenant override guard
+  (`forbiddenDirectives`) is unchanged, so only an admin-assigned package can
+  flip it. Package edits fan out a pool re-render.

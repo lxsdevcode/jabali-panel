@@ -25,6 +25,7 @@ type Package = {
   max_databases: number;
   ssh_enabled: boolean;
   cgi_enabled: boolean;
+  php_exec_enabled: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -164,6 +165,13 @@ export const PackageList = () => {
             title="SSH"
             render={(enabled: boolean) =>
               enabled ? <Tag color="green">yes</Tag> : <Tag>no</Tag>
+            }
+          />
+          <Table.Column
+            dataIndex="php_exec_enabled"
+            title="PHP exec"
+            render={(enabled: boolean) =>
+              enabled ? <Tag color="red">on</Tag> : <Tag>off</Tag>
             }
           />
           <Table.Column

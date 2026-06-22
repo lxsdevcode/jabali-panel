@@ -43,6 +43,7 @@ type PackageEditInput = {
   max_docker_apps: number;
   ssh_enabled: boolean;
   cgi_enabled: boolean;
+  php_exec_enabled: boolean;
   nspawn_image_version?: string | null;
 };
 
@@ -287,6 +288,18 @@ export const PackageEdit = () => {
             <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
           </Form.Item>
           <Typography.Text>CGI Enabled</Typography.Text>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
+          <Form.Item
+            name="php_exec_enabled"
+            valuePropName="checked"
+            tooltip="Security: re-enables PHP exec/proc_open/shell_exec for ALL tenants on this package (GH #401 lockdown is OFF). Only enable for plans whose apps genuinely need shell-outs."
+            noStyle
+          >
+            <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
+          </Form.Item>
+          <Typography.Text>Allow PHP exec functions <Typography.Text type="warning">(proc_open / shell_exec — security risk)</Typography.Text></Typography.Text>
         </div>
 
         <Form.Item

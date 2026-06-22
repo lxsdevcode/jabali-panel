@@ -29,7 +29,11 @@ php_admin_value[open_basedir] = /home/{{.User}}:/run/mysqld/mysqld.sock:/tmp:/va
 ; and in the agent's forbiddenDirectives set, exactly like open_basedir. Blocks
 ; process-spawning only — curl/file_get_contents stay enabled (WordPress HTTP
 ; API needs them); outbound SSRF/metadata is handled at the egress layer.
-php_admin_value[disable_functions] = exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec,pcntl_fork,proc_nice,dl
+; The value is spec-driven (agent: defaultDisableFunctions). GH #402: an admin
+; may opt a package out, making DisableFunctions empty -> no line emitted.
+{{- if .DisableFunctions }}
+php_admin_value[disable_functions] = {{ .DisableFunctions }}
+{{- end }}
 ; Opcache SHM cap. Conservative 32MB per pool keeps total bounded on
 ; shared-host boxes (20 users × 32MB = 640MB). Tune in the runbook.
 php_admin_value[opcache.memory_consumption] = 32

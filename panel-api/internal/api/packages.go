@@ -24,6 +24,10 @@ import (
 // reconciler.
 type PackageReconciler interface {
 	ReconcileSSHKeysForUser(ctx context.Context, userID string) error
+	// ReapplyPHPPoolForUser re-renders the user's PHP pool so a package's
+	// php_exec_enabled change (GH #402) takes effect without waiting for the
+	// periodic sweep.
+	ReapplyPHPPoolForUser(ctx context.Context, userID string) error
 }
 
 // PackageHandlerConfig plugs the hosting-package CRUD handlers into the router.
@@ -78,6 +82,7 @@ type createPackageRequest struct {
 	MaxDockerApps    uint32 `json:"max_docker_apps"`
 	SSHEnabled       bool   `json:"ssh_enabled"`
 	CGIEnabled       bool   `json:"cgi_enabled"`
+	PHPExecEnabled   bool   `json:"php_exec_enabled"`
 	// M13: nspawn image pin (empty = use server default).
 	NspawnImageVersion string `json:"nspawn_image_version"`
 }
@@ -97,6 +102,7 @@ type updatePackageRequest struct {
 	MaxDockerApps      *uint32 `json:"max_docker_apps"`
 	SSHEnabled         *bool   `json:"ssh_enabled"`
 	CGIEnabled         *bool   `json:"cgi_enabled"`
+	PHPExecEnabled     *bool   `json:"php_exec_enabled"`
 	NspawnImageVersion *string `json:"nspawn_image_version"`
 }
 
@@ -142,6 +148,7 @@ func (h *packageHandler) create(c *gin.Context) {
 		MaxDockerApps:    req.MaxDockerApps,
 		SSHEnabled:       req.SSHEnabled,
 		CGIEnabled:       req.CGIEnabled,
+		PHPExecEnabled:   req.PHPExecEnabled,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -222,6 +229,7 @@ func (h *packageHandler) update(c *gin.Context) {
 	// fan-out, so we can compare to the new values once Update returns
 	// successfully. Read BEFORE the field copies overwrite pkg.
 	prevSSHEnabled := pkg.SSHEnabled
+	prevPHPExec := pkg.PHPExecEnabled
 
 	if req.Name != nil {
 		pkg.Name = *req.Name
@@ -265,6 +273,9 @@ func (h *packageHandler) update(c *gin.Context) {
 	if req.CGIEnabled != nil {
 		pkg.CGIEnabled = *req.CGIEnabled
 	}
+	if req.PHPExecEnabled != nil {
+		pkg.PHPExecEnabled = *req.PHPExecEnabled
+	}
 	if req.NspawnImageVersion != nil {
 		v := strings.TrimSpace(*req.NspawnImageVersion)
 		if v == "" {
@@ -304,6 +315,12 @@ func (h *packageHandler) update(c *gin.Context) {
 	// makes the change feel immediate.
 	if req.SSHEnabled != nil && *req.SSHEnabled != prevSSHEnabled {
 		h.fanOutSSHReconcile(pkg.ID)
+	}
+	// GH #402: re-render every pool on this package when php_exec_enabled
+	// flipped, so the disable_functions change applies without waiting for
+	// the periodic sweep.
+	if req.PHPExecEnabled != nil && *req.PHPExecEnabled != prevPHPExec {
+		h.fanOutPHPPoolReapply(pkg.ID)
 	}
 
 	c.JSON(http.StatusOK, pkg)
@@ -349,6 +366,45 @@ func (h *packageHandler) fanOutSSHReconcile(packageID string) {
 			perCancel()
 		}
 		log.Info("package update: ssh reconcile fan-out complete", "package_id", packageID, "users", count)
+	}()
+}
+
+// fanOutPHPPoolReapply re-renders every pool on the given package in a
+// detached goroutine (GH #402). Same shape + bounds as fanOutSSHReconcile;
+// errors logged, never returned. The periodic sweep is the safety net.
+func (h *packageHandler) fanOutPHPPoolReapply(packageID string) {
+	if h.cfg.Users == nil || h.cfg.Reconciler == nil {
+		return
+	}
+	users := h.cfg.Users
+	rec := h.cfg.Reconciler
+	log := h.cfg.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		all, _, err := users.List(ctx, repository.ListOptions{Limit: 10000})
+		if err != nil {
+			log.Warn("package update: list users for php pool reapply", "package_id", packageID, "err", err)
+			return
+		}
+		count := 0
+		for i := range all {
+			u := &all[i]
+			if u.PackageID == nil || *u.PackageID != packageID {
+				continue
+			}
+			perCtx, perCancel := context.WithTimeout(ctx, 30*time.Second)
+			if err := rec.ReapplyPHPPoolForUser(perCtx, u.ID); err != nil {
+				log.Warn("package update: php pool reapply user", "package_id", packageID, "user_id", u.ID, "err", err)
+			} else {
+				count++
+			}
+			perCancel()
+		}
+		log.Info("package update: php pool reapply fan-out complete", "package_id", packageID, "users", count)
 	}()
 }
 

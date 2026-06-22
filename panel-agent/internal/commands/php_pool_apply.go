@@ -27,6 +27,13 @@ type phpPoolApplyParams struct {
 	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
 	AdminValues               []KV   `json:"admin_values"`
 	AdminFlags                []KV   `json:"admin_flags"`
+	// DisableFunctions (GH #402) overrides the php_admin_value[disable_functions]
+	// line. nil = caller did not specify -> the safe default (#401) is used;
+	// "" = explicit admin opt-out (emit no line); any other value is rendered
+	// verbatim. Admin-only channel: bypasses the tenant-facing
+	// forbiddenDirectives guard (which still rejects disable_functions in
+	// admin_values), so a tenant can never shorten their own blocklist.
+	DisableFunctions *string `json:"disable_functions"`
 }
 
 // KV represents a key-value pair for ini directives.
@@ -52,6 +59,7 @@ type phpPoolSpecTemplate struct {
 	ProcessIdleTimeoutSeconds uint32
 	AdminValues               []KV
 	AdminFlags                []KV
+	DisableFunctions          string
 }
 
 // phpVersionRegex validates PHP version format: X.Y where X and Y are digits.
@@ -78,6 +86,14 @@ var adminFlagAllowlist = map[string]bool{
 	"log_errors":     true,
 	"file_uploads":   true,
 }
+
+// defaultDisableFunctions is the GH #401 command-exec lockdown: the safe,
+// non-overridable php_admin_value[disable_functions] applied to every pool
+// unless an admin opts the owner's package out (GH #402, params.DisableFunctions
+// == ""). Single source of truth — the template renders {{.DisableFunctions}},
+// it is NOT hard-coded in the .tmpl anymore. Blocks process-spawning only;
+// curl/file_get_contents stay enabled (WordPress HTTP API).
+const defaultDisableFunctions = "exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec,pcntl_fork,proc_nice,dl"
 
 // forbiddenDirectives are directives that must never appear in overrides,
 // even if they pass the allowlist check. Belt-and-suspenders defense.
@@ -451,6 +467,21 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
+	// Resolve disable_functions: nil param -> the #401 safe default; a
+	// non-nil value (incl. "") is the admin per-package decision (#402).
+	// Reject control chars so a value can never break out of the pool-conf
+	// line (defense-in-depth; the value comes from panel-api, not a tenant).
+	disableFunctions := defaultDisableFunctions
+	if p.DisableFunctions != nil {
+		disableFunctions = *p.DisableFunctions
+	}
+	if strings.ContainsAny(disableFunctions, "\n\r\x00") {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: "disable_functions contains control characters",
+		}
+	}
+
 	spec := phpPoolSpecTemplate{
 		PoolName:                  poolName,
 		User:                      p.Username,
@@ -461,6 +492,7 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 		ProcessIdleTimeoutSeconds: p.ProcessIdleTimeoutSeconds,
 		AdminValues:               p.AdminValues,
 		AdminFlags:                p.AdminFlags,
+		DisableFunctions:          disableFunctions,
 	}
 
 	var buf strings.Builder
