@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"regexp"
 	"strconv"
 	"strings"
@@ -124,7 +125,10 @@ type createUserRequest struct {
 // users change them through the Kratos self-service settings flow rather
 // than PATCHing a panel row.
 type updateUserRequest struct {
-	Email     *string `json:"email,omitempty" binding:"omitempty,email"`
+	// Email is validated in the handler, not via the binding `email` tag: a
+	// *string pointer to "" is non-nil, so validator omitempty does NOT skip
+	// it and the empty string fails `email` (GH #258 — email is optional).
+	Email     *string `json:"email,omitempty"`
 	NameFirst *string `json:"name_first,omitempty"`
 	NameLast  *string `json:"name_last,omitempty"`
 	IsAdmin   *bool   `json:"is_admin,omitempty"`
@@ -277,6 +281,21 @@ func (h *userHandler) update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
+	}
+
+	// GH #258: email is optional. An empty string clears it; a non-empty value
+	// must be a valid address. (createUserRequest's plain-string field already
+	// allows empty via omitempty; the update pointer needs this explicit pass.)
+	if req.Email != nil {
+		if e := strings.TrimSpace(*req.Email); e != "" {
+			if _, perr := mail.ParseAddress(e); perr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_email", "detail": "email must be a valid address or empty"})
+				return
+			}
+			*req.Email = e
+		} else {
+			*req.Email = ""
+		}
 	}
 
 	// Only admins may toggle is_admin. A non-admin owner who sends the field

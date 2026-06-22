@@ -1113,3 +1113,37 @@ func TestUsers_Create_NoEmail_OK(t *testing.T) {
 	assert.NotContains(t, gotBody, `"email":""`, "must not send an empty email trait to Kratos")
 	assert.Contains(t, gotBody, `"username":"acmecorp"`)
 }
+
+// GH #258: email is optional. A PATCH with email:"" must clear it (200), not
+// 400 on the validator's `email` tag; a malformed non-empty email still 400s.
+func TestUsers_Patch_EmptyEmailClears(t *testing.T) {
+	t.Parallel()
+
+	repo := newMemUserRepo()
+	u := makeUser(t, "u@example.com", false, "password01")
+	repo.seed(u)
+
+	r := buildRouter(repo, &auth.AccessClaims{UserID: u.ID})
+	rec := doJSON(t, r, http.MethodPatch, "/api/v1/users/"+u.ID, map[string]any{
+		"email": "",
+	})
+	require.Equal(t, http.StatusOK, rec.Code, "empty email must be accepted")
+
+	after, err := repo.FindByID(context.Background(), u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "", after.Email, "empty email must clear the field")
+}
+
+func TestUsers_Patch_MalformedEmailRejected(t *testing.T) {
+	t.Parallel()
+
+	repo := newMemUserRepo()
+	u := makeUser(t, "u@example.com", false, "password01")
+	repo.seed(u)
+
+	r := buildRouter(repo, &auth.AccessClaims{UserID: u.ID})
+	rec := doJSON(t, r, http.MethodPatch, "/api/v1/users/"+u.ID, map[string]any{
+		"email": "not-an-email",
+	})
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "malformed non-empty email must 400")
+}
