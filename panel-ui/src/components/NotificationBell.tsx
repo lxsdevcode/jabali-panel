@@ -12,9 +12,11 @@
 import { Badge, Button, Divider, Dropdown, Empty, Grid, Popconfirm, Space, Tag, Tooltip, Typography, message, theme } from "antd";
 import type { MenuProps } from "antd";
 import type { CSSProperties, ReactElement } from "react";
-import { cloneElement, useEffect } from "react";
+import { cloneElement, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
+
+import { useAuth } from "../auth/AuthContext";
 
 import { BellOutlined, CheckOutlined, DeleteOutlined } from "@icons";
 
@@ -69,6 +71,8 @@ function relativeTime(iso: string): string {
 
 export function NotificationBell() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const webpush = useWebPushSubscription();
   const { token } = useToken();
@@ -254,6 +258,8 @@ export function NotificationBell() {
     <Dropdown
       menu={{ items }}
       trigger={["click"]}
+      open={open}
+      onOpenChange={setOpen}
       // Always anchor right edge of popup to right edge of bell. On narrow
       // viewports "bottom" (centered) overflows the right edge when the bell
       // is near the right of the header. "bottomRight" keeps the popup inside
@@ -326,7 +332,24 @@ export function NotificationBell() {
             )}
           </div>
           <Divider style={{ margin: 0 }} />
-          <div style={rowStyle}>{pushToggle}</div>
+          <div style={rowStyle}>
+            {user?.isAdmin ? (
+              <Button
+                type="link"
+                size="small"
+                style={{ paddingLeft: 0 }}
+                onClick={() => {
+                  setOpen(false);
+                  navigate("/jabali-admin/notifications/history");
+                }}
+              >
+                View history
+              </Button>
+            ) : (
+              <span />
+            )}
+            {pushToggle}
+          </div>
         </div>
       )}
     >
