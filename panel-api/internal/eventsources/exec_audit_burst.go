@@ -75,6 +75,39 @@ type auditEventsDTO struct {
 	Events []auditEventDTO `json:"events"`
 }
 
+// systemctlExePaths are the real systemctl binary paths. An exec of
+// systemctl under a TENANT login-uid is always one of jabali's own
+// management polls (the #280 cron last_run harvester shells
+// `sudo -u <tenant> systemctl --user show jabali-cron-<id>`, once per
+// cron per tick) — tenants are SFTP-only with no shell or sudo, so they
+// cannot invoke systemctl themselves. Counting these jabali-initiated
+// execs in the suspicious-exec burst fires continuous false positives
+// on any tenant with several crons (GH #403). A genuine exploit spawns
+// a shell/interpreter (sh, bash, python, perl, …) at a different exe
+// path, which is still counted — so excluding the real systemctl binary
+// removes jabali's own noise without blunting the detector.
+var systemctlExePaths = map[string]bool{
+	"/usr/bin/systemctl": true,
+	"/bin/systemctl":     true,
+}
+
+// isJabaliManagementExec reports whether an audit event is one of
+// jabali's own management execs that must not count toward a tenant's
+// suspicious-exec burst (GH #403). Matched on the resolved exe path
+// (not comm) so an attacker's binary merely named "systemctl" elsewhere
+// is still counted.
+func isJabaliManagementExec(e auditEventDTO) bool {
+	if systemctlExePaths[e.Exe] {
+		return true
+	}
+	// Exe can be empty on some auditd rows (e.g. truncated); fall back
+	// to comm, which auditd derives from the binary's basename.
+	if e.Exe == "" && e.Comm == "systemctl" {
+		return true
+	}
+	return false
+}
+
 func execAuditPass(ctx context.Context, d Deps) {
 	callCtx, cancel := context.WithTimeout(ctx, execAuditCallTimeout)
 	defer cancel()
@@ -103,6 +136,10 @@ func execAuditPass(ctx context.Context, d Deps) {
 	counts := map[string]int{}
 	for _, e := range resp.Events {
 		if e.Username == "" {
+			continue
+		}
+		// GH #403: don't count jabali's own management polls.
+		if isJabaliManagementExec(e) {
 			continue
 		}
 		ts, err := time.Parse(time.RFC3339, e.Timestamp)
