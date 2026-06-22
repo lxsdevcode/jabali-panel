@@ -825,6 +825,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Autoresponders: deps.Autoresponders,
 		MailboxShares:  deps.MailboxShares,
 		DNSSECKeys:     deps.DNSSECKeys,
+		DNSZones:       deps.DNSZones,
+		DNSRecords:     deps.DNSRecords,
 		SSHKeys:        deps.SSHKeys,
 		CronJobs:       deps.CronJobs,
 		LimitOverrides: deps.LimitOverrides,

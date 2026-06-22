@@ -44,6 +44,8 @@ type Deps struct {
 	Autoresponders repository.EmailAutoresponderRepository
 	MailboxShares  repository.MailboxShareRepository
 	DNSSECKeys     repository.DNSSECKeyRepository
+	DNSZones       repository.DNSZoneRepository
+	DNSRecords     repository.DNSRecordRepository
 	SSHKeys        repository.SSHKeyRepository
 	CronJobs       repository.CronJobRepository
 	LimitOverrides repository.UserLimitOverrideRepository
@@ -284,6 +286,23 @@ func Build(ctx context.Context, user *models.User, d Deps) *internalbackup.Accou
 						PublicKey: k.PublicKey, Active: k.Active,
 						ObservedAt: timeRFC(k.ObservedAt),
 					})
+				}
+			}
+			// GH #267: capture USER (non-managed) DNS records so restore can
+			// re-insert them; managed records re-derive from domain config.
+			if d.DNSZones != nil && d.DNSRecords != nil {
+				if zone, zerr := d.DNSZones.FindByDomainID(ctx, dom.ID); zerr == nil && zone != nil {
+					if recs, rerr := d.DNSRecords.ListByZoneID(ctx, zone.ID); rerr == nil {
+						for _, rec := range recs {
+							if rec.Managed {
+								continue
+							}
+							dRow.DNSRecords = append(dRow.DNSRecords, internalbackup.MetadataDNSRecord{
+								Name: rec.Name, Type: rec.Type, Content: rec.Content,
+								TTL: rec.TTL, Priority: rec.Priority, IsEnabled: rec.IsEnabled,
+							})
+						}
+					}
 				}
 			}
 			m.Domains = append(m.Domains, dRow)

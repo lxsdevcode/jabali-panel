@@ -77,6 +77,8 @@ type Deps struct {
 	Autoresponders repository.EmailAutoresponderRepository
 	MailboxShares  repository.MailboxShareRepository
 	DNSSECKeys     repository.DNSSECKeyRepository
+	DNSZones       repository.DNSZoneRepository
+	DNSRecords     repository.DNSRecordRepository
 	SSHKeys        repository.SSHKeyRepository
 	CronJobs       repository.CronJobRepository
 	LimitOverrides repository.UserLimitOverrideRepository
@@ -551,6 +553,8 @@ func buildScheduleMetadata(ctx context.Context, deps Deps, user *models.User, lo
 		Autoresponders: deps.Autoresponders,
 		MailboxShares:  deps.MailboxShares,
 		DNSSECKeys:     deps.DNSSECKeys,
+		DNSZones:       deps.DNSZones,
+		DNSRecords:     deps.DNSRecords,
 		SSHKeys:        deps.SSHKeys,
 		CronJobs:       deps.CronJobs,
 		LimitOverrides: deps.LimitOverrides,

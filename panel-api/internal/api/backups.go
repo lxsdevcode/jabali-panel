@@ -54,6 +54,8 @@ type BackupHandlerConfig struct {
 	Autoresponders  repository.EmailAutoresponderRepository
 	MailboxShares   repository.MailboxShareRepository
 	DNSSECKeys      repository.DNSSECKeyRepository
+	DNSZones        repository.DNSZoneRepository
+	DNSRecords      repository.DNSRecordRepository
 	SSHKeys         repository.SSHKeyRepository
 	CronJobs        repository.CronJobRepository
 	LimitOverrides  repository.UserLimitOverrideRepository
@@ -729,7 +731,7 @@ func (cfg BackupHandlerConfig) buildAccountMetadata(ctx context.Context, user *m
 		Domains: cfg.Domains, Mailboxes: cfg.Mailboxes, AppInstalls: cfg.AppInstalls,
 		SSLCerts: cfg.SSLCerts, PHPPools: cfg.PHPPools, PHPPoolIni: cfg.PHPPoolIni,
 		Forwarders: cfg.Forwarders, Autoresponders: cfg.Autoresponders, MailboxShares: cfg.MailboxShares,
-		DNSSECKeys: cfg.DNSSECKeys, SSHKeys: cfg.SSHKeys, CronJobs: cfg.CronJobs,
+		DNSSECKeys: cfg.DNSSECKeys, DNSZones: cfg.DNSZones, DNSRecords: cfg.DNSRecords, SSHKeys: cfg.SSHKeys, CronJobs: cfg.CronJobs,
 		LimitOverrides: cfg.LimitOverrides, EgressPolicies: cfg.EgressPolicies, EgressRequests: cfg.EgressRequests,
 		Log: cfg.Log,
 	})
@@ -831,6 +833,8 @@ type MeBackupsHandlerConfig struct {
 	Autoresponders repository.EmailAutoresponderRepository
 	MailboxShares  repository.MailboxShareRepository
 	DNSSECKeys     repository.DNSSECKeyRepository
+	DNSZones       repository.DNSZoneRepository
+	DNSRecords     repository.DNSRecordRepository
 	SSHKeys        repository.SSHKeyRepository
 	CronJobs       repository.CronJobRepository
 	LimitOverrides repository.UserLimitOverrideRepository
@@ -848,7 +852,7 @@ func (cfg MeBackupsHandlerConfig) buildAccountMetadata(ctx context.Context, user
 		Domains: cfg.Domains, Mailboxes: cfg.Mailboxes, AppInstalls: cfg.AppInstalls,
 		SSLCerts: cfg.SSLCerts, PHPPools: cfg.PHPPools, PHPPoolIni: cfg.PHPPoolIni,
 		Forwarders: cfg.Forwarders, Autoresponders: cfg.Autoresponders, MailboxShares: cfg.MailboxShares,
-		DNSSECKeys: cfg.DNSSECKeys, SSHKeys: cfg.SSHKeys, CronJobs: cfg.CronJobs,
+		DNSSECKeys: cfg.DNSSECKeys, DNSZones: cfg.DNSZones, DNSRecords: cfg.DNSRecords, SSHKeys: cfg.SSHKeys, CronJobs: cfg.CronJobs,
 		LimitOverrides: cfg.LimitOverrides, EgressPolicies: cfg.EgressPolicies, EgressRequests: cfg.EgressRequests,
 		Log: cfg.Log,
 	})

@@ -131,6 +131,10 @@ type MetadataDomain struct {
 	SSLCertificate *MetadataSSLCert       `json:"ssl_certificate,omitempty"`
 	Mailboxes      []MetadataMailbox      `json:"mailboxes,omitempty"`
 	Forwarders     []MetadataForwarder    `json:"forwarders,omitempty"`
+	// DNSRecords (GH #267) captures the user-created DNS rows so a restore can
+	// re-insert them. Managed records (BootstrapRecords + mail) are excluded —
+	// they re-derive from domain config via the reconciler.
+	DNSRecords     []MetadataDNSRecord    `json:"dns_records,omitempty"`
 	DNSSECKeys     []MetadataDNSSECKey    `json:"dnssec_keys,omitempty"`
 }
 
@@ -250,6 +254,17 @@ type MetadataMailboxShare struct {
 	SharedWithMailboxID string `json:"shared_with_mailbox_id"`
 	Rights              string `json:"rights"` // raw JSON
 	CreatedAt           string `json:"created_at,omitempty"`
+}
+
+// MetadataDNSRecord mirrors the user-editable columns of models.DNSRecord so a
+// restore can re-create a zone's custom records (GH #267).
+type MetadataDNSRecord struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	TTL       int    `json:"ttl"`
+	Priority  int    `json:"priority"`
+	IsEnabled bool   `json:"is_enabled"`
 }
 
 // MetadataDNSSECKey mirrors models.DomainDNSSECKey.

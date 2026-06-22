@@ -914,6 +914,8 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:        deps.Domains,
 				Mailboxes:      deps.Mailboxes,
 				AppInstalls:    deps.WordPressInstalls,
+				DNSZones:       deps.DNSZones,
+				DNSRecords:     deps.DNSRecords,
 				Log:            deps.Log,
 				SSOKey:         deps.SSOKey,
 			})
@@ -927,6 +929,8 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:        deps.Domains,
 				Mailboxes:      deps.Mailboxes,
 				AppInstalls:    deps.WordPressInstalls,
+				DNSZones:       deps.DNSZones,
+				DNSRecords:     deps.DNSRecords,
 				Log:            deps.Log,
 			})
 		}
