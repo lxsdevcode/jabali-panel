@@ -45,6 +45,7 @@ type backupRestoreSelectiveParams struct {
 	ManifestSnapshotID string   `json:"manifest_snapshot_id"`
 	TargetUsername     string   `json:"target_username"`
 	Databases          []string `json:"databases"`
+	Mailboxes          []string `json:"mailboxes"`
 	RestoreHome        bool     `json:"home"`
 	Overwrite          bool     `json:"overwrite"`
 	// Restic dest (optional; empty = default local repo, like materialize).
@@ -75,8 +76,8 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 	if p.TargetUsername == "" {
 		return nil, bkInvalidArg("target_username required")
 	}
-	if len(p.Databases) == 0 && !p.RestoreHome {
-		return nil, bkInvalidArg("select at least one database and/or home")
+	if len(p.Databases) == 0 && !p.RestoreHome && len(p.Mailboxes) == 0 {
+		return nil, bkInvalidArg("select at least one database, mailbox, and/or home")
 	}
 
 	out := backupRestoreSelectiveResult{JobID: p.JobID}
@@ -146,6 +147,20 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 		}
 	}
 
+	var mailStage *backup.ManifestStage
+	if len(p.Mailboxes) > 0 {
+		for i := range manifest.Stages {
+			st := manifest.Stages[i]
+			if st.Name == backup.StageMail && st.Status == backup.StageStatusOK && st.SnapshotID != "" {
+				mailStage = &manifest.Stages[i]
+				break
+			}
+		}
+		if mailStage == nil {
+			out.Warnings = append(out.Warnings, "mail is not in this backup — skipped")
+		}
+	}
+
 	var homeStage *backup.ManifestStage
 	if p.RestoreHome {
 		for i := range manifest.Stages {
@@ -160,7 +175,7 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 		}
 	}
 
-	if len(dbStages) == 0 && homeStage == nil {
+	if len(dbStages) == 0 && homeStage == nil && mailStage == nil {
 		out.Warnings = append(out.Warnings, "nothing selected matched the backup — nothing to do")
 		return out, nil
 	}
@@ -172,6 +187,11 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 		}
 		if homeStage != nil {
 			out.Skipped = append(out.Skipped, "home")
+		}
+		if mailStage != nil {
+			for _, mb := range p.Mailboxes {
+				out.Skipped = append(out.Skipped, "mail:"+mb)
+			}
 		}
 		out.Warnings = append(out.Warnings,
 			"overwrite=false: nothing applied. Restore overwrites live data; "+
@@ -218,7 +238,67 @@ func backupRestoreSelectiveHandler(ctx context.Context, raw json.RawMessage) (an
 		}
 	}
 
+	// Mail — ADDITIVE + idempotent: restic-restore the mail stage's Maildir
+	// tree, then JMAP-import each requested mailbox via the proven
+	// migration import (importOneMailbox dedupes by Message-ID, so existing
+	// messages are skipped and only lost ones come back — never duplicates,
+	// never deletes; the RocksDB-unsafe store apply is NOT used).
+	if mailStage != nil {
+		mailApplied, mailWarn := applySelectiveMail(ctx, stagingRoot, p.Mailboxes, mailStage, c)
+		out.Applied = append(out.Applied, mailApplied...)
+		out.Warnings = append(out.Warnings, mailWarn...)
+	}
+
 	return out, nil
+}
+
+// applySelectiveMail restic-restores the mail stage to staging and imports each
+// requested mailbox's Maildir into running Stalwart via JMAP. Additive +
+// idempotent (Message-ID dedup in importOneMailbox).
+func applySelectiveMail(ctx context.Context, stagingRoot string, mailboxes []string, st *backup.ManifestStage, c *backup.Client) ([]string, []string) {
+	var applied, warnings []string
+	want := map[string]bool{}
+	for _, mb := range mailboxes {
+		want[mb] = true
+	}
+	target := filepath.Join(stagingRoot, "mail")
+	if err := os.MkdirAll(target, 0o750); err != nil {
+		return nil, []string{"mail: mkdir staging: " + err.Error()}
+	}
+	if err := c.Restore(ctx, backup.RestoreOpts{SnapshotID: st.SnapshotID, Target: target}); err != nil {
+		return nil, []string{"mail: restic restore: " + err.Error()}
+	}
+	// Walk the restored tree for Maildirs: any dir containing a "cur" child is
+	// a maildir; its basename is the local part and its parent's basename is
+	// the domain (layout <...>/mail/<domain>/<local>/{cur,new,tmp}).
+	found := map[string]string{} // email -> maildir path
+	_ = filepath.Walk(target, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || !info.IsDir() || info.Name() != "cur" {
+			return nil
+		}
+		maildir := filepath.Dir(path)
+		local := filepath.Base(maildir)
+		domain := filepath.Base(filepath.Dir(maildir))
+		email := local + "@" + domain
+		if want[email] {
+			found[email] = maildir
+		}
+		return nil
+	})
+	for _, mb := range mailboxes {
+		md, ok := found[mb]
+		if !ok {
+			warnings = append(warnings, "mail "+mb+": not found in this backup — skipped")
+			continue
+		}
+		n, _, skipped, ierr := importOneMailbox(ctx, mb, md)
+		if ierr != nil {
+			warnings = append(warnings, "mail "+mb+": import: "+ierr.Error())
+			continue
+		}
+		applied = append(applied, fmt.Sprintf("mail → %s (%d imported, %d already present)", mb, n, len(skipped)))
+	}
+	return applied, warnings
 }
 
 // applySelectiveHome restores the home stage additively. Returns "" on success
