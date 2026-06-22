@@ -1,8 +1,8 @@
 # ADR-0144: Scope-restricted user API tokens (RBAC)
 
-**Status:** ACCEPTED (2026-06-21) — phase 1+2 shipped + live-verified on mx.
+**Status:** ACCEPTED (2026-06-21) — ALL phases (1–5) shipped + live-verified on mx.
 **Issue:** GH #245
-**Commit:** `38810f53`
+**Commits:** `38810f53` (phase 1+2 DNS+DDNS), `400f96c5` (phase 3+4 — all tenant areas + UI permission grid), `68c2f093` (phase 5 — per-record DDNS)
 **Blueprint:** `plans/m245-api-key-rbac.md`
 
 ## Context
@@ -27,7 +27,8 @@ Enforce user-token scopes, **fail-closed**, with backward compatibility:
   safe-by-default during the phased rollout.
 - Scope vocabulary: `read:<area>` / `write:<area>` (+ `read:*` / `write:*`
   wildcards via the existing `Has`), plus a narrow `ddns` grant for the DynDNS
-  shim only. Phase 1+2 defines `read:dns`, `write:dns`, `ddns`.
+  shim only. All 13 areas are now mapped (dns, mail, files, databases, apps,
+  domains, cron, ssl, php, ssh, logs, notifications, backups).
 - The DDNS shim (`/nic/update`) accepts empty scopes, `ddns`, or `write:dns`;
   everything else is `badauth`. A `ddns`-only token can use the router shim but
   is 403'd on the DNS REST API.
@@ -46,10 +47,13 @@ results in denial, never escalation. A coverage test guards drift.
 
 - Safe DynDNS / router keys today (`ddns` scope), DNS read/write scoping, and a
   UI permission preset — johnnyq's request is met.
-- Remaining areas (mail, files, databases, apps, domains, cron, ssl, backups)
-  ship one phase at a time; until mapped, a scoped token simply can't reach
-  them. Full tokens are unaffected throughout.
-- Per-resource scoping ("tie a token to one DNS record") is a future phase.
+- All tenant areas (mail, files, databases, apps, domains, cron, ssl, php, ssh,
+  logs, notifications, backups) are mapped (phase 3+4); the UI ships a per-area
+  read/write permission grid. Full tokens are unaffected throughout.
+- Per-resource scoping ("tie a token to one DNS record") shipped as phase 5:
+  a `record:<26-char ULID>` scope constrains a token to updating only the listed
+  DNS record(s) via the DDNS shim (`tokenAllowsRecord`). This is johnnyq's exact
+  "update one record, not add/delete" request.
 
 ## Verification
 
