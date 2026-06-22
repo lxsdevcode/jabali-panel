@@ -1,7 +1,7 @@
 # M267 — Tenant Self-Service Selective Restore
 
 **Issue:** GH #267 ("No Tenant Restore Functionality under Tenant Panel")
-**Status:** Wave 1 SHIPPED (read-only manifest preview, `c31bf675`); Waves 2–5 pending
+**Status:** Waves 1+2 SHIPPED (preview `c31bf675`; DB-only selective restore `708e751d`, negative-round-trip verified). Wave 4 (UI) + home/mail (deferred) pending.
 **Target ADR:** ADR-0148
 **Depends on:** M30/M30.1 backup foundation, ADR-0075/0078/0080; #245 RBAC scopes (ADR-0144)
 
@@ -179,7 +179,7 @@ iteration — do NOT promise lossless DNS restore for backups taken today.
    (option B above) — bumps manifest `schema_version`. Skip for a managed-only v1.
 1. **Manifest preview** — ✅ SHIPPED (`c31bf675`): agent `backup.manifest_read` + `GET /me/backups/:id/manifest`, owner-scoped, live-verified (home/db×3/mail/meta with item names). Original text: — `backup.manifest_read` agent cmd + `GET /me/backups/:id/manifest`
    + owner/scope checks. Read-only; ship + verify first (no mutation risk).
-2. **Selective restore API** — `POST /me/backups/:id/restore`, validation,
+2. **Selective restore API + agent (DB-only)** — ✅ SHIPPED (`708e751d`): `POST /me/backups/:id/restore` + agent `backup.restore_selective`; fail-closed (overwrite gate, server-derived target, owned-DB check); negative round-trip proven (restore one DB, others+home byte-unchanged). Original text: — `POST /me/backups/:id/restore`, validation,
    job creation, dispatch. Agent stub returns "not implemented" per stage.
 3. **Agent selective apply** — `backup.restore_selective`, one stage at a time:
    3a home, 3b databases, 3c mailboxes, 3d dns. Each independently testable.
