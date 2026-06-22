@@ -152,6 +152,11 @@ func validateDocumentRoot(docRoot, username, domainName string) error {
 
 type updateDomainRequest struct {
 	IsEnabled             *bool                 `json:"is_enabled,omitempty"`
+	// DocRoot (GH #265) — admin-only change of the document root. Empty
+	// resets to the default /home/<user>/domains/<name>/public_html. The
+	// reconciler's per-tick domain.create mkdir -p's the new path + re-renders
+	// the vhost, so changing it is safe (old files are not moved).
+	DocRoot               *string               `json:"doc_root,omitempty"`
 	NginxCustomDirectives *string               `json:"nginx_custom_directives,omitempty"`
 	RedirectAllTo         *string               `json:"redirect_all_to,omitempty"`
 	RedirectAllType       *string               `json:"redirect_all_type,omitempty"`
@@ -788,6 +793,25 @@ func (h *domainHandler) update(c *gin.Context) {
 				return
 			}
 			domain.NginxRules = *req.NginxRules
+		}
+
+		// DocRoot (GH #265): admin-only. Confine to the owner's home via
+		// validateDocumentRoot; empty resets to the canonical default.
+		if req.DocRoot != nil {
+			owner, oerr := h.cfg.Users.FindByID(ctx, domain.UserID)
+			if oerr != nil || owner == nil || owner.Username == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "owner_lookup_failed"})
+				return
+			}
+			newRoot := strings.TrimSpace(*req.DocRoot)
+			if newRoot == "" {
+				newRoot = "/home/" + *owner.Username + "/domains/" + domain.Name + "/public_html"
+			}
+			if err := validateDocumentRoot(newRoot, *owner.Username, domain.Name); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_doc_root", "detail": err.Error()})
+				return
+			}
+			domain.DocRoot = newRoot
 		}
 	}
 

@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Form,
+  Input,
   Space,
   Spin,
   Switch,
@@ -37,6 +38,7 @@ import { DomainDeliverabilitySection } from "./DomainDeliverabilitySection";
 
 export type DomainEditInput = {
   is_enabled?: boolean;
+  doc_root?: string;
 };
 
 export const DomainEdit = () => {
@@ -57,6 +59,7 @@ export const DomainEdit = () => {
     if (domain) {
       form.setFieldsValue({
         is_enabled: domain.is_enabled,
+        doc_root: domain.doc_root,
       });
     }
   }, [domain, form]);
@@ -99,8 +102,12 @@ export const DomainEdit = () => {
         <Typography.Text>{domain.name}</Typography.Text>
       </Form.Item>
 
-      <Form.Item label="Doc Root">
-        <Typography.Text>{domain.doc_root || "auto-generated"}</Typography.Text>
+      <Form.Item
+        label="Doc Root"
+        name="doc_root"
+        extra="Must be under the owner's home directory. Changing it re-points the vhost on the next sync and creates the new directory — existing files are NOT moved. Leave blank to reset to the default public_html."
+      >
+        <Input placeholder="auto-generated (default public_html)" allowClear />
       </Form.Item>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
