@@ -1,0 +1,123 @@
+<?php
+/**
+ * Jabali WP Cache — standalone test harness (no PHPUnit, no WordPress).
+ *
+ *   php tests/test-lib.php
+ *   JABALI_TEST_REDIS=/run/redis/redis.sock php tests/test-lib.php   # live round-trip
+ *
+ * Exits non-zero on the first failure.
+ *
+ * @package Jabali_Cache
+ */
+
+error_reporting( E_ALL );
+
+$tests  = 0;
+$failed = 0;
+
+function jc_assert( $cond, $msg ) {
+	global $tests, $failed;
+	$tests++;
+	if ( $cond ) {
+		echo "  ok   - {$msg}\n";
+	} else {
+		$failed++;
+		echo "  FAIL - {$msg}\n";
+	}
+}
+
+require __DIR__ . '/../includes/lib.php';
+
+// ---------------------------------------------------------------------------
+// Config resolution.
+// ---------------------------------------------------------------------------
+echo "Config:\n";
+Jabali_Cache_Config::reset();
+$cfg = Jabali_Cache_Config::load();
+
+jc_assert( '/run/redis/redis.sock' === $cfg['socket'], 'default socket is the jabali panel socket' );
+jc_assert( 1 === (int) $cfg['database'], 'default database is 1 (ADR-0059)' );
+jc_assert( 'unix' === $cfg['scheme'], 'default scheme is unix' );
+jc_assert( 0 === strpos( $cfg['prefix'], 'jc:' ), 'prefix is namespaced with jc: ' . $cfg['prefix'] );
+jc_assert( ':' === substr( $cfg['prefix'], -1 ), 'prefix ends with a separator' );
+jc_assert( is_array( $cfg['global_groups'] ) && in_array( 'users', $cfg['global_groups'], true ), 'global groups include users' );
+
+// Prefix must be deterministic across calls.
+Jabali_Cache_Config::reset();
+$cfg2 = Jabali_Cache_Config::load();
+jc_assert( $cfg['prefix'] === $cfg2['prefix'], 'prefix is deterministic' );
+
+// ---------------------------------------------------------------------------
+// Client construction / graceful failure (no Redis required).
+// ---------------------------------------------------------------------------
+echo "Client (offline):\n";
+$bad = new Jabali_Cache_Client(
+	array_merge(
+		$cfg,
+		array(
+			'scheme'  => 'unix',
+			'socket'  => '/nonexistent/jabali-test.sock',
+			'timeout' => 0.2,
+		)
+	)
+);
+jc_assert( false === $bad->connect(), 'connect() to a missing socket returns false' );
+jc_assert( false === $bad->is_connected(), 'is_connected() is false after a failed connect' );
+jc_assert( false === $bad->get( 'anything' ), 'get() returns false when disconnected' );
+jc_assert( false === $bad->set( 'k', 'v' ), 'set() returns false when disconnected' );
+jc_assert( 0 === $bad->del( 'k' ), 'del() returns 0 when disconnected' );
+jc_assert( '' !== $bad->last_error(), 'last_error() is populated on failure' );
+
+$mg = $bad->mget( array( 'a', 'b' ) );
+jc_assert( is_array( $mg ) && false === $mg['a'] && false === $mg['b'], 'mget() returns all-miss map when disconnected' );
+
+// ---------------------------------------------------------------------------
+// Live round-trip (only when a real socket is provided).
+// ---------------------------------------------------------------------------
+$live = getenv( 'JABALI_TEST_REDIS' );
+if ( $live ) {
+	echo "Client (live: {$live}):\n";
+	$c = new Jabali_Cache_Client(
+		array_merge(
+			$cfg,
+			array(
+				'scheme'   => 'unix',
+				'socket'   => $live,
+				'database' => 1,
+				'timeout'  => 1.0,
+			)
+		)
+	);
+	if ( ! $c->connect() ) {
+		echo "  SKIP - could not connect: " . $c->last_error() . "\n";
+	} else {
+		$pfx = 'jc:test' . getmypid() . ':';
+		$k1  = $pfx . 'alpha';
+		$k2  = $pfx . 'beta';
+
+		jc_assert( $c->set( $k1, 'hello', 30 ), 'set k1 with TTL' );
+		jc_assert( 'hello' === $c->get( $k1 ), 'get k1 round-trips' );
+		jc_assert( false === $c->get( $pfx . 'missing' ), 'get of missing key is false' );
+
+		jc_assert( true === $c->add( $k2, 'first', 30 ), 'add new key succeeds' );
+		jc_assert( false === $c->add( $k2, 'second', 30 ), 'add existing key fails (NX)' );
+
+		$m = $c->mget( array( $k1, $k2, $pfx . 'missing' ) );
+		jc_assert( 'hello' === $m[ $k1 ] && 'first' === $m[ $k2 ] && false === $m[ $pfx . 'missing' ], 'mget mixed hit/miss' );
+
+		$c->set( $pfx . 'ctr', '10' );
+		jc_assert( 12 === $c->incr( $pfx . 'ctr', 2 ), 'incr by 2' );
+		jc_assert( 11 === $c->decr( $pfx . 'ctr', 1 ), 'decr by 1' );
+
+		$n = $c->delete_by_pattern( $pfx . '*' );
+		jc_assert( $n >= 3, "delete_by_pattern removed our keys ({$n})" );
+		jc_assert( 0 === $c->count_keys( $pfx ), 'no keys remain for the test prefix' );
+
+		$c->close();
+	}
+} else {
+	echo "Client (live): SKIP (set JABALI_TEST_REDIS=/run/redis/redis.sock to enable)\n";
+}
+
+echo "\n{$tests} checks, {$failed} failed\n";
+exit( $failed > 0 ? 1 : 0 );
