@@ -40,6 +40,41 @@ in by default for the cache) — but then the plugin can't connect. **This is th
 gating decision; do not build the switch until it's made.** Check the live socket
 perms first (`stat /run/redis/redis.sock`, group membership).
 
+## LIVE FINDING (2026-06-23) — isolation is genuinely blocking
+
+`stat /run/redis/redis.sock` → `srw-rw---- redis:jabali-sockets`. A real tenant
+(`shukivaknin`, groups: own + www-data + jabali-sftp) is **NOT** in
+`jabali-sockets` → `redis-cli PING` as that tenant = **"Permission denied"**.
+The `default` Redis user is `nopass ~* &* +@all` (no AUTH, full access), and this
+is the SAME Redis the M14 notification dispatcher uses (Redis Streams).
+
+So today tenants can't reach Redis at all. To let the WP plugin (tenant uid)
+connect, we must grant socket access — at which point, with the default no-AUTH
+user, the tenant gets **full read/write/FLUSH over every tenant's cache AND the
+panel's notification streams.** Option (A) prefix-only is therefore **rejected**.
+
+Required minimum to ship safely (option B, expanded):
+1. Add tenants to `jabali-sockets` (or a new `jabali-redis-clients` group) so the
+   plugin can open the socket.
+2. **Lock the `default` user** (`ACL SETUSER default off` or set a requirepass)
+   so socket access alone grants nothing.
+3. Per-tenant ACL user: `ACL SETUSER wp_<user> on >TOKEN ~<prefix>* +@all
+   -@dangerous -flushall -flushdb -acl -config` (key-pattern scoped, no flush/admin),
+   and DENY the panel's notification key space. Hand `>TOKEN` to the plugin via
+   `JABALI_CACHE_PASSWORD`. ACL lifecycle (create on first enable, drop on user
+   delete) is new agent surface.
+4. Confirm the M14 dispatcher still works with the default user locked (it uses
+   its own connection — give IT a dedicated ACL user too, or keep default for
+   loopback-only... must verify).
+
+This is an architecture + security change (Redis ACL model + default-user
+lockdown + notification-dispatcher credentialing), NOT a UI switch. It needs an
+ADR and likely the security-reviewer. **Do not build the switch until this lands.**
+
+Alternative: a **separate per-tenant Redis** (or a single Redis with the tenant
+plugin pointed at a tenant-scoped instance) sidesteps the shared-default-user
+problem but adds process/socket management. Weigh against the ACL approach.
+
 ## Design (once isolation is decided)
 
 **Bundle.** install.sh deploys `wp-plugins/jabali-wp-cache/` →
