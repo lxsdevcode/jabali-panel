@@ -1,7 +1,7 @@
 # M267 — Tenant Self-Service Selective Restore
 
 **Issue:** GH #267 ("No Tenant Restore Functionality under Tenant Panel")
-**Status:** Waves 1+2 SHIPPED (preview `c31bf675`; DB-only selective restore `708e751d`, negative-round-trip verified). Wave 4 (UI) SHIPPED `ed4c04d0` — tenant DB restore usable end-to-end. home/mail/DNS apply deferred.
+**Status:** Waves 1+2 SHIPPED (preview `c31bf675`; DB-only selective restore `708e751d`, negative-round-trip verified). DB + HOME restore SHIPPED (UI ed4c04d0, home 10f0c5d3). home is ADDITIVE (rsync no --delete). mail/DNS still deferred.
 **Target ADR:** ADR-0148
 **Depends on:** M30/M30.1 backup foundation, ADR-0075/0078/0080; #245 RBAC scopes (ADR-0144)
 
