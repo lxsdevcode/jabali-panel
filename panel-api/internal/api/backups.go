@@ -913,6 +913,7 @@ func RegisterMeBackupRoutes(rg *gin.RouterGroup, cfg MeBackupsHandlerConfig) {
 	g.GET("", h.list)
 	g.GET("/:id/download", h.download)
 	g.GET("/:id/manifest", h.manifest)
+	g.POST("/:id/restore", h.restoreSelective)
 }
 
 type meBackupHandler struct{ cfg MeBackupsHandlerConfig }
@@ -980,6 +981,114 @@ func (h *meBackupHandler) list(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": rows, "total": total, "page": page, "page_size": limit,
 	})
+}
+
+type meRestoreSelectiveRequest struct {
+	Databases []string `json:"databases"`
+	Overwrite bool     `json:"overwrite"`
+}
+
+// restoreSelective restores a chosen subset of the caller's OWN backup
+// (databases only, GH #267 Wave 2). DESTRUCTIVE + fail-closed: nothing is
+// written unless overwrite=true, target_username is server-derived (never from
+// the body), and each requested DB must be both in the backup AND currently
+// owned by the caller. Home/mail/DNS are out of v1 (see the blueprint).
+func (h *meBackupHandler) restoreSelective(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"status": "error", "error": "unauthenticated"})
+		return
+	}
+	job, err := h.cfg.Jobs.Get(c.Request.Context(), c.Param("id"))
+	if err != nil || job.UserID != claims.UserID {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
+		return
+	}
+	if job.Status != models.BackupJobStatusSucceeded {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "no_completed_snapshot"})
+		return
+	}
+	if job.SnapshotID == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "no_snapshot_id"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "error": "agent_unavailable"})
+		return
+	}
+
+	var req meRestoreSelectiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "validation_failed", "detail": err.Error()})
+		return
+	}
+	if len(req.Databases) == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "databases_required",
+			"detail": "v1 restores databases only; pass a non-empty databases[]"})
+		return
+	}
+
+	// Server-derive the target username from the caller — NEVER trust a body.
+	owner, oerr := h.cfg.Users.FindByID(c.Request.Context(), claims.UserID)
+	if oerr != nil || owner == nil || owner.Username == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "owner_lookup_failed"})
+		return
+	}
+
+	// Every requested DB must be CURRENTLY owned by the caller — fail-closed.
+	// (The agent additionally restores only DBs present in the manifest.)
+	owned := map[string]bool{}
+	if h.cfg.Databases != nil {
+		dbs, _, derr := h.cfg.Databases.ListByUserID(c.Request.Context(), claims.UserID, repository.ListOptions{Limit: 10000})
+		if derr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "db_list_failed"})
+			return
+		}
+		for _, d := range dbs {
+			owned[d.Name] = true
+		}
+	}
+	for _, name := range req.Databases {
+		if !owned[name] {
+			c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "database_not_owned",
+				"detail": "you do not own a database named " + name})
+			return
+		}
+	}
+
+	// Track the restore as its own job so the jobs list + notifications cover it.
+	restoreJob := &models.BackupJob{
+		ID:        ids.NewULID(),
+		UserID:    claims.UserID,
+		Kind:      models.BackupJobKindAccountRestore,
+		CreatedAt: time.Now().UTC(),
+		Status:    models.BackupJobStatusQueued,
+	}
+	if err := h.cfg.Jobs.Create(c.Request.Context(), restoreJob); err != nil {
+		h.cfg.logErr("create selective restore job", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "db_create"})
+		return
+	}
+	_ = h.cfg.Jobs.MarkStarted(c.Request.Context(), restoreJob.ID)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), restoreCallTimeout)
+	defer cancel()
+	raw, aerr := h.cfg.Agent.Call(ctx, "backup.restore_selective", map[string]any{
+		"job_id":               restoreJob.ID,
+		"manifest_snapshot_id": job.SnapshotID,
+		"target_username":      *owner.Username,
+		"databases":            req.Databases,
+		"overwrite":            req.Overwrite,
+	})
+	if aerr != nil {
+		_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusFailed,
+			"", "", 0, 0, nil, nil, aerr.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "restore_failed", "detail": aerr.Error()})
+		return
+	}
+	_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusSucceeded,
+		"", "", 0, 0, nil, nil, "")
+	c.Data(http.StatusOK, "application/json", raw)
 }
 
 // manifest returns the backup's stage/item preview (GH #267 Wave 1) so the
