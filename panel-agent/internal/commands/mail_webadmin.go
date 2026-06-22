@@ -3,19 +3,13 @@ package commands
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"text/template"
-
-	"golang.org/x/crypto/bcrypt"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
@@ -35,7 +29,6 @@ import (
 
 const (
 	stalwartAdminVhostName = "jabali-stalwart-admin.conf"
-	stalwartAdminUser      = "stalwart-admin"
 )
 
 // stalwartAdminHtpasswd is the nginx basic-auth gateway credential file.
@@ -47,7 +40,7 @@ var stalwartAdminVhostTemplate = `# Rendered by panel-agent mail.webadmin.apply 
 # it reuses the panel cert (name matches; already trusted) and Stalwart owns
 # the origin root (its admin SPA uses absolute /api, /logo, /webadmin paths).
 # Stalwart stays on 127.0.0.1:8446; this is the only externally reachable door,
-# behind TLS + basic-auth{{if .AllowCIDRs}} + IP allowlist{{end}}.
+# behind TLS{{if .AllowCIDRs}} + IP allowlist{{end}} + Stalwart's own admin login.
 server {
     listen {{.Port}} ssl;
     listen [::]:{{.Port}} ssl;
@@ -59,13 +52,11 @@ server {
 {{range .AllowCIDRs}}    allow {{.}};
 {{end}}{{if .AllowCIDRs}}    deny all;
 {{end}}
-    auth_basic "Stalwart WebAdmin";
-    auth_basic_user_file {{.HtpasswdPath}};
-
     client_max_body_size 25m;
 
-    # This door is already gated four ways (TLS + IP allowlist + dedicated
-    # basic-auth credential + Stalwart's own admin login). The global CrowdSec
+    # This door is gated by TLS + IP allowlist + Stalwart's own admin login
+    # (basic-auth was dropped — it collided with Stalwart's own API auth on the
+    # Authorization header; see ADR-0142). The global CrowdSec
     # nginx bouncer / AppSec WAF false-positives on the WebAdmin's own admin
     # paths (/admin, /login, /webadmin, /api/auth read as admin-panel scans),
     # returning 403. A no-op server-scope access_by_lua override exempts only
@@ -99,28 +90,19 @@ type webadminApplyParams struct {
 	SSLCertPath string   `json:"ssl_cert_path"`
 	SSLKeyPath  string   `json:"ssl_key_path"`
 	AllowCIDRs  []string `json:"allow_cidrs,omitempty"`
-	// Regenerate forces a fresh gateway credential (drops the existing
-	// htpasswd first). Used by the "reset credential" action.
-	Regenerate bool `json:"regenerate,omitempty"`
 }
 
 type webadminVhostTemplateData struct {
-	ServerName   string
-	Port         int
-	SSLCertPath  string
-	SSLKeyPath   string
-	AllowCIDRs   []string
-	HtpasswdPath string
+	ServerName  string
+	Port        int
+	SSLCertPath string
+	SSLKeyPath  string
+	AllowCIDRs  []string
 }
 
 type webadminApplyResponse struct {
 	Ok      bool `json:"ok"`
 	Changed bool `json:"changed"`
-	// GatewayUser/GatewayPassword are returned ONLY when a fresh credential
-	// was just generated (first enable). Empty otherwise — the panel shows it
-	// once and never stores the plaintext.
-	GatewayUser     string `json:"gateway_user,omitempty"`
-	GatewayPassword string `json:"gateway_password,omitempty"`
 }
 
 func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -142,8 +124,9 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 				changed = true
 			}
 		}
-		// Leave the htpasswd in place (cheap, lets a re-enable reuse the
-		// existing credential rather than churn it). Reload only on change.
+		// Remove any stale htpasswd from the basic-auth era (ADR-0142 dropped
+		// it). Reload only when the vhost actually changed.
+		_ = os.Remove(stalwartAdminHtpasswd)
 		if changed {
 			if err := nginxTestAndReload(ctx); err != nil {
 				return nil, err
@@ -166,45 +149,18 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		}
 	}
 
-	// Regenerate drops the existing credential so the block below mints a new one.
-	if p.Regenerate {
-		_ = os.Remove(stalwartAdminHtpasswd)
-	}
-
-	// Generate the gateway credential on first enable (no htpasswd yet).
-	var freshUser, freshPass string
-	if _, err := os.Stat(stalwartAdminHtpasswd); os.IsNotExist(err) {
-		pass, gerr := generateGatewayPassword()
-		if gerr != nil {
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: gerr.Error()}
-		}
-		hash, herr := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)
-		if herr != nil {
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: herr.Error()}
-		}
-		line := fmt.Sprintf("%s:%s\n", stalwartAdminUser, string(hash))
-		if werr := os.WriteFile(stalwartAdminHtpasswd, []byte(line), 0o640); werr != nil {
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write htpasswd: %v", werr)}
-		}
-		// nginx workers run as www-data and must READ the auth file; a
-		// root:root 0640 file gives them "Permission denied" -> 500. Group it
-		// to www-data (the bcrypt hash, not a plaintext secret).
-		if gid := wwwDataGID(); gid >= 0 {
-			_ = os.Chown(stalwartAdminHtpasswd, 0, gid)
-		}
-		freshUser, freshPass = stalwartAdminUser, pass
-	}
+	// Clean up any stale htpasswd from the basic-auth era (ADR-0142 dropped it).
+	_ = os.Remove(stalwartAdminHtpasswd)
 
 	if p.Port < 1 || p.Port > 65535 {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "port out of range"}
 	}
 	data := webadminVhostTemplateData{
-		ServerName:   p.ServerName,
-		Port:         p.Port,
-		SSLCertPath:  p.SSLCertPath,
-		SSLKeyPath:   p.SSLKeyPath,
-		AllowCIDRs:   p.AllowCIDRs,
-		HtpasswdPath: stalwartAdminHtpasswd,
+		ServerName:  p.ServerName,
+		Port:        p.Port,
+		SSLCertPath: p.SSLCertPath,
+		SSLKeyPath:  p.SSLKeyPath,
+		AllowCIDRs:  p.AllowCIDRs,
 	}
 	tmpl, err := template.New("swadmin").Parse(stalwartAdminVhostTemplate)
 	if err != nil {
@@ -229,23 +185,14 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		changed = true
 	}
 	// Open the WebAdmin port in UFW so it is reachable (best-effort; a no-op
-	// when UFW is inactive). The basic-auth + allowlist remain the real gate.
+	// when UFW is inactive). The IP allowlist + Stalwart's own login are the gate.
 	ufwSetWebadminPort(ctx, p.Port, true)
-	if changed || freshPass != "" {
+	if changed {
 		if err := nginxTestAndReload(ctx); err != nil {
 			return nil, err
 		}
 	}
-	return webadminApplyResponse{Ok: true, Changed: changed, GatewayUser: freshUser, GatewayPassword: freshPass}, nil
-}
-
-// generateGatewayPassword returns a 30-char URL-safe random password.
-func generateGatewayPassword() (string, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("rand: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return webadminApplyResponse{Ok: true, Changed: changed}, nil
 }
 
 // validCIDROrIP accepts a bare IP or a CIDR (the two shapes nginx allow/deny
@@ -259,8 +206,8 @@ func validCIDROrIP(s string) bool {
 }
 
 // ufwSetWebadminPort opens (open=true) or closes the WebAdmin port in UFW.
-// Best-effort: errors (UFW inactive, not installed) are ignored — the
-// basic-auth + IP allowlist are the security gate, not the firewall.
+// Best-effort: errors (UFW inactive, not installed) are ignored — the IP
+// allowlist + Stalwart's own login are the security gate, not the firewall.
 func ufwSetWebadminPort(ctx context.Context, port int, open bool) {
 	if _, err := exec.LookPath("ufw"); err != nil {
 		return
@@ -278,19 +225,6 @@ func ufwSetWebadminPort(ctx context.Context, port int, open bool) {
 
 // stalwartAdminUFWPort is used by the close path when no port is supplied.
 var stalwartAdminUFWPort = "8449/tcp"
-
-// wwwDataGID resolves the www-data group id (nginx worker group). Returns -1
-// when the group is absent.
-func wwwDataGID() int {
-	g, err := user.LookupGroup("www-data")
-	if err != nil {
-		return -1
-	}
-	if gid, perr := strconv.Atoi(g.Gid); perr == nil {
-		return gid
-	}
-	return -1
-}
 
 func init() {
 	Default.Register("mail.webadmin.apply", mailWebadminApplyHandler)

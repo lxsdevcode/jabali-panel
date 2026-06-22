@@ -120,7 +120,6 @@ type updateServerSettingsRequest struct {
 	StalwartWebadminEnabled    *bool   `json:"stalwart_webadmin_enabled,omitempty"`
 	StalwartWebadminAllowCIDRs *string `json:"stalwart_webadmin_allow_cidrs,omitempty"`
 	// Transient (not persisted): force a fresh gateway credential.
-	StalwartWebadminRegenerate    *bool   `json:"stalwart_webadmin_regenerate,omitempty"`
 	PostgresMaxConnectionsPerUser *uint16 `json:"postgres_max_connections_per_user,omitempty"`
 
 	// M35 SSRF override. When true, migrate.ValidateHost accepts
@@ -609,25 +608,17 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 
 	h.cfg.Log.Info("event=audit kind=server_settings_updated actor_id=" + claims.UserID)
 	// GH #243: apply the Stalwart WebAdmin reverse-proxy SYNCHRONOUSLY when the
-	// toggle or allowlist changed, so a freshly-minted gateway credential can be
-	// returned to the operator once. Stalwart itself stays loopback-pinned.
-	var webadminCred *webadminCredential
-	regenWebadmin := req.StalwartWebadminRegenerate != nil && *req.StalwartWebadminRegenerate
+	// toggle or allowlist changed. Stalwart itself stays loopback-pinned; the
+	// gate is TLS + the IP allowlist + Stalwart's own admin login (ADR-0142).
 	webadminChanged := current.StalwartWebadminEnabled != prevWebadminEnabled ||
 		current.StalwartWebadminAllowCIDRs != prevWebadminCIDRs
-	if (webadminChanged || regenWebadmin) && h.cfg.Agent != nil {
-		cred, aerr := h.applyStalwartWebadmin(ctx, current, regenWebadmin)
-		if aerr != nil {
+	if webadminChanged && h.cfg.Agent != nil {
+		if aerr := h.applyStalwartWebadmin(ctx, current); aerr != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "webadmin_apply_failed", "detail": firstLineString(aerr.Error())})
 			return
 		}
-		webadminCred = cred
 	}
 
-	if webadminCred != nil {
-		c.JSON(http.StatusOK, settingsUpdateResponse{ServerSettings: current, WebadminCredential: webadminCred})
-		return
-	}
 	c.JSON(http.StatusOK, current)
 }
 
@@ -807,21 +798,6 @@ func (h *serverSettingsHandler) pythonRuntimeStatus(c *gin.Context) {
 // on (panel hostname, panel cert). Distinct from the panel :8443.
 const stalwartWebadminPort = 8449
 
-// webadminCredential is the one-time gateway basic-auth credential returned to
-// the operator when the WebAdmin proxy is first enabled.
-type webadminCredential struct {
-	User     string `json:"user"`
-	Password string `json:"password"`
-	URL      string `json:"url"`
-}
-
-// settingsUpdateResponse embeds the settings (so the body is unchanged for
-// existing callers) and adds the one-time WebAdmin credential when present.
-type settingsUpdateResponse struct {
-	*models.ServerSettings
-	WebadminCredential *webadminCredential `json:"stalwart_webadmin_credential,omitempty"`
-}
-
 // stalwartAdminCredentialResponse carries the Stalwart admin GUI login. The
 // password is the recovery-admin token — the same credential the panel uses to
 // manage Stalwart — so a rotate restarts jabali-stalwart + jabali-panel.
@@ -880,17 +856,11 @@ func (h *serverSettingsHandler) stalwartAdminCredential(c *gin.Context) {
 }
 
 // applyStalwartWebadmin dispatches mail.webadmin.apply with the effective
-// state. server_name is admin.<panel-hostname>; the proxy uses the panel cert.
-// Returns a freshly-minted gateway credential only on first enable.
-func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings, regenerate bool) (*webadminCredential, error) {
+// state. Serves on a dedicated port of the panel hostname, reusing the panel
+// cert; Stalwart stays loopback. No gateway credential — the gate is TLS + the
+// IP allowlist + Stalwart's own admin login (ADR-0142).
+func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *models.ServerSettings) error {
 	cidrs := splitCIDRList(s.StalwartWebadminAllowCIDRs)
-
-	// Serve on a dedicated port of the PANEL hostname (not an admin.<host>
-	// subdomain): reuse the panel cert (it already covers the panel hostname
-	// and is the cert the operator already trusts for the panel), and let
-	// Stalwart own the origin root — its admin SPA uses absolute /api, /logo
-	// and /webadmin paths that would collide under a sub-path on the panel
-	// host (GH #243).
 	params := map[string]any{
 		"enabled":       s.StalwartWebadminEnabled,
 		"server_name":   s.Hostname,
@@ -898,27 +868,11 @@ func (h *serverSettingsHandler) applyStalwartWebadmin(ctx context.Context, s *mo
 		"ssl_cert_path": "/etc/jabali/tls/panel.crt",
 		"ssl_key_path":  "/etc/jabali/tls/panel.key",
 		"allow_cidrs":   cidrs,
-		"regenerate":    regenerate,
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(callCtx, "mail.webadmin.apply", params)
-	if err != nil {
-		return nil, err
-	}
-	var resp struct {
-		GatewayUser     string `json:"gateway_user"`
-		GatewayPassword string `json:"gateway_password"`
-	}
-	_ = json.Unmarshal(raw, &resp)
-	if resp.GatewayPassword == "" {
-		return nil, nil
-	}
-	return &webadminCredential{
-		User:     resp.GatewayUser,
-		Password: resp.GatewayPassword,
-		URL:      fmt.Sprintf("https://%s:%d/", s.Hostname, stalwartWebadminPort),
-	}, nil
+	_, err := h.cfg.Agent.Call(callCtx, "mail.webadmin.apply", params)
+	return err
 }
 
 // splitCIDRList parses a comma/space-separated allowlist into a clean slice.

@@ -35,48 +35,55 @@ must be opt-in, defence-in-depth, and reversible.
    `/logo`) resolve without rewriting. The bare root redirects to `/admin/`
    (`location = / { return 302 /admin/; }`) — Stalwart serves its WebAdmin SPA
    at `/admin/` (base href=/admin/), not `/`, which 404s.
-4. **Defence in depth — every layer required:**
+4. **Defence in depth:**
    - **TLS** (panel cert, reused on the panel hostname:8449 — name already
      matches, no warning, no extra SAN needed).
-   - **nginx basic-auth** with a **dedicated generated gateway credential**
-     (bcrypt htpasswd) — **never** the Stalwart admin token. Shown once at
-     enable, not stored by the panel.
-   - **Optional source-IP allowlist** (`stalwart_webadmin_allow_cidrs` →
-     nginx `allow`/`deny`), validated as IP/CIDR before write.
+   - **Source-IP allowlist** (`stalwart_webadmin_allow_cidrs` → nginx
+     `allow`/`deny`), validated as IP/CIDR before write. This is now the primary
+     network gate — strongly recommended; empty means any IP can reach the login.
    - **Stalwart's own admin login** underneath.
+   - **nginx basic-auth was REMOVED** (2026-06-22). It collided with Stalwart's
+     own admin auth: once the browser answered the basic-auth challenge it
+     auto-sent `Authorization: Basic <gateway>` on the SPA's API XHRs, nginx
+     forwarded it, and Stalwart 401'd the (wrong) credential — the WebAdmin
+     could never load its config ("Failed to load the admin panel configuration.
+     API error 401"). Two auth schemes can't share one `Authorization` header.
+     The gate is now TLS + IP allowlist + Stalwart's own login. The agent
+     deletes any stale htpasswd on apply.
    - **CrowdSec exemption (server-scope `access_by_lua_block { return }`).** The
      global CrowdSec nginx bouncer/AppSec WAF false-positives on the WebAdmin's
      own admin paths (`/admin`, `/login`, `/webadmin`, `/api/auth` read as
      admin-panel scans → 403), so the SPA never loaded. A no-op access_by_lua
      override exempts *only* this vhost; every other server still runs CrowdSec.
      Acceptable because the door is already IP-allowlisted to operator IPs
-     (stricter than CrowdSec's banlist) and basic-auth-gated.
-5. **Apply on the PATCH** (synchronous, to surface the one-time credential) +
-   idempotent enable/disable. Enable opens UFW `8449/tcp`; disable removes the
-   vhost + symlink + UFW rule (htpasswd kept so a re-enable reuses the
-   credential). The agent writes `sites-available/` and symlinks into
-   `sites-enabled/` only when absent.
+     (stricter than CrowdSec's banlist) and behind Stalwart's own login.
+5. **Apply on the PATCH** (synchronous) + idempotent enable/disable. Enable
+   opens UFW `8449/tcp`; disable removes the vhost + symlink + UFW rule. The
+   agent writes `sites-available/` and symlinks into `sites-enabled/` only when
+   absent, and deletes any stale basic-auth htpasswd on every apply.
 
 **Rejected:** raw public bind of `:8446` (no gate); a sub-path on the panel host
 (SPA base-path breakage + cookie-scope coupling); a `admin.<host>` subdomain
 (browsers hard-refuse a self-signed `.local` subdomain cert, non-overridable —
 abandoned for the port-on-panel-hostname approach above); panel-SSO
 `auth_request` as the gateway (cross-host cookie/CORS against a unix-socket
-panel-api — flagged dicey in the plan; basic-auth is self-contained).
+panel-api — flagged dicey in the plan); and **nginx basic-auth** (shipped first,
+then removed — it collides with Stalwart's own `Authorization`-header auth, see
+Decision 4).
 
 ## Security checklist status
 
 - [x] Stalwart listener still loopback-only (verified on mx).
-- [x] No path to `:8446` without nginx auth (vhost renders `auth_basic` —
-      unit-tested; live unauth→401 pending deploy).
-- [x] TLS enforced; HTTP → 301.
-- [x] Gateway credential is a separate bcrypt htpasswd, not the admin token.
-- [x] Allowlist emits `allow … ; deny all;` when set (unit-tested).
-- [x] Disable removes the vhost (unit-tested).
+- [x] Stalwart listener stays loopback-only; nginx is the only door.
+- [x] TLS enforced (panel cert on :8449).
+- [x] Source-IP allowlist emits `allow … ; deny all;` when set (unit-tested);
+      it is the primary network gate now that basic-auth is gone.
+- [x] Stalwart's own admin login gates the app itself.
+- [x] basic-auth removed — no Authorization-header collision; the WebAdmin SPA
+      can establish its own session (unit test asserts the vhost has no
+      `auth_basic`).
+- [x] Disable removes the vhost; apply deletes any stale htpasswd (unit-tested).
 - [x] Off by default on fresh install + upgrade (migration default 0).
-- [x] Live unauth→401 verified on 10.0.3.14 (2026-06-22): `/admin/` without
-      credentials → 401; with the gateway credential → 200 (SPA loads, assets
-      200); allowlist `deny all` confirmed present after restore.
 
 ## Admin-login reveal / rotate (follow-up, shipped)
 
@@ -115,7 +122,7 @@ sufficient to change the accepted password.
 
 ## Consequences
 
-- New opt-in attack surface, but gated four ways and off by default. Net posture
+- New opt-in attack surface, but gated by TLS + IP allowlist + Stalwart's own login, and off by default. Net posture
   is stricter than the existing phpMyAdmin/Adminer exposure (mail admin > DB admin).
 - No DNS record or extra cert needed: the vhost lives on the panel hostname's
   port 8449 and reuses the panel cert. Operator just opens the port (automatic

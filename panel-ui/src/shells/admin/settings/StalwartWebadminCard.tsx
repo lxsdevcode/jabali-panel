@@ -1,7 +1,7 @@
 // StalwartWebadminCard — GH #243 (ADR-0142). Opt-in toggle that exposes
-// Stalwart's WebAdmin UI through an nginx reverse-proxy (TLS + basic-auth +
-// optional IP allowlist). Stalwart itself stays loopback-bound; this is the
-// only door. Default off. Lives on the Server Settings → Email tab.
+// Stalwart's WebAdmin UI through an nginx reverse-proxy (TLS + optional IP
+// allowlist + Stalwart's own admin login). Stalwart itself stays loopback-bound;
+// this is the only door. Default off. Lives on the Server Settings → Email tab.
 import { App, Alert, Button, Card, Input, Modal, Space, Switch, Typography } from "antd";
 import { useEffect, useState } from "react";
 
@@ -11,12 +11,6 @@ interface WebadminSettings {
   stalwart_webadmin_enabled: boolean;
   stalwart_webadmin_allow_cidrs: string;
   hostname: string;
-}
-
-interface WebadminCredential {
-  user: string;
-  password: string;
-  url: string;
 }
 
 interface AdminCredential {
@@ -32,7 +26,6 @@ export function StalwartWebadminCard() {
   const [cidrs, setCidrs] = useState("");
   const [hostname, setHostname] = useState("");
   const [busy, setBusy] = useState(false);
-  const [cred, setCred] = useState<WebadminCredential | null>(null);
   const [adminCred, setAdminCred] = useState<AdminCredential | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
 
@@ -51,13 +44,7 @@ export function StalwartWebadminCard() {
   }, []);
 
   const patch = async (body: Record<string, unknown>) => {
-    const r = await apiClient.patch<{ stalwart_webadmin_credential?: WebadminCredential }>(
-      "/admin/settings",
-      body,
-    );
-    if (r.data?.stalwart_webadmin_credential) {
-      setCred(r.data.stalwart_webadmin_credential);
-    }
+    await apiClient.patch("/admin/settings", body);
   };
 
   const doEnable = async () => {
@@ -83,7 +70,7 @@ export function StalwartWebadminCard() {
         content:
           "This publishes the full mail-server admin UI at " +
           (hostname ? `${hostname}:8449` : "<panel-hostname>:8449") +
-          " behind TLS + a basic-auth gateway. It is the highest-value target on the box — anyone who gets past the gateway can read all mail and send as any domain. Use the IP allowlist, keep the gateway credential safe, and turn this off when you are done.",
+          " behind TLS, the optional IP allowlist, and Stalwart's own admin login. It is the highest-value target on the box — anyone who reaches it can read all mail and send as any domain. Set the IP allowlist, and turn this off when you are done.",
         onOk: doEnable,
       });
     } else {
@@ -106,19 +93,6 @@ export function StalwartWebadminCard() {
     } catch (err) {
       const e = err as { response?: { data?: { detail?: string; error?: string } } };
       message.error(e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to save allowlist");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const regenerate = async () => {
-    setBusy(true);
-    try {
-      await patch({ stalwart_webadmin_regenerate: true });
-      message.success("New gateway credential generated");
-    } catch (err) {
-      const e = err as { response?: { data?: { detail?: string; error?: string } } };
-      message.error(e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to regenerate");
     } finally {
       setBusy(false);
     }
@@ -161,7 +135,7 @@ export function StalwartWebadminCard() {
           Exposes Stalwart&apos;s native admin UI (queues, tracing, fine-grained
           settings the panel doesn&apos;t surface) through nginx. Off by default —
           Stalwart stays bound to localhost; this is the only externally reachable
-          door, behind TLS and a dedicated basic-auth credential.
+          door, behind TLS, the IP allowlist, and Stalwart&apos;s own admin login.
         </Typography.Paragraph>
 
         <Space>
@@ -173,7 +147,7 @@ export function StalwartWebadminCard() {
           <Typography.Text>Source IP allowlist (optional)</Typography.Text>
           <Space.Compact style={{ width: "100%" }}>
             <Input
-              placeholder="e.g. 203.0.113.0/24, 198.51.100.5  (empty = any IP that passes auth)"
+              placeholder="e.g. 203.0.113.0/24, 198.51.100.5  (empty = any IP reaches Stalwart\u2019s login)"
               value={cidrs}
               onChange={(e) => setCidrs(e.target.value)}
               disabled={busy}
@@ -183,7 +157,7 @@ export function StalwartWebadminCard() {
             </Button>
           </Space.Compact>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Comma/space-separated IPs or CIDRs. Empty = any IP that passes the gateway auth.
+            Comma/space-separated IPs or CIDRs. Empty = any IP can reach Stalwart\u2019s login \u2014 set this.
           </Typography.Text>
         </div>
 
@@ -193,16 +167,12 @@ export function StalwartWebadminCard() {
               type="warning"
               showIcon
               message={`Live at https://${hostname}:8449/`}
-              description="The full mail-server admin is reachable. Restrict by IP and disable when not in use."
+              description="The full mail-server admin is reachable behind Stalwart\u2019s own login. Restrict by IP and disable when not in use."
             />
-            <Button onClick={regenerate} loading={busy}>
-              Regenerate gateway credential
-            </Button>
-
             <div>
               <Typography.Text strong>Stalwart admin login</Typography.Text>
               <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: "2px 0 8px" }}>
-                The second prompt (Stalwart&apos;s own sign-in) after the gateway. This is also
+                Stalwart&apos;s own sign-in for the WebAdmin. This is also
                 the panel&apos;s management credential — rotating it restarts the mail server and
                 panel API briefly.
               </Typography.Paragraph>
@@ -219,27 +189,6 @@ export function StalwartWebadminCard() {
         )}
 
         <Modal
-          open={!!cred}
-          title="Gateway credential — shown once"
-          onOk={() => setCred(null)}
-          onCancel={() => setCred(null)}
-          okText="I saved it"
-          cancelButtonProps={{ style: { display: "none" } }}
-        >
-          <Typography.Paragraph>
-            Use this at the nginx basic-auth prompt (then Stalwart&apos;s own admin login).
-            It is <strong>not stored</strong> and won&apos;t be shown again.
-          </Typography.Paragraph>
-          <Typography.Paragraph>
-            URL: <Typography.Text copyable>{cred?.url}</Typography.Text>
-            <br />
-            User: <Typography.Text copyable>{cred?.user}</Typography.Text>
-            <br />
-            Password: <Typography.Text copyable code>{cred?.password}</Typography.Text>
-          </Typography.Paragraph>
-        </Modal>
-
-        <Modal
           open={!!adminCred}
           title={adminCred?.rotated ? "New Stalwart admin password" : "Stalwart admin login"}
           onOk={() => setAdminCred(null)}
@@ -248,7 +197,7 @@ export function StalwartWebadminCard() {
           cancelButtonProps={{ style: { display: "none" } }}
         >
           <Typography.Paragraph>
-            Use this at Stalwart&apos;s own sign-in (the second prompt, after the nginx gateway).
+            Use this at Stalwart&apos;s own sign-in for the WebAdmin.
             {adminCred?.rotated && (
               <>
                 {" "}
