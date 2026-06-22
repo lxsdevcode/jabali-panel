@@ -54,10 +54,15 @@ interface DuResp {
   entries: DuEntry[];
 }
 
-function nodeTitle(name: string, size: number) {
+function nodeTitle(isDir: boolean, name: string, size: number) {
   return (
-    <span style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%" }}>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+    <span style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+      <span style={{ flex: "0 0 auto", display: "inline-flex", color: isDir ? "#1677ff" : undefined }}>
+        {isDir ? <FolderOutlined /> : <FileOutlined />}
+      </span>
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {name}
+      </span>
       <Typography.Text type="secondary" style={{ fontSize: 12, flex: "0 0 auto" }}>
         {fmtBytes(size)}
       </Typography.Text>
@@ -68,9 +73,8 @@ function nodeTitle(name: string, size: number) {
 function toNodes(entries: DuEntry[], parentPath: string): DataNode[] {
   return entries.map((e) => ({
     key: `${parentPath}/${e.name}`,
-    title: nodeTitle(e.name, e.size),
+    title: nodeTitle(e.is_dir, e.name, e.size),
     isLeaf: !e.is_dir,
-    icon: e.is_dir ? <FolderOutlined /> : <FileOutlined />,
   }));
 }
 
@@ -132,7 +136,7 @@ function FilesTree() {
   }
   return (
     <div style={{ padding: "8px 12px", maxHeight: 320, overflow: "auto" }}>
-      <Tree blockNode showIcon treeData={treeData} loadData={onLoadData} />
+      <Tree blockNode treeData={treeData} loadData={onLoadData} />
     </div>
   );
 }
