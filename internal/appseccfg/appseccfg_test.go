@@ -189,6 +189,7 @@ func TestCRSPluginBefore_WordPressBuilderExclusions(t *testing.T) {
 	mustContain(t, out, `"@rx ^/wp-json/elementor/"`, "scoped to elementor REST")
 	mustContain(t, out, `^/wp-admin/admin-ajax`, "scoped to admin-ajax")
 	mustContain(t, out, `^/wp-admin/post`, "scoped to post.php")
+	mustContain(t, out, `^/wp-json/wp/v2/`, "scoped to wp/v2 REST")
 	// The original narrow 933120 exclusion is still present.
 	mustContain(t, out, "ctl:ruleRemoveTargetById=933120;ARGS:_wp_http_referer", "933120 _wp_http_referer exclusion intact")
 	// Surgical, not blanket: no path-allow, no remediation override.

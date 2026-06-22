@@ -148,13 +148,15 @@ SecRule REQUEST_URI "@beginsWith /wp-admin/"     "id:9599100,phase:1,pass,nolog,
 # enforcement (911100), JSON-SQLi (942550) and the RCE rule (932370),
 # pushing the inbound anomaly score past 949110 -> a ~4h AppSec ban on the
 # editor's OWN IP. Drop ONLY those three rule IDs, ONLY on the builder
-# endpoints. Every other rule still inspects these paths, so XSS (941),
+# endpoints (incl. the wp/v2 REST surface Elementor also posts to).
+# Every other rule still inspects these paths, so XSS (941),
 # LFI (930), path traversal, other SQLi/RCE rules, etc. stay fully active
 # (surgical, not a path-allow). Replaces the rejected on_match
 # blanket-allow exemption (ADR-0147 revised).
 SecRule REQUEST_URI "@rx ^/wp-json/elementor/"       "id:9599200,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 SecRule REQUEST_URI "@rx ^/wp-admin/admin-ajax\.php" "id:9599201,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 SecRule REQUEST_URI "@rx ^/wp-admin/post\.php"       "id:9599202,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
+SecRule REQUEST_URI "@rx ^/wp-json/wp/v2/"           "id:9599203,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 `
 }
 

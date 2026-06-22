@@ -22,8 +22,9 @@ The endpoints: `/wp-json/elementor/*`, `/wp-admin/admin-ajax.php`,
 ## Decision
 
 **Localize by rule + path, not by remediation.** Drop **only** the three false-
-positive CRS rules (`911100`, `942550`, `932370`), and **only** on the three
-builder endpoints, via the existing jabali-owned CRS "before" plugin
+positive CRS rules (`911100`, `942550`, `932370`), and **only** on the four
+builder / admin-REST endpoints (`/wp-json/elementor/`, `/wp-admin/admin-ajax.php`,
+`/wp-admin/post.php`, `/wp-json/wp/v2/` — the path set the reporter verified), via the existing jabali-owned CRS "before" plugin
 (`CRSPluginBefore`, written to
 `/var/lib/crowdsec/data/crs-plugins/jabali/jabali-before.conf`). Every other CRS
 rule keeps inspecting those same paths.
@@ -32,6 +33,7 @@ rule keeps inspecting those same paths.
 SecRule REQUEST_URI "@rx ^/wp-json/elementor/"       "id:9599200,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 SecRule REQUEST_URI "@rx ^/wp-admin/admin-ajax\.php" "id:9599201,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 SecRule REQUEST_URI "@rx ^/wp-admin/post\.php"       "id:9599202,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
+SecRule REQUEST_URI "@rx ^/wp-json/wp/v2/"           "id:9599203,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 ```
 
 This **supersedes** the first cut of this ADR, which added an `on_match` filter
@@ -95,6 +97,12 @@ not done here.
   unauthenticated has those three (and only those three) checks lifted there. The
   far larger remainder of CRS still applies, which is the inverse of the rejected
   blanket allow.
+
+- `/wp-json/wp/v2/` (public WP REST) is in scope per the reporter's verified
+  path set: only the three noisy IDs are lifted there, and the libinjection SQLi
+  rule (942100) plus the rest of CRS still inspect it, so a real SQLi/RCE is still
+  caught. This is the inverse of the rejected blanket allow, which would have
+  stripped all ~200 rules from public REST.
 
 ## Acceptance (revised)
 
