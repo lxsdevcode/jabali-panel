@@ -49,6 +49,29 @@ See "DNS caveat" + Phase 0.
   the existing jobs list + notifications cover it.
 - **Overwrite is explicit** and per-resource; default is fail-if-exists.
 
+## Apply-safety constraints (verified against the existing admin restore)
+
+The admin whole-account apply (`applyAccountRestore`) is the source of truth for
+what is safe to write live:
+
+- **Databases — SAFE, and the Wave 2 deliverable.** Apply = `mariadb <db> <
+  <db>.sql`; the dump's DROP/CREATE rebuilds the schema. Smallest blast radius,
+  clearest semantics ("I broke my WordPress DB"). Selective = load ONLY the
+  chosen db items.
+- **Home — deferred to a later wave.** Reuses an rsync; its `--delete` semantics
+  decide whether "restore" clobbers or also *removes* live files — must be read
+  and the overwrite flag designed around it before building. Not in Wave 2.
+- **Mail — NOT auto-appliable, by design.** The admin path refuses to apply mail:
+  `stalwart-cli` apply over a running spool corrupts RocksDB, plan.json carries
+  cross-host refs, and a bodies.tar untar risks lost messages. Selective mailbox
+  restore MUST refuse identically. The only safe path is JMAP message *import*
+  through running Stalwart — a separate future wave, NOT this one. The reporter's
+  "restore individual mailbox" ask is therefore explicitly out of v1.
+- **DNS — managed-only** (see DNS caveat); custom records aren't captured.
+
+**Wave 2 scope = databases only.** Home/mail/DNS return an explicit
+"not supported in this version" per selected kind rather than a partial apply.
+
 ## Non-goals (v1)
 
 - Cross-user / cross-host restore (admin-only, already exists for whole-account).
