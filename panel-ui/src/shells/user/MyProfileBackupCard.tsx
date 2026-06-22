@@ -3,12 +3,13 @@
 // when a row is succeeded. Mirrors AdminBackupsPage data shape but
 // scoped via /me/backups (auth-gated to caller's user_id).
 import { Button, Card, Space, Table, Tag, Typography, message } from "antd";
-import { DownloadOutlined, SaveOutlined } from "@icons";
+import { DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
 import { useState } from "react";
 
 import { apiClient } from "../../apiClient";
 import { useListQuery } from "../../hooks/useQueries";
 import { humanBytes as formatBytes } from "../../utils/bytes";
+import { RestoreDrawer } from "./RestoreDrawer";
 
 type MyBackup = {
   id: string;
@@ -35,6 +36,7 @@ const statusColor = (status: string): string => {
 
 export const MyProfileBackupCard = () => {
   const [submitting, setSubmitting] = useState(false);
+  const [restoreId, setRestoreId] = useState<string | null>(null);
   const query = useListQuery<MyBackup>({ resource: "me/backups" });
 
   const handleCreate = async () => {
@@ -104,10 +106,22 @@ export const MyProfileBackupCard = () => {
                   >
                     Download
                   </Button>
+                  <Button
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    onClick={() => setRestoreId(row.id)}
+                  >
+                    Restore
+                  </Button>
                 </Space>
               ) : null,
           },
         ]}
+      />
+      <RestoreDrawer
+        backupId={restoreId}
+        open={restoreId !== null}
+        onClose={() => setRestoreId(null)}
       />
     </Card>
   );
