@@ -2,12 +2,14 @@
 // stat cards (Total / Files / Email / Databases / Quota). Bottom row: three
 // breakdown cards (Files & Folders, Email Mailboxes, Databases) each with a
 // table + a "View all" link. Backed by GET /api/v1/me/disk-usage.
-import { Alert, Card, Col, Empty, Row, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Card, Col, Empty, Row, Spin, Table, Tag, Tree, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { DataNode } from "antd/es/tree";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
-import { DatabaseOutlined, ExportOutlined, FileOutlined, MailOutlined } from "@icons";
+import { DatabaseOutlined, ExportOutlined, FileOutlined, FolderOutlined, MailOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
 
@@ -38,6 +40,101 @@ function fmtBytes(n: number): string {
     i++;
   }
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+interface DuEntry {
+  name: string;
+  is_dir: boolean;
+  size: number;
+  has_subdirs: boolean;
+}
+interface DuResp {
+  path: string;
+  total: number;
+  entries: DuEntry[];
+}
+
+function nodeTitle(name: string, size: number) {
+  return (
+    <span style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%" }}>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      <Typography.Text type="secondary" style={{ fontSize: 12, flex: "0 0 auto" }}>
+        {fmtBytes(size)}
+      </Typography.Text>
+    </span>
+  );
+}
+
+function toNodes(entries: DuEntry[], parentPath: string): DataNode[] {
+  return entries.map((e) => ({
+    key: `${parentPath}/${e.name}`,
+    title: nodeTitle(e.name, e.size),
+    isLeaf: !e.is_dir,
+    icon: e.is_dir ? <FolderOutlined /> : <FileOutlined />,
+  }));
+}
+
+function updateTreeData(list: DataNode[], key: string, children: DataNode[]): DataNode[] {
+  return list.map((node) => {
+    if (node.key === key) return { ...node, children };
+    if (node.children) return { ...node, children: updateTreeData(node.children, key, children) };
+    return node;
+  });
+}
+
+// FilesTree — lazy disk-usage tree of the user's home directory. Each folder
+// carries its recursive size; expanding a folder fetches the next level on
+// demand (GET /me/disk-usage/files?path=).
+function FilesTree() {
+  const [treeData, setTreeData] = useState<DataNode[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDir = async (path?: string): Promise<DuResp> => {
+    const url = path ? `/me/disk-usage/files?path=${encodeURIComponent(path)}` : "/me/disk-usage/files";
+    const r = await apiClient.get<DuResp>(url);
+    return r.data;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const d = await fetchDir();
+        if (!cancelled) setTreeData(toNodes(d.entries, d.path));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onLoadData = async (node: DataNode) => {
+    const key = node.key as string;
+    const d = await fetchDir(key);
+    setTreeData((prev) => updateTreeData(prev, key, toNodes(d.entries, key)));
+  };
+
+  if (loading) {
+    return (
+      <div style={{ padding: 24, textAlign: "center" }}>
+        <Spin />
+      </div>
+    );
+  }
+  if (treeData.length === 0) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Home directory is empty" />
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding: "8px 12px", maxHeight: 320, overflow: "auto" }}>
+      <Tree blockNode showIcon treeData={treeData} loadData={onLoadData} />
+    </div>
+  );
 }
 
 const COLORS = {
@@ -299,7 +396,9 @@ export function DiskUsagePage() {
               styles={{ body: { padding: 0, minHeight: 220, display: "flex", flexDirection: "column" } }}
             >
               <div style={{ flex: 1 }}>
-                {b.cat.items.length === 0 ? (
+                {b.key === "files" ? (
+                  <FilesTree />
+                ) : b.cat.items.length === 0 ? (
                   <div style={{ padding: 24 }}>
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}

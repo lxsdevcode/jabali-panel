@@ -44,6 +44,7 @@ func RegisterMeDiskUsageRoutes(g *gin.RouterGroup, cfg DiskUsageConfig) {
 	}
 	h := &meDiskUsageHandler{cfg: cfg}
 	g.GET("/me/disk-usage", h.get)
+	g.GET("/me/disk-usage/files", h.filesTree)
 }
 
 type meDiskUsageHandler struct{ cfg DiskUsageConfig }
@@ -139,6 +140,55 @@ func (h *meDiskUsageHandler) get(c *gin.Context) {
 
 // homeUsage returns (usedBytes, limitBytes) from the agent's quota report.
 // Best-effort: any failure yields (0, 0).
+func (h *meDiskUsageHandler) filesTree(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	user, err := h.cfg.Users.FindByID(ctx, claims.UserID)
+	if err != nil || user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+		return
+	}
+	if user.Username == nil || *user.Username == "" || h.cfg.Agent == nil {
+		c.JSON(http.StatusOK, gin.H{"path": "", "total": 0, "entries": []any{}})
+		return
+	}
+	username := *user.Username
+	path := c.Query("path")
+	if path == "" {
+		path = "/home/" + username
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	raw, derr := h.cfg.Agent.Call(cctx, "files.du", map[string]any{
+		"user_id":  claims.UserID,
+		"username": username,
+		"path":     path,
+	})
+	if derr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "files_du_failed", "detail": firstLineString(derr.Error())})
+		return
+	}
+	var v struct {
+		Path    string `json:"path"`
+		Total   int64  `json:"total"`
+		Entries []struct {
+			Name       string `json:"name"`
+			IsDir      bool   `json:"is_dir"`
+			Size       int64  `json:"size"`
+			HasSubdirs bool   `json:"has_subdirs"`
+		} `json:"entries"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "files_du_decode"})
+		return
+	}
+	c.JSON(http.StatusOK, v)
+}
+
 func (h *meDiskUsageHandler) homeUsage(ctx context.Context, username string) (uint64, uint64) {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
