@@ -50,7 +50,7 @@ func BuildApexMailRecords(provider, zoneName string, srv *models.ServerSettings,
 	mk := func(name, typ, content string, prio int) models.DNSRecord {
 		return models.DNSRecord{
 			ID: idNew(), ZoneID: "", Name: name, Type: typ, Content: content,
-			TTL: 3600, Priority: prio, Managed: true, ManagedBy: &marker,
+			TTL: 300, Priority: prio, Managed: true, ManagedBy: &marker,
 			IsEnabled: true, CreatedAt: now, UpdatedAt: now,
 		}
 	}
@@ -90,7 +90,7 @@ func BuildProviderMailRecords(provider, zoneName, m365Onmicrosoft, googleDKIM st
 	mk := func(name, typ, content string, prio int) models.DNSRecord {
 		return models.DNSRecord{
 			ID: idNew(), ZoneID: "", Name: name, Type: typ, Content: content,
-			TTL: 3600, Priority: prio, Managed: true, ManagedBy: &marker,
+			TTL: 300, Priority: prio, Managed: true, ManagedBy: &marker,
 			IsEnabled: true, CreatedAt: now, UpdatedAt: now,
 		}
 	}

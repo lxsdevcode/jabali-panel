@@ -48,7 +48,7 @@ func BuildMTAStsRecords(
 			Name:      name,
 			Type:      typ,
 			Content:   content,
-			TTL:       3600,
+			TTL:       300,
 			Priority:  0,
 			Managed:   true,
 			ManagedBy: &marker,

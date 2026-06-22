@@ -18,8 +18,8 @@ func TestBuildMTAStsRecords_HappyPath(t *testing.T) {
 		if r.ZoneID != "zone1" || !r.Managed || r.ManagedBy == nil || *r.ManagedBy != "mta-sts" {
 			t.Errorf("%s: bad scope/manager: %+v", r.Type, r)
 		}
-		if r.TTL != 3600 {
-			t.Errorf("%s: ttl %d != 3600", r.Type, r.TTL)
+		if r.TTL != 300 {
+			t.Errorf("%s: ttl %d != 300", r.Type, r.TTL)
 		}
 	}
 	if byType["A"] != 1 || byType["TXT"] != 1 {

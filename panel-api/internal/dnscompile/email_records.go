@@ -75,7 +75,7 @@ func BuildEmailRecords(
 			Name:      name,
 			Type:      typ,
 			Content:   content,
-			TTL:       3600,
+			TTL:       300,
 			Priority:  priority,
 			Managed:   true,
 			ManagedBy: &m6,
