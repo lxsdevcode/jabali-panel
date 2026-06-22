@@ -238,17 +238,17 @@ export async function whoami(): Promise<KratosSession | null> {
  * issues a POST to the URL with the token to invalidate the session.
  * We wrap it into a single call that returns once the cookie is cleared.
  */
-export async function logoutBrowser(): Promise<void> {
+export async function logoutBrowser(): Promise<string> {
   const resp = await kratosClient.get<{ logout_token: string; logout_url: string }>(
     "/self-service/logout/browser",
   );
-  // Kratos expects a GET on logout_url with the token as a query param for
-  // browser flows. withCredentials ensures the cookie is sent so the session
-  // row can be deleted server-side.
-  await kratosClient.get(resp.data.logout_url, {
-    params: { token: resp.data.logout_token },
-    withCredentials: true,
-  });
+  // Return the logout_url for the caller to TOP-LEVEL navigate to (#255).
+  // Browser-flow logout must be a real navigation, not an XHR: Kratos clears
+  // the ory_kratos_session cookie via Set-Cookie on logout_url and 303s to the
+  // configured return URL (/login). An XHR GET did not reliably clear the
+  // cookie, so the session survived and /login bounced it straight back in.
+  // logout_url already carries the token as a query param.
+  return resp.data.logout_url;
 }
 
 /**

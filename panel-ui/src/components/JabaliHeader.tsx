@@ -256,11 +256,12 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
   };
 
   const handleLogout = async () => {
-    await logout();
-    // Hard-navigate so the whoami refetch that AuthProvider would
-    // otherwise race against the React Router push doesn't have a
-    // chance to briefly restore a stale session.
-    window.location.assign("/login");
+    // Single top-level navigation to Kratos's logout_url (#255): it clears the
+    // session cookie and 303s to /login. Fall back to /login only if the logout
+    // flow init failed (no URL). Doing the navigation here — not an XHR inside
+    // logout() — is what actually revokes the session.
+    const logoutURL = await logout();
+    window.location.assign(logoutURL ?? "/login");
   };
 
   const userMenu: MenuProps["items"] = [

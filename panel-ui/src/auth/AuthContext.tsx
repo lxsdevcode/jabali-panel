@@ -46,7 +46,7 @@ type AuthState = {
   isAdmin: boolean;
   isLoading: boolean;
   refresh: () => Promise<void>;
-  logout: () => Promise<void>;
+  logout: () => Promise<string | null>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -86,12 +86,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await refetch();
   }, [refetch]);
 
-  const logout = useCallback(async () => {
-    // Kratos browser-flow logout revokes the ory_kratos_session cookie.
-    // Best-effort — a stale cookie or an unreachable Kratos shouldn't
-    // block client-side cleanup.
+  const logout = useCallback(async (): Promise<string | null> => {
+    // Kratos browser-flow logout revokes the ory_kratos_session cookie via a
+    // top-level navigation to logout_url (returned here for the caller to
+    // navigate to). Best-effort — a stale cookie or an unreachable Kratos
+    // shouldn't block client-side cleanup.
+    let logoutURL: string | null = null;
     try {
-      await logoutBrowser();
+      logoutURL = await logoutBrowser();
     } catch {
       /* noop */
     }
@@ -101,6 +103,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // a session that was closed mid-2FA-enrolment).
     sessionStorage.removeItem("post_login_return_to");
     sessionStorage.removeItem("kratos_settings_redirect_attempted");
+    return logoutURL;
   }, [qc]);
 
   const value = useMemo<AuthState>(
