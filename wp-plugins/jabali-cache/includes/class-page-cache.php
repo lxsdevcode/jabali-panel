@@ -1,0 +1,275 @@
+<?php
+/**
+ * Jabali Cache — full-page cache engine.
+ *
+ * Driven by the wp-content/advanced-cache.php drop-in (which WordPress loads
+ * before almost everything else when WP_CACHE is true). Caches anonymous,
+ * cacheable GET responses in Redis and serves them on subsequent requests
+ * without booting the rest of WordPress.
+ *
+ * This is OPTIONAL and OFF by default: jabali ships an nginx-level fastcgi
+ * microcache (ADR-0108) that already covers anonymous edge caching. The WP
+ * page cache is for operators who keep the nginx microcache disabled or want
+ * WordPress-aware invalidation hooks.
+ *
+ * Safety: only ever serves to clearly-anonymous requests. Any login,
+ * comment-author, WooCommerce/EDD cart, or password cookie disables both the
+ * serve and the store path.
+ *
+ * @package Jabali_Cache
+ */
+
+if ( ! class_exists( 'Jabali_Cache_Client' ) ) {
+	require_once __DIR__ . '/lib.php';
+}
+
+if ( class_exists( 'Jabali_Cache_Page_Cache' ) ) {
+	return;
+}
+
+class Jabali_Cache_Page_Cache {
+
+	/** @var array<string,mixed> */
+	private $cfg;
+
+	/** @var Jabali_Cache_Client */
+	private $client;
+
+	/** @var string */
+	private $key = '';
+
+	/** @var int */
+	private $ttl = 300;
+
+	/** @var bool */
+	private $store = false;
+
+	public function __construct() {
+		$this->cfg    = Jabali_Cache_Config::load();
+		$this->ttl    = max( 1, (int) $this->cfg['page_ttl'] );
+		$this->client = new Jabali_Cache_Client( $this->cfg );
+	}
+
+	/**
+	 * Entry point called by advanced-cache.php. Serves a cached page (and
+	 * exits) on a hit, or arms output buffering to store on a miss.
+	 */
+	public function run() {
+		if ( empty( $this->cfg['enabled'] ) || empty( $this->cfg['page_cache'] ) ) {
+			return;
+		}
+		if ( ! $this->is_cacheable_request() ) {
+			return;
+		}
+		if ( ! $this->client->connect() ) {
+			return;
+		}
+
+		$this->key = $this->cfg['prefix'] . 'page:' . $this->request_hash();
+
+		$raw = $this->client->get( $this->key );
+		if ( false !== $raw ) {
+			$payload = @unserialize( $raw, array( 'allowed_classes' => false ) ); // phpcs:ignore
+			if ( is_array( $payload ) && isset( $payload['body'] ) ) {
+				$this->serve( $payload );
+				// serve() exits.
+			}
+		}
+
+		// Miss: capture the generated page.
+		$this->store = true;
+		ob_start( array( $this, 'on_flush' ) );
+	}
+
+	/**
+	 * Output-buffer callback. Returns the (unmodified) body so WordPress still
+	 * sends it; stores a copy in Redis when the response is cacheable.
+	 *
+	 * @param string $body
+	 * @param int    $phase
+	 * @return string
+	 */
+	public function on_flush( $body, $phase = 0 ) {
+		if ( ! $this->store || '' === $this->key ) {
+			return $body;
+		}
+		// Only cache the final, complete buffer.
+		if ( 0 === ( $phase & PHP_OUTPUT_HANDLER_FINAL ) && 0 === ( $phase & PHP_OUTPUT_HANDLER_END ) ) {
+			return $body;
+		}
+		if ( ! $this->is_cacheable_response( $body ) ) {
+			return $body;
+		}
+
+		$payload = array(
+			'body'    => $body,
+			'type'    => $this->detect_content_type(),
+			'created' => time(),
+			'gen'     => defined( 'JABALI_CACHE_VERSION' ) ? JABALI_CACHE_VERSION : '1',
+		);
+		// Best-effort store; failure just means no caching this time.
+		$this->client->set( $this->key, serialize( $payload ), $this->ttl ); // phpcs:ignore
+		return $body;
+	}
+
+	/**
+	 * Invalidate every cached page for this site (called from WP hooks on
+	 * post publish/update, comment, etc.).
+	 *
+	 * @return int
+	 */
+	public function purge_all() {
+		if ( ! $this->client->connect() ) {
+			return 0;
+		}
+		return $this->client->delete_by_pattern( $this->cfg['prefix'] . 'page:*' );
+	}
+
+	// ------------------------------------------------------------------
+	// Decisions.
+	// ------------------------------------------------------------------
+
+	private function is_cacheable_request() {
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET'; // phpcs:ignore
+		if ( 'GET' !== $method ) {
+			return false;
+		}
+		if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
+			return false;
+		}
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			return false;
+		}
+		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/'; // phpcs:ignore
+
+		// Query strings: skip by default (dynamic). Allow a short safelist
+		// (tracking params that don't change content).
+		$qpos = strpos( $uri, '?' );
+		if ( false !== $qpos ) {
+			$qs = substr( $uri, $qpos + 1 );
+			if ( '' !== $qs && ! $this->only_safe_query_params( $qs ) ) {
+				return false;
+			}
+		}
+
+		foreach ( (array) $this->cfg['page_exclusions'] as $needle ) {
+			if ( '' !== $needle && false !== strpos( $uri, $needle ) ) {
+				return false;
+			}
+		}
+		if ( $this->has_identity_cookie() ) {
+			return false;
+		}
+		return true;
+	}
+
+	private function is_cacheable_response( $body ) {
+		if ( '' === trim( (string) $body ) ) {
+			return false;
+		}
+		if ( defined( 'DONOTCACHEPAGE' ) && DONOTCACHEPAGE ) {
+			return false;
+		}
+		// Respect a non-200 status set during the request.
+		if ( function_exists( 'http_response_code' ) ) {
+			$code = http_response_code();
+			if ( $code && 200 !== (int) $code ) {
+				return false;
+			}
+		}
+		// Never cache an admin/login page that slipped through.
+		if ( function_exists( 'is_admin' ) && is_admin() ) {
+			return false;
+		}
+		if ( function_exists( 'is_user_logged_in' ) && is_user_logged_in() ) {
+			return false;
+		}
+		if ( function_exists( 'is_404' ) && is_404() ) {
+			return false;
+		}
+		// A Set-Cookie emitted during render usually means session state.
+		foreach ( headers_list() as $h ) {
+			if ( 0 === stripos( $h, 'Set-Cookie:' ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private function has_identity_cookie() {
+		if ( empty( $_COOKIE ) || ! is_array( $_COOKIE ) ) { // phpcs:ignore
+			return false;
+		}
+		$markers = array(
+			'wordpress_logged_in_',
+			'comment_author_',
+			'wp-postpass_',
+			'woocommerce_items_in_cart',
+			'woocommerce_cart_hash',
+			'wp_woocommerce_session_',
+			'edd_items_in_cart',
+			'jabali_nocache',
+		);
+		foreach ( array_keys( $_COOKIE ) as $name ) { // phpcs:ignore
+			foreach ( $markers as $m ) {
+				if ( 0 === strpos( (string) $name, $m ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private function only_safe_query_params( $qs ) {
+		$safe = array( 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'ref' );
+		parse_str( $qs, $params );
+		foreach ( array_keys( (array) $params ) as $k ) {
+			if ( ! in_array( $k, $safe, true ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private function request_hash() {
+		$https  = ( ! empty( $_SERVER['HTTPS'] ) && 'off' !== $_SERVER['HTTPS'] ) ? 'https' : 'http'; // phpcs:ignore
+		$host   = isset( $_SERVER['HTTP_HOST'] ) ? (string) $_SERVER['HTTP_HOST'] : 'localhost'; // phpcs:ignore
+		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/'; // phpcs:ignore
+		// Strip a safe-only query string so /p and /p?utm_x share a cache entry.
+		$qpos = strpos( $uri, '?' );
+		if ( false !== $qpos ) {
+			$uri = substr( $uri, 0, $qpos );
+		}
+		$mobile = $this->is_mobile() ? 'm' : 'd';
+		return md5( $https . '|' . $host . '|' . $uri . '|' . $mobile );
+	}
+
+	private function is_mobile() {
+		$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : ''; // phpcs:ignore
+		return (bool) preg_match( '/(Mobile|Android|iPhone|iPad|iPod)/i', $ua );
+	}
+
+	private function detect_content_type() {
+		foreach ( headers_list() as $h ) {
+			if ( 0 === stripos( $h, 'Content-Type:' ) ) {
+				return trim( substr( $h, strlen( 'Content-Type:' ) ) );
+			}
+		}
+		return 'text/html; charset=UTF-8';
+	}
+
+	/**
+	 * @param array<string,mixed> $payload
+	 */
+	private function serve( array $payload ) {
+		$type = isset( $payload['type'] ) ? $payload['type'] : 'text/html; charset=UTF-8';
+		$age  = isset( $payload['created'] ) ? max( 0, time() - (int) $payload['created'] ) : 0;
+		if ( ! headers_sent() ) {
+			header( 'Content-Type: ' . $type );
+			header( 'X-Jabali-Cache: HIT' );
+			header( 'X-Jabali-Cache-Age: ' . $age );
+		}
+		echo $payload['body']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		exit;
+	}
+}
