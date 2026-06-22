@@ -253,10 +253,19 @@ func buildCronServiceContent(jobID, name string, cmd *cronvalidate.Command, user
 		}
 	}
 
-	// If we have a docroot, add ExecStartPre validation
-	execStartPre := ""
+	// If we have a docroot, gate the whole unit on it existing via a
+	// systemd [Unit] condition (GH #403). This REPLACES the former
+	// `ExecStartPre=/usr/local/libexec/jabali/cron-precheck <docroot>` bash
+	// helper: that helper spawned a `bash` execve on EVERY cron fire, run
+	// inside the tenant's lingering user@<uid>.service (auid=tenant), which
+	// the M33 `jabali_susp_exec` auditd rule tagged -> a tenant with several
+	// crons tripped the "Suspicious exec burst" detector with jabali's own
+	// machinery. ConditionPathIsDirectory does the same docroot check in the
+	// systemd manager (no exec): a missing docroot skips the unit cleanly,
+	// same outcome as the precheck's exit 1, without an audited shell.
+	condDocroot := ""
 	if docroot != "" {
-		execStartPre = fmt.Sprintf("ExecStartPre=/usr/local/libexec/jabali/cron-precheck %s\n", singleQuote(docroot))
+		condDocroot = "ConditionPathIsDirectory=" + docroot + "\n"
 	}
 
 	return fmt.Sprintf(`[Unit]
@@ -264,16 +273,16 @@ Description=Jabali cron job %s (%s)
 After=default.target
 StartLimitIntervalSec=1
 StartLimitBurst=1
-
+%s
 [Service]
 Type=oneshot
 RemainAfterExit=no
 Environment=PATH=%s
 WorkingDirectory=%%h
-%s%s
-`, jobID, name,
+%s
+`, jobID, name, condDocroot,
 		"/home/"+username+"/.jabali/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
-		execStartPre, execStart)
+		execStart)
 }
 
 // buildCronTimerContent generates the systemd timer unit content. The

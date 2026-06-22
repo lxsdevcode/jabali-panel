@@ -352,3 +352,32 @@ func TestBuildCronServiceContent_HTTPTrigger(t *testing.T) {
 		t.Errorf("http-trigger unit must not have a docroot ExecStartPre:\n%s", content)
 	}
 }
+
+// GH #403: a cron whose command targets a docroot gates the unit on
+// ConditionPathIsDirectory (systemd-native, no exec) instead of the former
+// cron-precheck bash ExecStartPre that tripped the M33 suspicious-exec burst.
+func TestBuildCronServiceContent_DocrootCondition(t *testing.T) {
+	dr := "/home/alice/domains/a.example.com/public_html"
+	cmd := &cronvalidate.Command{Argv: []string{"php", dr + "/wp-cron.php"}}
+	content := buildCronServiceContent("job9", "WP cron", cmd, "alice", []string{dr})
+
+	if !contains(content, "ConditionPathIsDirectory="+dr) {
+		t.Errorf("expected ConditionPathIsDirectory for the docroot:\n%s", content)
+	}
+	if contains(content, "cron-precheck") || contains(content, "ExecStartPre") {
+		t.Errorf("must NOT spawn a cron-precheck shell anymore:\n%s", content)
+	}
+	// Condition belongs in [Unit], before [Service].
+	if indexOfStr(content, "ConditionPathIsDirectory") > indexOfStr(content, "[Service]") {
+		t.Errorf("ConditionPathIsDirectory must be in [Unit], before [Service]")
+	}
+}
+
+func indexOfStr(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
