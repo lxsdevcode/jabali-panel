@@ -1,0 +1,82 @@
+// backup_manifest_read.go — GH #267 (tenant selective restore, Wave 1).
+//
+// Read-only preview: dump the manifest.json out of an account_backup's manifest
+// snapshot and return its stages + items so the panel can show a restore picker
+// WITHOUT materializing any data. Mirrors the manifest read the restore handler
+// already does (backup_restore.go), but as a standalone read-only command the
+// tenant /me/backups/:id/manifest endpoint can call.
+//
+// Uses the default local restic repo (the same simplification as
+// backup.materialize / the tenant download path — remote-destination preview is
+// a follow-up). The manifest snapshot's stdin filename is "manifest.json"
+// (backup_create.go).
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
+)
+
+type backupManifestReadParams struct {
+	ManifestSnapshotID string `json:"manifest_snapshot_id"`
+}
+
+type backupManifestStageDTO struct {
+	Name   string   `json:"name"`
+	Status string   `json:"status"`
+	Items  []string `json:"items,omitempty"`
+}
+
+type backupManifestReadResult struct {
+	Kind     string                   `json:"kind"`
+	UserID   string                   `json:"user_id"`
+	Username string                   `json:"username"`
+	Stages   []backupManifestStageDTO `json:"stages"`
+}
+
+func backupManifestReadHandler(ctx context.Context, raw json.RawMessage) (any, error) {
+	var p backupManifestReadParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, bkInvalidArg(fmt.Sprintf("parse params: %v", err))
+	}
+	if p.ManifestSnapshotID == "" {
+		return nil, bkInvalidArg("manifest_snapshot_id is required")
+	}
+
+	cfg, cerr := bkResticConfig("", "", nil)
+	if cerr != nil {
+		return nil, bkInternal("restic config", cerr)
+	}
+	c := backup.New(cfg)
+
+	manifestBytes, err := c.Dump(ctx, p.ManifestSnapshotID, "manifest.json")
+	if err != nil {
+		return nil, bkInternal("dump manifest", err)
+	}
+	m, err := backup.AccountManifestFromBytes(manifestBytes)
+	if err != nil {
+		return nil, bkInternal("parse manifest", err)
+	}
+
+	out := backupManifestReadResult{
+		Kind:     m.Kind,
+		UserID:   m.User.ID,
+		Username: m.User.Username,
+		Stages:   make([]backupManifestStageDTO, 0, len(m.Stages)),
+	}
+	for _, st := range m.Stages {
+		out.Stages = append(out.Stages, backupManifestStageDTO{
+			Name:   st.Name,
+			Status: st.Status,
+			Items:  st.Items,
+		})
+	}
+	return out, nil
+}
+
+func init() {
+	Default.Register("backup.manifest_read", backupManifestReadHandler)
+}

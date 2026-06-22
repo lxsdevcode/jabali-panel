@@ -912,6 +912,7 @@ func RegisterMeBackupRoutes(rg *gin.RouterGroup, cfg MeBackupsHandlerConfig) {
 	g.POST("", h.create)
 	g.GET("", h.list)
 	g.GET("/:id/download", h.download)
+	g.GET("/:id/manifest", h.manifest)
 }
 
 type meBackupHandler struct{ cfg MeBackupsHandlerConfig }
@@ -979,6 +980,47 @@ func (h *meBackupHandler) list(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": rows, "total": total, "page": page, "page_size": limit,
 	})
+}
+
+// manifest returns the backup's stage/item preview (GH #267 Wave 1) so the
+// tenant restore UI can show what's inside one of the caller's own backups
+// WITHOUT materializing it. Read-only; owner-scoped (cross-user → 404).
+func (h *meBackupHandler) manifest(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"status": "error", "error": "unauthenticated"})
+		return
+	}
+	job, err := h.cfg.Jobs.Get(c.Request.Context(), c.Param("id"))
+	if err != nil || job.UserID != claims.UserID {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
+		return
+	}
+	if job.Status != models.BackupJobStatusSucceeded {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "no_completed_snapshot"})
+		return
+	}
+	if job.SnapshotID == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "no_snapshot_id"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "error": "agent_unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(ctx, "backup.manifest_read", map[string]any{
+		"manifest_snapshot_id": job.SnapshotID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error", "error": "manifest_read_failed", "detail": err.Error(),
+		})
+		return
+	}
+	// Pass the agent's {kind,user_id,username,stages[]} through verbatim.
+	c.Data(http.StatusOK, "application/json", raw)
 }
 
 func (h *meBackupHandler) download(c *gin.Context) {
