@@ -238,6 +238,19 @@ shows the rsync exit code + truncated stderr. Common causes:
   be readable by jabali user; install.sh provisions 0750
   root:jabali so the agent service running as root can read)
 
+### 5.5 Docroot perm damage after migration (nginx 403 on uploads)
+If a restored docroot ends up group-owned by the user instead of
+`www-data` (or its directories miss the setgid bit), nginx (www-data)
+can't read files the PHP-FPM pool writes -> 403 on newly uploaded media.
+Note: any account migrated in the 19->21 importer window can carry this
+residual perm damage (only `malki` was found on the reference host, but
+re-run the fix on any account from that window to be safe). Remediate:
+```
+jabali domain fix-perms <username>
+```
+(symlink-safe; equivalent to `chgrp -R www-data <docroot> && find <docroot>
+-type d -exec chmod g+s {} +`, idempotent -- safe to re-run).
+
 ## 6. Where to look
 
 | Concern | Path |

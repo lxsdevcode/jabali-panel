@@ -25,6 +25,7 @@ func newDomainCmd() *cobra.Command {
 		newDomainPruneOrphansCmd(),
 	)
 	// M6 email-* leaves live in their own file (domain_email_cmd.go).
+	cmd.AddCommand(newDomainFixPermsCmd())
 	cmd.AddCommand(domainEmailSubcommands()...)
 	// M6.5 catchall + disclaimer (domain_extras_cmd.go).
 	cmd.AddCommand(domainExtraSubcommands()...)
