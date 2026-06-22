@@ -87,12 +87,32 @@ func runCronHTTPTrigger(ctx context.Context, rawURL string) error {
 	if len(addrs) == 0 {
 		return fmt.Errorf("resolve %s: no addresses", host)
 	}
-	var pins []string
+	// Validate EVERY resolved address first (a domain split between a public
+	// and a private/loopback IP is exactly the rebind/SSRF shape we refuse),
+	// then split by family.
+	var v4, v6 []string
 	for _, a := range addrs {
 		if cronvalidate.IsBlockedIP(a.IP) {
 			return fmt.Errorf("refusing %s: resolves to non-routable address %s (SSRF guard)", host, a.IP)
 		}
-		pins = append(pins, fmt.Sprintf("%s:%s:%s", host, port, a.IP.String()))
+		if a.IP.To4() != nil {
+			v4 = append(v4, a.IP.String())
+		} else {
+			v6 = append(v6, "["+a.IP.String()+"]") // bracket IPv6 for --resolve
+		}
+	}
+
+	// Pin a SINGLE family and force curl to it. Pinning both families in one
+	// --resolve list makes curl prefer IPv6 and NOT fall back to the pinned
+	// IPv4 when v6 egress is broken (the common case on hosting boxes) — the
+	// trigger then fails despite a perfectly reachable v4. Prefer IPv4 (near
+	// universal egress); fall to v6 only when there is no A record. Either
+	// way curl connects to a validated, pinned IP, so rebind stays closed.
+	famFlag := "--ipv4"
+	pinIPs := v4
+	if len(pinIPs) == 0 {
+		famFlag = "--ipv6"
+		pinIPs = v6
 	}
 
 	// Fixed, hardened curl GET. --resolve pins the validated IPs so curl
@@ -100,14 +120,15 @@ func runCronHTTPTrigger(ctx context.Context, rawURL string) error {
 	// --max-redirs 0 blocks redirect-based SSRF, -f fails on HTTP >=400,
 	// -o /dev/null discards the body.
 	cargs := []string{
+		famFlag,
 		"--proto", "=http,https",
 		"--max-redirs", "0",
 		"--max-time", "30",
 		"--silent", "--show-error", "--fail",
 		"--output", "/dev/null",
 	}
-	for _, p := range pins {
-		cargs = append(cargs, "--resolve", p)
+	for _, ip := range pinIPs {
+		cargs = append(cargs, "--resolve", fmt.Sprintf("%s:%s:%s", host, port, ip))
 	}
 	cargs = append(cargs, rawURL)
 
