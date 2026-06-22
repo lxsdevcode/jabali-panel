@@ -236,8 +236,51 @@ func newPHPPoolCmd() *cobra.Command {
 	cmd.AddCommand(
 		newPHPPoolGetCmd(),
 		newPHPPoolSetCmd(),
+		newPHPPoolReapplyAllCmd(),
 	)
 	return cmd
+}
+
+// newPHPPoolReapplyAllCmd — `jabali php pool reapply-all`.
+//
+// Forces every active per-user pool to be re-rendered from the CURRENT
+// /etc/jabali-panel/php-pool.conf.tmpl on the next reconciler tick, by
+// flipping its status active -> pending (the reconciler reapplies any
+// pending pool, rebuilding the conf + reloading FPM). This is how a
+// template change (e.g. the GH #401 disable_functions hardening) reaches
+// EXISTING tenants — ReconcilePHPPools otherwise skips active pools, so a
+// template edit only affects newly-created pools without this.
+//
+// `jabali update` runs this after syncing the template. Idempotent + safe
+// to run manually; pools self-heal back to active within one tick (~60s).
+func newPHPPoolReapplyAllCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "reapply-all",
+		Short:   "Mark all active pools pending so the reconciler re-renders them from the current template",
+		Args:    cobra.NoArgs,
+		PreRunE: requireDB,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Second)
+			defer cancel()
+			repo := repository.NewPHPPoolRepository(sharedDB)
+			pools, _, err := repo.ListAll(ctx, repository.ListOptions{Limit: 100000})
+			if err != nil {
+				return fmt.Errorf("list pools: %w", err)
+			}
+			n := 0
+			for i := range pools {
+				if pools[i].Status != "active" {
+					continue
+				}
+				if err := repo.SetStatus(ctx, pools[i].ID, "pending", nil); err != nil {
+					return fmt.Errorf("mark pool %s pending: %w", pools[i].ID, err)
+				}
+				n++
+			}
+			fmt.Printf("marked %d active pool(s) pending; reconciler will re-render them from the template\n", n)
+			return nil
+		},
+	}
 }
 
 func newPHPPoolGetCmd() *cobra.Command {

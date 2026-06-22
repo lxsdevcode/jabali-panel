@@ -23,6 +23,13 @@ security.limit_extensions = .php
 ; socket and only 127.0.0.1 (TCP) works (GH#112). The socket file is
 ; root/mysql-owned and not user-writable, so it adds no jailbreak surface.
 php_admin_value[open_basedir] = /home/{{.User}}:/run/mysqld/mysqld.sock:/tmp:/var/tmp
+; Tenant command-exec lockdown (GH #401). Tenants are SFTP-only, so PHP is
+; their exec vector; without this a tenant shell_exec/proc_open runs arbitrary
+; commands as their uid from any web request. php_admin_value (not overridable)
+; and in the agent's forbiddenDirectives set, exactly like open_basedir. Blocks
+; process-spawning only — curl/file_get_contents stay enabled (WordPress HTTP
+; API needs them); outbound SSRF/metadata is handled at the egress layer.
+php_admin_value[disable_functions] = exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec,pcntl_fork,proc_nice,dl
 ; Opcache SHM cap. Conservative 32MB per pool keeps total bounded on
 ; shared-host boxes (20 users × 32MB = 640MB). Tune in the runbook.
 php_admin_value[opcache.memory_consumption] = 32

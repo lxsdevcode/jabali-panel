@@ -9,7 +9,7 @@ import (
 
 // allExist makes every slice "present on host" so the renderer emits
 // every non-off user.
-func allExist(string) bool { return true }
+func allExist(string) bool  { return true }
 func noneExist(string) bool { return false }
 
 func TestRenderEgressNFT_EmitsHeaderAndDefaults(t *testing.T) {
@@ -126,12 +126,12 @@ func TestExtractUsernameFromCounter_ShapeRequired(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		"user_alice_drops":      {"alice", true},
-		"user_z9-x_drops":       {"z9-x", true},
-		"user__drops":           {"", false},
-		"misc_alice_drops":      {"", false},
-		"user_alice_misc":       {"", false},
-		"":                      {"", false},
+		"user_alice_drops": {"alice", true},
+		"user_z9-x_drops":  {"z9-x", true},
+		"user__drops":      {"", false},
+		"misc_alice_drops": {"", false},
+		"user_alice_misc":  {"", false},
+		"":                 {"", false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -152,4 +152,47 @@ func TestPortStrings(t *testing.T) {
 	require.Equal(t, "53,80,443", portStrings([]int{53, 80, 443}))
 	// guard against accidental empty-list panic
 	require.True(t, !strings.Contains(portStrings(nil), ","))
+}
+
+// GH #401: an always-on SSRF floor drops link-local / cloud-metadata for any
+// tenant slice (level 2), before the per-user vmap, regardless of enrollment.
+func TestRenderEgressNFT_SSRFFloor(t *testing.T) {
+	out := RenderEgressNFT(nil, CanonicalDefaults(), allExist)
+	for _, want := range []string{
+		"counter ssrf_floor_drops {}",
+		`socket cgroupv2 level 2 "jabali.slice/jabali-user.slice" ip daddr 169.254.0.0/16 counter name ssrf_floor_drops drop`,
+		`socket cgroupv2 level 2 "jabali.slice/jabali-user.slice" ip6 daddr fe80::/10 counter name ssrf_floor_drops drop`,
+	} {
+		if !contains(out, want) {
+			t.Errorf("egress floor missing %q:\n%s", want, out)
+		}
+	}
+	// Floor must precede the per-user dispatch so it is absolute.
+	fi := indexOf(out, "169.254.0.0/16")
+	vi := indexOf(out, "vmap @cgroup_to_chain")
+	if fi < 0 || vi < 0 || fi > vi {
+		t.Errorf("floor must come before the vmap dispatch (floor=%d vmap=%d)", fi, vi)
+	}
+
+	// When the tenant parent slice is absent, the floor (and its counter)
+	// must NOT be emitted — nft would reject a cgroupv2 path that doesn't
+	// exist, and an undeclared counter reference is a load error.
+	noneOut := RenderEgressNFT(nil, CanonicalDefaults(), noneExist)
+	if contains(noneOut, "ssrf_floor_drops") || contains(noneOut, "169.254.0.0/16") {
+		t.Errorf("floor must be omitted when parent slice missing:\n%s", noneOut)
+	}
+}
+
+func indexOf(s, sub string) int { return strings.Index(s, sub) }
+
+// The rendered file must atomically replace the table (add+delete+redefine)
+// so reconcile-tick reloads don't accumulate duplicate chain rules.
+func TestRenderEgressNFT_AtomicReplaceHeader(t *testing.T) {
+	out := RenderEgressNFT(nil, CanonicalDefaults(), allExist)
+	add := indexOf(out, "add table inet jabali_per_user")
+	del := indexOf(out, "delete table inet jabali_per_user")
+	def := indexOf(out, "table inet jabali_per_user {")
+	if add < 0 || del < 0 || def < 0 || !(add < del && del < def) {
+		t.Fatalf("expected add < delete < table-definition; got add=%d del=%d def=%d\n%s", add, del, def, out)
+	}
 }

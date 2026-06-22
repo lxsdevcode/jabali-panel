@@ -82,6 +82,16 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 	b.WriteString("# Source of truth: user_egress_policies. Reload via:\n")
 	b.WriteString("#   nft -f /etc/nftables.d/jabali-per-user-egress.nft\n\n")
 
+	// Atomic replace: `add` makes the table exist so the `delete` never
+	// errors on first load, then `delete` removes the prior definition, all
+	// in the SAME `nft -f` transaction. Without this, re-loading the file
+	// (every reconcile tick) APPENDS the chain's rules instead of replacing
+	// them — chain `output` accumulated a duplicate `vmap` line on every
+	// reload (latent since M34), which silently reordered the GH #401 SSRF
+	// floor after the per-user dispatch.
+	b.WriteString("add table inet jabali_per_user\n")
+	b.WriteString("delete table inet jabali_per_user\n\n")
+
 	b.WriteString("table inet jabali_per_user {\n")
 
 	// Default sets — referenced from every per-user chain.
@@ -108,6 +118,13 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 		b.WriteString("    type inet_service;\n")
 		fmt.Fprintf(&b, "    elements = { %s }\n", joinInts(defaults.PortsUDP, ", "))
 		b.WriteString("  }\n")
+	}
+
+	// Always-on SSRF floor counter (GH #401). Declared only when the tenant
+	// parent slice exists, matching the floor rule's emission guard so the
+	// counter is never referenced without being declared.
+	if existsFn(tenantParentSlice) {
+		b.WriteString("\n  counter ssrf_floor_drops {}\n")
 	}
 
 	// Per-user counters + chains. Skip off-state and missing-slice users.
@@ -153,6 +170,15 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 
 	b.WriteString("\n  chain output {\n")
 	b.WriteString("    type filter hook output priority 0; policy accept;\n")
+	// GH #401 SSRF floor: no tenant process may reach link-local /
+	// cloud-metadata (169.254.0.0/16 incl. 169.254.169.254, fe80::/10),
+	// regardless of per-user egress enrollment. Runs BEFORE the per-user
+	// vmap so it is absolute. Emitted only when the tenant parent slice
+	// exists on the host (nft verifies cgroupv2 paths at load time).
+	if existsFn(tenantParentSlice) {
+		fmt.Fprintf(&b, "    socket cgroupv2 level 2 \"%s\" ip daddr 169.254.0.0/16 counter name ssrf_floor_drops drop\n", tenantParentSlice)
+		fmt.Fprintf(&b, "    socket cgroupv2 level 2 \"%s\" ip6 daddr fe80::/10 counter name ssrf_floor_drops drop\n", tenantParentSlice)
+	}
 	b.WriteString("    socket cgroupv2 level 3 vmap @cgroup_to_chain\n")
 	b.WriteString("  }\n")
 	b.WriteString("}\n")
@@ -163,6 +189,12 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 // SlicePathFor returns the full cgroup path under /sys/fs/cgroup that
 // nftables type=cgroupsv2 expects for one user. Mirrors the M18 slice
 // hierarchy exactly.
+// tenantParentSlice is the cgroupv2 path (level 2) that parents every
+// per-user slice. Matching here scopes a rule to ANY tenant process,
+// enrolled in a per-user egress policy or not — used for the GH #401
+// always-on cloud-metadata / link-local SSRF floor.
+const tenantParentSlice = "jabali.slice/jabali-user.slice"
+
 func SlicePathFor(username string) string {
 	return fmt.Sprintf("jabali.slice/jabali-user.slice/jabali-user-%s.slice", username)
 }

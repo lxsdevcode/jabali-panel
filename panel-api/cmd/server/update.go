@@ -1338,6 +1338,19 @@ test -x node_modules/.bin/tsc || {
 			}
 			return nil
 		}},
+		{"reapply PHP pools from template (GH #401)", func() error {
+			// The pool template was re-synced above, but ReconcilePHPPools
+			// skips ACTIVE pools, so template hardening (e.g. the GH #401
+			// disable_functions default) never reaches existing tenants on
+			// its own. Flip every active pool to pending so the next
+			// reconciler tick re-renders it from the fresh template. Runs
+			// the just-installed binary; non-fatal (pools also re-render on
+			// any later pool change). Idempotent.
+			if err := run("", defaultPanelBinPath, "php", "pool", "reapply-all"); err != nil {
+				fmt.Printf("  (pool reapply failed: %v -- pools will pick up the template on next change)\n", err)
+			}
+			return nil
+		}},
 	}
 
 	for _, s := range prelude {
