@@ -443,6 +443,15 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Users: deps.Users,
 			Agent: deps.Agent,
 		})
+		// Per-user disk-usage breakdown (files + email + databases).
+		api.RegisterMeDiskUsageRoutes(v1, api.DiskUsageConfig{
+			Users:      deps.Users,
+			Domains:    deps.Domains,
+			Mailboxes:  deps.Mailboxes,
+			Databases:  deps.Databases,
+			Agent:      deps.Agent,
+			QuotaMount: deps.QuotaMount,
+		})
 
 		// ADR-0128 — admin act-as grant management (GH #183). Mounted on v1;
 		// ResolveImpersonation skips this path so it always runs as the real

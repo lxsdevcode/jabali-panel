@@ -26,6 +26,7 @@ import {
   EthernetPortOutlined,
   FolderOutlined,
   GlobalOutlined,
+  HddOutlined,
   HomeOutlined,
   KeyOutlined,
   ApiOutlined,
@@ -263,6 +264,12 @@ export const userNav: NavItem[] = [
     label: "Databases",
     icon: navIcon(DatabaseOutlined),
     path: "/jabali-panel/databases",
+  },
+  {
+    key: "disk-usage",
+    label: "Disk Usage",
+    icon: navIcon(HddOutlined),
+    path: "/jabali-panel/disk-usage",
   },
   {
     key: "files",

@@ -70,6 +70,7 @@ import { SSLManagerPage } from "./shells/admin/ssl/SSLManagerPage";
 import { UserSSLManagerPage } from "./shells/user/ssl/UserSSLManagerPage";
 import { UserPHPSettingsPage } from "./shells/user/php-settings/UserPHPSettingsPage";
 import { UserApplicationList } from "./shells/user/applications/UserApplicationList";
+import { DiskUsagePage } from "./shells/user/disk-usage/DiskUsagePage";
 import { CapabilityRoute } from "./components/CapabilityRoute";
 import { PythonAppsPage } from "./shells/user/python-apps/PythonAppsPage";
 import { UserDockerAppsPage } from "./shells/user/docker-apps/UserDockerAppsPage";
@@ -259,6 +260,7 @@ const ThemedApp = () => {
             <Route path="dnssec" element={<Navigate to="/jabali-panel/dns" replace />} />
             <Route path="php-settings" element={<UserPHPSettingsPage />} />
             <Route path="files" element={<FileManagerPage />} />
+            <Route path="disk-usage" element={<DiskUsagePage />} />
             <Route path="logs" element={<UserLogsPage />} />
             <Route path="activity" element={<AccountActivity />} />
             <Route path="applications" element={<UserApplicationList />} />
