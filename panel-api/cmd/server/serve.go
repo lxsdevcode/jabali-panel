@@ -798,6 +798,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		go reconciler.StartDomainExpiryTicker(ctx, sharedAgent, deps.Domains, log)
 	}
 
+	// GH #263: mailbox usage sampler -> mailboxes.last_usage_bytes (the
+	// mailbox.usage probe + UpdateUsage existed but were never wired).
+	if sharedAgent != nil && deps.Mailboxes != nil {
+		go reconciler.StartMailboxUsageTicker(ctx, sharedAgent, deps.Mailboxes, log)
+	}
+
 	// M30.2 (ADR-0080) backup scheduler + finalizer. Per-destination
 	// model — copy worker removed (no source repo, no mirror).
 	if sched := backupscheduler.New(backupscheduler.Deps{
