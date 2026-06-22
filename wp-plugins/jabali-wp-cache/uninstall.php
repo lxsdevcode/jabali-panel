@@ -1,6 +1,6 @@
 <?php
 /**
- * Jabali Cache — uninstall cleanup.
+ * Jabali WP Cache — uninstall cleanup.
  *
  * Runs when the plugin is deleted from the WordPress admin. Removes drop-ins,
  * the generated config file, and the stored settings option. Cached data in

@@ -1,8 +1,8 @@
 <?php
 /**
- * Jabali Cache — admin screen.
+ * Jabali WP Cache — admin screen.
  *
- * Settings page under Settings → Jabali Cache: connection status, live Redis
+ * Settings page under Settings → Jabali WP Cache: connection status, live Redis
  * health, flush button, drop-in install/repair, and the connection form.
  *
  * @package Jabali_Cache
@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
 
 class Jabali_Cache_Admin {
 
-	const SLUG  = 'jabali-cache';
+	const SLUG  = 'jabali-wp-cache';
 	const NONCE = 'jabali_cache_action';
 
 	/** @var string */
@@ -41,8 +41,8 @@ class Jabali_Cache_Admin {
 
 	public function menu() {
 		add_options_page(
-			'Jabali Cache',
-			'Jabali Cache',
+			'Jabali WP Cache',
+			'Jabali WP Cache',
 			'manage_options',
 			self::SLUG,
 			array( $this, 'render' )
@@ -51,7 +51,7 @@ class Jabali_Cache_Admin {
 
 	public function action_links( $links ) {
 		$url = admin_url( 'options-general.php?page=' . self::SLUG );
-		array_unshift( $links, '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Settings', 'jabali-cache' ) . '</a>' );
+		array_unshift( $links, '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Settings', 'jabali-wp-cache' ) . '</a>' );
 		return $links;
 	}
 
@@ -61,7 +61,7 @@ class Jabali_Cache_Admin {
 		}
 		$bar->add_node(
 			array(
-				'id'    => 'jabali-cache-flush',
+				'id'    => 'jabali-wp-cache-flush',
 				'title' => 'Flush Cache',
 				'href'  => wp_nonce_url( admin_url( 'admin-post.php?action=jabali_cache_flush' ), self::NONCE ),
 				'meta'  => array( 'title' => 'Flush the Jabali object cache' ),
@@ -134,14 +134,14 @@ class Jabali_Cache_Admin {
 		}
 		// Surface a connection problem anywhere in admin so it isn't silent.
 		if ( ! $health['connected'] ) {
-			echo '<div class="notice notice-warning"><p><strong>Jabali Cache:</strong> ';
+			echo '<div class="notice notice-warning"><p><strong>Jabali WP Cache:</strong> ';
 			echo 'Redis is not reachable, so caching is currently inactive (the site still works, just without acceleration). ';
 			echo esc_html( $health['hint'] );
 			echo ' <a href="' . esc_url( admin_url( 'options-general.php?page=' . self::SLUG ) ) . '">Open settings</a>.</p></div>';
 			return;
 		}
 		if ( $on_page && ! $health['dropin_ok'] ) {
-			echo '<div class="notice notice-warning"><p><strong>Jabali Cache:</strong> ';
+			echo '<div class="notice notice-warning"><p><strong>Jabali WP Cache:</strong> ';
 			echo 'The object-cache drop-in is not installed yet. Use “Install / repair drop-ins” below to enable persistent caching.</p></div>';
 		}
 	}
@@ -152,7 +152,7 @@ class Jabali_Cache_Admin {
 
 	public function render() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to view this page.', 'jabali-cache' ) );
+			wp_die( esc_html__( 'You do not have permission to view this page.', 'jabali-wp-cache' ) );
 		}
 		$s      = Jabali_Cache_Settings::get();
 		$health = $this->health();
@@ -160,7 +160,7 @@ class Jabali_Cache_Admin {
 		$dstat  = $mgr->status();
 		$flush  = wp_nonce_url( admin_url( 'admin-post.php?action=jabali_cache_flush' ), self::NONCE );
 
-		echo '<div class="wrap"><h1>Jabali Cache</h1>';
+		echo '<div class="wrap"><h1>Jabali WP Cache</h1>';
 		$this->render_flash();
 
 		// Status card.
@@ -193,7 +193,7 @@ class Jabali_Cache_Admin {
 		wp_nonce_field( self::NONCE );
 		echo '<input type="hidden" name="action" value="jabali_cache_dropins">';
 		echo '<button class="button" name="dropin_action" value="install">Install / repair drop-ins</button> ';
-		echo '<button class="button" name="dropin_action" value="remove" onclick="return confirm(\'Remove the Jabali Cache drop-ins?\')">Remove drop-ins</button>';
+		echo '<button class="button" name="dropin_action" value="remove" onclick="return confirm(\'Remove the Jabali WP Cache drop-ins?\')">Remove drop-ins</button>';
 		echo '</form>';
 
 		// Settings form.
@@ -222,7 +222,7 @@ class Jabali_Cache_Admin {
 		submit_button( 'Save settings' );
 		echo '</form>';
 
-		echo '<hr><p style="color:#646970;max-width:760px">Jabali Cache uses the shared panel Redis (ADR-0059): unix socket <code>/run/redis/redis.sock</code>, database 1. Cache entries are isolated per site by key prefix and survive Redis LRU eviction by design.</p>';
+		echo '<hr><p style="color:#646970;max-width:760px">Jabali WP Cache uses the shared panel Redis (ADR-0059): unix socket <code>/run/redis/redis.sock</code>, database 1. Cache entries are isolated per site by key prefix and survive Redis LRU eviction by design.</p>';
 		echo '</div>';
 	}
 
@@ -299,7 +299,7 @@ class Jabali_Cache_Admin {
 
 	private function guard() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Permission denied.', 'jabali-cache' ) );
+			wp_die( esc_html__( 'Permission denied.', 'jabali-wp-cache' ) );
 		}
 		check_admin_referer( self::NONCE );
 	}

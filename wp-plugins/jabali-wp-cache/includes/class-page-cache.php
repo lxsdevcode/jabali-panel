@@ -1,6 +1,6 @@
 <?php
 /**
- * Jabali Cache — full-page cache engine.
+ * Jabali WP Cache — full-page cache engine.
  *
  * Driven by the wp-content/advanced-cache.php drop-in (which WordPress loads
  * before almost everything else when WP_CACHE is true). Caches anonymous,

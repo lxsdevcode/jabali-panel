@@ -1,6 +1,6 @@
 <?php
 /**
- * Jabali Cache — shared low-level library.
+ * Jabali WP Cache — shared low-level library.
  *
  * Loaded by BOTH the plugin and the wp-content drop-ins (object-cache.php,
  * advanced-cache.php). Must be self-sufficient: no WordPress functions are
@@ -37,7 +37,7 @@ if ( ! defined( 'JABALI_CACHE_VERSION' ) ) {
 /**
  * Resolves runtime configuration from (in priority order):
  *   1. PHP constants (typically set in wp-config.php),
- *   2. the generated config file wp-content/jabali-cache-config.php,
+ *   2. the generated config file wp-content/jabali-wp-cache-config.php,
  *   3. built-in jabali defaults.
  *
  * Resolution is done without touching the database so the drop-ins, which
@@ -128,10 +128,10 @@ class Jabali_Cache_Config {
 			return (string) JABALI_CACHE_CONFIG_FILE;
 		}
 		if ( defined( 'WP_CONTENT_DIR' ) ) {
-			return WP_CONTENT_DIR . '/jabali-cache-config.php';
+			return WP_CONTENT_DIR . '/jabali-wp-cache-config.php';
 		}
 		// Drop-ins run before WP_CONTENT_DIR may be defined; derive from this file.
-		return dirname( __DIR__, 3 ) . '/jabali-cache-config.php';
+		return dirname( __DIR__, 3 ) . '/jabali-wp-cache-config.php';
 	}
 
 	/**

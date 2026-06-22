@@ -1,6 +1,6 @@
 <?php
 /**
- * Jabali Cache — persistent object cache engine.
+ * Jabali WP Cache — persistent object cache engine.
  *
  * Implements the WordPress object-cache contract on top of
  * Jabali_Cache_Client. Instantiated by the wp-content/object-cache.php

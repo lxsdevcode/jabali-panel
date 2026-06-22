@@ -1,4 +1,4 @@
-=== Jabali Cache ===
+=== Jabali WP Cache ===
 Contributors: jabalipanel
 Tags: cache, redis, object cache, performance, page cache
 Requires at least: 5.6
@@ -12,7 +12,7 @@ Redis-backed persistent object cache (and optional full-page cache) tuned for th
 
 == Description ==
 
-Jabali Cache turns WordPress's transient/object cache into a persistent Redis-backed cache using the Redis instance the Jabali panel already provisions. It is purpose-built for the panel's shared-hosting model:
+Jabali WP Cache turns WordPress's transient/object cache into a persistent Redis-backed cache using the Redis instance the Jabali panel already provisions. It is purpose-built for the panel's shared-hosting model:
 
 * **Zero-config on Jabali.** Connects to the panel Redis over the unix socket `/run/redis/redis.sock`, logical database 1 (ADR-0059). No host/port to enter.
 * **Per-site isolation.** Every install gets a unique key prefix. The shared Redis database is namespaced per site; one site can never read or flush another's cache.
@@ -24,9 +24,9 @@ A full-page cache is included but **off by default**, because Jabali already pro
 
 == Installation ==
 
-1. Upload the `jabali-cache` folder to `wp-content/plugins/`.
-2. Activate **Jabali Cache** from Plugins. Activation installs the `object-cache.php` drop-in automatically.
-3. Visit **Settings → Jabali Cache** to confirm "Redis connection: Connected".
+1. Upload the `jabali-wp-cache` folder to `wp-content/plugins/`.
+2. Activate **Jabali WP Cache** from Plugins. Activation installs the `object-cache.php` drop-in automatically.
+3. Visit **Settings → Jabali WP Cache** to confirm "Redis connection: Connected".
 
 If the status shows "Not reachable", the screen prints the exact host prerequisite (see FAQ).
 

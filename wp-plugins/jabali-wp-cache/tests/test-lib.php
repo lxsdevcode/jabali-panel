@@ -1,6 +1,6 @@
 <?php
 /**
- * Jabali Cache — standalone test harness (no PHPUnit, no WordPress).
+ * Jabali WP Cache — standalone test harness (no PHPUnit, no WordPress).
  *
  *   php tests/test-lib.php
  *   JABALI_TEST_REDIS=/run/redis/redis.sock php tests/test-lib.php   # live round-trip

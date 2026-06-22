@@ -1,14 +1,14 @@
 <?php
 /**
- * Jabali Cache — WP-CLI commands.
+ * Jabali WP Cache — WP-CLI commands.
  *
- *   wp jabali-cache status
- *   wp jabali-cache enable
- *   wp jabali-cache disable
- *   wp jabali-cache flush [--pages]
- *   wp jabali-cache update-dropins
- *   wp jabali-cache remove-dropins
- *   wp jabali-cache diagnose
+ *   wp jabali-wp-cache status
+ *   wp jabali-wp-cache enable
+ *   wp jabali-wp-cache disable
+ *   wp jabali-wp-cache flush [--pages]
+ *   wp jabali-wp-cache update-dropins
+ *   wp jabali-wp-cache remove-dropins
+ *   wp jabali-wp-cache diagnose
  *
  * @package Jabali_Cache
  */
