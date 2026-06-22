@@ -129,7 +129,16 @@ func (h *dnsHandler) getZone(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"zone": zone})
+	// GH #259: include the user-record count (dns_records; SOA/NS are
+	// auto-generated and not stored) so the DNS Zones list can show it
+	// without a second per-domain fetch.
+	recordCount := 0
+	if h.cfg.Records != nil {
+		if recs, rerr := h.cfg.Records.ListByZoneID(c.Request.Context(), zone.ID); rerr == nil {
+			recordCount = len(recs)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"zone": zone, "record_count": recordCount})
 }
 
 func (h *dnsHandler) updateZone(c *gin.Context) {

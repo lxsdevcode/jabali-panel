@@ -22,10 +22,13 @@ interface Domain {
   name: string;
   created_at: string;
   updated_at: string;
+  dnssec_enabled?: boolean;
 }
 
 interface ZoneStatus {
   provisioned: boolean;
+  recordCount?: number;
+  ttl?: number | null;
 }
 
 const ZonesTab = () => {
@@ -51,15 +54,17 @@ const ZonesTab = () => {
           return {
             domainId: domain.id,
             provisioned: !!res.data?.zone?.id,
+            recordCount: res.data?.record_count as number | undefined,
+            ttl: (res.data?.zone?.minimum_ttl ?? null) as number | null,
           };
         } catch {
-          return { domainId: domain.id, provisioned: false };
+          return { domainId: domain.id, provisioned: false, recordCount: undefined, ttl: null };
         }
       }),
     ).then((results) => {
       const statusMap = new Map<string, ZoneStatus>();
-      results.forEach(({ domainId, provisioned }) => {
-        statusMap.set(domainId, { provisioned });
+      results.forEach(({ domainId, provisioned, recordCount, ttl }) => {
+        statusMap.set(domainId, { provisioned, recordCount, ttl });
       });
       setZoneStatuses(statusMap);
     });
@@ -123,6 +128,29 @@ const ZonesTab = () => {
           <Table.Column<Domain>
             title="Zone Status"
             render={(_, record) => getZoneStatusTag(record.id)}
+          />
+          <Table.Column<Domain>
+            title="Records"
+            render={(_, record) => {
+              const s = zoneStatuses.get(record.id);
+              if (s === undefined) return <Spin size="small" />;
+              return s.recordCount ?? 0;
+            }}
+          />
+          <Table.Column<Domain>
+            title="TTL"
+            render={(_, record) => {
+              const s = zoneStatuses.get(record.id);
+              if (s === undefined) return <Spin size="small" />;
+              return s.ttl != null ? `${s.ttl}s` : "—";
+            }}
+          />
+          <Table.Column<Domain>
+            title="DNSSEC"
+            dataIndex="dnssec_enabled"
+            render={(enabled: boolean | undefined) =>
+              enabled ? <Tag color="green">Signed</Tag> : <Tag>Unsigned</Tag>
+            }
           />
           <Table.Column<Domain>
             title="Actions"
