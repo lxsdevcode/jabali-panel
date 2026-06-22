@@ -803,6 +803,13 @@ func (r *domainRepo) computeSSLState(domain *models.Domain, cert *models.SSLCert
 		return "failed"
 	}
 
+	// A DELIBERATE self-signed cert (Self mode, GH #246) is terminal — it is
+	// NOT "pending/issuing". (The LE stop-gap fallback uses status
+	// pending_acme_retry, handled below, so this never masks an in-flight LE.)
+	if cert.Status == models.SSLStatusSelfSigned {
+		return "self_signed"
+	}
+
 	// Pending, Issuing, PendingACMERetry
 	return "pending"
 }

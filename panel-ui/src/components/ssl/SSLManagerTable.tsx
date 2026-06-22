@@ -295,7 +295,7 @@ export const SSLManagerTable = ({
       render: (status: string, record: SSLCertificate) => {
         let tooltip = "";
         if (status === "self_signed") {
-          tooltip = "Stop-gap self-signed cert — ACME will retry shortly";
+          tooltip = "Self-signed certificate (Self SSL mode) — browsers show a trust warning; not issued by a CA.";
         } else if (status === "pending_acme_retry") {
           tooltip = `ACME failed — retrying at ${formatDate(record.next_retry_at)}`;
         }
