@@ -39,8 +39,9 @@ func pythonAppRepoFromDB() repository.PythonAppRepository {
 
 func newPythonAppListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List Python apps",
+		Use:     "list",
+		Short:   "List Python apps",
+		PreRunE: requireDB,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			apps, err := pythonAppRepoFromDB().ListAll(context.Background())
 			if err != nil {
@@ -63,9 +64,10 @@ func newPythonAppListCmd() *cobra.Command {
 
 func newPythonAppControlCmd(verb, short string) *cobra.Command {
 	return &cobra.Command{
-		Use:   verb + " <app-id>",
-		Short: short,
-		Args:  cobra.ExactArgs(1),
+		Use:     verb + " <app-id>",
+		Short:   short,
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -83,9 +85,10 @@ func newPythonAppControlCmd(verb, short string) *cobra.Command {
 func newPythonAppLogsCmd() *cobra.Command {
 	var lines int
 	c := &cobra.Command{
-		Use:   "logs <app-id>",
-		Short: "Show an app's recent logs",
-		Args:  cobra.ExactArgs(1),
+		Use:     "logs <app-id>",
+		Short:   "Show an app's recent logs",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -108,9 +111,10 @@ func newPythonAppLogsCmd() *cobra.Command {
 
 func newPythonAppDeleteCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete <app-id>",
-		Short: "Stop + remove an app (app files are kept)",
-		Args:  cobra.ExactArgs(1),
+		Use:     "delete <app-id>",
+		Short:   "Stop + remove an app (app files are kept)",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			repo := pythonAppRepoFromDB()

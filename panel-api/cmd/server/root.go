@@ -40,6 +40,28 @@ var (
 	sharedAgent *agent.Client
 )
 
+// rejectUnknownSubcommands makes every grouping command (one with
+// subcommands but no Run/RunE of its own) FAIL with a non-zero exit on an
+// unknown/typo'd subcommand, instead of cobra's default of printing the
+// parent's help and exiting 0 (QA 2026-06-22 #4: `jabali backup list --json`
+// looked like success to automation). Bare `jabali <group>` still prints help
+// and exits 0. A real subcommand is dispatched before the parent RunE runs.
+func rejectUnknownSubcommands(cmd *cobra.Command) {
+	for _, c := range cmd.Commands() {
+		rejectUnknownSubcommands(c)
+	}
+	if cmd.Runnable() || !cmd.HasSubCommands() {
+		return
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("unknown subcommand %q for %q (run with --help for available subcommands)", args[0], c.CommandPath())
+		}
+		return c.Help()
+	}
+	cmd.SilenceUsage = true
+}
+
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "jabali",
@@ -113,7 +135,9 @@ func newRootCmd() *cobra.Command {
 		newDockerAppCmd(),
 		newPythonAppCmd(),
 	)
-	// `jabali reconcile` was removed by M20 — the reconciler already ticks
+rejectUnknownSubcommands(cmd)
+
+		// `jabali reconcile` was removed by M20 — the reconciler already ticks
 	// every cfg.Agent.ReconcilerInterval (default 60s), and the CLI's
 	// manual-trigger path relied on legacy JWT that the Kratos-era
 	// middleware ignores. Operators who need an immediate tick can restart

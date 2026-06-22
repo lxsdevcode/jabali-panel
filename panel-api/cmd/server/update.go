@@ -52,6 +52,11 @@ func newUpdateCmd() *cobra.Command {
 		// the operator's terminal — they want the error and a next
 		// move, not the help text.
 		SilenceUsage: true,
+		// Args: NoArgs (QA 2026-06-22, CRITICAL): without this, cobra accepts
+		// a stray positional (`jabali update status`) and RunE runs the real
+		// updater anyway — a mistyped/guessed subcommand triggered a live
+		// self-update during a read-only QA pass. Reject extra args outright.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := runUpdate(cmd, args)
 			if err != nil {
