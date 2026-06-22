@@ -21,15 +21,42 @@ func TestCRSPluginBefore_Surgical(t *testing.T) {
 		}
 	}
 
-	// Must NOT broaden: no whole-rule removal, no path-allow.
+	// Must NOT broaden: no path-allow / blanket allow.
 	mustNotContain := []string{
-		"ruleRemoveById", // would kill 933120 everywhere
 		"SetRemediation", // path-allow / blanket allow
 		"CancelEvent",
 	}
 	for _, sub := range mustNotContain {
 		if strings.Contains(body, sub) {
 			t.Errorf("CRSPluginBefore must not contain %q (too broad)", sub)
+		}
+	}
+
+	// GH #404 (revised): ruleRemoveById IS allowed, but ONLY for the three
+	// builder false-positive rules and ONLY on a SecRule that is path-scoped
+	// by REQUEST_URI. A bare/global ruleRemoveById, or one targeting any
+	// other rule ID, is a WAF hole.
+	allowedDrops := map[string]bool{"911100": true, "942550": true, "932370": true}
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.Contains(line, "ruleRemoveById=") {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(line), "SecRule REQUEST_URI") {
+			t.Errorf("ruleRemoveById on a non-REQUEST_URI-scoped rule: %q", line)
+		}
+		// Every ruleRemoveById=<id> on the line must be an allowed builder rule.
+		for _, tok := range strings.Split(line, "ctl:ruleRemoveById=") {
+			id := ""
+			for _, c := range tok {
+				if c >= '0' && c <= '9' {
+					id += string(c)
+				} else {
+					break
+				}
+			}
+			if id != "" && !allowedDrops[id] {
+				t.Errorf("ruleRemoveById drops non-builder rule %q (WAF hole): %q", id, line)
+			}
 		}
 	}
 

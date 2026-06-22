@@ -27,20 +27,6 @@ type Opts struct {
 	Countries      []string
 	Inband         []string
 	AdminAllowlist bool
-	// WordPressAllowlist (GH #404) exempts the WordPress page-builder
-	// endpoints that CRS false-positive-bans on legitimate admin edits
-	// (Elementor save -> 942550 JSON-SQLi / 932370 RCE / 911100 method ->
-	// 949110 anomaly block -> ~4h ban on the editor's IP). A page builder
-	// POSTs arbitrary HTML/CSS/URLs in JSON, indistinguishable from
-	// injection at the WAF, so a per-rule-ID exclusion is whack-a-mole.
-	// Instead: plain-allow the plugin-namespaced /wp-json/elementor/ REST
-	// (own permission callbacks, like our /api/v1/ bypass), and for the
-	// dual-purpose /wp-admin/{admin-ajax,post}.php gate the exemption on
-	// the WordPress login cookie so the UNAUTHENTICATED nopriv surface stays
-	// fully inspected. Cookie presence != validation (an attacker can add
-	// the header), so not a hard boundary, but it keeps drive-by/automated
-	// scanning -- the bulk of WAF value -- inspected.
-	WordPressAllowlist bool
 	// WebmailHosts is the explicit allowlist of FQDNs exempted from
 	// CrowdSec AppSec. These are the dedicated webmail/autodiscover
 	// vhosts served exclusively by Bulwark + Stalwart, both of which
@@ -156,6 +142,19 @@ func CRSPluginBefore() string {
 # under /wp-admin/. Body inspection, every other rule, and 933120 on
 # every other arg/path all stay active.
 SecRule REQUEST_URI "@beginsWith /wp-admin/"     "id:9599100,phase:1,pass,nolog,ctl:ruleRemoveTargetById=933120;ARGS:_wp_http_referer"
+#
+# 911100 / 942550 / 932370 vs WordPress page builders (GH #404). Saving an
+# Elementor page POSTs arbitrary HTML/CSS/JSON markup that trips method-
+# enforcement (911100), JSON-SQLi (942550) and the RCE rule (932370),
+# pushing the inbound anomaly score past 949110 -> a ~4h AppSec ban on the
+# editor's OWN IP. Drop ONLY those three rule IDs, ONLY on the builder
+# endpoints. Every other rule still inspects these paths, so XSS (941),
+# LFI (930), path traversal, other SQLi/RCE rules, etc. stay fully active
+# (surgical, not a path-allow). Replaces the rejected on_match
+# blanket-allow exemption (ADR-0147 revised).
+SecRule REQUEST_URI "@rx ^/wp-json/elementor/"       "id:9599200,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
+SecRule REQUEST_URI "@rx ^/wp-admin/admin-ajax\.php" "id:9599201,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
+SecRule REQUEST_URI "@rx ^/wp-admin/post\.php"       "id:9599202,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
 `
 }
 
@@ -204,19 +203,11 @@ func Render(o Opts) string {
 	// controlled header and nginx falls back to default_server (which
 	// serves phpMyAdmin) when no vhost matches.
 	hosts := sanitizeWebmailHosts(o.WebmailHosts)
-	if o.AdminAllowlist || o.WordPressAllowlist || len(hosts) > 0 {
+	if o.AdminAllowlist || len(hosts) > 0 {
 		b.WriteString("on_match:\n")
 	}
 	if o.AdminAllowlist {
 		b.WriteString(` - filter: req.URL.Path startsWith "/api/v1/"
-   apply:
-    - CancelEvent()
-    - CancelAlert()
-    - SetRemediation("allow")
-`)
-	}
-	if o.WordPressAllowlist {
-		b.WriteString(` - filter: req.URL.Path startsWith "/wp-json/elementor/" || (req.URL.Path == "/wp-admin/admin-ajax.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"})) || (req.URL.Path == "/wp-admin/post.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"}))
    apply:
     - CancelEvent()
     - CancelAlert()

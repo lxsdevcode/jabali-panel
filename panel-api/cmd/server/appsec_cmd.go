@@ -97,7 +97,6 @@ gate a 'systemctl reload crowdsec' on real diffs.`,
 				Countries:          countries,
 				Inband:             inband,
 				AdminAllowlist:     true,
-				WordPressAllowlist: true, // GH #404: default-on WP page-builder exemption
 				WebmailHosts:       webmailHosts,
 			})
 

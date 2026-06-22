@@ -165,31 +165,32 @@ func TestSanitizeWebmailHosts(t *testing.T) {
 	}
 }
 
-// GH #404: WordPress page-builder exemption. /wp-json/elementor/ is plain-
-// allowed; the dual-purpose /wp-admin/{admin-ajax,post}.php are exempt ONLY
-// when the WordPress login cookie is present (unauthenticated nopriv surface
-// stays inspected).
-func TestRender_WordPressAllowlist(t *testing.T) {
-	out := Render(Opts{
-		Mode:               "off",
-		Inband:             []string{"crowdsecurity/vpatch-*"},
-		AdminAllowlist:     true,
-		WordPressAllowlist: true,
-	})
-	mustContain(t, out, `req.URL.Path startsWith "/wp-json/elementor/"`, "elementor REST plain-allow")
-	mustContain(t, out, `req.URL.Path == "/wp-admin/admin-ajax.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"})`, "admin-ajax cookie-gated")
-	mustContain(t, out, `req.URL.Path == "/wp-admin/post.php" && any(req.Cookies(), {.Name startsWith "wordpress_logged_in_"})`, "post.php cookie-gated")
-	// Security regression guards: never blanket-allow public-surface paths.
-	mustNotContain(t, out, `startsWith "/wp-json/wp/v2/"`, "must NOT exempt public wp/v2 REST")
-	mustNotContain(t, out, `startsWith "/wp-admin/admin-ajax.php"`, "admin-ajax must be exact+cookie, not a prefix-allow")
-	// /api/v1/ block still first + intact.
-	if strings.Index(out, `startsWith "/api/v1/"`) > strings.Index(out, `startsWith "/wp-json/elementor/"`) {
-		t.Fatal("/api/v1/ block must precede the WP block")
-	}
+// GH #404 (revised, ADR-0147): the WordPress page-builder exemption is a
+// SCOPED CRS rule-ID drop in the before-plugin, NOT an on_match blanket
+// allow. Render() must therefore emit NO WP path-allow / SetRemediation for
+// any wp path — that surface moved entirely into CRSPluginBefore().
+func TestRender_NoWordPressBlanketAllow(t *testing.T) {
+	out := Render(Opts{Mode: "off", Inband: []string{"crowdsecurity/vpatch-*"}, AdminAllowlist: true})
+	mustNotContain(t, out, "wp-json/elementor", "no WP path-allow in the rendered yaml")
+	mustNotContain(t, out, "wordpress_logged_in_", "no cookie-gated WP exemption in the yaml")
+	mustNotContain(t, out, "/wp-admin/admin-ajax.php", "no WP admin-ajax allow in the yaml")
+	// /api/v1/ admin allowlist is unaffected.
+	mustContain(t, out, `startsWith "/api/v1/"`, "admin /api/v1/ allowlist intact")
 }
 
-// Off by default: no WordPressAllowlist flag => no WP exemption emitted.
-func TestRender_WordPressAllowlistOptOut(t *testing.T) {
-	out := Render(Opts{Mode: "off", Inband: []string{"x"}, AdminAllowlist: false})
-	mustNotContain(t, out, "wp-json/elementor", "no WP exemption when flag unset")
+// GH #404: the builder false-positive rules are dropped surgically in the
+// CRS before-plugin — only 911100/942550/932370, only on the builder paths,
+// and never as a SetRemediation("allow") blanket exemption.
+func TestCRSPluginBefore_WordPressBuilderExclusions(t *testing.T) {
+	out := CRSPluginBefore()
+	for _, id := range []string{"911100", "942550", "932370"} {
+		mustContain(t, out, "ctl:ruleRemoveById="+id, "drops builder FP rule "+id)
+	}
+	mustContain(t, out, `"@rx ^/wp-json/elementor/"`, "scoped to elementor REST")
+	mustContain(t, out, `^/wp-admin/admin-ajax`, "scoped to admin-ajax")
+	mustContain(t, out, `^/wp-admin/post`, "scoped to post.php")
+	// The original narrow 933120 exclusion is still present.
+	mustContain(t, out, "ctl:ruleRemoveTargetById=933120;ARGS:_wp_http_referer", "933120 _wp_http_referer exclusion intact")
+	// Surgical, not blanket: no path-allow, no remediation override.
+	mustNotContain(t, out, `SetRemediation`, "before-plugin must not blanket-allow")
 }
