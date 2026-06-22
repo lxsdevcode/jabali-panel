@@ -1,7 +1,7 @@
 # M267 — Tenant Self-Service Selective Restore
 
 **Issue:** GH #267 ("No Tenant Restore Functionality under Tenant Panel")
-**Status:** Waves 1+2 SHIPPED (preview `c31bf675`; DB-only selective restore `708e751d`, negative-round-trip verified). Wave 4 (UI) + home/mail (deferred) pending.
+**Status:** Waves 1+2 SHIPPED (preview `c31bf675`; DB-only selective restore `708e751d`, negative-round-trip verified). Wave 4 (UI) SHIPPED `ed4c04d0` — tenant DB restore usable end-to-end. home/mail/DNS apply deferred.
 **Target ADR:** ADR-0148
 **Depends on:** M30/M30.1 backup foundation, ADR-0075/0078/0080; #245 RBAC scopes (ADR-0144)
 
@@ -183,7 +183,7 @@ iteration — do NOT promise lossless DNS restore for backups taken today.
    job creation, dispatch. Agent stub returns "not implemented" per stage.
 3. **Agent selective apply** — `backup.restore_selective`, one stage at a time:
    3a home, 3b databases, 3c mailboxes, 3d dns. Each independently testable.
-4. **Tenant UI** — restore drawer on `/jabali-panel/backups`: pick a backup →
+4. **Tenant UI (DB-only)** — ✅ SHIPPED (`ed4c04d0`): RestoreDrawer on the Backups card; preview → pick DBs → overwrite-confirm → result. Original text: — restore drawer on `/jabali-panel/backups`: pick a backup →
    preview stages/items → check resources → overwrite confirm → progress via the
    jobs list. Reuse `SearchableTable`/Drawer conventions.
 5. **E2E + runbook** — backup → delete a DB row / mailbox → selective restore →
