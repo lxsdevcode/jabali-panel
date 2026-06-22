@@ -120,20 +120,11 @@ export function MyProfileUsageCard({ userId }: { userId: string }) {
     };
   }, [userId]);
 
-  const heading = (
-    <Typography.Title level={5} style={{ margin: "0 0 12px" }}>
-      Resource usage
-    </Typography.Title>
-  );
-
   if (error || !data) {
     return (
-      <div>
-        {heading}
-        <Typography.Text type="secondary">
-          {error ? "Usage data is currently unavailable." : "Loading…"}
-        </Typography.Text>
-      </div>
+      <Typography.Text type="secondary">
+        {error ? "Usage data is currently unavailable." : "Loading…"}
+      </Typography.Text>
     );
   }
 
@@ -173,15 +164,12 @@ export function MyProfileUsageCard({ userId }: { userId: string }) {
   ];
 
   return (
-    <div>
-      {heading}
-      <Row gutter={[12, 12]}>
-        {metrics.map((m) => (
-          <Col xs={12} sm={8} lg={4} key={m.label}>
-            <MetricCard {...m} />
-          </Col>
-        ))}
-      </Row>
-    </div>
+    <Row gutter={[12, 12]}>
+      {metrics.map((m) => (
+        <Col xs={12} sm={8} lg={8} key={m.label}>
+          <MetricCard {...m} />
+        </Col>
+      ))}
+    </Row>
   );
 }
