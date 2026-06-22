@@ -187,12 +187,11 @@ export const PackageList = () => {
               <Space>
                 <RowActionButton
                   icon={<EditOutlined />}
+                  title="Edit"
                   onClick={() =>
                     navigate(`/jabali-admin/packages/edit/${r.id}`)
                   }
-                >
-                  Edit
-                </RowActionButton>
+                />
                 <RowDeleteButton
                   confirmTitle={`Delete package "${r.name}"?`}
                   onConfirm={async () => {

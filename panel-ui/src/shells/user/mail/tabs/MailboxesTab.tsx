@@ -271,11 +271,11 @@ export const MailboxesTab = () => {
         rowKey="id"
         loading={loading && rows.length === 0}
         dataSource={rows}
-        pagination={{ pageSize: 20, showSizeChanger: true }}
+        pagination={{ pageSize: 20 }}
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No mailboxes" /> }}
         columns={[
           {
-            title: "Email",
+            title: "Mailbox",
             dataIndex: "email",
             ellipsis: true,
             sorter: (a, b) => a.email.localeCompare(b.email),
@@ -287,7 +287,15 @@ export const MailboxesTab = () => {
                 >
                   <LibravatarAvatar email={v} size={24} />
                   <span style={{ display: "inline-flex", flexDirection: "column" }}>
-                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                    {record.display_name ? (
+                      <Typography.Text strong>
+                        {record.display_name}
+                      </Typography.Text>
+                    ) : null}
+                    <Typography.Text
+                      type={record.display_name ? "secondary" : undefined}
+                      style={{ fontFamily: "monospace", fontSize: record.display_name ? 12 : undefined }}
+                    >
                       {v}
                     </Typography.Text>
                     {fwd?.aliases.length ? (
@@ -309,17 +317,6 @@ export const MailboxesTab = () => {
                 </span>
               );
             },
-          },
-          {
-            title: "Name",
-            dataIndex: "display_name",
-            ellipsis: true,
-            render: (v: string) =>
-              v ? (
-                v
-              ) : (
-                <Typography.Text type="secondary">—</Typography.Text>
-              ),
           },
           {
             title: "Domain",
@@ -396,12 +393,17 @@ export const MailboxesTab = () => {
                 quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
               return (
                 <Tooltip title={`${formatBytes(used)} of ${formatBytes(quota)}`}>
-                  <Progress
-                    percent={pct}
-                    size="small"
-                    status={pct >= 90 ? "exception" : "normal"}
-                    format={() => `${formatBytes(used)} / ${formatBytes(quota)}`}
-                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <Typography.Text style={{ fontSize: 12 }}>
+                      {`${formatBytes(used)} / ${formatBytes(quota)}`}
+                    </Typography.Text>
+                    <Progress
+                      percent={pct}
+                      size="small"
+                      showInfo={false}
+                      status={pct >= 90 ? "exception" : "normal"}
+                    />
+                  </div>
                 </Tooltip>
               );
             },

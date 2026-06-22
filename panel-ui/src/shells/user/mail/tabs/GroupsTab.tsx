@@ -94,7 +94,7 @@ export function GroupsTab() {
           scroll={{ x: "max-content" }}
           rowKey="id"
           dataSource={groups ?? []}
-          pagination={{ pageSize: 25, showSizeChanger: true }}
+          pagination={{ pageSize: 25 }}
           locale={{
             emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No groups" />,
           }}
