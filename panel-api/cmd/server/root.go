@@ -112,7 +112,6 @@ func newRootCmd() *cobra.Command {
 		newAuditCmd(),
 		newDockerAppCmd(),
 		newPythonAppCmd(),
-		newDockerEngineCmd(),
 	)
 	// `jabali reconcile` was removed by M20 — the reconciler already ticks
 	// every cfg.Agent.ReconcilerInterval (default 60s), and the CLI's

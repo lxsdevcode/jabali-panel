@@ -315,9 +315,11 @@ export function UserAPITokensPage(): JSX.Element {
     >
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
         Tokens authenticate API requests as you, scoped to resources
-        you own. Use them to script DNS records, deploy WordPress,
-        drive a DDNS updater on your router — anything the panel UI
-        lets you do. Send the token as{" "}
+        you own. Use them to script the documented{" "}
+        <Typography.Text strong>Automation API</Typography.Text> — DNS
+        records, WordPress deploys, a DDNS updater on your router, and the
+        other endpoints listed under Automation API (a stable, documented
+        subset, not every endpoint the web UI uses). Send the token as{" "}
         <Typography.Text code>Authorization: Bearer jat_…</Typography.Text>
         .
       </Typography.Paragraph>

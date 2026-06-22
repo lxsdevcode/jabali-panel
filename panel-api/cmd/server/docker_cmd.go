@@ -35,9 +35,18 @@ const (
 func newDockerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "docker",
-		Short: "Docker host management for the app marketplace (M48/M49)",
+		Short: "Manage the docker engine + app-marketplace host (M48/M49)",
 	}
-	cmd.AddCommand(newDockerEnableTenantCmd())
+	// Single `docker` tree. Previously `newDockerEngineCmd()` registered a
+	// SECOND root command with the same Use:"docker", so cobra dispatched only
+	// one and the engine subcommands (enable/disable/status) were unreachable
+	// (gap-audit 2026-06-22). Fold them in here.
+	cmd.AddCommand(
+		newDockerEngineActionCmd("enable", "Install docker engine + flip Server Settings toggle"),
+		newDockerEngineActionCmd("disable", "Disable the marketplace toggle (keeps docker installed)"),
+		newDockerEngineStatusCmd(),
+		newDockerEnableTenantCmd(),
+	)
 	return cmd
 }
 

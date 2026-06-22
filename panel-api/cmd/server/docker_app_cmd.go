@@ -568,19 +568,6 @@ func newDockerAppBackupsCmd() *cobra.Command {
 
 // ---- jabali docker (engine toggle, mirrors `jabali db postgres enable`) -----
 
-func newDockerEngineCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "docker",
-		Short: "Manage the docker engine (M48 opt-in)",
-	}
-	cmd.AddCommand(
-		newDockerEngineActionCmd("enable", "Install docker engine + flip Server Settings toggle"),
-		newDockerEngineActionCmd("disable", "Disable the marketplace toggle (keeps docker installed)"),
-		newDockerEngineStatusCmd(),
-	)
-	return cmd
-}
-
 func newDockerEngineActionCmd(action, short string) *cobra.Command {
 	return &cobra.Command{
 		Use:     action,
