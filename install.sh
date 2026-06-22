@@ -990,7 +990,7 @@ POLICYEOF
       ed inotify-tools \
       logrotate \
       unattended-upgrades \
-      restic \
+      restic zstd \
       sshpass \
       "${php_extensions[@]}" \
       "${optional_pkgs[@]}"
@@ -2330,6 +2330,12 @@ DOCKER_EOF
   # repeat the gate here so a fresh M48-only run does not skip it.
   if ! command -v restic >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends restic
+  fi
+  # zstd binary: backup download streams `tar -I zstd` (GH #266). Without it
+  # the tar child exits 127 and the download is a 0-byte file. Heal existing
+  # hosts on `jabali update` (install_base_packages covers fresh installs).
+  if ! command -v zstd >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends zstd
   fi
 
   _ok "docker engine ready (live-restore + journald + jabali in docker group)"
