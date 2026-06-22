@@ -83,6 +83,7 @@ type createPackageRequest struct {
 	SSHEnabled       bool   `json:"ssh_enabled"`
 	CGIEnabled       bool   `json:"cgi_enabled"`
 	PHPExecEnabled   bool   `json:"php_exec_enabled"`
+	DockerAppSlugs   string `json:"docker_app_slugs"`
 	// M13: nspawn image pin (empty = use server default).
 	NspawnImageVersion string `json:"nspawn_image_version"`
 }
@@ -103,6 +104,7 @@ type updatePackageRequest struct {
 	SSHEnabled         *bool   `json:"ssh_enabled"`
 	CGIEnabled         *bool   `json:"cgi_enabled"`
 	PHPExecEnabled     *bool   `json:"php_exec_enabled"`
+	DockerAppSlugs     *string `json:"docker_app_slugs"`
 	NspawnImageVersion *string `json:"nspawn_image_version"`
 }
 
@@ -149,6 +151,7 @@ func (h *packageHandler) create(c *gin.Context) {
 		SSHEnabled:       req.SSHEnabled,
 		CGIEnabled:       req.CGIEnabled,
 		PHPExecEnabled:   req.PHPExecEnabled,
+		DockerAppSlugs:   req.DockerAppSlugs,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -275,6 +278,9 @@ func (h *packageHandler) update(c *gin.Context) {
 	}
 	if req.PHPExecEnabled != nil {
 		pkg.PHPExecEnabled = *req.PHPExecEnabled
+	}
+	if req.DockerAppSlugs != nil {
+		pkg.DockerAppSlugs = *req.DockerAppSlugs
 	}
 	if req.NspawnImageVersion != nil {
 		v := strings.TrimSpace(*req.NspawnImageVersion)

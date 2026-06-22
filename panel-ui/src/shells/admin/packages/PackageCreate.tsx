@@ -42,6 +42,7 @@ type PackageCreateInput = {
   ssh_enabled: boolean;
   cgi_enabled: boolean;
   php_exec_enabled: boolean;
+  docker_app_slugs?: string[];
   nspawn_image_version?: string | null;
 };
 
@@ -73,9 +74,29 @@ export const PackageCreate = () => {
     };
   }, []);
 
+  const [dockerApps, setDockerApps] = useState<{ slug: string; name: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiClient.get<{ items: { slug: string; name: string; tenant_installable: boolean }[] }>(
+          "/admin/docker-apps/catalog",
+        );
+        if (!cancelled) setDockerApps((r.data.items || []).filter((e) => e.tenant_installable).map((e) => ({ slug: e.slug, name: e.name })));
+      } catch {
+        /* catalog unavailable */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const handleFinish = async (values: PackageCreateInput) => {
     try {
-      await createMutation.mutateAsync(values);
+      const payload = {
+        ...values,
+        docker_app_slugs: Array.isArray(values.docker_app_slugs) ? values.docker_app_slugs.join(",") : "",
+      } as unknown as PackageCreateInput;
+      await createMutation.mutateAsync(payload);
       message.success("Package created");
       navigate("/jabali-admin/packages");
     } catch (err: unknown) {
@@ -285,6 +306,19 @@ export const PackageCreate = () => {
           </Form.Item>
           <Typography.Text>Allow PHP exec functions <Typography.Text type="warning">(proc_open / shell_exec — security risk)</Typography.Text></Typography.Text>
         </div>
+
+        <Form.Item
+          label="Docker apps (per-package allowlist)"
+          name="docker_app_slugs"
+          extra="Tenants on this package may install only these apps. Empty = use the server-wide Docker Apps curation. Requires Max Docker Apps > 0."
+        >
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Empty = server-wide default"
+            options={dockerApps.map((a) => ({ value: a.slug, label: a.name }))}
+          />
+        </Form.Item>
 
         <Form.Item
           label="nspawn sandbox image"

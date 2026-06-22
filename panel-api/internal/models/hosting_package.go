@@ -31,6 +31,12 @@ type HostingPackage struct {
 	// this plan. 0 = docker apps NOT included (safe default, opt-in per plan).
 	MaxDockerApps uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_docker_apps"`
 
+	// DockerAppSlugs (GH #170 #3) is a CSV allowlist of catalog slugs a tenant
+	// on this package may install. Empty = fall back to the server-wide
+	// docker_tenant_apps curation. Always AND-ed with MaxDockerApps>0 +
+	// tenant_installable.
+	DockerAppSlugs string `gorm:"column:docker_app_slugs;type:varchar(2000);not null;default:''" json:"docker_app_slugs"`
+
 	// Feature toggles.
 	SSHEnabled bool `gorm:"type:tinyint(1);not null;default:0" json:"ssh_enabled"`
 	CGIEnabled bool `gorm:"type:tinyint(1);not null;default:0" json:"cgi_enabled"`

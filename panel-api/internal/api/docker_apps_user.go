@@ -146,9 +146,33 @@ func (h *userDockerAppHandler) tenantExposed(ctx context.Context, slug string) b
 	return all || set[slug]
 }
 
+// tenantAllowSet returns the effective tenant-installable slug set for a user
+// (GH #170 #3): their hosting package's docker_app_slugs allowlist when set,
+// else the server-wide docker_tenant_apps curation. all=true = every eligible
+// app. Always still AND-ed with tenant_installable + MaxDockerApps by callers.
+func (h *userDockerAppHandler) tenantAllowSet(ctx context.Context, userID string) (map[string]bool, bool) {
+	if h.cfg.Users != nil && h.cfg.Packages != nil {
+		if u, err := h.cfg.Users.FindByID(ctx, userID); err == nil && u != nil && u.PackageID != nil {
+			if pkg, perr := h.cfg.Packages.FindByID(ctx, *u.PackageID); perr == nil && pkg != nil {
+				if csv := strings.TrimSpace(pkg.DockerAppSlugs); csv != "" {
+					set := map[string]bool{}
+					for _, sl := range strings.Split(csv, ",") {
+						if v := strings.TrimSpace(sl); v != "" {
+							set[v] = true
+						}
+					}
+					return set, false
+				}
+			}
+		}
+	}
+	return h.dockerTenantSelection(ctx)
+}
+
 func (h *userDockerAppHandler) listCatalog(c *gin.Context) {
+	claims := ginctx.Claims(c)
 	out := make([]catalogEntryResponse, 0)
-	set, all := h.dockerTenantSelection(c.Request.Context())
+	set, all := h.tenantAllowSet(c.Request.Context(), claims.UserID)
 	for _, e := range h.cfg.Catalog.All() {
 		if tenantInstallable(e) && (all || set[e.Slug]) {
 			out = append(out, catalogEntryToResponse(e))
@@ -275,8 +299,9 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 	}
 
 	entry, ok := h.cfg.Catalog.Get(req.Slug)
-	if !ok || !tenantInstallable(entry) || !h.tenantExposed(c.Request.Context(), req.Slug) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown_slug", "detail": "not installable by tenants"})
+	allowSet, allowAll := h.tenantAllowSet(c.Request.Context(), claims.UserID)
+	if !ok || !tenantInstallable(entry) || !(allowAll || allowSet[req.Slug]) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown_slug", "detail": "not installable on your hosting package"})
 		return
 	}
 

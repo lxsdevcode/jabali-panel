@@ -181,10 +181,24 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 	// docker compose up -d. ctx covers the whole operation incl.
 	// the optional health-wait below; the caller is responsible for
 	// passing a context with a sensible deadline.
-	if out, err := runDockerCompose(ctx, dir, "up", "-d"); err != nil {
+	//
+	// GH #170 #2: a TENANT install reuses the on-host image and NEVER pulls
+	// (`--pull never`). The admin provisions images (admin install or the
+	// catalog provision action); a tenant can't trigger an arbitrary registry
+	// pull (bandwidth / disk / supply-chain). Missing image -> compose fails;
+	// the message tells them to ask the admin to provision it.
+	upArgs := []string{"up", "-d"}
+	if p.TenantValidate {
+		upArgs = append(upArgs, "--pull", "never")
+	}
+	if out, err := runDockerCompose(ctx, dir, upArgs...); err != nil {
+		msg := composeFailMessage("up -d", out, err)
+		if p.TenantValidate && (strings.Contains(out, "pull") || strings.Contains(out, "manifest unknown") || strings.Contains(out, "not found")) {
+			msg = "image not provisioned on this host — ask your administrator to provision this app, then retry: " + msg
+		}
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
-			Message: composeFailMessage("up -d", out, err),
+			Message: msg,
 			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
 		}
 	}
