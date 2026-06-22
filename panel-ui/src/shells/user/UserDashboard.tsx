@@ -8,14 +8,11 @@ import {
   Button,
   Card,
   Col,
-  Grid,
   Masonry,
   Row,
   Space,
   Table,
-  Typography,
 } from "antd";
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useQueries } from "@tanstack/react-query";
@@ -32,78 +29,12 @@ import { useListQuery } from "../../hooks/useQueries";
 import type { Mailbox } from "../../hooks/useMailboxes";
 import { getIdentity, type Identity } from "../../identity";
 import { MyProfileUsageCard } from "./MyProfileUsageCard";
+import { StatCard } from "../../components/StatCard";
 
 const RECENT_LIMIT = 5;
 
 const formatCount = (n: number | undefined) =>
   n == null ? "—" : n.toLocaleString();
-
-interface StatCardProps {
-  label: string;
-  value: number | undefined;
-  icon: ReactNode;
-  iconBg: string;
-  iconColor: string;
-  to: string;
-}
-
-const StatCard = ({ label, value, icon, iconBg, iconColor, to }: StatCardProps) => {
-  const screens = Grid.useBreakpoint();
-  // md=4 columns is too narrow for long labels — switch to centered vertical layout.
-  const compact = !!screens.md && !screens.lg;
-
-  return (
-    <Link to={to} style={{ display: "block", color: "inherit" }}>
-      <Card hoverable size="small" styles={{ body: { padding: compact ? 10 : 16 } }}>
-        <Space
-          direction={compact ? "vertical" : "horizontal"}
-          size={compact ? 4 : 16}
-          align="center"
-          style={{ width: "100%", justifyContent: compact ? "center" : undefined }}
-        >
-          <div
-            style={{
-              width: compact ? 36 : 48,
-              height: compact ? 36 : 48,
-              borderRadius: compact ? 8 : 12,
-              background: iconBg,
-              color: iconColor,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: compact ? 18 : 22,
-              flex: compact ? undefined : "0 0 48px",
-            }}
-          >
-            {icon}
-          </div>
-          <Space
-            direction="vertical"
-            size={2}
-            style={{ minWidth: 0, textAlign: compact ? "center" : undefined }}
-          >
-            <Typography.Title
-              level={compact ? 4 : 3}
-              style={{ margin: 0, lineHeight: 1.1 }}
-            >
-              {formatCount(value)}
-            </Typography.Title>
-            <Typography.Text
-              type="secondary"
-              style={{
-                fontSize: compact ? 10 : 12,
-                letterSpacing: compact ? 0 : 0.6,
-                textTransform: "uppercase",
-              }}
-            >
-              {label}
-            </Typography.Text>
-          </Space>
-        </Space>
-      </Card>
-    </Link>
-  );
-};
 
 type DomainRow = {
   id: string;
@@ -332,7 +263,7 @@ export function UserDashboard() {
         <Col xs={24} sm={12} md={6}>
           <StatCard
             label="Domains"
-            value={recentDomains.total}
+            value={formatCount(recentDomains.total)}
             icon={<GlobalOutlined />}
             iconBg="rgba(146, 84, 222, 0.14)"
             iconColor="#9254de"
@@ -342,7 +273,7 @@ export function UserDashboard() {
         <Col xs={24} sm={12} md={6}>
           <StatCard
             label="Mailboxes"
-            value={mailboxTotal}
+            value={formatCount(mailboxTotal)}
             icon={<MailOutlined />}
             iconBg="rgba(250, 140, 22, 0.14)"
             iconColor="#fa8c16"
@@ -352,7 +283,7 @@ export function UserDashboard() {
         <Col xs={24} sm={12} md={6}>
           <StatCard
             label="Applications"
-            value={recentApps.total}
+            value={formatCount(recentApps.total)}
             icon={<AppstoreOutlined />}
             iconBg="rgba(22, 119, 255, 0.12)"
             iconColor="#1677ff"
@@ -362,7 +293,7 @@ export function UserDashboard() {
         <Col xs={24} sm={12} md={6}>
           <StatCard
             label="Databases"
-            value={recentDatabases.total}
+            value={formatCount(recentDatabases.total)}
             icon={<DatabaseOutlined />}
             iconBg="rgba(82, 196, 26, 0.14)"
             iconColor="#52c41a"

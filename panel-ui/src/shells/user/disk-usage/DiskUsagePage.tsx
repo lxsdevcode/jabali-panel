@@ -12,6 +12,7 @@ import { useNavigate } from "react-router";
 import { DatabaseOutlined, ExportOutlined, FileOutlined, FolderOutlined, MailOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
+import { StatCard } from "../../../components/StatCard";
 
 interface UsageItem {
   name: string;
@@ -148,50 +149,6 @@ const COLORS = {
   gold: "#faad14",
 } as const;
 
-function StatCard({
-  label,
-  value,
-  sub,
-  color,
-  icon,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  color: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card size="small" styles={{ body: { padding: 16 } }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div
-          style={{
-            flex: "0 0 auto",
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: `${color}22`,
-            color,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 22,
-          }}
-        >
-          {icon}
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ color, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{label}</div>
-          <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {sub}
-          </Typography.Text>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 export function DiskUsagePage() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useQuery<DiskUsage>({
@@ -230,36 +187,36 @@ export function DiskUsagePage() {
     {
       label: "Total Used",
       value: fmtBytes(total),
-      sub: "Across all data",
-      color: COLORS.purple,
+      subtitle: "Across all data",
+      iconColor: COLORS.purple,
       icon: <DatabaseOutlined />,
     },
     {
       label: "Files",
       value: fmtBytes(data.files.bytes),
-      sub: pctOf(data.files.bytes),
-      color: COLORS.blue,
+      subtitle: pctOf(data.files.bytes),
+      iconColor: COLORS.blue,
       icon: <FileOutlined />,
     },
     {
       label: "Email",
       value: fmtBytes(data.email.bytes),
-      sub: pctOf(data.email.bytes),
-      color: COLORS.green,
+      subtitle: pctOf(data.email.bytes),
+      iconColor: COLORS.green,
       icon: <MailOutlined />,
     },
     {
       label: "Databases",
       value: fmtBytes(data.databases.bytes),
-      sub: pctOf(data.databases.bytes),
-      color: COLORS.gold,
+      subtitle: pctOf(data.databases.bytes),
+      iconColor: COLORS.gold,
       icon: <DatabaseOutlined />,
     },
     {
       label: "Quota Status",
       value: quota > 0 ? `${quotaPct}%` : "Unlimited",
-      sub: quota > 0 ? `of ${fmtBytes(quota)}` : "No quota enforced",
-      color: COLORS.purple,
+      subtitle: quota > 0 ? `of ${fmtBytes(quota)}` : "No quota enforced",
+      iconColor: COLORS.purple,
       icon: <span style={{ fontSize: 24, fontWeight: 700, lineHeight: 1 }}>∞</span>,
     },
   ];
@@ -300,7 +257,7 @@ export function DiskUsagePage() {
       key: "files",
       title: "Files & Folders",
       icon: <FileOutlined />,
-      color: COLORS.blue,
+      iconColor: COLORS.blue,
       cat: data.files,
       cols: filesCols,
       emptyText: "No files",
@@ -310,7 +267,7 @@ export function DiskUsagePage() {
       key: "email",
       title: "Email Mailboxes",
       icon: <MailOutlined />,
-      color: COLORS.green,
+      iconColor: COLORS.green,
       cat: data.email,
       cols: emailCols,
       emptyText: "No email usage yet",
@@ -321,7 +278,7 @@ export function DiskUsagePage() {
       key: "databases",
       title: "Databases",
       icon: <DatabaseOutlined />,
-      color: COLORS.gold,
+      iconColor: COLORS.gold,
       cat: data.databases,
       cols: dbCols,
       emptyText: "No databases",
@@ -392,16 +349,16 @@ export function DiskUsagePage() {
             <Card
               size="small"
               title={
-                <span style={{ color: b.color }}>
+                <span style={{ color: b.iconColor }}>
                   {b.icon} <span style={{ color: "inherit" }}>{b.title}</span>
                 </span>
               }
               extra={
                 <Tag
                   style={{
-                    color: b.color,
-                    background: `${b.color}22`,
-                    borderColor: `${b.color}55`,
+                    color: b.iconColor,
+                    background: `${b.iconColor}22`,
+                    borderColor: `${b.iconColor}55`,
                     fontWeight: 600,
                   }}
                 >

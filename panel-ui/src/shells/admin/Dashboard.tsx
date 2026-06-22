@@ -4,13 +4,13 @@
 // stats (users / domains / mailboxes) and a prominent button into the
 // Server Status page.
 import { Alert, Button, Card, Col, Masonry, Row, Space, Table, Tag, Typography } from "antd";
-import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { ServerOutlined, TeamOutlined, GlobalOutlined, MailOutlined } from "@icons";
 
 import { apiClient } from "../../apiClient";
+import { StatCard } from "../../components/StatCard";
 import { useListQuery } from "../../hooks/useQueries";
 import { useServerStatus } from "../../hooks/useServerStatus";
 
@@ -53,51 +53,6 @@ interface CountsResponse {
 
 const formatCount = (n: number | undefined) =>
   n == null ? "—" : n.toLocaleString();
-
-interface StatCardProps {
-  label: string;
-  value: number | undefined;
-  icon: ReactNode;
-  iconBg: string;
-  iconColor: string;
-  to: string;
-}
-
-const StatCard = ({ label, value, icon, iconBg, iconColor, to }: StatCardProps) => (
-  <Link to={to} style={{ display: "block", color: "inherit" }}>
-    <Card hoverable size="small" styles={{ body: { padding: 16 } }}>
-      <Space size={16} align="center" style={{ width: "100%" }}>
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: iconBg,
-            color: iconColor,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 22,
-            flex: "0 0 48px",
-          }}
-        >
-          {icon}
-        </div>
-        <Space direction="vertical" size={2} style={{ minWidth: 0 }}>
-          <Typography.Text
-            type="secondary"
-            style={{ fontSize: 12, letterSpacing: 0.6, textTransform: "uppercase" }}
-          >
-            {label}
-          </Typography.Text>
-          <Typography.Title level={3} style={{ margin: 0, lineHeight: 1.1 }}>
-            {formatCount(value)}
-          </Typography.Title>
-        </Space>
-      </Space>
-    </Card>
-  </Link>
-);
 
 export const Dashboard = () => {
   const status = useServerStatus();
@@ -149,7 +104,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={8}>
           <StatCard
             label="Total Users"
-            value={users.data}
+            value={formatCount(users.data)}
             icon={<TeamOutlined />}
             iconBg="rgba(22, 119, 255, 0.12)"
             iconColor="#1677ff"
@@ -159,7 +114,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={8}>
           <StatCard
             label="Active Domains"
-            value={domains.data}
+            value={formatCount(domains.data)}
             icon={<GlobalOutlined />}
             iconBg="rgba(146, 84, 222, 0.14)"
             iconColor="#9254de"
@@ -169,7 +124,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={8}>
           <StatCard
             label="Mailboxes"
-            value={mailboxes.data}
+            value={formatCount(mailboxes.data)}
             icon={<MailOutlined />}
             iconBg="rgba(250, 140, 22, 0.14)"
             iconColor="#fa8c16"
