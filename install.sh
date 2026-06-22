@@ -5242,6 +5242,21 @@ install_phpmyadmin_fpm_pool() {
   local pma_phpver="8.4"
   local pma_root="/opt/phpmyadmin/current"
 
+  # GH #217: phpMyAdmin is optional and its CDN is flaky. If it is not
+  # installed, do NOT create/start its FPM pool — the pool config sets
+  # chdir=/opt/phpmyadmin/current, so jabali-fpm@pma fails ("chdir path does
+  # not exist") and the _die at the end of this function would abort the whole
+  # install over an optional component (panel :8443 never comes up). Skip the
+  # pool, tear down any stale failing instance, and let a later run (once
+  # phpMyAdmin is present) install it. Pairs with install_phpmyadmin's
+  # graceful CDN-failure skip and the panel vhost's placeholder include.
+  if [[ ! -d "$pma_root" ]]; then
+    _warn "phpMyAdmin not installed ($pma_root absent) — skipping its FPM pool (panel works without it; re-run after 'jabali update' once phpMyAdmin is reachable)"
+    systemctl stop jabali-fpm@pma.service 2>/dev/null || true
+    rm -f /etc/php/*/fpm/pool.d/jabali-pma.conf 2>/dev/null || true
+    return 0
+  fi
+
   # Create version pin for pma pool
   _log "pinning PHP version for pma pool"
   mkdir -p /etc/jabali-panel/user-phpver
@@ -11467,8 +11482,11 @@ provision_new_software() {
         || _warn "provision: php${_pv} package install had issues"
     done
     declare -f install_php >/dev/null 2>&1 && install_php
-    declare -f install_phpmyadmin_fpm_pool >/dev/null 2>&1 && install_phpmyadmin_fpm_pool
+    # Order matters (GH #217): phpMyAdmin must extract to
+    # /opt/phpmyadmin/current BEFORE its FPM pool starts, else the pool's
+    # chdir target is missing. The pool is also self-gating on that dir.
     install_phpmyadmin
+    declare -f install_phpmyadmin_fpm_pool >/dev/null 2>&1 && install_phpmyadmin_fpm_pool
   fi
 
   # GH#114: if /etc/nginx/conf.d/jabali-bulwark-upstream.conf goes missing
