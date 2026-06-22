@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -496,9 +495,27 @@ func (h *backupHandler) logs(c *gin.Context) {
 }
 
 func (h *backupHandler) download(c *gin.Context) {
-	jobID := c.Param("job_id")
-	job, err := h.cfg.Jobs.Get(c.Request.Context(), jobID)
-	if err != nil || job.Status != models.BackupJobStatusSucceeded {
+	job, err := h.cfg.Jobs.Get(c.Request.Context(), c.Param("job_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "no_completed_snapshot"})
+		return
+	}
+	streamBackupArtifact(c, h.cfg.Agent, job, h.cfg.logErr)
+}
+
+// streamBackupArtifact materializes a SUCCEEDED backup job's restic snapshot
+// via the agent and streams it to the client as a tar.zst attachment. Shared
+// by the admin (/backups/:job_id/download) and tenant (/me/backups/:id/download
+// — GH #266) handlers; the CALLER must load the job and authorize the request
+// (admin vs owner) before calling this.
+//
+// panel-api runs as the jabali user and can read neither
+// /etc/jabali-panel/restic-repo.password nor /var/lib/jabali-backups/repo (both
+// 0600/0700 root:root), so the restic restore is dispatched to the agent, which
+// materializes the snapshot under /var/lib/jabali-backups/downloads/<job_id>/ as
+// root:jabali 0750 for the tar to read without elevated privileges.
+func streamBackupArtifact(c *gin.Context, ag agent.AgentInterface, job *models.BackupJob, logErr func(string, error, ...any)) {
+	if job.Status != models.BackupJobStatusSucceeded {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "no_completed_snapshot"})
 		return
 	}
@@ -506,20 +523,14 @@ func (h *backupHandler) download(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "no_snapshot_id"})
 		return
 	}
-	if h.cfg.Agent == nil {
+	if ag == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "error": "agent_unavailable"})
 		return
 	}
-	// panel-api runs as the jabali user and can read neither
-	// /etc/jabali-panel/restic-repo.password nor /var/lib/jabali-backups/repo
-	// (both 0600/0700 root:root). Dispatch the restic restore to the
-	// agent — it materializes the snapshot under
-	// /var/lib/jabali-backups/downloads/<job_id>/ as root:jabali 0750
-	// so we can tar it out without elevated privileges.
 	matCtx, matCancel := context.WithTimeout(c.Request.Context(), 30*time.Minute)
 	defer matCancel()
-	raw, err := h.cfg.Agent.Call(matCtx, "backup.materialize", map[string]string{
-		"job_id":      jobID,
+	raw, err := ag.Call(matCtx, "backup.materialize", map[string]string{
+		"job_id":      job.ID,
 		"snapshot_id": job.SnapshotID,
 	})
 	if err != nil {
@@ -541,18 +552,18 @@ func (h *backupHandler) download(c *gin.Context) {
 		// future cron sweeper.
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_, _ = h.cfg.Agent.Call(cleanCtx, "backup.materialize_cleanup", map[string]string{"job_id": jobID})
+		_, _ = ag.Call(cleanCtx, "backup.materialize_cleanup", map[string]string{"job_id": job.ID})
 	}()
 
 	c.Header("Content-Type", "application/zstd")
-	c.Header("Content-Disposition", "attachment; filename=\""+jobID+".tar.zst\"")
+	c.Header("Content-Disposition", "attachment; filename=\""+job.ID+".tar.zst\"")
 	tarCmd := exec.CommandContext(c.Request.Context(),
 		"tar", "-I", "zstd", "-cf", "-",
 		"-C", filepath.Dir(mat.Path), filepath.Base(mat.Path),
 	)
 	tarCmd.Stdout = c.Writer
 	if err := tarCmd.Run(); err != nil {
-		h.cfg.logErr("tar download", err, "job_id", jobID)
+		logErr("tar download", err, "job_id", job.ID)
 	}
 }
 
@@ -694,6 +705,14 @@ func maxInt(a, b int) int {
 }
 
 func (cfg BackupHandlerConfig) logErr(msg string, err error, kv ...any) {
+	if cfg.Log == nil {
+		return
+	}
+	args := append([]any{"err", err}, kv...)
+	cfg.Log.Warn(msg, args...)
+}
+
+func (cfg MeBackupsHandlerConfig) logErr(msg string, err error, kv ...any) {
 	if cfg.Log == nil {
 		return
 	}
@@ -974,10 +993,9 @@ func (h *meBackupHandler) download(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
 		return
 	}
-	c.Status(http.StatusOK)
-	// Reuse admin download path semantics: materialize → tar zstd.
-	// Wired through (h *backupHandler).download in v2; v1 returns
-	// metadata so the SPA can hit the admin URL with the same job_id.
-	c.JSON(http.StatusOK, gin.H{"data": job})
-	_ = strconv.Itoa
+	// GH #266: actually materialize + stream the tar.zst (the v1 stub
+	// returned job metadata as JSON, so the browser's <a href> download
+	// got a JSON blob, never a file). Same agent-materialize path as the
+	// admin handler, scoped to the caller's own job by the check above.
+	streamBackupArtifact(c, h.cfg.Agent, job, h.cfg.logErr)
 }
