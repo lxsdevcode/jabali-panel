@@ -159,14 +159,7 @@ function StatCard({
 }) {
   return (
     <Card size="small" styles={{ body: { padding: 16 } }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ color, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{label}</div>
-          <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {sub}
-          </Typography.Text>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div
           style={{
             flex: "0 0 auto",
@@ -182,6 +175,13 @@ function StatCard({
           }}
         >
           {icon}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{label}</div>
+          <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {sub}
+          </Typography.Text>
         </div>
       </div>
     </Card>
