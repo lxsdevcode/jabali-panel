@@ -24,6 +24,11 @@ import (
 //   failed (or non-zero ExecMainStatus) -> failed
 //   anything else (inactive/unknown/gone) -> success
 
+// staleOrphanRunTimeout bounds how long a running row with no pollable unit may
+// linger before the reconciler reaps it as failed. No update runs this long; a
+// shorter window risks false-failing a legitimately slow run.
+const staleOrphanRunTimeout = 30 * time.Minute
+
 // statusCmdForUnit maps a run unit to its agent status command. Only the two
 // known transient units are pollable; anything else is left alone.
 func statusCmdForUnit(unit string) (string, bool) {
@@ -56,6 +61,16 @@ func (r *Reconciler) reconcileUpdateRuns(ctx context.Context) {
 		row := rows[i]
 		cmd, ok := statusCmdForUnit(row.Unit)
 		if !ok {
+			// No pollable unit (empty/unknown) — can't reconcile via systemd.
+			// A panel restart orphans such a row forever and the tasks
+			// indicator shows a phantom "running" task. Reap it as failed once
+			// it is clearly stale (legacy rows; current handlers always set a
+			// unit). Keeps recent unit-less rows, if any, untouched.
+			if time.Since(row.StartedAt) > staleOrphanRunTimeout {
+				if err := r.updateRunHistory.MarkFinished(ctx, row.ID, models.UpdateStatusFailed, "orphaned — no unit to reconcile", ""); err != nil {
+					r.log.Warn("update-run reconcile: reap orphan failed", "id", row.ID, "error", err)
+				}
+			}
 			continue
 		}
 		raw, cerr := r.agent.Call(ctx, cmd, map[string]any{

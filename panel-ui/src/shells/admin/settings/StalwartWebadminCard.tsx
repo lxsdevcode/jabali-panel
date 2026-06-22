@@ -144,10 +144,10 @@ export function StalwartWebadminCard() {
         </Space>
 
         <div>
-          <Typography.Text>Source IP allowlist (optional)</Typography.Text>
+          <Typography.Text>Source IP allowlist (recommended)</Typography.Text>
           <Space.Compact style={{ width: "100%" }}>
             <Input
-              placeholder="e.g. 203.0.113.0/24, 198.51.100.5  (empty = any IP reaches Stalwart\u2019s login)"
+              placeholder="e.g. 203.0.113.0/24, 198.51.100.5  (empty = any IP reaches Stalwart’s login)"
               value={cidrs}
               onChange={(e) => setCidrs(e.target.value)}
               disabled={busy}
@@ -157,7 +157,7 @@ export function StalwartWebadminCard() {
             </Button>
           </Space.Compact>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Comma/space-separated IPs or CIDRs. Empty = any IP can reach Stalwart\u2019s login \u2014 set this.
+            Comma/space-separated IPs or CIDRs. Empty = any IP can reach Stalwart’s login — set this.
           </Typography.Text>
         </div>
 
@@ -167,7 +167,7 @@ export function StalwartWebadminCard() {
               type="warning"
               showIcon
               message={`Live at https://${hostname}:8449/`}
-              description="The full mail-server admin is reachable behind Stalwart\u2019s own login. Restrict by IP and disable when not in use."
+              description="The full mail-server admin is reachable behind Stalwart’s own login. Restrict by IP and disable when not in use."
             />
             <div>
               <Typography.Text strong>Stalwart admin login</Typography.Text>
