@@ -396,7 +396,18 @@ export function DiskUsagePage() {
                   {b.icon} <span style={{ color: "inherit" }}>{b.title}</span>
                 </span>
               }
-              extra={<Tag color={b.color}>{fmtBytes(b.cat.bytes)}</Tag>}
+              extra={
+                <Tag
+                  style={{
+                    color: b.color,
+                    background: `${b.color}22`,
+                    borderColor: `${b.color}55`,
+                    fontWeight: 600,
+                  }}
+                >
+                  {fmtBytes(b.cat.bytes)}
+                </Tag>
+              }
               styles={{ body: { padding: 0, minHeight: 220, display: "flex", flexDirection: "column" } }}
             >
               <div style={{ flex: 1 }}>
