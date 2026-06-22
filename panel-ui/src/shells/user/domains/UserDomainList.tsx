@@ -13,7 +13,7 @@ import {
   DeleteOutlined,
   LockOutlined,
 } from "@icons";
-import { Button, Card, Dropdown, Modal, Space, Table, Tag, Typography, notification } from "antd";
+import { Button, Card, Dropdown, Modal, Space, Table, Tag, Tooltip, Typography, notification } from "antd";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import type { SorterResult } from "antd/es/table/interface";
@@ -115,6 +115,27 @@ const getSSLTagLabel = (state?: string): string => {
     default:
       return state;
   }
+};
+
+const renderRedirect = (d: { redirect_all_to?: string | null; redirect_all_type?: string | null; page_redirects?: { source: string; destination: string; type: string }[] | null }) => {
+  if (d.redirect_all_to) {
+    const t = d.redirect_all_type || "301";
+    return (
+      <Tooltip title={`${t} → ${d.redirect_all_to}`}>
+        <Tag color="purple">Redirect {t}</Tag>
+      </Tooltip>
+    );
+  }
+  const pr = d.page_redirects ?? [];
+  if (pr.length > 0) {
+    const lines = pr.slice(0, 8).map((r) => `${r.type} ${r.source} → ${r.destination}`).join("\n");
+    return (
+      <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{lines}{pr.length > 8 ? `\n…+${pr.length - 8} more` : ""}</span>}>
+        <Tag color="geekblue">{pr.length} path{pr.length > 1 ? "s" : ""}</Tag>
+      </Tooltip>
+    );
+  }
+  return <span style={{ color: "#bbb" }}>—</span>;
 };
 
 export type Domain = {
@@ -250,6 +271,10 @@ export const UserDomainList = () => {
             render={(state?: string) => (
               <Tag color={getSSLTagColor(state)}>{getSSLTagLabel(state)}</Tag>
             )}
+          />
+          <Table.Column<Domain>
+            title="Redirect"
+            render={(_, record) => renderRedirect(record)}
           />
           <Table.Column<Domain>
             dataIndex="bytes_30d"

@@ -2,7 +2,7 @@
 // stays the same (DNS/Redirects/Index/Settings/Toggle/Edit/Delete);
 // only the hook and the two Refine action buttons change.
 import { useState } from "react";
-import { Button, Card, Dropdown, Modal, Space, Table, Tag, Typography, notification } from "antd";
+import { Button, Card, Dropdown, Modal, Space, Table, Tag, Tooltip, Typography, notification } from "antd";
 import {
   DeleteOutlined,
   DownOutlined,
@@ -75,6 +75,29 @@ export type SSLBadge = {
   issuer?: string | null;
   issued_at?: string | null;
   expires_at?: string | null;
+};
+
+// renderRedirect (GH #260): a compact indicator + hover detail for a domain's
+// whole-domain redirect (redirect_all_to) or per-path redirects (page_redirects).
+const renderRedirect = (d: Domain) => {
+  if (d.redirect_all_to) {
+    const t = d.redirect_all_type || "301";
+    return (
+      <Tooltip title={`${t} → ${d.redirect_all_to}`}>
+        <Tag color="purple">Redirect {t}</Tag>
+      </Tooltip>
+    );
+  }
+  const pr = d.page_redirects ?? [];
+  if (pr.length > 0) {
+    const lines = pr.slice(0, 8).map((r) => `${r.type} ${r.source} → ${r.destination}`).join("\n");
+    return (
+      <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{lines}{pr.length > 8 ? `\n…+${pr.length - 8} more` : ""}</span>}>
+        <Tag color="geekblue">{pr.length} path{pr.length > 1 ? "s" : ""}</Tag>
+      </Tooltip>
+    );
+  }
+  return <span style={{ color: "#bbb" }}>—</span>;
 };
 
 const renderSSL = (ssl: SSLBadge | null | undefined) => {
@@ -274,6 +297,10 @@ export const DomainList = () => {
             dataIndex="ssl"
             title="SSL"
             render={(ssl: SSLBadge | null | undefined) => renderSSL(ssl)}
+          />
+          <Table.Column<Domain>
+            title="Redirect"
+            render={(_, record) => renderRedirect(record)}
           />
           <Table.Column<Domain>
             dataIndex="bytes_30d"
