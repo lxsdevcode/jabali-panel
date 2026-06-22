@@ -31,6 +31,7 @@ type mailLogEntry struct {
 	To        string `json:"to"`
 	Size      int    `json:"size"`
 	Status    string `json:"status"` // GH #262: delivered/failed/queued
+	QueueID   string `json:"queue_id,omitempty"` // GH #261
 }
 
 type mailLogsResponse struct {
@@ -50,6 +51,7 @@ func RegisterMailLogsRoutes(g *gin.RouterGroup, cfg MailLogsHandlerConfig) {
 	}
 	h := &mailLogsHandler{cfg: cfg}
 	g.GET("/mail/logs", h.list)
+	g.GET("/mail/logs/detail", h.detail)
 }
 
 func (h *mailLogsHandler) list(c *gin.Context) {
@@ -138,4 +140,50 @@ func max1(n int) int {
 		return 1
 	}
 	return n
+}
+
+// detail returns the per-message delivery trail (GH #261) for one queueId,
+// scoped exactly like list: a non-admin caller only sees a trail whose message
+// involves one of their domains (the agent enforces this from domain_names).
+func (h *mailLogsHandler) detail(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+
+	queueID := c.Query("queue_id")
+	if queueID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "queue_id_required"})
+		return
+	}
+
+	var scope []string
+	if !claims.IsAdmin {
+		doms, _, err := h.cfg.Domains.ListByUserID(ctx, claims.UserID, repository.ListOptions{Limit: 500})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		for _, d := range doms {
+			scope = append(scope, d.Name)
+		}
+		if len(scope) == 0 {
+			c.JSON(http.StatusOK, gin.H{"queue_id": queueID, "events": []any{}})
+			return
+		}
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusOK, gin.H{"queue_id": queueID, "events": []any{}})
+		return
+	}
+
+	agentCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	raw, err := h.cfg.Agent.Call(agentCtx, "mail.logs_detail", map[string]any{
+		"queue_id":     queueID,
+		"domain_names": scope,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed"})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", raw)
 }

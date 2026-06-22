@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Alert,
+  Button,
   DatePicker,
   Input,
   Space,
@@ -14,6 +15,7 @@ import { ReloadOutlined } from "@icons";
 import type { Dayjs } from "dayjs";
 
 import { useMailLogs } from "../../../../hooks/useMailLogs";
+import { MailLogDetailDrawer } from "./MailLogDetailDrawer";
 
 interface Filters {
   from?: Dayjs | null;
@@ -25,6 +27,7 @@ interface Filters {
 export const LogsTab = () => {
   const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
+  const [detailQid, setDetailQid] = useState<string | null>(null);
   const pageSize = 50;
 
   const { data, isLoading, error, refetch, isFetching } = useMailLogs({
@@ -147,7 +150,23 @@ export const LogsTab = () => {
               return <Tag color={m.color}>{m.label}</Tag>;
             },
           },
+          {
+            title: "",
+            key: "trail",
+            width: 80,
+            render: (_: unknown, r) =>
+              r.queue_id ? (
+                <Button size="small" type="link" onClick={() => setDetailQid(r.queue_id!)}>
+                  Trail
+                </Button>
+              ) : null,
+          },
         ]}
+      />
+      <MailLogDetailDrawer
+        queueId={detailQid}
+        open={detailQid !== null}
+        onClose={() => setDetailQid(null)}
       />
     </div>
   );

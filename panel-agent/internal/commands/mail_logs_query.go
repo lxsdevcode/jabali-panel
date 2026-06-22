@@ -78,6 +78,8 @@ type mailLogEntry struct {
 	// queued + delivery.completed/failed tracer events. "delivered" /
 	// "failed" / "queued" (queued = accepted, no terminal event seen yet).
 	Status string `json:"status"`
+	// QueueID (GH #261) lets the UI fetch a per-message delivery trail.
+	QueueID string `json:"queue_id,omitempty"`
 }
 
 type mailLogsQueryResponse struct {
@@ -160,6 +162,7 @@ func parseMailLogLine(line string) (parsedMailLine, bool) {
 			From:      from,
 			To:        strings.Join(recipients, ", "),
 			Size:      size,
+			QueueID:   qid,
 		},
 		recipients: recipients,
 		ts:         ts,

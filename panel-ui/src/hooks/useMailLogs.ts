@@ -10,6 +10,8 @@ export interface MailLogEntry {
   size: number;
   /** GH #262: delivery outcome — "delivered" | "failed" | "queued". */
   status?: string;
+  /** GH #261: Stalwart queue id, for the per-message delivery-trail drawer. */
+  queue_id?: string;
 }
 
 export interface MailLogsQuery {
