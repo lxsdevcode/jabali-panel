@@ -29,6 +29,7 @@ import {
 import { RowActionButton } from "../../../components/RowActionButton";
 
 import { apiClient } from "../../../apiClient";
+import { useServerCapabilities } from "../../../hooks/useServerCapabilities";
 import type { ServiceDetail } from "../../../hooks/useServerStatus";
 
 interface Props {
@@ -53,6 +54,16 @@ const destructiveActions = new Set<Action>(["stop", "disable", "restart"]);
 
 export function ServicesSummaryCard({ services }: Props) {
   const qc = useQueryClient();
+  const { data: caps } = useServerCapabilities();
+  // Hide optional engines the operator hasn't enabled as a feature — an
+  // inactive postgresql/docker with Start/Enable buttons is noise when the
+  // server doesn't use them. Gate on the capability, not just runtime state.
+  const visibleServices = services.filter((s) => {
+    const name = s.unit.replace(/\.service$/, "");
+    if (name === "postgresql" && !caps?.postgres_enabled) return false;
+    if (name === "docker" && !caps?.docker_marketplace_enabled) return false;
+    return true;
+  });
   const [pending, setPending] = useState<{ unit: string; action: Action } | null>(null);
 
   const ctl = useMutation({
@@ -89,7 +100,7 @@ export function ServicesSummaryCard({ services }: Props) {
         <Table<ServiceDetail>
           rowKey="unit"
           size="small"
-          dataSource={services}
+          dataSource={visibleServices}
           pagination={false}
           scroll={{ x: "max-content" }}
           showHeader={false}
