@@ -1343,6 +1343,19 @@ test -x node_modules/.bin/tsc || {
 			}
 			return nil
 		}},
+		{"self-heal crowdsec BOUNCING_ON_TYPE (GH #212 log spam)", func() error {
+			// The nginx Lua bouncer rejects the firewall-bouncer comma-list
+			// `ban,captcha` and falls back to `ban`, spamming the nginx error
+			// log every reload. Idempotent: only rewrites + reloads when the
+			// stale value is present.
+			return run("", "bash", "-c",
+				`c=/etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf; `+
+					`if [ -f "$c" ] && grep -q '^BOUNCING_ON_TYPE=ban,captcha' "$c"; then `+
+					`sed -i 's/^BOUNCING_ON_TYPE=ban,captcha$/BOUNCING_ON_TYPE=ban/' "$c"; `+
+					`nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1 || true; `+
+					`echo "  fixed BOUNCING_ON_TYPE (was ban,captcha -> ban)"; `+
+					`fi`)
+		}},
 		{"reapply PHP pools from template (GH #401)", func() error {
 			// The pool template was re-synced above, but ReconcilePHPPools
 			// skips ACTIVE pools, so template hardening (e.g. the GH #401

@@ -7199,11 +7199,16 @@ CACHE_EXPIRATION=1
 # `cscli decisions add --type whitelist` then BLOCKS the IP instead of
 # allowing it. Reproduced 2026-05-25 on testserver: whitelisting an
 # admin's home IP returned HTTP 403 CrowdSec Ban on every request until
-# this value was narrowed. Per upstream
-# https://docs.crowdsec.net/u/bouncers/nginx#bouncing_on_type the
-# correct enforce list is ban + captcha; whitelist is an allow-list
-# signal consumed by parsers/scenarios, never an enforcement type.
-BOUNCING_ON_TYPE=ban,captcha
+# this value was narrowed.
+#
+# The nginx Lua bouncer takes a SINGLE value here (ban | captcha | all),
+# NOT the firewall bouncer's comma-list — `ban,captcha` is rejected as
+# "unsupported value" and silently falls back to `ban`, spamming the
+# nginx error log on every reload (GH #212). We use `ban` directly:
+# identical effective behaviour, no log spam. (Captcha remediation also
+# needs recaptcha keys the panel doesn't provision, so it was never
+# actually enforced via this list.)
+BOUNCING_ON_TYPE=ban
 FALLBACK_REMEDIATION=ban
 REQUEST_TIMEOUT=3000
 # UPDATE_FREQUENCY is in seconds. Default 10s = 6 LAPI polls/min;
