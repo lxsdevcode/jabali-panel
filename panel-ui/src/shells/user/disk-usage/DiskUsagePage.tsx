@@ -1,12 +1,13 @@
-// DiskUsagePage — cPanel-style per-user disk-usage breakdown. Shows total
-// usage (against the home quota when set) and a per-area breakdown: Files
-// (home directory), Email (mailboxes), and Databases. Backed by
-// GET /api/v1/me/disk-usage.
-import { Alert, Card, Col, Empty, Progress, Row, Spin, Statistic, Table, Tag, Typography } from "antd";
+// DiskUsagePage — cPanel-style per-user disk-usage breakdown. Top row: five
+// stat cards (Total / Files / Email / Databases / Quota). Bottom row: three
+// breakdown cards (Files & Folders, Email Mailboxes, Databases) each with a
+// table + a "View all" link. Backed by GET /api/v1/me/disk-usage.
+import { Alert, Card, Col, Empty, Row, Spin, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 
-import { DatabaseOutlined, FolderOutlined, HddOutlined, MailOutlined } from "@icons";
+import { DatabaseOutlined, ExportOutlined, FileOutlined, MailOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
 
@@ -39,9 +40,59 @@ function fmtBytes(n: number): string {
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-const CAT_COLORS = { files: "#1677ff", email: "#52c41a", databases: "#faad14" } as const;
+const COLORS = {
+  purple: "#722ed1",
+  blue: "#1677ff",
+  green: "#52c41a",
+  gold: "#faad14",
+} as const;
+
+function StatCard({
+  label,
+  value,
+  sub,
+  color,
+  icon,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  color: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Card size="small" styles={{ body: { padding: 16 } }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{label}</div>
+          <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>{value}</div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {sub}
+          </Typography.Text>
+        </div>
+        <div
+          style={{
+            flex: "0 0 auto",
+            width: 48,
+            height: 48,
+            borderRadius: 12,
+            background: `${color}22`,
+            color,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 22,
+          }}
+        >
+          {icon}
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export function DiskUsagePage() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery<DiskUsage>({
     queryKey: ["me-disk-usage"],
     queryFn: async () => {
@@ -71,134 +122,221 @@ export function DiskUsagePage() {
 
   const total = data.total_bytes;
   const quota = data.quota_bytes;
-  const pct = quota > 0 ? Math.min(100, Math.round((total / quota) * 100)) : 0;
+  const pctOf = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}% of total` : "0% of total");
+  const quotaPct = quota > 0 ? Math.min(100, Math.round((total / quota) * 100)) : 0;
 
-  const categories = [
-    { key: "files", label: "Files", icon: <FolderOutlined />, cat: data.files, color: CAT_COLORS.files },
-    { key: "email", label: "Email", icon: <MailOutlined />, cat: data.email, color: CAT_COLORS.email },
+  const statCards = [
     {
-      key: "databases",
-      label: "Databases",
+      label: "Total Used",
+      value: fmtBytes(total),
+      sub: "Across all data",
+      color: COLORS.purple,
       icon: <DatabaseOutlined />,
-      cat: data.databases,
-      color: CAT_COLORS.databases,
+    },
+    {
+      label: "Files",
+      value: fmtBytes(data.files.bytes),
+      sub: pctOf(data.files.bytes),
+      color: COLORS.blue,
+      icon: <FileOutlined />,
+    },
+    {
+      label: "Email",
+      value: fmtBytes(data.email.bytes),
+      sub: pctOf(data.email.bytes),
+      color: COLORS.green,
+      icon: <MailOutlined />,
+    },
+    {
+      label: "Databases",
+      value: fmtBytes(data.databases.bytes),
+      sub: pctOf(data.databases.bytes),
+      color: COLORS.gold,
+      icon: <DatabaseOutlined />,
+    },
+    {
+      label: "Quota Status",
+      value: quota > 0 ? `${quotaPct}%` : "Unlimited",
+      sub: quota > 0 ? `of ${fmtBytes(quota)}` : "No quota enforced",
+      color: COLORS.purple,
+      icon: <span style={{ fontSize: 24, fontWeight: 700, lineHeight: 1 }}>∞</span>,
     },
   ];
 
-  const itemCols: ColumnsType<UsageItem> = [
+  const sizeCol = {
+    title: "Size",
+    dataIndex: "bytes",
+    key: "bytes",
+    width: 110,
+    align: "right" as const,
+    sorter: (a: UsageItem, b: UsageItem) => a.bytes - b.bytes,
+    defaultSortOrder: "descend" as const,
+    render: (b: number) => fmtBytes(b),
+  };
+
+  const filesCols: ColumnsType<UsageItem> = [
     { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
+    sizeCol,
+  ];
+  const emailCols: ColumnsType<UsageItem> = [
+    { title: "Mailbox", dataIndex: "name", key: "name", ellipsis: true },
+    sizeCol,
+  ];
+  const dbCols: ColumnsType<UsageItem> = [
+    { title: "Database", dataIndex: "name", key: "name", ellipsis: true },
     {
       title: "Engine",
       dataIndex: "engine",
       key: "engine",
-      width: 110,
-      render: (e?: string) => (e ? <Tag>{e}</Tag> : "—"),
+      width: 100,
+      render: (e?: string) => e || "—",
+    },
+    sizeCol,
+  ];
+
+  const breakdowns = [
+    {
+      key: "files",
+      title: "Files & Folders",
+      icon: <FileOutlined />,
+      color: COLORS.blue,
+      cat: data.files,
+      cols: filesCols,
+      emptyText: "No files",
+      viewAll: { label: "View all files", to: "/jabali-panel/files" },
     },
     {
-      title: "Size",
-      dataIndex: "bytes",
-      key: "bytes",
-      width: 120,
-      align: "right",
-      sorter: (a, b) => a.bytes - b.bytes,
-      defaultSortOrder: "descend",
-      render: (b: number) => fmtBytes(b),
+      key: "email",
+      title: "Email Mailboxes",
+      icon: <MailOutlined />,
+      color: COLORS.green,
+      cat: data.email,
+      cols: emailCols,
+      emptyText: "No email usage yet",
+      emptyHint: "Your mailboxes are currently empty.",
+      viewAll: { label: "View all mailboxes", to: "/jabali-panel/mail/mailboxes" },
+    },
+    {
+      key: "databases",
+      title: "Databases",
+      icon: <DatabaseOutlined />,
+      color: COLORS.gold,
+      cat: data.databases,
+      cols: dbCols,
+      emptyText: "No databases",
+      viewAll: { label: "View all databases", to: "/jabali-panel/databases" },
     },
   ];
 
   return (
     <div>
       <Typography.Title level={3} style={{ marginTop: 0 }}>
-        <HddOutlined /> Disk Usage
+        Disk Usage
       </Typography.Title>
 
-      {/* Summary */}
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={[24, 16]} align="middle">
-          <Col xs={24} md={8}>
-            <Statistic title="Total used" value={fmtBytes(total)} />
-            <Typography.Text type="secondary">
-              {quota > 0 ? `of ${fmtBytes(quota)} quota` : "no home quota set"}
+      {/* Top: five stat cards */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        {statCards.map((c) => (
+          <div key={c.label} style={{ flex: "1 1 200px", minWidth: 180 }}>
+            <StatCard {...c} />
+          </div>
+        ))}
+      </div>
+
+      {/* Storage quota usage strip */}
+      <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+          <span>
+            <Typography.Text strong>Storage Quota Usage</Typography.Text>{" "}
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {quota > 0 ? `${quotaPct}% used` : "No quota enforced"}
             </Typography.Text>
-          </Col>
-          <Col xs={24} md={16}>
-            {quota > 0 ? (
-              <Progress
-                percent={pct}
-                status={pct >= 90 ? "exception" : "active"}
-                format={(p) => `${p}%`}
-              />
-            ) : (
-              <Typography.Text type="secondary">Unlimited / quota not enforced.</Typography.Text>
-            )}
-            {/* Proportional breakdown bar */}
-            {total > 0 && (
-              <div style={{ display: "flex", height: 14, borderRadius: 6, overflow: "hidden", marginTop: 12 }}>
-                {categories.map((c) =>
-                  c.cat.bytes > 0 ? (
-                    <div
-                      key={c.key}
-                      title={`${c.label}: ${fmtBytes(c.cat.bytes)}`}
-                      style={{ width: `${(c.cat.bytes / total) * 100}%`, background: c.color }}
-                    />
-                  ) : null,
-                )}
-              </div>
-            )}
-          </Col>
-        </Row>
+          </span>
+          <span>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {fmtBytes(total)} used
+            </Typography.Text>{" "}
+            <Typography.Text strong>{quota > 0 ? fmtBytes(quota) : "Unlimited"}</Typography.Text>
+          </span>
+        </div>
+        <div
+          style={{
+            height: 14,
+            borderRadius: 8,
+            background: "rgba(128,128,128,0.18)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: quota > 0 ? `${quotaPct}%` : "100%",
+              borderRadius: 8,
+              background:
+                "repeating-linear-gradient(45deg, #1677ff, #1677ff 10px, #4096ff 10px, #4096ff 20px)",
+            }}
+          />
+        </div>
+        <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 8 }}>
+          {quota > 0
+            ? `${fmtBytes(total)} of ${fmtBytes(quota)} (${quotaPct}%)`
+            : "Unlimited / no quota enforced"}
+        </Typography.Text>
       </Card>
 
-      {/* Category cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        {categories.map((c) => (
-          <Col xs={24} sm={8} key={c.key}>
-            <Card size="small">
-              <Statistic
-                title={
-                  <span style={{ color: c.color }}>
-                    {c.icon} {c.label}
-                  </span>
-                }
-                value={fmtBytes(c.cat.bytes)}
-              />
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {c.cat.items.length} item{c.cat.items.length === 1 ? "" : "s"}
-                {total > 0 ? ` · ${Math.round((c.cat.bytes / total) * 100)}%` : ""}
-              </Typography.Text>
+      {/* Bottom: three breakdown cards */}
+      <Row gutter={[16, 16]}>
+        {breakdowns.map((b) => (
+          <Col xs={24} lg={8} key={b.key}>
+            <Card
+              size="small"
+              title={
+                <span style={{ color: b.color }}>
+                  {b.icon} <span style={{ color: "inherit" }}>{b.title}</span>
+                </span>
+              }
+              extra={<Tag color={b.color}>{fmtBytes(b.cat.bytes)}</Tag>}
+              styles={{ body: { padding: 0, minHeight: 220, display: "flex", flexDirection: "column" } }}
+            >
+              <div style={{ flex: 1 }}>
+                {b.cat.items.length === 0 ? (
+                  <div style={{ padding: 24 }}>
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description={
+                        <div>
+                          <div>{b.emptyText}</div>
+                          {b.emptyHint && (
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {b.emptyHint}
+                            </Typography.Text>
+                          )}
+                        </div>
+                      }
+                    />
+                  </div>
+                ) : (
+                  <Table<UsageItem>
+                    size="small"
+                    rowKey={(r) => `${b.key}:${r.name}`}
+                    columns={b.cols}
+                    dataSource={b.cat.items}
+                    pagination={b.cat.items.length > 8 ? { pageSize: 8, size: "small" } : false}
+                    scroll={{ x: "max-content" }}
+                  />
+                )}
+              </div>
+              <div style={{ padding: "10px 16px", borderTop: "1px solid rgba(128,128,128,0.15)" }}>
+                <Typography.Link onClick={() => navigate(b.viewAll.to)}>
+                  {b.viewAll.label} <ExportOutlined />
+                </Typography.Link>
+              </div>
             </Card>
           </Col>
         ))}
       </Row>
 
-      {/* Breakdown tables */}
-      {categories.map((c) => (
-        <Card
-          key={c.key}
-          size="small"
-          title={
-            <span>
-              {c.icon} {c.label} — {fmtBytes(c.cat.bytes)}
-            </span>
-          }
-          style={{ marginBottom: 16 }}
-        >
-          {c.cat.items.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`No ${c.label.toLowerCase()}`} />
-          ) : (
-            <Table<UsageItem>
-              size="small"
-              rowKey={(r) => `${c.key}:${r.name}`}
-              columns={c.key === "databases" ? itemCols : itemCols.filter((col) => col.key !== "engine")}
-              dataSource={c.cat.items}
-              pagination={c.cat.items.length > 10 ? { pageSize: 10, size: "small" } : false}
-              scroll={{ x: "max-content" }}
-            />
-          )}
-        </Card>
-      ))}
-
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 12 }}>
         Email usage is sampled periodically. PostgreSQL database sizes are not yet reported.
       </Typography.Text>
     </div>
