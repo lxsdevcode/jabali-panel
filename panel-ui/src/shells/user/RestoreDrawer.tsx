@@ -30,6 +30,7 @@ interface ManifestResponse {
   kind: string;
   username: string;
   stages: ManifestStage[];
+  dns_domains?: string[];
 }
 interface RestoreResult {
   applied?: string[] | null;
@@ -49,6 +50,8 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const [restoreHome, setRestoreHome] = useState(false);
+  const [dnsDomains, setDnsDomains] = useState<string[]>([]);
+  const [selectedDns, setSelectedDns] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RestoreResult | null>(null);
 
@@ -59,6 +62,8 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
     setSelected([]);
     setConfirmOverwrite(false);
     setRestoreHome(false);
+    setDnsDomains([]);
+    setSelectedDns([]);
     setResult(null);
     apiClient
       .get<ManifestResponse>(`/me/backups/${backupId}/manifest`)
@@ -67,6 +72,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
           .filter((s) => s.name === "db" && s.status === "ok")
           .flatMap((s) => s.items ?? []);
         setDatabases(dbs);
+        setDnsDomains(resp.data.dns_domains ?? []);
       })
       .catch((err) =>
         message.error(
@@ -77,13 +83,13 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   }, [open, backupId]);
 
   const handleRestore = async () => {
-    if (!backupId || (selected.length === 0 && !restoreHome)) return;
+    if (!backupId || (selected.length === 0 && !restoreHome && selectedDns.length === 0)) return;
     setSubmitting(true);
     setResult(null);
     try {
       const resp = await apiClient.post<RestoreResult>(
         `/me/backups/${backupId}/restore`,
-        { databases: selected, home: restoreHome, overwrite: true },
+        { databases: selected, home: restoreHome, dns_domains: selectedDns, overwrite: true },
       );
       setResult(resp.data);
       const n = resp.data.applied?.length ?? 0;
@@ -146,7 +152,23 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
             </>
           )}
 
-          {(selected.length > 0 || restoreHome) && (
+          {dnsDomains.length > 0 && (
+            <>
+              <Typography.Text strong>DNS records</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                Replaces the domain&apos;s custom DNS records with the backed-up set
+                (managed records are untouched).
+              </Typography.Text>
+              <Checkbox.Group
+                value={selectedDns}
+                onChange={(v) => setSelectedDns(v as string[])}
+                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                options={dnsDomains.map((d) => ({ label: d, value: d }))}
+              />
+            </>
+          )}
+
+          {(selected.length > 0 || restoreHome || selectedDns.length > 0) && (
             <Alert
               type="warning"
               showIcon
@@ -155,7 +177,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
             />
           )}
 
-          {(selected.length > 0 || restoreHome) && (
+          {(selected.length > 0 || restoreHome || selectedDns.length > 0) && (
             <>
               <Checkbox
                 checked={confirmOverwrite}

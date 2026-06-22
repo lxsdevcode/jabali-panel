@@ -988,9 +988,10 @@ func (h *meBackupHandler) list(c *gin.Context) {
 }
 
 type meRestoreSelectiveRequest struct {
-	Databases []string `json:"databases"`
-	Home      bool     `json:"home"`
-	Overwrite bool     `json:"overwrite"`
+	Databases  []string `json:"databases"`
+	Home       bool     `json:"home"`
+	DNSDomains []string `json:"dns_domains"`
+	Overwrite  bool     `json:"overwrite"`
 }
 
 // restoreSelective restores a chosen subset of the caller's OWN backup
@@ -1027,9 +1028,9 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "validation_failed", "detail": err.Error()})
 		return
 	}
-	if len(req.Databases) == 0 && !req.Home {
+	if len(req.Databases) == 0 && !req.Home && len(req.DNSDomains) == 0 {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "nothing_selected",
-			"detail": "select at least one database and/or home"})
+			"detail": "select at least one database, home, and/or dns domain"})
 		return
 	}
 
@@ -1061,6 +1062,26 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 		}
 	}
 
+	// DNS domains must also be currently owned by the caller (name -> id map).
+	ownedDomains := map[string]string{}
+	if len(req.DNSDomains) > 0 && h.cfg.Domains != nil {
+		doms, _, derr := h.cfg.Domains.ListByUserID(c.Request.Context(), claims.UserID, repository.ListOptions{Limit: 10000})
+		if derr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "domain_list_failed"})
+			return
+		}
+		for _, d := range doms {
+			ownedDomains[d.Name] = d.ID
+		}
+		for _, n := range req.DNSDomains {
+			if _, ok := ownedDomains[n]; !ok {
+				c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "domain_not_owned",
+					"detail": "you do not own a domain named " + n})
+				return
+			}
+		}
+	}
+
 	// Track the restore as its own job so the jobs list + notifications cover it.
 	restoreJob := &models.BackupJob{
 		ID:        ids.NewULID(),
@@ -1078,23 +1099,130 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), restoreCallTimeout)
 	defer cancel()
-	raw, aerr := h.cfg.Agent.Call(ctx, "backup.restore_selective", map[string]any{
-		"job_id":               restoreJob.ID,
-		"manifest_snapshot_id": job.SnapshotID,
-		"target_username":      *owner.Username,
-		"databases":            req.Databases,
-		"home":                 req.Home,
-		"overwrite":            req.Overwrite,
-	})
-	if aerr != nil {
-		_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusFailed,
-			"", "", 0, 0, nil, nil, aerr.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "restore_failed", "detail": aerr.Error()})
-		return
+
+	applied := []string{}
+	skipped := []string{}
+	warnings := []string{}
+
+	// Databases + home go to the agent (host-side). Only dispatch when one is
+	// requested — the agent rejects an empty db+home set.
+	if len(req.Databases) > 0 || req.Home {
+		raw, aerr := h.cfg.Agent.Call(ctx, "backup.restore_selective", map[string]any{
+			"job_id":               restoreJob.ID,
+			"manifest_snapshot_id": job.SnapshotID,
+			"target_username":      *owner.Username,
+			"databases":            req.Databases,
+			"home":                 req.Home,
+			"overwrite":            req.Overwrite,
+		})
+		if aerr != nil {
+			_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusFailed,
+				"", "", 0, 0, nil, nil, aerr.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "restore_failed", "detail": aerr.Error()})
+			return
+		}
+		var ar struct {
+			Applied  []string `json:"applied"`
+			Skipped  []string `json:"skipped"`
+			Warnings []string `json:"warnings"`
+		}
+		_ = json.Unmarshal(raw, &ar)
+		applied = append(applied, ar.Applied...)
+		skipped = append(skipped, ar.Skipped...)
+		warnings = append(warnings, ar.Warnings...)
 	}
+
+	// DNS records are panel-side DB rows — restore them here (owner-scoped),
+	// reading the captured records out of the backup metadata via the agent.
+	if len(req.DNSDomains) > 0 {
+		if !req.Overwrite {
+			for _, n := range req.DNSDomains {
+				skipped = append(skipped, "dns:"+n)
+			}
+			warnings = append(warnings, "overwrite=false: DNS not applied. Restoring DNS replaces this domain's custom records; re-send with overwrite=true.")
+		} else {
+			da, dw := h.restoreDNSRecords(ctx, job.SnapshotID, req.DNSDomains, ownedDomains)
+			applied = append(applied, da...)
+			warnings = append(warnings, dw...)
+		}
+	}
+
 	_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusSucceeded,
 		"", "", 0, 0, nil, nil, "")
-	c.Data(http.StatusOK, "application/json", raw)
+	c.JSON(http.StatusOK, gin.H{"job_id": restoreJob.ID, "applied": applied, "skipped": skipped, "warnings": warnings})
+}
+
+// restoreDNSRecords reads the captured user DNS records from the backup metadata
+// (via the agent) and re-inserts them into each domain's zone, replacing the
+// existing NON-managed records. Owner-scoping is enforced by ownedDomains (the
+// caller's name->id map); managed records are left untouched (they re-derive).
+func (h *meBackupHandler) restoreDNSRecords(ctx context.Context, manifestSnap string, domains []string, ownedDomains map[string]string) ([]string, []string) {
+	var applied, warnings []string
+	if h.cfg.DNSZones == nil || h.cfg.DNSRecords == nil {
+		return nil, []string{"dns: not configured on this panel"}
+	}
+	raw, err := h.cfg.Agent.Call(ctx, "backup.dns_read", map[string]any{
+		"manifest_snapshot_id": manifestSnap,
+		"domain_names":         domains,
+	})
+	if err != nil {
+		return nil, []string{"dns: read from backup failed: " + err.Error()}
+	}
+	var rd struct {
+		Domains []struct {
+			Name       string `json:"name"`
+			DNSRecords []struct {
+				Name      string `json:"name"`
+				Type      string `json:"type"`
+				Content   string `json:"content"`
+				TTL       int    `json:"ttl"`
+				Priority  int    `json:"priority"`
+				IsEnabled bool   `json:"is_enabled"`
+			} `json:"dns_records"`
+		} `json:"domains"`
+	}
+	if uerr := json.Unmarshal(raw, &rd); uerr != nil {
+		return nil, []string{"dns: parse backup metadata failed"}
+	}
+	have := map[string]bool{}
+	for _, d := range rd.Domains {
+		have[d.Name] = true
+		domID, ok := ownedDomains[d.Name]
+		if !ok {
+			continue // not owned (already validated, defensive)
+		}
+		zone, zerr := h.cfg.DNSZones.FindByDomainID(ctx, domID)
+		if zerr != nil || zone == nil {
+			warnings = append(warnings, "dns "+d.Name+": no DNS zone — skipped")
+			continue
+		}
+		// Replace the zone's existing user records.
+		if existing, lerr := h.cfg.DNSRecords.ListByZoneID(ctx, zone.ID); lerr == nil {
+			for _, e := range existing {
+				if !e.Managed {
+					_ = h.cfg.DNSRecords.Delete(ctx, e.ID)
+				}
+			}
+		}
+		n := 0
+		for _, rec := range d.DNSRecords {
+			if cerr := h.cfg.DNSRecords.Create(ctx, &models.DNSRecord{
+				ID: ids.NewULID(), ZoneID: zone.ID,
+				Name: rec.Name, Type: rec.Type, Content: rec.Content,
+				TTL: rec.TTL, Priority: rec.Priority,
+				Managed: false, IsEnabled: rec.IsEnabled,
+			}); cerr == nil {
+				n++
+			}
+		}
+		applied = append(applied, fmt.Sprintf("dns → %s (%d records; reconciler re-publishes)", d.Name, n))
+	}
+	for _, n := range domains {
+		if !have[n] {
+			warnings = append(warnings, "dns "+n+": no custom records captured in this backup (older backup, or none) — skipped")
+		}
+	}
+	return applied, warnings
 }
 
 // manifest returns the backup's stage/item preview (GH #267 Wave 1) so the

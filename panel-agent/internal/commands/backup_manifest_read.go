@@ -31,10 +31,11 @@ type backupManifestStageDTO struct {
 }
 
 type backupManifestReadResult struct {
-	Kind     string                   `json:"kind"`
-	UserID   string                   `json:"user_id"`
-	Username string                   `json:"username"`
-	Stages   []backupManifestStageDTO `json:"stages"`
+	Kind       string                   `json:"kind"`
+	UserID     string                   `json:"user_id"`
+	Username   string                   `json:"username"`
+	Stages     []backupManifestStageDTO `json:"stages"`
+	DNSDomains []string                 `json:"dns_domains"` // GH #267: domains with captured custom DNS records
 }
 
 func backupManifestReadHandler(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -73,6 +74,26 @@ func backupManifestReadHandler(ctx context.Context, raw json.RawMessage) (any, e
 			Status: st.Status,
 			Items:  st.Items,
 		})
+	}
+
+	// GH #267: surface which domains have captured custom DNS records (from the
+	// meta stage) so the restore UI can offer per-domain DNS restore.
+	out.DNSDomains = []string{}
+	for _, st := range m.Stages {
+		if st.Name != backup.StageMeta || st.Status != backup.StageStatusOK || st.SnapshotID == "" {
+			continue
+		}
+		if metaBytes, derr := c.Dump(ctx, st.SnapshotID, "metadata.json"); derr == nil {
+			var meta backup.AccountMetadata
+			if json.Unmarshal(metaBytes, &meta) == nil {
+				for _, d := range meta.Domains {
+					if len(d.DNSRecords) > 0 {
+						out.DNSDomains = append(out.DNSDomains, d.Name)
+					}
+				}
+			}
+		}
+		break
 	}
 	return out, nil
 }
