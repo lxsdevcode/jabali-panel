@@ -119,7 +119,64 @@ switch is the WP-aware front door).
 4. UI switch.
 5. Verify end-to-end on a WP app; ADR for the isolation decision.
 
+## Phase 0 — Redis ACL hardening (DETAILED PLAN, for review) — ADR-0148
+
+Decision recorded in **ADR-0148** (per-tenant Redis ACL, dedicated client group,
+`default` locked, dispatcher credentialed). Concrete change-set, grounded in the
+current code. **No code is written until this plan + ADR-0148 are approved.**
+
+### 0.1 install.sh — `install_redis()` (lines ~2346–2469)
+- New system group `jabali-redis-clients` (`groupadd -f`). Add `jabali` to it.
+- Socket drop-in (`/etc/redis/redis.conf.d/10-jabali-socket.conf`): keep
+  `unixsocketperm 660`; the systemd `ExecStartPost` chgrp changes
+  `jabali-sockets` → **`jabali-redis-clients`** for `/run/redis/redis.sock`.
+  (panel-api stays in `jabali-sockets` for the *other* sockets and additionally
+  joins `jabali-redis-clients`.)
+- Add `aclfile /etc/redis/users.acl` to the managed drop-in. Seed `users.acl`
+  (`install -m 0640 -o redis -g redis`) with: `default` still `on nopass` at first
+  apply, plus `jabali_dispatcher`, `jabali_acl_admin` (tokens read-or-created into
+  `/etc/jabali/panel.env`). `ACL LOAD`.
+- **Ordering gate** (the load-bearing bit): (1) load ACL with named users +
+  default-on; (2) write dispatcher token to panel.env; (3) bounce panel-api;
+  (4) round-trip a test notification; (5) ONLY THEN `ACL SETUSER default off` +
+  `ACL SAVE`. A helper `_redis_lock_default()` runs last, guarded by a
+  notification round-trip check; on failure it leaves `default on` and `_warn`s.
+- install.sh logger: only `_log/_ok/_warn/_err/_die` exist (memory
+  `feedback_install_sh_logger`) — reuse, don't invent.
+
+### 0.2 panel-api — dispatcher credentialing
+- `internal/config/config.go`: extend `RedisConfig` — either bake credentials into
+  the default `URL` (`unix://jabali_dispatcher:$TOKEN@/run/redis/redis.sock?db=0`)
+  read from env, or add `Username`/`Password` fields. First-boot reads
+  `JABALI_REDIS_DISPATCHER_TOKEN` from panel.env.
+- `cmd/server/serve.go:122` (`redis.ParseURL`): after parse, if Username/Password
+  present in config, set `opts.Username/opts.Password` (covers the unix-scheme
+  ParseURL uncertainty — Open Question #2). Ping on boot already fatal; keep.
+- New `internal/redisacl/` (or extend notifications): a small client using
+  `jabali_acl_admin` to `ACL SETUSER`/`DELUSER`/`SAVE`. Used by the Phase-3 REST
+  handler; defined here so Phase 0 owns the ACL surface + tests (miniredis or a
+  guarded integration test — miniredis does NOT implement ACL, so the ACL path
+  needs a real-redis integration test tagged off the default CI run, or a thin
+  interface faked in unit tests + a live smoke step).
+
+### 0.3 Verification (live, on 192.168.100.150)
+- `redis-cli -s … --user jabali_dispatcher --pass … XINFO STREAM jabali:notifications:queue` works; the panel emits + drains a test notification after `default off`.
+- As a real tenant (in `jabali-redis-clients`, with a `wp_<user>` token):
+  `SET jc:<prefix>:t 1` ok; `SET jc:<otherprefix>:t 1` → `NOPERM`;
+  `GET jabali:notifications:queue` → `NOPERM`; `FLUSHDB` → `NOPERM`.
+- `default` with no auth → `NOAUTH`/`NOPERM` on everything.
+
+### 0.4 ADR + review
+- ADR-0148 to **Accepted** after security-reviewer pass + the live smoke above.
+- Only then unblock Phase 1.
+
 ## Notes
 - Only `app_type=wordpress` installs get the switch.
 - The plugin's own admin page still works inside wp-admin; the panel switch is the
   jabali-managed front door (install + configure + nginx).
+- Grounding refs: dispatcher conn `cmd/server/serve.go:122` + keyspace
+  `internal/notifications/redis.go:15-16` (`jabali:notifications:queue|dlq`, db 0);
+  WP cache db 1, keys `jc:<prefix>:*`. nginx coupling reuses
+  `domain_cache.go` `PUT /domains/:id/cache` + `domainRepo.UpdateCacheEnabled`
+  (ADR-0108). New install flag: `application_installs.cache_enabled` — next free
+  migration **000187**. Agent runs as tenant via `buildSystemdRunCmd(ctx, osUser …)`.
