@@ -745,3 +745,10 @@ func (*MockDomainRepository) AttachDockerApp(context.Context, string, string, mo
 func (*MockDomainRepository) DetachDockerApp(context.Context, string, bool) error {
 	return nil
 }
+
+func (m *MockDomainRepository) ListForRegistrarRefresh(ctx context.Context, staleBefore time.Time, limit int) ([]models.Domain, error) {
+	return nil, nil
+}
+func (m *MockDomainRepository) SetRegistrarExpiry(ctx context.Context, id string, expiresAt *time.Time, checkedAt time.Time) error {
+	return nil
+}

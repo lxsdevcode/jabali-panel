@@ -3,7 +3,7 @@
 // count Tag in each tab label, panel-attached strip. Both tabs view
 // the same `domains` list.
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Empty, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Empty, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import { CloudServerOutlined } from "@icons";
 import { useNavigate } from "react-router";
 
@@ -20,6 +20,7 @@ interface Domain {
   created_at: string;
   updated_at: string;
   dnssec_enabled?: boolean;
+  registrar_expires_at?: string | null;
 }
 
 interface ZoneStatus {
@@ -140,6 +141,19 @@ const ZonesTab = () => {
             dataIndex="dnssec_enabled"
             render={(enabled: boolean | undefined) =>
               enabled ? <Tag color="green">Signed</Tag> : <Tag>Unsigned</Tag>
+            }
+          />
+          <Table.Column<Domain>
+            title="Expiration"
+            dataIndex="registrar_expires_at"
+            render={(d: string | null | undefined) =>
+              d ? (
+                <Tooltip title="Domain registration expiry (from WHOIS)">
+                  {new Date(d).toLocaleDateString()}
+                </Tooltip>
+              ) : (
+                <Typography.Text type="secondary">—</Typography.Text>
+              )
             }
           />
           <Table.Column<Domain>

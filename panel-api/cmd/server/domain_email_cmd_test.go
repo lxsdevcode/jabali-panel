@@ -86,6 +86,12 @@ func (*fakeDomainRepo) ListByUserID(context.Context, string, repository.ListOpti
 func (*fakeDomainRepo) BulkSetEnabledByUserID(context.Context, string, bool) (int64, error) { return 0, nil }
 func (*fakeDomainRepo) Update(context.Context, *models.Domain) error { return nil }
 func (*fakeDomainRepo) Delete(context.Context, string) error         { return nil }
+func (*fakeDomainRepo) ListForRegistrarRefresh(context.Context, time.Time, int) ([]models.Domain, error) {
+	return nil, nil
+}
+func (*fakeDomainRepo) SetRegistrarExpiry(context.Context, string, *time.Time, time.Time) error {
+	return nil
+}
 func (*fakeDomainRepo) CountByUserID(context.Context, string) (int64, error) {
 	return 0, nil
 }

@@ -71,6 +71,12 @@ func (m *mockDomainRepo) ListByUserID(ctx context.Context, userID string, opts r
 	return nil, 0, nil
 }
 
+func (m *mockDomainRepo) ListForRegistrarRefresh(ctx context.Context, staleBefore time.Time, limit int) ([]models.Domain, error) {
+	return nil, nil
+}
+func (m *mockDomainRepo) SetRegistrarExpiry(ctx context.Context, id string, expiresAt *time.Time, checkedAt time.Time) error {
+	return nil
+}
 func (m *mockDomainRepo) CountByUserID(ctx context.Context, userID string) (int64, error) {
 	return 0, nil
 }

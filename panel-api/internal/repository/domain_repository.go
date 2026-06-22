@@ -27,6 +27,14 @@ type DomainRepository interface {
 	BulkSetEnabledByUserID(ctx context.Context, userID string, enabled bool) (int64, error)
 	Delete(ctx context.Context, id string) error
 	CountByUserID(ctx context.Context, userID string) (int64, error)
+	// ListForRegistrarRefresh returns domains whose registrar expiry has never
+	// been checked or was last checked before staleBefore (GH #259), oldest
+	// first, capped at limit — the WHOIS-fetch ticker's work queue.
+	ListForRegistrarRefresh(ctx context.Context, staleBefore time.Time, limit int) ([]models.Domain, error)
+	// SetRegistrarExpiry caches a domain's registration expiry + stamps the
+	// check time. expiresAt may be nil (whois unavailable / unparseable) — the
+	// check time is still set so the ticker doesn't re-query every pass.
+	SetRegistrarExpiry(ctx context.Context, id string, expiresAt *time.Time, checkedAt time.Time) error
 	// CountByPHPPoolID returns the number of domains currently bound to
 	// the given PHP pool. Used by the pool-delete handler to refuse with
 	// 409 when any domain still references the pool (ADR-0023 decision 10).
@@ -812,4 +820,23 @@ func (r *domainRepo) computeSSLState(domain *models.Domain, cert *models.SSLCert
 
 	// Pending, Issuing, PendingACMERetry
 	return "pending"
+}
+
+func (r *domainRepo) ListForRegistrarRefresh(ctx context.Context, staleBefore time.Time, limit int) ([]models.Domain, error) {
+	var rows []models.Domain
+	err := r.db.WithContext(ctx).
+		Where("registrar_checked_at IS NULL OR registrar_checked_at < ?", staleBefore).
+		Order("registrar_checked_at IS NOT NULL, registrar_checked_at ASC").
+		Limit(limit).
+		Find(&rows).Error
+	return rows, err
+}
+
+func (r *domainRepo) SetRegistrarExpiry(ctx context.Context, id string, expiresAt *time.Time, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"registrar_expires_at": expiresAt,
+			"registrar_checked_at": checkedAt,
+		}).Error
 }

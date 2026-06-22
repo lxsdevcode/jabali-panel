@@ -326,6 +326,13 @@ type Domain struct {
 	DNSSECEnabled   bool       `gorm:"column:dnssec_enabled;type:tinyint(1);not null;default:0" json:"dnssec_enabled"`
 	DNSSECEnabledAt *time.Time `gorm:"column:dnssec_enabled_at;type:datetime(6)" json:"dnssec_enabled_at,omitempty"`
 
+	// RegistrarExpiry (GH #259): the domain's registration expiry, populated by
+	// the scheduled WHOIS-fetch ticker (StartDomainExpiryTicker). checked_at
+	// gates the refresh cadence and is set even when the lookup yields no date
+	// (unparseable / no whois) so we don't re-query every tick.
+	RegistrarExpiresAt *time.Time `gorm:"column:registrar_expires_at;type:datetime(6)" json:"registrar_expires_at,omitempty"`
+	RegistrarCheckedAt *time.Time `gorm:"column:registrar_checked_at;type:datetime(6)" json:"registrar_checked_at,omitempty"`
+
 	// CacheEnabled (migration 000140, ADR-0108) is the per-domain
 	// opt-in nginx FastCGI micro-cache switch. Off by default; the
 	// reconciler passes it into domain.create and the agent renders

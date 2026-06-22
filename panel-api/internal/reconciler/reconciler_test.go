@@ -110,6 +110,12 @@ func (f *fakeDomainRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeDomainRepo) ListForRegistrarRefresh(ctx context.Context, staleBefore time.Time, limit int) ([]models.Domain, error) {
+	return nil, nil
+}
+func (f *fakeDomainRepo) SetRegistrarExpiry(ctx context.Context, id string, expiresAt *time.Time, checkedAt time.Time) error {
+	return nil
+}
 func (f *fakeDomainRepo) CountByUserID(ctx context.Context, userID string) (int64, error) {
 	count := 0
 	for _, d := range f.domains {

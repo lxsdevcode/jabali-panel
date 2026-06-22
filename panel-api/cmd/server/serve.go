@@ -793,6 +793,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		go reconciler.StartBandwidthTicker(ctx, sharedAgent, deps.Domains, deps.BWDaily, log)
 	}
 
+	// GH #259: scheduled registrar-expiry WHOIS fetch -> domains.registrar_expires_at.
+	if sharedAgent != nil && deps.Domains != nil {
+		go reconciler.StartDomainExpiryTicker(ctx, sharedAgent, deps.Domains, log)
+	}
+
 	// M30.2 (ADR-0080) backup scheduler + finalizer. Per-destination
 	// model — copy worker removed (no source repo, no mirror).
 	if sched := backupscheduler.New(backupscheduler.Deps{
