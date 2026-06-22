@@ -1,4 +1,5 @@
 slug: freshrss
+tenant_installable: true
 name: FreshRSS
 version: "1.29.1"
 description: |

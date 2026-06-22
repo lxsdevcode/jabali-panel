@@ -1,4 +1,5 @@
 slug: mealie
+tenant_installable: true
 name: Mealie
 version: "3.19.2"
 description: |

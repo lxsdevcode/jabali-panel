@@ -47,13 +47,14 @@ const defaultTenantDockerFlag = "/etc/jabali/docker-tenant-enabled"
 
 // UserDockerAppHandlerConfig bundles tenant-handler dependencies.
 type UserDockerAppHandlerConfig struct {
-	Repo     repository.DockerAppRepository
-	Catalog  *dockerapp.Catalog
-	Domains  repository.DomainRepository
-	Agent    agent.AgentInterface
-	Users    repository.UserRepository
-	Packages repository.PackageRepository
-	Log      *slog.Logger
+	Repo           repository.DockerAppRepository
+	Catalog        *dockerapp.Catalog
+	Domains        repository.DomainRepository
+	Agent          agent.AgentInterface
+	Users          repository.UserRepository
+	Packages       repository.PackageRepository
+	ServerSettings repository.ServerSettingsRepository
+	Log            *slog.Logger
 	// TenantFlagPath gates the whole surface. Empty = the production default.
 	TenantFlagPath string
 }
@@ -119,10 +120,37 @@ func tenantInstallable(e dockerapp.Entry) bool {
 	return true
 }
 
+// dockerTenantSelection returns the admin-exposed slug set and whether the
+// selection is "all eligible" (empty CSV = the curated default, expose all).
+func (h *userDockerAppHandler) dockerTenantSelection(ctx context.Context) (map[string]bool, bool) {
+	if h.cfg.ServerSettings == nil {
+		return nil, true
+	}
+	cfg, err := h.cfg.ServerSettings.Get(ctx)
+	if err != nil || cfg == nil || strings.TrimSpace(cfg.DockerTenantApps) == "" {
+		return nil, true
+	}
+	set := map[string]bool{}
+	for _, sl := range strings.Split(cfg.DockerTenantApps, ",") {
+		if v := strings.TrimSpace(sl); v != "" {
+			set[v] = true
+		}
+	}
+	return set, false
+}
+
+// tenantExposed reports whether a catalog slug is exposed to tenants given the
+// admin selection (empty selection = all eligible).
+func (h *userDockerAppHandler) tenantExposed(ctx context.Context, slug string) bool {
+	set, all := h.dockerTenantSelection(ctx)
+	return all || set[slug]
+}
+
 func (h *userDockerAppHandler) listCatalog(c *gin.Context) {
 	out := make([]catalogEntryResponse, 0)
+	set, all := h.dockerTenantSelection(c.Request.Context())
 	for _, e := range h.cfg.Catalog.All() {
-		if tenantInstallable(e) {
+		if tenantInstallable(e) && (all || set[e.Slug]) {
 			out = append(out, catalogEntryToResponse(e))
 		}
 	}
@@ -131,7 +159,7 @@ func (h *userDockerAppHandler) listCatalog(c *gin.Context) {
 
 func (h *userDockerAppHandler) catalogIcon(c *gin.Context) {
 	e, ok := h.cfg.Catalog.Get(c.Param("slug"))
-	if !ok || !tenantInstallable(e) {
+	if !ok || !tenantInstallable(e) || !h.tenantExposed(c.Request.Context(), e.Slug) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
@@ -247,7 +275,7 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 	}
 
 	entry, ok := h.cfg.Catalog.Get(req.Slug)
-	if !ok || !tenantInstallable(entry) {
+	if !ok || !tenantInstallable(entry) || !h.tenantExposed(c.Request.Context(), req.Slug) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown_slug", "detail": "not installable by tenants"})
 		return
 	}

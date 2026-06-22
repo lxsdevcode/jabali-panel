@@ -1,4 +1,5 @@
 slug: privatebin
+tenant_installable: true
 name: PrivateBin
 version: "2.0.4"
 description: |

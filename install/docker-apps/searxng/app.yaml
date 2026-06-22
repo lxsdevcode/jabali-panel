@@ -1,4 +1,5 @@
 slug: searxng
+tenant_installable: true
 name: SearXNG
 version: "2026.6.20"
 description: |

@@ -112,18 +112,19 @@ func requireAdminForDockerApps(c *gin.Context) {
 // ---- catalog -----------------------------------------------------------------
 
 type catalogEntryResponse struct {
-	Slug          string                  `json:"slug"`
-	Name          string                  `json:"name"`
-	Version       string                  `json:"version"`
-	Description   string                  `json:"description"`
-	Icon          string                  `json:"icon"`
-	Upstream      string                  `json:"upstream,omitempty"`
-	Documentation string                  `json:"documentation,omitempty"`
-	UpdateMode    string                  `json:"update_mode"`
-	Resources     dockerapp.Resources     `json:"resources"`
-	Volumes       []dockerapp.Volume      `json:"volumes"`
-	Ports         []dockerapp.PortSpec    `json:"ports"`
-	Env           []catalogEnvVarResponse `json:"env,omitempty"`
+	Slug              string                  `json:"slug"`
+	Name              string                  `json:"name"`
+	Version           string                  `json:"version"`
+	Description       string                  `json:"description"`
+	Icon              string                  `json:"icon"`
+	Upstream          string                  `json:"upstream,omitempty"`
+	Documentation     string                  `json:"documentation,omitempty"`
+	UpdateMode        string                  `json:"update_mode"`
+	Resources         dockerapp.Resources     `json:"resources"`
+	Volumes           []dockerapp.Volume      `json:"volumes"`
+	Ports             []dockerapp.PortSpec    `json:"ports"`
+	Env               []catalogEnvVarResponse `json:"env,omitempty"`
+	TenantInstallable bool                    `json:"tenant_installable"`
 }
 
 type catalogEnvVarResponse struct {
@@ -201,18 +202,19 @@ func catalogEntryToResponse(e dockerapp.Entry) catalogEntryResponse {
 		env = append(env, row)
 	}
 	return catalogEntryResponse{
-		Slug:          e.Slug,
-		Name:          e.Name,
-		Version:       e.Version,
-		Description:   e.Description,
-		Icon:          e.Icon,
-		Upstream:      e.Upstream,
-		Documentation: e.Documentation,
-		UpdateMode:    e.UpdateMode,
-		Resources:     e.Resources,
-		Volumes:       e.Volumes,
-		Ports:         e.Ports,
-		Env:           env,
+		Slug:              e.Slug,
+		Name:              e.Name,
+		Version:           e.Version,
+		Description:       e.Description,
+		Icon:              e.Icon,
+		Upstream:          e.Upstream,
+		Documentation:     e.Documentation,
+		UpdateMode:        e.UpdateMode,
+		Resources:         e.Resources,
+		Volumes:           e.Volumes,
+		Ports:             e.Ports,
+		TenantInstallable: e.TenantInstallable,
+		Env:               env,
 	}
 }
 

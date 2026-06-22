@@ -1,4 +1,5 @@
 slug: enclosed
+tenant_installable: true
 name: Enclosed
 version: "latest"
 description: |

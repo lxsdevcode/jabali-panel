@@ -204,6 +204,10 @@ type ServerSettings struct {
 	// tenant docker surface is gated off. Drives the user-panel Docker Apps
 	// tab visibility via /me/server-capabilities.
 	DockerAppsForUsersEnabled bool `gorm:"column:docker_apps_for_users_enabled;type:tinyint(1);not null;default:0" json:"docker_apps_for_users_enabled"`
+	// DockerTenantApps is a CSV of catalog slugs the admin exposes to tenants.
+	// Empty = expose ALL tenant-eligible apps (the curated default). Narrows
+	// which Docker apps users may install.
+	DockerTenantApps string `gorm:"column:docker_tenant_apps;type:varchar(4096);not null;default:''" json:"docker_tenant_apps"`
 	// PythonAppsEnabled gates the Python Application Manager (ADR-0131 / GH
 	// #203): hidden + endpoints 403 when off (default). Enabling installs the
 	PythonAppsEnabled bool `gorm:"column:python_apps_enabled;type:tinyint(1);not null;default:0" json:"python_apps_enabled"`

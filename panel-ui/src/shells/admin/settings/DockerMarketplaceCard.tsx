@@ -5,7 +5,7 @@
 //   (sources install.sh, runs install_docker_engine, starts docker).
 // Flip false: panel-api dispatches `docker.disable` (stops + disables
 //   docker units). Data under /var/lib/jabali/docker-apps/ stays.
-import { App, Alert, Card, Modal, Space, Spin, Switch, Tag, Typography } from "antd";
+import { App, Alert, Button, Card, Checkbox, Modal, Space, Spin, Switch, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
@@ -13,6 +13,13 @@ import { apiClient } from "../../../apiClient";
 interface ServerSettingsDocker {
   docker_marketplace_enabled: boolean;
   docker_apps_for_users_enabled: boolean;
+  docker_tenant_apps: string;
+}
+
+interface CatalogEntry {
+  slug: string;
+  name: string;
+  tenant_installable: boolean;
 }
 
 export function DockerMarketplaceCard() {
@@ -22,12 +29,27 @@ export function DockerMarketplaceCard() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [forUsers, setForUsers] = useState(false);
   const [forUsersBusy, setForUsersBusy] = useState(false);
+  const [eligible, setEligible] = useState<CatalogEntry[]>([]);
+  const [exposed, setExposed] = useState<string[]>([]);
+  const [appsBusy, setAppsBusy] = useState(false);
 
   const refresh = async () => {
     try {
       const r = await apiClient.get<ServerSettingsDocker>("/admin/settings");
       setEnabled(!!r.data.docker_marketplace_enabled);
       setForUsers(!!r.data.docker_apps_for_users_enabled);
+      const csv = (r.data.docker_tenant_apps || "").trim();
+      if (r.data.docker_marketplace_enabled && r.data.docker_apps_for_users_enabled) {
+        try {
+          const cat = await apiClient.get<{ items: CatalogEntry[] }>("/admin/docker-apps/catalog");
+          const elig = (cat.data.items || []).filter((e) => e.tenant_installable);
+          setEligible(elig);
+          // empty CSV = all eligible exposed (the curated default)
+          setExposed(csv ? csv.split(",").map((x) => x.trim()).filter(Boolean) : elig.map((e) => e.slug));
+        } catch {
+          /* catalog unavailable */
+        }
+      }
     } catch (err) {
       message.error(
         `Could not load marketplace setting: ${
@@ -231,6 +253,46 @@ export function DockerMarketplaceCard() {
               quota-bounded apps). Enabling makes the host tenant-ready (userns-remap +
               daemon restart). Off hides the tab and closes the tenant Docker API.
             </Typography.Paragraph>
+
+            {forUsers && eligible.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <Typography.Text strong>Apps available to users</Typography.Text>
+                <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: "2px 0 8px" }}>
+                  Pick which tenant-safe Docker apps users may install. All are checked by default.
+                </Typography.Paragraph>
+                <Checkbox.Group
+                  value={exposed}
+                  onChange={(v) => setExposed(v as string[])}
+                  options={eligible.map((e) => ({ label: e.name, value: e.slug }))}
+                  style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 4 }}
+                />
+                <div style={{ marginTop: 10 }}>
+                  <Button
+                    type="primary"
+                    size="small"
+                    loading={appsBusy}
+                    onClick={async () => {
+                      setAppsBusy(true);
+                      try {
+                        // Save all-eligible as empty CSV (the "default" sentinel).
+                        const allChecked = exposed.length === eligible.length;
+                        await apiClient.patch("/admin/settings", {
+                          docker_tenant_apps: allChecked ? "" : exposed.join(","),
+                        });
+                        message.success("Tenant app list saved");
+                      } catch (err) {
+                        const e = err as { response?: { data?: { detail?: string; error?: string } } };
+                        message.error(e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to save");
+                      } finally {
+                        setAppsBusy(false);
+                      }
+                    }}
+                  >
+                    Save app list
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {busyLabel && <Typography.Text type="secondary">{busyLabel}</Typography.Text>}

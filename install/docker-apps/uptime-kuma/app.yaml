@@ -1,4 +1,5 @@
 slug: uptime-kuma
+tenant_installable: true
 name: Uptime Kuma
 version: "2.4.0"
 description: |

@@ -116,6 +116,8 @@ type updateServerSettingsRequest struct {
 	DockerMarketplaceEnabled *bool `json:"docker_marketplace_enabled,omitempty"`
 	// Admin opt-in: expose tenant Docker Apps to users (GH docker-opt-in).
 	DockerAppsForUsersEnabled *bool `json:"docker_apps_for_users_enabled,omitempty"`
+	// Admin-curated CSV of tenant-exposed Docker app slugs (empty = all eligible).
+	DockerTenantApps *string `json:"docker_tenant_apps,omitempty"`
 	// ADR-0131: Python Application Manager opt-in.
 	PythonAppsEnabled *bool `json:"python_apps_enabled,omitempty"`
 	// GH #243 (ADR-0142): opt-in Stalwart WebAdmin exposure + IP allowlist.
@@ -320,6 +322,9 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.DockerAppsForUsersEnabled != nil {
 		current.DockerAppsForUsersEnabled = *req.DockerAppsForUsersEnabled
+	}
+	if req.DockerTenantApps != nil {
+		current.DockerTenantApps = strings.TrimSpace(*req.DockerTenantApps)
 	}
 	if req.PythonAppsEnabled != nil {
 		current.PythonAppsEnabled = *req.PythonAppsEnabled

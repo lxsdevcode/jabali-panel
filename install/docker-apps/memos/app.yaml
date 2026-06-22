@@ -1,4 +1,5 @@
 slug: memos
+tenant_installable: true
 name: Memos
 version: "0.29.1"
 description: |

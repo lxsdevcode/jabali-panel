@@ -1,4 +1,5 @@
 slug: dokuwiki
+tenant_installable: true
 name: DokuWiki
 version: "2024-02-06b"
 description: |
