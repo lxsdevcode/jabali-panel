@@ -9,6 +9,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { CloseOutlined, ThunderboltOutlined } from "@icons";
 import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { UnorderedListOutlined } from "@ant-design/icons";
 
 import { apiClient } from "../../../apiClient";
@@ -128,29 +129,12 @@ function ProcTable({ rows, onKill }: ProcTableProps) {
           width: 70,
           align: "right" as const,
           render: (_: unknown, r: ProcessTop) => (
-            <Space size={4}>
-              <Tooltip title="SIGTERM (graceful)">
-                <RowActionButton
-                  size="small"
-                  icon={<CloseOutlined />}
-                  onClick={() => onKill(r, false)}
-                  aria-label="SIGTERM"
-                >
-                  Term
-                </RowActionButton>
-              </Tooltip>
-              <Tooltip title="SIGKILL (force)">
-                <RowActionButton
-                  size="small"
-                  danger
-                  icon={<ThunderboltOutlined />}
-                  onClick={() => onKill(r, true)}
-                  aria-label="SIGKILL"
-                >
-                  Kill
-                </RowActionButton>
-              </Tooltip>
-            </Space>
+            <RowActions
+              actions={[
+                { key: "term", label: "Term", icon: <CloseOutlined />, onClick: () => onKill(r, false), tooltip: "SIGTERM (graceful)" },
+                { key: "kill", label: "Kill", icon: <ThunderboltOutlined />, danger: true, onClick: () => onKill(r, true), tooltip: "SIGKILL (force)" },
+              ]}
+            />
           ),
         },
       ]}
