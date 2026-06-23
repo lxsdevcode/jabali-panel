@@ -320,15 +320,15 @@ export const DomainList = () => {
                 >
                   DNS
                 </RowActionButton>
-                <RowActionButton
-                  icon={<EditOutlined />}
-                  onClick={() => navigate(`/jabali-admin/domains/edit/${r.id}`)}
-                >
-                  Edit
-                </RowActionButton>
                 <Dropdown
                   menu={{
                     items: [
+                      {
+                        key: "edit",
+                        icon: <EditOutlined />,
+                        label: "Edit",
+                        onClick: () => navigate(`/jabali-admin/domains/edit/${r.id}`),
+                      },
                       {
                         key: "info",
                         icon: <InfoCircleOutlined />,
