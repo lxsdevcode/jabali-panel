@@ -3,13 +3,12 @@
 // <DeleteButton> replaced with plain react-router <Button>s + a
 // RowDeleteButton wired to useDeleteMutation.
 import { Button, Card, Input, Space, Table, Tag, Typography } from "antd";
-import { EditOutlined, PackageOpenOutlined, SearchOutlined } from "@icons";
+import { EditOutlined, PackageOpenOutlined, SearchOutlined, DeleteOutlined } from "@icons";
 
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { useNavigate } from "react-router";
 import type { SorterResult } from "antd/es/table/interface";
 
-import { RowDeleteButton } from "../../../components/RowDeleteButton";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useDeleteMutation } from "../../../hooks/useQueries";
@@ -184,21 +183,19 @@ export const PackageList = () => {
             title="Actions"
             dataIndex="actions"
             render={(_: unknown, r: Package) => (
-              <Space>
-                <RowActionButton
-                  icon={<EditOutlined />}
-                  title="Edit"
-                  onClick={() =>
-                    navigate(`/jabali-admin/packages/edit/${r.id}`)
-                  }
-                />
-                <RowDeleteButton
-                  confirmTitle={`Delete package "${r.name}"?`}
-                  onConfirm={async () => {
-                    await deleteMutation.mutateAsync({ id: r.id });
-                  }}
-                />
-              </Space>
+              <RowActions
+                actions={[
+                  { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => navigate(`/jabali-admin/packages/edit/${r.id}`) },
+                  {
+                    key: "delete",
+                    label: "Delete",
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: () => { void deleteMutation.mutateAsync({ id: r.id }); },
+                    confirm: { title: `Delete package "${r.name}"?`, okText: "Delete" },
+                  },
+                ]}
+              />
             )}
           />
         </SearchableTableStringQ>
