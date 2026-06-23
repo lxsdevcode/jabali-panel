@@ -8,10 +8,10 @@
 // the ?is_admin filter is applied before search/sort so the paginated
 // total stays correct per tab.
 import { useState } from "react";
-import { Badge, Button, Card, Dropdown, Input, message, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
-import { DeleteOutlined, EditOutlined, LoginOutlined, MoreOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
+import { Badge, Button, Card, Input, message, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { DeleteOutlined, EditOutlined, LoginOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
+import { RowActions, type RowAction } from "../../../components/RowActions";
 
-import { RowActionButton } from "../../../components/RowActionButton";
 import { startImpersonation } from "../../../impersonation";
 import type { SorterResult } from "antd/es/table/interface";
 
@@ -54,7 +54,7 @@ const renderCreated = (ts: string) => new Date(ts).toLocaleString();
 // users-spec E2E asserts on `getByRole("cell", { name: email })`, and
 // if the action cell's accessible name contained the email too, the
 // matcher would hit both cells and fail with a strict-mode violation.
-function RowActions({
+function UserRowActions({
   user,
   onEdit,
 }: {
@@ -78,64 +78,37 @@ function RowActions({
     }
   };
 
-  type MenuItem = NonNullable<
-    NonNullable<Parameters<typeof Dropdown>[0]["menu"]>["items"]
-  >[number];
-  const items: MenuItem[] = [
-    {
-      key: "edit",
-      icon: <EditOutlined />,
-      label: "Edit",
-      onClick: () => onEdit(user.id),
-    },
-    {
-      key: "reset2fa",
-      icon: <SafetyOutlined />,
-      label: "Reset 2FA",
-      onClick: () => setReset2faOpen(true),
-    },
-    {
-      key: "resetpw",
-      icon: <SafetyOutlined />,
-      label: "Reset password",
-      onClick: () => setResetPwOpen(true),
-    },
+  const actions: RowAction[] = [
+    ...(!user.is_admin
+      ? [
+          {
+            key: "login",
+            label: "Log in as user",
+            icon: <LoginOutlined />,
+            onClick: handleLoginAs,
+          },
+        ]
+      : []),
+    { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => onEdit(user.id) },
+    { key: "reset2fa", label: "Reset 2FA", icon: <SafetyOutlined />, onClick: () => setReset2faOpen(true) },
+    { key: "resetpw", label: "Reset password", icon: <SafetyOutlined />, onClick: () => setResetPwOpen(true) },
     ...(!user.is_admin
       ? [
           {
             key: "suspend",
-            icon: user.suspended ? <PlayCircleOutlined /> : <PauseCircleOutlined />,
             label: user.suspended ? "Unsuspend" : "Suspend",
+            icon: user.suspended ? <PlayCircleOutlined /> : <PauseCircleOutlined />,
             danger: !user.suspended,
             onClick: () => setSuspendOpen(true),
-          } as MenuItem,
+          },
         ]
       : []),
-    { type: "divider" } as MenuItem,
-    {
-      key: "delete",
-      icon: <DeleteOutlined />,
-      label: "Delete",
-      danger: true,
-      onClick: () => setDeleteOpen(true),
-    },
+    { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, onClick: () => setDeleteOpen(true) },
   ];
 
   return (
-    <Space size="middle">
-      {!user.is_admin && (
-        <Tooltip title="Log in as user">
-          <RowActionButton
-            icon={<LoginOutlined />}
-            color="default"
-            aria-label="Log in as user"
-            onClick={handleLoginAs}
-          />
-        </Tooltip>
-      )}
-      <Dropdown trigger={["click"]} placement="bottomRight" menu={{ items }}>
-        <RowActionButton icon={<MoreOutlined />} color="default" aria-label="Actions" />
-      </Dropdown>
+    <>
+      <RowActions actions={actions} />
       <UserReset2FAAction
         userId={user.id}
         userEmail={user.email}
@@ -163,7 +136,7 @@ function RowActions({
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
       />
-    </Space>
+    </>
   );
 }
 
@@ -380,7 +353,7 @@ function UsersShellTable({
       <Table.Column
         title="Actions"
         dataIndex="actions"
-        render={(_: unknown, r: User) => <RowActions user={r} onEdit={onEdit} />}
+        render={(_: unknown, r: User) => <UserRowActions user={r} onEdit={onEdit} />}
       />
     </SearchableTableStringQ>
     </div>
