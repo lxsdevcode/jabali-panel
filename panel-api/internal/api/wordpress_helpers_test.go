@@ -138,6 +138,18 @@ func (m *mockWordPressInstallRepo) UpdateCacheEnabled(ctx context.Context, id st
 	return nil
 }
 
+func (m *mockWordPressInstallRepo) CountCacheEnabledByUserID(_ context.Context, userID, excludeID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for _, inst := range m.installs {
+		if inst.UserID == userID && inst.AppType == "wordpress" && inst.CacheEnabled && inst.ID != excludeID {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (m *mockWordPressInstallRepo) UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

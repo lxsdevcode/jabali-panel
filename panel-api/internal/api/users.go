@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
@@ -40,6 +41,9 @@ type UserHandlerConfig struct {
 	Packages        repository.PackageRepository
 	Reconciler      *reconciler.Reconciler
 	Log             *slog.Logger
+	// Redis is the shared client used to revoke a tenant's wp_<osuser> cache
+	// ACL user on the delete cascade (GH #408). Optional; nil skips revoke.
+	Redis *redis.Client
 
 	// KratosClient is the (required in production) identity-provider client.
 	// POST /users atomically creates both a panel user row and a Kratos
@@ -670,6 +674,20 @@ func (h *userHandler) delete(c *gin.Context) {
 				"user_id", id, "identity_id", *target.KratosIdentityID, "err", kerr)
 		}
 		kcancel()
+	}
+
+	// Revoke the tenant's WordPress-cache Redis ACL user (GH #408 / ADR-0148).
+	// The OS account + all its installs are being torn down, so wp_<username>
+	// must not linger in the aclfile — a recycled username would otherwise
+	// re-derive the same token and inherit the stale principal + keyspace.
+	// Best-effort: a revoke failure is logged, never blocks the delete.
+	if h.cfg.Redis != nil && username != "" {
+		rctx, rcancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		if rErr := revokeTenantRedisACL(rctx, h.cfg.Redis, username); rErr != nil {
+			slog.Warn("cascade delete: revoke tenant cache ACL failed",
+				"user_id", id, "username", username, "err", rErr)
+		}
+		rcancel()
 	}
 
 	if err := h.cfg.Repo.Delete(c.Request.Context(), id); err != nil {

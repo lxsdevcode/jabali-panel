@@ -22,6 +22,7 @@ import (
 	"path"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
@@ -36,6 +37,21 @@ func cacheTenantToken(secret, osUser string) string {
 	m := hmac.New(sha256.New, []byte(secret))
 	m.Write([]byte("wp-cache-tenant:" + osUser))
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+// revokeTenantRedisACL removes the per-tenant wp_<osUser> Redis ACL user and
+// persists the aclfile (GH #408 / ADR-0148 Lifecycle). Idempotent — DELUSER on
+// an absent user is a no-op. The caller must ensure the tenant has no remaining
+// cache-enabled install, because wp_<osUser> is shared across a tenant's
+// installs. Used by both the cache-disable path and the user-delete cascade.
+func revokeTenantRedisACL(ctx context.Context, rdb *redis.Client, osUser string) error {
+	if rdb == nil || osUser == "" {
+		return nil
+	}
+	if err := rdb.Do(ctx, "ACL", "DELUSER", "wp_"+osUser).Err(); err != nil {
+		return err
+	}
+	return rdb.Do(ctx, "ACL", "SAVE").Err()
 }
 
 // cache toggles the WP object cache + nginx page cache for a WordPress install.
@@ -160,6 +176,22 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		slog.ErrorContext(ctx, "cache: install flag", "err", err, "install_id", installID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
+	}
+
+	// 5. On disable, reap the per-tenant Redis ACL user once the tenant has no
+	// other cache-enabled install (GH #408). wp_<osuser> is shared across a
+	// tenant's installs, so it may only be DELUSER'd when this was the last —
+	// otherwise siblings lose their cache. Best-effort: a revoke failure is
+	// logged, never fails the disable (the toggle already succeeded).
+	if !req.Enabled {
+		remaining, cErr := h.cfg.ApplicationInstalls.CountCacheEnabledByUserID(ctx, install.UserID, installID)
+		if cErr != nil {
+			slog.WarnContext(ctx, "cache: count remaining cache-enabled installs", "err", cErr, "user_id", install.UserID)
+		} else if remaining == 0 {
+			if rErr := revokeTenantRedisACL(ctx, h.cfg.Redis, osUser); rErr != nil {
+				slog.WarnContext(ctx, "cache: revoke tenant ACL", "err", rErr, "os_user", osUser)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"cache_enabled": req.Enabled})

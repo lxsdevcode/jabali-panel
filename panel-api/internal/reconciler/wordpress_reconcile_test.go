@@ -73,6 +73,15 @@ func (m *mockWordPressInstallRepo) ListReadyByUpdatedAtAsc(_ context.Context, _ 
 	return nil, nil
 }
 
+
+func (m *mockWordPressInstallRepo) CountCacheEnabledByUserID(_ context.Context, _, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockWordPressInstallRepo) UpdateCacheEnabled(_ context.Context, _ string, _ bool) error {
+	return nil
+}
+
 func (m *mockWordPressInstallRepo) UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error {
 	m.updateCalls = append(m.updateCalls, struct {
 		id      string

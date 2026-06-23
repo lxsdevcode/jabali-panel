@@ -37,6 +37,11 @@ type ApplicationInstallRepository interface {
 	UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error
 	// UpdateCacheEnabled writes application_installs.cache_enabled (GH #406).
 	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
+	// CountCacheEnabledByUserID counts a user's WordPress installs with the
+	// object cache ON, excluding excludeID. The per-tenant Redis ACL user
+	// wp_<osuser> is shared across a tenant's installs, so it may only be
+	// revoked when this returns 0 (the last install just disabled) — GH #408.
+	CountCacheEnabledByUserID(ctx context.Context, userID, excludeID string) (int64, error)
 	Delete(ctx context.Context, id string) error
 	// ListReadyByUpdatedAtAsc returns ready installs ordered oldest-
 	// updated-first, capped to limit. Reconciler probe loop uses this
@@ -207,6 +212,15 @@ func (r *applicationInstallRepo) UpdateStatus(ctx context.Context, id, status st
 func (r *applicationInstallRepo) UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error {
 	return r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
 		Where("id = ?", id).Update("cache_enabled", enabled).Error
+}
+
+func (r *applicationInstallRepo) CountCacheEnabledByUserID(ctx context.Context, userID, excludeID string) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
+		Where("user_id = ? AND app_type = ? AND cache_enabled = ? AND id <> ?",
+			userID, "wordpress", true, excludeID).
+		Count(&n).Error
+	return n, err
 }
 
 func (r *applicationInstallRepo) Delete(ctx context.Context, id string) error {

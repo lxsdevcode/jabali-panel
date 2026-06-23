@@ -487,6 +487,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Packages:        deps.Packages,
 				Reconciler:      deps.Reconciler,
 				Log:             deps.Log,
+				Redis:           deps.Redis,
 				// M20: atomic Kratos identity creation on POST /users.
 				KratosClient: deps.KratosClient,
 			})
