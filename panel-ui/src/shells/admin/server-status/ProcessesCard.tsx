@@ -4,11 +4,10 @@
 // Kill icon buttons (SIGTERM / SIGKILL) with confirm Modal. The agent
 // owns the denylist.
 import { useState } from "react";
-import { Button, Card, Modal, Space, Statistic, Table, Tooltip, message } from "antd";
+import { Button, Card, Modal, Space, Statistic, Table, message } from "antd";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { CloseOutlined, ThunderboltOutlined } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
 import { RowActions } from "../../../components/RowActions";
 import { UnorderedListOutlined } from "@ant-design/icons";
 
