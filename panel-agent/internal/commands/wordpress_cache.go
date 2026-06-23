@@ -59,6 +59,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		// plugin shouldn't fail the disable).
 		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "jabali-wp-cache", "disable")
 		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "plugin", "deactivate", "jabali-wp-cache")
+		_ = setWPConfigCacheConstants(p.InstallPath, "", 0, "", "", false) // strip the managed block
 		return wordpressCacheSetResult{Ok: true, Enabled: false}, nil
 	}
 
@@ -94,6 +95,16 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	}
 	if err := exec.CommandContext(ctx, "chown", p.OSUser+":www-data", cfgPath).Run(); err != nil {
 		return nil, bkInternal("chown cache config", err)
+	}
+
+	// 2b. Pin the jabali settings as CONSTANTS in wp-config.php. The plugin's
+	//     activation regenerates wp-content/jabali-wp-cache-config.php with a
+	//     SELF-DERIVED key prefix (md5 of the site URL), which would NOT match the
+	//     per-tenant Redis ACL (~jc:<osuser>:*) — so the object cache would NOPERM
+	//     even with socket access. apply_constants() in the plugin makes these
+	//     JABALI_CACHE_* defines authoritative over that regenerated file.
+	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, true); err != nil {
+		return nil, bkInternal("write wp-config constants", err)
 	}
 
 	// 3. Grant the tenant access to the Redis client socket group so its
@@ -141,6 +152,79 @@ func wpCacheConfigPHP(socket string, db int, prefix, password string) string {
 		"  'password'   => '" + esc(password) + "',\n" +
 		"  'prefix'     => '" + esc(prefix) + "',\n" +
 		");\n"
+}
+
+// wpConfigBeginMarker / wpConfigEndMarker fence the jabali-managed define block
+// in wp-config.php so it can be replaced/removed idempotently.
+const (
+	wpConfigBeginMarker = "// BEGIN Jabali WP Cache (managed by jabali #406) — do not edit"
+	wpConfigEndMarker   = "// END Jabali WP Cache"
+)
+
+// setWPConfigCacheConstants writes (enable) or strips (disable) the jabali-managed
+// JABALI_CACHE_* define block in <installPath>/wp-config.php. The block is inserted
+// just before the "stop editing" marker (or wp-settings.php require), so the defines
+// land before WordPress — and the plugin's drop-ins — load.
+func setWPConfigCacheConstants(installPath, socket string, db int, prefix, password string, enable bool) error {
+	cfgPath := filepath.Join(installPath, "wp-config.php")
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	content := stripWPCacheBlock(string(raw))
+
+	if enable {
+		esc := func(s string) string { // PHP single-quote: escape \ then '
+			s = strings.ReplaceAll(s, "\\", "\\\\")
+			return strings.ReplaceAll(s, "'", "\\'")
+		}
+		block := wpConfigBeginMarker + "\n" +
+			"if ( ! defined( 'JABALI_CACHE_SOCKET' ) )   define( 'JABALI_CACHE_SOCKET', '" + esc(socket) + "' );\n" +
+			"if ( ! defined( 'JABALI_CACHE_DB' ) )       define( 'JABALI_CACHE_DB', " + strconv.Itoa(db) + " );\n" +
+			"if ( ! defined( 'JABALI_CACHE_PASSWORD' ) ) define( 'JABALI_CACHE_PASSWORD', '" + esc(password) + "' );\n" +
+			"if ( ! defined( 'JABALI_CACHE_PREFIX' ) )   define( 'JABALI_CACHE_PREFIX', '" + esc(prefix) + "' );\n" +
+			wpConfigEndMarker + "\n"
+		content = insertBeforeWPSettings(content, block)
+	}
+
+	if err := os.WriteFile(cfgPath, []byte(content), 0o640); err != nil {
+		return err
+	}
+	// wp-config.php is owned <user>:www-data on a jabali install; preserve that.
+	_ = exec.Command("chown", "--reference="+filepath.Dir(cfgPath), cfgPath).Run()
+	return nil
+}
+
+// stripWPCacheBlock removes a previously-inserted BEGIN..END jabali block
+// (idempotent re-apply / clean disable). No block → returned unchanged.
+func stripWPCacheBlock(content string) string {
+	start := strings.Index(content, wpConfigBeginMarker)
+	if start < 0 {
+		return content
+	}
+	end := strings.Index(content[start:], wpConfigEndMarker)
+	if end < 0 {
+		return content // malformed; leave alone rather than truncate
+	}
+	end = start + end + len(wpConfigEndMarker)
+	if end < len(content) && content[end] == '\n' {
+		end++
+	}
+	return content[:start] + content[end:]
+}
+
+// insertBeforeWPSettings places block before the "stop editing" marker or the
+// wp-settings.php require (whichever appears first); falls back to appending.
+func insertBeforeWPSettings(content, block string) string {
+	for _, anchor := range []string{"/* That's all, stop editing!", "require_once ABSPATH . 'wp-settings.php'", "require_once(ABSPATH . 'wp-settings.php')"} {
+		if i := strings.Index(content, anchor); i >= 0 {
+			return content[:i] + block + content[i:]
+		}
+	}
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return content + block
 }
 
 func runWPAsTenant(ctx context.Context, osUser, installPath string, args ...string) error {

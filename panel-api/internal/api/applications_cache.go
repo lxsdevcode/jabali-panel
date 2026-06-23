@@ -97,7 +97,11 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		installPath = path.Join(domain.DocRoot, install.Subdirectory)
 	}
 
-	prefix := "jc:" + osUser + ":" // ACL: ~jc:<osuser>:*
+	// Per-site prefix UNDER the per-tenant ACL namespace. The plugin wraps the
+	// value as jc:<value>: ; "<osuser>:<installID>" -> jc:<osuser>:<installID>:
+	// which the ACL key pattern ~jc:<osuser>:* still matches, while staying unique
+	// per install so a tenant's two sites never collide.
+	prefix := osUser + ":" + installID
 
 	if req.Enabled {
 		// 1. Provision the per-tenant ACL user BEFORE the plugin tries to auth.
