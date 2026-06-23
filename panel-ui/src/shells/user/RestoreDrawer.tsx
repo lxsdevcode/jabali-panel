@@ -50,6 +50,8 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const [restoreHome, setRestoreHome] = useState(false);
+  const [mailboxes, setMailboxes] = useState<string[]>([]);
+  const [selectedMb, setSelectedMb] = useState<string[]>([]);
   const [dnsDomains, setDnsDomains] = useState<string[]>([]);
   const [selectedDns, setSelectedDns] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -62,6 +64,8 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
     setSelected([]);
     setConfirmOverwrite(false);
     setRestoreHome(false);
+    setMailboxes([]);
+    setSelectedMb([]);
     setDnsDomains([]);
     setSelectedDns([]);
     setResult(null);
@@ -72,6 +76,10 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
           .filter((s) => s.name === "db" && s.status === "ok")
           .flatMap((s) => s.items ?? []);
         setDatabases(dbs);
+        const mbs = (resp.data.stages ?? [])
+          .filter((st) => st.name === "mail" && st.status === "ok")
+          .flatMap((st) => st.items ?? []);
+        setMailboxes(mbs);
         setDnsDomains(resp.data.dns_domains ?? []);
       })
       .catch((err) =>
@@ -83,13 +91,13 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   }, [open, backupId]);
 
   const handleRestore = async () => {
-    if (!backupId || (selected.length === 0 && !restoreHome && selectedDns.length === 0)) return;
+    if (!backupId || (selected.length === 0 && !restoreHome && selectedDns.length === 0 && selectedMb.length === 0)) return;
     setSubmitting(true);
     setResult(null);
     try {
       const resp = await apiClient.post<RestoreResult>(
         `/me/backups/${backupId}/restore`,
-        { databases: selected, home: restoreHome, dns_domains: selectedDns, overwrite: true },
+        { databases: selected, home: restoreHome, mailboxes: selectedMb, dns_domains: selectedDns, overwrite: true },
       );
       setResult(resp.data);
       const n = resp.data.applied?.length ?? 0;
@@ -152,6 +160,22 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
             </>
           )}
 
+          {mailboxes.length > 0 && (
+            <>
+              <Typography.Text strong>Mailboxes</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                Restores messages from the backup. Additive — existing messages
+                are kept (deduped), nothing is deleted.
+              </Typography.Text>
+              <Checkbox.Group
+                value={selectedMb}
+                onChange={(v) => setSelectedMb(v as string[])}
+                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                options={mailboxes.map((m) => ({ label: m, value: m }))}
+              />
+            </>
+          )}
+
           {dnsDomains.length > 0 && (
             <>
               <Typography.Text strong>DNS records</Typography.Text>
@@ -168,7 +192,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
             </>
           )}
 
-          {(selected.length > 0 || restoreHome || selectedDns.length > 0) && (
+          {(selected.length > 0 || restoreHome || selectedDns.length > 0 || selectedMb.length > 0) && (
             <Alert
               type="warning"
               showIcon
@@ -177,7 +201,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
             />
           )}
 
-          {(selected.length > 0 || restoreHome || selectedDns.length > 0) && (
+          {(selected.length > 0 || restoreHome || selectedDns.length > 0 || selectedMb.length > 0) && (
             <>
               <Checkbox
                 checked={confirmOverwrite}
