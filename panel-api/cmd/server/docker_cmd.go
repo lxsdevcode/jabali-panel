@@ -150,8 +150,20 @@ func isLikelyUnprivilegedContainer() bool {
 	if err != nil {
 		return false // can't tell; let the restart+rollback path catch failures.
 	}
-	f := strings.Fields(strings.TrimSpace(string(b)))
-	return !(len(f) == 3 && f[0] == "0" && f[1] == "0")
+	return uidMapIsUnprivileged(string(b))
+}
+
+// uidMapIsUnprivileged reports whether a /proc/<pid>/uid_map body describes an
+// unprivileged user namespace. The identity map "0 0 4294967295" means uid 0 is
+// the real root (privileged host/VM/privileged LXC). Any other 3-field mapping
+// (e.g. "0 100000 65536") means root is remapped — an unprivileged container,
+// where docker userns-remap can't work. Unparseable -> false (let rollback catch).
+func uidMapIsUnprivileged(uidMap string) bool {
+	f := strings.Fields(strings.TrimSpace(uidMap))
+	if len(f) != 3 {
+		return false
+	}
+	return !(f[0] == "0" && f[1] == "0")
 }
 
 func runDockerEnableTenant(yes bool) error {
