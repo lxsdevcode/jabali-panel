@@ -161,14 +161,32 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		}
 	}
 
-	// 3. Couple the nginx page cache: same flag the More-menu toggle writes.
-	if err := h.cfg.Domains.UpdateCacheEnabled(ctx, domain.ID, req.Enabled); err != nil {
-		slog.ErrorContext(ctx, "cache: domain flag", "err", err, "domain_id", domain.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+	// 3. Couple the nginx page cache (domains.cache_enabled, ADR-0108). Enabling
+	// is additive. On DISABLE, a domain can host multiple installs (root +
+	// /blog), so only flip the per-domain flag OFF when no sibling install on
+	// the same domain still wants it — otherwise we'd kill page cache for a
+	// site whose own switch is still ON (GH #409).
+	desiredDomainCache := req.Enabled
+	if !req.Enabled {
+		siblings, sErr := h.cfg.ApplicationInstalls.CountCacheEnabledByDomainID(ctx, domain.ID, installID)
+		if sErr != nil {
+			// Conservative on error: leave the page cache as-is rather than risk
+			// clobbering a sibling. Skip the domain flag write this pass.
+			slog.WarnContext(ctx, "cache: count siblings on domain", "err", sErr, "domain_id", domain.ID)
+			desiredDomainCache = domain.CacheEnabled
+		} else if siblings > 0 {
+			desiredDomainCache = true // a sibling still wants the page cache
+		}
 	}
-	if h.cfg.Reconciler != nil {
-		h.cfg.Reconciler.Schedule(domain.ID) // re-render vhost + nginx reload
+	if desiredDomainCache != domain.CacheEnabled {
+		if err := h.cfg.Domains.UpdateCacheEnabled(ctx, domain.ID, desiredDomainCache); err != nil {
+			slog.ErrorContext(ctx, "cache: domain flag", "err", err, "domain_id", domain.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		if h.cfg.Reconciler != nil {
+			h.cfg.Reconciler.Schedule(domain.ID) // re-render vhost + nginx reload
+		}
 	}
 
 	// 4. Persist the install-level switch state.

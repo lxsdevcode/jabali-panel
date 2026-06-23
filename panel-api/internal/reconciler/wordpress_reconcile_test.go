@@ -78,6 +78,10 @@ func (m *mockWordPressInstallRepo) CountCacheEnabledByUserID(_ context.Context, 
 	return 0, nil
 }
 
+func (m *mockWordPressInstallRepo) CountCacheEnabledByDomainID(_ context.Context, _, _ string) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockWordPressInstallRepo) UpdateCacheEnabled(_ context.Context, _ string, _ bool) error {
 	return nil
 }

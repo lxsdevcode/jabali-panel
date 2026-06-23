@@ -42,6 +42,12 @@ type ApplicationInstallRepository interface {
 	// wp_<osuser> is shared across a tenant's installs, so it may only be
 	// revoked when this returns 0 (the last install just disabled) — GH #408.
 	CountCacheEnabledByUserID(ctx context.Context, userID, excludeID string) (int64, error)
+	// CountCacheEnabledByDomainID counts cache-ON WordPress installs on a domain,
+	// excluding excludeID. domains.cache_enabled (the nginx page cache, ADR-0108)
+	// is per-domain but a domain can host multiple installs, so it may only be
+	// flipped off when this returns 0 — otherwise a sibling loses page cache
+	// (GH #409).
+	CountCacheEnabledByDomainID(ctx context.Context, domainID, excludeID string) (int64, error)
 	Delete(ctx context.Context, id string) error
 	// ListReadyByUpdatedAtAsc returns ready installs ordered oldest-
 	// updated-first, capped to limit. Reconciler probe loop uses this
@@ -219,6 +225,15 @@ func (r *applicationInstallRepo) CountCacheEnabledByUserID(ctx context.Context, 
 	err := r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
 		Where("user_id = ? AND app_type = ? AND cache_enabled = ? AND id <> ?",
 			userID, "wordpress", true, excludeID).
+		Count(&n).Error
+	return n, err
+}
+
+func (r *applicationInstallRepo) CountCacheEnabledByDomainID(ctx context.Context, domainID, excludeID string) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
+		Where("domain_id = ? AND app_type = ? AND cache_enabled = ? AND id <> ?",
+			domainID, "wordpress", true, excludeID).
 		Count(&n).Error
 	return n, err
 }
