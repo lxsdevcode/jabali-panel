@@ -101,7 +101,8 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 
 	if req.Enabled {
 		// 1. Provision the per-tenant ACL user BEFORE the plugin tries to auth.
-		if h.cfg.Redis == nil {
+		if h.cfg.Redis == nil || h.cfg.CacheTokenSecret == "" {
+			// No Redis, or no secret to derive a non-guessable per-tenant token.
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "redis_unavailable"})
 			return
 		}

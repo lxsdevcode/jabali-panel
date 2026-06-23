@@ -22,6 +22,10 @@ import (
 
 const bundledWPCachePluginDir = "/usr/local/share/jabali/wp-plugins/jabali-wp-cache"
 
+// redisClientsGroup gates /run/redis/redis.sock. Distinct from jabali-sockets
+// (which also fronts the root agent socket) so tenants get Redis but nothing else.
+const redisClientsGroup = "jabali-redis-clients"
+
 type wordpressCacheSetParams struct {
 	InstallPath   string `json:"install_path"`
 	OSUser        string `json:"os_user"`
@@ -92,7 +96,19 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, bkInternal("chown cache config", err)
 	}
 
-	// 3. Activate + enable (drop-ins + WP_CACHE), as the tenant.
+	// 3. Grant the tenant access to the Redis client socket group so its
+	// php-fpm workers can open /run/redis/redis.sock (the socket is group
+	// jabali-redis-clients, NOT jabali-sockets — tenants must never reach the
+	// root agent socket; ADR-0148). Group membership is fixed at the fpm master
+	// start, so the per-user master is RESTARTED (not reloaded) to pick it up.
+	_ = exec.CommandContext(ctx, "groupadd", "-f", redisClientsGroup).Run()
+	if err := exec.CommandContext(ctx, "usermod", "-aG", redisClientsGroup, p.OSUser).Run(); err != nil {
+		return nil, bkInternal("add tenant to "+redisClientsGroup, err)
+	}
+	// Best-effort: a missing/!active fpm master (e.g. CLI-only install) isn't fatal.
+	_ = exec.CommandContext(ctx, "systemctl", "restart", "jabali-fpm@"+p.OSUser+".service").Run()
+
+	// 4. Activate + enable (drop-ins + WP_CACHE), as the tenant.
 	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "activate", "jabali-wp-cache"); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
 			Message: fmt.Sprintf("wp plugin activate: %v: %s", err, out)}

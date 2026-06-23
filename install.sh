@@ -2482,6 +2482,21 @@ install_redis_acl() {
   local sock="/run/redis/redis.sock"
   local aclfile="/etc/redis/users.acl"
 
+  # ADR-0148 socket access: a dedicated group fronts ONLY the Redis socket so
+  # WP-cache tenants (#406) can reach Redis without joining jabali-sockets
+  # (which also fronts the root agent socket). Granted via POSIX ACL in an
+  # ExecStartPost, so redis's primary Group=jabali-sockets — load-bearing for
+  # panel-api — is left untouched (zero blast radius on existing installs).
+  # Re-applied every start (RuntimeDirectory + socket are recreated each boot).
+  getent group jabali-redis-clients >/dev/null || groupadd --system jabali-redis-clients
+  install -d -m 0755 -o root -g root /etc/systemd/system/redis-server.service.d
+  local acl_unit="/etc/systemd/system/redis-server.service.d/20-jabali-redis-clients.conf"
+  local acl_unit_desired=$'# Managed by jabali install.sh — #406 / ADR-0148. Do NOT hand-edit.\n[Service]\nExecStartPost=+/bin/sh -c \'for i in 1 2 3 4 5; do [ -S /run/redis/redis.sock ] && break; sleep 1; done; setfacl -m g:jabali-redis-clients:rx /run/redis 2>/dev/null; setfacl -m g:jabali-redis-clients:rw /run/redis/redis.sock 2>/dev/null; true\'\n'
+  if [[ ! -f "$acl_unit" ]] || ! cmp -s <(printf '%s' "$acl_unit_desired") "$acl_unit"; then
+    printf '%s' "$acl_unit_desired" > "$acl_unit"; chmod 0644 "$acl_unit"
+    systemctl daemon-reload
+  fi
+
   # 1. Panel token — read-or-create in panel.env (never rotate: a rotate would
   #    orphan the running panel until restart).
   local panel_token
@@ -3981,6 +3996,18 @@ build_backend() {
       "$REPO_DIR/install/docker-apps/" \
       /usr/local/share/jabali/docker-apps/
     _ok "synced docker-app catalog -> /usr/local/share/jabali/docker-apps/"
+  fi
+
+  # #406: bundle the jabali-wp-cache WordPress plugin read-only into the
+  # production path the agent installs FROM (wordpress.cache_set). Tenants
+  # never supply plugin code; re-synced on every `jabali update`.
+  if [[ -d "$REPO_DIR/wp-plugins/jabali-wp-cache" ]]; then
+    install -d -m 0755 /usr/local/share/jabali/wp-plugins
+    rsync -a --delete --exclude=".git" \
+      "$REPO_DIR/wp-plugins/jabali-wp-cache/" \
+      /usr/local/share/jabali/wp-plugins/jabali-wp-cache/
+    chown -R root:root /usr/local/share/jabali/wp-plugins/jabali-wp-cache
+    _ok "bundled jabali-wp-cache -> /usr/local/share/jabali/wp-plugins/jabali-wp-cache/"
   fi
 
   # Ergonomic alias: `jabali ...` works the same as `jabali-panel ...`.
