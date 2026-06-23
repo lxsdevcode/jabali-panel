@@ -6,15 +6,14 @@
 // (open AddGrantModal), Password (rotate + reveal modal), and Delete
 // (drops the whole user, cascading all grants).
 import { useState } from "react";
-import { Button, Card, Space, Table, Tag, Tooltip, Typography, message } from "antd";
-import { KeyOutlined, PlusOutlined, UserOutlined } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { Button, Card, Space, Table, Tag, Typography, message } from "antd";
+import { KeyOutlined, PlusOutlined, UserOutlined, DeleteOutlined } from "@icons";
+import { RowActions } from "../../../components/RowActions";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../../../apiClient";
 import { AddGrantModal } from "../../../components/AddGrantModal";
 import { DatabaseUserPasswordModal } from "../../../components/DatabaseUserPasswordModal";
-import { RowDeleteButton } from "../../../components/RowDeleteButton";
 import { columnSearchProps } from "../../../components/columnSearch";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { useDeleteMutation } from "../../../hooks/useQueries";
@@ -250,31 +249,20 @@ export const DatabaseUsersList = () => {
             dataIndex="actions"
             width={180}
             render={(_, row) => (
-              <Space>
-                <Tooltip title="Add database access">
-                  <RowActionButton
-                    icon={<PlusOutlined />}
-                    onClick={() => setGrantTarget(row)}
-                  >
-                    Grant
-                  </RowActionButton>
-                </Tooltip>
-                <Tooltip title="Rotate password">
-                  <RowActionButton
-                    icon={<KeyOutlined />}
-                    loading={rotatingId === row.id}
-                    onClick={() => rotate(row)}
-                  >
-                    Rotate
-                  </RowActionButton>
-                </Tooltip>
-                <RowDeleteButton
-                  confirmTitle={`Delete user "${row.username}"?`}
-                  onConfirm={async () => {
-                    await deleteMutation.mutateAsync({ id: row.id });
-                  }}
-                />
-              </Space>
+              <RowActions
+                actions={[
+                  { key: "grant", label: "Grant", icon: <PlusOutlined />, onClick: () => setGrantTarget(row), tooltip: "Add database access" },
+                  { key: "rotate", label: "Rotate", icon: <KeyOutlined />, loading: rotatingId === row.id, onClick: () => rotate(row), tooltip: "Rotate password" },
+                  {
+                    key: "delete",
+                    label: "Delete",
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: () => { void deleteMutation.mutateAsync({ id: row.id }); },
+                    confirm: { title: `Delete user "${row.username}"?`, okText: "Delete" },
+                  },
+                ]}
+              />
             )}
           />
         </SearchableTableStringQ>
