@@ -16,8 +16,12 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'JABALI_CACHE_VERSION', '1.0.0' );
-define( 'JABALI_CACHE_PLUGIN_FILE', __FILE__ );
+if ( ! defined( 'JABALI_CACHE_VERSION' ) ) {
+	define( 'JABALI_CACHE_VERSION', '1.0.0' );
+}
+if ( ! defined( 'JABALI_CACHE_PLUGIN_FILE' ) ) {
+	define( 'JABALI_CACHE_PLUGIN_FILE', __FILE__ );
+}
 if ( ! defined( 'JABALI_CACHE_PLUGIN_DIR' ) ) {
 	define( 'JABALI_CACHE_PLUGIN_DIR', __DIR__ );
 }
