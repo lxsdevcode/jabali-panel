@@ -56,7 +56,22 @@ func ensureRootDir(dir string) error {
 			return fmt.Errorf("refuse: %s is not a directory", dir)
 		}
 		if !isRootOwned(fi) {
-			return fmt.Errorf("refuse: %s is not root-owned", dir)
+			// Legacy / reclaim: older agents created /home/<user>/.jabali[/bin]
+			// owned by the tenant. It is a real, non-symlink directory at a
+			// FIXED path, so reclaiming it for root is strictly safer than
+			// refusing forever (which bricks the per-user CLI php pin with no
+			// recovery path — GH #256 follow-up). Reclaim TOCTOU-safely: open
+			// without following symlinks and fchown the descriptor, so a tenant
+			// can't race a symlink into place between the stat and the chown.
+			fd, oErr := os.OpenFile(dir, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_DIRECTORY, 0)
+			if oErr != nil {
+				return fmt.Errorf("refuse: cannot safely reclaim %s: %w", dir, oErr)
+			}
+			defer fd.Close()
+			if cErr := fd.Chown(0, 0); cErr != nil {
+				return fmt.Errorf("reclaim %s for root: %w", dir, cErr)
+			}
+			return nil
 		}
 		return nil
 	}
