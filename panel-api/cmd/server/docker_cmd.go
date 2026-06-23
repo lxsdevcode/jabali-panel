@@ -96,6 +96,27 @@ func mergeUsernsRemap(daemonJSON []byte) ([]byte, bool, error) {
 	return append(out, '\n'), true, nil
 }
 
+// removeUsernsRemap strips "userns-remap" from a daemon.json document. Returns
+// the new bytes + whether anything was removed. Used to recover dockerd when a
+// userns-remap restart fails (GH #272) — regardless of which run added it.
+func removeUsernsRemap(daemonJSON []byte) ([]byte, bool, error) {
+	doc := map[string]any{}
+	if len(daemonJSON) > 0 {
+		if err := json.Unmarshal(daemonJSON, &doc); err != nil {
+			return nil, false, fmt.Errorf("parse daemon.json: %w", err)
+		}
+	}
+	if _, ok := doc["userns-remap"]; !ok {
+		return daemonJSON, false, nil
+	}
+	delete(doc, "userns-remap")
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, false, err
+	}
+	return append(out, '\n'), true, nil
+}
+
 // parseDockremapBase reads the base subuid for the dockremap user out of an
 // /etc/subuid body (lines "name:base:count"). The chown retrofit shifts app
 // data into <base>:<base>. Pure for testing.
@@ -208,13 +229,20 @@ func runDockerEnableTenant(yes bool) error {
 		// where nested user namespaces for docker are unavailable. REVERT
 		// daemon.json + restart so the base docker daemon comes back instead of
 		// being left permanently dead (GH #272), then report a clear error.
-		if changed {
-			if len(cur) == 0 {
-				_ = os.Remove(dockerDaemonJSON)
-			} else {
-				_ = os.WriteFile(dockerDaemonJSON, cur, 0o644)
+		// ALWAYS strip userns-remap + restart, regardless of whether THIS run
+		// added it — the goal is that docker comes back, and userns-remap is the
+		// only thing this command manages. Re-read the file so we clean whatever
+		// is actually on disk.
+		if onDisk, rerr := os.ReadFile(dockerDaemonJSON); rerr == nil {
+			if cleaned, removed, cerr := removeUsernsRemap(onDisk); cerr == nil && removed {
+				if len(cleaned) <= 3 { // "{}\n" — nothing left worth keeping
+					_ = os.Remove(dockerDaemonJSON)
+				} else {
+					_ = os.WriteFile(dockerDaemonJSON, cleaned, 0o644)
+				}
+				_ = exec.Command("systemctl", "reset-failed", "docker").Run()
+				_ = exec.Command("systemctl", "restart", "docker").Run()
 			}
-			_ = exec.Command("systemctl", "restart", "docker").Run()
 		}
 		hint := ""
 		if isLikelyUnprivilegedContainer() {
