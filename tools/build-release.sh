@@ -82,6 +82,15 @@ $GO_BIN build -trimpath -ldflags "$LDFLAGS_AGENT" \
 
 chmod 0755 "$STAGE"/bin/*
 
+# 2b. Bundle the jabali-wp-cache WordPress plugin (GH #406). The agent installs
+#     it FROM /usr/local/share/jabali/wp-plugins; ship it in the release so the
+#     tarball-update path matches install.sh's source-build bundle.
+if [[ -d "${REPO_ROOT}/wp-plugins/jabali-wp-cache" ]]; then
+  mkdir -p "$STAGE/wp-plugins"
+  rsync -a --exclude=.git "${REPO_ROOT}/wp-plugins/jabali-wp-cache" "$STAGE/wp-plugins/"
+  echo "==> staged wp-plugins/jabali-wp-cache"
+fi
+
 # 3. MANIFEST: machine-readable, single line per key. update.go parses
 #    this to print "Updating to release <short_sha> (built <build_time>)".
 cat > "$STAGE/MANIFEST" <<MANIFEST
@@ -96,7 +105,7 @@ MANIFEST
 # 4. Tar + sha256.
 TAR_NAME="jabali-release-${SHORT_SHA}.tar.gz"
 echo "==> packing $TAR_NAME"
-tar -C "$STAGE" -czf "$DIST_DIR/$TAR_NAME" bin MANIFEST
+tar -C "$STAGE" -czf "$DIST_DIR/$TAR_NAME" bin MANIFEST $([[ -d "$STAGE/wp-plugins" ]] && echo wp-plugins)
 
 (cd "$DIST_DIR" && sha256sum "$TAR_NAME" > "${TAR_NAME}.sha256")
 SIZE_MB=$(du -m "$DIST_DIR/$TAR_NAME" | awk '{print $1}')

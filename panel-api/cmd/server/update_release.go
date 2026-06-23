@@ -187,7 +187,31 @@ func installFromRelease(ctx context.Context, log func(string, ...any)) (installe
 		log("release: installed %s", dst)
 	}
 
+	// 6b. Install the bundled WordPress plugins (GH #406). The agent installs
+	//     jabali-wp-cache FROM /usr/local/share/jabali/wp-plugins; ship it in the
+	//     tarball so the release-update path matches the source-build bundle.
+	//     Best-effort: an older tarball without wp-plugins/ must not fail the
+	//     whole update (the binaries are already in).
+	if src := filepath.Join(extractDir, "wp-plugins", "jabali-wp-cache"); dirExists(src) {
+		const dst = "/usr/local/share/jabali/wp-plugins/jabali-wp-cache"
+		_ = os.MkdirAll("/usr/local/share/jabali/wp-plugins", 0o755)
+		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", "--exclude=.git", src+"/", dst+"/")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return false, "", fmt.Errorf("release: install wp-plugins: %v: %s", err, out)
+		}
+		_ = exec.CommandContext(ctx, "chown", "-R", "root:root", dst).Run()
+		log("release: installed %s", dst)
+	} else {
+		log("release: tarball has no wp-plugins/jabali-wp-cache (older release) — skipping plugin bundle")
+	}
+
 	return true, fullSHA, nil
+}
+
+// dirExists reports whether path is an existing directory.
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 // fetchLatestMainSHA hits Gitea's branch-info endpoint and returns the
