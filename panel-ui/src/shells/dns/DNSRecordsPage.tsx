@@ -8,7 +8,7 @@ import {
   CloseOutlined,
   PlusOutlined,
 } from "@icons";
-import { RowActionButton } from "../../components/RowActionButton";
+import { RowActions } from "../../components/RowActions";
 import {
   Button,
   Drawer,
@@ -25,7 +25,6 @@ import {
   Switch,
   Row,
   Col,
-  Popconfirm,
   Spin,
   Empty,
   notification,
@@ -631,33 +630,20 @@ export const DNSRecordsPage = () => {
                   }
 
                   return (
-                    <Space size={isCompact ? 4 : "small"}>
-                      <Tooltip title={isCompact ? "Edit" : undefined}>
-                        <RowActionButton
-                          icon={<EditOutlined />}
-                          onClick={() => openEditDrawer(record)}
-                        >
-                          {isCompact ? null : "Edit"}
-                        </RowActionButton>
-                      </Tooltip>
-                      <Popconfirm
-                        title="Delete record?"
-                        description="This action cannot be undone."
-                        onConfirm={() => handleDeleteRecord(record.id)}
-                        okText="Delete"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Tooltip title={isCompact ? "Delete" : undefined}>
-                          <RowActionButton
-                            danger
-                            icon={<DeleteOutlined />}
-                            loading={deletingRecordId === record.id}
-                          >
-                            {isCompact ? null : "Delete"}
-                          </RowActionButton>
-                        </Tooltip>
-                      </Popconfirm>
-                    </Space>
+                    <RowActions
+                      actions={[
+                        { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => openEditDrawer(record) },
+                        {
+                          key: "delete",
+                          label: "Delete",
+                          icon: <DeleteOutlined />,
+                          danger: true,
+                          loading: deletingRecordId === record.id,
+                          onClick: () => handleDeleteRecord(record.id),
+                          confirm: { title: "Delete record?", description: "This action cannot be undone.", okText: "Delete" },
+                        },
+                      ]}
+                    />
                   );
                 },
               },
