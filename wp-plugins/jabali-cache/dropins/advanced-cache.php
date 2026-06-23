@@ -36,17 +36,17 @@ if ( '' === JABALI_CACHE_PLUGIN_DIR ) {
 	return;
 }
 
-$jabali_page_engine = JABALI_CACHE_PLUGIN_DIR . '/includes/class-page-cache.php';
-if ( ! is_readable( $jabali_page_engine ) ) {
+$jabali_cache_page_engine = JABALI_CACHE_PLUGIN_DIR . '/includes/class-page-cache.php';
+if ( ! is_readable( $jabali_cache_page_engine ) ) {
 	return;
 }
 
 require_once JABALI_CACHE_PLUGIN_DIR . '/includes/lib.php';
-require_once $jabali_page_engine;
+require_once $jabali_cache_page_engine;
 
 try {
-	$jabali_page_cache = new Jabali_Cache_Page_Cache();
-	$jabali_page_cache->run();
+	$jabali_cache_page_cache = new Jabali_Cache_Page_Cache();
+	$jabali_cache_page_cache->run();
 } catch ( \Throwable $e ) {
 	// Never let the page cache take the site down.
 	return;
