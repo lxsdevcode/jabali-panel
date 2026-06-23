@@ -355,7 +355,9 @@ class Jabali_Cache_Client {
 			$jabali_auth = ! empty( $this->cfg['username'] )
 				? array( 'AUTH', $this->cfg['username'], $this->cfg['password'] )
 				: array( 'AUTH', $this->cfg['password'] );
-			if ( true !== $this->cmd( $jabali_auth ) ) {
+			// Redis replies +OK to AUTH, which read_reply() returns as the string
+			// "OK" (not bool true). A wrong cred yields -WRONGPASS -> null.
+			if ( 'OK' !== $this->cmd( $jabali_auth ) ) {
 				$this->fail( 'AUTH rejected' );
 				return false;
 			}
