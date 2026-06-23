@@ -169,19 +169,18 @@ export const AdminCronList = () => {
             }}
             columns={[
               {
-                title: "Owner",
-                dataIndex: "username",
-                width: 160,
-                render: (u: string, row) => (
-                  <Tooltip title={`user_id: ${row.user_id}`}>
-                    <Typography.Text code>{u || row.user_id}</Typography.Text>
-                  </Tooltip>
-                ),
-              },
-              {
                 title: "Name",
                 dataIndex: "name",
-                render: (name: string) => <Typography.Text strong>{name}</Typography.Text>,
+                render: (name: string, row) => (
+                  <Space direction="vertical" size={0}>
+                    <Typography.Text strong>{name}</Typography.Text>
+                    <Tooltip title={`user_id: ${row.user_id}`}>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {row.username || row.user_id}
+                      </Typography.Text>
+                    </Tooltip>
+                  </Space>
+                ),
               },
               {
                 title: "Schedule",
