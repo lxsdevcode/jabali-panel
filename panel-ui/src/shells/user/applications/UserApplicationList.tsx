@@ -16,7 +16,6 @@ import {
   Tabs,
   Tag,
   Typography,
-  Popconfirm,
   message,
   Tooltip,
 } from "antd";
@@ -37,7 +36,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { SorterResult } from "antd/es/table/interface";
 
 import { columnSearchProps } from "../../../components/columnSearch";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { apiClient } from "../../../apiClient";
 import { useAuth } from "../../../auth/AuthContext";
@@ -145,62 +144,48 @@ const ActionsCell = ({
   };
 
   return (
-    <Space>
-      {canLogin && (
-        <Tooltip title="Log in to the admin dashboard">
-          <RowActionButton
-            icon={<LoginOutlined />}
-            loading={magicLinkLoading}
-            onClick={handleMagicLink}
-          >
-            Log in to admin
-          </RowActionButton>
-        </Tooltip>
-      )}
-      {record.cache_enabled && (
-        <Tooltip title="Clear the nginx page cache for this site">
-          <RowActionButton
-            icon={<ThunderboltOutlined />}
-            loading={purging}
-            onClick={handlePurge}
-          >
-            Purge cache
-          </RowActionButton>
-        </Tooltip>
-      )}
-      <Tooltip
-        title={
-          canClone
-            ? ""
-            : "Clone is only available for healthy WordPress installs"
-        }
-      >
-        <RowActionButton
-          icon={<CopyOutlined />}
-          disabled={!canClone}
-          onClick={onClone}
-        >
-          Clone
-        </RowActionButton>
-      </Tooltip>
-      <Popconfirm
-        title="Delete this application?"
-        description="The database and files will be removed. This cannot be undone."
-        okText="Delete"
-        okButtonProps={{ danger: true }}
-        cancelText="Cancel"
-        onConfirm={onDelete}
-        disabled={isDeleting}
-      >
-        <RowActionButton
-          danger
-          icon={<DeleteOutlined />}
-          loading={isDeleting}
-        >
-          Delete
-        </RowActionButton>
-      </Popconfirm>
-    </Space>
+    <RowActions
+      actions={[
+        {
+          key: "login",
+          label: "Log in to admin",
+          icon: <LoginOutlined />,
+          onClick: handleMagicLink,
+          loading: magicLinkLoading,
+          tooltip: "Log in to the admin dashboard",
+          hidden: !canLogin,
+        },
+        {
+          key: "purge",
+          label: "Purge cache",
+          icon: <ThunderboltOutlined />,
+          onClick: handlePurge,
+          loading: purging,
+          hidden: !record.cache_enabled,
+        },
+        {
+          key: "clone",
+          label: "Clone",
+          icon: <CopyOutlined />,
+          onClick: onClone,
+          disabled: !canClone,
+          tooltip: canClone ? undefined : "Clone is only available for healthy WordPress installs",
+        },
+        {
+          key: "delete",
+          label: "Delete",
+          icon: <DeleteOutlined />,
+          onClick: onDelete,
+          danger: true,
+          loading: isDeleting,
+          confirm: {
+            title: "Delete this application?",
+            description: "The database and files will be removed. This cannot be undone.",
+            okText: "Delete",
+          },
+        },
+      ]}
+    />
   );
 };
 
