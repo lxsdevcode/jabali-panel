@@ -44,6 +44,7 @@ func TestWordPressInstallCreate_Success(t *testing.T) {
 			install.Locale, install.UseWWW, install.Subdirectory, install.Status, install.LastError,
 			sqlmock.AnyArg(), sqlmock.AnyArg(),
 			install.AppType,
+			sqlmock.AnyArg(), // cache_enabled (GH #406)
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -84,7 +85,7 @@ func TestWordPressInstallCreate_UniqueDomainIDConstraint(t *testing.T) {
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg()).
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()). // +cache_enabled (GH #406)
 		WillReturnError(sql.ErrNoRows) // Simulates UNIQUE constraint violation
 	mock.ExpectRollback()
 
