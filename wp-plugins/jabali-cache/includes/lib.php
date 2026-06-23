@@ -76,6 +76,7 @@ class Jabali_Cache_Config {
 			'port'     => 6379,
 			'database' => 1,                          // ADR-0059: DB 1 for WP.
 			'password' => '',                         // jabali socket has no AUTH.
+			'username' => '',                         // Redis ACL user (AUTH <user> <pass>); empty = legacy AUTH.
 			'timeout'  => 1.0,                        // connect/read timeout (seconds).
 
 			// Behaviour.
@@ -150,6 +151,7 @@ class Jabali_Cache_Config {
 			'JABALI_CACHE_DB'       => array( 'database', false ),
 			'WP_REDIS_DATABASE'     => array( 'database', false ),
 			'JABALI_CACHE_PASSWORD' => array( 'password', false ),
+			'JABALI_CACHE_USER'     => array( 'username', false ),
 			'JABALI_CACHE_PREFIX'   => array( 'prefix', false ),
 			'JABALI_CACHE_MAXTTL'   => array( 'maxttl', false ),
 			'JABALI_CACHE_SCHEME'   => array( 'scheme', false ),
@@ -308,7 +310,12 @@ class Jabali_Cache_Client {
 				return false;
 			}
 			if ( ! empty( $this->cfg['password'] ) ) {
-				$redis->auth( $this->cfg['password'] );
+				// Redis 6+ ACL needs AUTH <user> <pass>; fall back to legacy single-arg.
+				if ( ! empty( $this->cfg['username'] ) ) {
+					$redis->auth( array( $this->cfg['username'], $this->cfg['password'] ) );
+				} else {
+					$redis->auth( $this->cfg['password'] );
+				}
 			}
 			$redis->select( (int) $this->cfg['database'] );
 			$this->redis     = $redis;
@@ -345,7 +352,10 @@ class Jabali_Cache_Client {
 		$this->driver = 'pure-php';
 
 		if ( ! empty( $this->cfg['password'] ) ) {
-			if ( true !== $this->cmd( array( 'AUTH', $this->cfg['password'] ) ) ) {
+			$jabali_auth = ! empty( $this->cfg['username'] )
+				? array( 'AUTH', $this->cfg['username'], $this->cfg['password'] )
+				: array( 'AUTH', $this->cfg['password'] );
+			if ( true !== $this->cmd( $jabali_auth ) ) {
 				$this->fail( 'AUTH rejected' );
 				return false;
 			}

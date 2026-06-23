@@ -59,7 +59,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		// plugin shouldn't fail the disable).
 		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "jabali-cache", "disable")
 		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "plugin", "deactivate", "jabali-cache")
-		_ = setWPConfigCacheConstants(p.InstallPath, "", 0, "", "", false) // strip the managed block
+		_ = setWPConfigCacheConstants(p.InstallPath, "", 0, "", "", "", false) // strip the managed block
 		return wordpressCacheSetResult{Ok: true, Enabled: false}, nil
 	}
 
@@ -103,7 +103,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	//     per-tenant Redis ACL (~jc:<osuser>:*) — so the object cache would NOPERM
 	//     even with socket access. apply_constants() in the plugin makes these
 	//     JABALI_CACHE_* defines authoritative over that regenerated file.
-	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, true); err != nil {
+	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, "wp_"+p.OSUser, true); err != nil {
 		return nil, bkInternal("write wp-config constants", err)
 	}
 
@@ -171,7 +171,7 @@ const (
 // JABALI_CACHE_* define block in <installPath>/wp-config.php. The block is inserted
 // just before the "stop editing" marker (or wp-settings.php require), so the defines
 // land before WordPress — and the plugin's drop-ins — load.
-func setWPConfigCacheConstants(installPath, socket string, db int, prefix, password string, enable bool) error {
+func setWPConfigCacheConstants(installPath, socket string, db int, prefix, password, username string, enable bool) error {
 	cfgPath := filepath.Join(installPath, "wp-config.php")
 	raw, err := os.ReadFile(cfgPath)
 	if err != nil {
@@ -188,6 +188,7 @@ func setWPConfigCacheConstants(installPath, socket string, db int, prefix, passw
 			"if ( ! defined( 'JABALI_CACHE_SOCKET' ) )   define( 'JABALI_CACHE_SOCKET', '" + esc(socket) + "' );\n" +
 			"if ( ! defined( 'JABALI_CACHE_DB' ) )       define( 'JABALI_CACHE_DB', " + strconv.Itoa(db) + " );\n" +
 			"if ( ! defined( 'JABALI_CACHE_PASSWORD' ) ) define( 'JABALI_CACHE_PASSWORD', '" + esc(password) + "' );\n" +
+			"if ( ! defined( 'JABALI_CACHE_USER' ) )     define( 'JABALI_CACHE_USER', '" + esc(username) + "' );\n" +
 			"if ( ! defined( 'JABALI_CACHE_PREFIX' ) )   define( 'JABALI_CACHE_PREFIX', '" + esc(prefix) + "' );\n" +
 			wpConfigEndMarker + "\n"
 		content = insertBeforeWPSettings(content, block)
