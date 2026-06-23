@@ -1,0 +1,7 @@
+# Files excluded from the wordpress.org build (SVN deploy + submission zip).
+/.git
+/.gitignore
+/.distignore
+/tests
+/README.md
+/config-sample.php

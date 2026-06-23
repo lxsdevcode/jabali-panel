@@ -1,4 +1,6 @@
 <?php
+
+defined( 'ABSPATH' ) || exit; // wp.org: prevent direct file access.
 /**
  * Jabali WP Cache — full-page cache engine.
  *

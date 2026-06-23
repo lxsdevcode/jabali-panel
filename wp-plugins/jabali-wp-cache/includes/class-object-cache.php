@@ -13,6 +13,8 @@
  * @package Jabali_Cache
  */
 
+defined( 'ABSPATH' ) || exit; // wp.org: prevent direct file access.
+
 if ( ! class_exists( 'Jabali_Cache_Client' ) ) {
 	require_once __DIR__ . '/lib.php';
 }
