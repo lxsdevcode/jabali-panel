@@ -369,9 +369,7 @@ export const UserDomainList = () => {
                     ],
                   }}
                 >
-                  <RowActionButton icon={<MoreOutlined />} color="default">
-                    More
-                  </RowActionButton>
+                  <RowActionButton icon={<MoreOutlined />} color="default" aria-label="More actions" />
                 </Dropdown>
                 </Space>
                 {activeModal?.domainId === r.id && activeModal.type === "redirects" && (

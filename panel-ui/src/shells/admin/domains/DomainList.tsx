@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button, Card, Dropdown, Modal, Space, Table, Tag, Tooltip, Typography, notification } from "antd";
 import {
   DeleteOutlined,
-  DownOutlined,
+  MoreOutlined,
   EditOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
@@ -390,9 +390,7 @@ export const DomainList = () => {
                     ],
                   }}
                 >
-                  <RowActionButton icon={<DownOutlined />} color="default">
-                    More
-                  </RowActionButton>
+                  <RowActionButton icon={<MoreOutlined />} color="default" aria-label="More actions" />
                 </Dropdown>
                 {activeModal?.domain.id === r.id && activeModal.type === "redirects" && (
                   <DomainRedirectsButton
