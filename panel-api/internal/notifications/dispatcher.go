@@ -129,7 +129,12 @@ func NewDispatcher(
 	if host == "" {
 		host = "panel"
 	}
-	consumer := fmt.Sprintf("panel-api-%s-%d", host, os.Getpid())
+	// Stable across restarts — NO pid. A pid-suffixed name stranded this
+	// process's in-flight PEL entries on every restart, so frequent restarts
+	// (deploys, crash-loops) piled up hundreds of dead consumers whose pending
+	// entries churned through reclaim straight into the DLQ. A stable name lets
+	// a restarted dispatcher reclaim its own prior PEL instead of orphaning it.
+	consumer := fmt.Sprintf("panel-api-%s", host)
 	return &Dispatcher{
 		cfg:         cfg.withDefaults(),
 		queue:       q,

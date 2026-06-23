@@ -59,10 +59,13 @@ func securityDecisionPass(ctx context.Context, d Deps, bin string) {
 		return
 	}
 
-	// Dedupe key includes the *bucket* of activity so a sustained burst
-	// fires once and a fresh spike fires again.
-	tag := fmt.Sprintf("ufw=%d,limitreq=%d", ufwDrops, nginxRateLimits)
-	if !shouldFire(ctx, d, "security.decision.fired", tag, securityDecisionCoolOff) {
+	// Dedupe on the EVENT KIND alone (empty tag) so any security activity
+	// raises at most one notification per cool-off window. The previous tag
+	// keyed on exact counts (ufw=%d,limitreq=%d) which (a) changed every tick
+	// and (b) was never a substring of the rendered body, so shouldFire never
+	// suppressed — on an internet-facing host with steady UFW drops that fired
+	// every tick forever and flooded the notification queue + DLQ.
+	if !shouldFire(ctx, d, "security.decision.fired", "", securityDecisionCoolOff) {
 		return
 	}
 
