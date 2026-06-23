@@ -4,6 +4,7 @@
 // "not enabled on this server" notice when the host has no userns-remap (the
 // backend 403s docker_tenant_not_enabled).
 import { useMemo, useState } from "react";
+import { RowActions } from "../../../components/RowActions";
 import {
   Alert,
   Button,
@@ -191,42 +192,23 @@ export const UserDockerAppsPage = () => {
             title: "Actions",
             key: "actions",
             render: (_, r) => (
-              <Space>
-                {r.status === "stopped" ? (
-                  <Button
-                    size="small"
-                    icon={<PlayCircleOutlined />}
-                    onClick={() => lifecycle.mutate({ id: r.id, action: "start" })}
-                  />
-                ) : (
-                  <Button
-                    size="small"
-                    icon={<PauseCircleOutlined />}
-                    onClick={() => lifecycle.mutate({ id: r.id, action: "stop" })}
-                  />
-                )}
-                <Button
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={() => lifecycle.mutate({ id: r.id, action: "restart" })}
-                />
-                <Button size="small" icon={<FileTextOutlined />} onClick={() => setLogsFor(r)} />
-                <Button size="small" icon={<KeyOutlined />} onClick={() => setCredsFor(r)} />
-                <Button
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() =>
-                    Modal.confirm({
-                      title: `Delete "${r.name}"?`,
-                      content: "This removes the container and its data.",
-                      okText: "Delete",
-                      okButtonProps: { danger: true },
-                      onOk: () => remove.mutateAsync(r.id),
-                    })
-                  }
-                />
-              </Space>
+              <RowActions
+                actions={[
+                  { key: "start", label: "Start", icon: <PlayCircleOutlined />, hidden: r.status !== "stopped", onClick: () => lifecycle.mutate({ id: r.id, action: "start" }) },
+                  { key: "stop", label: "Stop", icon: <PauseCircleOutlined />, hidden: r.status === "stopped", onClick: () => lifecycle.mutate({ id: r.id, action: "stop" }) },
+                  { key: "restart", label: "Restart", icon: <ReloadOutlined />, onClick: () => lifecycle.mutate({ id: r.id, action: "restart" }) },
+                  { key: "logs", label: "Logs", icon: <FileTextOutlined />, onClick: () => setLogsFor(r) },
+                  { key: "creds", label: "Credentials", icon: <KeyOutlined />, onClick: () => setCredsFor(r) },
+                  {
+                    key: "delete",
+                    label: "Delete",
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: () => { void remove.mutateAsync(r.id); },
+                    confirm: { title: `Delete "${r.name}"?`, description: "This removes the container and its data.", okText: "Delete" },
+                  },
+                ]}
+              />
             ),
           },
         ]}
