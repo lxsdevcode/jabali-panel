@@ -173,7 +173,13 @@ class Jabali_Cache_Admin {
 		$this->row( 'Key prefix', '<code>' . esc_html( $health['prefix'] ) . '</code>' );
 		$this->row( 'Keys for this site', $health['connected'] ? (int) $health['keys'] : '—' );
 		$this->row( 'Object-cache drop-in', $this->dropin_label( $dstat['object_installed'], $dstat['object_ours'], $dstat['object_foreign'] ) );
-		$this->row( 'Advanced-cache drop-in', $this->dropin_label( $dstat['advanced_installed'], $dstat['advanced_ours'], false ) . ( $dstat['wp_cache_const'] ? '' : ' <em>(WP_CACHE not defined in wp-config.php)</em>' ) );
+		if ( empty( $s['page_cache'] ) ) {
+			// Page caching is intentionally off (Jabali serves pages from the nginx
+			// fastcgi microcache). Show it as a deliberate state, not a red error.
+			$this->row( 'Advanced-cache drop-in', '<span style="color:#646970">Off — page caching handled by the server</span>' );
+		} else {
+			$this->row( 'Advanced-cache drop-in', $this->dropin_label( $dstat['advanced_installed'], $dstat['advanced_ours'], false ) . ( $dstat['wp_cache_const'] ? '' : ' <em>(WP_CACHE not defined in wp-config.php)</em>' ) );
+		}
 		if ( ! $health['connected'] && '' !== $health['last_error'] ) {
 			$this->row( 'Last error', '<code>' . esc_html( $health['last_error'] ) . '</code>' );
 		}
