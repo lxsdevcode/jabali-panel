@@ -9,7 +9,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Progress,
   Skeleton,
   Space,
@@ -35,6 +34,7 @@ import { AdminGroupsTab } from "./AdminGroupsTab";
 import { CreateMailboxWizardModal } from "../../user/mail/CreateMailboxWizardModal";
 import { DatabaseUserPasswordModal } from "../../../components/DatabaseUserPasswordModal";
 import { PasswordInput } from "../../../components/PasswordInput";
+import { RowActions } from "../../../components/RowActions";
 
 function formatBytes(n: number): string {
   if (!n) return "0 B";
@@ -237,47 +237,28 @@ export function AdminMailPage() {
               title: "Actions",
               key: "actions",
               render: (_, row) => (
-                <Space>
-                  <Tooltip title="Open webmail for this mailbox">
-                    <Button
-                      type="text"
-                      icon={<MailOutlined />}
-                      loading={
-                        ssoMutation.isPending && ssoMutation.variables?.id === row.id
-                      }
-                      onClick={() => openWebmail(row)}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Edit mailbox">
-                    <Button type="text" icon={<EditOutlined />} onClick={() => setEditTarget(row)} />
-                  </Tooltip>
-                  <Tooltip title="Reset password">
-                    <Button
-                      type="text"
-                      icon={<KeyOutlined />}
-                      onClick={() => {
-                        resetForm.resetFields();
-                        setResetTarget(row);
-                      }}
-                    />
-                  </Tooltip>
-                  <Popconfirm
-                    title={`Delete ${row.email}?`}
-                    description="All mail in this mailbox will be removed. This cannot be undone."
-                    okText="Delete"
-                    okType="danger"
-                    onConfirm={async () => {
-                      try {
-                        await deleteMutation.mutateAsync({ id: row.id, domainId: row.domain_id });
-                        message.success("Mailbox deleted");
-                      } catch {
-                        message.error("Failed to delete");
-                      }
-                    }}
-                  >
-                    <Button danger type="text" icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                </Space>
+                <RowActions
+                  actions={[
+                    { key: "webmail", label: "Open webmail", icon: <MailOutlined />, loading: ssoMutation.isPending && ssoMutation.variables?.id === row.id, onClick: () => openWebmail(row) },
+                    { key: "edit", label: "Edit mailbox", icon: <EditOutlined />, onClick: () => setEditTarget(row) },
+                    { key: "reset", label: "Reset password", icon: <KeyOutlined />, onClick: () => { resetForm.resetFields(); setResetTarget(row); } },
+                    {
+                      key: "delete",
+                      label: "Delete",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      onClick: async () => {
+                        try {
+                          await deleteMutation.mutateAsync({ id: row.id, domainId: row.domain_id });
+                          message.success("Mailbox deleted");
+                        } catch {
+                          message.error("Failed to delete");
+                        }
+                      },
+                      confirm: { title: `Delete ${row.email}?`, description: "All mail in this mailbox will be removed. This cannot be undone.", okText: "Delete" },
+                    },
+                  ]}
+                />
               ),
             },
           ]}
