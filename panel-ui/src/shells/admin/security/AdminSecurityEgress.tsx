@@ -11,7 +11,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Popconfirm,
   Select,
   Space,
   Statistic,
@@ -20,6 +19,8 @@ import {
   Typography,
   message,
 } from "antd";
+import { CheckOutlined, CloseOutlined } from "@icons";
+import { RowActions } from "../../../components/RowActions";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -339,28 +340,33 @@ const PendingRequestsTable = ({ rows }: { rows: EgressRequest[] }) => {
       <Table.Column<EgressRequest>
         title="Actions"
         render={(_, r) => (
-          <Space>
-            <Popconfirm
-              title="Approve and add to user's allowlist?"
-              onConfirm={() =>
-                decide.mutate({ id: r.id, decision: "approve" }, {
-                  onSuccess: () => message.success("Request approved"),
-                })
-              }
-            >
-              <Button size="small" type="primary">Approve</Button>
-            </Popconfirm>
-            <Popconfirm
-              title="Deny request?"
-              onConfirm={() =>
-                decide.mutate({ id: r.id, decision: "deny" }, {
-                  onSuccess: () => message.info("Request denied"),
-                })
-              }
-            >
-              <Button size="small" danger>Deny</Button>
-            </Popconfirm>
-          </Space>
+          <RowActions
+            actions={[
+              {
+                key: "approve",
+                label: "Approve",
+                icon: <CheckOutlined />,
+                onClick: () =>
+                  decide.mutate(
+                    { id: r.id, decision: "approve" },
+                    { onSuccess: () => message.success("Request approved") },
+                  ),
+                confirm: { title: "Approve and add to user's allowlist?", okText: "Approve" },
+              },
+              {
+                key: "deny",
+                label: "Deny",
+                icon: <CloseOutlined />,
+                danger: true,
+                onClick: () =>
+                  decide.mutate(
+                    { id: r.id, decision: "deny" },
+                    { onSuccess: () => message.info("Request denied") },
+                  ),
+                confirm: { title: "Deny request?", okText: "Deny" },
+              },
+            ]}
+          />
         )}
       />
     </Table>

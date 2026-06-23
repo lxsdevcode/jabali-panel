@@ -2,7 +2,8 @@
 // backup of the caller's account; list recent self-backups; download
 // when a row is succeeded. Mirrors AdminBackupsPage data shape but
 // scoped via /me/backups (auth-gated to caller's user_id).
-import { Button, Card, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Table, Tag, Typography, message } from "antd";
+import { RowActions } from "../../components/RowActions";
 import { DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
 import { useState } from "react";
 
@@ -98,22 +99,12 @@ export const MyProfileBackupCard = () => {
             key: "actions",
             render: (_, row) =>
               row.status === "succeeded" ? (
-                <Space>
-                  <Button
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    href={`/api/v1/me/backups/${row.id}/download`}
-                  >
-                    Download
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<ReloadOutlined />}
-                    onClick={() => setRestoreId(row.id)}
-                  >
-                    Restore
-                  </Button>
-                </Space>
+                <RowActions
+                  actions={[
+                    { key: "download", label: "Download", icon: <DownloadOutlined />, onClick: () => { window.location.href = `/api/v1/me/backups/${row.id}/download`; } },
+                    { key: "restore", label: "Restore", icon: <ReloadOutlined />, onClick: () => setRestoreId(row.id) },
+                  ]}
+                />
               ) : null,
           },
         ]}

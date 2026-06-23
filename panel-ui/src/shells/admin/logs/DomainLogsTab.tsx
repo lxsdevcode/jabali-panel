@@ -2,6 +2,7 @@
 // real-time). Extracted from the old single-purpose LogsPage so it can be
 // one tab of the consolidated Logs & Statistics page.
 import { useState } from "react";
+import { RowActions } from "../../../components/RowActions";
 import { Card, Typography, Button, Space, Table, message } from "antd";
 import {
   ReloadOutlined,
@@ -108,27 +109,13 @@ export const DomainLogsTab = () => {
       title: "Actions",
       key: "actions",
       render: (_: unknown, record: Domain) => (
-        <Space size="small" wrap>
-          <Button
-            icon={<FileTextOutlined />}
-            onClick={() => openStream("access", record.id || undefined)}
-          >
-            {labelFor.access}
-          </Button>
-          <Button
-            icon={<WarningOutlined />}
-            onClick={() => openStream("error", record.id || undefined)}
-          >
-            {labelFor.error}
-          </Button>
-          <Button
-            type="primary"
-            icon={<DashboardOutlined />}
-            onClick={() => openStream("goaccess", record.id || undefined)}
-          >
-            {labelFor.goaccess}
-          </Button>
-        </Space>
+        <RowActions
+          actions={[
+            { key: "access", label: labelFor.access, icon: <FileTextOutlined />, onClick: () => openStream("access", record.id || undefined) },
+            { key: "error", label: labelFor.error, icon: <WarningOutlined />, onClick: () => openStream("error", record.id || undefined) },
+            { key: "goaccess", label: labelFor.goaccess, icon: <DashboardOutlined />, onClick: () => openStream("goaccess", record.id || undefined) },
+          ]}
+        />
       ),
     },
   ];

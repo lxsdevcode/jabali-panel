@@ -1,7 +1,8 @@
 // AdminBackupsPage — admin overview of every backup run.
 // Scheduler-fired jobs roll up under their run_id (one parent row,
 // expandable to per-user children). Manual creates render flat.
-import { Badge, Button, Card, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Badge, Button, Card, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { RowActions } from "../../../components/RowActions";
 import {
   CalendarCheckOutlined,
   DownloadOutlined,
@@ -12,6 +13,7 @@ import {
   RotateCcwOutlined,
   SaveOutlined,
   SettingOutlined,
+  CloseOutlined,
 } from "@icons";
 import { useEffect, useRef, useState } from "react";
 
@@ -341,51 +343,22 @@ export const AdminBackupsPage = () => {
         {
           title: "Actions",
           render: (_: unknown, row: BackupJob) => (
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<FileTextOutlined />}
-                onClick={() => setLogJob(row)}
-              >
-                Log
-              </Button>
-              {row.status === "succeeded" && (
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  onClick={() => handleDownload(row)}
-                >
-                  Download
-                </Button>
-              )}
-              {row.status === "succeeded" &&
-                row.kind === "account_backup" &&
-                row.snapshot_id && (
-                  <Popconfirm
-                    title={`Restore ${usernameById(row.user_id)}?`}
-                    description="Overwrites the account's current files, databases, and mailboxes."
-                    okText="Restore"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => handleRestore(row)}
-                  >
-                    <Button
-                      type="primary"
-                      size="small"
-                      icon={<RotateCcwOutlined />}
-                      danger
-                    >
-                      Restore
-                    </Button>
-                  </Popconfirm>
-                )}
-              {row.status === "running" && (
-                <Button type="primary" size="small" danger onClick={() => handleCancel(row)}>
-                  Cancel
-                </Button>
-              )}
-            </Space>
+            <RowActions
+              actions={[
+                { key: "log", label: "Log", icon: <FileTextOutlined />, onClick: () => setLogJob(row) },
+                { key: "download", label: "Download", icon: <DownloadOutlined />, hidden: row.status !== "succeeded", onClick: () => handleDownload(row) },
+                {
+                  key: "restore",
+                  label: "Restore",
+                  icon: <RotateCcwOutlined />,
+                  danger: true,
+                  hidden: !(row.status === "succeeded" && row.kind === "account_backup" && row.snapshot_id),
+                  onClick: () => handleRestore(row),
+                  confirm: { title: `Restore ${usernameById(row.user_id)}?`, description: "Overwrites the account's current files, databases, and mailboxes.", okText: "Restore" },
+                },
+                { key: "cancel", label: "Cancel", icon: <CloseOutlined />, danger: true, hidden: row.status !== "running", onClick: () => handleCancel(row) },
+              ]}
+            />
           ),
         },
       ]}

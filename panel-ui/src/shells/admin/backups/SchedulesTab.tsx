@@ -19,6 +19,7 @@ import {
   Typography,
   message,
 } from "antd";
+import { RowActions } from "../../../components/RowActions";
 import dayjs, { type Dayjs } from "dayjs";
 import {
   CalendarCheckOutlined,
@@ -554,29 +555,13 @@ export function SchedulesTab() {
         <Table.Column<BackupSchedule>
           title="Actions"
           render={(_, row) => (
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<PlayCircleOutlined />}
-                onClick={() => handleRunNow(row)}
-                disabled={!row.enabled}
-              >
-                Run now
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setEditing(row);
-                  setDrawerOpen(true);
-                }}
-              >
-                Edit
-              </Button>
-              <Button type="primary" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(row)} />
-            </Space>
+            <RowActions
+              actions={[
+                { key: "run", label: "Run now", icon: <PlayCircleOutlined />, disabled: !row.enabled, onClick: () => handleRunNow(row) },
+                { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => { setEditing(row); setDrawerOpen(true); } },
+                { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, onClick: () => handleDelete(row) },
+              ]}
+            />
           )}
         />
       </Table>

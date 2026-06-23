@@ -25,6 +25,7 @@ import {
   message,
   notification,
 } from "antd";
+import { RowActions } from "../../../components/RowActions";
 import {
   CheckCircleOutlined,
   DeleteOutlined,
@@ -742,42 +743,14 @@ export function DestinationsTab() {
         <Table.Column<BackupDestination>
           title="Actions"
           render={(_, row) => (
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<FlaskConicalOutlined />}
-                onClick={() => handleTest(row)}
-              >
-                Test
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setEditing(row);
-                  setDrawerOpen(true);
-                }}
-              >
-                Edit
-              </Button>
-              <Button
-                size="small"
-                icon={<KeyOutlined />}
-                onClick={() => handleRotatePassword(row)}
-                loading={rotatingId === row.id}
-              >
-                Rotate password
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={() => handleDelete(row)}
-              />
-            </Space>
+            <RowActions
+              actions={[
+                { key: "test", label: "Test", icon: <FlaskConicalOutlined />, onClick: () => handleTest(row) },
+                { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => { setEditing(row); setDrawerOpen(true); } },
+                { key: "rotate", label: "Rotate password", icon: <KeyOutlined />, loading: rotatingId === row.id, onClick: () => handleRotatePassword(row) },
+                { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, onClick: () => handleDelete(row), confirm: { title: "Delete this destination?", okText: "Delete" } },
+              ]}
+            />
           )}
         />
       </Table>
