@@ -44,7 +44,7 @@ import {
   DeleteOutlined,
   ReloadOutlined,
 } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { ISO3166_COUNTRIES } from "../../../data/iso3166";
 import { CrowdsecTestIPCard } from "./CrowdsecTestIPCard";
 import { Sparkline } from "../../../components/Sparkline";
@@ -249,31 +249,12 @@ export const AdminSecurityCrowdsec = () => {
           key="actions"
           width={200}
           render={(_, row) => (
-            <Space>
-              <Popconfirm
-                title="Whitelist IP"
-                description={`Add ${row.ip} to the allowlist and remove this ban? CrowdSec will stop blocking it.`}
-                okText="Whitelist"
-                cancelText="Cancel"
-                onConfirm={() => onWhitelist(row)}
-              >
-                <RowActionButton size="small" icon={<CheckOutlined />}>
-                  Whitelist
-                </RowActionButton>
-              </Popconfirm>
-              <Popconfirm
-                title="Remove ban"
-                description={`Remove the ban on ${row.ip}? Traffic will resume immediately.`}
-                okText="Remove"
-                okButtonProps={{ danger: true }}
-                cancelText="Cancel"
-                onConfirm={() => onDeleteDecision(row)}
-              >
-                <RowActionButton danger size="small" icon={<DeleteOutlined />}>
-                  Delete
-                </RowActionButton>
-              </Popconfirm>
-            </Space>
+            <RowActions
+              actions={[
+                { key: "whitelist", label: "Whitelist", icon: <CheckOutlined />, onClick: () => onWhitelist(row), confirm: { title: "Whitelist IP", description: `Add ${row.ip} to the allowlist and remove this ban? CrowdSec will stop blocking it.`, okText: "Whitelist" } },
+                { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, onClick: () => onDeleteDecision(row), confirm: { title: "Remove ban", description: `Remove the ban on ${row.ip}? Traffic will resume immediately.`, okText: "Remove" } },
+              ]}
+            />
           )}
         />
       </Table>

@@ -19,7 +19,7 @@ import {
 import { useState } from "react";
 
 import { DeleteOutlined, ReloadOutlined, RedoOutlined } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 
 import { apiClient } from "../../../apiClient";
 
@@ -222,25 +222,12 @@ export const DLQTab = () => {
           {
             title: "Actions",
             render: (_, r) => (
-              <Space>
-                <RowActionButton
-                  icon={<RedoOutlined />}
-                  loading={busyID === r.id}
-                  onClick={() => replay(r)}
-                >
-                  Replay
-                </RowActionButton>
-                <Popconfirm
-                  title="Drop this entry?"
-                  okText="Drop"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={() => drop(r)}
-                >
-                  <RowActionButton danger icon={<DeleteOutlined />} loading={busyID === r.id}>
-                    Drop
-                  </RowActionButton>
-                </Popconfirm>
-              </Space>
+              <RowActions
+                actions={[
+                  { key: "replay", label: "Replay", icon: <RedoOutlined />, loading: busyID === r.id, onClick: () => replay(r) },
+                  { key: "drop", label: "Drop", icon: <DeleteOutlined />, danger: true, loading: busyID === r.id, onClick: () => drop(r), confirm: { title: "Drop this entry?", okText: "Drop" } },
+                ]}
+              />
             ),
           },
         ]}

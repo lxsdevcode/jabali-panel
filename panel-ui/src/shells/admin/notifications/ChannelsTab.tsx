@@ -3,12 +3,12 @@
 // Rendered inside NotificationsTabsPage Card.tabList. Strips its own
 // page-level header; the "Add channel" button stays here because it's
 // tab-specific (the History tab has a different action).
-import { Button, Popconfirm, Space, Switch, Table, Tag, message } from "antd";
+import { Button, Space, Switch, Table, Tag, message } from "antd";
 import { useState } from "react";
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, SendOutlined } from "@icons";
 
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { apiClient } from "../../../apiClient";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import {
@@ -122,19 +122,13 @@ export const ChannelsTab = () => {
           title="Actions"
           key="actions"
           render={(_: unknown, row: NotificationChannel) => (
-            <Space>
-              <RowActionButton icon={<SendOutlined />} onClick={() => handleTest(row)}>
-                Test
-              </RowActionButton>
-              <RowActionButton icon={<EditOutlined />} onClick={() => openEdit(row)}>
-                Edit
-              </RowActionButton>
-              <Popconfirm title={`Delete ${row.name}?`} onConfirm={() => handleDelete(row)}>
-                <RowActionButton danger icon={<DeleteOutlined />}>
-                  Delete
-                </RowActionButton>
-              </Popconfirm>
-            </Space>
+            <RowActions
+              actions={[
+                { key: "test", label: "Test", icon: <SendOutlined />, onClick: () => handleTest(row) },
+                { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => openEdit(row) },
+                { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, onClick: () => handleDelete(row), confirm: { title: `Delete ${row.name}?` } },
+              ]}
+            />
           )}
         />
       </SearchableTableStringQ>
