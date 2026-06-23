@@ -188,12 +188,12 @@ func installFromRelease(ctx context.Context, log func(string, ...any)) (installe
 	}
 
 	// 6b. Install the bundled WordPress plugins (GH #406). The agent installs
-	//     jabali-wp-cache FROM /usr/local/share/jabali/wp-plugins; ship it in the
+	//     jabali-cache FROM /usr/local/share/jabali/wp-plugins; ship it in the
 	//     tarball so the release-update path matches the source-build bundle.
 	//     Best-effort: an older tarball without wp-plugins/ must not fail the
 	//     whole update (the binaries are already in).
-	if src := filepath.Join(extractDir, "wp-plugins", "jabali-wp-cache"); dirExists(src) {
-		const dst = "/usr/local/share/jabali/wp-plugins/jabali-wp-cache"
+	if src := filepath.Join(extractDir, "wp-plugins", "jabali-cache"); dirExists(src) {
+		const dst = "/usr/local/share/jabali/wp-plugins/jabali-cache"
 		_ = os.MkdirAll("/usr/local/share/jabali/wp-plugins", 0o755)
 		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", "--exclude=.git", src+"/", dst+"/")
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -202,7 +202,7 @@ func installFromRelease(ctx context.Context, log func(string, ...any)) (installe
 		_ = exec.CommandContext(ctx, "chown", "-R", "root:root", dst).Run()
 		log("release: installed %s", dst)
 	} else {
-		log("release: tarball has no wp-plugins/jabali-wp-cache (older release) — skipping plugin bundle")
+		log("release: tarball has no wp-plugins/jabali-cache (older release) — skipping plugin bundle")
 	}
 
 	return true, fullSHA, nil

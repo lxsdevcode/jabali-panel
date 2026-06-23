@@ -2,7 +2,7 @@
 //
 // A single owner-scoped switch that drives BOTH layers of caching for a
 // WordPress install:
-//   - the Redis OBJECT cache (the bundled jabali-wp-cache plugin), gated by a
+//   - the Redis OBJECT cache (the bundled jabali-cache plugin), gated by a
 //     per-tenant Redis ACL user wp_<osuser> scoped ~jc:<osuser>:* (ADR-0148); and
 //   - the nginx FastCGI page cache for the app's domain (ADR-0108), via the same
 //     domains.cache_enabled flag the More-menu Caching toggle writes.

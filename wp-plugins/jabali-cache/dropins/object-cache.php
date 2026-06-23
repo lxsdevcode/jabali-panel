@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: Jabali WP Cache — Object Cache Drop-in
- * Description: Redis-backed persistent object cache for the jabali panel. Installed by the Jabali WP Cache plugin; do not edit by hand.
+ * Plugin Name: Jabali Cache — Object Cache Drop-in
+ * Description: Redis-backed persistent object cache for the jabali panel. Installed by the Jabali Cache plugin; do not edit by hand.
  * Version: 1.0.0
  *
  * This file is copied to wp-content/object-cache.php. WordPress loads it very
@@ -22,8 +22,8 @@ if ( ! defined( 'JABALI_CACHE_PLUGIN_DIR' ) ) {
 	$jabali_cache_stamped = '__JABALI_CACHE_PLUGIN_DIR__';
 	if ( 0 !== strpos( $jabali_cache_stamped, '__JABALI' ) && is_dir( $jabali_cache_stamped ) ) {
 		define( 'JABALI_CACHE_PLUGIN_DIR', $jabali_cache_stamped );
-	} elseif ( defined( 'WP_PLUGIN_DIR' ) && is_dir( WP_PLUGIN_DIR . '/jabali-wp-cache' ) ) {
-		define( 'JABALI_CACHE_PLUGIN_DIR', WP_PLUGIN_DIR . '/jabali-wp-cache' );
+	} elseif ( defined( 'WP_PLUGIN_DIR' ) && is_dir( WP_PLUGIN_DIR . '/jabali-cache' ) ) {
+		define( 'JABALI_CACHE_PLUGIN_DIR', WP_PLUGIN_DIR . '/jabali-cache' );
 	} else {
 		define( 'JABALI_CACHE_PLUGIN_DIR', '' );
 	}

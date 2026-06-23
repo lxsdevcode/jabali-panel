@@ -1,4 +1,4 @@
-// wordpress_cache.go — GH #406. Enable/disable the jabali-wp-cache plugin on a
+// wordpress_cache.go — GH #406. Enable/disable the jabali-cache plugin on a
 // WordPress install, as the tenant, via wp-cli. The Redis object cache is gated
 // by the per-tenant ACL user (ADR-0148): panel-api creates wp_<osuser> scoped to
 // ~jc:<prefix>:* and passes the token here; the plugin connects with it.
@@ -20,7 +20,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
 
-const bundledWPCachePluginDir = "/usr/local/share/jabali/wp-plugins/jabali-wp-cache"
+const bundledWPCachePluginDir = "/usr/local/share/jabali/wp-plugins/jabali-cache"
 
 // redisClientsGroup gates /run/redis/redis.sock. Distinct from jabali-sockets
 // (which also fronts the root agent socket) so tenants get Redis but nothing else.
@@ -57,14 +57,14 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	if !p.Enable {
 		// Disable: drop-ins out, plugin deactivated. Best-effort (a missing
 		// plugin shouldn't fail the disable).
-		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "jabali-wp-cache", "disable")
-		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "plugin", "deactivate", "jabali-wp-cache")
+		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "jabali-cache", "disable")
+		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "plugin", "deactivate", "jabali-cache")
 		_ = setWPConfigCacheConstants(p.InstallPath, "", 0, "", "", false) // strip the managed block
 		return wordpressCacheSetResult{Ok: true, Enabled: false}, nil
 	}
 
 	// 1. Stage the plugin into the install (root copy, then chown to the tenant).
-	dest := filepath.Join(p.InstallPath, "wp-content", "plugins", "jabali-wp-cache")
+	dest := filepath.Join(p.InstallPath, "wp-content", "plugins", "jabali-cache")
 	if _, err := os.Stat(bundledWPCachePluginDir); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition,
 			Message: fmt.Sprintf("bundled plugin missing at %s — re-run install.sh", bundledWPCachePluginDir)}
@@ -79,7 +79,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, bkInternal("chown plugin", err)
 	}
 
-	// 2. Write the config file the drop-ins read (wp-content/jabali-wp-cache-config.php).
+	// 2. Write the config file the drop-ins read (wp-content/jabali-cache-config.php).
 	socket := p.RedisSocket
 	if socket == "" {
 		socket = "/run/redis/redis.sock"
@@ -88,7 +88,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	if db == 0 {
 		db = 1
 	}
-	cfgPath := filepath.Join(p.InstallPath, "wp-content", "jabali-wp-cache-config.php")
+	cfgPath := filepath.Join(p.InstallPath, "wp-content", "jabali-cache-config.php")
 	cfg := wpCacheConfigPHP(socket, db, p.Prefix, p.RedisPassword)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o640); err != nil {
 		return nil, bkInternal("write cache config", err)
@@ -98,7 +98,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	}
 
 	// 2b. Pin the jabali settings as CONSTANTS in wp-config.php. The plugin's
-	//     activation regenerates wp-content/jabali-wp-cache-config.php with a
+	//     activation regenerates wp-content/jabali-cache-config.php with a
 	//     SELF-DERIVED key prefix (md5 of the site URL), which would NOT match the
 	//     per-tenant Redis ACL (~jc:<osuser>:*) — so the object cache would NOPERM
 	//     even with socket access. apply_constants() in the plugin makes these
@@ -120,13 +120,13 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	_ = exec.CommandContext(ctx, "systemctl", "restart", "jabali-fpm@"+p.OSUser+".service").Run()
 
 	// 4. Activate + enable (drop-ins + WP_CACHE), as the tenant.
-	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "activate", "jabali-wp-cache"); err != nil {
+	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "activate", "jabali-cache"); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
 			Message: fmt.Sprintf("wp plugin activate: %v: %s", err, out)}
 	}
-	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "jabali-wp-cache", "enable"); err != nil {
+	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "jabali-cache", "enable"); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
-			Message: fmt.Sprintf("wp jabali-wp-cache enable: %v: %s", err, out)}
+			Message: fmt.Sprintf("wp jabali-cache enable: %v: %s", err, out)}
 	}
 	return wordpressCacheSetResult{Ok: true, Enabled: true}, nil
 }

@@ -1,9 +1,9 @@
 <?php
 /**
- * Jabali WP Cache — settings store and config-file writer.
+ * Jabali Cache — settings store and config-file writer.
  *
  * Settings live in a single WP option. On every change we also (re)write
- * wp-content/jabali-wp-cache-config.php — a plain PHP array file the drop-ins
+ * wp-content/jabali-cache-config.php — a plain PHP array file the drop-ins
  * read before WordPress (and thus the options table) is available.
  *
  * @package Jabali_Cache
@@ -96,7 +96,7 @@ class Jabali_Cache_Settings {
 
 	/**
 	 * Build the runtime config array consumed by Jabali_Cache_Config and write
-	 * it to wp-content/jabali-wp-cache-config.php.
+	 * it to wp-content/jabali-cache-config.php.
 	 *
 	 * @param array<string,mixed> $s
 	 * @return bool
@@ -117,8 +117,8 @@ class Jabali_Cache_Settings {
 		);
 
 		$body  = "<?php\n";
-		$body .= "/**\n * Jabali WP Cache runtime config — generated, do not edit by hand.\n";
-		$body .= " * Edit via the Jabali WP Cache settings screen or `wp jabali-wp-cache`.\n */\n";
+		$body .= "/**\n * Jabali Cache runtime config — generated, do not edit by hand.\n";
+		$body .= " * Edit via the Jabali Cache settings screen or `wp jabali-cache`.\n */\n";
 		$body .= "defined( 'ABSPATH' ) || exit;\n";
 		$body .= 'return ' . var_export( $cfg, true ) . ";\n"; // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export
 

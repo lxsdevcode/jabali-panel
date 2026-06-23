@@ -1,12 +1,12 @@
 <?php
 /**
- * Jabali WP Cache — drop-in manager.
+ * Jabali Cache — drop-in manager.
  *
  * Installs / updates / removes the wp-content/object-cache.php and
  * advanced-cache.php drop-ins, stamping the real plugin path into each so the
  * drop-ins can locate the engine no matter where wp-content lives.
  *
- * Only ever touches files it owns: it verifies the "Jabali WP Cache" signature
+ * Only ever touches files it owns: it verifies the "Jabali Cache" signature
  * before overwriting or deleting an existing drop-in, so a third-party object
  * cache is never clobbered.
  *
@@ -17,7 +17,7 @@ defined( 'ABSPATH' ) || exit;
 
 class Jabali_Cache_Dropin_Manager {
 
-	const SIGNATURE = 'Jabali WP Cache —';
+	const SIGNATURE = 'Jabali Cache —';
 
 	/** @var string */
 	private $plugin_dir;

@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       Jabali WP Cache
+ * Plugin Name:       Jabali Cache
  * Plugin URI:        https://jabali-panel.com/
  * Description:        Redis-backed object cache (and optional full-page cache) tuned for the Jabali hosting panel. Uses the shared panel Redis over a unix socket with per-site key isolation. Works with or without the phpredis extension.
  * Version:           1.0.0
@@ -9,7 +9,7 @@
  * Author:            Jabali Panel
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       jabali-wp-cache
+ * Text Domain:       jabali-cache
  *
  * @package Jabali_Cache
  */
@@ -78,7 +78,7 @@ if ( is_admin() ) {
  */
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once JABALI_CACHE_PLUGIN_DIR . '/includes/class-cli.php';
-	WP_CLI::add_command( 'jabali-wp-cache', new Jabali_Cache_CLI( JABALI_CACHE_PLUGIN_DIR ) );
+	WP_CLI::add_command( 'jabali-cache', new Jabali_Cache_CLI( JABALI_CACHE_PLUGIN_DIR ) );
 }
 
 /**

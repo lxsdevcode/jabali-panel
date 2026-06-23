@@ -2,7 +2,7 @@
 
 defined( 'ABSPATH' ) || exit; // wp.org: prevent direct file access.
 /**
- * Jabali WP Cache — full-page cache engine.
+ * Jabali Cache — full-page cache engine.
  *
  * Driven by the wp-content/advanced-cache.php drop-in (which WordPress loads
  * before almost everything else when WP_CACHE is true). Caches anonymous,

@@ -1,6 +1,6 @@
 <?php
 /**
- * Jabali WP Cache — object-cache engine test (no PHPUnit, no WordPress).
+ * Jabali Cache — object-cache engine test (no PHPUnit, no WordPress).
  *
  * Stubs the handful of WordPress functions the engine touches, then exercises
  * the full WP_Object_Cache contract. Runs purely in-memory unless a live Redis

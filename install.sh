@@ -3999,16 +3999,16 @@ build_backend() {
     _ok "synced docker-app catalog -> /usr/local/share/jabali/docker-apps/"
   fi
 
-  # #406: bundle the jabali-wp-cache WordPress plugin read-only into the
+  # #406: bundle the jabali-cache WordPress plugin read-only into the
   # production path the agent installs FROM (wordpress.cache_set). Tenants
   # never supply plugin code; re-synced on every `jabali update`.
-  if [[ -d "$REPO_DIR/wp-plugins/jabali-wp-cache" ]]; then
+  if [[ -d "$REPO_DIR/wp-plugins/jabali-cache" ]]; then
     install -d -m 0755 /usr/local/share/jabali/wp-plugins
     rsync -a --delete --exclude=".git" \
-      "$REPO_DIR/wp-plugins/jabali-wp-cache/" \
-      /usr/local/share/jabali/wp-plugins/jabali-wp-cache/
-    chown -R root:root /usr/local/share/jabali/wp-plugins/jabali-wp-cache
-    _ok "bundled jabali-wp-cache -> /usr/local/share/jabali/wp-plugins/jabali-wp-cache/"
+      "$REPO_DIR/wp-plugins/jabali-cache/" \
+      /usr/local/share/jabali/wp-plugins/jabali-cache/
+    chown -R root:root /usr/local/share/jabali/wp-plugins/jabali-cache
+    _ok "bundled jabali-cache -> /usr/local/share/jabali/wp-plugins/jabali-cache/"
   fi
 
   # Ergonomic alias: `jabali ...` works the same as `jabali-panel ...`.

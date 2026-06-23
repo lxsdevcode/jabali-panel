@@ -1,11 +1,11 @@
-# Jabali WP Cache
+# Jabali Cache
 
 Redis-backed WordPress **object cache** (and optional full-page cache) built for the
 [Jabali hosting panel](https://jabali-panel.com/). It plugs into the Redis instance the
 panel already provisions and follows the panel's shared-hosting security model.
 
 > This is a self-contained WordPress plugin. It does **not** modify any Jabali panel
-> code — it lives under `wp-plugins/jabali-wp-cache/` and is deployed into a WordPress
+> code — it lives under `wp-plugins/jabali-cache/` and is deployed into a WordPress
 > install's `wp-content/plugins/` directory.
 
 ## Why it fits Jabali
@@ -22,8 +22,8 @@ panel already provisions and follows the panel's shared-hosting security model.
 ## Architecture
 
 ```
-jabali-wp-cache/
-├── jabali-wp-cache.php              # plugin bootstrap, activation, purge hooks
+jabali-cache/
+├── jabali-cache.php              # plugin bootstrap, activation, purge hooks
 ├── uninstall.php                 # prefix-scoped Redis purge + cleanup
 ├── config-sample.php             # optional wp-config.php overrides
 ├── includes/
@@ -32,8 +32,8 @@ jabali-wp-cache/
 │   ├── class-page-cache.php      # full-page cache engine
 │   ├── class-settings.php        # options store + generated config file writer
 │   ├── class-dropin-manager.php  # installs/removes wp-content drop-ins (signature-guarded)
-│   ├── class-admin.php           # Settings → Jabali WP Cache screen + diagnostics
-│   └── class-cli.php             # `wp jabali-wp-cache ...`
+│   ├── class-admin.php           # Settings → Jabali Cache screen + diagnostics
+│   └── class-cli.php             # `wp jabali-cache ...`
 ├── dropins/
 │   ├── object-cache.php          # → wp-content/object-cache.php (thin loader, no-op fallback)
 │   └── advanced-cache.php        # → wp-content/advanced-cache.php (page cache, fail-safe)
@@ -48,9 +48,9 @@ fatals.
 
 ## Install
 
-1. Copy `jabali-wp-cache/` into `wp-content/plugins/`.
+1. Copy `jabali-cache/` into `wp-content/plugins/`.
 2. Activate it — the `object-cache.php` drop-in is installed automatically.
-3. **Settings → Jabali WP Cache** → confirm *Redis connection: Connected*.
+3. **Settings → Jabali Cache** → confirm *Redis connection: Connected*.
 
 ### Host prerequisites (panel admin, one-time)
 
@@ -74,12 +74,12 @@ screen tells you which step is missing.
 ## WP-CLI
 
 ```bash
-wp jabali-wp-cache status          # connectivity, driver, key count
-wp jabali-wp-cache diagnose        # extension + connection hints
-wp jabali-wp-cache flush [--pages] # flush object cache (+ page cache)
-wp jabali-wp-cache enable|disable
-wp jabali-wp-cache update-dropins  # (re)install drop-ins
-wp jabali-wp-cache remove-dropins
+wp jabali-cache status          # connectivity, driver, key count
+wp jabali-cache diagnose        # extension + connection hints
+wp jabali-cache flush [--pages] # flush object cache (+ page cache)
+wp jabali-cache enable|disable
+wp jabali-cache update-dropins  # (re)install drop-ins
+wp jabali-cache remove-dropins
 ```
 
 ## Configuration
@@ -92,9 +92,9 @@ constants in `wp-config.php` — see `config-sample.php`. Constants win over the
 `tests/test-lib.php` is a plain-PHP harness (no PHPUnit needed):
 
 ```bash
-php wp-plugins/jabali-wp-cache/tests/test-lib.php
+php wp-plugins/jabali-cache/tests/test-lib.php
 # add a live socket round-trip when Redis is available:
-JABALI_TEST_REDIS=/run/redis/redis.sock php wp-plugins/jabali-wp-cache/tests/test-lib.php
+JABALI_TEST_REDIS=/run/redis/redis.sock php wp-plugins/jabali-cache/tests/test-lib.php
 ```
 
 ## License

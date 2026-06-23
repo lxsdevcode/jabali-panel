@@ -44,7 +44,7 @@ type ApplicationInstall struct {
 	// is appended to existing INSERT/SELECT orderings rather than
 	// reshuffling them.
 	AppType string `gorm:"type:varchar(32);not null;default:'wordpress';uniqueIndex:uniq_app_installs_domain_subdir_apptype,priority:3" json:"app_type"`
-	// CacheEnabled (GH #406): jabali-wp-cache plugin + nginx page cache toggle.
+	// CacheEnabled (GH #406): jabali-cache plugin + nginx page cache toggle.
 	CacheEnabled bool `gorm:"column:cache_enabled;type:tinyint(1);not null;default:0" json:"cache_enabled"`
 }
 
