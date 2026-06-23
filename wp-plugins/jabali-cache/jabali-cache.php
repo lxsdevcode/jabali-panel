@@ -89,7 +89,8 @@ function jabali_cache_send_validators() {
 	if ( is_admin() || is_user_logged_in() || is_feed() || is_404() ) {
 		return;
 	}
-	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET' ) !== 'GET' ) {
+	$method = isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET';
+	if ( 'GET' !== $method && 'HEAD' !== $method ) {
 		return;
 	}
 	if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {

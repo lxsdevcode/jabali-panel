@@ -207,6 +207,21 @@ class Jabali_Cache_Admin {
 			}
 			$this->row( 'Redis server', esc_html( implode( ' · ', $parts ) ) );
 		}
+		$page = $this->probe_page_cache();
+		if ( ! empty( $page['status'] ) ) {
+			$st  = strtoupper( $page['status'] );
+			$col = ( 'HIT' === $st ) ? '#1a7f37' : '#646970';
+			$this->row( 'Server page cache', '<span style="color:' . $col . '">Active</span> <span style="color:#646970">(last probe: ' . esc_html( $st ) . ')</span>' );
+			if ( '' !== $page['cache_control'] ) {
+				$this->row( 'Edge Cache-Control', '<code>' . esc_html( $page['cache_control'] ) . '</code>' );
+			}
+			$val = array();
+			if ( 'yes' === $page['etag'] ) { $val[] = 'ETag'; }
+			if ( 'yes' === $page['last_modified'] ) { $val[] = 'Last-Modified'; }
+			if ( $val ) {
+				$this->row( 'Revalidation', esc_html( implode( ' + ', $val ) ) . ' <span style="color:#646970">(304 on returning visits)</span>' );
+			}
+		}
 		if ( ! $health['connected'] && '' !== $health['last_error'] ) {
 			$this->row( 'Last error', '<code>' . esc_html( $health['last_error'] ) . '</code>' );
 		}
@@ -298,6 +313,37 @@ class Jabali_Cache_Admin {
 			$out['last_error'] = $client->last_error();
 			$out['hint']       = $this->diagnose_hint( $cfg, $out['last_error'] );
 		}
+		return $out;
+	}
+
+	/**
+	 * Detect a server-side full-page cache (the jabali nginx micro-cache) by a
+	 * single anonymous loopback HEAD to the home URL, reading X-Jabali-Cache.
+	 * Result is cached in a transient so the status screen never blocks on it.
+	 * Returns array() when no server page cache is detected (e.g. off-jabali).
+	 *
+	 * @return array<string,string>
+	 */
+	private function probe_page_cache() {
+		$cached = get_transient( 'jabali_cache_page_probe' );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+		$out  = array();
+		$resp = wp_remote_head(
+			home_url( '/' ),
+			array( 'timeout' => 3, 'redirection' => 0, 'sslverify' => false, 'headers' => array( 'Accept' => 'text/html' ) )
+		);
+		if ( ! is_wp_error( $resp ) ) {
+			$xjc = wp_remote_retrieve_header( $resp, 'x-jabali-cache' );
+			if ( '' !== $xjc ) {
+				$out['status']        = is_array( $xjc ) ? reset( $xjc ) : (string) $xjc;
+				$out['cache_control'] = (string) wp_remote_retrieve_header( $resp, 'cache-control' );
+				$out['etag']          = '' !== wp_remote_retrieve_header( $resp, 'etag' ) ? 'yes' : 'no';
+				$out['last_modified'] = '' !== wp_remote_retrieve_header( $resp, 'last-modified' ) ? 'yes' : 'no';
+			}
+		}
+		set_transient( 'jabali_cache_page_probe', $out, 5 * MINUTE_IN_SECONDS );
 		return $out;
 	}
 
