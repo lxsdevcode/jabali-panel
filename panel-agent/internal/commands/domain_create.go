@@ -249,7 +249,7 @@ server {
         # responses stay no-cache. Strip any upstream header first to avoid dupes.
         fastcgi_hide_header Cache-Control;
         set $jabali_cc "private, no-cache, max-age=0";
-        if ($jabali_skip = 0) { set $jabali_cc "public, max-age={{.CacheTTLSeconds}}"; }
+        if ($jabali_skip = 0) { set $jabali_cc "public, max-age={{.CacheClientMaxAge}}"; }
         add_header Cache-Control $jabali_cc always;
 {{ end }}
     }
@@ -279,7 +279,7 @@ server {
         # responses stay no-cache. Strip any upstream header first to avoid dupes.
         fastcgi_hide_header Cache-Control;
         set $jabali_cc "private, no-cache, max-age=0";
-        if ($jabali_skip = 0) { set $jabali_cc "public, max-age={{.CacheTTLSeconds}}"; }
+        if ($jabali_skip = 0) { set $jabali_cc "public, max-age={{.CacheClientMaxAge}}"; }
         add_header Cache-Control $jabali_cc always;
 {{ end }}
     }
@@ -352,10 +352,11 @@ type vhostData struct {
 	// ADR-0108 FastCGI micro-cache. All three are panel/agent-controlled
 	// (never user data). When CacheEnabled is false the template emits
 	// none of the cache/static directives → byte-identical to pre-0108.
-	CacheEnabled    bool
-	CacheKeyZone    string
-	CacheTTL        string
-	CacheTTLSeconds int // numeric form of CacheTTL for Cache-Control max-age
+	CacheEnabled      bool
+	CacheKeyZone      string
+	CacheTTL          string
+	CacheTTLSeconds   int // numeric form of CacheTTL for Cache-Control max-age
+	CacheClientMaxAge int // client Cache-Control max-age (browser/CDN); decoupled from server TTL
 	// RootOverridden is true when CustomDirectives contain a
 	// `location /` block (any modifier — exact, prefix, regex). The
 	// template omits its own default `location /` + `location ~ \.php$`
@@ -492,6 +493,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		CacheKeyZone:               "jabali_fcgi",
 		CacheTTL:                   "60s",
 		CacheTTLSeconds:            60,
+		CacheClientMaxAge:          300,
 		// RootOverridden tracks whether ANY user-controlled directive
 		// block declares `location /`. Both raw `customDirectives`
 		// (admin Raw Directives tab) and `ruleDirectives` (compiled

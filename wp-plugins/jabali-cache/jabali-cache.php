@@ -74,6 +74,41 @@ if ( is_admin() ) {
 }
 
 /**
+ * Conditional-request validators (Last-Modified + ETag) on cacheable front-end
+ * responses, so returning visitors + CDNs revalidate with a 304 instead of a
+ * full re-download. Gated on caching being enabled; never on admin, logged-in,
+ * non-GET, feeds, REST, or error pages. nginx caches these on a MISS and honours
+ * If-Modified-Since on HITs (no PHP-side 304 short-circuit, to stay clear of
+ * REST/feed edge cases).
+ */
+function jabali_cache_send_validators() {
+	$cfg = Jabali_Cache_Config::load();
+	if ( empty( $cfg['enabled'] ) ) {
+		return;
+	}
+	if ( is_admin() || is_user_logged_in() || is_feed() || is_404() ) {
+		return;
+	}
+	if ( ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : 'GET' ) !== 'GET' ) {
+		return;
+	}
+	if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+		return;
+	}
+	$lm = get_lastpostmodified( 'GMT' );
+	if ( ! $lm ) {
+		return;
+	}
+	$ts      = strtotime( $lm . ' GMT' );
+	$lastmod = gmdate( 'D, d M Y H:i:s', $ts ) . ' GMT';
+	$uri     = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/';
+	$etag    = '"' . md5( $lastmod . '|' . $uri ) . '"';
+	header( 'Last-Modified: ' . $lastmod );
+	header( 'ETag: ' . $etag );
+}
+add_action( 'template_redirect', 'jabali_cache_send_validators', 9 );
+
+/**
  * WP-CLI wiring.
  */
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
