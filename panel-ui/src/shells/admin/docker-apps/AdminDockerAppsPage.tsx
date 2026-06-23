@@ -341,25 +341,23 @@ export const AdminDockerAppsPage = () => {
                               />
                             </Tooltip>
                           )}
-                          <Tooltip title="Restart">
-                            <Button
-                              size="small"
-                              icon={<ReloadOutlined />}
-                              onClick={() => lifecycle.mutate({ id: r.id, action: "restart" })}
-                            />
-                          </Tooltip>
-                          <Tooltip title={running ? "Stop the container before editing" : "Edit"}>
-                            <Button
-                              size="small"
-                              icon={<EditOutlined />}
-                              disabled={running}
-                              onClick={() => setEditApp(r)}
-                            />
-                          </Tooltip>
                           <Dropdown
                             trigger={["click"]}
                             menu={{
                               items: [
+                                {
+                                  key: "restart",
+                                  icon: <ReloadOutlined />,
+                                  label: "Restart",
+                                  onClick: () => lifecycle.mutate({ id: r.id, action: "restart" }),
+                                },
+                                {
+                                  key: "edit",
+                                  icon: <EditOutlined />,
+                                  label: "Edit",
+                                  disabled: running,
+                                  onClick: () => setEditApp(r),
+                                },
                                 {
                                   key: "update",
                                   icon: <SyncOutlined />,
