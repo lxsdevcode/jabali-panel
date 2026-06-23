@@ -5,8 +5,10 @@
 // on the next tick (5s typical). last_applied_at + last_error on each
 // row tell the operator whether the Stalwart side caught up.
 import { useState } from "react";
+import { RowActions } from "../../../components/RowActions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Drawer, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Drawer, Form, Input, InputNumber, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { EditOutlined, DeleteOutlined } from "@icons";
 import type { ColumnsType } from "antd/es/table";
 
 import { apiClient } from "../../../apiClient";
@@ -95,22 +97,19 @@ export const MailThrottlesPage = () => {
       title: "Actions",
       key: "act",
       render: (_, row) => (
-        <Space>
-          <Button size="small" onClick={() => { form.setFieldsValue(row); setDrawer({ open: true, row }); }}>Edit</Button>
-          <Button
-            size="small"
-            danger
-            onClick={() =>
-              Modal.confirm({
-                title: "Delete throttle?",
-                content: `${row.scope}/${row.scope_ref ?? "-"} — ${row.max_per_hour}/hr`,
-                onOk: () => deleteMut.mutate(row.id),
-              })
-            }
-          >
-            Delete
-          </Button>
-        </Space>
+        <RowActions
+          actions={[
+            { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => { form.setFieldsValue(row); setDrawer({ open: true, row }); } },
+            {
+              key: "delete",
+              label: "Delete",
+              icon: <DeleteOutlined />,
+              danger: true,
+              onClick: () => deleteMut.mutate(row.id),
+              confirm: { title: "Delete throttle?", description: `${row.scope}/${row.scope_ref ?? "-"} — ${row.max_per_hour}/hr`, okText: "Delete" },
+            },
+          ]}
+        />
       ),
     },
   ];

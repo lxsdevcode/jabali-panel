@@ -6,6 +6,7 @@
 // explains that. Reveal-once passwords reuse DatabaseUserPasswordModal
 // — the UX is identical (operator saves, we never display again).
 import { useState } from "react";
+import { RowActions } from "../../../components/RowActions";
 import {
   Alert,
   Button,
@@ -14,7 +15,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Progress,
   Select,
   Skeleton,
@@ -31,7 +31,6 @@ import {
   MailOutlined,
   PlusOutlined,
 } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
 
 import { DatabaseUserPasswordModal } from "../../../components/DatabaseUserPasswordModal";
 import { PasswordInput } from "../../../components/PasswordInput";
@@ -357,46 +356,28 @@ export const DomainMailboxesSection = ({
               title: "Actions",
               width: 180,
               render: (_, row) => (
-                <Space>
-                  <Tooltip title="Open webmail for this mailbox">
-                    <Button
-                      type="text"
-                      icon={<MailOutlined />}
-                      loading={ssoMutation.isPending && ssoMutation.variables?.id === row.id}
-                      onClick={() => openWebmail(row)}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Rotate password">
-                    <Button
-                      type="text"
-                      icon={<KeyOutlined />}
-                      loading={rotatingId === row.id}
-                      onClick={() => rotate(row)}
-                    />
-                  </Tooltip>
-                  <Popconfirm
-                    title={`Delete ${row.email}?`}
-                    description="All mail in this mailbox will be removed. This cannot be undone."
-                    onConfirm={async () => {
-                      try {
-                        await deleteMutation.mutateAsync({
-                          id: row.id,
-                          domainId,
-                        });
-                        message.success("Mailbox deleted");
-                      } catch (err) {
-                        const msg =
-                          (err as { response?: { data?: { detail?: string } } })?.response
-                            ?.data?.detail ?? "Failed to delete";
-                        message.error(msg);
-                      }
-                    }}
-                    okText="Delete"
-                    okButtonProps={{ danger: true }}
-                  >
-                    <RowActionButton danger icon={<DeleteOutlined />}>Remove</RowActionButton>
-                  </Popconfirm>
-                </Space>
+                <RowActions
+                  actions={[
+                    { key: "webmail", label: "Open webmail", icon: <MailOutlined />, loading: ssoMutation.isPending && ssoMutation.variables?.id === row.id, onClick: () => openWebmail(row) },
+                    { key: "rotate", label: "Rotate password", icon: <KeyOutlined />, loading: rotatingId === row.id, onClick: () => rotate(row) },
+                    {
+                      key: "delete",
+                      label: "Remove",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      onClick: async () => {
+                        try {
+                          await deleteMutation.mutateAsync({ id: row.id, domainId });
+                          message.success("Mailbox deleted");
+                        } catch (err) {
+                          const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Failed to delete";
+                          message.error(msg);
+                        }
+                      },
+                      confirm: { title: `Delete ${row.email}?`, description: "All mail in this mailbox will be removed. This cannot be undone.", okText: "Delete" },
+                    },
+                  ]}
+                />
               ),
             },
           ]}
