@@ -2,6 +2,7 @@
 // create/edit groups (shared mailbox + calendar + address book + files),
 // manage membership, delete. Mirrors MailboxesTab styling.
 import { useMemo, useState } from "react";
+import { RowActions } from "../../../../components/RowActions";
 import {
   App,
   Button,
@@ -10,14 +11,12 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Skeleton,
   Space,
   Table,
   Tag,
   Radio,
-  Tooltip,
   Typography,
 } from "antd";
 import {
@@ -132,34 +131,27 @@ export function GroupsTab() {
               title: "Actions",
               key: "actions",
               render: (_, row) => (
-                <Space>
-                  <Tooltip title="Manage members">
-                    <Button
-                      type="text"
-                      icon={<UsergroupAddOutlined />}
-                      onClick={() => setMembersTarget(row)}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Edit group">
-                    <Button type="text" icon={<EditOutlined />} onClick={() => setEditTarget(row)} />
-                  </Tooltip>
-                  <Popconfirm
-                    title={`Delete ${row.email}?`}
-                    description="The shared mailbox, calendar, address book and files are removed. This cannot be undone."
-                    okText="Delete"
-                    okType="danger"
-                    onConfirm={async () => {
-                      try {
-                        await del.mutateAsync({ id: row.id, domainId: row.domain_id });
-                        message.success("Group deleted");
-                      } catch {
-                        message.error("Failed to delete group");
-                      }
-                    }}
-                  >
-                    <Button danger type="text" icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                </Space>
+                <RowActions
+                  actions={[
+                    { key: "members", label: "Manage members", icon: <UsergroupAddOutlined />, onClick: () => setMembersTarget(row) },
+                    { key: "edit", label: "Edit group", icon: <EditOutlined />, onClick: () => setEditTarget(row) },
+                    {
+                      key: "delete",
+                      label: "Delete",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      onClick: async () => {
+                        try {
+                          await del.mutateAsync({ id: row.id, domainId: row.domain_id });
+                          message.success("Group deleted");
+                        } catch {
+                          message.error("Failed to delete group");
+                        }
+                      },
+                      confirm: { title: `Delete ${row.email}?`, description: "The shared mailbox, calendar, address book and files are removed. This cannot be undone.", okText: "Delete" },
+                    },
+                  ]}
+                />
               ),
             },
           ]}

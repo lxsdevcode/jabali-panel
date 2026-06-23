@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { RowActions } from "../../../components/RowActions";
 import { Card, Typography, Button, Space, Table, Tabs, message } from "antd";
 import {
   ReloadOutlined,
@@ -103,27 +104,13 @@ export const UserLogsPage = () => {
       title: "Actions",
       key: "actions",
       render: (_: unknown, record: Domain) => (
-        <Space size="small" wrap>
-          <Button
-            icon={<FileTextOutlined />}
-            onClick={() => openStream("access", record.id)}
-          >
-            {labelFor.access}
-          </Button>
-          <Button
-            icon={<WarningOutlined />}
-            onClick={() => openStream("error", record.id)}
-          >
-            {labelFor.error}
-          </Button>
-          <Button
-            type="primary"
-            icon={<DashboardOutlined />}
-            onClick={() => openStream("goaccess", record.id)}
-          >
-            {labelFor.goaccess}
-          </Button>
-        </Space>
+        <RowActions
+          actions={[
+            { key: "access", label: labelFor.access, icon: <FileTextOutlined />, onClick: () => openStream("access", record.id) },
+            { key: "error", label: labelFor.error, icon: <WarningOutlined />, onClick: () => openStream("error", record.id) },
+            { key: "goaccess", label: labelFor.goaccess, icon: <DashboardOutlined />, onClick: () => openStream("goaccess", record.id) },
+          ]}
+        />
       ),
     },
   ];
