@@ -116,6 +116,12 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	if err := exec.CommandContext(ctx, "usermod", "-aG", redisClientsGroup, p.OSUser).Run(); err != nil {
 		return nil, bkInternal("add tenant to "+redisClientsGroup, err)
 	}
+	// Grant the group access to the Redis socket NOW (POSIX ACL), so caching works
+	// immediately without waiting for a full install.sh run (which writes the
+	// persistent redis ExecStartPost drop-in that re-applies this on every restart).
+	// This one-shot bridges the gap on boxes updated binary-only. Best-effort.
+	_ = exec.CommandContext(ctx, "setfacl", "-m", "g:"+redisClientsGroup+":rx", "/run/redis").Run()
+	_ = exec.CommandContext(ctx, "setfacl", "-m", "g:"+redisClientsGroup+":rw", socket).Run()
 	// Best-effort: a missing/!active fpm master (e.g. CLI-only install) isn't fatal.
 	_ = exec.CommandContext(ctx, "systemctl", "restart", "jabali-fpm@"+p.OSUser+".service").Run()
 
