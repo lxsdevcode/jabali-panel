@@ -108,7 +108,14 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 // cache stays off — nginx owns page caching (the /domains/:id/cache microcache);
 // this enables the Redis OBJECT cache only.
 func wpCacheConfigPHP(socket string, db int, prefix, password string) string {
-	esc := func(s string) string { return strings.ReplaceAll(s, "'", "\\'") }
+	// PHP single-quoted strings treat only \ and ' as special. Escape the
+	// backslash FIRST (else we'd double-escape the ones we add for the quote),
+	// then the quote — a value ending in \ would otherwise escape the closing '.
+	esc := func(s string) string {
+		s = strings.ReplaceAll(s, "\\", "\\\\")
+		s = strings.ReplaceAll(s, "'", "\\'")
+		return s
+	}
 	return "<?php\n// Managed by jabali (GH #406). Do NOT hand-edit.\nreturn array(\n" +
 		"  'enabled'    => true,\n" +
 		"  'page_cache' => false,\n" +

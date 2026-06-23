@@ -4,6 +4,7 @@ package app
 
 import (
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -1021,6 +1022,9 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Agent:               deps.Agent,
 				Apps:                deps.Apps,
 				CronJobs:            deps.CronJobs,
+				Redis:               deps.Redis,
+				Reconciler:          deps.Reconciler,
+				CacheTokenSecret:    os.Getenv("JABALI_REDIS_PANEL_TOKEN"),
 			}
 			api.RegisterApplicationRoutes(v1, appCfg)
 

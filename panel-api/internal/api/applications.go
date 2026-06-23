@@ -80,6 +80,7 @@ func RegisterApplicationRoutes(g *gin.RouterGroup, cfg ApplicationHandlerConfig)
 	apps.GET("/:id", wp.get)
 	apps.DELETE("/:id", wp.delete)
 	apps.POST("/:id/clone", wp.clone)
+	apps.PUT("/:id/cache", wp.cache) // GH #406: WP object cache + nginx page cache
 }
 
 type applicationsHandler struct{ cfg ApplicationHandlerConfig }

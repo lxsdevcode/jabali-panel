@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/redis/go-redis/v9"
+
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
@@ -34,6 +36,16 @@ type ApplicationHandlerConfig struct {
 	Users               repository.UserRepository
 	Packages            repository.PackageRepository
 	Agent               agent.AgentInterface
+	// Redis is the panel's jabali_panel-authenticated client (ADR-0148, #406).
+	// Provisions the per-tenant wp_<osuser> ACL user that gates the WP object
+	// cache. Nil when Redis isn't configured -> the cache switch returns 503.
+	Redis *redis.Client
+	// CacheTokenSecret derives the stable per-tenant Redis ACL token
+	// (HMAC(secret, osuser)); read from JABALI_REDIS_PANEL_TOKEN.
+	CacheTokenSecret string
+	// Reconciler re-renders the domain vhost after the nginx page-cache flag
+	// flips (mirrors DomainCacheHandlerConfig.Reconciler). Optional.
+	Reconciler DNSScheduler
 	// CronJobs lets app installers (ITFlow #206) create + tear down the
 	// app-managed cron jobs an app needs. Optional; nil disables auto-cron.
 	CronJobs repository.CronJobRepository

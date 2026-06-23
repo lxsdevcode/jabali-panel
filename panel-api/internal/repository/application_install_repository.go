@@ -35,6 +35,8 @@ type ApplicationInstallRepository interface {
 	ListByUserID(ctx context.Context, userID string, opts ListOptions) ([]models.ApplicationInstall, int64, error)
 	List(ctx context.Context, opts ListOptions) ([]models.ApplicationInstall, int64, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error
+	// UpdateCacheEnabled writes application_installs.cache_enabled (GH #406).
+	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
 	Delete(ctx context.Context, id string) error
 	// ListReadyByUpdatedAtAsc returns ready installs ordered oldest-
 	// updated-first, capped to limit. Reconciler probe loop uses this
@@ -200,6 +202,11 @@ func (r *applicationInstallRepo) UpdateStatus(ctx context.Context, id, status st
 		return err
 	}
 	return nil
+}
+
+func (r *applicationInstallRepo) UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error {
+	return r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
+		Where("id = ?", id).Update("cache_enabled", enabled).Error
 }
 
 func (r *applicationInstallRepo) Delete(ctx context.Context, id string) error {
