@@ -34,10 +34,23 @@ class Jabali_Cache_Dropin_Manager {
 	 * @return array{object:bool,advanced:bool}
 	 */
 	public function install() {
-		return array(
+		// Object cache: always (it accelerates every request, no WP_CACHE needed).
+		$out = array(
 			'object'   => $this->copy_dropin( 'object-cache.php' ),
-			'advanced' => $this->copy_dropin( 'advanced-cache.php' ),
+			'advanced' => false,
 		);
+		// Page cache (advanced-cache.php) only when explicitly enabled. On Jabali
+		// page caching is handled by the nginx fastcgi microcache, so page_cache
+		// defaults off — installing an inert drop-in (WordPress never loads it
+		// without WP_CACHE) only confuses the status screen. Remove a stale one.
+		$cfg = Jabali_Cache_Config::load();
+		$adv = $this->content_dir . '/advanced-cache.php';
+		if ( ! empty( $cfg['page_cache'] ) ) {
+			$out['advanced'] = $this->copy_dropin( 'advanced-cache.php' );
+		} elseif ( $this->is_ours( $adv ) ) {
+			@unlink( $adv ); // phpcs:ignore
+		}
+		return $out;
 	}
 
 	/**
