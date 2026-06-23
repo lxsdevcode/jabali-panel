@@ -1025,7 +1025,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				CronJobs:            deps.CronJobs,
 				Redis:               deps.Redis,
 				Reconciler:          deps.Reconciler,
-				CacheTokenSecret:    os.Getenv("JABALI_REDIS_PANEL_TOKEN"),
+				CacheTokenSecret:    cacheHMACSecret(),
 			}
 			api.RegisterApplicationRoutes(v1, appCfg)
 
@@ -1211,4 +1211,21 @@ func startRateLimiterSweeper(rl *middleware.RateLimiter) {
 			rl.Cleanup(rateLimiterIdleCleanup)
 		}
 	}()
+}
+
+// cacheHMACSecret returns the dedicated WP-cache token-derivation secret used to
+// derive per-tenant Redis ACL tokens (GH #407). It is deliberately SEPARATE from
+// JABALI_REDIS_PANEL_TOKEN so the panel's master Redis credential can be rotated
+// without stranding every tenant's wp-config cache token. Falls back to the
+// master token (with a one-time warning) for installs predating the dedicated
+// secret, so caching keeps working until install.sh provisions it.
+func cacheHMACSecret() string {
+	if s := os.Getenv("JABALI_WP_CACHE_HMAC_SECRET"); s != "" {
+		return s
+	}
+	if s := os.Getenv("JABALI_REDIS_PANEL_TOKEN"); s != "" {
+		slog.Warn("JABALI_WP_CACHE_HMAC_SECRET unset — deriving WP-cache tokens from JABALI_REDIS_PANEL_TOKEN (GH #407); set the dedicated secret so rotating the master token does not strand tenant caches")
+		return s
+	}
+	return ""
 }

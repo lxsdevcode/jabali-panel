@@ -2508,6 +2508,16 @@ install_redis_acl() {
     _log "generated JABALI_REDIS_PANEL_TOKEN"
   fi
 
+  # 1b. WP-cache HMAC secret (GH #407) — DEDICATED secret for deriving per-tenant
+  #     cache ACL tokens. Kept SEPARATE from JABALI_REDIS_PANEL_TOKEN so the
+  #     panel's master Redis credential can be rotated without stranding every
+  #     tenant's wp-config cache token. read-or-create; never rotate here.
+  if ! grep -q '^JABALI_WP_CACHE_HMAC_SECRET=' "$ENV_FILE" 2>/dev/null; then
+    printf 'JABALI_WP_CACHE_HMAC_SECRET=%s
+' "$(openssl rand -hex 32)" >> "$ENV_FILE"
+    _log "generated JABALI_WP_CACHE_HMAC_SECRET"
+  fi
+
   # 2. ACL file — panel user scoped to its keyspaces (jabali:* + automation:*)
   #    with +acl so it owns the per-tenant ACL lifecycle. `default` starts ON so
   #    the running dispatcher keeps working until we restart panel + lock below.
