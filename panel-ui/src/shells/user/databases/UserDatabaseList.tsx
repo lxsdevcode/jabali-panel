@@ -4,10 +4,11 @@
 // popup blockers while the SSO call runs.
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Space, Table, Tooltip, Typography, message } from "antd";
+import { Button, Card, Space, Table, Typography, message } from "antd";
 import {
   DatabaseOutlined,
   LinkOutlined,
+  DeleteOutlined,
   PlusSquareOutlined,
   ThunderboltOutlined,
 } from "@icons";
@@ -15,8 +16,7 @@ import type { SorterResult } from "antd/es/table/interface";
 
 import { ssoAdminer, ssoPhpMyAdmin } from "../../../apiClient";
 import { EngineTag } from "../../../components/EngineTag";
-import { RowActionButton } from "../../../components/RowActionButton";
-import { RowDeleteButton } from "../../../components/RowDeleteButton";
+import { RowActions } from "../../../components/RowActions";
 import { columnSearchProps } from "../../../components/columnSearch";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { useDeleteMutation } from "../../../hooks/useQueries";
@@ -257,38 +257,35 @@ export const UserDatabaseList = () => {
               const isAdminerLoading = loadingAdminerId === r.id;
 
               return (
-                <Space>
-                  <Tooltip
-                    title={
-                      isPostgres
-                        ? "phpMyAdmin supports MySQL/MariaDB only"
-                        : ""
-                    }
-                  >
-                    <RowActionButton
-                      icon={<LinkOutlined />}
-                      onClick={() => handleOpenPhpMyAdmin(r)}
-                      disabled={isPostgres || isLoading}
-                      loading={isLoading}
-                    >
-                      Open in phpMyAdmin
-                    </RowActionButton>
-                  </Tooltip>
-                  <RowActionButton
-                    icon={<LinkOutlined />}
-                    onClick={() => handleOpenAdminer(r)}
-                    disabled={isAdminerLoading}
-                    loading={isAdminerLoading}
-                  >
-                    Open in Adminer
-                  </RowActionButton>
-                  <RowDeleteButton
-                    confirmTitle={`Delete database "${r.name}"?`}
-                    onConfirm={async () => {
-                      await deleteMutation.mutateAsync({ id: r.id });
-                    }}
-                  />
-                </Space>
+                <RowActions
+                  actions={[
+                    {
+                      key: "pma",
+                      label: "Open in phpMyAdmin",
+                      icon: <LinkOutlined />,
+                      onClick: () => handleOpenPhpMyAdmin(r),
+                      disabled: isPostgres || isLoading,
+                      loading: isLoading,
+                      tooltip: isPostgres ? "phpMyAdmin supports MySQL/MariaDB only" : undefined,
+                    },
+                    {
+                      key: "adminer",
+                      label: "Open in Adminer",
+                      icon: <LinkOutlined />,
+                      onClick: () => handleOpenAdminer(r),
+                      disabled: isAdminerLoading,
+                      loading: isAdminerLoading,
+                    },
+                    {
+                      key: "delete",
+                      label: "Delete",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      onClick: () => { void deleteMutation.mutateAsync({ id: r.id }); },
+                      confirm: { title: `Delete database "${r.name}"?`, okText: "Delete" },
+                    },
+                  ]}
+                />
               );
             }}
           />

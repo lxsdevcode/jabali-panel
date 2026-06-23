@@ -4,7 +4,6 @@ import {
   Button,
   Card,
   Input,
-  Popconfirm,
   Space,
   Switch,
   Table,
@@ -22,7 +21,7 @@ import {
   CheckOutlined,
   CloseOutlined,
 } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -271,49 +270,39 @@ export const UserCronList = () => {
             title: "Actions",
             dataIndex: "actions",
             render: (_, record) => (
-              <Space>
-                <RowActionButton
-                  icon={<PlayCircleOutlined />}
-                  onClick={() => handleRunNow(record)}
-                  loading={runningId === record.id}
-                  disabled={
-                    runningId !== null && runningId !== record.id
-                  }
-                >
-                  Run now
-                </RowActionButton>
-                <RowActionButton
-                  icon={<EyeOutlined />}
-                  onClick={() => {
-                    setLogJobId(record.id);
-                    setLogDrawerOpen(true);
-                  }}
-                >
-                  Log
-                </RowActionButton>
-                <RowActionButton
-                  icon={<EditOutlined />}
-                  onClick={() => handleOpenEditModal(record)}
-                >
-                  Edit
-                </RowActionButton>
-                <Popconfirm
-                  title="Delete Cron Job"
-                  description="Are you sure you want to delete this cron job?"
-                  onConfirm={() => handleDelete(record)}
-                  okText="Yes"
-                  cancelText="No"
-                >
-                  <RowActionButton
-                    danger
-                    icon={<DeleteOutlined />}
-                    loading={deletingId === record.id}
-                    disabled={deletingId !== null && deletingId !== record.id}
-                  >
-                    Delete
-                  </RowActionButton>
-                </Popconfirm>
-              </Space>
+              <RowActions
+                actions={[
+                  {
+                    key: "run",
+                    label: "Run now",
+                    icon: <PlayCircleOutlined />,
+                    onClick: () => handleRunNow(record),
+                    loading: runningId === record.id,
+                    disabled: runningId !== null && runningId !== record.id,
+                  },
+                  {
+                    key: "log",
+                    label: "Log",
+                    icon: <EyeOutlined />,
+                    onClick: () => { setLogJobId(record.id); setLogDrawerOpen(true); },
+                  },
+                  {
+                    key: "edit",
+                    label: "Edit",
+                    icon: <EditOutlined />,
+                    onClick: () => handleOpenEditModal(record),
+                  },
+                  {
+                    key: "delete",
+                    label: "Delete",
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    loading: deletingId === record.id,
+                    onClick: () => handleDelete(record),
+                    confirm: { title: "Delete Cron Job", description: "Are you sure you want to delete this cron job?", okText: "Yes" },
+                  },
+                ]}
+              />
             ),
           },
         ]}
