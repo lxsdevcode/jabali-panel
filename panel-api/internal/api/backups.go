@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -990,6 +991,7 @@ func (h *meBackupHandler) list(c *gin.Context) {
 type meRestoreSelectiveRequest struct {
 	Databases  []string `json:"databases"`
 	Home       bool     `json:"home"`
+	Mailboxes  []string `json:"mailboxes"`
 	DNSDomains []string `json:"dns_domains"`
 	Overwrite  bool     `json:"overwrite"`
 }
@@ -1028,9 +1030,9 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "validation_failed", "detail": err.Error()})
 		return
 	}
-	if len(req.Databases) == 0 && !req.Home && len(req.DNSDomains) == 0 {
+	if len(req.Databases) == 0 && !req.Home && len(req.DNSDomains) == 0 && len(req.Mailboxes) == 0 {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "nothing_selected",
-			"detail": "select at least one database, home, and/or dns domain"})
+			"detail": "select at least one database, mailbox, home, and/or dns domain"})
 		return
 	}
 
@@ -1064,7 +1066,7 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 
 	// DNS domains must also be currently owned by the caller (name -> id map).
 	ownedDomains := map[string]string{}
-	if len(req.DNSDomains) > 0 && h.cfg.Domains != nil {
+	if (len(req.DNSDomains) > 0 || len(req.Mailboxes) > 0) && h.cfg.Domains != nil {
 		doms, _, derr := h.cfg.Domains.ListByUserID(c.Request.Context(), claims.UserID, repository.ListOptions{Limit: 10000})
 		if derr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "domain_list_failed"})
@@ -1077,6 +1079,18 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 			if _, ok := ownedDomains[n]; !ok {
 				c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "domain_not_owned",
 					"detail": "you do not own a domain named " + n})
+				return
+			}
+		}
+		for _, mb := range req.Mailboxes {
+			at := strings.LastIndex(mb, "@")
+			if at <= 0 {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"status": "error", "error": "invalid_mailbox", "detail": mb})
+				return
+			}
+			if _, ok := ownedDomains[mb[at+1:]]; !ok {
+				c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "mailbox_not_owned",
+					"detail": "you do not own the domain for mailbox " + mb})
 				return
 			}
 		}
@@ -1106,12 +1120,13 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 
 	// Databases + home go to the agent (host-side). Only dispatch when one is
 	// requested — the agent rejects an empty db+home set.
-	if len(req.Databases) > 0 || req.Home {
+	if len(req.Databases) > 0 || req.Home || len(req.Mailboxes) > 0 {
 		raw, aerr := h.cfg.Agent.Call(ctx, "backup.restore_selective", map[string]any{
 			"job_id":               restoreJob.ID,
 			"manifest_snapshot_id": job.SnapshotID,
 			"target_username":      *owner.Username,
 			"databases":            req.Databases,
+			"mailboxes":            req.Mailboxes,
 			"home":                 req.Home,
 			"overwrite":            req.Overwrite,
 		})
