@@ -93,6 +93,15 @@ if [[ -d "${REPO_ROOT}/wp-plugins/jabali-cache" ]]; then
   echo "==> staged wp-plugins/jabali-cache"
 fi
 
+# 2c. Bundle the docker-app catalog (M48). Same gap as wp-plugins: the panel-api
+#     reads it from /usr/local/share/jabali/docker-apps at startup, but only
+#     install.sh's build_backend synced it — so a tarball update left the
+#     marketplace catalog stale. Ship it in the release.
+if [[ -d "${REPO_ROOT}/install/docker-apps" ]]; then
+  cp -a "${REPO_ROOT}/install/docker-apps" "$STAGE/docker-apps"
+  echo "==> staged docker-apps catalog"
+fi
+
 # 3. MANIFEST: machine-readable, single line per key. update.go parses
 #    this to print "Updating to release <short_sha> (built <build_time>)".
 cat > "$STAGE/MANIFEST" <<MANIFEST
@@ -107,7 +116,7 @@ MANIFEST
 # 4. Tar + sha256.
 TAR_NAME="jabali-release-${SHORT_SHA}.tar.gz"
 echo "==> packing $TAR_NAME"
-tar -C "$STAGE" -czf "$DIST_DIR/$TAR_NAME" bin MANIFEST $([[ -d "$STAGE/wp-plugins" ]] && echo wp-plugins)
+tar -C "$STAGE" -czf "$DIST_DIR/$TAR_NAME" bin MANIFEST $([[ -d "$STAGE/wp-plugins" ]] && echo wp-plugins) $([[ -d "$STAGE/docker-apps" ]] && echo docker-apps)
 
 (cd "$DIST_DIR" && sha256sum "$TAR_NAME" > "${TAR_NAME}.sha256")
 SIZE_MB=$(du -m "$DIST_DIR/$TAR_NAME" | awk '{print $1}')

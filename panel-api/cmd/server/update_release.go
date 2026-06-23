@@ -205,6 +205,20 @@ func installFromRelease(ctx context.Context, log func(string, ...any)) (installe
 		log("release: tarball has no wp-plugins/jabali-cache (older release) — skipping plugin bundle")
 	}
 
+	// 6c. Install the docker-app catalog (M48) the panel-api reads at startup.
+	//     Same best-effort posture: an older tarball without it just keeps the
+	//     existing on-disk catalog.
+	if src := filepath.Join(extractDir, "docker-apps"); dirExists(src) {
+		const dst = "/usr/local/share/jabali/docker-apps"
+		_ = os.MkdirAll(dst, 0o755)
+		cmd := exec.CommandContext(ctx, "rsync", "-a", "--delete", "--exclude=.git", src+"/", dst+"/")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log("release: install docker-apps failed (non-fatal): %v: %s", err, out)
+		} else {
+			log("release: installed %s", dst)
+		}
+	}
+
 	return true, fullSHA, nil
 }
 
