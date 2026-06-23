@@ -141,9 +141,25 @@ func listInstalledAppDirs(root string) ([]string, error) {
 	return dirs, nil
 }
 
+// isLikelyUnprivilegedContainer reports whether this host is an unprivileged
+// LXC/container, where docker's userns-remap cannot work. In such a container
+// uid 0 is mapped to a high host uid, so /proc/self/uid_map is NOT the identity
+// map "0 0 4294967295".
+func isLikelyUnprivilegedContainer() bool {
+	b, err := os.ReadFile("/proc/self/uid_map")
+	if err != nil {
+		return false // can't tell; let the restart+rollback path catch failures.
+	}
+	f := strings.Fields(strings.TrimSpace(string(b)))
+	return !(len(f) == 3 && f[0] == "0" && f[1] == "0")
+}
+
 func runDockerEnableTenant(yes bool) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("must run as root")
+	}
+	if isLikelyUnprivilegedContainer() {
+		return fmt.Errorf("tenant docker needs docker userns-remap, which requires user-namespace support not available in this unprivileged LXC/container. Run on a VM, or a privileged LXC with nesting enabled + a subuid/subgid map. (Base docker is unaffected.)")
 	}
 	if _, err := os.Stat(dockerTenantFlagPath); err == nil {
 		fmt.Println("tenant docker already enabled (" + dockerTenantFlagPath + " exists)")
@@ -176,7 +192,23 @@ func runDockerEnableTenant(yes bool) error {
 		}
 	}
 	if out, err := exec.Command("systemctl", "restart", "docker").CombinedOutput(); err != nil {
-		return fmt.Errorf("restart docker: %v: %s", err, out)
+		// userns-remap broke dockerd. Most common cause: an unprivileged LXC,
+		// where nested user namespaces for docker are unavailable. REVERT
+		// daemon.json + restart so the base docker daemon comes back instead of
+		// being left permanently dead (GH #272), then report a clear error.
+		if changed {
+			if len(cur) == 0 {
+				_ = os.Remove(dockerDaemonJSON)
+			} else {
+				_ = os.WriteFile(dockerDaemonJSON, cur, 0o644)
+			}
+			_ = exec.Command("systemctl", "restart", "docker").Run()
+		}
+		hint := ""
+		if isLikelyUnprivilegedContainer() {
+			hint = " This host is an unprivileged LXC/container — docker userns-remap is unsupported here. Run tenant docker on a VM, or a privileged LXC with nesting + a subuid/subgid map."
+		}
+		return fmt.Errorf("restart docker with userns-remap failed (reverted; base docker restored): %v: %s.%s", err, strings.TrimSpace(string(out)), hint)
 	}
 
 	// 3. chown app data trees into the dockremap range.

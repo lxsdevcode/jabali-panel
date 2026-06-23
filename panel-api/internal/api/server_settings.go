@@ -506,6 +506,20 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			defer cancel()
 			if _, err := h.cfg.Agent.Call(bgCtx, "docker.tenant_set", map[string]any{"enabled": target}); err != nil {
 				h.cfg.Log.Error("agent docker.tenant_set failed", "enabled", target, "err", err)
+				// On a failed ENABLE (e.g. unprivileged LXC — GH #272), revert the
+				// DB flag so the UI toggle reflects reality (host setup did NOT
+				// happen) instead of showing "enabling…" forever. Fresh context:
+				// bgCtx may already be exhausted from the agent call/timeout.
+				if target {
+					rctx, rcancel := context.WithTimeout(context.Background(), 15*time.Second)
+					defer rcancel()
+					if cur, gerr := h.cfg.Repo.Get(rctx); gerr == nil && cur != nil {
+						cur.DockerAppsForUsersEnabled = false
+						if uerr := h.cfg.Repo.Upsert(rctx, cur); uerr != nil {
+							h.cfg.Log.Error("revert docker_apps_for_users after failed enable", "err", uerr)
+						}
+					}
+				}
 			}
 		}(current.DockerAppsForUsersEnabled)
 	}
