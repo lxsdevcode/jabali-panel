@@ -11,6 +11,7 @@ import {
   Empty,
   Row,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -67,6 +68,7 @@ type ApplicationInstall = {
     | "failed";
   version: string | null;
   last_error: string;
+  cache_enabled?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -189,6 +191,7 @@ export const UserApplicationList = () => {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloningId, setCloningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [cachingId, setCachingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
 
   const handleScan = async () => {
@@ -267,6 +270,30 @@ export const UserApplicationList = () => {
       message.error(msg);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  // #406: single switch -> Redis object cache (jabali-wp-cache plugin) + nginx
+  // page cache for the app's domain. WordPress + ready only.
+  const handleToggleCache = async (row: ApplicationInstall, enabled: boolean) => {
+    setCachingId(row.id);
+    try {
+      await apiClient.put(`/applications/${row.id}/cache`, { enabled });
+      message.success(
+        enabled
+          ? `Caching enabled for ${row.domain_name || row.domain_id}`
+          : `Caching disabled for ${row.domain_name || row.domain_id}`,
+      );
+      qc.invalidateQueries({ queryKey: ["list", "applications"] });
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error ??
+        (err as { message?: string })?.message ??
+        "Failed to toggle caching";
+      message.error(msg);
+    } finally {
+      setCachingId(null);
     }
   };
 
@@ -499,6 +526,31 @@ export const UserApplicationList = () => {
             key="created_at"
             sorter={{ multiple: 2 }}
             render={(date: string) => new Date(date).toLocaleDateString()}
+          />
+          <Table.Column<ApplicationInstall>
+            title="Cache"
+            dataIndex="cache_enabled"
+            render={(_, r) => {
+              const supported =
+                (r.app_type ?? "wordpress") === "wordpress" &&
+                r.status === "ready";
+              const sw = (
+                <Switch
+                  size="small"
+                  checked={!!r.cache_enabled}
+                  loading={cachingId === r.id}
+                  disabled={!supported}
+                  onChange={(checked) => handleToggleCache(r, checked)}
+                />
+              );
+              return supported ? (
+                <Tooltip title="Redis object cache + nginx page cache">
+                  {sw}
+                </Tooltip>
+              ) : (
+                sw
+              );
+            }}
           />
           <Table.Column<ApplicationInstall>
             title="Actions"
