@@ -22,6 +22,8 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -55,33 +57,51 @@ func ensureRootDir(dir string) error {
 		if !fi.IsDir() {
 			return fmt.Errorf("refuse: %s is not a directory", dir)
 		}
-		if !isRootOwned(fi) {
-			// Legacy / reclaim: older agents created /home/<user>/.jabali[/bin]
-			// owned by the tenant. It is a real, non-symlink directory at a
-			// FIXED path, so reclaiming it for root is strictly safer than
-			// refusing forever (which bricks the per-user CLI php pin with no
-			// recovery path — GH #256 follow-up). Reclaim TOCTOU-safely: open
-			// without following symlinks and fchown the descriptor, so a tenant
-			// can't race a symlink into place between the stat and the chown.
-			fd, oErr := os.OpenFile(dir, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_DIRECTORY, 0)
-			if oErr != nil {
-				return fmt.Errorf("refuse: cannot safely reclaim %s: %w", dir, oErr)
-			}
-			defer fd.Close()
-			if cErr := fd.Chown(0, 0); cErr != nil {
-				return fmt.Errorf("reclaim %s for root: %w", dir, cErr)
+		if isRootOwned(fi) {
+			// Already ours. Enforce a safe mode in case a legacy/tenant state
+			// left group/world-write bits — otherwise a tenant could keep
+			// planting entries even though the dir is root-owned.
+			if fi.Mode().Perm() != 0o755 {
+				if cErr := os.Chmod(dir, 0o755); cErr != nil {
+					return fmt.Errorf("harden mode %s: %w", dir, cErr)
+				}
 			}
 			return nil
 		}
-		return nil
-	}
-	if !os.IsNotExist(err) {
+		// Tenant-owned (legacy state from an older agent). Do NOT reclaim it in
+		// place: both its MODE and its CONTENTS are tenant-controlled, so a bare
+		// chown would leave a group/world-writable dir or tenant-planted entries
+		// in a now-"root-owned" path. Instead rename the suspect dir ASIDE
+		// within its (root-owned, tenant-unwritable) parent and discard it, then
+		// recreate it empty + root-owned below. The caller rebuilds the wrapper
+		// symlinks from scratch, so nothing of value is lost. The parent being
+		// root-owned (verified by the caller for /home/<user>, and by the prior
+		// ensureRootDir pass for .jabali) means a tenant cannot rename/swap the
+		// suspect dir out from under us between the Lstat and the Rename.
+		var rnd [8]byte
+		if _, rErr := rand.Read(rnd[:]); rErr != nil {
+			return fmt.Errorf("reclaim %s: rand: %w", dir, rErr)
+		}
+		aside := dir + ".reclaim-" + hex.EncodeToString(rnd[:])
+		if rErr := os.Rename(dir, aside); rErr != nil {
+			return fmt.Errorf("reclaim %s: rename aside: %w", dir, rErr)
+		}
+		// Best-effort discard. The suspect tree is already out of the live path;
+		// leftover litter (root-owned) is harmless if removal hiccups.
+		_ = os.RemoveAll(aside)
+		// fall through to a fresh root-owned create
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	return os.Lchown(dir, 0, 0)
+	if err := os.Lchown(dir, 0, 0); err != nil {
+		return err
+	}
+	// Mkdir's mode is umask-masked; force the intended perms so the dir is never
+	// group/world-writable regardless of the agent's umask.
+	return os.Chmod(dir, 0o755)
 }
 
 // ensureUserCLIPHP writes/refreshes /home/<user>/.jabali/bin/php as a symlink

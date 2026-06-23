@@ -3,6 +3,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -90,6 +91,37 @@ func TestReplaceCLISymlink_RefusesRegularFile(t *testing.T) {
 
 // TestEnsureRootDir_RefusesSymlink — a symlink where a dir is expected is
 // refused (never followed).
+// A tenant-owned (non-root) wrapper dir must be reclaimed by renaming the
+// suspect tree ASIDE and recreating it empty — never reused in place — so a
+// tenant-planted entry inside it cannot survive into a "root-owned" path.
+// (sec review: reclaim of tenant-controlled directory.) The test runs unprivileged
+// so the final Lchown(0,0) fails; we assert the security-relevant invariant
+// (planted content gone) holds regardless of that error.
+func TestEnsureRootDir_DiscardsTenantContentOnReclaim(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "bin")
+	if err := os.Mkdir(dir, 0o777); err != nil { // group/world-writable tenant dir
+		t.Fatal(err)
+	}
+	planted := filepath.Join(dir, "php")
+	if err := os.WriteFile(planted, []byte("#!/bin/sh\nevil\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Unprivileged: the final chown-to-root will fail, but the rename-aside +
+	// fresh mkdir must already have happened first.
+	_ = ensureRootDir(dir)
+	if _, err := os.Lstat(planted); !os.IsNotExist(err) {
+		t.Fatalf("tenant-planted entry survived reclaim: %v", err)
+	}
+	// No .reclaim-* litter should remain in the parent.
+	entries, _ := os.ReadDir(parent)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "bin.reclaim-") {
+			t.Errorf("reclaim litter left behind: %s", e.Name())
+		}
+	}
+}
+
 func TestEnsureRootDir_RefusesSymlink(t *testing.T) {
 	dir := t.TempDir()
 	elsewhere := filepath.Join(dir, "elsewhere")
