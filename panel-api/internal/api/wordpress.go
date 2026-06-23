@@ -127,6 +127,7 @@ type wordPressListResponse struct {
 	Status        string    `json:"status"`
 	Version       *string   `json:"version"`
 	LastError     string    `json:"last_error"`
+	CacheEnabled  bool      `json:"cache_enabled"` // GH #406
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
@@ -537,6 +538,7 @@ func (h *wordPressHandler) list(c *gin.Context) {
 			Status:        inst.Status,
 			Version:       inst.Version,
 			LastError:     inst.LastError,
+			CacheEnabled:  inst.CacheEnabled,
 			CreatedAt:     inst.CreatedAt,
 			UpdatedAt:     inst.UpdatedAt,
 		}
