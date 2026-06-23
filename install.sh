@@ -2491,7 +2491,7 @@ install_redis_acl() {
   getent group jabali-redis-clients >/dev/null || groupadd --system jabali-redis-clients
   install -d -m 0755 -o root -g root /etc/systemd/system/redis-server.service.d
   local acl_unit="/etc/systemd/system/redis-server.service.d/20-jabali-redis-clients.conf"
-  local acl_unit_desired=$'# Managed by jabali install.sh — #406 / ADR-0148. Do NOT hand-edit.\n[Service]\nExecStartPost=+/bin/sh -c \'for i in 1 2 3 4 5; do [ -S /run/redis/redis.sock ] && break; sleep 1; done; setfacl -m g:jabali-redis-clients:rx /run/redis 2>/dev/null; setfacl -m g:jabali-redis-clients:rw /run/redis/redis.sock 2>/dev/null; true\'\n'
+  local acl_unit_desired=$'# Managed by jabali - #406 / ADR-0148. Do NOT hand-edit.\n[Service]\nExecStartPost=+/bin/sh -c \'for i in 1 2 3 4 5; do [ -S /run/redis/redis.sock ] && break; sleep 1; done; setfacl -m g:jabali-redis-clients:rx /run/redis 2>/dev/null; setfacl -m g:jabali-redis-clients:rw /run/redis/redis.sock 2>/dev/null; true\'\n'
   if [[ ! -f "$acl_unit" ]] || ! cmp -s <(printf '%s' "$acl_unit_desired") "$acl_unit"; then
     printf '%s' "$acl_unit_desired" > "$acl_unit"; chmod 0644 "$acl_unit"
     systemctl daemon-reload

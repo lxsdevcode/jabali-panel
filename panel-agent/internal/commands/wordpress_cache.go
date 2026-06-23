@@ -116,12 +116,12 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	if err := exec.CommandContext(ctx, "usermod", "-aG", redisClientsGroup, p.OSUser).Run(); err != nil {
 		return nil, bkInternal("add tenant to "+redisClientsGroup, err)
 	}
-	// Grant the group access to the Redis socket NOW (POSIX ACL), so caching works
-	// immediately without waiting for a full install.sh run (which writes the
-	// persistent redis ExecStartPost drop-in that re-applies this on every restart).
-	// This one-shot bridges the gap on boxes updated binary-only. Best-effort.
-	_ = exec.CommandContext(ctx, "setfacl", "-m", "g:"+redisClientsGroup+":rx", "/run/redis").Run()
-	_ = exec.CommandContext(ctx, "setfacl", "-m", "g:"+redisClientsGroup+":rw", socket).Run()
+	// Grant the group access to the Redis socket — both PERSISTENTLY (a redis
+	// ExecStartPost drop-in that re-applies on every restart) and IMMEDIATELY
+	// (one-shot, no redis restart needed). Doing this in the agent means a plain
+	// `jabali update` (binaries only, no install.sh) is enough — the socket grant
+	// no longer depends on a full installer run. Idempotent + best-effort.
+	ensureRedisSocketGroupAccess(ctx, socket)
 	// Best-effort: a missing/!active fpm master (e.g. CLI-only install) isn't fatal.
 	_ = exec.CommandContext(ctx, "systemctl", "restart", "jabali-fpm@"+p.OSUser+".service").Run()
 
@@ -231,6 +231,35 @@ func insertBeforeWPSettings(content, block string) string {
 		content += "\n"
 	}
 	return content + block
+}
+
+// redisSocketAccessDropIn is the systemd drop-in that re-grants the
+// jabali-redis-clients group access to the Redis runtime dir + socket on every
+// redis start (RuntimeDirectory + socket are recreated each boot). MUST stay
+// byte-identical to the copy install.sh writes (install_redis_acl) so the two
+// never fight over the file. sha256 24ed9aaf...
+const redisSocketAccessDropIn = "# Managed by jabali - #406 / ADR-0148. Do NOT hand-edit.\n" +
+	"[Service]\n" +
+	"ExecStartPost=+/bin/sh -c 'for i in 1 2 3 4 5; do [ -S /run/redis/redis.sock ] && break; sleep 1; done; " +
+	"setfacl -m g:jabali-redis-clients:rx /run/redis 2>/dev/null; " +
+	"setfacl -m g:jabali-redis-clients:rw /run/redis/redis.sock 2>/dev/null; true'\n"
+
+// ensureRedisSocketGroupAccess installs the persistent drop-in (idempotent;
+// daemon-reload only when it changes) and applies the ACL to the live socket so
+// caching works without waiting for a redis restart. All best-effort.
+func ensureRedisSocketGroupAccess(ctx context.Context, socket string) {
+	const unitPath = "/etc/systemd/system/redis-server.service.d/20-jabali-redis-clients.conf"
+	if cur, err := os.ReadFile(unitPath); err != nil || string(cur) != redisSocketAccessDropIn {
+		if mkErr := os.MkdirAll("/etc/systemd/system/redis-server.service.d", 0o755); mkErr == nil {
+			if wErr := os.WriteFile(unitPath, []byte(redisSocketAccessDropIn), 0o644); wErr == nil {
+				_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+			}
+		}
+	}
+	// Immediate: apply to the live runtime dir + socket (the drop-in only fires on
+	// the next redis (re)start).
+	_ = exec.CommandContext(ctx, "setfacl", "-m", "g:"+redisClientsGroup+":rx", "/run/redis").Run()
+	_ = exec.CommandContext(ctx, "setfacl", "-m", "g:"+redisClientsGroup+":rw", socket).Run()
 }
 
 func runWPAsTenant(ctx context.Context, osUser, installPath string, args ...string) error {
