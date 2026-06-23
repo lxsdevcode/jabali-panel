@@ -130,6 +130,37 @@ class Jabali_Cache_CLI {
 	}
 
 	/**
+	 * Verify live Redis connectivity with a real write/read/delete round-trip
+	 * under the site's ACL-scoped prefix. Exits non-zero (WP_CLI::error) on any
+	 * failure so a caller (the Jabali agent) can gate "cache enabled" on actual
+	 * health instead of a bare exit-0. A plain connect()/PING is NOT enough — a
+	 * wrong-prefix or mis-derived ACL token still connects but NOPERMs on the
+	 * first key op, which only a real SET/GET surfaces (GH #410).
+	 *
+	 * @when after_wp_load
+	 */
+	public function verify() {
+		$cfg = Jabali_Cache_Config::load();
+		$c   = new Jabali_Cache_Client( $cfg );
+		if ( ! $c->connect() ) {
+			\WP_CLI::error( 'Redis connect failed: ' . $c->last_error() );
+		}
+		$key = $cfg['prefix'] . '__jabali_verify';
+		if ( ! $c->set( $key, '1', 10 ) ) {
+			$err = $c->last_error();
+			$c->close();
+			\WP_CLI::error( 'Redis SET failed (NOPERM / keyspace denied for ' . $cfg['prefix'] . '*): ' . $err );
+		}
+		$val = $c->get( $key );
+		$c->del( $key );
+		$c->close();
+		if ( '1' !== (string) $val ) {
+			\WP_CLI::error( 'Redis round-trip mismatch (set 1, got ' . var_export( $val, true ) . ')' );
+		}
+		\WP_CLI::success( 'Cache verified: live Redis read/write under ' . $cfg['prefix'] );
+	}
+
+	/**
 	 * Diagnose connectivity and print an actionable hint on failure.
 	 *
 	 * @when after_wp_load

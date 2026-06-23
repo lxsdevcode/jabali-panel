@@ -134,6 +134,18 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
 			Message: fmt.Sprintf("wp jabali-cache enable: %v: %s", err, out)}
 	}
+
+	// 5. Verify live Redis connectivity with a real SET/GET round-trip (GH #410).
+	// `enable` only flips a flag + installs drop-ins; it never touches Redis, so a
+	// silent NOPERM (wrong prefix, stale/mis-derived ACL token, no socket access)
+	// would otherwise return success with a dead cache. Gate on the probe, and
+	// roll the plugin back to inert so we never report a green-but-broken cache.
+	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "jabali-cache", "verify"); err != nil {
+		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "jabali-cache", "disable")
+		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "plugin", "deactivate", "jabali-cache")
+		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition,
+			Message: fmt.Sprintf("cache enabled but Redis verify failed (rolled back): %s", out)}
+	}
 	return wordpressCacheSetResult{Ok: true, Enabled: true}, nil
 }
 
