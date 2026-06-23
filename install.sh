@@ -2511,9 +2511,10 @@ install_redis_acl() {
   # 2. ACL file — panel user scoped to its keyspaces (jabali:* + automation:*)
   #    with +acl so it owns the per-tenant ACL lifecycle. `default` starts ON so
   #    the running dispatcher keeps working until we restart panel + lock below.
+  # NOTE: the external aclfile accepts ONLY `user` lines — redis aborts startup
+  # on any comment/blank line ("should start with user keyword"). Keep it pure.
+  # Runtime tenant users (wp_<osuser>) are appended by panel-api via ACL SETUSER.
   cat > "$aclfile" <<ACL
-# Managed by jabali install.sh — #406 / ADR-0148. Do NOT hand-edit; runtime
-# tenant users (wp_<osuser>) are added by panel-api via ACL SETUSER + ACL SAVE.
 user default on nopass ~* &* +@all
 user jabali_panel on >${panel_token} ~jabali:* ~automation:* resetchannels +@all -@dangerous +acl +@connection
 ACL
