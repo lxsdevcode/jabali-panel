@@ -26,10 +26,10 @@ import {
   message,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 
 import { apiClient } from "../../../apiClient";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { DeleteOutlined, PlusOutlined, RedoOutlined, SwapOutlined } from "@icons";
 import { BulkWhmDrawer } from "./BulkWhmDrawer";
 import { CreateMigrationDrawer } from "./CreateMigrationDrawer";
@@ -76,6 +76,7 @@ const SOURCE_BADGE: Record<string, { color: string; label: string }> = {
 };
 
 export const AdminMigrationsPage = () => {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -356,62 +357,37 @@ export const AdminMigrationsPage = () => {
                 r.state === "failed" ||
                 r.state === "cancelled";
               return (
-                <Space size="small">
-                  <Link to={`/jabali-admin/migrations/${r.id}`}>
-                    <RowActionButton icon={<SwapOutlined />} color="default">
-                      View
-                    </RowActionButton>
-                  </Link>
-                  {r.state === "pending" && (
-                    <Popconfirm
-                      title={`Re-kick pull-source for ${r.source_user}?`}
-                      description="Re-dispatches the agent's pull-source runner. Use for rows that landed pending before auto-kick existed, or after a transient SSH/network blip."
-                      onConfirm={() => reKick.mutate({ id: r.id })}
-                      okText="Re-kick"
-                    >
-                      <RowActionButton
-                        icon={<RedoOutlined />}
-                        color="primary"
-                      >
-                        Re-kick
-                      </RowActionButton>
-                    </Popconfirm>
-                  )}
-                  {!terminal && (
-                    <Popconfirm
-                      title={`Cancel migration ${r.source_user}?`}
-                      description="Stamps the DB row as cancelled. Does NOT kill an in-flight CLI process — Ctrl-C the cobra cmd separately."
-                      onConfirm={() => cancel.mutate({ id: r.id })}
-                      okText="Cancel job"
-                      okButtonProps={{ danger: true }}
-                    >
-                      <RowActionButton
-                        danger
-                        icon={<DeleteOutlined />}
-                        color="default"
-                      >
-                        Cancel
-                      </RowActionButton>
-                    </Popconfirm>
-                  )}
-                  {terminal && (
-                    <Popconfirm
-                      title={`Destroy migration ${r.source_user}?`}
-                      description="Removes the DB row, secrets file, and /var/lib/jabali-migrations/<id>/ extracted dir. Operator-irreversible."
-                      onConfirm={() => destroy.mutate({ id: r.id })}
-                      okText="Destroy"
-                      okButtonProps={{ danger: true }}
-                    >
-                      <RowActionButton
-                        danger
-                        icon={<DeleteOutlined />}
-                        color="default"
-                      >
-                        Destroy
-                      </RowActionButton>
-                    </Popconfirm>
-                  )}
-                </Space>
+                <RowActions
+                  actions={[
+                    { key: "view", label: "View", icon: <SwapOutlined />, onClick: () => navigate(`/jabali-admin/migrations/${r.id}`) },
+                    {
+                      key: "rekick",
+                      label: "Re-kick",
+                      icon: <RedoOutlined />,
+                      hidden: r.state !== "pending",
+                      onClick: () => reKick.mutate({ id: r.id }),
+                      confirm: { title: `Re-kick pull-source for ${r.source_user}?`, description: "Re-dispatches the agent's pull-source runner. Use for rows that landed pending before auto-kick existed, or after a transient SSH/network blip.", okText: "Re-kick" },
+                    },
+                    {
+                      key: "cancel",
+                      label: "Cancel",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      hidden: terminal,
+                      onClick: () => cancel.mutate({ id: r.id }),
+                      confirm: { title: `Cancel migration ${r.source_user}?`, description: "Stamps the DB row as cancelled. Does NOT kill an in-flight CLI process — Ctrl-C the cobra cmd separately.", okText: "Cancel job" },
+                    },
+                    {
+                      key: "destroy",
+                      label: "Destroy",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      hidden: !terminal,
+                      onClick: () => destroy.mutate({ id: r.id }),
+                      confirm: { title: `Destroy migration ${r.source_user}?`, description: "Removes the DB row, secrets file, and /var/lib/jabali-migrations/<id>/ extracted dir. Operator-irreversible.", okText: "Destroy" },
+                    },
+                  ]}
+                />
               );
             }}
           />
