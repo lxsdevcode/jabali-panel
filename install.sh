@@ -2468,6 +2468,65 @@ install_redis() {
   _ok "Redis listening on unix socket /run/redis/redis.sock mode 0660 ${owner}:${group}"
 }
 
+# install_redis_acl — #406 / ADR-0148. Lock the no-AUTH default user and give
+# panel-api a scoped ACL user, so reaching the socket no longer grants full
+# access (the prerequisite for ever letting tenants connect for WP caching).
+#
+# Idempotent + token-stable: the panel token is generated once and persisted in
+# panel.env; re-runs (jabali update) reuse it and re-assert the locked state.
+# Sequenced so the dispatcher never loses access: write the users with `default`
+# still ON, reload, restart panel (it now authenticates as jabali_panel), THEN
+# lock default.
+install_redis_acl() {
+  _log "configuring Redis multi-tenant ACLs (#406 / ADR-0148)"
+  local sock="/run/redis/redis.sock"
+  local aclfile="/etc/redis/users.acl"
+
+  # 1. Panel token — read-or-create in panel.env (never rotate: a rotate would
+  #    orphan the running panel until restart).
+  local panel_token
+  panel_token="$(sed -n 's/^JABALI_REDIS_PANEL_TOKEN=//p' "$ENV_FILE" 2>/dev/null | head -1)"
+  if [[ -z "$panel_token" ]]; then
+    panel_token="$(openssl rand -hex 32)"
+    printf 'JABALI_REDIS_PANEL_TOKEN=%s
+' "$panel_token" >> "$ENV_FILE"
+    _log "generated JABALI_REDIS_PANEL_TOKEN"
+  fi
+
+  # 2. ACL file — panel user scoped to its keyspaces (jabali:* + automation:*)
+  #    with +acl so it owns the per-tenant ACL lifecycle. `default` starts ON so
+  #    the running dispatcher keeps working until we restart panel + lock below.
+  cat > "$aclfile" <<ACL
+# Managed by jabali install.sh — #406 / ADR-0148. Do NOT hand-edit; runtime
+# tenant users (wp_<osuser>) are added by panel-api via ACL SETUSER + ACL SAVE.
+user default on nopass ~* &* +@all
+user jabali_panel on >${panel_token} ~jabali:* ~automation:* resetchannels +@all -@dangerous +acl +@connection
+ACL
+  chown redis:redis "$aclfile"; chmod 0640 "$aclfile"
+  printf 'aclfile %s
+' "$aclfile" > /etc/redis/redis.conf.d/20-jabali-acl.conf
+  chmod 0644 /etc/redis/redis.conf.d/20-jabali-acl.conf
+
+  systemctl restart redis-server
+  sleep 1
+
+  # 3. Restart panel so it authenticates as jabali_panel BEFORE we lock default.
+  #    On a fresh install the panel isn't up yet — it starts later with the token.
+  if systemctl is-active --quiet jabali-panel 2>/dev/null; then
+    systemctl restart jabali-panel
+    sleep 2
+    if ! redis-cli -s "$sock" --user jabali_panel --pass "$panel_token" --no-auth-warning PING >/dev/null 2>&1; then
+      _warn "jabali_panel Redis auth check failed — leaving default ON (notifications safe); investigate before relying on tenant isolation"
+      return 0
+    fi
+  fi
+
+  # 4. Lock default. Socket access alone is now inert (NOAUTH).
+  sed -i 's|^user default on nopass.*|user default off nopass ~* resetchannels -@all|' "$aclfile"
+  redis-cli -s "$sock" --user jabali_panel --pass "$panel_token" --no-auth-warning ACL LOAD >/dev/null 2>&1 || systemctl restart redis-server
+  _ok "Redis ACLs configured: default locked, jabali_panel scoped, per-tenant users ready"
+}
+
 # ---------- step 2.5c: PostgreSQL 16 (M37 Phase 1) ---------------------------
 #
 # Installs PostgreSQL 16 from Debian's archive (matches our M7 stance
@@ -11848,6 +11907,7 @@ main() {
   # in Server Settings; panel-api dispatches docker.install which
   # sources install.sh and runs install_docker_engine on demand.
   install_redis
+  install_redis_acl
   # M37 Phase 4: PostgreSQL is OPT-IN. install_postgres no longer runs on
   # fresh install. Operator flips server_settings.postgres_enabled in
   # the Databases tab; panel-api dispatches db.postgres.install which

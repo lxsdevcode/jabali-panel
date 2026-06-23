@@ -123,6 +123,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("parse redis url %q: %w", cfg.Redis.URL, err)
 		}
+		// ADR-0148 (#406): once Redis' default user is locked for the WP-cache
+		// multi-tenant ACL model, panel-api must authenticate. It uses a single
+		// client across ALL its keyspaces — jabali:* (notifications, audit,
+		// login/session, secret) AND automation:replay:* — and also runs the
+		// tenant ACL lifecycle, so the jabali_panel user is scoped to those key
+		// patterns with +acl (not the notifications-only scope first drafted).
+		// Token seeded by install.sh into panel.env BEFORE default is locked;
+		// absent on a pre-ACL host → no auth, default still nopass → unchanged.
+		if tok := os.Getenv("JABALI_REDIS_PANEL_TOKEN"); tok != "" {
+			opts.Username = "jabali_panel"
+			opts.Password = tok
+		}
 		redisClient = redis.NewClient(opts)
 		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

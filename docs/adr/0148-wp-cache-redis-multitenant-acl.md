@@ -213,3 +213,31 @@ and persisted; install.sh reads-or-creates.
    runs `ACL SETUSER` over the socket (it is already a `jabali-redis-clients`
    member). Alternative: the agent (root) does it. Proposed: panel-api, to keep
    the credential out of the agent and ACL logic next to the lifecycle state.
+
+---
+
+## Implementation note (2026-06-23) — Phase 0 SHIPPED + corrected
+
+**Status: Accepted.** Phase 0 (this ACL model) is implemented + live-verified on
+the test host (Ubuntu noble, Redis 7.0.15) and codified in `install_redis_acl()`.
+
+**Correction to §3a — the panel user is NOT notifications-only.** panel-api uses a
+**single** go-redis client across all its keyspaces: `jabali:notifications:*`
+(dispatcher + DLQ + inbox + server-status XLEN), plus `jabali:audit:*`,
+`jabali:login-wl-seen:*`, `jabali:session-seen:*`, `jabali:secret`, **and**
+`automation:replay:*` (M44 HMAC replay-defense — note: NOT `jabali:`-prefixed).
+Scoping it to `~jabali:notifications:*` as first drafted would NOPERM automation
+replay-defense + audit. The shipped `jabali_panel` user is therefore:
+```
+user jabali_panel on >TOKEN ~jabali:* ~automation:* resetchannels +@all -@dangerous +acl +@connection
+```
+`+acl` lets the same connection run the per-tenant ACL lifecycle (`ACL SETUSER`/
+`DELUSER`/`SAVE`), so panel-api needs no second admin connection — the separate
+`jabali_acl_admin`/`jabali_dispatcher` split in §3 is collapsed into one trusted
+control-plane user. Tenants remain tightly scoped (`~jc:<prefix>:*`).
+
+**Verified live (gated, default-lock survives restart):** default off → no-auth
+PING = NOAUTH; panel reconnects as jabali_panel + dispatcher starts; a
+`~jc:demopfx:*` tenant user gets OK on its own prefix and NOPERM on another
+prefix, on `jabali:notifications:*`, and on FLUSHALL. Survives redis restart
+(aclfile-persisted).
