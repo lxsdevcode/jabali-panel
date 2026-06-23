@@ -10,7 +10,6 @@ import {
   Input,
   message,
   Modal,
-  Popconfirm,
   Radio,
   Select,
   Skeleton,
@@ -24,7 +23,7 @@ import { DeleteOutlined, PlusOutlined, TeamOutlined } from "@icons";
 
 import { apiClient } from "../../../../apiClient";
 import { useListQuery } from "../../../../hooks/useQueries";
-import { RowActionButton } from "../../../../components/RowActionButton";
+import { RowActions } from "../../../../components/RowActions";
 import type { Domain } from "../../domains/UserDomainList";
 import type { Mailbox } from "../../../../hooks/useMailboxes";
 import {
@@ -119,27 +118,26 @@ export const SharedResourcesTab = () => {
             title: "Actions",
             width: 160,
             render: (_, row) => (
-              <Space>
-                <Button size="small" icon={<TeamOutlined />} onClick={() => setGrantsTarget(row)}>
-                  Grants
-                </Button>
-                <Popconfirm
-                  title={`Delete ${row.display_name || row.email}?`}
-                  description="Removes the shared collection and all its grants."
-                  okText="Delete"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={async () => {
-                    try {
-                      await deleteMut.mutateAsync({ id: row.id });
-                      message.success("Deleted");
-                    } catch {
-                      message.error("Delete failed");
-                    }
-                  }}
-                >
-                  <RowActionButton danger icon={<DeleteOutlined />} aria-label="Delete" />
-                </Popconfirm>
-              </Space>
+              <RowActions
+                actions={[
+                  { key: "grants", label: "Grants", icon: <TeamOutlined />, onClick: () => setGrantsTarget(row) },
+                  {
+                    key: "delete",
+                    label: "Delete",
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: async () => {
+                      try {
+                        await deleteMut.mutateAsync({ id: row.id });
+                        message.success("Deleted");
+                      } catch {
+                        message.error("Delete failed");
+                      }
+                    },
+                    confirm: { title: `Delete ${row.display_name || row.email}?`, description: "Removes the shared collection and all its grants.", okText: "Delete" },
+                  },
+                ]}
+              />
             ),
           },
         ]}

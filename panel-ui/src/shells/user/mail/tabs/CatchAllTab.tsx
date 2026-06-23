@@ -11,17 +11,15 @@ import {
   Form,
   message,
   Modal,
-  Popconfirm,
   Select,
   Skeleton,
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
 } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@icons";
-import { RowActionButton } from "../../../../components/RowActionButton";
+import { RowActions } from "../../../../components/RowActions";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../../../../apiClient";
@@ -190,14 +188,16 @@ export const CatchAllTab = () => {
               title: "Actions",
               width: 140,
               render: (_, row) => (
-                <Space>
-                  <Tooltip title="Edit target">
-                    <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(row)} />
-                  </Tooltip>
-                  {row.target && (
-                    <Popconfirm
-                      title={`Clear catch-all for ${row.domain_name}?`}
-                      onConfirm={async () => {
+                <RowActions
+                  actions={[
+                    { key: "edit", label: "Edit target", icon: <EditOutlined />, onClick: () => openEdit(row) },
+                    {
+                      key: "remove",
+                      label: "Remove",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      hidden: !row.target,
+                      onClick: async () => {
                         try {
                           await deleteMut.mutateAsync(row.domain_id);
                           message.success("Catch-all cleared");
@@ -206,14 +206,11 @@ export const CatchAllTab = () => {
                             ?.data?.error ?? "Failed to clear";
                           message.error(msg);
                         }
-                      }}
-                      okText="Clear"
-                      okButtonProps={{ danger: true }}
-                    >
-                      <RowActionButton danger icon={<DeleteOutlined />}>Remove</RowActionButton>
-                    </Popconfirm>
-                  )}
-                </Space>
+                      },
+                      confirm: { title: `Clear catch-all for ${row.domain_name}?`, okText: "Clear" },
+                    },
+                  ]}
+                />
               ),
             },
           ]}
