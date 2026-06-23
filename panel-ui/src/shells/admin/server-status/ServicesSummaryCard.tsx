@@ -8,10 +8,8 @@ import { useState } from "react";
 import {
   Card,
   Modal,
-  Space,
   Table,
   Tag,
-  Tooltip,
   message,
 } from "antd";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,7 +24,7 @@ import {
   SettingOutlined,
   SyncOutlined,
 } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 
 import { apiClient } from "../../../apiClient";
 import { useServerCapabilities } from "../../../hooks/useServerCapabilities";
@@ -165,84 +163,16 @@ function ServiceActions({ service, onAction }: ServiceActionsProps) {
     service.unit_file_state === "alias";
 
   return (
-    <Space size={2}>
-      {isDown ? (
-        <Tooltip title="Start">
-          <RowActionButton
-            size="small"
-            icon={<PlayCircleOutlined />}
-            onClick={() => onAction(service.unit, "start")}
-            aria-label="Start"
-          >
-            Start
-          </RowActionButton>
-        </Tooltip>
-      ) : (
-        <>
-          <Tooltip title="Restart">
-            <RowActionButton
-              size="small"
-              icon={<SyncOutlined />}
-              onClick={() => onAction(service.unit, "restart")}
-              aria-label="Restart"
-            >
-              Restart
-            </RowActionButton>
-          </Tooltip>
-          {isReload && (
-            <Tooltip title="Reload">
-              <RowActionButton
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={() => onAction(service.unit, "reload")}
-                aria-label="Reload"
-              >
-                Reload
-              </RowActionButton>
-            </Tooltip>
-          )}
-          {!isSelfDestruct && (
-            <Tooltip title="Stop">
-              <RowActionButton
-                size="small"
-                danger
-                icon={<PauseCircleOutlined />}
-                onClick={() => onAction(service.unit, "stop")}
-                aria-label="Stop"
-              >
-                Stop
-              </RowActionButton>
-            </Tooltip>
-          )}
-        </>
-      )}
-      {isEnabled
-        ? !isSelfDestruct && (
-            <Tooltip title="Disable at boot">
-              <RowActionButton
-                size="small"
-                danger
-                icon={<PoweroffOutlined />}
-                onClick={() => onAction(service.unit, "disable")}
-                aria-label="Disable at boot"
-              >
-                Disable
-              </RowActionButton>
-            </Tooltip>
-          )
-        : (
-          <Tooltip title="Enable at boot">
-            <RowActionButton
-              size="small"
-              icon={<PoweroffOutlined />}
-              onClick={() => onAction(service.unit, "enable")}
-              aria-label="Enable at boot"
-            >
-              Enable
-            </RowActionButton>
-          </Tooltip>
-        )}
-    </Space>
+    <RowActions
+      actions={[
+        { key: "start", label: "Start", icon: <PlayCircleOutlined />, hidden: !isDown, onClick: () => onAction(service.unit, "start"), tooltip: "Start" },
+        { key: "restart", label: "Restart", icon: <SyncOutlined />, hidden: isDown, onClick: () => onAction(service.unit, "restart"), tooltip: "Restart" },
+        { key: "reload", label: "Reload", icon: <ReloadOutlined />, hidden: isDown || !isReload, onClick: () => onAction(service.unit, "reload"), tooltip: "Reload" },
+        { key: "stop", label: "Stop", icon: <PauseCircleOutlined />, danger: true, hidden: isDown || isSelfDestruct, onClick: () => onAction(service.unit, "stop"), tooltip: "Stop" },
+        { key: "enable", label: "Enable at boot", icon: <PoweroffOutlined />, hidden: isEnabled, onClick: () => onAction(service.unit, "enable"), tooltip: "Enable at boot" },
+        { key: "disable", label: "Disable at boot", icon: <PoweroffOutlined />, danger: true, hidden: !isEnabled || isSelfDestruct, onClick: () => onAction(service.unit, "disable"), tooltip: "Disable at boot" },
+      ]}
+    />
   );
 }
 

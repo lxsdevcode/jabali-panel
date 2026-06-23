@@ -14,6 +14,7 @@ import {
 import { ApiOutlined, DeleteOutlined, DownloadOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined } from "@icons";
 import { apiClient } from "../../../apiClient";
 import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 
 // Shape mirrors the contract locked in panel-api/internal/agent/php_ext_contract_test.go.
 interface ExtensionState {
@@ -289,20 +290,19 @@ const ExtensionActions = ({ record, busy, onApply }: ExtensionActionsProps) => {
 
   // Installed: show Remove plus Enable/Disable (except mysql meta).
   return (
-    <Space>
-      {!isMysqlMeta &&
-        (record.enabled ? (
-          <RowActionButton danger icon={<PauseCircleOutlined />} loading={busy} onClick={() => onApply("disable")}>
-            Disable
-          </RowActionButton>
-        ) : (
-          <RowActionButton icon={<PlayCircleOutlined />} loading={busy} onClick={() => onApply("enable")}>
-            Enable
-          </RowActionButton>
-        ))}
-      <RowActionButton danger icon={<DeleteOutlined />} loading={busy} onClick={() => onApply("remove")}>
-        Remove
-      </RowActionButton>
-    </Space>
+    <RowActions
+      actions={[
+        {
+          key: "toggle",
+          label: record.enabled ? "Disable" : "Enable",
+          icon: record.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />,
+          danger: record.enabled,
+          loading: busy,
+          hidden: isMysqlMeta,
+          onClick: () => onApply(record.enabled ? "disable" : "enable"),
+        },
+        { key: "remove", label: "Remove", icon: <DeleteOutlined />, danger: true, loading: busy, onClick: () => onApply("remove") },
+      ]}
+    />
   );
 };

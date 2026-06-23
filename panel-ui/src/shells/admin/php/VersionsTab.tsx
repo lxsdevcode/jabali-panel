@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, notification, Popconfirm, Space, Spin, Table, Tag } from "antd";
+import { Alert, notification, Spin, Table, Tag } from "antd";
 import {
   CheckCircleOutlined,
   DeleteOutlined,
@@ -7,6 +7,7 @@ import {
   ReloadOutlined,
 } from "@icons";
 import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { apiClient } from "../../../apiClient";
 
 interface PHPVersionStatus {
@@ -291,37 +292,22 @@ export const VersionsTab = () => {
 
             if (record.installed) {
               return (
-                <Space size="small" wrap>
-                  <RowActionButton
-                    icon={<ReloadOutlined />}
-                    onClick={() => handleReload(record.version)}
-                    loading={isReloading}
-                    disabled={isReloading || isUninstalling}
-                  >
-                    Reload
-                  </RowActionButton>
-                  {/* Uninstall hidden for the default version — agent
-                      blocks anyway, but better UX to hide than 409. */}
-                  {!isDefault && (
-                    <Popconfirm
-                      title={`Uninstall PHP ${record.version}?`}
-                      description="apt-get purge --auto-remove. Sites pinned to this version will break until you change their pool."
-                      okText="Uninstall"
-                      okButtonProps={{ danger: true }}
-                      cancelText="Cancel"
-                      onConfirm={() => handleUninstall(record.version)}
-                    >
-                      <RowActionButton
-                        icon={<DeleteOutlined />}
-                        danger
-                        loading={isUninstalling}
-                        disabled={isUninstalling || isReloading}
-                      >
-                        Uninstall
-                      </RowActionButton>
-                    </Popconfirm>
-                  )}
-                </Space>
+                <RowActions
+                  actions={[
+                    { key: "reload", label: "Reload", icon: <ReloadOutlined />, onClick: () => handleReload(record.version), loading: isReloading, disabled: isReloading || isUninstalling },
+                    {
+                      key: "uninstall",
+                      label: "Uninstall",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      hidden: isDefault,
+                      loading: isUninstalling,
+                      disabled: isUninstalling || isReloading,
+                      onClick: () => handleUninstall(record.version),
+                      confirm: { title: `Uninstall PHP ${record.version}?`, description: "apt-get purge --auto-remove. Sites pinned to this version will break until you change their pool.", okText: "Uninstall" },
+                    },
+                  ]}
+                />
               );
             } else {
               return (
