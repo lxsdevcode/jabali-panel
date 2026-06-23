@@ -87,7 +87,9 @@ chmod 0755 "$STAGE"/bin/*
 #     tarball-update path matches install.sh's source-build bundle.
 if [[ -d "${REPO_ROOT}/wp-plugins/jabali-wp-cache" ]]; then
   mkdir -p "$STAGE/wp-plugins"
-  rsync -a --exclude=.git "${REPO_ROOT}/wp-plugins/jabali-wp-cache" "$STAGE/wp-plugins/"
+  # cp, not rsync — the host CI runner has no rsync (build-release.sh used none
+  # before #406). The plugin tree carries no nested .git, so a plain copy is fine.
+  cp -a "${REPO_ROOT}/wp-plugins/jabali-wp-cache" "$STAGE/wp-plugins/"
   echo "==> staged wp-plugins/jabali-wp-cache"
 fi
 
