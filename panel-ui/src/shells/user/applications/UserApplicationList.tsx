@@ -31,6 +31,7 @@ import {
   CopyOutlined,
   LoginOutlined,
   SearchOutlined,
+  ThunderboltOutlined,
 } from "@icons";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SorterResult } from "antd/es/table/interface";
@@ -125,6 +126,24 @@ const ActionsCell = ({
     }
   };
 
+  const [purging, setPurging] = useState(false);
+  const handlePurge = async () => {
+    setPurging(true);
+    try {
+      await apiClient.post(`/domains/${record.domain_id}/cache/purge`);
+      message.success("Page cache purged");
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error ??
+        (err as { message?: string })?.message ??
+        "Purge failed";
+      message.error(msg);
+    } finally {
+      setPurging(false);
+    }
+  };
+
   return (
     <Space>
       {canLogin && (
@@ -135,6 +154,17 @@ const ActionsCell = ({
             onClick={handleMagicLink}
           >
             Log in to admin
+          </RowActionButton>
+        </Tooltip>
+      )}
+      {record.cache_enabled && (
+        <Tooltip title="Clear the nginx page cache for this site">
+          <RowActionButton
+            icon={<ThunderboltOutlined />}
+            loading={purging}
+            onClick={handlePurge}
+          >
+            Purge cache
           </RowActionButton>
         </Tooltip>
       )}
