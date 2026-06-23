@@ -172,6 +172,16 @@ class Jabali_Cache_Admin {
 		$this->row( 'Target', esc_html( $health['target'] ) . ' (db ' . (int) $s['database'] . ')' );
 		$this->row( 'Key prefix', '<code>' . esc_html( $health['prefix'] ) . '</code>' );
 		$this->row( 'Keys for this site', $health['connected'] ? (int) $health['keys'] : '—' );
+		$oc = isset( $GLOBALS['wp_object_cache'] ) ? $GLOBALS['wp_object_cache'] : null;
+		if ( $oc && isset( $oc->cache_hits ) ) {
+			$h    = (int) $oc->cache_hits;
+			$m    = (int) $oc->cache_misses;
+			$tot  = $h + $m;
+			$rate = $tot ? (int) round( 100 * $h / $tot ) : 0;
+			$this->row( 'Cache hits (this request)', esc_html( $h . ' hits / ' . $m . ' misses (' . $rate . '%)' ) );
+		}
+		$ttl = (int) $s['maxttl'];
+		$this->row( 'Object TTL', $ttl > 0 ? esc_html( $ttl . 's' ) : 'none (Redis LRU eviction)' );
 		$this->row( 'Object-cache drop-in', $this->dropin_label( $dstat['object_installed'], $dstat['object_ours'], $dstat['object_foreign'] ) );
 		if ( empty( $s['page_cache'] ) ) {
 			// Page caching is intentionally off (Jabali serves pages from the nginx
@@ -179,6 +189,23 @@ class Jabali_Cache_Admin {
 			$this->row( 'Advanced-cache drop-in', '<span style="color:#646970">Off — page caching handled by the server</span>' );
 		} else {
 			$this->row( 'Advanced-cache drop-in', $this->dropin_label( $dstat['advanced_installed'], $dstat['advanced_ours'], false ) . ( $dstat['wp_cache_const'] ? '' : ' <em>(WP_CACHE not defined in wp-config.php)</em>' ) );
+		}
+		if ( $health['connected'] && ! empty( $health['server'] ) ) {
+			$sv    = $health['server'];
+			$parts = array();
+			if ( ! empty( $sv['redis_version'] ) ) {
+				$parts[] = 'v' . $sv['redis_version'];
+			}
+			if ( ! empty( $sv['used_memory_human'] ) ) {
+				$parts[] = $sv['used_memory_human'] . ' used';
+			}
+			if ( ! empty( $sv['maxmemory_policy'] ) ) {
+				$parts[] = $sv['maxmemory_policy'];
+			}
+			if ( isset( $sv['evicted_keys'] ) ) {
+				$parts[] = (int) $sv['evicted_keys'] . ' evicted';
+			}
+			$this->row( 'Redis server', esc_html( implode( ' · ', $parts ) ) );
 		}
 		if ( ! $health['connected'] && '' !== $health['last_error'] ) {
 			$this->row( 'Last error', '<code>' . esc_html( $health['last_error'] ) . '</code>' );
@@ -253,6 +280,7 @@ class Jabali_Cache_Admin {
 			'last_error' => '',
 			'dropin_ok'  => false,
 			'hint'       => '',
+			'server'     => array(),
 		);
 
 		$mgr              = new Jabali_Cache_Dropin_Manager( $this->plugin_dir );
@@ -264,12 +292,31 @@ class Jabali_Cache_Admin {
 			$out['connected']  = true;
 			$out['driver']     = $client->driver();
 			$out['keys']       = $client->count_keys( $cfg['prefix'] );
+			$out['server']     = $this->parse_info( $client->info() );
 			$client->close();
 		} else {
 			$out['last_error'] = $client->last_error();
 			$out['hint']       = $this->diagnose_hint( $cfg, $out['last_error'] );
 		}
 		return $out;
+	}
+
+	/**
+	 * Pull a few operationally-useful fields out of a Redis INFO dump.
+	 *
+	 * @param string $raw
+	 * @return array<string,string>
+	 */
+	private function parse_info( $raw ) {
+		$want = array( 'redis_version', 'used_memory_human', 'maxmemory_policy', 'evicted_keys', 'connected_clients' );
+		$map  = array();
+		foreach ( preg_split( '/\r?\n/', (string) $raw ) as $line ) {
+			$kv = explode( ':', $line, 2 );
+			if ( 2 === count( $kv ) && in_array( $kv[0], $want, true ) ) {
+				$map[ $kv[0] ] = trim( $kv[1] );
+			}
+		}
+		return $map;
 	}
 
 	/**
