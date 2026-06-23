@@ -13,7 +13,6 @@ import {
   Space,
   Table,
   Tag,
-  Popconfirm,
   Tooltip,
   Typography,
   message,
@@ -27,7 +26,7 @@ import {
   LoginOutlined,
   SearchOutlined,
 } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import type { SorterResult } from "antd/es/table/interface";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
@@ -126,34 +125,20 @@ const AdminActionsCell = ({
   };
 
   return (
-    <Space>
-      {canLogin && (
-        <Tooltip title="Log in to the admin dashboard">
-          <RowActionButton
-            icon={<LoginOutlined />}
-            loading={magicLinkLoading}
-            onClick={handleMagicLink}
-          >
-            Log in to admin
-          </RowActionButton>
-        </Tooltip>
-      )}
-      <Popconfirm
-        title="Delete this application?"
-        description={`Permanently removes ${record.domain_name || record.domain_id} and its data. This cannot be undone.`}
-        okText="Delete"
-        okButtonProps={{ danger: true }}
-        onConfirm={handleDelete}
-      >
-        <RowActionButton
-          icon={<DeleteOutlined />}
-          color="danger"
-          loading={deleting}
-        >
-          Delete
-        </RowActionButton>
-      </Popconfirm>
-    </Space>
+    <RowActions
+      actions={[
+        { key: "login", label: "Log in to admin", icon: <LoginOutlined />, loading: magicLinkLoading, onClick: handleMagicLink, tooltip: "Log in to the admin dashboard", hidden: !canLogin },
+        {
+          key: "delete",
+          label: "Delete",
+          icon: <DeleteOutlined />,
+          danger: true,
+          loading: deleting,
+          onClick: handleDelete,
+          confirm: { title: "Delete this application?", description: `Permanently removes ${record.domain_name || record.domain_id} and its data. This cannot be undone.`, okText: "Delete" },
+        },
+      ]}
+    />
   );
 };
 

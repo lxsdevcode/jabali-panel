@@ -6,7 +6,7 @@
 // all go through the existing /cron/:id endpoints, which authorise
 // admins via fetchAndAuthorize's claims.IsAdmin bypass.
 import { useMemo, useState } from "react";
-import { App, Button, Card, Input, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { App, Button, Card, Input, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import {
   CalendarCheckOutlined,
   PlusSquareOutlined,
@@ -16,7 +16,7 @@ import {
   CheckOutlined,
   CloseOutlined,
 } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -236,36 +236,21 @@ export const AdminCronList = () => {
                 title: "Actions",
                 width: 240,
                 render: (_, row) => (
-                  <Space size={4}>
-                    <RowActionButton
-                      icon={<PlayCircleOutlined />}
-                      loading={runningId === row.id}
-                      onClick={() => handleRunNow(row)}
-                    >
-                      Run
-                    </RowActionButton>
-                    <RowActionButton
-                      icon={<EyeOutlined />}
-                      onClick={() => {
-                        setLogJobId(row.id);
-                        setLogDrawerOpen(true);
-                      }}
-                    >
-                      Log
-                    </RowActionButton>
-                    <Popconfirm
-                      title={`Delete cron job "${row.name}"?`}
-                      okText="Delete"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => handleDelete(row)}
-                    >
-                      <RowActionButton
-                        icon={<DeleteOutlined />}
-                        loading={deletingId === row.id}
-                        danger
-                      />
-                    </Popconfirm>
-                  </Space>
+                  <RowActions
+                    actions={[
+                      { key: "run", label: "Run", icon: <PlayCircleOutlined />, loading: runningId === row.id, onClick: () => handleRunNow(row) },
+                      { key: "log", label: "Log", icon: <EyeOutlined />, onClick: () => { setLogJobId(row.id); setLogDrawerOpen(true); } },
+                      {
+                        key: "delete",
+                        label: "Delete",
+                        icon: <DeleteOutlined />,
+                        danger: true,
+                        loading: deletingId === row.id,
+                        onClick: () => handleDelete(row),
+                        confirm: { title: `Delete cron job "${row.name}"?`, okText: "Delete" },
+                      },
+                    ]}
+                  />
                 ),
               },
             ]}

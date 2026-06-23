@@ -5,7 +5,7 @@
 // the affected-domains list returned by the API.
 import { Button, Card, Modal, Space, Table, Tag, Typography, message } from "antd";
 import { DeleteOutlined, EditOutlined, EthernetPortOutlined } from "@icons";
-import { RowActionButton } from "../../../components/RowActionButton";
+import { RowActions } from "../../../components/RowActions";
 import { useState } from "react";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
@@ -178,19 +178,12 @@ export const AdminIPList = () => {
             title="Actions"
             dataIndex="actions"
             render={(_: unknown, r: ManagedIP) => (
-              <Space>
-                <RowActionButton icon={<EditOutlined />} onClick={() => openEdit(r.id)}>
-                  Edit
-                </RowActionButton>
-                <RowActionButton
-                  danger
-                  icon={<DeleteOutlined />}
-                  loading={deleteMutation.isPending}
-                  onClick={() => handleDelete(r)}
-                >
-                  Delete
-                </RowActionButton>
-              </Space>
+              <RowActions
+                actions={[
+                  { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => openEdit(r.id) },
+                  { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, loading: deleteMutation.isPending, onClick: () => handleDelete(r) },
+                ]}
+              />
             )}
           />
         </SearchableTableStringQ>
