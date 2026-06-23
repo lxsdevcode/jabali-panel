@@ -2,7 +2,7 @@
 Contributors: jabalipanel
 Tags: cache, redis, object cache, performance, page cache
 Requires at least: 5.6
-Tested up to: 6.7
+Tested up to: 6.8
 Requires PHP: 7.4
 Stable tag: 1.0.0
 License: GPLv2 or later
@@ -34,12 +34,14 @@ If the status shows "Not reachable", the screen prints the exact host prerequisi
 
 = The status says Redis is not reachable. =
 
-On a default Jabali host the tenant PHP-FPM pool cannot open the shared Redis socket until two host-level prerequisites are met (panel admin):
+On the Jabali panel, socket access is provisioned automatically when you enable caching for the site (Applications → cache toggle). If the status still shows "Not reachable", re-run that toggle.
 
-1. **open_basedir** must allow the socket. Add `/run/redis` to the pool's `open_basedir`.
-2. **Group membership.** The site's system user must be in the `jabali-sockets` group (`usermod -aG jabali-sockets <user>` then restart the pool), so the `0660` socket is reachable.
+On a standalone host the site's PHP user needs two things:
 
-Until then the plugin runs as a non-persistent cache and the site works normally.
+1. **open_basedir** must allow the socket path — add `/run/redis` (or your socket's directory) to the pool's `open_basedir`.
+2. **Read access to the socket** for the PHP-FPM user.
+
+Until then the plugin runs as a non-persistent per-request cache and the site keeps working normally — caching just isn't accelerated.
 
 = Does it need the phpredis extension? =
 
@@ -49,7 +51,17 @@ No. It auto-detects phpredis and uses it if present, otherwise a built-in pure-P
 
 No. The object cache complements the nginx microcache. The WP page cache is off by default to avoid double-caching.
 
+= Can I use it outside the Jabali panel? =
+
+Yes. Point it at any Redis over a unix socket or TCP. Define overrides in `wp-config.php`:
+`JABALI_CACHE_SOCKET`, or `JABALI_CACHE_HOST` + `JABALI_CACHE_PORT`, plus `JABALI_CACHE_DB`, `JABALI_CACHE_PASSWORD`, and `JABALI_CACHE_PREFIX`. With no overrides it defaults to the Jabali socket and derives a per-site key prefix.
+
 == Changelog ==
 
 = 1.0.0 =
 * Initial release: Redis object cache, optional page cache, WP-CLI, admin diagnostics.
+
+== Upgrade Notice ==
+
+= 1.0.0 =
+Initial release.

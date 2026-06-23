@@ -149,7 +149,7 @@ class Jabali_Cache_CLI {
 		\WP_CLI::warning( 'Not connected: ' . $c->last_error() );
 		\WP_CLI::log( 'Hints:' );
 		\WP_CLI::log( '  - open_basedir must include /run/redis (or the socket path).' );
-		\WP_CLI::log( '  - the PHP-FPM system user must be in the "jabali-sockets" group.' );
+		\WP_CLI::log( '  - the PHP-FPM system user needs read/write on the Redis socket (the Jabali panel grants this automatically).' );
 		\WP_CLI::log( '  - redis-server must be running on the panel host.' );
 	}
 

@@ -277,12 +277,12 @@ class Jabali_Cache_Admin {
 				return 'PHP open_basedir is blocking the Redis socket. Add "/run/redis/redis.sock" (or "/run/redis") to this site\'s open_basedir, or ask the panel admin to allow it for the PHP-FPM pool.';
 			}
 			if ( false !== strpos( $err, 'permission denied' ) ) {
-				return 'The PHP-FPM user cannot open the Redis socket. The site\'s system user must be in the "jabali-sockets" group (panel admin: usermod -aG jabali-sockets <user>, then restart the pool).';
+				return 'The PHP-FPM user cannot open the Redis socket. On the Jabali panel this is provisioned automatically when you enable caching for the site (Applications → cache toggle) — re-run that if you see this. On a standalone host, grant the site\'s PHP user read/write on the socket.';
 			}
 			if ( false !== strpos( $err, 'no such file' ) || false !== strpos( $err, 'connection refused' ) ) {
 				return 'Redis socket /run/redis/redis.sock not found. Confirm redis-server is running on the panel host.';
 			}
-			return 'Could not connect to the Redis unix socket. Verify open_basedir includes /run/redis and the site user is in the jabali-sockets group.';
+			return 'Could not connect to the Redis unix socket. Verify open_basedir includes /run/redis and that the site\'s PHP user can read the socket (the Jabali panel grants this automatically when caching is enabled).';
 		}
 		return 'Could not connect to Redis over TCP. Note: the jabali panel runs Redis on a unix socket only (no TCP) — prefer the Unix socket option.';
 	}
