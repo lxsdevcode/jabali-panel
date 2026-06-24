@@ -60,6 +60,17 @@ func domainDeleteHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
+	// #432: reap the per-domain nginx logs (current + rotated/compressed) so a
+	// deleted domain doesn't leave orphan logs accumulating in /var/log/nginx.
+	// p.Domain is domainRegex-validated (only [a-z0-9-.]), so the glob carries no
+	// attacker-controlled metacharacters.
+	for _, suffix := range []string{"-access.log", "-error.log"} {
+		matches, _ := filepath.Glob("/var/log/nginx/" + p.Domain + suffix + "*")
+		for _, m := range matches {
+			_ = os.Remove(m)
+		}
+	}
+
 	return domainDeleteResponse{
 		Domain:  p.Domain,
 		Deleted: true,

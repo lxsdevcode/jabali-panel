@@ -63,6 +63,7 @@
 /var/log/php-fpm-*.log {
     daily
     rotate 14
+    maxsize 50M
     compress
     delaycompress
     missingok
@@ -113,4 +114,20 @@
         # nginx default logrotate sends USR1; ours rides alongside.
         [ ! -f /var/run/nginx.pid ] || kill -USR1 "$(cat /var/run/nginx.pid)"
     endscript
+}
+
+# M8 per-user cron logs (#432). One subdir per hosting user under
+# /var/log/jabali/cron/<user>/. maxsize caps a chatty cron from filling the
+# disk between daily ticks; rotate 7 + compress bounds retention. copytruncate
+# because the systemd-user cron writer keeps the file open.
+/var/log/jabali/cron/*/*.log {
+    daily
+    rotate 7
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su root root
 }
