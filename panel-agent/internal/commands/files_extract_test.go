@@ -6,11 +6,19 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
 func testExtractor(dir string) *extractor {
-	return &extractor{destDir: dir, uid: os.Getuid(), gid: os.Getgid()}
+	sc := filesafe.NewScopeForTest("u", "u", dir)
+	ed, err := sc.NewExtractDir(dir, os.Getuid(), os.Getgid())
+	if err != nil {
+		panic(err)
+	}
+	return &extractor{ed: ed}
 }
 
 func TestSafeDestRejectsTraversal(t *testing.T) {
@@ -23,8 +31,9 @@ func TestSafeDestRejectsTraversal(t *testing.T) {
 		if err != nil {
 			t.Errorf("%q should be safe, got %v", name, err)
 		}
-		if rel, _ := filepath.Rel(dir, got); rel == ".." || filepath.IsAbs(rel) && rel[:2] == ".." {
-			t.Errorf("%q escaped: %q", name, got)
+		// safeDest now returns a cleaned RELATIVE path under destDir.
+		if filepath.IsAbs(got) || got == ".." || strings.HasPrefix(got, "../") {
+			t.Errorf("%q should be a safe relative path, got %q", name, got)
 		}
 	}
 
@@ -132,5 +141,44 @@ func writeZip(t *testing.T, path string, files map[string]string) {
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Gitea #423 (write side, reopened): a tenant pre-plants a SYMLINK directory
+// component inside their own (tenant-owned) destDir pointing out of scope, then
+// extracts an archive whose regular-file entry lands under it. The per-entry
+// write must be refused (skipped), never followed — root must not write through
+// the planted parent symlink.
+func TestUnzip_RejectsWriteThroughPlantedParentSymlink(t *testing.T) {
+	work := t.TempDir()
+	dest := filepath.Join(work, "dest")
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(work, "victim")
+	if err := os.Mkdir(victim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Tenant-planted symlink dir inside their own destDir -> outside.
+	if err := os.Symlink(victim, filepath.Join(dest, "sub")); err != nil {
+		t.Fatal(err)
+	}
+
+	z := filepath.Join(work, "evil.zip")
+	writeZip(t, z, map[string]string{"sub/pwn": "owned"})
+	ex := testExtractor(dest)
+	zf, err := os.Open(z)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zf.Close()
+	if err := ex.unzip(zf); err != nil {
+		t.Fatalf("unzip should skip the unsafe entry, not hard-error: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(victim, "pwn")); err == nil {
+		t.Fatalf("root wrote through the planted parent symlink into the victim — ESCAPE")
+	}
+	if ex.skipped == 0 {
+		t.Errorf("the unsafe entry should have been counted as skipped")
 	}
 }

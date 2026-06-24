@@ -698,3 +698,154 @@ func (s *Scope) mkdirParents(pathStr string, perm os.FileMode) error {
 	}
 	return nil
 }
+
+// ExtractDir is an escape-proof destination for archive extraction: a base
+// directory fd plus the uid/gid that created entries are chowned to. Paths are
+// slash-relative under the base; every component is created/opened via
+// openat(O_NOFOLLOW), so a pre-planted parent-directory symlink in the
+// (tenant-owned) destination tree can never redirect a write outside the base —
+// the extract WRITE side of Gitea #423/#424. Close() releases the base fd.
+type ExtractDir struct {
+	base     *os.File
+	uid, gid int
+}
+
+// NewExtractDir opens destPath escape-proof as the extraction base.
+func (s *Scope) NewExtractDir(destPath string, uid, gid int) (*ExtractDir, error) {
+	base, err := s.OpenDirInScope(destPath)
+	if err != nil {
+		return nil, err
+	}
+	return &ExtractDir{base: base, uid: uid, gid: gid}, nil
+}
+
+// Close releases the base dir fd.
+func (e *ExtractDir) Close() error { return e.base.Close() }
+
+// splitExtractRel cleans a slash-relative archive path into components, rejecting
+// absolute paths, "", and any ".." escape.
+func splitExtractRel(rel string) ([]string, error) {
+	rel = strings.TrimPrefix(rel, "/")
+	out := make([]string, 0, 8)
+	for _, c := range strings.Split(rel, "/") {
+		if c == "" || c == "." {
+			continue
+		}
+		if c == ".." || strings.ContainsRune(c, 0) {
+			return nil, &ValidationError{Code: ErrCodeTraversal, Detail: fmt.Sprintf("extract path escapes destination: %q", rel)}
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// descend opens each component of comps under the base. When mkMode != 0 missing
+// components are created (mkdirat) and newly-created dirs chowned to uid:gid.
+// Every open is O_NOFOLLOW|O_DIRECTORY, so a symlink component is refused
+// (ELOOP). Returns the deepest dir fd; the caller closes it unless isBase.
+func (e *ExtractDir) descend(comps []string, mkMode os.FileMode) (fd int, isBase bool, err error) {
+	cur := int(e.base.Fd())
+	curIsBase := true
+	for _, c := range comps {
+		created := false
+		if mkMode != 0 {
+			merr := unix.Mkdirat(cur, c, uint32(mkMode.Perm()))
+			if merr != nil && merr != unix.EEXIST {
+				if !curIsBase {
+					unix.Close(cur)
+				}
+				return -1, false, merr
+			}
+			created = merr == nil
+		}
+		nfd, oerr := unix.Openat(cur, c, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if oerr != nil {
+			if !curIsBase {
+				unix.Close(cur)
+			}
+			return -1, false, oerr
+		}
+		if created {
+			_ = unix.Fchown(nfd, e.uid, e.gid)
+		}
+		if !curIsBase {
+			unix.Close(cur)
+		}
+		cur = nfd
+		curIsBase = false
+	}
+	return cur, curIsBase, nil
+}
+
+// MkdirAll creates relDir (slash-relative) under the base, each component
+// escape-proof; newly-created dirs are chowned to uid:gid.
+func (e *ExtractDir) MkdirAll(relDir string, mode os.FileMode) error {
+	if mode == 0 || mode&0o700 == 0 {
+		mode = 0o755
+	}
+	comps, err := splitExtractRel(relDir)
+	if err != nil {
+		return err
+	}
+	fd, isBase, err := e.descend(comps, mode)
+	if err != nil {
+		return err
+	}
+	if !isBase {
+		unix.Close(fd)
+	}
+	return nil
+}
+
+// Create opens relPath's leaf for writing (O_CREAT|O_TRUNC|O_NOFOLLOW) under the
+// base, creating intermediate dirs; the leaf is chowned to uid:gid. A symlink at
+// the leaf OR at any parent component is refused (ELOOP). Caller streams+Closes.
+func (e *ExtractDir) Create(relPath string, perm os.FileMode) (*os.File, error) {
+	comps, err := splitExtractRel(relPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(comps) == 0 {
+		return nil, &ValidationError{Code: ErrCodeTraversal, Detail: "empty extract path"}
+	}
+	if perm == 0 {
+		perm = 0o644
+	}
+	leaf := comps[len(comps)-1]
+	parentFd, isBase, err := e.descend(comps[:len(comps)-1], 0o755)
+	if err != nil {
+		return nil, err
+	}
+	ofd, oerr := unix.Openat(parentFd, leaf, unix.O_WRONLY|unix.O_CREAT|unix.O_TRUNC|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(perm.Perm()))
+	if !isBase {
+		unix.Close(parentFd)
+	}
+	if oerr != nil {
+		return nil, oerr
+	}
+	f := os.NewFile(uintptr(ofd), leaf)
+	_ = f.Chown(e.uid, e.gid)
+	return f, nil
+}
+
+// Remove unlinks relPath's leaf under the base (escape-proof) — used to drop a
+// partially-extracted file that breached the per-file size cap.
+func (e *ExtractDir) Remove(relPath string) error {
+	comps, err := splitExtractRel(relPath)
+	if err != nil {
+		return err
+	}
+	if len(comps) == 0 {
+		return nil
+	}
+	leaf := comps[len(comps)-1]
+	parentFd, isBase, err := e.descend(comps[:len(comps)-1], 0)
+	if err != nil {
+		return err
+	}
+	uerr := unix.Unlinkat(parentFd, leaf, 0)
+	if !isBase {
+		unix.Close(parentFd)
+	}
+	return uerr
+}

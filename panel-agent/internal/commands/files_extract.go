@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,10 +15,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"golang.org/x/sys/unix"
 )
 
 // files.extract — unpack an archive (.zip / .tar / .tar.gz / .tgz / .tar.bz2 /
@@ -90,7 +91,17 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 
 	uid, gid := hostingIDs(p.Username)
 
-	ex := &extractor{scope: scope, destDir: destDir, uid: uid, gid: gid}
+	// SECURITY (Gitea #423 write side / #424): every extracted entry is created
+	// relative to an escape-proof destDir fd (openat/mkdirat O_NOFOLLOW per
+	// component), so a tenant-planted parent-directory symlink inside their own
+	// destDir (e.g. sub -> /etc/cron.d) cannot redirect a root-side write.
+	ed, err := scope.NewExtractDir(destDir, uid, gid)
+	if err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("failed to open destination: %v", err)}
+	}
+	defer ed.Close()
+
+	ex := &extractor{ed: ed}
 
 	// SECURITY (Gitea #423): open the archive through the escape-proof fd. The
 	// previous scope.Open(p.Path) / zip.OpenReader(path) re-resolved the path and
@@ -135,12 +146,21 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 
 // extractor carries the scope + running counters/limits across one archive.
 type extractor struct {
-	scope     *filesafe.Scope
-	destDir   string
-	uid, gid  int
+	ed        *filesafe.ExtractDir
 	extracted int
 	skipped   int
 	total     int64
+}
+
+// isUnsafeExtractTarget reports whether an extract create/mkdir error means the
+// target (or a parent component) is a planted symlink / not-a-directory / an
+// already-conflicting node — such entries are skipped, never written through.
+func isUnsafeExtractTarget(err error) bool {
+	if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) || errors.Is(err, os.ErrExist) {
+		return true
+	}
+	var ve *filesafe.ValidationError
+	return errors.As(err, &ve)
 }
 
 // safeDest cleans an archive entry name and resolves it inside destDir,
@@ -163,13 +183,10 @@ func (ex *extractor) safeDest(name string) (string, error) {
 	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return escape()
 	}
-	joined := filepath.Join(ex.destDir, cleaned)
-	// Defense-in-depth: ensure the cleaned join is still under destDir.
-	rel, err := filepath.Rel(ex.destDir, joined)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return escape()
-	}
-	return joined, nil
+	// Return the cleaned RELATIVE path; the write descends from the destDir fd
+	// component-by-component (escape-proof), so we never hand an absolute string
+	// to an os.* call that would re-resolve a planted parent symlink (#423 write).
+	return cleaned, nil
 }
 
 func (ex *extractor) bump(n int64) error {
@@ -181,48 +198,48 @@ func (ex *extractor) bump(n int64) error {
 }
 
 func (ex *extractor) mkdirAll(dir string, mode os.FileMode) error {
-	if mode == 0 || mode&0o700 == 0 {
-		mode = 0o755
-	}
-	if err := os.MkdirAll(dir, mode); err != nil {
+	if err := ex.ed.MkdirAll(dir, mode); err != nil {
+		if isUnsafeExtractTarget(err) {
+			ex.skipped++
+			return nil
+		}
 		return err
 	}
-	_ = os.Chown(dir, ex.uid, ex.gid)
 	return nil
 }
 
-// writeFile streams r into dir/dest (O_NOFOLLOW final component), capped at the
-// per-file + total limits, then chowns to the hosting user.
-func (ex *extractor) writeFile(dest string, mode os.FileMode, r io.Reader) error {
-	if err := ex.mkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
-	}
+// writeFile streams r into the entry at rel (a destDir-relative path), creating
+// intermediate dirs and the leaf via the escape-proof ExtractDir (openat/mkdirat
+// O_NOFOLLOW per component). A symlink planted at the leaf OR any parent
+// component is refused and the entry skipped — root never writes THROUGH it
+// (Gitea #423 write side). Capped at the per-file + total limits.
+func (ex *extractor) writeFile(rel string, mode os.FileMode, r io.Reader) error {
 	if mode == 0 {
 		mode = 0o644
 	}
-	// O_NOFOLLOW: never write THROUGH a symlink planted at the destination.
-	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, mode.Perm())
+	out, err := ex.ed.Create(rel, mode)
 	if err != nil {
-		// A symlink at dest (EEXIST/ELOOP) is treated as an unsafe entry.
-		ex.skipped++
-		return nil
-	}
-	defer out.Close()
-
-	limited := io.LimitReader(r, maxExtractFileSize+1)
-	n, err := io.Copy(out, limited)
-	if err != nil {
+		if isUnsafeExtractTarget(err) {
+			ex.skipped++
+			return nil
+		}
 		return err
 	}
+
+	limited := io.LimitReader(r, maxExtractFileSize+1)
+	n, cpErr := io.Copy(out, limited)
+	out.Close()
+	if cpErr != nil {
+		return cpErr
+	}
 	if n > maxExtractFileSize {
-		_ = os.Remove(dest)
+		_ = ex.ed.Remove(rel)
 		return &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: "an archived file exceeds the per-file size limit"}
 	}
 	if err := ex.bump(n); err != nil {
-		_ = os.Remove(dest)
+		_ = ex.ed.Remove(rel)
 		return err
 	}
-	_ = out.Chown(ex.uid, ex.gid)
 	ex.extracted++
 	return nil
 }
