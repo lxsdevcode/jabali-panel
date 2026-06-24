@@ -1,6 +1,6 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
-import { App, Avatar, Button, Card, Col, Dropdown, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { humanBytes } from "../../../utils/bytes";
 import { useState } from "react";
@@ -17,8 +17,8 @@ import {
   CodeOutlined,
   SaveOutlined,
   EditOutlined,
-  MoreOutlined,
 } from "@icons";
+import { RowActions, type RowAction } from "../../../components/RowActions";
 
 import { deleteApp, lifecycleAction, listCatalog, listInstalled, updateApp } from "./api";
 import type { CatalogEntry, InstalledApp } from "./types";
@@ -322,81 +322,19 @@ export const AdminDockerAppsPage = () => {
                           okButtonProps: { danger: true },
                           onOk: () => remove.mutate(r.id),
                         });
-                      return (
-                        <Space size={4}>
-                          {running ? (
-                            <Tooltip title="Stop">
-                              <Button
-                                size="small"
-                                icon={<PauseCircleOutlined />}
-                                onClick={() => lifecycle.mutate({ id: r.id, action: "stop" })}
-                              />
-                            </Tooltip>
-                          ) : (
-                            <Tooltip title="Start">
-                              <Button
-                                size="small"
-                                icon={<PlayCircleOutlined />}
-                                onClick={() => lifecycle.mutate({ id: r.id, action: "start" })}
-                              />
-                            </Tooltip>
-                          )}
-                          <Dropdown
-                            trigger={["click"]}
-                            menu={{
-                              items: [
-                                {
-                                  key: "restart",
-                                  icon: <ReloadOutlined />,
-                                  label: "Restart",
-                                  onClick: () => lifecycle.mutate({ id: r.id, action: "restart" }),
-                                },
-                                {
-                                  key: "edit",
-                                  icon: <EditOutlined />,
-                                  label: "Edit",
-                                  disabled: running,
-                                  onClick: () => setEditApp(r),
-                                },
-                                {
-                                  key: "update",
-                                  icon: <SyncOutlined />,
-                                  label: "Update",
-                                  onClick: () => updateImage.mutate(r.id),
-                                },
-                                {
-                                  key: "logs",
-                                  icon: <FileTextOutlined />,
-                                  label: "Logs",
-                                  onClick: () => setLogsAppId(r.id),
-                                },
-                                {
-                                  key: "exec",
-                                  icon: <CodeOutlined />,
-                                  label: "Exec",
-                                  onClick: () => setExecAppId(r.id),
-                                },
-                                {
-                                  key: "backups",
-                                  icon: <SaveOutlined />,
-                                  label: "Backups",
-                                  onClick: () => setBackupsAppId(r.id),
-                                },
-                                { type: "divider" as const, key: "d1" },
-                                {
-                                  key: "delete",
-                                  icon: <DeleteOutlined />,
-                                  label: "Uninstall",
-                                  danger: true,
-                                  onClick: confirmDelete,
-                                },
-                              ],
-                            }}
-                          >
-                            <Button size="small" icon={<MoreOutlined />} />
-                          </Dropdown>
-                        </Space>
-                      );
+                      const actions: RowAction[] = [
+                        running
+                          ? { key: "stop", label: "Stop", icon: <PauseCircleOutlined />, onClick: () => lifecycle.mutate({ id: r.id, action: "stop" }) }
+                          : { key: "start", label: "Start", icon: <PlayCircleOutlined />, onClick: () => lifecycle.mutate({ id: r.id, action: "start" }) },
+                        { key: "restart", label: "Restart", icon: <ReloadOutlined />, onClick: () => lifecycle.mutate({ id: r.id, action: "restart" }) },
+                        { key: "edit", label: "Edit", icon: <EditOutlined />, disabled: running, onClick: () => setEditApp(r) },
+                        { key: "update", label: "Update", icon: <SyncOutlined />, onClick: () => updateImage.mutate(r.id) },
+                        { key: "logs", label: "Logs", icon: <FileTextOutlined />, onClick: () => setLogsAppId(r.id) },
+                        { key: "exec", label: "Exec", icon: <CodeOutlined />, onClick: () => setExecAppId(r.id) },
+                        { key: "backups", label: "Backups", icon: <SaveOutlined />, onClick: () => setBackupsAppId(r.id) },
+                        { key: "delete", label: "Uninstall", icon: <DeleteOutlined />, danger: true, onClick: confirmDelete },
+                      ];
+                      return <RowActions actions={actions} />;
                     },
                   },
                 ]}

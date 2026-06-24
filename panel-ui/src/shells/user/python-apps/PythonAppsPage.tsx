@@ -7,13 +7,14 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Table,
   Tag,
   Typography,
 } from "antd";
+import { ReloadOutlined, PauseCircleOutlined, FileTextOutlined, DeleteOutlined } from "@icons";
+import { RowActions } from "../../../components/RowActions";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -143,28 +144,21 @@ export function PythonAppsPage() {
           title=""
           width={280}
           render={(_, r) => (
-            <Space size={4}>
-              <Button size="small" onClick={() => void doControl(r.id, "restart")}>
-                Restart
-              </Button>
-              <Button size="small" onClick={() => void doControl(r.id, "stop")}>
-                Stop
-              </Button>
-              <Button size="small" onClick={() => void openLogs(r)}>
-                Logs
-              </Button>
-              <Popconfirm
-                title="Delete app?"
-                description="Stops the service and removes it. App files are kept."
-                okText="Delete"
-                okButtonProps={{ danger: true }}
-                onConfirm={() => void del.mutateAsync(r.id)}
-              >
-                <Button size="small" danger>
-                  Delete
-                </Button>
-              </Popconfirm>
-            </Space>
+            <RowActions
+              actions={[
+                { key: "restart", label: "Restart", icon: <ReloadOutlined />, onClick: () => void doControl(r.id, "restart") },
+                { key: "stop", label: "Stop", icon: <PauseCircleOutlined />, onClick: () => void doControl(r.id, "stop") },
+                { key: "logs", label: "Logs", icon: <FileTextOutlined />, onClick: () => void openLogs(r) },
+                {
+                  key: "delete",
+                  label: "Delete",
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  onClick: () => void del.mutateAsync(r.id),
+                  confirm: { title: "Delete app?", description: "Stops the service and removes it. App files are kept.", okText: "Delete" },
+                },
+              ]}
+            />
           )}
         />
       </Table>
