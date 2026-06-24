@@ -58,16 +58,15 @@ class Jabali_Cache_Config {
 			return self::$cache;
 		}
 
-		$file_cfg = array();
-		$path     = self::config_file_path();
-		if ( $path && is_readable( $path ) ) {
-			/** @psalm-suppress UnresolvableInclude */
-			$loaded = include $path;
-			if ( is_array( $loaded ) ) {
-				$file_cfg = $loaded;
-			}
-		}
-
+		// Config comes from DEFAULTS overridden by wp-config.php JABALI_CACHE_*
+		// constants (apply_constants() below). This runs from the object-cache /
+		// advanced-cache DROP-INS, which load before the options API is usable
+		// (get_option() there recurses into the half-initialised object cache),
+		// so settings must NOT be read from the DB here — constants are the only
+		// safe early source. Jabali stamps the constants automatically; a manual
+		// install sets them in wp-config.php (see readme). The admin screen and
+		// wp-cli persist preferences to the options table for display, but the
+		// drop-ins are driven by constants. (wp.org: no generated PHP config file.)
 		$defaults = array(
 			// Connection. Socket is preferred and is the jabali default.
 			'scheme'   => 'unix',                     // 'unix' or 'tcp'.
@@ -96,7 +95,7 @@ class Jabali_Cache_Config {
 			'page_exclusions' => array( '/wp-admin/', '/wp-json/', '/feed/', '/sitemap' ),
 		);
 
-		$cfg = self::merge( $defaults, $file_cfg );
+		$cfg = $defaults;
 		$cfg = self::apply_constants( $cfg );
 
 		if ( '' === $cfg['prefix'] ) {
@@ -127,14 +126,13 @@ class Jabali_Cache_Config {
 	 * @return string
 	 */
 	public static function config_file_path() {
-		if ( defined( 'JABALI_CACHE_CONFIG_FILE' ) ) {
-			return (string) JABALI_CACHE_CONFIG_FILE;
-		}
+		// Retained ONLY to locate and delete a legacy jabali-cache-config.php
+		// from older versions (config now lives in the options table). Never
+		// written or read for runtime config.
 		if ( defined( 'WP_CONTENT_DIR' ) ) {
 			return WP_CONTENT_DIR . '/jabali-cache-config.php';
 		}
-		// Drop-ins run before WP_CONTENT_DIR may be defined; derive from this file.
-		return dirname( __DIR__, 3 ) . '/jabali-cache-config.php';
+		return '';
 	}
 
 	/**

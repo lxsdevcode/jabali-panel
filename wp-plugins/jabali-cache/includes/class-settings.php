@@ -89,52 +89,14 @@ class Jabali_Cache_Settings {
 		}
 
 		update_option( self::OPTION, $out, false );
-		self::write_config_file( $out );
+		// Settings persist in the options table only (wp.org compliance). Older
+		// versions also wrote wp-content/jabali-cache-config.php; remove it so a
+		// stale executable config file can't shadow the option.
+		self::delete_config_file();
 		Jabali_Cache_Config::reset();
 		return $out;
 	}
 
-	/**
-	 * Build the runtime config array consumed by Jabali_Cache_Config and write
-	 * it to wp-content/jabali-cache-config.php.
-	 *
-	 * @param array<string,mixed> $s
-	 * @return bool
-	 */
-	public static function write_config_file( array $s ) {
-		$cfg = array(
-			'enabled'    => (bool) $s['enabled'],
-			'page_cache' => (bool) $s['page_cache'],
-			'page_ttl'   => (int) $s['page_ttl'],
-			'maxttl'     => (int) $s['maxttl'],
-			'scheme'     => $s['scheme'],
-			'socket'     => $s['socket'],
-			'host'       => $s['host'],
-			'port'       => (int) $s['port'],
-			'database'   => (int) $s['database'],
-			'password'   => (string) $s['password'],
-			'prefix'     => (string) $s['prefix'],
-		);
-
-		$body  = "<?php\n";
-		$body .= "/**\n * Jabali Cache runtime config — generated, do not edit by hand.\n";
-		$body .= " * Edit via the Jabali Cache settings screen or `wp jabali-cache`.\n */\n";
-		$body .= "defined( 'ABSPATH' ) || exit;\n";
-		$body .= 'return ' . var_export( $cfg, true ) . ";\n"; // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export
-
-		$path = Jabali_Cache_Config::config_file_path();
-		// Write atomically: temp file in the same dir then rename.
-		$tmp = $path . '.tmp' . wp_rand( 1000, 9999 );
-		if ( false === file_put_contents( $tmp, $body, LOCK_EX ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			return false;
-		}
-		@chmod( $tmp, 0640 ); // phpcs:ignore
-		if ( ! @rename( $tmp, $path ) ) { // phpcs:ignore
-			@unlink( $tmp ); // phpcs:ignore
-			return false;
-		}
-		return true;
-	}
 
 	public static function delete_config_file() {
 		$path = Jabali_Cache_Config::config_file_path();

@@ -17,8 +17,10 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'JABALI_CACHE_PLUGIN_DIR' ) ) {
-	// Stamped by the plugin at install time; the placeholder below is the
-	// fallback for manual installs.
+	// A drop-in lives in wp-content/, not in the plugin, so it cannot resolve
+	// the plugin path with plugin_dir_path( __FILE__ ). The plugin stamps the
+	// absolute path into the placeholder below at install; the only fallback is
+	// the canonical WP_PLUGIN_DIR for a manual install under the standard slug.
 	$jabali_cache_stamped = '__JABALI_CACHE_PLUGIN_DIR__';
 	if ( 0 !== strpos( $jabali_cache_stamped, '__JABALI' ) && is_dir( $jabali_cache_stamped ) ) {
 		define( 'JABALI_CACHE_PLUGIN_DIR', $jabali_cache_stamped );

@@ -79,7 +79,6 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, bkInternal("chown plugin", err)
 	}
 
-	// 2. Write the config file the drop-ins read (wp-content/jabali-cache-config.php).
 	socket := p.RedisSocket
 	if socket == "" {
 		socket = "/run/redis/redis.sock"
@@ -88,21 +87,14 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	if db == 0 {
 		db = 1
 	}
-	cfgPath := filepath.Join(p.InstallPath, "wp-content", "jabali-cache-config.php")
-	cfg := wpCacheConfigPHP(socket, db, p.Prefix, p.RedisPassword)
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o640); err != nil {
-		return nil, bkInternal("write cache config", err)
-	}
-	if err := exec.CommandContext(ctx, "chown", p.OSUser+":www-data", cfgPath).Run(); err != nil {
-		return nil, bkInternal("chown cache config", err)
-	}
 
-	// 2b. Pin the jabali settings as CONSTANTS in wp-config.php. The plugin's
-	//     activation regenerates wp-content/jabali-cache-config.php with a
-	//     SELF-DERIVED key prefix (md5 of the site URL), which would NOT match the
-	//     per-tenant Redis ACL (~jc:<osuser>:*) — so the object cache would NOPERM
-	//     even with socket access. apply_constants() in the plugin makes these
-	//     JABALI_CACHE_* defines authoritative over that regenerated file.
+	// 2. Pin the jabali settings as CONSTANTS in wp-config.php — the single,
+	//    authoritative config source. The plugin reads its settings from the
+	//    options table (wp.org compliance) but apply_constants() makes these
+	//    JABALI_CACHE_* defines win, so the per-tenant socket / DB / ACL token /
+	//    key prefix (~jc:<osuser>:*) are always correct regardless of any value
+	//    saved via the admin screen. We no longer write a jabali-cache-config.php
+	//    file (the plugin stopped reading one; it deletes any legacy copy).
 	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, "wp_"+p.OSUser, true); err != nil {
 		return nil, bkInternal("write wp-config constants", err)
 	}
@@ -149,28 +141,6 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	return wordpressCacheSetResult{Ok: true, Enabled: true}, nil
 }
 
-// wpCacheConfigPHP renders the PHP array config the plugin's drop-ins read. Page
-// cache stays off — nginx owns page caching (the /domains/:id/cache microcache);
-// this enables the Redis OBJECT cache only.
-func wpCacheConfigPHP(socket string, db int, prefix, password string) string {
-	// PHP single-quoted strings treat only \ and ' as special. Escape the
-	// backslash FIRST (else we'd double-escape the ones we add for the quote),
-	// then the quote — a value ending in \ would otherwise escape the closing '.
-	esc := func(s string) string {
-		s = strings.ReplaceAll(s, "\\", "\\\\")
-		s = strings.ReplaceAll(s, "'", "\\'")
-		return s
-	}
-	return "<?php\n// Managed by jabali (GH #406). Do NOT hand-edit.\nreturn array(\n" +
-		"  'enabled'    => true,\n" +
-		"  'page_cache' => false,\n" +
-		"  'scheme'     => 'unix',\n" +
-		"  'socket'     => '" + esc(socket) + "',\n" +
-		"  'database'   => " + strconv.Itoa(db) + ",\n" +
-		"  'password'   => '" + esc(password) + "',\n" +
-		"  'prefix'     => '" + esc(prefix) + "',\n" +
-		");\n"
-}
 
 // wpConfigBeginMarker / wpConfigEndMarker fence the jabali-managed define block
 // in wp-config.php so it can be replaced/removed idempotently.
