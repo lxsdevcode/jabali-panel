@@ -184,6 +184,13 @@ func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, 
 		"--ro-bind-try", "/etc/profile.d", "/etc/profile.d",
 		"--ro-bind-try", "/etc/bash.bashrc", "/etc/bash.bashrc",
 		"--ro-bind-try", "/etc/alternatives", "/etc/alternatives",
+		// /etc/php carries the CLI php.ini + conf.d extension config for every
+		// installed version. Without it the jailed `php` (and Composer / wp-cli)
+		// loads ZERO conf.d extensions — the binary + .so files live under the
+		// already-bound /usr, but PHP can't find its config, so a tenant sees a
+		// minimal module set while root sees the full one (GH #277). Read-only;
+		// php config holds no tenant secrets.
+		"--ro-bind-try", "/etc/php", "/etc/php",
 		"--ro-bind-data", strconv.Itoa(int(passwdFD)), "/etc/passwd",
 		"--ro-bind-data", strconv.Itoa(int(groupFD)), "/etc/group",
 		"--proc", "/proc",
