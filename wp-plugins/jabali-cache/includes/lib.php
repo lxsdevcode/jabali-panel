@@ -39,11 +39,14 @@ if ( ! defined( 'JABALI_CACHE_VERSION' ) ) {
 /**
  * Resolves runtime configuration from (in priority order):
  *   1. PHP constants (typically set in wp-config.php),
- *   2. the generated config file wp-content/jabali-cache-config.php,
- *   3. built-in jabali defaults.
+ *   2. built-in jabali defaults.
  *
- * Resolution is done without touching the database so the drop-ins, which
- * load before WordPress is available, can configure themselves.
+ * Resolution is done WITHOUT touching the database or any generated file: the
+ * object-cache / advanced-cache drop-ins load before the options API is safe to
+ * call, so constants are the only early-safe source. The admin screen persists
+ * preferences to the options table for display; the drop-ins are driven by the
+ * wp-config.php JABALI_CACHE_* constants. Jabali stamps them automatically; a
+ * manual install sets them in wp-config.php (see readme).
  */
 class Jabali_Cache_Config {
 

@@ -1,10 +1,11 @@
 <?php
 /**
- * Jabali Cache — settings store and config-file writer.
+ * Jabali Cache — settings store.
  *
- * Settings live in a single WP option. On every change we also (re)write
- * wp-content/jabali-cache-config.php — a plain PHP array file the drop-ins
- * read before WordPress (and thus the options table) is available.
+ * Settings live in a single WP option (Settings API). The cache connection used
+ * by the drop-ins comes from wp-config.php JABALI_CACHE_* constants, not from a
+ * generated PHP file. Any legacy wp-content/jabali-cache-config.php left by an
+ * older version is removed on save / activation / uninstall.
  *
  * @package Jabali_Cache
  */
