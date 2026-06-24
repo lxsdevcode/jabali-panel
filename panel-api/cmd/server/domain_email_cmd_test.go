@@ -121,6 +121,7 @@ func (*fakeDomainRepo) UpdateDisclaimer(context.Context, string, bool, *string) 
 func (*fakeDomainRepo) UpdateCacheEnabled(context.Context, string, bool) error {
 	return nil
 }
+func (*fakeDomainRepo) UpdateCachePath(context.Context, string, string) error { return nil }
 
 func (*fakeDomainRepo) UpdateSkipAutoSAN(context.Context, string, bool) error {
 	return nil
