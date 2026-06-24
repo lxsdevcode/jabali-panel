@@ -80,6 +80,7 @@ func TestBuildBwrapArgv_ForwardsCommandAndIsolates(t *testing.T) {
 		"--unshare-all", "--share-net",
 		"--ro-bind-data 7 /etc/passwd", "--ro-bind-data 8 /etc/group",
 		"--ro-bind-try /etc/php /etc/php", // GH #277: CLI php.ini + conf.d extensions
+		"--ro-bind-try /etc/jabali/snuffleupagus /etc/jabali/snuffleupagus",
 		"--tmpfs /run", "--proc /proc",
 	} {
 		if !strings.Contains(joined, must) {

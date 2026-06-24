@@ -191,6 +191,12 @@ func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, 
 		// minimal module set while root sees the full one (GH #277). Read-only;
 		// php config holds no tenant secrets.
 		"--ro-bind-try", "/etc/php", "/etc/php",
+		// Snuffleupagus (loaded by the php conf.d above) hard-fails if it can't
+		// read its ruleset, so bind ONLY that subdir of the otherwise-hidden
+		// /etc/jabali (bwrap auto-creates the /etc/jabali parent empty — panel.env
+		// and the rest stay invisible). The rules aren't tenant secrets. Without
+		// this, binding /etc/php would make CLI php FATAL instead of work (#277).
+		"--ro-bind-try", "/etc/jabali/snuffleupagus", "/etc/jabali/snuffleupagus",
 		"--ro-bind-data", strconv.Itoa(int(passwdFD)), "/etc/passwd",
 		"--ro-bind-data", strconv.Itoa(int(groupFD)), "/etc/group",
 		"--proc", "/proc",
