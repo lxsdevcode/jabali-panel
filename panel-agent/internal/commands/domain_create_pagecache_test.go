@@ -40,3 +40,29 @@ func TestVhostTemplate_PageCacheIsFailClosed(t *testing.T) {
 		t.Error("PHP block must not advertise public/CDN caching for dynamic responses")
 	}
 }
+
+// Gitea #420: the page cache must be scoped to the install path prefix.
+func TestVhostTemplate_PathScopedCache(t *testing.T) {
+	t.Parallel()
+	tmpl := template.Must(template.New("v").Parse(vhostTemplate))
+	render := func(cachePath string) string {
+		var b bytes.Buffer
+		_ = tmpl.Execute(&b, vhostData{
+			Domain: "ex.com", DocRoot: "/home/u/public_html/ex.com", HasPHP: true,
+			PHPVersion: "8.3", Username: "u", IsEnabled: true,
+			CacheEnabled: true, CacheKeyZone: "jabali", CacheTTL: "60s", CachePath: cachePath,
+		})
+		return b.String()
+	}
+	// whole-domain ("/" or empty): no path gate.
+	for _, root := range []string{"/", ""} {
+		if strings.Contains(render(root), `!~ "^`) {
+			t.Errorf("CachePath=%q must not emit a path gate", root)
+		}
+	}
+	// subdir: gate scopes to that prefix.
+	out := render("/blog")
+	if !strings.Contains(out, `if ($request_uri !~ "^/blog(/|$)") { set $jabali_skip 1; }`) {
+		t.Errorf("CachePath=/blog must scope cache to ^/blog\n%s", out)
+	}
+}

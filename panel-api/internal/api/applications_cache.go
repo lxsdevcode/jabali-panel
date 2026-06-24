@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -32,11 +33,26 @@ type setCacheRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
-// cacheTenantToken derives the stable per-tenant Redis ACL token.
-func cacheTenantToken(secret, osUser string) string {
+// cacheTenantToken derives the per-tenant Redis ACL token from the global
+// secret, the OS user, AND a persisted per-tenant salt (Gitea #415). The salt
+// makes the token non-deterministic from (secret, osuser) alone, so a single
+// tenant can be rotated (regenerate its salt) without rotating the global
+// secret and breaking every other tenant.
+func cacheTenantToken(secret, osUser, salt string) string {
 	m := hmac.New(sha256.New, []byte(secret))
-	m.Write([]byte("wp-cache-tenant:" + osUser))
+	m.Write([]byte("wp-cache-tenant:" + osUser + ":" + salt))
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+// cachePathFromSubdir maps a WP install subdirectory to the nginx page-cache
+// path prefix (Gitea #420). "" (root install) → "/" (whole domain); "blog" or
+// "/blog/" → "/blog".
+func cachePathFromSubdir(subdir string) string {
+	s := strings.Trim(strings.TrimSpace(subdir), "/")
+	if s == "" {
+		return "/"
+	}
+	return "/" + s
 }
 
 // revokeTenantRedisACL removes the per-tenant wp_<osUser> Redis ACL user and
@@ -126,7 +142,17 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "redis_unavailable"})
 			return
 		}
-		token := cacheTenantToken(h.cfg.CacheTokenSecret, osUser)
+		salt := ""
+		if h.cfg.CacheTokenSalts != nil {
+			s2, sErr := h.cfg.CacheTokenSalts.GetOrCreate(ctx, install.UserID)
+			if sErr != nil {
+				slog.ErrorContext(ctx, "cache: salt get/create", "err", sErr, "user_id", install.UserID)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "salt_failed"})
+				return
+			}
+			salt = s2
+		}
+		token := cacheTenantToken(h.cfg.CacheTokenSecret, osUser, salt)
 		if err := h.provisionTenantACL(ctx, osUser, token); err != nil {
 			slog.ErrorContext(ctx, "cache: ACL provision", "err", err, "os_user", osUser)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "acl_provision_failed"})
@@ -176,6 +202,14 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 			desiredDomainCache = domain.CacheEnabled
 		} else if siblings > 0 {
 			desiredDomainCache = true // a sibling still wants the page cache
+		}
+	}
+	// Gitea #420: scope the page cache to this install's path, so enabling cache
+	// on a /blog WP install doesn't apply WP-tuned caching to unrelated content
+	// elsewhere on the domain. "/" = whole domain (root install).
+	if req.Enabled {
+		if perr := h.cfg.Domains.UpdateCachePath(ctx, domain.ID, cachePathFromSubdir(install.Subdirectory)); perr != nil {
+			slog.ErrorContext(ctx, "cache: domain cache_path", "err", perr, "domain_id", domain.ID)
 		}
 	}
 	if desiredDomainCache != domain.CacheEnabled {

@@ -43,6 +43,8 @@ type ApplicationHandlerConfig struct {
 	// CacheTokenSecret derives the stable per-tenant Redis ACL token
 	// (HMAC(secret, osuser)); read from JABALI_REDIS_PANEL_TOKEN.
 	CacheTokenSecret string
+	// CacheTokenSalts persists the per-tenant token salt (Gitea #415).
+	CacheTokenSalts  repository.CacheTokenSaltRepository
 	// Reconciler re-renders the domain vhost after the nginx page-cache flag
 	// flips (mirrors DomainCacheHandlerConfig.Reconciler). Optional.
 	Reconciler DNSScheduler

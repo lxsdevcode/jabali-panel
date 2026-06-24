@@ -553,15 +553,51 @@ class Jabali_Cache_Object_Cache {
 			return ( false === $val && '' !== $body ) ? false : $val;
 		}
 		if ( 'ph:' === $tag ) {
-			// The object cache legitimately stores WP objects (WP_Post, etc.),
-			// so arbitrary classes must be allowed on read. The cross-tenant
-			// object-injection risk on the shared DB 1 (ADR-0059) is bounded by
-			// the per-site key prefix, which is derived from ABSPATH + DB_NAME
-			// + home_url — values a co-tenant cannot observe, so the victim's
-			// keyspace is not addressable from another account.
-			$val = @unserialize( $body, array( 'allowed_classes' => true ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+			// SECURITY (Gitea #412): restrict deserialization to a curated set of
+			// WP value-object classes. Anything else becomes an inert
+			// __PHP_Incomplete_Class — PHP does NOT call its __wakeup, so a
+			// crafted ph: payload in the keyspace can't drive a POP gadget chain
+			// to RCE. We DON'T rely on prefix-unobservability (false under
+			// jabali, where panel-api pins jc:<osuser>:<installID>:) — defense in
+			// depth behind the per-tenant Redis ACL. A site that caches its own
+			// objects can widen this via the JABALI_CACHE_ALLOWED_CLASSES
+			// constant (CSV, or the literal true to restore allow-all).
+			$val = @unserialize( $body, array( 'allowed_classes' => self::allowed_unserialize_classes() ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+			// A disallowed class deserialized to an incomplete stub — treat the
+			// whole entry as a miss rather than hand a broken object to WP.
+			if ( $val instanceof \__PHP_Incomplete_Class ) {
+				return false;
+			}
 			return $val;
 		}
 		return $raw;
+	}
+
+	/**
+	 * Allowlist of classes the ph: object cache may deserialize (Gitea #412).
+	 *
+	 * @return string[]|bool array of class names, or true if the operator opted
+	 *                       back into allow-all via JABALI_CACHE_ALLOWED_CLASSES.
+	 */
+	private static function allowed_unserialize_classes() {
+		if ( defined( 'JABALI_CACHE_ALLOWED_CLASSES' ) ) {
+			$c = JABALI_CACHE_ALLOWED_CLASSES;
+			if ( true === $c || 'true' === $c ) {
+				return true;
+			}
+			if ( is_array( $c ) ) {
+				return $c;
+			}
+			if ( is_string( $c ) && '' !== $c ) {
+				return array_values( array_filter( array_map( 'trim', explode( ',', $c ) ) ) );
+			}
+		}
+		return array(
+			'stdClass',
+			'WP_Post', 'WP_Term', 'WP_User', 'WP_Comment', 'WP_Site', 'WP_Network',
+			'WP_Post_Type', 'WP_Taxonomy', 'WP_Role', 'WP_Roles', 'WP_Error',
+			'WP_Block', 'WP_Block_Type', 'WP_Theme', 'WP_Meta_Query', 'WP_Date_Query',
+			'WP_Dependency', 'WP_Dependencies', 'WP_Locale',
+		);
 	}
 }

@@ -341,6 +341,9 @@ type Domain struct {
 	// we pin it to match the DNSSEC/SSL toggles and the
 	// gorm-column-tags scar.
 	CacheEnabled bool `gorm:"column:cache_enabled;type:tinyint(1);not null;default:0" json:"cache_enabled"`
+	// CachePath (migration 000191, Gitea #420) scopes the page cache to the WP
+	// install path prefix; "/" = whole domain (default).
+	CachePath string `gorm:"column:cache_path;type:varchar(255);not null;default:'/'" json:"cache_path"`
 
 	// MTA-STS per-domain opt-in (migration 000141, ADR-0109). When
 	// flipped on, the reconciler ensures:

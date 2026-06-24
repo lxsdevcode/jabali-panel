@@ -245,6 +245,8 @@ func (m *MockDomainRepository) UpdateCacheEnabled(ctx context.Context, id string
 	return args.Error(0)
 }
 
+func (m *MockDomainRepository) UpdateCachePath(_ context.Context, _, _ string) error { return nil }
+
 func (m *MockDomainRepository) UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error {
 	return nil
 }

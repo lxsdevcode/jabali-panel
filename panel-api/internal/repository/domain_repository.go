@@ -109,6 +109,8 @@ type DomainRepository interface {
 	// UpdateCacheEnabled writes domains.cache_enabled (ADR-0108).
 	// Dedicated method: cache_enabled is not in Update()'s allowlist.
 	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
+	// UpdateCachePath writes domains.cache_path (Gitea #420).
+	UpdateCachePath(ctx context.Context, id, path string) error
 	// UpdateSkipAutoSAN writes domains.skip_auto_san (M50 SAN opt-out).
 	// Dedicated method per [[feedback_domain_update_allowlist_silent_drop]].
 	UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error
@@ -647,6 +649,11 @@ func (r *domainRepo) UpdateCacheEnabled(ctx context.Context, id string, enabled 
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *domainRepo) UpdateCachePath(ctx context.Context, id, path string) error {
+	return r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).Update("cache_path", path).Error
 }
 
 // UpdateSkipAutoSAN writes domains.skip_auto_san — tenant opt-out of

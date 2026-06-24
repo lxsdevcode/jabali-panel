@@ -35,6 +35,7 @@ type domainCreateParams struct {
 	// CacheEnabled (ADR-0108) — per-domain nginx FastCGI micro-cache
 	// opt-in. false ⇒ vhost byte-identical to the pre-0108 shape.
 	CacheEnabled bool   `json:"cache_enabled"`
+	CachePath    string `json:"cache_path,omitempty"`
 	SSLCertPath  string `json:"ssl_cert_path"`
 	SSLKeyPath   string `json:"ssl_key_path"`
 	// PHP INI overrides: omitted if not set on the domain.
@@ -243,7 +244,10 @@ server {
         if ($request_method = POST) { set $jabali_skip 1; }
         if ($query_string != "") { set $jabali_skip 1; }
         if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
-        fastcgi_cache {{.CacheKeyZone}};
+{{ if and (ne .CachePath "/") (ne .CachePath "") }}        # Gitea #420: only cache within the WP install's path prefix; other
+        # (non-WP, differently-authed) apps on this domain are never cached.
+        if ($request_uri !~ "^{{.CachePath}}(/|$)") { set $jabali_skip 1; }
+{{ end }}        fastcgi_cache {{.CacheKeyZone}};
         fastcgi_cache_key "$scheme$request_method$host$request_uri";
         fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
         fastcgi_cache_bypass $jabali_skip;
@@ -279,7 +283,10 @@ server {
         if ($request_method = POST) { set $jabali_skip 1; }
         if ($query_string != "") { set $jabali_skip 1; }
         if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
-        fastcgi_cache {{.CacheKeyZone}};
+{{ if and (ne .CachePath "/") (ne .CachePath "") }}        # Gitea #420: only cache within the WP install's path prefix; other
+        # (non-WP, differently-authed) apps on this domain are never cached.
+        if ($request_uri !~ "^{{.CachePath}}(/|$)") { set $jabali_skip 1; }
+{{ end }}        fastcgi_cache {{.CacheKeyZone}};
         fastcgi_cache_key "$scheme$request_method$host$request_uri";
         fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
         fastcgi_cache_bypass $jabali_skip;
@@ -365,6 +372,7 @@ type vhostData struct {
 	// (never user data). When CacheEnabled is false the template emits
 	// none of the cache/static directives → byte-identical to pre-0108.
 	CacheEnabled      bool
+	CachePath         string // Gitea #420: page-cache path prefix ("/" = whole domain)
 	CacheKeyZone      string
 	CacheTTL          string
 	CacheTTLSeconds   int // numeric form of CacheTTL for Cache-Control max-age
@@ -452,7 +460,10 @@ func buildPHPValueParam(memLimit, uploadMax, postMax string, maxInputVars, maxEx
 // writeVhost generates and writes the nginx vhost configuration, then tests and reloads nginx.
 // This is the core logic shared by domain.create and domain.enable/disable.
 // If the config content is unchanged, nginx reload is skipped for efficiency.
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool) (string, error) {
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string) (string, error) {
+	if cachePath == "" {
+		cachePath = "/" // back-compat: older panel doesn't send it → whole domain
+	}
 	// SSL cert may be referenced by the DB (ssl_cert_path set) but MISSING
 	// on disk — most commonly after a reinstall wiped /etc/letsencrypt while
 	// the panel DB kept the cert row. Emitting the 443 block with
@@ -502,6 +513,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		ListenIPv4:                 listenIPv4,
 		ListenIPv6:                 listenIPv6,
 		CacheEnabled:               cacheEnabled,
+		CachePath:                  cachePath,
 		CacheKeyZone:               "jabali_fcgi",
 		CacheTTL:                   "60s",
 		CacheTTLSeconds:            60,
@@ -691,7 +703,7 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 	dirPrivacyDirectives := buildDirectoryPrivacyDirectives(p.DirectoryPrivacyRules)
-	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled)
+	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
