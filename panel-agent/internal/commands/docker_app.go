@@ -182,19 +182,20 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 	// the optional health-wait below; the caller is responsible for
 	// passing a context with a sensible deadline.
 	//
-	// GH #170 #2: a TENANT install reuses the on-host image and NEVER pulls
-	// (`--pull never`). The admin provisions images (admin install or the
-	// catalog provision action); a tenant can't trigger an arbitrary registry
-	// pull (bandwidth / disk / supply-chain). Missing image -> compose fails;
-	// the message tells them to ask the admin to provision it.
+	// GH #170 #2 / GH #284: a TENANT install is gated to CATALOG apps only
+	// (the slug allowlist + tenant_installable filter), so its image is always
+	// a curated, catalog-pinned reference — never arbitrary tenant input. Use
+	// `--pull missing` so the install pulls that one image if the admin hasn't
+	// pre-provisioned it, instead of failing with a confusing "never started"
+	// (was `--pull never`, which stranded every un-provisioned tenant install).
 	upArgs := []string{"up", "-d"}
 	if p.TenantValidate {
-		upArgs = append(upArgs, "--pull", "never")
+		upArgs = append(upArgs, "--pull", "missing")
 	}
 	if out, err := runDockerCompose(ctx, dir, upArgs...); err != nil {
 		msg := composeFailMessage("up -d", out, err)
 		if p.TenantValidate && (strings.Contains(out, "pull") || strings.Contains(out, "manifest unknown") || strings.Contains(out, "not found")) {
-			msg = "image not provisioned on this host — ask your administrator to provision this app, then retry: " + msg
+			msg = "could not fetch this app's image — check the host has registry access, then retry: " + msg
 		}
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
