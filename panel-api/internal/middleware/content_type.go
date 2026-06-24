@@ -8,9 +8,11 @@ import (
 )
 
 // RequireContentType rejects POST/PATCH/PUT requests with a missing or
-// unrecognised Content-Type. Accepted types are application/json and
-// multipart/form-data (file-upload endpoints). GET, DELETE, and other
-// body-less methods are passed through unchanged.
+// unrecognised Content-Type. Accepted types are application/json,
+// multipart/form-data (small file uploads), and application/octet-stream
+// (the file manager's chunked-upload path streams raw binary chunks — every
+// file over 100 MB, GH #211). GET, DELETE, and other body-less methods are
+// passed through unchanged.
 func RequireContentType() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		m := c.Request.Method
@@ -26,7 +28,9 @@ func RequireContentType() gin.HandlerFunc {
 		}
 
 		ct := c.GetHeader("Content-Type")
-		if !strings.HasPrefix(ct, "application/json") && !strings.HasPrefix(ct, "multipart/form-data") {
+		if !strings.HasPrefix(ct, "application/json") &&
+			!strings.HasPrefix(ct, "multipart/form-data") &&
+			!strings.HasPrefix(ct, "application/octet-stream") {
 			c.AbortWithStatusJSON(http.StatusUnsupportedMediaType, gin.H{
 				"error": "unsupported_content_type",
 			})
