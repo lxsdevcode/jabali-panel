@@ -460,10 +460,24 @@ func buildPHPValueParam(memLimit, uploadMax, postMax string, maxInputVars, maxEx
 // writeVhost generates and writes the nginx vhost configuration, then tests and reloads nginx.
 // This is the core logic shared by domain.create and domain.enable/disable.
 // If the config content is unchanged, nginx reload is skipped for efficiency.
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string) (string, error) {
-	if cachePath == "" {
-		cachePath = "/" // back-compat: older panel doesn't send it → whole domain
+// cachePathSegmentRE bounds the page-cache path prefix to a single safe segment
+// under root (Gitea #420 / nginx-template-injection guard).
+var cachePathSegmentRE = regexp.MustCompile(`^/[a-z0-9][a-z0-9_-]{0,63}$`)
+
+// sanitizeCachePath re-validates the page-cache path prefix at the agent (the
+// nginx config-generation trust boundary): it is rendered verbatim into the
+// regex `^<path>(/|$)`, so anything that is not "/" or a single safe segment
+// falls back to "/" (whole domain, no scoping) and can never inject nginx
+// directives or break the regex — regardless of what the panel sent.
+func sanitizeCachePath(p string) string {
+	if p != "/" && !cachePathSegmentRE.MatchString(p) {
+		return "/"
 	}
+	return p
+}
+
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string) (string, error) {
+	cachePath = sanitizeCachePath(cachePath)
 	// SSL cert may be referenced by the DB (ssl_cert_path set) but MISSING
 	// on disk — most commonly after a reinstall wiped /etc/letsencrypt while
 	// the panel DB kept the cert row. Emitting the 443 block with

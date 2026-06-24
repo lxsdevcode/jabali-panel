@@ -66,3 +66,21 @@ func TestVhostTemplate_PathScopedCache(t *testing.T) {
 		t.Errorf("CachePath=/blog must scope cache to ^/blog\n%s", out)
 	}
 }
+
+// SECURITY (nginx template/config injection): the agent must reject any cache
+// path that isn't "/" or a single safe segment, falling back to "/".
+func TestSanitizeCachePath(t *testing.T) {
+	safe := map[string]string{"/": "/", "/blog": "/blog", "/shop2": "/shop2", "": "/"}
+	for in, want := range safe {
+		if got := sanitizeCachePath(in); got != want {
+			t.Errorf("sanitizeCachePath(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, bad := range []string{
+		`/a" { return 444; } location /x {`, "/a/b", "/UP", "/a;b", "/a\n}", "/../etc", "/a ", "blog", "/-x",
+	} {
+		if got := sanitizeCachePath(bad); got != "/" {
+			t.Errorf("sanitizeCachePath(%q) = %q, want \"/\" (unsafe must fall back)", bad, got)
+		}
+	}
+}
