@@ -186,7 +186,17 @@ func (h *forwarderHandler) create(c *gin.Context) {
 		return
 	}
 	if req.Target == "" {
-		req.Target = mb.LocalPart + "@" + dom.Name
+		// External default target is the mailbox itself. For an ALIAS the target
+		// column is unused at apply (delivery is by local_part -> mailbox), but it
+		// is part of uq_external_forward(mailbox_id,type,target) — every alias used
+		// to default to the SAME mailbox address, so the 2nd alias collided on that
+		// key and failed (GH #280). Store the alias's OWN address, which is unique
+		// per alias, so a mailbox can hold many aliases.
+		if req.Type == "alias" {
+			req.Target = req.LocalPart + "@" + dom.Name
+		} else {
+			req.Target = mb.LocalPart + "@" + dom.Name
+		}
 	}
 	f := &models.EmailForwarder{
 		ID:        ids.NewULID(),
