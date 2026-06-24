@@ -164,8 +164,13 @@ func (r *mailCertRepo) MarkFailed(ctx context.Context, id, errMsg string, retryA
 }
 
 func (r *mailCertRepo) MarkDNSMissing(ctx context.Context, id, errMsg string) error {
-	// 1h backoff for DNS recheck. Cheap query so we don't need long.
-	retryAt := time.Now().Add(time.Hour)
+	// Short backoff for DNS recheck (GH #276). A freshly-created domain's
+	// mail.<domain> record propagates in minutes, and this recheck is a cheap
+	// DNS lookup that NEVER hits Let's Encrypt (the agent pre-checks resolution
+	// before ordering, so it consumes no LE new-order quota). The old 1h gate
+	// meant a new install sat without a mail cert for up to an hour and the
+	// operator had to click Reissue; 3 minutes issues it promptly once DNS is live.
+	retryAt := time.Now().Add(3 * time.Minute)
 	updates := map[string]any{
 		"status":        models.MailCertStatusDNSMissing,
 		"last_error":    errMsg,
