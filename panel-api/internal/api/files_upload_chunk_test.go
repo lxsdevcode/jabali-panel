@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -86,5 +87,44 @@ func TestUploadChunk_ConcurrencyCap(t *testing.T) {
 	w := doChunk(r, "capN", "/home/alice", "f.txt", 0, false, "a")
 	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "too_many_uploads") {
 		t.Fatalf("over-cap upload: got %d body=%s, want 429 too_many_uploads", w.Code, w.Body.String())
+	}
+}
+
+// #425: userStagingStats counts a tenant's staging files + bytes (both chunked
+// and single-shot are tag-prefixed) — the basis for the concurrency + byte cap.
+func TestUserStagingStats(t *testing.T) {
+	setupFilesRouter(t, "user1", &mockAgent{}) // points uploadStagingDir at a tmpdir
+	for i, body := range []string{"aa", "bbbb", "c"} {
+		if err := os.WriteFile(chunkStagingPath("user1", fmt.Sprintf("id%d", i)), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A different user's file must not be counted.
+	if err := os.WriteFile(chunkStagingPath("user2", "z"), []byte("zzzzz"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cnt, bytes := userStagingStats("user1")
+	if cnt != 3 || bytes != int64(2+4+1) {
+		t.Fatalf("userStagingStats(user1) = (%d,%d), want (3,7)", cnt, bytes)
+	}
+}
+
+// #425: the single-shot /upload path shares the per-user concurrency cap (it is
+// now user-tagged), so once a tenant holds maxInFlightUploadsPerUser staging
+// files a further single-shot upload is rejected.
+func TestUpload_SingleShotRespectsConcurrencyCap(t *testing.T) {
+	r := setupFilesRouter(t, "user1", agentReply(map[string]any{"path": "/home/alice/x"}))
+	for i := 0; i < maxInFlightUploadsPerUser; i++ {
+		if w := doChunk(r, fmt.Sprintf("c%d", i), "/home/alice", "f.txt", 0, false, "a"); w.Code != http.StatusOK {
+			t.Fatalf("chunked in-flight %d should be accepted, got %d", i, w.Code)
+		}
+	}
+	body, ct := makeMultipart(t, "file", "single.txt", "hello")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload?path=/home/alice", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "too_many_uploads") {
+		t.Fatalf("single-shot over cap: got %d body=%s, want 429 too_many_uploads", w.Code, w.Body.String())
 	}
 }

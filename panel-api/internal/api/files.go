@@ -80,12 +80,41 @@ func chunkStagingPath(userID, uploadID string) string {
 	return uploadStagingPrefix() + userStagingTag(userID) + "-" + hex.EncodeToString(sum[:])
 }
 
-// countUserInFlightUploads counts a tenant's current chunked staging files via a
-// glob of their tag prefix — the per-user concurrency cap for #425, no shared
-// state, survives restarts.
-func countUserInFlightUploads(userID string) int {
+// globUserStaging returns a tenant's current staging files (both chunked and
+// single-shot — both are tag-prefixed).
+func globUserStaging(userID string) []string {
 	m, _ := filepath.Glob(uploadStagingPrefix() + userStagingTag(userID) + "-*")
-	return len(m)
+	return m
+}
+
+// userStagingStats returns how many staging files the tenant currently holds and
+// their total bytes — the per-user concurrency + disk-budget basis for #425.
+// No shared state, survives restarts.
+func userStagingStats(userID string) (count int, bytes int64) {
+	for _, m := range globUserStaging(userID) {
+		if fi, err := os.Stat(m); err == nil && fi.Mode().IsRegular() {
+			count++
+			bytes += fi.Size()
+		}
+	}
+	return
+}
+
+// maxUserStagingBytesMultiple: the per-user assembled-staging ceiling is this
+// multiple of the configured single-upload cap, so a tenant can't fill the
+// service partition (shared with MariaDB + panel state) with many concurrent or
+// abandoned uploads (#425, reviewer item 3).
+const maxUserStagingBytesMultiple = 2
+
+func (h *filesHandler) userStagingBudget(ctx context.Context) int64 {
+	return maxUserStagingBytesMultiple * h.resolveMaxUploadBytes(ctx)
+}
+
+// singleStagingPath mints a user-tagged staging path for the single-shot upload
+// path so it counts against the same per-user concurrency + byte budget as the
+// chunked path (and still satisfies the agent ingest prefix gate).
+func singleStagingPath(userID, rnd string) string {
+	return uploadStagingPrefix() + userStagingTag(userID) + "-" + rnd
 }
 
 // Agent param struct types. JSON tags must match panel-agent/internal/commands/files_*.go
@@ -650,7 +679,16 @@ func (h *filesHandler) upload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": err.Error()})
 		return
 	}
-	tmpPath := uploadStagingPrefix() + hex.EncodeToString(idBytes)
+	// #425: single-shot staging is user-tagged so it counts against the same
+	// per-user concurrency + byte budget as the chunked path.
+	if cnt, total := userStagingStats(userID); cnt >= maxInFlightUploadsPerUser {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_uploads"})
+		return
+	} else if total >= h.userStagingBudget(c.Request.Context()) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "staging_budget_exceeded"})
+		return
+	}
+	tmpPath := singleStagingPath(userID, hex.EncodeToString(idBytes))
 	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": err.Error()})
@@ -668,6 +706,12 @@ func (h *filesHandler) upload(c *gin.Context) {
 	if written > maxBytes {
 		_ = os.Remove(tmpPath)
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file_too_large"})
+		return
+	}
+	// #425: per-user staging byte budget across all in-flight uploads.
+	if _, total := userStagingStats(userID); total > h.userStagingBudget(c.Request.Context()) {
+		_ = os.Remove(tmpPath)
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "staging_budget_exceeded"})
 		return
 	}
 
@@ -972,12 +1016,15 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 	// different tenant who learns this upload_id cannot target this file.
 	tmpPath := chunkStagingPath(userID, uploadID)
 
-	// #425: per-user in-flight concurrency cap, checked when a NEW upload begins
-	// (offset 0 and the staging file doesn't exist yet).
+	// #425: per-user concurrency + disk-budget cap, checked when a NEW upload
+	// begins (offset 0 and the staging file doesn't exist yet).
 	if offset == 0 {
 		if _, statErr := os.Stat(tmpPath); errors.Is(statErr, os.ErrNotExist) {
-			if countUserInFlightUploads(userID) >= maxInFlightUploadsPerUser {
+			if cnt, total := userStagingStats(userID); cnt >= maxInFlightUploadsPerUser {
 				c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_uploads"})
+				return
+			} else if total >= h.userStagingBudget(c.Request.Context()) {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "staging_budget_exceeded"})
 				return
 			}
 		}
@@ -1043,6 +1090,12 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 	if offset+written > maxUploadSize {
 		_ = os.Remove(tmpPath)
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file_too_large"})
+		return
+	}
+	// #425: enforce the per-user staging byte budget as the upload grows.
+	if _, total := userStagingStats(userID); total > h.userStagingBudget(c.Request.Context()) {
+		_ = os.Remove(tmpPath)
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "staging_budget_exceeded"})
 		return
 	}
 
