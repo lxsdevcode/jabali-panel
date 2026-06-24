@@ -82,7 +82,19 @@ func TestMeDiskUsage_Aggregates(t *testing.T) {
 	})
 	RegisterMeDiskUsageRoutes(v1, cfg)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/disk-usage", nil)
+	// GET before any refresh returns an empty snapshot (computed_at nil) — the
+	// page never auto-computes on entry.
+	greq := httptest.NewRequest(http.MethodGet, "/api/v1/me/disk-usage", nil)
+	grec := httptest.NewRecorder()
+	r.ServeHTTP(grec, greq)
+	var empty diskUsageResponse
+	_ = json.Unmarshal(grec.Body.Bytes(), &empty)
+	if empty.ComputedAt != nil || empty.TotalBytes != 0 {
+		t.Errorf("GET before refresh must be empty, got total=%d computed_at=%v", empty.TotalBytes, empty.ComputedAt)
+	}
+
+	// POST refresh recomputes live (where the aggregation now lives).
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/me/disk-usage/refresh", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -92,6 +104,9 @@ func TestMeDiskUsage_Aggregates(t *testing.T) {
 	var resp diskUsageResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
+	}
+	if resp.ComputedAt == nil {
+		t.Error("refresh must set computed_at")
 	}
 	if resp.Files.Bytes != 1024*1024 {
 		t.Errorf("files: want %d, got %d", 1024*1024, resp.Files.Bytes)

@@ -2,14 +2,14 @@
 // stat cards (Total / Files / Email / Databases / Quota). Bottom row: three
 // breakdown cards (Files & Folders, Email Mailboxes, Databases) each with a
 // table + a "View all" link. Backed by GET /api/v1/me/disk-usage.
-import { Alert, Card, Col, Empty, Row, Spin, Table, Tag, Tree, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Row, Spin, Table, Tag, Tree, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { DataNode } from "antd/es/tree";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
-import { DatabaseOutlined, ExportOutlined, FileOutlined, FolderOutlined, MailOutlined } from "@icons";
+import { DatabaseOutlined, ExportOutlined, FileOutlined, FolderOutlined, MailOutlined, ReloadOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
 import { StatCard } from "../../../components/StatCard";
@@ -24,11 +24,24 @@ interface UsageCategory {
   items: UsageItem[];
 }
 interface DiskUsage {
+  computed_at?: string | null;
   total_bytes: number;
   quota_bytes: number;
   files: UsageCategory;
   email: UsageCategory;
   databases: UsageCategory;
+}
+
+function relTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "just now";
+  const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (sec < 60) return "just now";
+  const m = Math.round(sec / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return `${Math.round(h / 24)} d ago`;
 }
 
 function fmtBytes(n: number): string {
@@ -151,13 +164,23 @@ const COLORS = {
 
 export function DiskUsagePage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data, isLoading, error } = useQuery<DiskUsage>({
     queryKey: ["me-disk-usage"],
     queryFn: async () => {
       const r = await apiClient.get<DiskUsage>("/me/disk-usage");
       return r.data;
     },
+    // The snapshot only changes on an explicit Refresh — never auto-recompute.
     refetchOnWindowFocus: false,
+    staleTime: Infinity,
+  });
+  const refresh = useMutation({
+    mutationFn: async () => {
+      const r = await apiClient.post<DiskUsage>("/me/disk-usage/refresh");
+      return r.data;
+    },
+    onSuccess: (d) => qc.setQueryData(["me-disk-usage"], d),
   });
 
   if (isLoading) {
@@ -286,11 +309,51 @@ export function DiskUsagePage() {
     },
   ];
 
-  return (
-    <div>
-      <Typography.Title level={3} style={{ marginTop: 0 }}>
+  const computedAt = data.computed_at;
+  const header = (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 12,
+        marginBottom: 12,
+      }}
+    >
+      <Typography.Title level={3} style={{ margin: 0 }}>
         Disk Usage
       </Typography.Title>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Typography.Text type="secondary">
+          {computedAt ? `Computed ${relTime(computedAt)}` : "Not computed yet"}
+        </Typography.Text>
+        <Button
+          icon={<ReloadOutlined />}
+          loading={refresh.isPending}
+          onClick={() => refresh.mutate()}
+        >
+          {refresh.isPending ? "Calculating\u2026" : "Refresh"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (!computedAt) {
+    return (
+      <div>
+        {header}
+        <Empty
+          description="No disk-usage snapshot yet \u2014 click Refresh to calculate."
+          style={{ padding: 64 }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {header}
 
       {/* Top: five stat cards */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>

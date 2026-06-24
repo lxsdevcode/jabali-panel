@@ -34,6 +34,9 @@ type DiskUsageConfig struct {
 	Databases  repository.DatabaseRepository
 	Agent      agent.AgentInterface
 	QuotaMount string
+	// Snapshots persists the last computed breakdown so GET is a cheap read
+	// and recompute happens only on an explicit POST refresh (#tenant DU).
+	Snapshots  repository.DiskUsageSnapshotRepository
 }
 
 // RegisterMeDiskUsageRoutes mounts GET /me/disk-usage on a group that already
@@ -44,6 +47,7 @@ func RegisterMeDiskUsageRoutes(g *gin.RouterGroup, cfg DiskUsageConfig) {
 	}
 	h := &meDiskUsageHandler{cfg: cfg}
 	g.GET("/me/disk-usage", h.get)
+	g.POST("/me/disk-usage/refresh", h.refresh)
 	g.GET("/me/disk-usage/files", h.filesTree)
 }
 
@@ -61,6 +65,9 @@ type diskUsageCategory struct {
 }
 
 type diskUsageResponse struct {
+	// ComputedAt is when this breakdown was computed; nil => never computed
+	// (the page shows an empty state prompting a first Refresh).
+	ComputedAt *time.Time        `json:"computed_at"`
 	TotalBytes uint64            `json:"total_bytes"`
 	QuotaBytes uint64            `json:"quota_bytes"` // home quota limit; 0 = unlimited/unknown
 	Files      diskUsageCategory `json:"files"`
@@ -73,6 +80,8 @@ type diskUsageResponse struct {
 // bounded rather than unbounded-querying.
 const diskUsageListLimit = 2000
 
+// get returns the LAST stored snapshot (a cheap DB read — no agent calls). The
+// page never auto-recomputes on entry; recompute is the explicit POST refresh.
 func (h *meDiskUsageHandler) get(c *gin.Context) {
 	ctx := c.Request.Context()
 	claims := ginctx.Claims(c)
@@ -80,10 +89,51 @@ func (h *meDiskUsageHandler) get(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	user, err := h.cfg.Users.FindByID(ctx, claims.UserID)
-	if err != nil || user == nil {
+	resp := diskUsageResponse{
+		Files:     diskUsageCategory{Items: []diskUsageItem{}},
+		Email:     diskUsageCategory{Items: []diskUsageItem{}},
+		Databases: diskUsageCategory{Items: []diskUsageItem{}},
+	}
+	if h.cfg.Snapshots != nil {
+		if snap, err := h.cfg.Snapshots.Get(ctx, claims.UserID); err == nil && snap != nil {
+			if uerr := json.Unmarshal([]byte(snap.Payload), &resp); uerr == nil {
+				ca := snap.ComputedAt
+				resp.ComputedAt = &ca
+			}
+		}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// refresh recomputes the breakdown live (quota report + mailbox cache +
+// db.size), persists it as the new snapshot, and returns it.
+func (h *meDiskUsageHandler) refresh(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	resp, err := h.compute(ctx, claims.UserID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
 		return
+	}
+	now := time.Now()
+	resp.ComputedAt = &now
+	if h.cfg.Snapshots != nil {
+		if payload, merr := json.Marshal(resp); merr == nil {
+			_ = h.cfg.Snapshots.Upsert(ctx, claims.UserID, string(payload), now)
+		}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// compute runs the live aggregation. Extracted from the old GET handler.
+func (h *meDiskUsageHandler) compute(ctx context.Context, userID string) (diskUsageResponse, error) {
+	user, err := h.cfg.Users.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return diskUsageResponse{}, err
 	}
 	opts := repository.ListOptions{Limit: diskUsageListLimit}
 
@@ -102,7 +152,7 @@ func (h *meDiskUsageHandler) get(c *gin.Context) {
 	}
 
 	// --- Email: sum cached mailbox usage across the user's domains ---
-	if domains, _, derr := h.cfg.Domains.ListByUserID(ctx, claims.UserID, opts); derr == nil {
+	if domains, _, derr := h.cfg.Domains.ListByUserID(ctx, userID, opts); derr == nil {
 		for i := range domains {
 			mbs, _, merr := h.cfg.Mailboxes.ListByDomainID(ctx, domains[i].ID, opts)
 			if merr != nil {
@@ -119,7 +169,7 @@ func (h *meDiskUsageHandler) get(c *gin.Context) {
 	}
 
 	// --- Databases: per-db size (MariaDB; PostgreSQL has no size verb yet) ---
-	if dbs, _, derr := h.cfg.Databases.ListByUserID(ctx, claims.UserID, opts); derr == nil {
+	if dbs, _, derr := h.cfg.Databases.ListByUserID(ctx, userID, opts); derr == nil {
 		for i := range dbs {
 			var sz uint64
 			if dbs[i].Engine == "mariadb" && h.cfg.Agent != nil {
@@ -135,7 +185,7 @@ func (h *meDiskUsageHandler) get(c *gin.Context) {
 	}
 
 	resp.TotalBytes = resp.Files.Bytes + resp.Email.Bytes + resp.Databases.Bytes
-	c.JSON(http.StatusOK, resp)
+	return resp, nil
 }
 
 // homeUsage returns (usedBytes, limitBytes) from the agent's quota report.

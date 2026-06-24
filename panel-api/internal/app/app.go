@@ -452,6 +452,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Databases:  deps.Databases,
 			Agent:      deps.Agent,
 			QuotaMount: deps.QuotaMount,
+			Snapshots:  repository.NewDiskUsageSnapshotRepository(deps.DB),
 		})
 
 		// ADR-0128 — admin act-as grant management (GH #183). Mounted on v1;
