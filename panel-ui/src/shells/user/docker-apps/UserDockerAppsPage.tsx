@@ -8,6 +8,7 @@ import { RowActions } from "../../../components/RowActions";
 import {
   Alert,
   Button,
+  AutoComplete,
   Card,
   Descriptions,
   Form,
@@ -30,6 +31,7 @@ import {
 } from "@icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
+import { apiClient } from "../../../apiClient";
 
 import type { CatalogEntry, InstalledApp } from "../../admin/docker-apps/types";
 import {
@@ -239,6 +241,19 @@ const InstallModal = ({
   onInstalled: () => void;
 }) => {
   const [form] = Form.useForm<{ name: string; domain: string }>();
+  // #281: suggest the user's owned domains; AutoComplete (not a plain Select)
+  // keeps a free hostname typeable since the backend accepts a new subdomain
+  // under the caller's ownership too.
+  const domainsQuery = useQuery({
+    queryKey: ["user-domains-min"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ data: { id: string; name: string }[] }>(
+        "/domains",
+        { params: { page: 1, page_size: 100 } },
+      );
+      return data.data ?? [];
+    },
+  });
   const install = useMutation({
     mutationFn: (v: { name: string; domain: string }) =>
       installApp({ slug: entry!.slug, name: v.name, domain: v.domain }),
@@ -280,7 +295,13 @@ const InstallModal = ({
           extra="A domain you own (or a new hostname). The app is served here over HTTPS."
           rules={[{ required: true, message: "Required" }]}
         >
-          <Input placeholder="notes.example.com" />
+          <AutoComplete
+            placeholder="Select a domain you own, or type a new hostname"
+            options={(domainsQuery.data ?? []).map((d) => ({ value: d.name }))}
+            filterOption={(input, opt) =>
+              (opt?.value ?? "").toLowerCase().includes(input.toLowerCase())
+            }
+          />
         </Form.Item>
       </Form>
     </Modal>

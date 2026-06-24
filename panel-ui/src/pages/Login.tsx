@@ -128,7 +128,13 @@ export const LoginPage = () => {
       // cache write that notifies observers in the same tick, so the
       // next render sees the authoritative user.
       const mePrimed: MeUser | null = me
-        ? { id: me.id, email: me.email, isAdmin: me.isAdmin }
+        ? {
+            id: me.id,
+            email: me.email,
+            isAdmin: me.isAdmin,
+            username: me.username,
+            fullName: me.fullName,
+          }
         : null;
       qc.setQueryData<MeUser | null>(["whoami"], mePrimed);
       // Honour return_to set by /profile's refresh-flow escalation
