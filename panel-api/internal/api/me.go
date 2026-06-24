@@ -61,10 +61,24 @@ func (h *meExtHandler) serverCapabilities(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return
 	}
+	// docker_apps_user_enabled is the server flag AND the caller's package
+	// allowance: a user WITH a package whose MaxDockerApps is 0 doesn't see
+	// Docker Apps (GH #283 — hide if not in package). A user with NO package
+	// is unrestricted (GH #282), so the server flag alone decides.
+	dockerUser := settings.DockerMarketplaceEnabled && settings.DockerAppsForUsersEnabled && tenantDockerHostReady()
+	if dockerUser && h.cfg.Users != nil && h.cfg.Packages != nil {
+		if claims := ginctx.Claims(c); claims != nil {
+			if u, uerr := h.cfg.Users.FindByID(ctx, claims.UserID); uerr == nil && u != nil && u.PackageID != nil {
+				if pkg, perr := h.cfg.Packages.FindByID(ctx, *u.PackageID); perr != nil || pkg == nil || pkg.MaxDockerApps == 0 {
+					dockerUser = false
+				}
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"postgres_enabled":           settings.PostgresEnabled,
 		"docker_marketplace_enabled": settings.DockerMarketplaceEnabled,
-		"docker_apps_user_enabled":   settings.DockerMarketplaceEnabled && settings.DockerAppsForUsersEnabled && tenantDockerHostReady(),
+		"docker_apps_user_enabled":   dockerUser,
 		"python_apps_enabled":        settings.PythonAppsEnabled,
 	})
 }

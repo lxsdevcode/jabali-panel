@@ -127,7 +127,7 @@ func (r *packageRepo) Delete(ctx context.Context, id string) error {
 // edit or delete them from the admin Packages page. Zero = unlimited per
 // the model contract, so every limit here is an explicit non-zero cap.
 func defaultPackages(now time.Time) []models.HostingPackage {
-	mk := func(name string, diskMB, bwMB, cpu, memMB, tasks, domains, email, dbs, dbUsers uint32, ssh bool) models.HostingPackage {
+	mk := func(name string, diskMB, bwMB, cpu, memMB, tasks, domains, email, dbs, dbUsers, dockerApps uint32, ssh bool) models.HostingPackage {
 		return models.HostingPackage{
 			ID:               ids.NewULID(),
 			Name:             name,
@@ -140,16 +140,17 @@ func defaultPackages(now time.Time) []models.HostingPackage {
 			MaxEmailAccounts: email,
 			MaxDatabases:     dbs,
 			MaxDatabaseUsers: dbUsers,
+			MaxDockerApps:    dockerApps,
 			SSHEnabled:       ssh,
 			CreatedAt:        now,
 			UpdatedAt:        now,
 		}
 	}
 	return []models.HostingPackage{
-		//      name        disk    bw      cpu  mem   tasks dom email db dbu  ssh
-		mk("Tier 1", 5_000, 50_000, 50, 512, 100, 1, 5, 1, 1, false),
-		mk("Tier 2", 20_000, 200_000, 100, 1024, 200, 5, 25, 5, 5, false),
-		mk("Tier 3", 50_000, 500_000, 200, 2048, 400, 25, 100, 25, 25, true),
+		//      name        disk    bw      cpu  mem   tasks dom email db dbu docker ssh
+		mk("Tier 1", 5_000, 50_000, 50, 512, 100, 1, 5, 1, 1, 0, false),
+		mk("Tier 2", 20_000, 200_000, 100, 1024, 200, 5, 25, 5, 5, 1, false),
+		mk("Tier 3", 50_000, 500_000, 200, 2048, 400, 25, 100, 25, 25, 3, true),
 	}
 }
 

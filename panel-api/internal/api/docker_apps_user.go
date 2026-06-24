@@ -305,29 +305,33 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 		return
 	}
 
-	// Resolve the caller + package quota gate.
+	// Resolve the caller. A user MUST have a Linux account; the package quota
+	// gate is enforced ONLY when the user has a package — no package means no
+	// docker limit (admin/power users; GH #282).
 	user, err := h.cfg.Users.FindByID(ctx, claims.UserID)
-	if err != nil || user == nil || user.Username == nil || user.PackageID == nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "no_package", "detail": "account has no hosting package"})
+	if err != nil || user == nil || user.Username == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no_account", "detail": "account has no Linux user"})
 		return
 	}
-	pkg, err := h.cfg.Packages.FindByID(ctx, *user.PackageID)
-	if err != nil || pkg == nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "no_package"})
-		return
-	}
-	if pkg.MaxDockerApps == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "docker_apps_not_in_package", "detail": "your hosting package does not include Docker apps"})
-		return
-	}
-	count, err := h.cfg.Repo.CountByUserID(ctx, claims.UserID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "quota_check_failed"})
-		return
-	}
-	if count >= int64(pkg.MaxDockerApps) {
-		c.JSON(http.StatusConflict, gin.H{"error": "docker_app_quota_exceeded", "detail": "you have reached your Docker app limit"})
-		return
+	if user.PackageID != nil {
+		pkg, perr := h.cfg.Packages.FindByID(ctx, *user.PackageID)
+		if perr != nil || pkg == nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "no_package"})
+			return
+		}
+		if pkg.MaxDockerApps == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "docker_apps_not_in_package", "detail": "your hosting package does not include Docker apps"})
+			return
+		}
+		count, cerr := h.cfg.Repo.CountByUserID(ctx, claims.UserID)
+		if cerr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "quota_check_failed"})
+			return
+		}
+		if count >= int64(pkg.MaxDockerApps) {
+			c.JSON(http.StatusConflict, gin.H{"error": "docker_app_quota_exceeded", "detail": "you have reached your Docker app limit"})
+			return
+		}
 	}
 
 	// Domain ownership: must be a domain the caller owns, or a free hostname
