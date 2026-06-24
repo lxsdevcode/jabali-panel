@@ -11,11 +11,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
@@ -155,7 +159,25 @@ const (
 // land before WordPress — and the plugin's drop-ins — load.
 func setWPConfigCacheConstants(installPath, socket string, db int, prefix, password, username string, enable bool) error {
 	cfgPath := filepath.Join(installPath, "wp-config.php")
-	raw, err := os.ReadFile(cfgPath)
+	// GH #411: the root agent must NEVER read or write THROUGH a tenant-planted
+	// symlink — a tenant owns their docroot and could point wp-config.php (or a
+	// parent dir) at /etc/shadow or another user's file, turning this read +
+	// write-through + chown into arbitrary-file disclosure / overwrite / LPE.
+	// openat2 with RESOLVE_NO_SYMLINKS makes the KERNEL refuse if the file OR any
+	// path component is a symlink — race-free, no TOCTOU. We then do every op on
+	// the returned fd (read / truncate / write / fchown / fchmod), never via a
+	// path that could be re-resolved through a symlink.
+	rawFD, oerr := unix.Openat2(unix.AT_FDCWD, cfgPath, &unix.OpenHow{
+		Flags:   unix.O_RDWR | unix.O_CLOEXEC,
+		Resolve: unix.RESOLVE_NO_SYMLINKS,
+	})
+	if oerr != nil {
+		return fmt.Errorf("open wp-config refused (symlink in path? #411): %w", oerr)
+	}
+	f := os.NewFile(uintptr(rawFD), cfgPath)
+	defer f.Close()
+
+	raw, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
@@ -176,12 +198,26 @@ func setWPConfigCacheConstants(installPath, socket string, db int, prefix, passw
 		content = insertBeforeWPSettings(content, block)
 	}
 
-	if err := os.WriteFile(cfgPath, []byte(content), 0o640); err != nil {
+	// Rewrite in place on the SAME fd (no path re-resolution → no symlink race).
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	// wp-config.php is owned <user>:www-data on a jabali install; preserve that.
-	_ = exec.Command("chown", "--reference="+filepath.Dir(cfgPath), cfgPath).Run()
-	return nil
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		return err
+	}
+	// Preserve the intended owner/mode (<user>:www-data 0640). The openat2 above
+	// guarantees installPath has no symlink components, so stat'ing it is safe;
+	// fchown/fchmod act on the fd, never a path.
+	if fi, serr := os.Stat(installPath); serr == nil {
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+			_ = f.Chown(int(st.Uid), int(st.Gid))
+		}
+	}
+	_ = f.Chmod(0o640)
+	return nil // deferred f.Close() flushes
 }
 
 // stripWPCacheBlock removes a previously-inserted BEGIN..END jabali block
