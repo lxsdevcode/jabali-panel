@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 )
@@ -48,10 +49,14 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 		return map[string]any{"ok": true, "purged": 0, "domain": p.Domain}, nil
 	}
 
-	// nginx stores a `KEY: <scheme><method><host><uri>` line in the
-	// cache file header. Match files whose KEY contains the host.
+	// nginx stores a `KEY: <scheme><method><host><uri>` line in the cache file
+	// header (cache_key = $scheme$request_method$host$request_uri, concatenated
+	// with no delimiter). Match the HOST FIELD exactly — a raw substring match
+	// would evict another tenant whose host merely CONTAINS this domain
+	// ("a.com" ⊂ "sub.a.com") or whose URL path contains the string, a
+	// cross-tenant cache-eviction lever despite the owner-scoped REST (Gitea #418).
 	needle := []byte("KEY: ")
-	host := []byte(p.Domain)
+	host := p.Domain
 	purged := 0
 	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -77,7 +82,7 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 			if j := bytes.IndexByte(line, '\n'); j >= 0 {
 				line = line[:j]
 			}
-			if bytes.Contains(line, host) {
+			if keyLineHost(line) == host {
 				if rmErr := os.Remove(path); rmErr == nil {
 					purged++
 				}
@@ -89,6 +94,31 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 		return nil, csInternal("walk cache dir", walkErr)
 	}
 	return map[string]any{"ok": true, "purged": purged, "domain": p.Domain}, nil
+}
+
+// keyLineHost extracts the $host field from an nginx cache KEY line of the form
+// "KEY: <scheme><method><host><uri>". The fields are concatenated with no
+// separator, so we peel the known scheme + method prefixes and take everything
+// up to the first "/" (the request_uri always begins with "/"). Returns "" if
+// the line doesn't parse. Exact host comparison (not substring) is the #418 fix.
+func keyLineHost(line []byte) string {
+	v := strings.TrimSpace(strings.TrimPrefix(string(line), "KEY:"))
+	for _, sch := range []string{"https", "http"} { // https first (longer)
+		if strings.HasPrefix(v, sch) {
+			v = v[len(sch):]
+			break
+		}
+	}
+	for _, m := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "PURGE", "TRACE", "CONNECT"} {
+		if strings.HasPrefix(v, m) {
+			v = v[len(m):]
+			break
+		}
+	}
+	if i := strings.IndexByte(v, '/'); i >= 0 {
+		return v[:i]
+	}
+	return v
 }
 
 func init() {

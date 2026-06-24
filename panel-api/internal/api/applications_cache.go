@@ -222,12 +222,22 @@ func (h *wordPressHandler) provisionTenantACL(ctx context.Context, osUser, token
 	user := "wp_" + osUser
 	// resetkeys/resetchannels make the rule absolute (idempotent re-apply); the
 	// keyspace is fenced to ~jc:<osuser>:* — no access to jabali:* / automation:*.
+	// Explicit command ALLOWLIST (Gitea #413) instead of the broad +@keyspace
+	// category — @keyspace included RANDOMKEY/DBSIZE, which Redis ACLs do NOT
+	// pattern-scope, so a tenant could enumerate other tenants' key names /
+	// total key count past the ~jc:<osuser>:* fence. This is exactly the set the
+	// bundled object cache issues (GET/SET/SETEX/DEL/MGET/INCRBY/DECRBY/SCAN/
+	// SELECT/PING/AUTH) plus a little headroom — no RANDOMKEY, DBSIZE, KEYS, or
+	// FLUSH. `reset` first makes the rule fully authoritative on re-apply, so an
+	// already-provisioned user loses any prior @keyspace grant.
 	if err := h.cfg.Redis.Do(ctx, "ACL", "SETUSER", user,
+		"reset",
 		"on", ">"+token,
-		"resetkeys", "~jc:"+osUser+":*",
-		"resetchannels",
-		"+@read", "+@write", "+@keyspace", "+@connection",
-		"-@dangerous",
+		"~jc:"+osUser+":*",
+		"+GET", "+SET", "+SETEX", "+PSETEX", "+SETNX", "+DEL", "+UNLINK",
+		"+MGET", "+MSET", "+INCR", "+INCRBY", "+DECR", "+DECRBY",
+		"+EXPIRE", "+PEXPIRE", "+TTL", "+PTTL", "+PERSIST", "+TYPE", "+EXISTS",
+		"+SCAN", "+SELECT", "+PING", "+AUTH", "+HELLO",
 	).Err(); err != nil {
 		return err
 	}
