@@ -82,6 +82,7 @@ func TestBuildBwrapArgv_ForwardsCommandAndIsolates(t *testing.T) {
 		"--ro-bind-try /etc/php /etc/php", // GH #277: CLI php.ini + conf.d extensions
 		"--ro-bind-try /etc/jabali/snuffleupagus /etc/jabali/snuffleupagus",
 		"--tmpfs /run", "--proc /proc",
+		"--ro-bind-try /run/mysqld/mysqld.sock /run/mysqld/mysqld.sock", // GH #285: shell DB access
 	} {
 		if !strings.Contains(joined, must) {
 			t.Errorf("argv missing %q in: %s", must, joined)

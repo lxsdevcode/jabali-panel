@@ -204,6 +204,12 @@ func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, 
 		"--tmpfs", "/tmp",
 		"--tmpfs", "/run",
 		"--tmpfs", "/var",
+		// Expose ONLY the MariaDB socket on the fresh /run tmpfs so a tenant can
+		// run `mysql -u <dbuser> -p <db>` / import a .sql from the shell (GH #285).
+		// The socket is world-connectable but MariaDB auth gates access, so a
+		// tenant still needs valid DB credentials and only reaches DBs their user
+		// is granted — same path phpMyAdmin uses. Nothing else under /run leaks.
+		"--ro-bind-try", "/run/mysqld/mysqld.sock", "/run/mysqld/mysqld.sock",
 		"--bind", home, home,
 		"--chdir", home,
 		// Isolate everything, then re-share only the network so egress
