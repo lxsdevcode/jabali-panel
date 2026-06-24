@@ -242,3 +242,17 @@ pre {
   max-width: 100%;
   overflow-x: auto;
 }
+
+/* GH #279 — while impersonating, the always-visible amber banner (sticky,
+   z-index above the modal mask as a security indicator) used to overlap modal
+   and drawer CONTENT. Offset that content below the banner so the bar stays
+   visible but no longer covers the dialog. --imp-banner-h is published by
+   ImpersonationBanner; falls back to 40px. */
+body.imp-active .ant-modal-wrap {
+  padding-top: var(--imp-banner-h, 40px);
+}
+body.imp-active .ant-drawer-content-wrapper,
+body.imp-active .ant-drawer .ant-drawer-content {
+  margin-top: var(--imp-banner-h, 40px);
+  height: calc(100% - var(--imp-banner-h, 40px));
+}

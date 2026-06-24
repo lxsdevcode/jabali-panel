@@ -3,12 +3,36 @@
 // Read once per render; enter/exit do a full page navigation, so the banner is
 // always correct on load. Sticky + a bright amber so it stays visible and
 // clearly distinguishable in dark mode while scrolling.
+import { useEffect, useRef } from "react";
 import { Alert, Button } from "antd";
 
 import { getActAs, stopImpersonation } from "../impersonation";
 
 export function ImpersonationBanner() {
   const actAs = getActAs();
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Publish the banner height + a body class so global.css can offset modal /
+  // drawer content below the always-on-top banner (GH #279). Measure live so
+  // the offset tracks the real height (wraps on narrow screens).
+  useEffect(() => {
+    if (!actAs) return;
+    const el = ref.current;
+    const apply = () => {
+      const h = el?.offsetHeight ?? 40;
+      document.body.style.setProperty("--imp-banner-h", `${h}px`);
+    };
+    apply();
+    document.body.classList.add("imp-active");
+    const ro = el ? new ResizeObserver(apply) : null;
+    if (el && ro) ro.observe(el);
+    return () => {
+      ro?.disconnect();
+      document.body.classList.remove("imp-active");
+      document.body.style.removeProperty("--imp-banner-h");
+    };
+  }, [actAs]);
+
   if (!actAs) return null;
 
   const exit = async () => {
@@ -17,7 +41,7 @@ export function ImpersonationBanner() {
   };
 
   return (
-    <div style={{ position: "sticky", top: 0, zIndex: 1001 }}>
+    <div ref={ref} style={{ position: "sticky", top: 0, zIndex: 1001 }}>
       <Alert
         type="warning"
         banner
