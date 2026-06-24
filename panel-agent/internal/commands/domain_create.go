@@ -231,11 +231,18 @@ server {
         fastcgi_param PHP_VALUE "{{.PHPValueParam}}";
 {{ end }}
 {{ if .CacheEnabled }}
-        set $jabali_skip 0;
+        # Fail-CLOSED page-cache gate (Gitea #416/#419): cache ONLY genuinely
+        # anonymous GETs. Default to skip; allow only when there is NO cookie or
+        # the cookie is exclusively known-benign analytics/consent. Auth, session,
+        # language, currency, membership, A/B, and any unknown cookie therefore
+        # bypass — so a member/paywall page or the wrong i18n/device variant is
+        # never stored and served cross-visitor (the old denylist was fail-open).
+        set $jabali_skip 1;
+        if ($http_cookie = "") { set $jabali_skip 0; }
+        if ($http_cookie ~* "^(?:\s*(?:_ga[\w-]*|_gid|_gat[\w-]*|_gcl[\w-]*|__utm[\w-]*|__gads|__gpi|_fbp|_fbc|_pk_[\w-]*|_hj[\w-]*|_clck|_clsk|_dc_gtm[\w-]*|cookie_consent[\w-]*|cookie_?notice[\w-]*|cookielawinfo[\w-]*|euconsent[\w-]*|wordpress_test_cookie)=[^;]*;?\s*)+$") { set $jabali_skip 0; }
         if ($request_method = POST) { set $jabali_skip 1; }
         if ($query_string != "") { set $jabali_skip 1; }
-        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
-        if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|woocommerce_items_in_cart|woocommerce_cart_hash|edd_items_in_cart|PHPSESSID") { set $jabali_skip 1; }
+        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
         fastcgi_cache {{.CacheKeyZone}};
         fastcgi_cache_key "$scheme$request_method$host$request_uri";
         fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
@@ -244,13 +251,12 @@ server {
         fastcgi_cache_use_stale error timeout updating http_500 http_503;
         fastcgi_cache_lock on;
         add_header X-Jabali-Cache $upstream_cache_status always;
-        # Client-cache header so returning anonymous visitors + CDNs (and audit
-        # tools) cache the page for the micro-cache window; bypassed/dynamic
-        # responses stay no-cache. Strip any upstream header first to avoid dupes.
+        # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
+        # #417): the origin micro-cache is purgeable but browser/CDN copies are
+        # not, and a skip-miss must never be amplified to Cloudflare scale. The
+        # speedup is the server-side micro-cache only; clients always revalidate.
         fastcgi_hide_header Cache-Control;
-        set $jabali_cc "private, no-cache, max-age=0";
-        if ($jabali_skip = 0) { set $jabali_cc "public, max-age={{.CacheClientMaxAge}}"; }
-        add_header Cache-Control $jabali_cc always;
+        add_header Cache-Control "private, no-cache, max-age=0" always;
 {{ end }}
     }
     location ~ \.php$ {
@@ -261,11 +267,18 @@ server {
         fastcgi_param PHP_VALUE "{{.PHPValueParam}}";
 {{ end }}
 {{ if .CacheEnabled }}
-        set $jabali_skip 0;
+        # Fail-CLOSED page-cache gate (Gitea #416/#419): cache ONLY genuinely
+        # anonymous GETs. Default to skip; allow only when there is NO cookie or
+        # the cookie is exclusively known-benign analytics/consent. Auth, session,
+        # language, currency, membership, A/B, and any unknown cookie therefore
+        # bypass — so a member/paywall page or the wrong i18n/device variant is
+        # never stored and served cross-visitor (the old denylist was fail-open).
+        set $jabali_skip 1;
+        if ($http_cookie = "") { set $jabali_skip 0; }
+        if ($http_cookie ~* "^(?:\s*(?:_ga[\w-]*|_gid|_gat[\w-]*|_gcl[\w-]*|__utm[\w-]*|__gads|__gpi|_fbp|_fbc|_pk_[\w-]*|_hj[\w-]*|_clck|_clsk|_dc_gtm[\w-]*|cookie_consent[\w-]*|cookie_?notice[\w-]*|cookielawinfo[\w-]*|euconsent[\w-]*|wordpress_test_cookie)=[^;]*;?\s*)+$") { set $jabali_skip 0; }
         if ($request_method = POST) { set $jabali_skip 1; }
         if ($query_string != "") { set $jabali_skip 1; }
-        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
-        if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|woocommerce_items_in_cart|woocommerce_cart_hash|edd_items_in_cart|PHPSESSID") { set $jabali_skip 1; }
+        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
         fastcgi_cache {{.CacheKeyZone}};
         fastcgi_cache_key "$scheme$request_method$host$request_uri";
         fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
@@ -274,13 +287,12 @@ server {
         fastcgi_cache_use_stale error timeout updating http_500 http_503;
         fastcgi_cache_lock on;
         add_header X-Jabali-Cache $upstream_cache_status always;
-        # Client-cache header so returning anonymous visitors + CDNs (and audit
-        # tools) cache the page for the micro-cache window; bypassed/dynamic
-        # responses stay no-cache. Strip any upstream header first to avoid dupes.
+        # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
+        # #417): the origin micro-cache is purgeable but browser/CDN copies are
+        # not, and a skip-miss must never be amplified to Cloudflare scale. The
+        # speedup is the server-side micro-cache only; clients always revalidate.
         fastcgi_hide_header Cache-Control;
-        set $jabali_cc "private, no-cache, max-age=0";
-        if ($jabali_skip = 0) { set $jabali_cc "public, max-age={{.CacheClientMaxAge}}"; }
-        add_header Cache-Control $jabali_cc always;
+        add_header Cache-Control "private, no-cache, max-age=0" always;
 {{ end }}
     }
 {{ end }}

@@ -42,7 +42,8 @@ var cacheMarkers = []string{
 	"fastcgi_no_cache $jabali_skip;",
 	"add_header X-Jabali-Cache $upstream_cache_status always;",
 	"set $jabali_skip 0;",
-	"wordpress_logged_in",
+	"set $jabali_skip 1;", // Gitea #416 fail-closed default
+	"private, no-cache, max-age=0", // Gitea #417 no public CDN caching
 	"location ~* \\.(?:css|js|jpe?g|png|gif|ico|svg|webp|woff2?|ttf|eot)$",
 }
 
