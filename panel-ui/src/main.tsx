@@ -8,6 +8,7 @@ import "antd/dist/reset.css";
 import "./global.css";
 
 import App from "./App";
+import { registerServiceWorker } from "./lib/registerServiceWorker";
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
@@ -21,3 +22,6 @@ createRoot(rootEl).render(
     <App />
   </StrictMode>,
 );
+
+// #434: register the app service worker so the panel is an installable PWA.
+registerServiceWorker();

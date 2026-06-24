@@ -37,6 +37,7 @@ import { apiClient } from "../apiClient";
 import { useAuth } from "../auth/AuthContext";
 import { adminNav, userNav } from "../nav";
 import { JabaliTitle } from "./JabaliTitle";
+import { InstallAppButton } from "./InstallAppButton";
 import { NotificationBell } from "./NotificationBell";
 import { TasksIndicator } from "./TasksIndicator";
 import { ServerHealthIndicator } from "./ServerHealthIndicator";
@@ -405,6 +406,7 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
       <Space size={4}>
         {isAdminShell && <ServerHealthIndicator />}
         {isAdminShell && <TasksIndicator />}
+        <InstallAppButton />
         <NotificationBell />
         <ThemeToggle />
         <Dropdown menu={{ items: userMenu }} placement="bottomRight">
