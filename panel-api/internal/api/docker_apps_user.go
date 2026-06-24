@@ -214,10 +214,24 @@ func (h *userDockerAppHandler) list(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "list_failed"})
 		return
 	}
+	// Resolve the attached domain per app (the domain back-references the app
+	// via docker_app_id) so the "Your apps" table can show it — the DockerApp
+	// row itself carries no domain (GH #284: showed "—" though the bind exists).
+	var domList []models.Domain
+	if h.cfg.Domains != nil {
+		domList, _, _ = h.cfg.Domains.ListByUserID(c.Request.Context(), claims.UserID, repository.ListOptions{Limit: diskUsageListLimit})
+	}
 	out := make([]installedResponse, 0, len(apps))
 	for _, a := range apps {
 		ports, _ := h.cfg.Repo.ListPortsForApp(c.Request.Context(), a.ID)
-		out = append(out, installedResponse{DockerApp: *a, Ports: ports})
+		resp := installedResponse{DockerApp: *a, Ports: ports}
+		for i := range domList {
+			if domList[i].DockerAppID != nil && *domList[i].DockerAppID == a.ID {
+				resp.Domain = domList[i].Name
+				break
+			}
+		}
+		out = append(out, resp)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": out})
 }
@@ -494,10 +508,10 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 	fresh, _ := h.cfg.Repo.FindByID(ctx, app.ID)
 	ports, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
 	if fresh != nil {
-		c.JSON(http.StatusCreated, installedResponse{DockerApp: *fresh, Ports: ports})
+		c.JSON(http.StatusCreated, installedResponse{DockerApp: *fresh, Ports: ports, Domain: req.Domain})
 		return
 	}
-	c.JSON(http.StatusCreated, installedResponse{DockerApp: *app, Ports: ports})
+	c.JSON(http.StatusCreated, installedResponse{DockerApp: *app, Ports: ports, Domain: req.Domain})
 }
 
 func (h *userDockerAppHandler) failInstall(c *gin.Context, appID, code string, err error) {
