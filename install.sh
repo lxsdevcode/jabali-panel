@@ -4585,6 +4585,18 @@ EOF
   # (commands/staging_tmp.go, commit 29823c3).
   install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/jabali-uploads
 
+  # GH #425: reap abandoned upload staging files (chunked uploads with no final
+  # chunk) so a tenant can't slowly fill the service partition shared with
+  # MariaDB + panel state. systemd-tmpfiles-clean.timer runs daily; 'e' removes
+  # files older than the age from the (existing) dir. Active uploads are written
+  # on every chunk so their mtime stays young until the upload is abandoned.
+  local uploads_reaper=/etc/tmpfiles.d/jabali-uploads-reaper.conf
+  local uploads_reaper_rule='e /var/lib/jabali-uploads - - - 12h'
+  if [[ ! -f "$uploads_reaper" ]] || ! cmp -s <(printf '%s\n' "$uploads_reaper_rule") "$uploads_reaper"; then
+    printf '%s\n' "$uploads_reaper_rule" > "$uploads_reaper"
+    systemd-tmpfiles --clean "$uploads_reaper" 2>/dev/null || true
+  fi
+
   systemctl daemon-reload
   systemctl enable --quiet "$AGENT_SERVICE_NAME.service"
   systemctl enable --quiet "$SERVICE_NAME.service"

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 
 	"github.com/gin-gonic/gin"
@@ -53,6 +54,38 @@ func uploadStagingPrefix() string { return uploadStagingDir + "/jabali-upload-" 
 // no-op when install.sh's install -d already created the dir.
 func ensureUploadStagingDir() error {
 	return os.MkdirAll(uploadStagingDir, 0o750)
+}
+
+// maxInFlightUploadsPerUser caps how many chunked staging files one tenant may
+// have on disk at once (Gitea #425 — a single account must not be able to fill
+// the service partition shared with MariaDB + panel state).
+const maxInFlightUploadsPerUser = 5
+
+// userStagingTag is a stable, non-secret per-user basename component that lets
+// the concurrency cap glob a single tenant's in-flight staging files without
+// any in-memory state. Distinct users -> distinct tags.
+func userStagingTag(userID string) string {
+	sum := sha256.Sum256([]byte("jabali-upload-user:" + userID))
+	return hex.EncodeToString(sum[:6])
+}
+
+// chunkStagingPath derives the chunked-upload staging path from the
+// AUTHENTICATED user plus the client upload_id. Because the path depends on the
+// server-side userID, one tenant can never compute — and therefore never write
+// into or read — another tenant's staging file even if they learn the upload_id
+// (Gitea #426). The basename stays a flat "jabali-upload-…" with no "/", so it
+// still satisfies the agent-side ingest prefix gate.
+func chunkStagingPath(userID, uploadID string) string {
+	sum := sha256.Sum256([]byte("jabali-upload:" + userID + ":" + uploadID))
+	return uploadStagingPrefix() + userStagingTag(userID) + "-" + hex.EncodeToString(sum[:])
+}
+
+// countUserInFlightUploads counts a tenant's current chunked staging files via a
+// glob of their tag prefix — the per-user concurrency cap for #425, no shared
+// state, survives restarts.
+func countUserInFlightUploads(userID string) int {
+	m, _ := filepath.Glob(uploadStagingPrefix() + userStagingTag(userID) + "-*")
+	return len(m)
 }
 
 // Agent param struct types. JSON tags must match panel-agent/internal/commands/files_*.go
@@ -935,14 +968,55 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": err.Error()})
 		return
 	}
-	tmpPath := uploadStagingPrefix() + uploadID
+	// #426: the staging path is derived from the authenticated user, so a
+	// different tenant who learns this upload_id cannot target this file.
+	tmpPath := chunkStagingPath(userID, uploadID)
 
-	// Open for read-write-create; APPEND is wrong here because the
-	// client may re-send a chunk after a network blip — we want to
-	// position by offset, not seek-to-end.
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE, 0o600)
+	// #425: per-user in-flight concurrency cap, checked when a NEW upload begins
+	// (offset 0 and the staging file doesn't exist yet).
+	if offset == 0 {
+		if _, statErr := os.Stat(tmpPath); errors.Is(statErr, os.ErrNotExist) {
+			if countUserInFlightUploads(userID) >= maxInFlightUploadsPerUser {
+				c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_uploads"})
+				return
+			}
+		}
+	}
+
+	// #426: first chunk creates O_EXCL (a fresh session); later chunks require
+	// the staging file to already exist. The offset must equal the current file
+	// size — no holes, no mid-file overwrite, no cross-session content injection.
+	openFlags := os.O_WRONLY
+	if offset == 0 {
+		openFlags |= os.O_CREATE | os.O_EXCL
+	}
+	f, err := os.OpenFile(tmpPath, openFlags, 0o600)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": err.Error()})
+		if offset == 0 && errors.Is(err, os.ErrExist) {
+			// Idempotent retry of the first chunk after a blip: reopen and let
+			// the offset/size check below decide.
+			f, err = os.OpenFile(tmpPath, os.O_WRONLY, 0o600)
+		}
+		if err != nil {
+			if offset > 0 && errors.Is(err, os.ErrNotExist) {
+				c.JSON(http.StatusConflict, gin.H{"error": "upload_not_found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": err.Error()})
+			return
+		}
+	}
+	fi, statErr := f.Stat()
+	if statErr != nil {
+		f.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": statErr.Error()})
+		return
+	}
+	if offset != fi.Size() {
+		// Reject holes / mid-file overwrites; client must resume from the actual
+		// size (query upload-chunk-status).
+		f.Close()
+		c.JSON(http.StatusConflict, gin.H{"error": "bad_offset", "expected": fi.Size()})
 		return
 	}
 	if _, err := f.Seek(offset, 0); err != nil {
@@ -999,7 +1073,8 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 // random UUIDs the risk is limited to the client leaking its own id,
 // which would already be in their localStorage anyway.
 func (h *filesHandler) uploadChunkStatus(c *gin.Context) {
-	if _, _, ok := h.requireClaimsAndUsername(c); !ok {
+	userID, _, ok := h.requireClaimsAndUsername(c)
+	if !ok {
 		return
 	}
 	uploadID := c.Query("upload_id")
@@ -1007,7 +1082,8 @@ func (h *filesHandler) uploadChunkStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_upload_id"})
 		return
 	}
-	tmpPath := uploadStagingPrefix() + uploadID
+	// Per-user path (#426): a tenant can only stat their OWN staging files.
+	tmpPath := chunkStagingPath(userID, uploadID)
 	info, err := os.Stat(tmpPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
