@@ -92,6 +92,7 @@ type updateServerSettingsRequest struct {
 	SSHPasswordAuth              *bool   `json:"ssh_password_auth,omitempty"`
 	SSHUserPasswordAuth          *bool   `json:"ssh_user_password_auth,omitempty"`
 	PanelBrandText               *string `json:"panel_brand_text,omitempty"`
+	PanelFontSize                *string `json:"panel_font_size,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
@@ -279,6 +280,19 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.PanelBrandText != nil {
 		current.PanelBrandText = strings.TrimSpace(*req.PanelBrandText)
+	}
+	if req.PanelFontSize != nil {
+		v := strings.TrimSpace(*req.PanelFontSize)
+		switch v {
+		case "small", "medium", "large":
+			current.PanelFontSize = v
+		default:
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_panel_font_size",
+				"message": "must be one of: small, medium, large",
+			})
+			return
+		}
 	}
 	if req.DiskQuotaEnabled != nil {
 		current.DiskQuotaEnabled = *req.DiskQuotaEnabled

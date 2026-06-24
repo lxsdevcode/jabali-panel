@@ -73,6 +73,9 @@ type ServerSettings struct {
 	LogoLightPath  string `gorm:"column:logo_light_path;type:varchar(255);not null;default:''" json:"logo_light_path"`
 	LogoDarkPath   string `gorm:"column:logo_dark_path;type:varchar(255);not null;default:''"  json:"logo_dark_path"`
 
+	// #433 panel font-size: "small" | "medium" | "large" (medium = default).
+	PanelFontSize string `gorm:"column:panel_font_size;type:varchar(10);not null;default:'medium'" json:"panel_font_size"`
+
 	// M26 AppSec geoblock (migration 000067). Server-wide rule applied
 	// by crowdsec AppSec. Mode ∈ {"off", "allow", "deny"}:
 	//   off   — rule file written with no filter; all traffic passes

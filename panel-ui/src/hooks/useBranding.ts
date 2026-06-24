@@ -9,6 +9,7 @@ import { apiClient } from "../apiClient";
 
 type BrandingInfo = {
   panel_brand_text: string;
+  panel_font_size: string;
   has_logo_light: boolean;
   has_logo_dark: boolean;
 };
@@ -27,11 +28,16 @@ export function useBranding() {
   });
 
   const brandText = query.data?.panel_brand_text ?? "";
+  const fontSize = (query.data?.panel_font_size ?? "medium") as
+    | "small"
+    | "medium"
+    | "large";
   const hasLogoLight = query.data?.has_logo_light ?? false;
   const hasLogoDark = query.data?.has_logo_dark ?? false;
 
   return {
     brandText,
+    fontSize,
     hasLogoLight,
     hasLogoDark,
     isLoading: query.isLoading,

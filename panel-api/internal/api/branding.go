@@ -1,12 +1,12 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
-	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,6 +77,7 @@ type brandingHandler struct{ cfg BrandingHandlerConfig }
 
 type brandingInfoResponse struct {
 	PanelBrandText string `json:"panel_brand_text"`
+	PanelFontSize  string `json:"panel_font_size"`
 	HasLogoLight   bool   `json:"has_logo_light"`
 	HasLogoDark    bool   `json:"has_logo_dark"`
 }
@@ -93,6 +94,7 @@ func (h *brandingHandler) publicInfo(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, brandingInfoResponse{
 		PanelBrandText: s.PanelBrandText,
+		PanelFontSize:  fontSizeOrDefault(s.PanelFontSize),
 		HasLogoLight:   s.LogoLightPath != "" && fileExists(s.LogoLightPath),
 		HasLogoDark:    s.LogoDarkPath != "" && fileExists(s.LogoDarkPath),
 	})
@@ -224,7 +226,7 @@ func (h *brandingHandler) upload(c *gin.Context) {
 		return
 	}
 
-	h.cfg.Log.Info("event=audit kind=branding_logo_uploaded actor_id="+claims.UserID+" variant="+variant+" ext="+ext)
+	h.cfg.Log.Info("event=audit kind=branding_logo_uploaded actor_id=" + claims.UserID + " variant=" + variant + " ext=" + ext)
 	h.syncWebmailBranding(current.PanelBrandText)
 	c.JSON(http.StatusOK, gin.H{"variant": variant, "ext": ext})
 }
@@ -327,4 +329,15 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+// fontSizeOrDefault normalizes a possibly-empty/legacy panel_font_size to one of
+// the three allowed values (#433), defaulting to "medium".
+func fontSizeOrDefault(v string) string {
+	switch v {
+	case "small", "large":
+		return v
+	default:
+		return "medium"
+	}
 }

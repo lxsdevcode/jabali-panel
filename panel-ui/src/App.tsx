@@ -38,7 +38,7 @@ import { AdminIPList } from "./shells/admin/ips/AdminIPList";
 import { AdminMailPage } from "./shells/admin/mail/AdminMailPage";
 import { AdminAuditList } from "./shells/admin/audit/AdminAuditList";
 import { NotificationsTabsPage } from "./shells/admin/notifications/NotificationsTabsPage";
-import { useApplyBrandingToTitle } from "./hooks/useBranding";
+import { useApplyBrandingToTitle, useBranding } from "./hooks/useBranding";
 import { AdminSecurityPage } from "./shells/admin/security/AdminSecurityPage";
 import { ServerStatusPage } from "./shells/admin/server-status/ServerStatusPage";
 import { MailDeliverabilityPage } from "./shells/admin/mail/MailDeliverabilityPage";
@@ -133,14 +133,26 @@ const BrandingTitleApplier = () => {
   return null;
 };
 
+const PANEL_FONT_PX: Record<string, number> = { small: 13, medium: 15, large: 17 };
+
 const ThemedApp = () => {
   const { mode } = useThemeMode();
   const muiConfig = useMuiTheme(mode);
+  const { fontSize } = useBranding();
+  // #433: branding-driven panel font size overrides the seed token so antd
+  // scales every size-derived token (fontSizeSM/LG, line-height, controls).
+  const themedConfig = {
+    ...muiConfig,
+    theme: {
+      ...muiConfig.theme,
+      token: { ...muiConfig.theme?.token, fontSize: PANEL_FONT_PX[fontSize] ?? 15 },
+    },
+  };
 
   return (
     <BrowserRouter>
       <ConfigProvider
-        {...muiConfig}
+        {...themedConfig}
         renderEmpty={() => <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
       >
         <AntdApp>
