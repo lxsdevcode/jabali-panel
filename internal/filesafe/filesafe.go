@@ -22,16 +22,16 @@ import (
 
 // Error codes for structured error reporting (suitable for API "error" field).
 const (
-	ErrCodeEmpty              = "empty"
-	ErrCodeTooLong            = "too_long"              // >4096 bytes
-	ErrCodeNotAbsolute        = "not_absolute"         // path not absolute
-	ErrCodeContainsNull       = "contains_null"        // NUL byte in path
-	ErrCodeContainsControl    = "contains_control"     // control character in path
-	ErrCodeTraversal          = "path_traversal"       // .. or other traversal attempt
-	ErrCodeSymlinkEscape      = "symlink_escape"       // symlink points outside scope
-	ErrCodeNotInScope         = "not_in_scope"         // path not within owned docroots
-	ErrCodeSymlinkLoop        = "symlink_loop"         // circular symlink chain
-	ErrCodeBadCharacters      = "bad_characters"       // invalid filename characters
+	ErrCodeEmpty           = "empty"
+	ErrCodeTooLong         = "too_long"         // >4096 bytes
+	ErrCodeNotAbsolute     = "not_absolute"     // path not absolute
+	ErrCodeContainsNull    = "contains_null"    // NUL byte in path
+	ErrCodeContainsControl = "contains_control" // control character in path
+	ErrCodeTraversal       = "path_traversal"   // .. or other traversal attempt
+	ErrCodeSymlinkEscape   = "symlink_escape"   // symlink points outside scope
+	ErrCodeNotInScope      = "not_in_scope"     // path not within owned docroots
+	ErrCodeSymlinkLoop     = "symlink_loop"     // circular symlink chain
+	ErrCodeBadCharacters   = "bad_characters"   // invalid filename characters
 )
 
 // ValidationError is the error type returned by validators.
@@ -154,11 +154,16 @@ func (s *Scope) Resolve(pathStr string) (string, error) {
 		return "", err
 	}
 
-	// EvalSymlinks does up to 40 iterations of symlink resolution
-	// If the path doesn't exist, it still cleans it and we verify the cleaned path
-	resolved := cleaned
-	if realPath, err := filepath.EvalSymlinks(cleaned); err == nil {
-		resolved = realPath
+	// SECURITY (Gitea #424): canonicalize by resolving the NEAREST EXISTING
+	// ancestor and re-appending the non-existent tail, failing CLOSED on any
+	// EvalSymlinks error other than "doesn't exist". The previous code did
+	// EvalSymlinks(cleaned) and, on ANY error (ENOENT for every new-file create
+	// and the .tmp.<rand> name), silently fell back to the LOGICAL path — so a
+	// tenant-planted PARENT symlink was never collapsed and verifyInScope passed
+	// on a prefix that didn't reflect where the bytes actually land.
+	resolved, err := s.resolveNearest(cleaned)
+	if err != nil {
+		return "", err
 	}
 
 	// Verify resolved path is still in scope (symlink escape detection)
@@ -299,5 +304,42 @@ func (s *Scope) verifyInScope(pathStr string) error {
 	return &ValidationError{
 		Code:   ErrCodeNotInScope,
 		Detail: fmt.Sprintf("path %q is not within owned docroots: %v", pathStr, s.OwnedDocroots),
+	}
+}
+
+// resolveNearest canonicalizes cleaned by EvalSymlinks-resolving its nearest
+// EXISTING ancestor and re-joining the (guaranteed non-existent, hence
+// symlink-free) tail. It fails CLOSED on any EvalSymlinks error other than the
+// component simply not existing (ENOENT) — an EACCES/ELOOP is returned, never
+// swallowed into a logical-path fallback (Gitea #424). The canonical ancestor
+// must itself stay in scope, so a parent symlink pointing out of the docroot is
+// rejected even when the final component does not yet exist.
+func (s *Scope) resolveNearest(cleaned string) (string, error) {
+	dir := cleaned
+	var tailParts []string
+	for {
+		real, err := filepath.EvalSymlinks(dir)
+		if err == nil {
+			if verr := s.verifyInScope(real); verr != nil {
+				return "", verr
+			}
+			out := real
+			for i := len(tailParts) - 1; i >= 0; i-- {
+				out = filepath.Join(out, tailParts[i])
+			}
+			return out, nil
+		}
+		if !os.IsNotExist(err) {
+			// EACCES, ELOOP (symlink loop / too many levels), etc. — fail closed.
+			return "", &ValidationError{Code: ErrCodeSymlinkEscape, Detail: fmt.Sprintf("cannot resolve %q: %v", dir, err)}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached "/" with no existing ancestor — impossible for an in-scope
+			// path (the docroot exists); fail closed.
+			return "", &ValidationError{Code: ErrCodeNotInScope, Detail: fmt.Sprintf("no existing ancestor for %q", cleaned)}
+		}
+		tailParts = append(tailParts, filepath.Base(dir))
+		dir = parent
 	}
 }

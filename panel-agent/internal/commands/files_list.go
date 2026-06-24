@@ -23,13 +23,13 @@ type filesListParams struct {
 // the expand chevron on folders with no subfolders. Computed via one
 // ReadDir per directory — OS dcache keeps the cost negligible.
 type filesListEntry struct {
-	Name        string `json:"name"`
-	IsDir       bool   `json:"is_dir"`
-	Size        int64  `json:"size"`
-	Mode        string `json:"mode"`
-	ModTime     string `json:"mod_time"`
-	IsSymlink   bool   `json:"is_symlink"`
-	HasSubdirs  bool   `json:"has_subdirs,omitempty"`
+	Name       string `json:"name"`
+	IsDir      bool   `json:"is_dir"`
+	Size       int64  `json:"size"`
+	Mode       string `json:"mode"`
+	ModTime    string `json:"mod_time"`
+	IsSymlink  bool   `json:"is_symlink"`
+	HasSubdirs bool   `json:"has_subdirs,omitempty"`
 }
 
 // filesListResponse is the output shape for files.list.
@@ -71,8 +71,11 @@ func filesListHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Validate and resolve path
-	resolvedPath, err := scope.Resolve(p.Path)
+	// String-gate the path; the listing is escape-proof — the directory is
+	// opened under openat2 RESOLVE_BENEATH and every entry is fstatat'd against
+	// that fd with AT_SYMLINK_NOFOLLOW, so neither the dir nor any entry can be
+	// redirected by a planted symlink (Gitea #428).
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -80,8 +83,7 @@ func filesListHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Open directory
-	entries, err := os.ReadDir(resolvedPath)
+	entries, err := scope.ReadDirInScope(cleanPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -89,40 +91,27 @@ func filesListHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Convert entries (use Lstat to avoid symlink traversal)
 	result := []filesListEntry{}
 	for _, entry := range entries {
-		// Use Lstat to avoid following symlinks
-		entryPath := filepath.Join(resolvedPath, entry.Name())
-		info, err := os.Lstat(entryPath)
-		if err != nil {
-			// Skip entries we can't stat
-			continue
-		}
-		isDir := info.IsDir()
-		isLink := (info.Mode() & os.ModeSymlink) != 0
-		// Peek into each real directory for at least one subdir so the
-		// tree UI can hide the expand chevron on leaves. Errors (perm
-		// denied, raced unlink, etc.) default to false — if the user
-		// can't see inside, a chevron they can't use is worse than a
-		// missing one they don't need.
+		// Peek into each real directory for at least one subdir so the tree UI
+		// can hide the expand chevron on leaves. Cosmetic hint only.
 		hasSubdirs := false
-		if isDir && !isLink {
-			hasSubdirs = dirHasSubdir(entryPath)
+		if entry.IsDir && !entry.IsSymlink {
+			hasSubdirs = dirHasSubdir(filepath.Join(cleanPath, entry.Name))
 		}
 		result = append(result, filesListEntry{
-			Name:       entry.Name(),
-			IsDir:      isDir,
-			Size:       info.Size(),
-			Mode:       info.Mode().String(),
-			ModTime:    info.ModTime().String(),
-			IsSymlink:  isLink,
+			Name:       entry.Name,
+			IsDir:      entry.IsDir,
+			Size:       entry.Size,
+			Mode:       entry.Mode.String(),
+			ModTime:    entry.ModTime.String(),
+			IsSymlink:  entry.IsSymlink,
 			HasSubdirs: hasSubdirs,
 		})
 	}
 
 	return &filesListResponse{
-		Path:    resolvedPath,
+		Path:    cleanPath,
 		Entries: result,
 	}, nil
 }

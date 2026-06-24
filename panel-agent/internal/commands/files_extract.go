@@ -68,7 +68,7 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("failed to create scope: %v", err)}
 	}
 
-	archivePath, err := scope.Resolve(p.Path)
+	cleanArchive, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("path validation failed: %v", err)}
 	}
@@ -78,11 +78,13 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 	if strings.TrimSpace(destRel) == "" {
 		destRel = filepath.Dir(p.Path)
 	}
-	destDir, err := scope.Resolve(destRel)
+	destDir, err := scope.Clean(destRel)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("destination validation failed: %v", err)}
 	}
-	if fi, err := os.Stat(destDir); err != nil || !fi.IsDir() {
+	// Verify the destination is an existing directory via the escape-proof stat,
+	// not an os.Stat(string) that re-resolves a swapped parent.
+	if di, derr := scope.StatInScope(destDir); derr != nil || !di.IsDir {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "destination is not a directory"}
 	}
 
@@ -90,7 +92,12 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 
 	ex := &extractor{scope: scope, destDir: destDir, uid: uid, gid: gid}
 
-	f, err := scope.Open(p.Path, os.O_RDONLY, 0)
+	// SECURITY (Gitea #423): open the archive through the escape-proof fd. The
+	// previous scope.Open(p.Path) / zip.OpenReader(path) re-resolved the path and
+	// followed a tenant-planted PARENT symlink, letting a tenant read another
+	// tenant's / root's archive. OpenInScope (RESOLVE_BENEATH) cannot be
+	// redirected out of the docroot.
+	f, err := scope.OpenInScope(cleanArchive, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeNotFound, Message: fmt.Sprintf("failed to open archive: %v", err)}
 	}
@@ -99,7 +106,7 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 	lower := strings.ToLower(p.Path)
 	switch {
 	case strings.HasSuffix(lower, ".zip"):
-		err = ex.unzip(archivePath)
+		err = ex.unzip(f)
 	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
 		var gz *gzip.Reader
 		if gz, err = gzip.NewReader(f); err == nil {
@@ -227,12 +234,16 @@ func (ex *extractor) countGuard() error {
 	return nil
 }
 
-func (ex *extractor) unzip(archivePath string) error {
-	zr, err := zip.OpenReader(archivePath)
+func (ex *extractor) unzip(f *os.File) error {
+	// Random-access zip read straight from the escape-proof fd (no path reopen).
+	fi, err := f.Stat()
+	if err != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("stat archive: %v", err)}
+	}
+	zr, err := zip.NewReader(f, fi.Size())
 	if err != nil {
 		return &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("not a valid zip: %v", err)}
 	}
-	defer zr.Close()
 	for _, zf := range zr.File {
 		if err := ex.countGuard(); err != nil {
 			return err

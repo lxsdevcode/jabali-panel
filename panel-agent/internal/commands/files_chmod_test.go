@@ -76,9 +76,10 @@ func TestParseChmodMode(t *testing.T) {
 		{"0o644", "0644"},
 		{"0O755", "0755"},
 		{"755", "0755"},
-		{"4755", "4755"}, // setuid — allowed
-		{"2755", "2755"}, // setgid — allowed
-		{"1777", "1777"}, // sticky — allowed
+		{"4755", "0755"}, // setuid — STRIPPED (Gitea #429)
+		{"2755", "0755"}, // setgid — STRIPPED (Gitea #429)
+		{"6755", "0755"}, // setuid+setgid — both stripped
+		{"1777", "1777"}, // sticky — preserved
 		{"0", "0000"},
 		{"100644", ""}, // file-type bits rejected
 		{"10000", ""},  // above 07777 rejected

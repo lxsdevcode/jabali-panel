@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/user"
 	"strconv"
 
@@ -59,8 +58,10 @@ func filesMkdirHandler(ctx context.Context, params json.RawMessage) (any, error)
 		}
 	}
 
-	// Validate and resolve path
-	resolvedPath, err := scope.Resolve(p.Path)
+	// String-gate the path; the directory is created escape-proof (mkdirat /
+	// openat(O_NOFOLLOW) descent against the base fd), so a parent-symlink swap
+	// can't redirect a root-side mkdir (Gitea #424 / #428).
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -68,25 +69,16 @@ func filesMkdirHandler(ctx context.Context, params json.RawMessage) (any, error)
 		}
 	}
 
-	// Create directory with temp permissions (0700), then set final perms + chown
-	var mkdirErr error
-	if p.Mode == "parents" {
-		mkdirErr = os.MkdirAll(resolvedPath, 0700)
-	} else {
-		mkdirErr = os.Mkdir(resolvedPath, 0700)
+	created, err := scope.MkdirInScope(cleanPath, p.Mode == "parents", 0700)
+	if err != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInternal,
+			Message: fmt.Sprintf("failed to create directory: %v", err),
+		}
 	}
 
-	if mkdirErr != nil {
-		// If already exists, return success (idempotent)
-		if !os.IsExist(mkdirErr) {
-			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("failed to create directory: %v", mkdirErr),
-			}
-		}
-		// Directory already exists; adjust ownership if needed
-	} else {
-		// New directory created; set ownership and permissions
+	if created {
+		// New directory: set ownership (user:www-data) and 0750 via the dir fd.
 		u, err := user.Lookup(p.Username)
 		if err != nil {
 			return nil, &agentwire.AgentError{
@@ -96,34 +88,39 @@ func filesMkdirHandler(ctx context.Context, params json.RawMessage) (any, error)
 		}
 		uid, _ := strconv.Atoi(u.Uid)
 		gid, _ := strconv.Atoi(u.Gid)
-
-		// Chown to user:www-data
-		wwwDataGroup, err := user.LookupGroup("www-data")
 		wwwDataGid := gid
-		if err == nil {
-			wwwDataGid, _ = strconv.Atoi(wwwDataGroup.Gid)
+		if g, gerr := user.LookupGroup("www-data"); gerr == nil {
+			wwwDataGid, _ = strconv.Atoi(g.Gid)
 		}
 
-		if err := os.Chown(resolvedPath, uid, wwwDataGid); err != nil {
+		df, derr := scope.OpenDirInScope(cleanPath)
+		if derr != nil {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInternal,
+				Message: fmt.Sprintf("failed to open new directory: %v", derr),
+			}
+		}
+		if err := df.Chown(uid, wwwDataGid); err != nil {
+			df.Close()
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
 				Message: fmt.Sprintf("failed to chown directory: %v", err),
 			}
 		}
-
-		// Chmod to 0750: owner rwx, www-data group r-x (nginx reads static + traverses),
-		// other none. Matches deployed docroot perms; blocks cross-user shell reads.
-		if err := os.Chmod(resolvedPath, 0750); err != nil {
+		// 0750: owner rwx, www-data group r-x (nginx static read + traverse).
+		if err := df.Chmod(0750); err != nil {
+			df.Close()
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
 				Message: fmt.Sprintf("failed to chmod directory: %v", err),
 			}
 		}
+		df.Close()
 	}
 
 	return &filesMkdirResponse{
-		Path:    resolvedPath,
-		Created: mkdirErr == nil,
+		Path:    cleanPath,
+		Created: created,
 	}, nil
 }
 

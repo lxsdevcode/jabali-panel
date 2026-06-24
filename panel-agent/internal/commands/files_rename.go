@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
@@ -65,8 +64,9 @@ func filesRenameHandler(ctx context.Context, params json.RawMessage) (any, error
 		}
 	}
 
-	// Validate and resolve both paths
-	oldPath, err := scope.Resolve(p.OldPath)
+	// String-gate both paths; the rename act is escape-proof (renameat between
+	// openat2 parent fds), closing the TOCTOU parent-swap (Gitea #428).
+	oldClean, err := scope.Clean(p.OldPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -74,7 +74,7 @@ func filesRenameHandler(ctx context.Context, params json.RawMessage) (any, error
 		}
 	}
 
-	newPath, err := scope.Resolve(p.NewPath)
+	newClean, err := scope.Clean(p.NewPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -83,17 +83,21 @@ func filesRenameHandler(ctx context.Context, params json.RawMessage) (any, error
 	}
 
 	// Validate that both paths share the same parent directory
-	oldParent := filepath.Dir(oldPath)
-	newParent := filepath.Dir(newPath)
-	if oldParent != newParent {
+	if filepath.Dir(oldClean) != filepath.Dir(newClean) {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
 			Message: "rename across directories not allowed",
 		}
 	}
 
-	// Prevent overwriting existing target
-	if _, err := os.Lstat(newPath); err == nil {
+	// Prevent overwriting existing target — checked through the escape-proof
+	// parent fd, not an os.Lstat(string) that re-resolves a swapped parent.
+	if existing, err := scope.ExistsInScope(newClean); err != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInternal,
+			Message: fmt.Sprintf("failed to stat target: %v", err),
+		}
+	} else if existing != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
 			Message: "target path already exists",
@@ -101,7 +105,7 @@ func filesRenameHandler(ctx context.Context, params json.RawMessage) (any, error
 	}
 
 	// Rename file
-	if err := os.Rename(oldPath, newPath); err != nil {
+	if err := scope.RenameInScope(oldClean, newClean); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to rename: %v", err),
@@ -109,8 +113,8 @@ func filesRenameHandler(ctx context.Context, params json.RawMessage) (any, error
 	}
 
 	return &filesRenameResponse{
-		OldPath: oldPath,
-		NewPath: newPath,
+		OldPath: oldClean,
+		NewPath: newClean,
 		Renamed: true,
 	}, nil
 }

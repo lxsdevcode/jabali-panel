@@ -12,10 +12,10 @@ import (
 
 // filesDeleteParams is the input shape for files.delete.
 type filesDeleteParams struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Path     string `json:"path"`
-	Recursive bool  `json:"recursive,omitempty"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	Path      string `json:"path"`
+	Recursive bool   `json:"recursive,omitempty"`
 }
 
 // filesDeleteResponse is the output shape for files.delete.
@@ -57,8 +57,10 @@ func filesDeleteHandler(ctx context.Context, params json.RawMessage) (any, error
 		}
 	}
 
-	// Validate and resolve path
-	resolvedPath, err := scope.Resolve(p.Path)
+	// String-gate the path; the unlink act is escape-proof (unlinkat / fd-descent
+	// against openat2 parent fds), so os.RemoveAll's string re-resolution can't
+	// be redirected through a swapped parent symlink (Gitea #428).
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -68,7 +70,7 @@ func filesDeleteHandler(ctx context.Context, params json.RawMessage) (any, error
 
 	// Prevent deletion of docroot roots themselves
 	for _, docroot := range scope.OwnedDocroots {
-		if resolvedPath == docroot {
+		if cleanPath == docroot {
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeInvalidArgument,
 				Message: "cannot delete docroot directory",
@@ -76,12 +78,18 @@ func filesDeleteHandler(ctx context.Context, params json.RawMessage) (any, error
 		}
 	}
 
-	// Delete file or directory
+	// Delete file or directory, escape-proof.
 	var deleteErr error
 	if p.Recursive {
-		deleteErr = os.RemoveAll(resolvedPath)
+		deleteErr = scope.RemoveAllInScope(cleanPath)
 	} else {
-		deleteErr = os.Remove(resolvedPath)
+		// Non-recursive: AT_REMOVEDIR needs to know if the leaf is a dir.
+		info, serr := scope.ExistsInScope(cleanPath)
+		if serr != nil {
+			deleteErr = serr
+		} else if info != nil {
+			deleteErr = scope.RemoveInScope(cleanPath, info.IsDir)
+		}
 	}
 
 	if deleteErr != nil {
@@ -95,7 +103,7 @@ func filesDeleteHandler(ctx context.Context, params json.RawMessage) (any, error
 	}
 
 	return &filesDeleteResponse{
-		Path:    resolvedPath,
+		Path:    cleanPath,
 		Deleted: true,
 	}, nil
 }

@@ -12,25 +12,23 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
-// files.ingest — take a file in the upload staging dir (written by
-// panel-api from an incoming chunked or streaming upload) and move it
-// into the user's scope at the requested destination path.
+// files.ingest — take a file in the upload staging dir (written by panel-api
+// from an incoming chunked or streaming upload) and move it into the user's
+// scope at the requested destination path.
 //
-// The `tmp_path` MUST start with "/var/lib/jabali-uploads/jabali-upload-"
-// so a malicious panel-api request can't coerce this command into
-// relocating, e.g., /etc/shadow into the user's homedir. panel-api
-// always writes into that prefix so this gate is a belt-and-braces
-// check against it being tricked via request tampering.
+// The `tmp_path` MUST start with "/var/lib/jabali-uploads/jabali-upload-" so a
+// malicious panel-api request can't coerce this command into relocating, e.g.,
+// /etc/shadow into the user's homedir. panel-api always writes into that prefix
+// so this gate is a belt-and-braces check against request tampering. That
+// staging dir is root-owned, flat, and contains no tenant-controlled symlinks,
+// so the source side is trusted; the DESTINATION is the attacker surface and is
+// resolved escape-proof (Gitea #427 — fourth parent-symlink escape sink).
 //
-// Why /var/lib/jabali-uploads and not /tmp: jabali-agent.service runs
-// with PrivateTmp=yes (install.sh) and so does jabali-panel-api.service.
-// Each service therefore has its own per-unit /tmp namespace, so a file
-// panel-api writes to /tmp is invisible to the agent. Same scar story
-// as the app-install staging path documented in
-// commands/staging_tmp.go (commit 29823c3) — uploads need the same
-// treatment, just on their own dedicated dir so the lifecycle (write,
-// ingest, delete) is independent of the long-lived staging dirs the
-// app installers reuse.
+// Why /var/lib/jabali-uploads and not /tmp: jabali-agent.service runs with
+// PrivateTmp=yes (install.sh) and so does jabali-panel-api.service. Each service
+// therefore has its own per-unit /tmp namespace, so a file panel-api writes to
+// /tmp is invisible to the agent. Same scar story as the app-install staging
+// path documented in commands/staging_tmp.go (commit 29823c3).
 
 type filesIngestParams struct {
 	UserID    string `json:"user_id"`
@@ -76,16 +74,23 @@ func filesIngestHandler(ctx context.Context, params json.RawMessage) (any, error
 			Message: fmt.Sprintf("scope: %v", err),
 		}
 	}
-	dst, err := scope.Resolve(p.DestPath)
+	dst, err := scope.Clean(p.DestPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
 			Message: fmt.Sprintf("dest_path validation failed: %v", err),
 		}
 	}
-	if fi, err := os.Lstat(dst); err == nil {
+
+	// Existence/collision check through the escape-proof parent fd.
+	existing, serr := scope.ExistsInScope(dst)
+	if serr != nil {
+		_ = os.Remove(p.TmpPath)
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("stat dest: %v", serr)}
+	}
+	if existing != nil {
 		// Never replace a directory with an uploaded file.
-		if fi.IsDir() {
+		if existing.IsDir {
 			_ = os.Remove(p.TmpPath)
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeFailedPrecondition,
@@ -94,50 +99,42 @@ func filesIngestHandler(ctx context.Context, params json.RawMessage) (any, error
 		}
 		if !p.Overwrite {
 			_ = os.Remove(p.TmpPath)
-			// "already_exists" token lets panel-api map this to HTTP 409 so
-			// the upload UI can offer overwrite / keep-both / cancel (GH #188).
+			// "already_exists" token lets panel-api map this to HTTP 409 so the
+			// upload UI can offer overwrite / keep-both / cancel (GH #188).
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeAlreadyExists,
 				Message: "already_exists: target path already exists",
 			}
 		}
-		// Overwrite a symlink by removing it first, so os.Rename replaces the
-		// link itself and the cross-fs fallback's create won't trip on it.
-		if fi.Mode()&os.ModeSymlink != 0 {
-			_ = os.Remove(dst)
+		// Overwrite: unlink the existing leaf (file or symlink) escape-proof so
+		// the rename/create below lands a fresh file, never writes THROUGH a
+		// planted symlink.
+		if rerr := scope.RemoveInScope(dst, false); rerr != nil && !os.IsNotExist(rerr) {
+			_ = os.Remove(p.TmpPath)
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("prepare overwrite: %v", rerr)}
 		}
 	}
 
-	// Try rename first — same filesystem, atomic. /tmp and user homedirs
-	// are typically on the same partition; if not, fall back to copy+unlink.
-	if err := os.Rename(p.TmpPath, dst); err == nil {
-		info, _ := os.Stat(dst)
-		size := int64(0)
-		if info != nil {
-			size = info.Size()
+	uid, gid := hostingIDs(p.Username)
+
+	// Try rename first — same filesystem, atomic. The destination parent is an
+	// openat2 fd; the source is the trusted staging file (renameat AT_FDCWD).
+	if err := scope.RenameIntoInScope(p.TmpPath, dst); err == nil {
+		size, cerr := finalizeIngest(scope, dst, uid, gid)
+		if cerr != nil {
+			return nil, cerr
 		}
-		// Chown transfers the bytes onto the target uid's quota. If that
-		// uid is already over limit, the kernel returns EDQUOT — classify
-		// so panel-api can surface a clear 'quota exceeded' instead of 500.
-		if err := chownIngestFile(dst, p.Username); err != nil {
-			_ = os.Remove(dst)
-			return nil, classifyFSWriteErr("chown_ingest", err)
-		}
-		_ = os.Chmod(dst, 0o644)
 		return &filesIngestResponse{DestPath: dst, Bytes: size}, nil
 	}
 
-	// Cross-filesystem fallback: copy the bytes, then unlink the source.
+	// Cross-filesystem fallback: copy the bytes into a fresh escape-proof file,
+	// then unlink the source.
 	in, err := os.Open(p.TmpPath)
 	if err != nil {
 		return nil, classifyFSWriteErr("open_tmp", err)
 	}
 	defer in.Close()
-	dstFlags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
-	if p.Overwrite {
-		dstFlags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-	}
-	out, err := os.OpenFile(dst, dstFlags, 0o644)
+	out, err := scope.CreateExclInScope(dst, 0o644)
 	if err != nil {
 		return nil, classifyFSWriteErr("open_dst", err)
 	}
@@ -146,21 +143,37 @@ func filesIngestHandler(ctx context.Context, params json.RawMessage) (any, error
 		err = cerr
 	}
 	if err != nil {
-		_ = os.Remove(dst)
+		_ = scope.RemoveInScope(dst, false)
 		return nil, classifyFSWriteErr("copy_dst", err)
 	}
 	_ = os.Remove(p.TmpPath)
-	if err := chownIngestFile(dst, p.Username); err != nil {
-		_ = os.Remove(dst)
-		return nil, classifyFSWriteErr("chown_ingest", err)
+	if _, cerr := finalizeIngest(scope, dst, uid, gid); cerr != nil {
+		return nil, cerr
 	}
 	return &filesIngestResponse{DestPath: dst, Bytes: size}, nil
 }
 
-// chownIngestFile sets the ingested file's owner/group to <user>:www-data,
-// matching the M9.5 ownership contract for files inside a user's homedir.
-func chownIngestFile(path, username string) error {
-	return chownToHostingUser(path, username)
+// finalizeIngest reopens the ingested file escape-proof and sets its
+// owner/group to <user>:www-data and mode 0644 via the fd (no path
+// re-resolution). chown is where an over-quota target surfaces EDQUOT — it is
+// classified so panel-api returns a clear 'quota exceeded' instead of 500.
+func finalizeIngest(scope *filesafe.Scope, dst string, uid, gid int) (int64, *agentwire.AgentError) {
+	f, err := scope.OpenInScope(dst, os.O_RDONLY, 0)
+	if err != nil {
+		_ = scope.RemoveInScope(dst, false)
+		return 0, classifyFSWriteErr("reopen_ingest", err)
+	}
+	defer f.Close()
+	var size int64
+	if fi, serr := f.Stat(); serr == nil {
+		size = fi.Size()
+	}
+	if err := f.Chown(uid, gid); err != nil {
+		_ = scope.RemoveInScope(dst, false)
+		return 0, classifyFSWriteErr("chown_ingest", err)
+	}
+	_ = f.Chmod(0o644)
+	return size, nil
 }
 
 func init() {

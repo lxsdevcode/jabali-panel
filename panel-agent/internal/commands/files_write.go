@@ -61,7 +61,7 @@ type filesWriteParams struct {
 
 // filesWriteResponse is the output shape for files.write.
 type filesWriteResponse struct {
-	Path      string `json:"path"`
+	Path         string `json:"path"`
 	BytesWritten int64  `json:"bytes_written"`
 }
 
@@ -107,8 +107,11 @@ func filesWriteHandler(ctx context.Context, params json.RawMessage) (any, error)
 		}
 	}
 
-	// Validate and resolve path
-	resolvedPath, err := scope.Resolve(p.Path)
+	// Validate path is in scope (string gate). The actual file ops below are
+	// performed against an escape-proof openat2 fd (RESOLVE_BENEATH), so a
+	// tenant-planted PARENT symlink can never redirect the root-side write
+	// (Gitea #421 / root cause #424).
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -137,10 +140,12 @@ func filesWriteHandler(ctx context.Context, params json.RawMessage) (any, error)
 				Message: fmt.Sprintf("failed to generate random suffix: %v", err),
 			}
 		}
-		tmpName := fmt.Sprintf("%s.tmp.%s", resolvedPath, hex.EncodeToString(randBytes))
+		tmpPath := fmt.Sprintf("%s.tmp.%s", cleanPath, hex.EncodeToString(randBytes))
 
-		// Create temp file with 0600 perms (read/write for owner only)
-		tmpFile, err := os.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		// Create the temp file via an escape-proof fd: O_CREAT|O_EXCL|O_NOFOLLOW
+		// against the openat2-resolved parent dir, so no parent symlink can
+		// redirect where the bytes land.
+		tmpFile, err := scope.CreateExclInScope(tmpPath, 0600)
 		if err != nil {
 			return nil, classifyFSWriteErr("create_tempfile", err)
 		}
@@ -149,50 +154,52 @@ func filesWriteHandler(ctx context.Context, params json.RawMessage) (any, error)
 		n, err := tmpFile.WriteString(p.Content)
 		if err != nil {
 			tmpFile.Close()
-			os.Remove(tmpName)
+			_ = scope.RemoveInScope(tmpPath, false)
 			return nil, classifyFSWriteErr("write_tempfile", err)
 		}
 
 		// Fsync to ensure data is written
 		if err := tmpFile.Sync(); err != nil {
 			tmpFile.Close()
-			os.Remove(tmpName)
+			_ = scope.RemoveInScope(tmpPath, false)
 			return nil, classifyFSWriteErr("sync_tempfile", err)
+		}
+
+		// Chown the OPEN fd to user:www-data (no path re-resolve). This is where
+		// EDQUOT typically surfaces on upload: agent wrote the bytes as root
+		// (unlimited quota), and the kernel re-charges the bytes to the target
+		// uid when ownership transfers. If the recipient is over quota, chown
+		// returns EDQUOT even though the write succeeded.
+		if err := tmpFile.Chown(uid, gid); err != nil {
+			tmpFile.Close()
+			_ = scope.RemoveInScope(tmpPath, false)
+			return nil, classifyFSWriteErr("chown_tempfile", err)
+		}
+
+		// Chmod to 0640 via the fd: owner rw, www-data group r (nginx static
+		// read), other none. Matches per-user FPM isolation.
+		if err := tmpFile.Chmod(0640); err != nil {
+			tmpFile.Close()
+			_ = scope.RemoveInScope(tmpPath, false)
+			return nil, classifyFSWriteErr("chmod_tempfile", err)
 		}
 
 		tmpFile.Close()
 
-		// Chown temp file to user:www-data. This is where EDQUOT
-		// typically surfaces on upload: agent wrote the bytes as root
-		// (unlimited quota), and the kernel re-charges the bytes to the
-		// target uid when ownership transfers. If the recipient is over
-		// quota, chown returns EDQUOT even though the write succeeded.
-		if err := os.Chown(tmpName, uid, gid); err != nil {
-			os.Remove(tmpName)
-			return nil, classifyFSWriteErr("chown_tempfile", err)
-		}
-
-		// Chmod to 0640: owner rw, www-data group r (nginx static read),
-		// other none. Matches per-user FPM isolation; blocks cross-user shell reads.
-		if err := os.Chmod(tmpName, 0640); err != nil {
-			os.Remove(tmpName)
-			return nil, classifyFSWriteErr("chmod_tempfile", err)
-		}
-
-		// Atomic rename
-		if err := os.Rename(tmpName, resolvedPath); err != nil {
-			os.Remove(tmpName)
+		// Atomic rename, escape-proof on BOTH parents (renameat between fds).
+		if err := scope.RenameInScope(tmpPath, cleanPath); err != nil {
+			_ = scope.RemoveInScope(tmpPath, false)
 			return nil, classifyFSWriteErr("rename_tempfile", err)
 		}
 
 		return &filesWriteResponse{
-			Path:         resolvedPath,
+			Path:         cleanPath,
 			BytesWritten: int64(n),
 		}, nil
 	}
 
-	// Append mode: open existing file or create new one
-	file, err := scope.Open(resolvedPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
+	// Append mode: open existing file or create new one, escape-proof.
+	file, err := scope.OpenInScope(cleanPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
 	if err != nil {
 		return nil, classifyFSWriteErr("open_append", err)
 	}
@@ -205,7 +212,7 @@ func filesWriteHandler(ctx context.Context, params json.RawMessage) (any, error)
 	}
 
 	return &filesWriteResponse{
-		Path:         resolvedPath,
+		Path:         cleanPath,
 		BytesWritten: int64(n),
 	}, nil
 }

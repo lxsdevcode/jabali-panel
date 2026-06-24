@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
@@ -61,7 +60,10 @@ func filesMoveHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	oldPath, err := scope.Resolve(p.OldPath)
+	// String-gate both paths; the rename act below is escape-proof (renameat
+	// between openat2 parent fds), so a parent-symlink swap can't redirect a
+	// root-side move (Gitea #422 / TOCTOU #428).
+	oldClean, err := scope.Clean(p.OldPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -69,7 +71,7 @@ func filesMoveHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	newPath, err := scope.Resolve(p.NewPath)
+	newClean, err := scope.Clean(p.NewPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -79,33 +81,36 @@ func filesMoveHandler(ctx context.Context, params json.RawMessage) (any, error) 
 
 	// Refuse no-op moves — the caller almost certainly dropped a row
 	// back onto itself or onto its own parent. Quiet success is confusing.
-	if oldPath == newPath {
+	if oldClean == newClean {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
 			Message: "source and destination are the same",
 		}
 	}
 
-	// Refuse moving a directory into itself (mv foo foo/bar). os.Rename
-	// would leave the filesystem in a surprising state, or error with
-	// EINVAL on some kernels; catching it here produces a clearer error.
-	if isDescendant(oldPath, newPath) {
+	// Refuse moving a directory into itself (mv foo foo/bar).
+	if isDescendant(oldClean, newClean) {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
 			Message: "cannot move into a subdirectory of itself",
 		}
 	}
 
-	// Prevent silent overwrite — if the user drags onto a folder that
-	// already contains a same-named child, surface it instead of clobbering.
-	if _, err := os.Lstat(newPath); err == nil {
+	// Prevent silent overwrite — check existence through the SAME escape-proof
+	// parent fd the rename will use, not an os.Lstat(string) that re-resolves.
+	if existing, err := scope.ExistsInScope(newClean); err != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInternal,
+			Message: fmt.Sprintf("failed to stat destination: %v", err),
+		}
+	} else if existing != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
 			Message: "target path already exists",
 		}
 	}
 
-	if err := os.Rename(oldPath, newPath); err != nil {
+	if err := scope.RenameInScope(oldClean, newClean); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to move: %v", err),
@@ -113,8 +118,8 @@ func filesMoveHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	}
 
 	return &filesMoveResponse{
-		OldPath: oldPath,
-		NewPath: newPath,
+		OldPath: oldClean,
+		NewPath: newClean,
 		Moved:   true,
 	}, nil
 }

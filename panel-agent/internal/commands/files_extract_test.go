@@ -50,7 +50,12 @@ func TestUnzipExtractsAndRejectsZipSlip(t *testing.T) {
 		"sub/world.txt": "earth",
 	})
 	ex := testExtractor(dest)
-	if err := ex.unzip(good); err != nil {
+	goodF, err := os.Open(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer goodF.Close()
+	if err := ex.unzip(goodF); err != nil {
 		t.Fatalf("good zip failed: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dest, "hello.txt")); string(b) != "hi" {
@@ -67,7 +72,12 @@ func TestUnzipExtractsAndRejectsZipSlip(t *testing.T) {
 	evil := filepath.Join(work, "evil.zip")
 	writeZip(t, evil, map[string]string{"../pwned.txt": "owned"})
 	ex2 := testExtractor(dest)
-	if err := ex2.unzip(evil); err == nil {
+	evilF, err := os.Open(evil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer evilF.Close()
+	if err := ex2.unzip(evilF); err == nil {
 		t.Errorf("zip-slip entry must be rejected")
 	}
 	if _, err := os.Stat(filepath.Join(work, "pwned.txt")); err == nil {

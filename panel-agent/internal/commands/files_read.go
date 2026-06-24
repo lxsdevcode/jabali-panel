@@ -79,8 +79,9 @@ func filesReadHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Validate and resolve path
-	resolvedPath, err := scope.Resolve(p.Path)
+	// String-gate the path; the open is escape-proof (openat2 RESOLVE_BENEATH),
+	// so a parent-symlink swap can't redirect a root-side read (Gitea #428).
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -88,8 +89,8 @@ func filesReadHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Open file safely (O_RDONLY)
-	file, err := scope.Open(resolvedPath, os.O_RDONLY, 0)
+	// Open file safely (O_RDONLY), escape-proof.
+	file, err := scope.OpenInScope(cleanPath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -121,7 +122,7 @@ func filesReadHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		!strings.Contains(mimeType, "javascript")
 
 	resp := &filesReadResponse{
-		Path:      resolvedPath,
+		Path:      cleanPath,
 		Truncated: truncated,
 		MimeType:  mimeType,
 		IsBinary:  isBinary,

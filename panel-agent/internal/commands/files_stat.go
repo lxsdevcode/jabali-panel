@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
@@ -60,8 +59,9 @@ func filesStatHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Validate and resolve path
-	resolvedPath, err := scope.Resolve(p.Path)
+	// String-gate the path; the stat is escape-proof (fstatat AT_SYMLINK_NOFOLLOW
+	// against the openat2 parent fd), closing the TOCTOU read (Gitea #428).
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -69,8 +69,7 @@ func filesStatHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Lstat file (don't follow symlinks)
-	info, err := os.Lstat(resolvedPath)
+	info, err := scope.StatInScope(cleanPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -79,12 +78,12 @@ func filesStatHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	}
 
 	return &filesStatResponse{
-		Path:      resolvedPath,
-		Size:      info.Size(),
-		Mode:      info.Mode().String(),
-		IsDir:     info.IsDir(),
-		ModTime:   info.ModTime().String(),
-		IsSymlink: (info.Mode() & os.ModeSymlink) != 0,
+		Path:      cleanPath,
+		Size:      info.Size,
+		Mode:      info.Mode.String(),
+		IsDir:     info.IsDir,
+		ModTime:   info.ModTime.String(),
+		IsSymlink: info.IsSymlink,
 	}, nil
 }
 

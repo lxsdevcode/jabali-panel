@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -56,6 +55,11 @@ func filesDuHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("scope: %v", err)}
 	}
+	// Resolve is now escape-proof at check time (fail-closed nearest-ancestor
+	// canonicalization, Gitea #424); entry metadata comes from the escape-proof
+	// ReadDirInScope (fstatat AT_SYMLINK_NOFOLLOW). The recursive-size `du`
+	// shell-out runs on the canonical path — a parent swap between resolve and
+	// exec is a residual on read-only size info only.
 	resolved, err := scope.Resolve(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("path validation failed: %v", err)}
@@ -77,19 +81,14 @@ func filesDuHandler(ctx context.Context, params json.RawMessage) (any, error) {
 		dirSizes[strings.TrimSpace(line[tab+1:])] = sz
 	}
 
-	entries, err := os.ReadDir(resolved)
+	entries, err := scope.ReadDirInScope(resolved)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("read dir: %v", err)}
 	}
 	result := []filesDuEntry{}
 	for _, e := range entries {
-		full := filepath.Join(resolved, e.Name())
-		info, lerr := os.Lstat(full)
-		if lerr != nil {
-			continue
-		}
-		isLink := (info.Mode() & os.ModeSymlink) != 0
-		isDir := info.IsDir() && !isLink
+		full := filepath.Join(resolved, e.Name)
+		isDir := e.IsDir && !e.IsSymlink
 		var size int64
 		hasSub := false
 		if isDir {
@@ -98,9 +97,9 @@ func filesDuHandler(ctx context.Context, params json.RawMessage) (any, error) {
 			}
 			hasSub = dirHasSubdir(full)
 		} else {
-			size = info.Size()
+			size = e.Size
 		}
-		result = append(result, filesDuEntry{Name: e.Name(), IsDir: isDir, Size: size, HasSubdirs: hasSub})
+		result = append(result, filesDuEntry{Name: e.Name, IsDir: isDir, Size: size, HasSubdirs: hasSub})
 	}
 	// Largest first — disk-usage view wants the heavy entries up top.
 	sort.SliceStable(result, func(i, j int) bool { return result[i].Size > result[j].Size })

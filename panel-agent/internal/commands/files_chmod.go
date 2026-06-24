@@ -66,7 +66,7 @@ func filesChmodHandler(ctx context.Context, params json.RawMessage) (any, error)
 			Message: fmt.Sprintf("failed to create scope: %v", err),
 		}
 	}
-	path, err := scope.Resolve(p.Path)
+	cleanPath, err := scope.Clean(p.Path)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
@@ -74,23 +74,16 @@ func filesChmodHandler(ctx context.Context, params json.RawMessage) (any, error)
 		}
 	}
 
-	// Lstat first — if it's a symlink we do NOT chase; we leave symlinks
-	// as-is rather than chmod-ing the target, which would be surprising.
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInvalidArgument,
-			Message: fmt.Sprintf("stat: %v", err),
+	// ChmodInScope opens the leaf O_NOFOLLOW against its escape-proof parent fd
+	// and Fchmods that fd — a symlink leaf is refused (never chased) and no
+	// parent-symlink swap can redirect the chmod (Gitea #428).
+	if err := scope.ChmodInScope(cleanPath, mode); err != nil {
+		if ve, ok := err.(*filesafe.ValidationError); ok && ve.Code == filesafe.ErrCodeSymlinkEscape {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInvalidArgument,
+				Message: "cannot chmod a symlink",
+			}
 		}
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInvalidArgument,
-			Message: "cannot chmod a symlink",
-		}
-	}
-
-	if err := os.Chmod(path, mode); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("chmod: %v", err),
@@ -98,17 +91,17 @@ func filesChmodHandler(ctx context.Context, params json.RawMessage) (any, error)
 	}
 
 	return &filesChmodResponse{
-		Path: path,
+		Path: cleanPath,
 		Mode: fmt.Sprintf("%04o", mode),
 	}, nil
 }
 
 // parseChmodMode accepts "0644", "644", "0o644" and returns an os.FileMode
-// masked to the low 12 bits (rwx for u/g/o plus setuid/setgid/sticky).
-// Any higher-bit characters (file-type bits like 0100000) are rejected
-// rather than silently stripped — if a caller sends `100644` they're
-// probably confused, and we'd rather surface that than silently do the
-// wrong thing. The 12-bit cap is the Linux chmod(2) contract.
+// masked to the low 12 bits, with the setuid and setgid bits FORCED OFF
+// (Gitea #429): a tenant must never be able to mark a file in their homedir
+// setuid/setgid via the file manager. The sticky bit is preserved (harmless,
+// and useful on shared upload dirs). Any higher-bit characters (file-type
+// bits like 0100000) are rejected rather than silently stripped.
 func parseChmodMode(s string) (os.FileMode, error) {
 	// Accept "0o" prefix for the TOML/Go-style writer; otherwise bare octal.
 	trimmed := s
@@ -122,6 +115,9 @@ func parseChmodMode(s string) (os.FileMode, error) {
 	if n > 0o7777 {
 		return 0, fmt.Errorf("mode out of range (max 0o7777): %q", s)
 	}
+	// Gitea #429: force setuid (0o4000) and setgid (0o2000) off — never settable
+	// through the file manager.
+	n &^= 0o6000
 	return os.FileMode(n), nil
 }
 
