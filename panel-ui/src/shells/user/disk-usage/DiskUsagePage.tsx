@@ -333,7 +333,7 @@ export function DiskUsagePage() {
           loading={refresh.isPending}
           onClick={() => refresh.mutate()}
         >
-          {refresh.isPending ? "Calculating\u2026" : "Refresh"}
+          {refresh.isPending ? "Calculating…" : "Refresh"}
         </Button>
       </div>
     </div>
@@ -344,7 +344,7 @@ export function DiskUsagePage() {
       <div>
         {header}
         <Empty
-          description="No disk-usage snapshot yet \u2014 click Refresh to calculate."
+          description="No disk-usage snapshot yet — click Refresh to calculate."
           style={{ padding: 64 }}
         />
       </div>
