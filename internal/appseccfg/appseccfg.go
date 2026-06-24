@@ -207,7 +207,17 @@ func Render(o Opts) string {
 		b.WriteString("on_match:\n")
 	}
 	if o.AdminAllowlist {
-		b.WriteString(` - filter: req.URL.Path startsWith "/api/v1/"
+		// /api/v1/ — the Kratos-session-gated SPA control plane (above).
+		// /phpmyadmin/ + /jabali-adminer/ — the SSO-gated DB admin tools
+		// (GH #285). Their whole JOB is to run arbitrary SQL, so CRS SQLi /
+		// RCE body rules (942xxx/932xxx) categorically false-positive on a
+		// legit SQL import or query and CrowdSec bans the operator's own IP.
+		// The SSO gate (signon) is the real boundary; behavioral log-based
+		// scenarios + the firewall bouncer for already-banned IPs are
+		// unaffected (this only skips AppSec body inspection). Path-prefix,
+		// matching the /api/v1/ precedent — both are jabali-owned paths not
+		// routed on tenant vhosts.
+		b.WriteString(` - filter: req.URL.Path startsWith "/api/v1/" || req.URL.Path startsWith "/phpmyadmin/" || req.URL.Path startsWith "/jabali-adminer/"
    apply:
     - CancelEvent()
     - CancelAlert()

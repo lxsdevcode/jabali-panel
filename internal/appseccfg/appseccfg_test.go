@@ -39,12 +39,14 @@ func TestRender_HeaderAndInband(t *testing.T) {
 	mustContain(t, out, "inband_rules:\n - crowdsecurity/base-config\n - crowdsecurity/vpatch-*\n - crowdsecurity/generic-*\n", "inband list in order")
 	// ADR-0102: panel-API allowlist present.
 	mustContain(t, out, `on_match:
- - filter: req.URL.Path startsWith "/api/v1/"
+ - filter: req.URL.Path startsWith "/api/v1/" || req.URL.Path startsWith "/phpmyadmin/" || req.URL.Path startsWith "/jabali-adminer/"
    apply:
     - CancelEvent()
     - CancelAlert()
     - SetRemediation("allow")
-`, "ADR-0102 panel-API allowlist (whole /api/v1/)")
+`, "ADR-0102 panel-API allowlist + GH#285 DB-tool allowlist")
+	mustContain(t, out, `startsWith "/phpmyadmin/"`, "phpMyAdmin allowlisted from AppSec (GH#285)")
+	mustContain(t, out, `startsWith "/jabali-adminer/"`, "Adminer allowlisted from AppSec (GH#285)")
 	// No WebmailHosts → no webmail filter line.
 	mustNotContain(t, out, `req.Host ==`, "no webmail allowlist when WebmailHosts empty")
 	mustNotContain(t, out, `startsWith "mail."`, "must not emit unsafe req.Host startsWith")
