@@ -9,6 +9,7 @@ import {
 import { RowActionButton } from "../../../components/RowActionButton";
 import { RowActions } from "../../../components/RowActions";
 import { apiClient } from "../../../apiClient";
+import { extractApiError } from "../../../apiErrors";
 
 interface PHPVersionStatus {
   version: string;
@@ -56,8 +57,7 @@ export const VersionsTab = () => {
     } catch (error) {
       notification.error({
         message: "Failed to fetch PHP versions",
-        description:
-          error instanceof Error ? error.message : "Unknown error occurred",
+        description: extractApiError(error, "Unknown error occurred"),
         duration: 5,
       });
     } finally {
@@ -98,11 +98,9 @@ export const VersionsTab = () => {
         };
       });
     } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : "Installation failed";
       notification.error({
         message: `Failed to install PHP ${version}`,
-        description: errorMsg,
+        description: extractApiError(error, "Installation failed"),
         duration: 5,
       });
     } finally {
@@ -124,11 +122,9 @@ export const VersionsTab = () => {
       });
       await fetchStatus();
     } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : "Uninstall failed";
       notification.error({
         message: `Failed to uninstall PHP ${version}`,
-        description: errorMsg,
+        description: extractApiError(error, "Uninstall failed"),
         duration: 5,
       });
     } finally {

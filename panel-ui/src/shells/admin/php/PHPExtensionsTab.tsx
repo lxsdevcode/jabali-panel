@@ -13,6 +13,7 @@ import {
 } from "antd";
 import { ApiOutlined, DeleteOutlined, DownloadOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined } from "@icons";
 import { apiClient } from "../../../apiClient";
+import { extractApiError } from "../../../apiErrors";
 import { RowActionButton } from "../../../components/RowActionButton";
 import { RowActions } from "../../../components/RowActions";
 
@@ -73,7 +74,7 @@ export const PHPExtensionsTab = () => {
       } catch (err) {
         notification.error({
           message: "Failed to fetch PHP versions",
-          description: err instanceof Error ? err.message : "Unknown error",
+          description: extractApiError(err, "Unknown error"),
         });
       } finally {
         setLoadingVersions(false);
@@ -100,7 +101,7 @@ export const PHPExtensionsTab = () => {
     } catch (err) {
       notification.error({
         message: `Failed to fetch extensions for PHP ${version}`,
-        description: err instanceof Error ? err.message : "Unknown error",
+        description: extractApiError(err, "Unknown error"),
       });
       setExtensions([]);
     } finally {
@@ -125,7 +126,7 @@ export const PHPExtensionsTab = () => {
     } catch (err) {
       notification.error({
         message: `${action} ${ext} failed`,
-        description: err instanceof Error ? err.message : "Unknown error",
+        description: extractApiError(err, "Unknown error"),
         duration: 5,
       });
     } finally {
