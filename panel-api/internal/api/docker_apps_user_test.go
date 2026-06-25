@@ -61,6 +61,15 @@ type fakeDockerRepo struct {
 	count    int64
 	sumBytes int64
 	owned    map[string]*models.DockerApp
+	updated  map[string]string
+}
+
+func (f *fakeDockerRepo) UpdateStatus(_ context.Context, id, status string, _ *string) error {
+	if f.updated == nil {
+		f.updated = map[string]string{}
+	}
+	f.updated[id] = status
+	return nil
 }
 
 func (f *fakeDockerRepo) SumDataBytesByUserID(context.Context, string) (int64, error) {
@@ -96,7 +105,30 @@ func (f *fakePkgRepo) FindByID(context.Context, string) (*models.HostingPackage,
 
 type fakeDomainRepo struct {
 	repository.DomainRepository
-	byName map[string]*models.Domain
+	byName   map[string]*models.Domain
+	owned    []models.Domain
+	detached map[string]bool
+	deleted  map[string]bool
+}
+
+func (f *fakeDomainRepo) ListByUserID(_ context.Context, _ string, _ repository.ListOptions) ([]models.Domain, int64, error) {
+	return f.owned, int64(len(f.owned)), nil
+}
+
+func (f *fakeDomainRepo) DetachDockerApp(_ context.Context, id string, _ bool) error {
+	if f.detached == nil {
+		f.detached = map[string]bool{}
+	}
+	f.detached[id] = true
+	return nil
+}
+
+func (f *fakeDomainRepo) Delete(_ context.Context, id string) error {
+	if f.deleted == nil {
+		f.deleted = map[string]bool{}
+	}
+	f.deleted[id] = true
+	return nil
 }
 
 func (f *fakeDomainRepo) FindByName(_ context.Context, n string) (*models.Domain, error) {
@@ -299,5 +331,41 @@ func TestTenantDocker_UsageUnderQuota(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"over_quota":false`) {
 		t.Fatalf("want over_quota false: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+
+// GH #284: tenant delete must detach the app's own domain link + clear the
+// injected proxy_pass (else the hostname keeps 502-ing at the dead container)
+// and remove any hostname auto-created for the app — mirroring the admin path.
+func TestTenantDocker_DeleteCleansDomainLinks(t *testing.T) {
+	appID := "a1"
+	dom := &fakeDomainRepo{
+		owned: []models.Domain{
+			{ID: "d1", UserID: "u1", DockerAppID: &appID, ManagedBy: ""},
+			{ID: "d2", UserID: "u1", DockerAppID: &appID, ManagedBy: models.DomainManagedByDockerApp, Name: "auto.example.com"},
+		},
+	}
+	repo := &fakeDockerRepo{owned: map[string]*models.DockerApp{
+		appID: {ID: appID, UserID: uname("u1"), Slug: "tdemo", Status: models.DockerAppStatusFailed},
+	}}
+	cfg := UserDockerAppHandlerConfig{Repo: repo, Catalog: tenantCatalog(t), Domains: dom}
+	r := tenantRouter(t, cfg, true)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/docker-apps/a1", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	if !dom.detached["d1"] {
+		t.Errorf("tenant-owned domain d1 should be detached (proxy_pass cleared)")
+	}
+	if !dom.deleted["d2"] {
+		t.Errorf("auto-managed domain d2 should be deleted")
+	}
+	if repo.updated["a1"] != models.DockerAppStatusDeleted {
+		t.Errorf("app should be soft-deleted, got %q", repo.updated["a1"])
 	}
 }

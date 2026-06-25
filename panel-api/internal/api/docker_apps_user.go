@@ -282,11 +282,54 @@ func (h *userDockerAppHandler) delete(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
 	if h.cfg.Agent != nil {
 		actx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		_, _ = h.cfg.Agent.Call(actx, "docker_app.delete", map[string]any{"slug": app.EffectiveSlug()})
+		// Best-effort teardown, purging the on-disk install dir too (tenant
+		// installs are per-instance, never reused). A genuine teardown
+		// failure is logged but must not strand the row — a tenant has no
+		// force/admin escape hatch, so the soft-delete proceeds regardless.
+		if _, err := h.cfg.Agent.Call(actx, "docker_app.delete", map[string]any{
+			"slug":          app.EffectiveSlug(),
+			"purge_volumes": true,
+		}); err != nil {
+			slog.Warn("tenant docker delete: agent teardown failed, soft-deleting anyway",
+				"app_id", app.ID, "slug", app.EffectiveSlug(), "err", err)
+		}
 	}
+
+	// Clean up the attached domain exactly as the admin delete does, but
+	// scoped to the caller's OWN domains (no cross-tenant reach). Without
+	// this the soft-deleted app leaves a dangling docker_app_id and a
+	// proxy_pass rule still pointing at the now-dead container's port, so
+	// the hostname keeps 502-ing and the link can never be reused (GH #284).
+	if h.cfg.Domains != nil {
+		domList, _, _ := h.cfg.Domains.ListByUserID(ctx, claims.UserID, repository.ListOptions{Limit: diskUsageListLimit})
+		for i := range domList {
+			dom := domList[i]
+			if dom.DockerAppID == nil || *dom.DockerAppID != app.ID {
+				continue
+			}
+			if dom.ManagedBy == models.DomainManagedByDockerApp {
+				// Hostname we auto-created for this app at install time —
+				// remove the row and tear down its proxy vhost.
+				domName := dom.Name
+				_ = h.cfg.Domains.Delete(ctx, dom.ID)
+				if h.cfg.Agent != nil && domName != "" {
+					rmCtx, rmCancel := context.WithTimeout(ctx, 30*time.Second)
+					_, _ = h.cfg.Agent.Call(rmCtx, "docker_app.vhost_remove",
+						map[string]string{"domain_name": domName})
+					rmCancel()
+				}
+			} else {
+				// The tenant's own pre-existing domain — keep it, just
+				// detach the app link and clear the injected proxy_pass rule.
+				_ = h.cfg.Domains.DetachDockerApp(ctx, dom.ID, true)
+			}
+		}
+	}
+
 	_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusDeleted, nil)
 	c.JSON(http.StatusOK, gin.H{"id": app.ID, "status": "deleted"})
 }
