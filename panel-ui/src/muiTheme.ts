@@ -13,8 +13,10 @@ import type { ThemeMode } from "./theme/ThemeModeContext";
 
 type LookAndFeel = {
   fontSizePx?: number;
-  primaryColor?: string;
   accentColor?: string;
+  // antd seed-token overrides (colorPrimary/colorSuccess/colorLink/...). Only
+  // non-empty entries should be passed; empty = use the algorithm default.
+  seedColors?: Record<string, string>;
 };
 
 const useMuiTheme = (
@@ -22,7 +24,7 @@ const useMuiTheme = (
   opts?: LookAndFeel,
 ): ConfigProviderProps => {
   const fontSizePx = opts?.fontSizePx ?? 15;
-  const primaryColor = opts?.primaryColor || "";
+  const seed = opts?.seedColors ?? {};
   // Selected sidebar-row / active-tab accent. Operator-overridable; falls back
   // to the built-in red per algorithm when unset.
   const accent = opts?.accentColor || (mode === "dark" ? "#ef4444" : "#dc2626");
@@ -37,7 +39,7 @@ const useMuiTheme = (
           // Every size-derived token (fontSizeSM, fontSizeLG, heading
           // sizes, line heights, control heights) scales off this.
           fontSize: fontSizePx,
-          ...(primaryColor ? { colorPrimary: primaryColor } : {}),
+          ...seed,
           // Inter as primary face (self-hosted via @fontsource/inter
           // imported in main.tsx). Falls through to OS system font if
           // the woff2 fails to load — cron/SSH/log views keep their
@@ -109,7 +111,7 @@ const useMuiTheme = (
         },
       },
     }),
-    [mode, fontSizePx, primaryColor, accent],
+    [mode, fontSizePx, accent, JSON.stringify(seed)],
   );
 };
 

@@ -81,6 +81,11 @@ type ServerSettings struct {
 	// token; AccentColor drives the selected sidebar-row / active-tab accent.
 	PanelPrimaryColor string `gorm:"column:panel_primary_color;type:varchar(9);not null;default:''" json:"panel_primary_color"`
 	PanelAccentColor  string `gorm:"column:panel_accent_color;type:varchar(9);not null;default:''"  json:"panel_accent_color"`
+	PanelSuccessColor string `gorm:"column:panel_success_color;type:varchar(9);not null;default:''" json:"panel_success_color"`
+	PanelWarningColor string `gorm:"column:panel_warning_color;type:varchar(9);not null;default:''" json:"panel_warning_color"`
+	PanelErrorColor   string `gorm:"column:panel_error_color;type:varchar(9);not null;default:''"   json:"panel_error_color"`
+	PanelInfoColor    string `gorm:"column:panel_info_color;type:varchar(9);not null;default:''"    json:"panel_info_color"`
+	PanelLinkColor    string `gorm:"column:panel_link_color;type:varchar(9);not null;default:''"    json:"panel_link_color"`
 
 	// M26 AppSec geoblock (migration 000067). Server-wide rule applied
 	// by crowdsec AppSec. Mode ∈ {"off", "allow", "deny"}:

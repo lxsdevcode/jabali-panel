@@ -95,6 +95,11 @@ type updateServerSettingsRequest struct {
 	PanelFontSize                *string `json:"panel_font_size,omitempty"`
 	PanelPrimaryColor            *string `json:"panel_primary_color,omitempty"`
 	PanelAccentColor             *string `json:"panel_accent_color,omitempty"`
+	PanelSuccessColor            *string `json:"panel_success_color,omitempty"`
+	PanelWarningColor            *string `json:"panel_warning_color,omitempty"`
+	PanelErrorColor              *string `json:"panel_error_color,omitempty"`
+	PanelInfoColor               *string `json:"panel_info_color,omitempty"`
+	PanelLinkColor               *string `json:"panel_link_color,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
@@ -296,27 +301,42 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			return
 		}
 	}
-	if req.PanelPrimaryColor != nil {
-		v := strings.TrimSpace(*req.PanelPrimaryColor)
+	// "Look and feel" colors — each empty-or-hex, validated uniformly.
+	validateColor := func(reqVal *string, dst *string, name string) bool {
+		if reqVal == nil {
+			return true
+		}
+		v := strings.TrimSpace(*reqVal)
 		if !isValidHexColor(v) {
 			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
-				"error":   "invalid_panel_primary_color",
+				"error":   "invalid_" + name,
 				"message": "must be empty or a hex color (#rgb, #rrggbb, #rrggbbaa)",
 			})
-			return
+			return false
 		}
-		current.PanelPrimaryColor = v
+		*dst = v
+		return true
 	}
-	if req.PanelAccentColor != nil {
-		v := strings.TrimSpace(*req.PanelAccentColor)
-		if !isValidHexColor(v) {
-			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
-				"error":   "invalid_panel_accent_color",
-				"message": "must be empty or a hex color (#rgb, #rrggbb, #rrggbbaa)",
-			})
-			return
-		}
-		current.PanelAccentColor = v
+	if !validateColor(req.PanelPrimaryColor, &current.PanelPrimaryColor, "panel_primary_color") {
+		return
+	}
+	if !validateColor(req.PanelAccentColor, &current.PanelAccentColor, "panel_accent_color") {
+		return
+	}
+	if !validateColor(req.PanelSuccessColor, &current.PanelSuccessColor, "panel_success_color") {
+		return
+	}
+	if !validateColor(req.PanelWarningColor, &current.PanelWarningColor, "panel_warning_color") {
+		return
+	}
+	if !validateColor(req.PanelErrorColor, &current.PanelErrorColor, "panel_error_color") {
+		return
+	}
+	if !validateColor(req.PanelInfoColor, &current.PanelInfoColor, "panel_info_color") {
+		return
+	}
+	if !validateColor(req.PanelLinkColor, &current.PanelLinkColor, "panel_link_color") {
+		return
 	}
 	if req.DiskQuotaEnabled != nil {
 		current.DiskQuotaEnabled = *req.DiskQuotaEnabled

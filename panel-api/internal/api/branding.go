@@ -80,6 +80,11 @@ type brandingInfoResponse struct {
 	PanelFontSize     string `json:"panel_font_size"`
 	PanelPrimaryColor string `json:"panel_primary_color"`
 	PanelAccentColor  string `json:"panel_accent_color"`
+	PanelSuccessColor string `json:"panel_success_color"`
+	PanelWarningColor string `json:"panel_warning_color"`
+	PanelErrorColor   string `json:"panel_error_color"`
+	PanelInfoColor    string `json:"panel_info_color"`
+	PanelLinkColor    string `json:"panel_link_color"`
 	HasLogoLight      bool   `json:"has_logo_light"`
 	HasLogoDark       bool   `json:"has_logo_dark"`
 }
@@ -99,6 +104,11 @@ func (h *brandingHandler) publicInfo(c *gin.Context) {
 		PanelFontSize:     fontSizeOrDefault(s.PanelFontSize),
 		PanelPrimaryColor: s.PanelPrimaryColor,
 		PanelAccentColor:  s.PanelAccentColor,
+		PanelSuccessColor: s.PanelSuccessColor,
+		PanelWarningColor: s.PanelWarningColor,
+		PanelErrorColor:   s.PanelErrorColor,
+		PanelInfoColor:    s.PanelInfoColor,
+		PanelLinkColor:    s.PanelLinkColor,
 		HasLogoLight:      s.LogoLightPath != "" && fileExists(s.LogoLightPath),
 		HasLogoDark:       s.LogoDarkPath != "" && fileExists(s.LogoDarkPath),
 	})

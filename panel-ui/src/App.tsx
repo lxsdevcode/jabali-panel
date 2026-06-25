@@ -39,6 +39,7 @@ import { AdminMailPage } from "./shells/admin/mail/AdminMailPage";
 import { AdminAuditList } from "./shells/admin/audit/AdminAuditList";
 import { NotificationsTabsPage } from "./shells/admin/notifications/NotificationsTabsPage";
 import { useApplyBrandingToTitle, useBranding } from "./hooks/useBranding";
+import { PANEL_COLORS } from "./lib/panelColors";
 import { AdminSecurityPage } from "./shells/admin/security/AdminSecurityPage";
 import { ServerStatusPage } from "./shells/admin/server-status/ServerStatusPage";
 import { MailDeliverabilityPage } from "./shells/admin/mail/MailDeliverabilityPage";
@@ -137,13 +138,17 @@ const PANEL_FONT_PX: Record<string, number> = { small: 13, medium: 15, large: 17
 
 const ThemedApp = () => {
   const { mode } = useThemeMode();
-  const { fontSize, primaryColor, accentColor } = useBranding();
+  const { fontSize, colors } = useBranding();
   // Branding "Look and feel": font size + operator colors feed the antd
   // ConfigProvider seed tokens so the whole panel scales/recolors for everyone.
+  const seedColors: Record<string, string> = {};
+  for (const c of PANEL_COLORS) {
+    if (c.token && colors[c.field]) seedColors[c.token] = colors[c.field];
+  }
   const muiConfig = useMuiTheme(mode, {
     fontSizePx: PANEL_FONT_PX[fontSize] ?? 15,
-    primaryColor,
-    accentColor,
+    accentColor: colors.panel_accent_color || "",
+    seedColors,
   });
 
   return (

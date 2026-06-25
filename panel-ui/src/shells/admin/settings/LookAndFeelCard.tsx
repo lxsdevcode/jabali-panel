@@ -6,43 +6,53 @@ import { useEffect, useState } from "react";
 import {
   Button,
   Card,
+  Col,
   ColorPicker,
   Form,
+  Row,
   Segmented,
   Space,
+  Tooltip,
   message,
 } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { SaveOutlined } from "@icons";
+import { QuestionCircleOutlined, SaveOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
+import { PANEL_COLORS } from "../../../lib/panelColors";
 
-type Shape = {
+type FormShape = Record<string, unknown> & {
   panel_font_size: "small" | "medium" | "large";
-  panel_primary_color: string;
-  panel_accent_color: string;
 };
 
-// ColorPicker stores an antd Color object on change but a plain hex string on
-// initial load — normalize either (or empty) to a hex string for the API.
+const COLOR_FIELDS = PANEL_COLORS.map((c) => c.field);
+
+// ColorPicker yields an antd Color object on change, a hex string on load, and a
+// fully-transparent colour when cleared — normalize all to a hex string, mapping
+// "cleared / transparent" to "" (= built-in default). Without this, clearing a
+// picker would persist a real transparent colour (#00000000) and wash the panel
+// out instead of restoring the default.
 const toHex = (c: unknown): string => {
   if (!c) return "";
-  if (typeof c === "string") return c;
-  if (
-    typeof c === "object" &&
-    c !== null &&
-    "toHexString" in c &&
-    typeof (c as { toHexString: unknown }).toHexString === "function"
-  ) {
-    return (c as { toHexString: () => string }).toHexString();
+  if (typeof c === "string") return /^#0{6,8}$/i.test(c) ? "" : c;
+  if (typeof c === "object" && c !== null) {
+    const obj = c as {
+      toHexString?: () => string;
+      toRgb?: () => { a: number };
+    };
+    if (typeof obj.toRgb === "function" && obj.toRgb().a === 0) return "";
+    if (typeof obj.toHexString === "function") {
+      const hex = obj.toHexString();
+      return /^#0{6,8}$/i.test(hex) ? "" : hex;
+    }
   }
   return "";
 };
 
 export const LookAndFeelCard = () => {
   const qc = useQueryClient();
-  const [form] = Form.useForm<Shape>();
+  const [form] = Form.useForm<FormShape>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -50,18 +60,15 @@ export const LookAndFeelCard = () => {
     let cancelled = false;
     (async () => {
       try {
-        const resp = await apiClient.get<{
-          panel_font_size?: string;
-          panel_primary_color?: string;
-          panel_accent_color?: string;
-        }>("/admin/settings");
+        const resp = await apiClient.get<Record<string, string>>(
+          "/admin/settings",
+        );
         if (cancelled) return;
-        form.setFieldsValue({
-          panel_font_size:
-            (resp.data.panel_font_size as Shape["panel_font_size"]) ?? "medium",
-          panel_primary_color: resp.data.panel_primary_color ?? "",
-          panel_accent_color: resp.data.panel_accent_color ?? "",
-        });
+        const values: Record<string, unknown> = {
+          panel_font_size: resp.data.panel_font_size ?? "medium",
+        };
+        for (const f of COLOR_FIELDS) values[f] = resp.data[f] ?? "";
+        form.setFieldsValue(values as Partial<FormShape>);
       } catch (err) {
         message.error(err instanceof Error ? err.message : "Load failed");
       } finally {
@@ -73,14 +80,14 @@ export const LookAndFeelCard = () => {
     };
   }, [form]);
 
-  const handleSubmit = async (values: Shape) => {
+  const persist = async (values: FormShape) => {
     setSaving(true);
     try {
-      await apiClient.patch("/admin/settings", {
-        panel_font_size: values.panel_font_size ?? "medium",
-        panel_primary_color: toHex(values.panel_primary_color),
-        panel_accent_color: toHex(values.panel_accent_color),
-      });
+      const payload: Record<string, string> = {
+        panel_font_size: (values.panel_font_size as string) ?? "medium",
+      };
+      for (const f of COLOR_FIELDS) payload[f] = toHex(values[f]);
+      await apiClient.patch("/admin/settings", payload);
       qc.invalidateQueries({ queryKey: ["branding", "public"] });
       message.success("Look and feel saved");
     } catch (err) {
@@ -90,14 +97,17 @@ export const LookAndFeelCard = () => {
     }
   };
 
+  // Reset clears every colour back to the built-in default and saves.
+  const resetColors = async () => {
+    const cleared: Record<string, undefined> = {};
+    for (const f of COLOR_FIELDS) cleared[f] = undefined;
+    form.setFieldsValue(cleared as Partial<FormShape>);
+    await persist(form.getFieldsValue() as FormShape);
+  };
+
   return (
     <Card title="Look and feel" style={{ marginBottom: 16 }}>
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-        disabled={loading}
-      >
+      <Form form={form} layout="vertical" onFinish={persist} disabled={loading}>
         <Form.Item
           label="Panel font size"
           name="panel_font_size"
@@ -112,23 +122,32 @@ export const LookAndFeelCard = () => {
           />
         </Form.Item>
 
-        <Form.Item
-          label="Primary color"
-          name="panel_primary_color"
-          getValueProps={(v) => ({ value: v || undefined })}
-          extra="Buttons, links, primary actions and selected toggles. Clear = default blue."
-        >
-          <ColorPicker allowClear format="hex" />
-        </Form.Item>
-
-        <Form.Item
-          label="Accent color"
-          name="panel_accent_color"
-          getValueProps={(v) => ({ value: v || undefined })}
-          extra="Selected sidebar row and active tab. Clear = default."
-        >
-          <ColorPicker allowClear format="hex" />
-        </Form.Item>
+        <Row gutter={[24, 0]}>
+          {PANEL_COLORS.map((c) => (
+            <Col xs={24} md={12} key={c.field}>
+              <Form.Item
+                name={c.field}
+                getValueProps={(v) => ({ value: v || undefined })}
+                label={
+                  <Space size={4}>
+                    {c.label}
+                    <Tooltip title={c.tip}>
+                      <QuestionCircleOutlined style={{ opacity: 0.55 }} />
+                    </Tooltip>
+                  </Space>
+                }
+              >
+                <ColorPicker
+                  allowClear
+                  showText
+                  disabledAlpha
+                  format="hex"
+                  onClear={() => form.setFieldValue(c.field, "")}
+                />
+              </Form.Item>
+            </Col>
+          ))}
+        </Row>
 
         <Space>
           <Button
@@ -138,6 +157,9 @@ export const LookAndFeelCard = () => {
             htmlType="submit"
           >
             Save
+          </Button>
+          <Button onClick={resetColors} disabled={saving || loading}>
+            Reset colors
           </Button>
         </Space>
       </Form>
