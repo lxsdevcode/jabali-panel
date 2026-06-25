@@ -122,19 +122,26 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 		}
 	}
 
-	// Optional chown of the data root + each volume subdir. Required
-	// for images whose entrypoint runs as a non-root UID: docker
-	// creates the bind-mount on first run owned root:root, the
-	// container init then EACCES on its own config file (Gitea's
-	// /data/gitea/conf/app.ini is the canonical scar).
-	if p.VolumeOwner != "" {
-		uid, gid, perr := parseUIDGID(p.VolumeOwner)
-		if perr != nil {
-			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInvalidArgument,
-				Message: fmt.Sprintf("invalid volume_owner %q: %v", p.VolumeOwner, perr),
-			}
+	// Chown the data root + each volume subdir so the container can write its
+	// own bind-mounted state. Two reasons:
+	//   - images whose entrypoint runs as a non-root UID EACCES on their own
+	//     config otherwise (Gitea's /data/gitea/conf/app.ini is the scar);
+	//   - under docker userns-remap the container's UIDs are shifted into the
+	//     dockremap subuid range. Docker fixes named-volume ownership for that
+	//     automatically but NOT bind mounts, and every jabali app uses bind
+	//     mounts under dockerAppDataRoot -- so without the offset the container's
+	//     (remapped) root EACCES on its data dir and init dies with
+	//     "chdir to cwd ... permission denied" (GH #284).
+	// base==0 when remap is off: the resolved owner is then the legacy behaviour
+	// exactly (chown only when the catalog declares volume_owner, no offset).
+	uid, gid, applyOwner, perr := resolveInstallOwner(p.VolumeOwner, dockremapRemapBase())
+	if perr != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: fmt.Sprintf("invalid volume_owner %q: %v", p.VolumeOwner, perr),
 		}
+	}
+	if applyOwner {
 		if err := os.Chown(dir, uid, gid); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chown %s: %v", dir, err)}
 		}
@@ -614,6 +621,69 @@ var _ = strconv.Itoa
 // would have to honour either the host's /etc/passwd or the image's
 // own UID convention -- ambiguous, brittle, and the catalog already
 // hardcodes the image's expected UID anyway.
+// dockremapRemapBase returns the dockremap subuid base when docker userns-remap
+// is active on this host, or 0 when it is off (or undeterminable). Active iff
+// /etc/docker/daemon.json sets a non-empty "userns-remap"; the base is then the
+// dockremap entry in /etc/subuid. Any read/parse miss returns 0 -- ownership is
+// never offset on uncertainty (that would break a non-remap host).
+func dockremapRemapBase() int {
+	daemon, err := os.ReadFile("/etc/docker/daemon.json")
+	if err != nil {
+		return 0
+	}
+	var cfg struct {
+		UsernsRemap string `json:"userns-remap"`
+	}
+	if err := json.Unmarshal(daemon, &cfg); err != nil || strings.TrimSpace(cfg.UsernsRemap) == "" {
+		return 0
+	}
+	subuid, err := os.ReadFile("/etc/subuid")
+	if err != nil {
+		return 0
+	}
+	return parseDockremapSubuidBase(string(subuid))
+}
+
+// parseDockremapSubuidBase pulls the base subuid for the dockremap user out of
+// an /etc/subuid body (lines "name:base:count"); 0 if absent/unparseable.
+// Mirrors the enable-tenant retrofit resolver. Pure for testing.
+func parseDockremapSubuidBase(subuidBody string) int {
+	for _, line := range strings.Split(subuidBody, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, ":")
+		if len(parts) >= 2 && parts[0] == "dockremap" {
+			if base, err := strconv.Atoi(parts[1]); err == nil {
+				return base
+			}
+		}
+	}
+	return 0
+}
+
+// resolveInstallOwner computes the on-disk owner for an app's data tree from the
+// catalog volume_owner ("" or "uid:gid") and the userns-remap base (0 = remap
+// off). base==0 reproduces the legacy behaviour exactly: chown only when a
+// volume_owner is declared, no offset. base>0 shifts the (container-internal)
+// owner into the dockremap range -- defaulting to root 0:0 -> base:base when no
+// volume_owner is declared (the common case, e.g. memos), which is what the
+// container's remapped root needs to reach its bind mount.
+func resolveInstallOwner(volumeOwner string, base int) (uid, gid int, apply bool, err error) {
+	if volumeOwner != "" {
+		u, g, perr := parseUIDGID(volumeOwner)
+		if perr != nil {
+			return 0, 0, false, perr
+		}
+		uid, gid, apply = u, g, true
+	}
+	if base > 0 {
+		uid, gid, apply = base+uid, base+gid, true
+	}
+	return uid, gid, apply, nil
+}
+
 func parseUIDGID(s string) (int, int, error) {
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 {
