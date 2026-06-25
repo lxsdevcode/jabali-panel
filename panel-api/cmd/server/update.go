@@ -438,6 +438,45 @@ source ` + installSh + ` && install_nginx_default_vhost`
 			}
 			return nil
 		}},
+		{"self-heal nginx http2 deprecation on >=1.25.1 (GH #292)", func() error {
+			// The inverse of the fold above: on nginx >=1.25.1 the
+			// `listen ... http2` parameter the server-scope vhosts were
+			// rendered with is DEPRECATED and warns on every reload. update
+			// re-renders the agent vhosts but not the install.sh-written
+			// jabali-default/jabali-panel vhosts, so re-render them via the
+			// (now version-aware) install.sh writers. Detect-gated on
+			// nginx>=1.25.1 AND a deprecated form still present, so it is a
+			// no-op + no reload once converged. Hostname/IP derived the same
+			// proven way as the GH#135 self-heal above.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			script := `set -e
+ver="$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+[ -n "$ver" ] || exit 0
+IFS=. read -r MA MI PA <<EOF
+$ver
+EOF
+ge=0
+{ [ "$MA" -gt 1 ]; } 2>/dev/null && ge=1
+{ [ "$MA" -eq 1 ] && [ "$MI" -gt 25 ]; } 2>/dev/null && ge=1
+{ [ "$MA" -eq 1 ] && [ "$MI" -eq 25 ] && [ "$PA" -ge 1 ]; } 2>/dev/null && ge=1
+[ "$ge" = 1 ] || exit 0
+CONF=/etc/nginx/sites-available/jabali-default.conf
+PCONF=/etc/nginx/sites-available/jabali-panel.conf
+grep -qE 'listen .* http2;' "$CONF" "$PCONF" 2>/dev/null || exit 0
+HN="$(hostname -f)"
+IP="$(grep -oE 'listen [0-9.]+:80 default_server' "$CONF" 2>/dev/null | grep -oE '[0-9.]+' | head -1)"
+if [ -z "$HN" ] || [ -z "$IP" ]; then echo "  (skip http2 re-render: no hostname/IP)"; exit 0; fi
+echo "  re-rendering server-scope nginx vhosts for http2 on; (nginx $ver, GH #292)"
+export JABALI_SRV_HOSTNAME="$HN" JABALI_SRV_IPV4="$IP"
+source ` + installSh + ` && install_nginx_default_vhost && install_nginx_websocket_map && install_nginx_panel_vhost`
+			if err := run("", "bash", "-c", script); err != nil {
+				fmt.Printf("  (http2 re-render failed: %v -- continuing)\n", err)
+			}
+			return nil
+		}},
 	}
 
 	// Build/apply steps — run only when HEAD moved OR --force was passed.
@@ -1346,45 +1385,6 @@ test -x node_modules/.bin/tsc || {
 			if broken, detail, derr := detectNginxConfigInvalid(repairCtx{}); derr == nil && broken {
 				fmt.Printf("  nginx-config-invalid: %s -- folding http2\n", detail)
 				return fixNginxConfigInvalid(repairCtx{})
-			}
-			return nil
-		}},
-		{"self-heal nginx http2 deprecation on >=1.25.1 (GH #292)", func() error {
-			// The inverse of the fold above: on nginx >=1.25.1 the
-			// `listen ... http2` parameter the server-scope vhosts were
-			// rendered with is DEPRECATED and warns on every reload. update
-			// re-renders the agent vhosts but not the install.sh-written
-			// jabali-default/jabali-panel vhosts, so re-render them via the
-			// (now version-aware) install.sh writers. Detect-gated on
-			// nginx>=1.25.1 AND a deprecated form still present, so it is a
-			// no-op + no reload once converged. Hostname/IP derived the same
-			// proven way as the GH#135 self-heal above.
-			installSh := repoDir + "/install.sh"
-			if _, err := os.Stat(installSh); err != nil {
-				return nil
-			}
-			script := `set -e
-ver="$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-[ -n "$ver" ] || exit 0
-IFS=. read -r MA MI PA <<EOF
-$ver
-EOF
-ge=0
-{ [ "$MA" -gt 1 ]; } 2>/dev/null && ge=1
-{ [ "$MA" -eq 1 ] && [ "$MI" -gt 25 ]; } 2>/dev/null && ge=1
-{ [ "$MA" -eq 1 ] && [ "$MI" -eq 25 ] && [ "$PA" -ge 1 ]; } 2>/dev/null && ge=1
-[ "$ge" = 1 ] || exit 0
-CONF=/etc/nginx/sites-available/jabali-default.conf
-PCONF=/etc/nginx/sites-available/jabali-panel.conf
-grep -qE 'listen .* http2;' "$CONF" "$PCONF" 2>/dev/null || exit 0
-HN="$(hostname -f)"
-IP="$(grep -oE 'listen [0-9.]+:80 default_server' "$CONF" 2>/dev/null | grep -oE '[0-9.]+' | head -1)"
-if [ -z "$HN" ] || [ -z "$IP" ]; then echo "  (skip http2 re-render: no hostname/IP)"; exit 0; fi
-echo "  re-rendering server-scope nginx vhosts for http2 on; (nginx $ver, GH #292)"
-export JABALI_SRV_HOSTNAME="$HN" JABALI_SRV_IPV4="$IP"
-source ` + installSh + ` && install_nginx_default_vhost && install_nginx_websocket_map && install_nginx_panel_vhost`
-			if err := run("", "bash", "-c", script); err != nil {
-				fmt.Printf("  (http2 re-render failed: %v -- continuing)\n", err)
 			}
 			return nil
 		}},
