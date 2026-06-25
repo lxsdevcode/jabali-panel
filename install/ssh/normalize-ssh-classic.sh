@@ -28,6 +28,30 @@ log()  { printf '[ssh-normalize] %s\n' "$1"; }
 warn() { printf '[ssh-normalize] WARN: %s\n' "$1" >&2; }
 err()  { printf '[ssh-normalize] ERROR: %s\n' "$1" >&2; }
 
+# Debian 13 / systemd 256 ships systemd-ssh-generator, which auto-exposes sshd
+# over AF_VSOCK (+ AF_UNIX). On a KVM/QEMU guest with no assigned vsock CID it
+# floods the console + journal on EVERY boot and EVERY daemon-reload with:
+#   systemd-ssh-generator[...]: Failed to query local AF_VSOCK CID: Cannot assign requested address
+# (GH #290). The console I/O storm can wedge an idle VM and lock SSH out. jabali
+# serves SSH via classic ssh.service ONLY (never over vsock/unix), so disabling
+# the generator has zero effect on the real TCP :22 listener — it just stops the
+# failing auto-units. Mask it to /dev/null. Idempotent.
+disable_ssh_vsock_generator() {
+  local gen mask=/etc/systemd/system-generators/systemd-ssh-generator
+  for gen in /usr/lib/systemd/system-generators/systemd-ssh-generator \
+             /lib/systemd/system-generators/systemd-ssh-generator; do
+    [[ -e "$gen" ]] || continue
+    if [[ "$(readlink -f "$mask" 2>/dev/null)" != /dev/null ]]; then
+      mkdir -p /etc/systemd/system-generators
+      ln -sf /dev/null "$mask"
+      systemctl daemon-reload 2>/dev/null || true
+      log "disabled systemd-ssh-generator (AF_VSOCK CID spam on KVM guests — GH #290)"
+    fi
+    return 0
+  done
+}
+disable_ssh_vsock_generator
+
 # Is anything listening on TCP :22 right now? (IPv4 or IPv6.)
 has_listener() {
   ss -ltnH 'sport = :22' 2>/dev/null | grep -q . && return 0
