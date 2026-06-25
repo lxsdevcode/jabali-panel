@@ -283,10 +283,14 @@ func dockerAppDeleteHandler(ctx context.Context, params json.RawMessage) (any, e
 	}
 	dir := filepath.Join(dockerAppDataRoot, p.Slug)
 	// docker compose down. -v removes named volumes too; we use bind
-	// mounts under DataRoot so this is mostly defensive.
+	// mounts under DataRoot so this is mostly defensive. A `down` failure
+	// is remembered, NOT returned early: a failed/half-broken install still
+	// leaves a data dir we must reclaim when a purge is requested, so the
+	// purge below has to run first. The error is surfaced afterwards.
+	var downErr *agentwire.AgentError
 	if _, err := os.Stat(filepath.Join(dir, "compose.yml")); err == nil {
 		if out, err := runDockerCompose(ctx, dir, "down", "-v"); err != nil {
-			return nil, &agentwire.AgentError{
+			downErr = &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
 				Message: fmt.Sprintf("docker compose down failed: %v", err),
 				Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
@@ -299,6 +303,9 @@ func dockerAppDeleteHandler(ctx context.Context, params json.RawMessage) (any, e
 		if err := os.RemoveAll(dir); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("rm -rf %s: %v", dir, err)}
 		}
+	}
+	if downErr != nil {
+		return nil, downErr
 	}
 	return dockerAppLifecycleResponse{Slug: p.Slug, Status: "deleted"}, nil
 }
