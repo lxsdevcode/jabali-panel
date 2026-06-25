@@ -55,7 +55,7 @@ export const BackupLogsTab = () => {
 
   // Fetch backup and restore jobs
   const { data, isLoading, error, refetch, isFetching } = useListQuery<BackupLogEntry>({
-    resource: "admin/backup-runs",
+    resource: "admin/backups",
     params: {
       page_size: 200, // Get more entries for logs
     },
@@ -72,24 +72,13 @@ export const BackupLogsTab = () => {
     return u?.username ?? id;
   };
 
-  // Process and flatten the backup data
+  // admin/backups returns individual backup JOBS (each with a real job id, the
+  // unit /admin/backups/:job_id/logs needs). The previous source (backup-runs)
+  // returned run aggregates with no per-job id, so the log modal showed "no-id"
+  // and "Failed to fetch log details" (GH #294).
   const entries = (() => {
-    const rawData = data?.items ?? [];
-    const runs = rawData || [];
-    const manual: any[] = []; // manual jobs if they exist in data structure
-    const allJobs = [...manual];
-
-    // Add jobs from runs
-    runs.forEach((run: any) => {
-      if (run.jobs) {
-        allJobs.push(...run.jobs);
-      } else {
-        // If run doesn't have jobs, treat the run itself as a job
-        allJobs.push(run);
-      }
-    });
-
-    return allJobs.sort((a, b) => {
+    const jobs = (data?.items ?? []) as BackupLogEntry[];
+    return [...jobs].sort((a, b) => {
       const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bTime - aTime;
@@ -125,7 +114,9 @@ export const BackupLogsTab = () => {
       setLogDetails({
         unit: "unknown",
         status: "error",
-        log_text: "Failed to fetch log details. The log may not be available.",
+        log_text: entry.error_text
+          ? `Backup failed:\n${entry.error_text}\n\n(no per-run log file was captured)`
+          : "Failed to fetch log details. The log may not be available.",
         fetched_at: new Date().toISOString(),
       });
     } finally {
