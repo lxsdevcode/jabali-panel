@@ -88,6 +88,7 @@ func newUserListCmd() *cobra.Command {
 
 func newUserCreateCmd() *cobra.Command {
 	var (
+		username  string
 		email     string
 		password  string
 		viaStdin  bool
@@ -97,9 +98,14 @@ func newUserCreateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create",
+		Use:   "create [username]",
 		Short: "Create a new user (direct DB + Kratos; bypasses HTTP auth — M20-safe)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// A bare positional is the username, matching `user delete <…>`.
+			if len(args) == 1 && username == "" {
+				username = args[0]
+			}
 			// 30s timeout covers the worst-case path: Kratos create (loopback,
 			// sub-100ms) + agent user.create (adduser + home-dir perms, low
 			// seconds). Generous so a cold Kratos doesn't spuriously fail.
@@ -122,6 +128,7 @@ func newUserCreateCmd() *cobra.Command {
 			}
 
 			u, warn, err := createUserDirect(ctx, cliUserInput{
+				Username:  username,
 				Email:     email,
 				Password:  password,
 				NameFirst: nameFirst,
@@ -150,7 +157,8 @@ func newUserCreateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "user email (required)")
+	cmd.Flags().StringVar(&username, "username", "", "login username — the identifier users sign in with (required unless --email is given to derive one)")
+	cmd.Flags().StringVar(&email, "email", "", "user email (optional; a placeholder is synthesized from the username if omitted)")
 	cmd.Flags().StringVar(&password, "password", "", "user password (required, min 10 chars)")
 	cmd.Flags().BoolVar(&viaStdin, "password-stdin", false, "read password from stdin (no prompt, no echo)")
 	cmd.Flags().StringVar(&nameFirst, "name-first", "", "first name")

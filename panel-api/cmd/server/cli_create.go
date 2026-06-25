@@ -23,6 +23,7 @@ import (
 // --skip-provision yet because the HTTP handler's skip-provision path is
 // admin-test-only and CLI operators always want OS provisioning.
 type cliUserInput struct {
+	Username  string
 	Email     string
 	Password  string
 	NameFirst string
@@ -56,28 +57,54 @@ func createUserDirect(ctx context.Context, in cliUserInput) (*models.User, strin
 		return nil, "", err
 	}
 
-	if in.Email == "" || in.Password == "" {
-		return nil, "", fmt.Errorf("--email and --password are required")
-	}
-	if !cliValidEmail(in.Email) {
-		return nil, "", fmt.Errorf("email %q is not a valid format (need user@domain.tld)", in.Email)
+	if in.Password == "" {
+		return nil, "", fmt.Errorf("--password is required")
 	}
 	if len(in.Password) < 10 {
 		return nil, "", fmt.Errorf("password must be at least 10 characters")
 	}
 
-	users := userRepo()
-
-	// Username derivation for regular users. Admins have nil username — they
-	// don't own /home/<user>, so no domain hosting.
-	var effectiveUsername *string
-	if !in.IsAdmin {
-		derived := cliLinuxUserFromEmail(in.Email)
-		if derived == "" || !cliValidUsername(derived) {
-			return nil, "", fmt.Errorf("could not derive a valid POSIX username from email %q — run the HTTP API with an explicit --username instead", in.Email)
-		}
-		effectiveUsername = &derived
+	username := strings.TrimSpace(in.Username)
+	email := strings.TrimSpace(in.Email)
+	if username == "" && email == "" {
+		return nil, "", fmt.Errorf("provide --username (the login name); --email is optional")
 	}
+
+	// Username is the login identifier: the Kratos identity schema marks
+	// `username` as the password identifier, so users sign in with their
+	// username, NOT their email. Prefer an explicit --username; for backward
+	// compat derive one from --email when only an email was given (regular
+	// users). Admins keep a nil username unless one is passed — they own no
+	// /home/<user>.
+	var effectiveUsername *string
+	if username == "" && !in.IsAdmin {
+		username = cliLinuxUserFromEmail(email)
+		if username == "" {
+			return nil, "", fmt.Errorf("could not derive a username from email %q — pass --username explicitly", email)
+		}
+	}
+	if username != "" {
+		if !cliValidUsername(username) {
+			return nil, "", fmt.Errorf("username %q is not a valid POSIX name (start with a lowercase letter; lowercase letters, digits, - and _; max 32 chars)", username)
+		}
+		effectiveUsername = &username
+	}
+
+	// email is NOT NULL in the users table and is a Kratos trait, but login
+	// never uses it — synthesize a placeholder from the username + panel
+	// hostname when the operator passed only --username.
+	if email == "" {
+		host := sharedCfg.Server.Hostname
+		if host == "" {
+			host = "localhost"
+		}
+		email = username + "@" + host
+	}
+	if !cliValidEmail(email) {
+		return nil, "", fmt.Errorf("email %q is not a valid format (need user@domain.tld)", email)
+	}
+
+	users := userRepo()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -86,7 +113,7 @@ func createUserDirect(ctx context.Context, in cliUserInput) (*models.User, strin
 
 	u := &models.User{
 		ID:           ids.NewULID(),
-		Email:        in.Email,
+		Email:        email,
 		Username:     effectiveUsername,
 		NameFirst:    in.NameFirst,
 		NameLast:     in.NameLast,
