@@ -47,10 +47,38 @@ func (r *Reconciler) reconcilePanelCertificate(ctx context.Context) {
 		return
 	}
 
+	// The mail kind (mail.<hostname>) is only pursued when the panel hostname
+	// actually serves mail — i.e. email is enabled on the panel-primary domain,
+	// the SAME gate the webmail vhost uses. Without this a no-mail panel (the
+	// default: email_enabled=0) has no mail.<hostname> DNS, so the mail cert
+	// parks in pending_acme_retry forever and shows as a perpetual "processing"
+	// task (GH #295). Enabling email on the panel hostname turns it back on.
+	panelMailEnabled := false
+	if r.domains != nil {
+		if d, derr := r.domains.FindByName(ctx, settings.Hostname); derr == nil && d != nil {
+			panelMailEnabled = d.EmailEnabled
+		}
+	}
+
 	for _, kind := range []string{models.PanelCertKindHostname, models.PanelCertKindMail} {
 		row, gerr := r.panelCerts.GetByKind(ctx, kind)
 		if gerr != nil {
 			r.log.Warn("panel-cert reconcile load row", "kind", kind, "error", gerr)
+			continue
+		}
+		if kind == models.PanelCertKindMail && !panelMailEnabled {
+			// Don't attempt LE for mail when the panel isn't doing mail. Reset a
+			// stale pending row to idle so the UI stops showing it as processing;
+			// the self-signed mail cert on disk is harmless (no webmail vhost
+			// references it while email is off).
+			if row.Status == models.PanelCertStatusPendingACME || row.Status == models.PanelCertStatusPendingACMERetry {
+				row.Status = models.PanelCertStatusSelfSigned
+				row.LastError = "mail not enabled on the panel hostname — enable email there to request mail.<hostname> TLS"
+				row.NextRetryAt = nil
+				if uerr := r.panelCerts.Upsert(ctx, row); uerr != nil {
+					r.log.Warn("panel-cert reconcile: failed to idle mail row", "error", uerr)
+				}
+			}
 			continue
 		}
 		r.reconcileOnePanelCert(ctx, kind, row, settings.AdminEmail, settings.PublicIPv4)
