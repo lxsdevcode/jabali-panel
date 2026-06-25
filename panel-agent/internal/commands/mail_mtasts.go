@@ -212,11 +212,15 @@ func renderMTAStsPolicy(mode string, maxAge int, mxHost string) string {
 // from the panel — the cert MUST cover `mta-sts.<domain>` as a SAN
 // (sanHostnamesForDomain handles this once mta_sts_enabled is on).
 func renderMTAStsVhost(domain, docRoot, certPath, keyPath string) string {
+	h2 := nginxHTTP2()
+	listenBlock := fmt.Sprintf("    listen 443 ssl%s;\n    listen [::]:443 ssl%s;", h2.Param, h2.Param)
+	if h2.Directive != "" {
+		listenBlock += "\n    " + h2.Directive
+	}
 	return fmt.Sprintf(`# Managed by jabali agent — mail.mtasts.apply (ADR-0109)
 # DO NOT HAND-EDIT — every reconciler pass overwrites.
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+%s
     server_name mta-sts.%s;
 
     ssl_certificate %s;
@@ -235,7 +239,7 @@ server {
     access_log /var/log/nginx/%s-mta-sts-access.log;
     error_log  /var/log/nginx/%s-mta-sts-error.log;
 }
-`, domain, certPath, keyPath, docRoot, domain, domain)
+`, listenBlock, domain, certPath, keyPath, docRoot, domain, domain)
 }
 
 // nginxTestAndReload + atomicWrite live in webmail_vhost.go and

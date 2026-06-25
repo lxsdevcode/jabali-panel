@@ -5033,6 +5033,24 @@ install_nginx_fastcgi_cache() {
 
 # ---------- M25 Step 4: nginx panel vhost (TLS terminator on :8443) -----
 
+# GH #292: pick the HTTP/2 syntax for the host's nginx. >=1.25.1 wants the
+# standalone `http2 on;` directive (and warns on `listen ... http2`); older nginx
+# (jammy 1.18 / bookworm 1.22 / noble 1.24) only understands the listen
+# parameter. Sets _NGX_H2_PARAM (" http2" or "") + _NGX_H2_DIR ("http2 on;" or "").
+_nginx_http2_form() {
+  _NGX_H2_PARAM=" http2"
+  _NGX_H2_DIR=""
+  local ver maj min pat
+  ver="$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  [[ -z "$ver" ]] && return 0
+  IFS=. read -r maj min pat <<<"$ver"
+  if (( maj > 1 )) || (( maj == 1 && min > 25 )) || (( maj == 1 && min == 25 && pat >= 1 )); then
+    _NGX_H2_PARAM=""
+    _NGX_H2_DIR="http2 on;"
+  fi
+  return 0
+}
+
 install_nginx_panel_vhost() {
   _log "installing nginx panel vhost (M25 Step 4 — TLS terminator on :8443)"
 
@@ -5053,9 +5071,12 @@ install_nginx_panel_vhost() {
   # Render the template by substituting ${SSL_CERT_PATH} + ${SSL_KEY_PATH}
   # via sed. envsubst would be cleaner but isn't a dependency we want to
   # add solely for two substitutions.
+  _nginx_http2_form
   sed \
     -e "s|\${SSL_CERT_PATH}|${tls_cert}|g" \
     -e "s|\${SSL_KEY_PATH}|${tls_key}|g" \
+    -e "s|\${NGX_H2_PARAM}|${_NGX_H2_PARAM}|g" \
+    -e "s|\${NGX_H2_DIR}|${_NGX_H2_DIR}|g" \
     "$tmpl" > "$panel_vhost_file"
 
   if grep -q '\${' "$panel_vhost_file"; then
@@ -5093,6 +5114,7 @@ install_nginx_panel_vhost() {
 # ---------- step 6.4: nginx default vhost for phpMyAdmin SSO -----
 
 install_nginx_default_vhost() {
+  _nginx_http2_form
   _log "creating default nginx vhost (80 -> 443 redirect, 443 with panel TLS cert)"
 
   local nginx_sites_dir="/etc/nginx/sites-available"
@@ -5168,8 +5190,8 @@ server {
 }
 
 server {
-    listen 443 ssl default_server http2;
-    listen [::]:443 ssl default_server http2;
+    listen 443 ssl default_server${_NGX_H2_PARAM};
+    listen [::]:443 ssl default_server${_NGX_H2_PARAM};
     # GH#135: mirror the \${JABALI_SRV_IPV4}:80 binding above onto :443.
     # Per-domain vhosts bind `listen \${IPv4}:443 ssl` (M24), moving them
     # into nginx's specific-IP listener pool. The wildcard `listen 443 ssl
@@ -5181,7 +5203,8 @@ server {
     # \${tls_cert}. Same incident class as 2026-04-26 (then fixed for :80
     # only); the panel hostname showed a 123123.com cert warning on
     # https://<hostname>/ while :8443 served valid LE.
-    listen ${JABALI_SRV_IPV4}:443 ssl default_server http2;
+    listen ${JABALI_SRV_IPV4}:443 ssl default_server${_NGX_H2_PARAM};
+    ${_NGX_H2_DIR}
     server_name _;
 
     ssl_certificate     ${tls_cert};
@@ -5231,9 +5254,10 @@ server {
 # landing page from /var/www/${JABALI_SRV_HOSTNAME} (static index.html or
 # the admin's own index.php). The panel UI itself stays on :8443.
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    listen ${JABALI_SRV_IPV4}:443 ssl http2;
+    listen 443 ssl${_NGX_H2_PARAM};
+    listen [::]:443 ssl${_NGX_H2_PARAM};
+    listen ${JABALI_SRV_IPV4}:443 ssl${_NGX_H2_PARAM};
+    ${_NGX_H2_DIR}
     server_name ${JABALI_SRV_HOSTNAME};
 
     ssl_certificate     ${tls_cert};

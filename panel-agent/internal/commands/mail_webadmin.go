@@ -42,10 +42,10 @@ var stalwartAdminVhostTemplate = `# Rendered by panel-agent mail.webadmin.apply 
 # Stalwart stays on 127.0.0.1:8446; this is the only externally reachable door,
 # behind TLS{{if .AllowCIDRs}} + IP allowlist{{end}} + Stalwart's own admin login.
 server {
-    listen {{.Port}} ssl;
-    listen [::]:{{.Port}} ssl;
-    http2 on;
-    server_name {{.ServerName}};
+    listen {{.Port}} ssl{{.HTTP2Param}};
+    listen [::]:{{.Port}} ssl{{.HTTP2Param}};
+{{ if .HTTP2Directive }}    {{.HTTP2Directive}}
+{{ end }}    server_name {{.ServerName}};
 
     ssl_certificate {{.SSLCertPath}};
     ssl_certificate_key {{.SSLKeyPath}};
@@ -98,6 +98,9 @@ type webadminVhostTemplateData struct {
 	SSLCertPath string
 	SSLKeyPath  string
 	AllowCIDRs  []string
+	// HTTP/2 form per host nginx version (GH #292).
+	HTTP2Param     string
+	HTTP2Directive string
 }
 
 type webadminApplyResponse struct {
@@ -155,12 +158,15 @@ func mailWebadminApplyHandler(ctx context.Context, params json.RawMessage) (any,
 	if p.Port < 1 || p.Port > 65535 {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "port out of range"}
 	}
+	swh2 := nginxHTTP2()
 	data := webadminVhostTemplateData{
-		ServerName:  p.ServerName,
-		Port:        p.Port,
-		SSLCertPath: p.SSLCertPath,
-		SSLKeyPath:  p.SSLKeyPath,
-		AllowCIDRs:  p.AllowCIDRs,
+		ServerName:     p.ServerName,
+		Port:           p.Port,
+		SSLCertPath:    p.SSLCertPath,
+		SSLKeyPath:     p.SSLKeyPath,
+		AllowCIDRs:     p.AllowCIDRs,
+		HTTP2Param:     swh2.Param,
+		HTTP2Directive: swh2.Directive,
 	}
 	tmpl, err := template.New("swadmin").Parse(stalwartAdminVhostTemplate)
 	if err != nil {

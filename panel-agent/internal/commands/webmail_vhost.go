@@ -44,12 +44,12 @@ const mailVhostTemplate = `# Rendered by panel-agent webmail.vhost_apply (M6 Ste
 # DO NOT EDIT — changes belong in install/nginx/jabali-mail-vhost.conf.tmpl.
 
 server {
-{{ if .ListenIPv4 }}  listen {{.ListenIPv4}}:443 ssl http2;
-{{ else }}  listen 443 ssl http2;
-{{ end }}{{ if .ListenIPv6 }}  listen [{{.ListenIPv6}}]:443 ssl http2;
-{{ else }}  listen [::]:443 ssl http2;
-{{ end }}  # http2 folded into listen — legacy form, nginx>=1.9.5
-  server_name mail.{{.DomainName}} autoconfig.{{.DomainName}} autodiscover.{{.DomainName}} mta-sts.{{.DomainName}};
+{{ if .ListenIPv4 }}  listen {{.ListenIPv4}}:443 ssl{{.HTTP2Param}};
+{{ else }}  listen 443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .ListenIPv6 }}  listen [{{.ListenIPv6}}]:443 ssl{{.HTTP2Param}};
+{{ else }}  listen [::]:443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .HTTP2Directive }}  {{.HTTP2Directive}}
+{{ end }}  server_name mail.{{.DomainName}} autoconfig.{{.DomainName}} autodiscover.{{.DomainName}} mta-sts.{{.DomainName}};
 
   ssl_certificate {{.SSLCertPath}};
   ssl_certificate_key {{.SSLKeyPath}};
@@ -221,6 +221,9 @@ type webmailVhostApplyParams struct {
 	// SNI deterministic when the apex vhost has a specific-IP listen.
 	ListenIPv4 string `json:"listen_ipv4,omitempty"`
 	ListenIPv6 string `json:"listen_ipv6,omitempty"`
+	// HTTP/2 form per host nginx version (GH #292); set before render.
+	HTTP2Param     string `json:"-"`
+	HTTP2Directive string `json:"-"`
 	// PanelHostname is server_settings.hostname (e.g. mx.jabali-panel.com).
 	// When set, the rendered vhost installs an nginx sub_filter that
 	// rewrites the panel hostname to the requested $host in Bulwark
@@ -262,6 +265,8 @@ func webmailVhostApplyHandler(ctx context.Context, params json.RawMessage) (any,
 		}
 	}
 
+	h2 := nginxHTTP2()
+	p.HTTP2Param, p.HTTP2Directive = h2.Param, h2.Directive
 	tmpl, err := template.New("mailvhost").Parse(mailVhostTemplate)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("template parse: %v", err)}

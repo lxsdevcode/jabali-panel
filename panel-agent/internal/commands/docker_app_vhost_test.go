@@ -54,7 +54,7 @@ func TestDockerAppVhostApply_RendersProxyVhost(t *testing.T) {
 		"server_name forum.example.com;",
 		"proxy_pass http://127.0.0.1:10000;",
 		`proxy_set_header Connection "upgrade";`, // websocket on
-		"listen 203.0.113.5:443 ssl http2;",
+		"listen 203.0.113.5:443 ssl",
 		"ssl_certificate /etc/ssl/x/fullchain.pem;",
 		"location ^~ /.well-known/acme-challenge/",
 		"return 301 https://$host$request_uri;",

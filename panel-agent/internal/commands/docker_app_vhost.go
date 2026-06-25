@@ -51,10 +51,11 @@ const dockerAppVhostTemplate = `# Rendered by panel-agent docker_app.vhost_apply
 # Proxy-only vhost for a managed_by='docker_app' domain.
 
 server {
-{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl http2;
-{{ else }}    listen 443 ssl http2;
-{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl http2;
-{{ else }}    listen [::]:443 ssl http2;
+{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl{{.HTTP2Param}};
+{{ else }}    listen 443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl{{.HTTP2Param}};
+{{ else }}    listen [::]:443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .HTTP2Directive }}    {{.HTTP2Directive}}
 {{ end }}    server_name {{.DomainName}};
 
     ssl_certificate {{.SSLCertPath}};
@@ -105,6 +106,9 @@ type dockerAppVhostApplyParams struct {
 	Websocket   bool   `json:"websocket,omitempty"`
 	ListenIPv4  string `json:"listen_ipv4,omitempty"`
 	ListenIPv6  string `json:"listen_ipv6,omitempty"`
+	// HTTP/2 form per host nginx version (GH #292); set before render, not wire.
+	HTTP2Param     string `json:"-"`
+	HTTP2Directive string `json:"-"`
 }
 
 func dockerAppVhostPaths(domain string) (configPath, enabledPath string) {
@@ -136,6 +140,8 @@ func dockerAppVhostApplyHandler(ctx context.Context, params json.RawMessage) (an
 		}
 	}
 
+	h2 := nginxHTTP2()
+	p.HTTP2Param, p.HTTP2Directive = h2.Param, h2.Directive
 	tmpl, err := template.New("dockerappvhost").Parse(dockerAppVhostTemplate)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("template parse: %v", err)}

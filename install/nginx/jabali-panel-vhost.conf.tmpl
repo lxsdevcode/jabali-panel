@@ -28,8 +28,9 @@ upstream jabali_panel_api {
 }
 
 server {
-  listen 8443 ssl http2;
-  listen [::]:8443 ssl;
+  listen 8443 ssl${NGX_H2_PARAM};
+  listen [::]:8443 ssl${NGX_H2_PARAM};
+  ${NGX_H2_DIR}
   server_name _;
 
   ssl_certificate     ${SSL_CERT_PATH};

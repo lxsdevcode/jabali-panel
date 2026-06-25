@@ -150,14 +150,15 @@ const vhostTemplate = `server {
 }
 
 server {
-{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl http2;
-{{ else }}    listen 443 ssl http2;
-{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl http2;
-{{ else }}    listen [::]:443 ssl http2;
-{{ end }}    # http2 folded into the listen directive — legacy form
-    # works on nginx >= 1.9.5. The separate http2-on directive (1.25+)
-    # caused transient emerg + cascade during the in-place vhost
-    # migrate on mixed hosts; reverted 2026-05-16.
+{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl{{.HTTP2Param}};
+{{ else }}    listen 443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl{{.HTTP2Param}};
+{{ else }}    listen [::]:443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .HTTP2Directive }}    {{.HTTP2Directive}}
+{{ end }}    # HTTP/2 is version-aware (GH #292): the listen ... http2
+    # parameter on nginx <1.25.1 (where the standalone directive is an
+    # unknown-directive error), the http2 on directive on >=1.25.1
+    # (where the listen parameter is deprecated and warns every reload).
     server_name {{.Domain}} www.{{.Domain}};
     ssl_certificate {{.SSLCertPath}};
     ssl_certificate_key {{.SSLKeyPath}};
@@ -359,6 +360,9 @@ type vhostData struct {
 	// panel-api before reaching the agent) so the template stays simple.
 	ListenIPv4 string
 	ListenIPv6 string
+	// HTTP/2 form selected per host nginx version (GH #292).
+	HTTP2Param     string // " http2" on nginx <1.25.1, "" on >=1.25.1
+	HTTP2Directive string // "" on nginx <1.25.1, "http2 on;" on >=1.25.1
 	// M36 IP allow/deny — pre-rendered nginx directives. One line per
 	// rule, "allow <cidr>;" or "deny <cidr>;", in priority order. Empty
 	// string when the domain has no ACLs (zero overhead). Sits inside
@@ -501,8 +505,11 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		return "", fmt.Errorf("template parse failed: %w", err)
 	}
 
+	h2 := nginxHTTP2()
 	vhostData := vhostData{
 		Domain:                     domain,
+		HTTP2Param:                 h2.Param,
+		HTTP2Directive:             h2.Directive,
 		DocRoot:                    docRoot,
 		HasPHP:                     hasPHP,
 		PHPVersion:                 phpVersion,

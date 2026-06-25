@@ -36,7 +36,7 @@ func TestMailWebadminApply_RenderAndGate(t *testing.T) {
 	cs := string(conf)
 	for _, want := range []string{
 		"server_name mx.example.com;",
-		"listen 8449 ssl;",
+		"listen 8449 ssl",
 		"proxy_pass http://127.0.0.1:8446;", // Stalwart stays loopback
 		"allow 203.0.113.0/24;", "allow 198.51.100.5;", "deny all;",
 		"return 302 /admin/;", // bare root -> SPA entry
