@@ -504,7 +504,7 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 		Env:          envMap,
 		TenantHardening: &dockerapp.TenantHardening{
 			CgroupParent: "jabali-user-" + username + ".slice",
-			Caps:         entry.TenantCaps,
+			Caps:         dockerapp.TenantCapAllowlist(entry.TenantCaps),
 			PIDsLimit:    pids,
 		},
 	})
@@ -530,7 +530,7 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 			"healthcheck_timeout_seconds": 300,
 			// M49: agent safety gate before `up`.
 			"tenant_validate": true,
-			"tenant_caps":     entry.TenantCaps,
+			"tenant_caps":     dockerapp.TenantCapAllowlist(entry.TenantCaps),
 		}
 		appID := app.ID
 		go func() {
