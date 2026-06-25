@@ -602,24 +602,9 @@ _detect_public_ipv6() {
 prompt_server_settings() {
   local config_file="/etc/jabali-panel/config.toml"
 
-  # If --hostname (or JABALI_HOSTNAME env) was passed, apply it at the OS
-  # layer immediately — even on re-runs where config.toml already has a
-  # hostname and we skip the prompt below. Without this, a second install
-  # pass with --hostname=new-name silently ignored the flag because the
-  # early-return fired before line 306's hostnamectl call.
-  if [[ -n "${JABALI_HOSTNAME:-}" ]]; then
-    local _hostname_regex='^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$'
-    if [[ ! "$JABALI_HOSTNAME" =~ $_hostname_regex ]]; then
-      _die "invalid JABALI_HOSTNAME: '$JABALI_HOSTNAME' (use letters/digits/dots/hyphens)"
-    fi
-    local _cur_hostname
-    _cur_hostname="$(hostname 2>/dev/null || echo '')"
-    if [[ "$_cur_hostname" != "$JABALI_HOSTNAME" ]]; then
-      _log "applying --hostname: $_cur_hostname → $JABALI_HOSTNAME"
-      hostnamectl set-hostname "$JABALI_HOSTNAME" 2>/dev/null || \
-        _warn "hostnamectl set-hostname failed (container without CAP_SYS_ADMIN?) — /etc/hostname may be stale"
-    fi
-  fi
+  # Hostname is applied up front by apply_system_hostname() in main(); re-run it
+  # idempotently here in case a re-run path set JABALI_HOSTNAME after that call.
+  apply_system_hostname
 
   # Strip every `127.0.1.1 ...` line in /etc/hosts. Debian seeds this
   # on first boot via `hostnamectl`, but on a public VPS it shadows
@@ -11903,8 +11888,60 @@ EOF
   _ok "DNS forwarder ${DNS_FORWARDER} live via TCP/53 (systemd-resolved masked, /etc/resolv.conf immutable)"
 }
 
+# apply_system_hostname applies the operator-supplied hostname (--hostname /
+# JABALI_HOSTNAME) at the OS layer. Called as the FIRST action in main() so every
+# downstream step (certs, mail config, DNS, the panel identity bound to the
+# hostname) sees the correct system hostname. No-op when the hostname is being
+# prompted interactively (JABALI_HOSTNAME unset) — prompt_server_settings sets it
+# after the prompt in that case. Idempotent.
+apply_system_hostname() {
+  [[ -z "${JABALI_HOSTNAME:-}" ]] && return 0
+  local _re='^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$'
+  [[ "$JABALI_HOSTNAME" =~ $_re ]] || _die "invalid JABALI_HOSTNAME: '$JABALI_HOSTNAME' (use letters/digits/dots/hyphens)"
+  local _cur
+  _cur="$(hostname 2>/dev/null || echo '')"
+  if [[ "$_cur" != "$JABALI_HOSTNAME" ]]; then
+    _log "setting system hostname: ${_cur:-<none>} -> $JABALI_HOSTNAME"
+    hostnamectl set-hostname "$JABALI_HOSTNAME" 2>/dev/null || \
+      _warn "hostnamectl set-hostname failed (container without CAP_SYS_ADMIN?) — /etc/hostname may be stale"
+  fi
+}
+
+# check_ptr_rdns compares the machine's reverse DNS (PTR) for its public IPv4
+# against the server hostname and WARNS at the end of the install if they don't
+# match. A matching PTR (rDNS) is required for reliable mail delivery — most
+# receivers reject or spam-fold mail from IPs whose PTR doesn't match the sending
+# hostname. The installer can't set rDNS (it is delegated to the IP owner), so
+# this is advisory: the operator must set it at their IP / hosting provider.
+check_ptr_rdns() {
+  local want ip ptr
+  want="${JABALI_HOSTNAME:-$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo '')}"
+  [[ -z "$want" ]] && return 0
+  ip="$(_detect_public_ipv4 2>/dev/null || true)"
+  [[ -z "$ip" ]] && return 0
+  if command -v dig >/dev/null 2>&1; then
+    ptr="$(dig +short -x "$ip" 2>/dev/null | head -n1 | sed 's/\.$//')"
+  elif command -v host >/dev/null 2>&1; then
+    ptr="$(host "$ip" 2>/dev/null | awk '/domain name pointer/{print $NF}' | head -n1 | sed 's/\.$//')"
+  else
+    _log "skipping reverse-DNS (PTR) check — no dig/host available"
+    return 0
+  fi
+  echo ""
+  if [[ -z "$ptr" ]]; then
+    _warn "Reverse DNS (PTR) for $ip is NOT set. For reliable mail delivery, set the PTR / rDNS of $ip to '$want' at your IP / hosting provider."
+  elif [[ "${ptr,,}" != "${want,,}" ]]; then
+    _warn "Reverse DNS (PTR) MISMATCH: $ip -> '$ptr', but the server hostname is '$want'. For reliable mail delivery, set the PTR / rDNS of $ip to '$want' at your IP / hosting provider."
+  else
+    _ok "Reverse DNS (PTR) matches hostname: $ip -> $ptr"
+  fi
+}
+
 main() {
   print_banner
+  # Set the system hostname up front so every downstream step (certs, mail,
+  # DNS, panel identity) uses it.
+  apply_system_hostname
   preflight
   # Swap MUST land before install_base_packages — apt + CrowdSec hub
   # downloads + npm ci all pull 100MB+ into RAM, OOM-killing each
@@ -12138,6 +12175,10 @@ main() {
     echo "============================================================"
     echo ""
   fi
+
+  # End-of-install advisory: warn if reverse DNS (PTR) does not match the
+  # hostname (mail deliverability).
+  check_ptr_rdns
 }
 
 # ---------- uninstall flow --------------------------------------------------
