@@ -12,6 +12,8 @@ Type=simple
 # system paths. Main ExecStart drops to User=<user> as set in drop-in.
 ExecStartPre=+/usr/local/libexec/jabali/fpm-pre-start %i
 ExecStart=/usr/local/libexec/jabali/fpm-exec %i
+# + prefix: runs as root so it can setfacl the tenant-owned socket (#430).
+ExecStartPost=+/usr/local/libexec/jabali/fpm-post-start %i
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 RestartSec=5s

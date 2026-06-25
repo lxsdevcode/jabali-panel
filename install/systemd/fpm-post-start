@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# jabali FPM post-start (#430): grant nginx (www-data) access to the per-user
+# FPM socket via a root-applied POSIX ACL.
+#
+# The pool sets listen.group=<user> — the FPM master runs AS the tenant and can
+# only chgrp the socket to its own group, and the tenant is NO LONGER in the
+# shared www-data group (that membership is what let one tenant read another's
+# docroot files). So nginx can't reach the socket via group. A root ACL grants
+# exactly nginx (the www-data USER) without re-introducing the shared-group
+# cross-tenant exposure. The socket is recreated on every (re)start, so this
+# reapplies each time (ExecStartPost). Best-effort: never fail the FPM unit.
+set -uo pipefail
+user="${1:?usage: fpm-post-start <user>}"
+sock="/run/php/jabali-${user}/fpm.sock"
+# FPM bind()s the socket during ExecStart; wait briefly for it to appear.
+for _ in $(seq 1 50); do
+  [[ -S "$sock" ]] && break
+  sleep 0.1
+done
+if [[ ! -S "$sock" ]]; then
+  echo "fpm-post-start: socket $sock never appeared" >&2
+  exit 0
+fi
+if ! setfacl -m u:www-data:rw "$sock"; then
+  echo "fpm-post-start: setfacl failed on $sock" >&2
+fi
+exit 0

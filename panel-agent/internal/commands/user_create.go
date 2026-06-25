@@ -16,10 +16,10 @@ import (
 
 // userCreateParams is the input shape for user.create.
 type userCreateParams struct {
-	Username  string `json:"username"`
-	HomeDir   string `json:"home_dir"`
-	Shell     string `json:"shell"`
-	Password  string `json:"password"`
+	Username string `json:"username"`
+	HomeDir  string `json:"home_dir"`
+	Shell    string `json:"shell"`
+	Password string `json:"password"`
 }
 
 // userCreateResponse is the output shape for user.create.
@@ -68,9 +68,12 @@ func userCreateHandler(ctx context.Context, params json.RawMessage) (any, error)
 	}
 
 	// Create user with home directory.
+	// #430: tenants are NOT added to the shared www-data group — that membership
+	// let one tenant read another's group-www-data docroot files. nginx reaches
+	// docroots via the setgid-www-data docroot group + the per-user FPM socket via
+	// a root ACL (fpm-post-start), neither of which needs tenant membership.
 	createCmd := exec.CommandContext(ctx, "useradd",
 		"--create-home",
-		"--groups", "www-data",
 		"--home-dir", p.HomeDir,
 		"--shell", p.Shell,
 		p.Username,

@@ -27,12 +27,12 @@ type userSliceEnsureParams struct {
 
 // userSliceEnsureResponse is the output shape for user.slice.ensure.
 type userSliceEnsureResponse struct {
-	Username      string `json:"username"`
-	SliceUnitPath string `json:"slice_unit_path"`
-	FPMDropinPath string `json:"fpm_dropin_path"`
+	Username        string `json:"username"`
+	SliceUnitPath   string `json:"slice_unit_path"`
+	FPMDropinPath   string `json:"fpm_dropin_path"`
 	LoginDropinPath string `json:"login_dropin_path"`
-	UID           int    `json:"uid"`
-	NoChange      bool   `json:"no_change,omitempty"`
+	UID             int    `json:"uid"`
+	NoChange        bool   `json:"no_change,omitempty"`
 }
 
 // testMutex protects runCmd and systemdRoot variables for test isolation.
@@ -95,13 +95,11 @@ func userSliceEnsureHandler(ctx context.Context, params json.RawMessage) (any, e
 		}
 	}
 
-	// Ensure the user is in www-data group so FPM can chown the socket
-	// listen.group=www-data. Idempotent: usermod -aG on a member is a no-op.
-	// Skip errors: a failure here leaves the socket chown failing loudly in FPM logs,
-	// which is more diagnosable than silently wedging the reconcile.
-	if _, _, gErr := runCmdFn(ctx, "usermod", "-aG", "www-data", p.Username); gErr != nil {
-		// Log via stderr by returning a warning-wrapped error would be overkill;
-		// socket chown will report the real problem.
+	// #430: tenants must NOT be in the shared www-data group (cross-tenant read).
+	// Self-healing: remove the membership every reconcile so a tenant created on an
+	// older build is migrated out. Best-effort — gpasswd -d errors if not a member,
+	// which is the desired end state anyway.
+	if _, _, gErr := runCmdFn(ctx, "gpasswd", "-d", p.Username, "www-data"); gErr != nil {
 		_ = gErr
 	}
 
