@@ -46,6 +46,49 @@ type cliUserInput struct {
 // Returns the created user + a non-fatal provisioning warning if the OS
 // user.create agent call failed (panel row + Kratos identity are kept —
 // operator can retry provisioning).
+// resolveCreateIdentity works out the login username (nil for an admin created
+// without an explicit username) and the email to store, from the operator's
+// --username / --email inputs. Login uses the USERNAME only — the Kratos schema
+// marks `username` as the password identifier — so an email is optional and is
+// synthesized as <username>@<panelHost> when omitted (the users.email column is
+// NOT NULL and email is a Kratos trait). Pure (panelHost injected) for testing.
+func resolveCreateIdentity(rawUsername, rawEmail string, isAdmin bool, panelHost string) (*string, string, error) {
+	username := strings.TrimSpace(rawUsername)
+	email := strings.TrimSpace(rawEmail)
+	if username == "" && email == "" {
+		return nil, "", fmt.Errorf("provide --username (the login name); --email is optional")
+	}
+	// Backward compat: derive a username from the email when only an email was
+	// given for a regular user. Admins own no /home/<user>, so they may stay
+	// username-less unless one is passed explicitly.
+	if username == "" && !isAdmin {
+		username = cliLinuxUserFromEmail(email)
+		if username == "" {
+			return nil, "", fmt.Errorf("could not derive a username from email %q — pass --username explicitly", email)
+		}
+	}
+	var effectiveUsername *string
+	if username != "" {
+		if !cliValidUsername(username) {
+			return nil, "", fmt.Errorf("username %q is not a valid POSIX name (start with a lowercase letter; lowercase letters, digits, - and _; max 32 chars)", username)
+		}
+		effectiveUsername = &username
+	}
+	if email == "" {
+		// Synthesised placeholder (login never uses email). Guarantee a valid
+		// dotted form: cliValidEmail rejects a bare-hostname domain, so fall
+		// back to localhost.localdomain when the panel host has no dot.
+		host := panelHost
+		if !strings.Contains(host, ".") {
+			host = "localhost.localdomain"
+		}
+		email = username + "@" + host
+	} else if !cliValidEmail(email) {
+		return nil, "", fmt.Errorf("email %q is not a valid format (need user@domain.tld)", email)
+	}
+	return effectiveUsername, email, nil
+}
+
 func createUserDirect(ctx context.Context, in cliUserInput) (*models.User, string, error) {
 	if err := initConfig(); err != nil {
 		return nil, "", err
@@ -64,44 +107,9 @@ func createUserDirect(ctx context.Context, in cliUserInput) (*models.User, strin
 		return nil, "", fmt.Errorf("password must be at least 10 characters")
 	}
 
-	username := strings.TrimSpace(in.Username)
-	email := strings.TrimSpace(in.Email)
-	if username == "" && email == "" {
-		return nil, "", fmt.Errorf("provide --username (the login name); --email is optional")
-	}
-
-	// Username is the login identifier: the Kratos identity schema marks
-	// `username` as the password identifier, so users sign in with their
-	// username, NOT their email. Prefer an explicit --username; for backward
-	// compat derive one from --email when only an email was given (regular
-	// users). Admins keep a nil username unless one is passed — they own no
-	// /home/<user>.
-	var effectiveUsername *string
-	if username == "" && !in.IsAdmin {
-		username = cliLinuxUserFromEmail(email)
-		if username == "" {
-			return nil, "", fmt.Errorf("could not derive a username from email %q — pass --username explicitly", email)
-		}
-	}
-	if username != "" {
-		if !cliValidUsername(username) {
-			return nil, "", fmt.Errorf("username %q is not a valid POSIX name (start with a lowercase letter; lowercase letters, digits, - and _; max 32 chars)", username)
-		}
-		effectiveUsername = &username
-	}
-
-	// email is NOT NULL in the users table and is a Kratos trait, but login
-	// never uses it — synthesize a placeholder from the username + panel
-	// hostname when the operator passed only --username.
-	if email == "" {
-		host := sharedCfg.Server.Hostname
-		if host == "" {
-			host = "localhost"
-		}
-		email = username + "@" + host
-	}
-	if !cliValidEmail(email) {
-		return nil, "", fmt.Errorf("email %q is not a valid format (need user@domain.tld)", email)
+	effectiveUsername, email, err := resolveCreateIdentity(in.Username, in.Email, in.IsAdmin, sharedCfg.Server.Hostname)
+	if err != nil {
+		return nil, "", err
 	}
 
 	users := userRepo()
