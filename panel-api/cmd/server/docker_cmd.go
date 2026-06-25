@@ -30,6 +30,7 @@ const (
 	dockerSubuidPath     = "/etc/subuid"
 	dockerAppsRoot       = "/var/lib/jabali/docker-apps"
 	dockremapUser        = "dockremap"
+	dockerCanaryImage    = "hello-world" // throwaway image for the runtime start check
 )
 
 func newDockerCmd() *cobra.Command {
@@ -187,6 +188,74 @@ func uidMapIsUnprivileged(uidMap string) bool {
 	return !(f[0] == "0" && f[1] == "0")
 }
 
+// dockerRuntimeCanary starts a throwaway container to confirm the runtime can
+// actually create containers under the active userns-remap. nil = ok OR the
+// check was inconclusive (canary image couldn't be fetched — a transient/offline
+// condition that must not block enable). A non-nil error means a container
+// provably failed to start, with a specific hint for the nested-LXC runc/
+// AppArmor case (GH #446).
+func dockerRuntimeCanary() error {
+	out, err := exec.Command("docker", "run", "--rm", dockerCanaryImage).CombinedOutput()
+	res := classifyCanaryOutput(string(out), err)
+	if res == nil && err != nil {
+		fmt.Fprintf(os.Stderr, "warning: tenant docker runtime check inconclusive (could not run %s): %s\n",
+			dockerCanaryImage, lastChars(strings.TrimSpace(string(out)), 200))
+	}
+	return res
+}
+
+// classifyCanaryOutput is the pure decision for dockerRuntimeCanary: given the
+// combined output + run error of the canary container, return nil to proceed
+// (success or an inconclusive image-fetch failure) or a diagnostic error to
+// block. Separated for unit testing.
+func classifyCanaryOutput(out string, runErr error) error {
+	if runErr == nil {
+		return nil
+	}
+	s := strings.TrimSpace(out)
+	low := strings.ToLower(s)
+	// Inconclusive: the canary image couldn't be fetched (offline / registry).
+	if strings.Contains(low, "manifest") || strings.Contains(low, "pull access") ||
+		strings.Contains(low, "no such host") || strings.Contains(low, "i/o timeout") ||
+		strings.Contains(low, "connection refused") || strings.Contains(low, "timeout exceeded") {
+		return nil
+	}
+	if strings.Contains(s, "ip_unprivileged_port_start") ||
+		(strings.Contains(low, "permission denied") && strings.Contains(low, "sysctl")) {
+		return fmt.Errorf("a test container could not start:\n  %s\n\nThis host looks like a nested LXC/Incus/Proxmox container: runc 1.3.x's security fix is denied by the container's AppArmor profile, so NO container can start (a bare `docker run hello-world` fails too). Patch the host's container AppArmor profile (Incus/Proxmox update) or run tenant docker on a VM / bare-metal. Base docker is unaffected. (GH #446)", lastChars(s, 400))
+	}
+	return fmt.Errorf("a test container could not start:\n  %s", lastChars(s, 400))
+}
+
+// revertUsernsRemapBestEffort strips userns-remap from daemon.json + restarts
+// dockerd so base docker is fully restored. Best-effort; used when a post-
+// restart step fails before any app data has been migrated.
+func revertUsernsRemapBestEffort() {
+	onDisk, err := os.ReadFile(dockerDaemonJSON)
+	if err != nil {
+		return
+	}
+	cleaned, removed, cerr := removeUsernsRemap(onDisk)
+	if cerr != nil || !removed {
+		return
+	}
+	if len(cleaned) <= 3 { // "{}\n" — nothing worth keeping
+		_ = os.Remove(dockerDaemonJSON)
+	} else {
+		_ = os.WriteFile(dockerDaemonJSON, cleaned, 0o644)
+	}
+	_ = exec.Command("systemctl", "reset-failed", "docker").Run()
+	_ = exec.Command("systemctl", "restart", "docker").Run()
+}
+
+// lastChars returns the trailing n chars of s (whole string if shorter).
+func lastChars(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "…" + s[len(s)-n:]
+}
+
 func runDockerEnableTenant(yes bool) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("must run as root")
@@ -249,6 +318,17 @@ func runDockerEnableTenant(yes bool) error {
 			hint = " This host is an unprivileged LXC/container — docker userns-remap is unsupported here. Run tenant docker on a VM, or a privileged LXC with nesting + a subuid/subgid map."
 		}
 		return fmt.Errorf("restart docker with userns-remap failed (reverted; base docker restored): %v: %s.%s", err, strings.TrimSpace(string(out)), hint)
+	}
+
+	// 2b. Runtime canary — prove a container can actually START under the new
+	// userns-remap before touching app data or writing the gate flag. The userns
+	// checks above pass on a nested LXC/Incus/Proxmox host, but runc 1.3.x's
+	// CVE-2025-52881 fix is then denied by the LXC AppArmor profile and EVERY
+	// container fails to init; without this, every future tenant install would
+	// silently strand as "failed" (GH #284 / #446).
+	if cerr := dockerRuntimeCanary(); cerr != nil {
+		revertUsernsRemapBestEffort() // no app data touched yet — clean rollback
+		return fmt.Errorf("tenant docker runtime check failed (reverted; base docker restored): %w", cerr)
 	}
 
 	// 3. chown app data trees into the dockremap range.
