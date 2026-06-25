@@ -39,24 +39,17 @@ func backupForgetHandler(ctx context.Context, raw json.RawMessage) (any, error) 
 	if p.JobID == "" {
 		return nil, bkInvalidArg("job_id required")
 	}
-	if p.RepoURL == "" {
-		return nil, bkInvalidArg("repo_url required")
-	}
-	kind := p.Kind
-	if kind == "" {
-		kind = "account_backup"
-	}
-
-	// Serialize against a concurrent create/restic op on the same repo. restic
-	// locks the repo itself, but taking the in-process slot turns a confusing
-	// "repository is already locked" into a clear, retryable precondition.
-	if existing, ok := defaultJobSlots.acquire(kind, p.UserID, p.RepoURL, p.JobID); !ok {
+	// Empty repo_url -> the agent's default local repo (matches backup.create,
+	// which me-backups call with no destination). The lock kind is the literal
+	// "backup" string create uses, so forget and create are mutually exclusive
+	// on the same user+repo (avoids a restic "repository is already locked").
+	if existing, ok := defaultJobSlots.acquire("backup", p.UserID, p.RepoURL, p.JobID); !ok {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeFailedPrecondition,
 			Message: fmt.Sprintf("another backup operation (%s) is running on this repository — retry once it finishes", existing),
 		}
 	}
-	defer defaultJobSlots.release(kind, p.UserID, p.RepoURL)
+	defer defaultJobSlots.release("backup", p.UserID, p.RepoURL)
 
 	cfg, cerr := bkResticConfigWithPassword(p.RepoURL, p.CredentialsRef, p.PasswordFile, p.ExtraOptions)
 	if cerr != nil {
