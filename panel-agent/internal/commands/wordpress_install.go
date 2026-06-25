@@ -131,17 +131,18 @@ func removePlaceholderIndex(ctx context.Context, installPath string) {
 
 // normalizePermsToWwwData makes the WP tree match the project's ownership
 // convention used by domain.create: owner=<user>, group=www-data,
-// dirs 0750, files 0640. nginx (in the www-data group) traverses via
-// group bits; FPM (running AS the user) writes via owner bits. Without
-// this step `wp core download` leaves files owned <user>:<user> with
-// world-readable perms — works by accident today but breaks the moment
-// any plugin or upload lands a 0700 dir or removes the world bit.
+// dirs 2750 (setgid), files 0640. nginx (in the www-data group) traverses via
+// group bits; FPM (running AS the user) writes via owner bits. The setgid bit
+// is load-bearing: it forces every file/dir the tenant later creates inside the
+// tree to group www-data, so nginx keeps read access to uploads/plugins without
+// the tenant being in www-data. A plain 0750 strips that, and new uploads land
+// group <user> -> nginx 403 (repair "docroot-www-data-group" flags exactly this).
 func normalizePermsToWwwData(ctx context.Context, installPath, osUser string) error {
 	if err := exec.CommandContext(ctx, "chown", "-R", osUser+":www-data", installPath).Run(); err != nil {
 		return fmt.Errorf("chown -R %s:www-data %s: %w", osUser, installPath, err)
 	}
-	if err := exec.CommandContext(ctx, "find", installPath, "-type", "d", "-exec", "chmod", "0750", "{}", "+").Run(); err != nil {
-		return fmt.Errorf("chmod dirs 0750 under %s: %w", installPath, err)
+	if err := exec.CommandContext(ctx, "find", installPath, "-type", "d", "-exec", "chmod", "2750", "{}", "+").Run(); err != nil {
+		return fmt.Errorf("chmod dirs 2750 under %s: %w", installPath, err)
 	}
 	if err := exec.CommandContext(ctx, "find", installPath, "-type", "f", "-exec", "chmod", "0640", "{}", "+").Run(); err != nil {
 		return fmt.Errorf("chmod files 0640 under %s: %w", installPath, err)

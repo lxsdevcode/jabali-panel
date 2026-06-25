@@ -841,9 +841,22 @@ func jabaliAAProfiles(repoDir string) []string {
 	return names
 }
 
+// apparmorEnforceable reports whether AppArmor can actually load/enforce
+// profiles on this host. In a nested/unprivileged LXC the module is often
+// "loaded" but the apparmor securityfs interface is absent (the host owns
+// AppArmor), so jabali's profiles can be neither parsed nor enforced — reporting
+// them "missing" or "disabled" there is noise, not a fixable condition.
+func apparmorEnforceable() bool {
+	_, err := os.Stat("/sys/kernel/security/apparmor/profiles")
+	return err == nil
+}
+
 func detectAppArmorProfilesMissing(ctx repairCtx) (bool, string, error) {
 	if _, err := exec.LookPath("aa-status"); err != nil {
 		return false, "", nil // AppArmor not installed
+	}
+	if !apparmorEnforceable() {
+		return false, "", nil // e.g. nested LXC — AppArmor can't run here
 	}
 	missing := []string{}
 	for _, p := range jabaliAAProfiles(ctx.repoDir) {
@@ -893,6 +906,9 @@ func fixAppArmorProfilesMissing(ctx repairCtx) error {
 func detectAppArmorProfilesDisabled(ctx repairCtx) (bool, string, error) {
 	if _, err := exec.LookPath("aa-status"); err != nil {
 		return false, "", nil
+	}
+	if !apparmorEnforceable() {
+		return false, "", nil // e.g. nested LXC — AppArmor can't run here
 	}
 	disabled := []string{}
 	for _, p := range jabaliAAProfiles(ctx.repoDir) {
