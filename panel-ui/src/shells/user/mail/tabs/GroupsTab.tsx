@@ -16,7 +16,7 @@ import {
   Space,
   Table,
   Tag,
-  Radio,
+  Segmented,
   Typography,
 } from "antd";
 import {
@@ -281,9 +281,8 @@ export function GroupDrawer({
           <Input placeholder="Marketing" autoComplete="off" />
         </Form.Item>
         <Form.Item label="Type" name="group_kind" tooltip="Distribution list = a mailing list (mail to the address reaches every member). Shared workspace = members also share the group's calendar, contacts and files.">
-          <Radio.Group
+          <Segmented
             disabled={editing}
-            optionType="button"
             options={[
               { label: "Shared workspace", value: "resource" },
               { label: "Distribution list", value: "distribution" },

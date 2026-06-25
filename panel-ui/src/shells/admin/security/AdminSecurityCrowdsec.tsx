@@ -22,6 +22,7 @@ import {
   message,
   Popconfirm,
   Radio,
+  Segmented,
   Row,
   Select,
   Space,
@@ -464,11 +465,15 @@ const AppSecGeoblockCard = () => {
         </Typography.Paragraph>
         <div>
           <Typography.Text strong>Mode: </Typography.Text>
-          <Radio.Group value={mode} onChange={(e) => setMode(e.target.value)}>
-            <Radio.Button value="off">Off</Radio.Button>
-            <Radio.Button value="allow">Allow-list</Radio.Button>
-            <Radio.Button value="deny">Deny-list</Radio.Button>
-          </Radio.Group>
+          <Segmented
+            value={mode}
+            onChange={(v) => setMode(v as "off" | "allow" | "deny")}
+            options={[
+              { label: "Off", value: "off" },
+              { label: "Allow-list", value: "allow" },
+              { label: "Deny-list", value: "deny" },
+            ]}
+          />
         </div>
         {mode !== "off" && (
           <div>
@@ -972,13 +977,17 @@ const CaptchaRemediationCard = () => {
         onFinish={onSubmit}
         initialValues={{ enabled: false, provider: "hcaptcha", site_key: "", secret_key: "" }}
       >
-        <Form.Item name="enabled" label="Enabled" valuePropName="checked">
-          <Radio.Group
+        <Form.Item
+          name="enabled"
+          label="Enabled"
+          getValueProps={(v) => ({ value: v ? "on" : "off" })}
+          normalize={(v) => v === "on"}
+        >
+          <Segmented
             options={[
-              { value: false, label: "Off" },
-              { value: true, label: "On" },
+              { label: "Off", value: "off" },
+              { label: "On", value: "on" },
             ]}
-            optionType="button"
           />
         </Form.Item>
         <Form.Item
@@ -1701,16 +1710,16 @@ const TopSourcesCard = () => {
         </Space>
       }
       extra={
-        <Radio.Group
+        <Segmented
           size="small"
           value={since}
-          onChange={(e) => setSince(e.target.value)}
-          optionType="button"
-        >
-          <Radio.Button value="24h">24h</Radio.Button>
-          <Radio.Button value="7d">7d</Radio.Button>
-          <Radio.Button value="30d">30d</Radio.Button>
-        </Radio.Group>
+          onChange={(v) => setSince(v as "24h" | "7d" | "30d")}
+          options={[
+            { label: "24h", value: "24h" },
+            { label: "7d", value: "7d" },
+            { label: "30d", value: "30d" },
+          ]}
+        />
       }
       loading={q.isLoading}
     >
@@ -1819,16 +1828,16 @@ const AlertsOverTimeCard = () => {
         </Space>
       }
       extra={
-        <Radio.Group
+        <Segmented
           size="small"
           value={since}
-          onChange={(e) => setSince(e.target.value)}
-          optionType="button"
-        >
-          <Radio.Button value="24h">24h</Radio.Button>
-          <Radio.Button value="7d">7d</Radio.Button>
-          <Radio.Button value="30d">30d</Radio.Button>
-        </Radio.Group>
+          onChange={(v) => setSince(v as "24h" | "7d" | "30d")}
+          options={[
+            { label: "24h", value: "24h" },
+            { label: "7d", value: "7d" },
+            { label: "30d", value: "30d" },
+          ]}
+        />
       }
       loading={q.isLoading}
     >

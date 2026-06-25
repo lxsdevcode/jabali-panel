@@ -10,7 +10,7 @@ import {
   Input,
   message,
   Modal,
-  Radio,
+  Segmented,
   Select,
   Skeleton,
   Space,
@@ -185,7 +185,7 @@ function CreateModal({
           <Select placeholder="Select domain" options={domains.map((d) => ({ label: d.name, value: d.id }))} />
         </Form.Item>
         <Form.Item name="kind" label="Type" rules={[{ required: true }]}>
-          <Radio.Group optionType="button" options={OFFERED_KINDS.map((k) => ({ label: KIND_LABEL[k], value: k }))} />
+          <Segmented options={OFFERED_KINDS.map((k) => ({ label: KIND_LABEL[k], value: k }))} />
         </Form.Item>
         <Form.Item name="display_name" label="Name" rules={[{ required: true, message: "Enter a name" }]}>
           <Input placeholder="Team Calendar" />
@@ -264,11 +264,11 @@ function GrantsModal({ resource, onClose }: { resource: Row; onClose: () => void
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <div>
             <Typography.Text strong>Access level</Typography.Text>
-            <Radio.Group
+            <Segmented
+              block
               style={{ display: "block", marginTop: 4 }}
-              optionType="button"
               value={rights}
-              onChange={(e) => setRights(e.target.value)}
+              onChange={(v) => setRights(v as "read" | "readwrite" | "admin")}
               options={[
                 { label: "Read", value: "read" },
                 { label: "Read/Write", value: "readwrite" },

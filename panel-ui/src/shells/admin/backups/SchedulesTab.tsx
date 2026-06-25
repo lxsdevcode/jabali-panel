@@ -8,7 +8,7 @@ import {
   Form,
   InputNumber,
   Modal,
-  Radio,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -318,11 +318,13 @@ function ScheduleDrawer({
           label="Frequency"
           rules={[{ required: true }]}
         >
-          <Radio.Group buttonStyle="solid">
-            <Radio.Button value="daily">Daily</Radio.Button>
-            <Radio.Button value="weekly">Weekly</Radio.Button>
-            <Radio.Button value="monthly">Monthly</Radio.Button>
-          </Radio.Group>
+          <Segmented
+            options={[
+              { label: "Daily", value: "daily" },
+              { label: "Weekly", value: "weekly" },
+              { label: "Monthly", value: "monthly" },
+            ]}
+          />
         </Form.Item>
         {freq === "weekly" && (
           <Form.Item
