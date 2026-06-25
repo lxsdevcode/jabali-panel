@@ -56,8 +56,16 @@ func TestRender_TenantHardening(t *testing.T) {
 		if s["cgroup_parent"] != "jabali-user-alice.slice" {
 			t.Errorf("service %q cgroup_parent = %v", name, s["cgroup_parent"])
 		}
-		if s["pids_limit"] != 200 {
-			t.Errorf("service %q pids_limit = %v", name, s["pids_limit"])
+		// pids must live under deploy.resources.limits.pids, NOT the legacy
+		// top-level pids_limit key (compose v5 conflict — GH #284).
+		if s["pids_limit"] != nil {
+			t.Errorf("service %q must not emit legacy top-level pids_limit: %v", name, s["pids_limit"])
+		}
+		deploy, _ := s["deploy"].(map[string]any)
+		res, _ := deploy["resources"].(map[string]any)
+		lim, _ := res["limits"].(map[string]any)
+		if lim == nil || lim["pids"] != 200 {
+			t.Errorf("service %q deploy.resources.limits.pids = %v, want 200", name, lim["pids"])
 		}
 	}
 	// Secret + the env value must survive the re-marshal.

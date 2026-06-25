@@ -134,7 +134,15 @@ func applyTenantHardening(composeYAML string, h TenantHardening) (string, error)
 			s["cap_add"] = capAdd
 		}
 		if h.PIDsLimit > 0 {
-			s["pids_limit"] = h.PIDsLimit
+			// Set the pids cap under deploy.resources.limits.pids (where the
+			// template already puts cpus/memory) rather than the legacy
+			// top-level pids_limit key. docker compose v5 maps the legacy key
+			// onto deploy.resources.limits.pids and then rejects the project
+			// with "can't set distinct values" whenever a deploy: block is
+			// present — which every tenant app has — stranding the install as
+			// failed (GH #284). Drop any stray legacy key for the same reason.
+			setDeployPidsLimit(s, h.PIDsLimit)
+			delete(s, "pids_limit")
 		}
 		s["cgroup_parent"] = h.CgroupParent
 		svcs[name] = s
@@ -144,6 +152,30 @@ func applyTenantHardening(composeYAML string, h TenantHardening) (string, error)
 		return "", fmt.Errorf("re-marshal hardened compose: %w", err)
 	}
 	return string(out), nil
+}
+
+// setDeployPidsLimit writes pids into deploy.resources.limits.pids, creating the
+// nested maps as needed. docker compose (v2+) applies this limit on a plain
+// `compose up`, the same as the cpus/memory limits the templates already use —
+// and unlike the legacy top-level pids_limit it does not collide with the
+// deploy: block under compose v5 (GH #284).
+func setDeployPidsLimit(s map[string]any, pids int) {
+	deploy, _ := s["deploy"].(map[string]any)
+	if deploy == nil {
+		deploy = map[string]any{}
+		s["deploy"] = deploy
+	}
+	res, _ := deploy["resources"].(map[string]any)
+	if res == nil {
+		res = map[string]any{}
+		deploy["resources"] = res
+	}
+	lim, _ := res["limits"].(map[string]any)
+	if lim == nil {
+		lim = map[string]any{}
+		res["limits"] = lim
+	}
+	lim["pids"] = pids
 }
 
 // clampCPULimit caps the requested cpus value to the host's logical
