@@ -77,3 +77,31 @@ Because nginx and tenants are both www-data, ANY grant to www-data (group or
   (`wp-config.php`, `.env`) to owner-only `0600` — PHP-FPM reads them as the
   owner, nginx never does — shrinking the highest-value disclosure without the
   group change. Partial; does not close #430.
+
+---
+
+## RESOLVED — minimal fix shipped (`181970b3`, 2026-06-25)
+
+The 2-tenant experiment collapsed the redesign. The full per-path docroot-ACL
+machinery (step 4) is **NOT needed**:
+
+- Docroots are `2750` setgid `<user>:www-data`. Once a tenant leaves www-data,
+  `other`=0 blocks them from even *traversing* another tenant's docroot →
+  cross-read closes for free. The setgid bit forces tenant-created files to group
+  www-data regardless of the creator's membership, so nginx reads docroot static
+  via the group with no ACLs (avoids the chmod-mask treadmill).
+- The only break is the FPM socket. Fix: pool `listen.group={{.User}}` + a root
+  `fpm-post-start` ExecStartPost that `setfacl -m u:www-data:rw`s the socket
+  (reapplied per restart; `acl` pkg added). Tenants dropped from www-data
+  (`user_create` no `--groups`; `user_slice_ensure` `gpasswd -d` self-heals).
+
+Rejected mechanisms (proven on the box): setgid socket-dir + drop `listen.group`
+→ FPM re-chgrps the socket to the master's egid (`<user>`), nginx can't reach it.
+The socket ACL is the working path.
+
+**Validated** (2 tenants, 10.0.3.14): tenant not in www-data; PHP 200 + static
+200 via the ACL'd socket; cross-read BLOCKED; ACL survives FPM restart.
+
+**Remaining: gated production rollout** (operator sign-off). Reconcile self-heals
+existing tenants; they pick up the new socket group + ACL on their next FPM
+restart. The 0600 interim (`7cb5417c`) stays as defense-in-depth.
