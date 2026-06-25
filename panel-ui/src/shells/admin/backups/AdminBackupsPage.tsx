@@ -4,6 +4,7 @@
 import { Badge, Button, Card, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { RowActions } from "../../../components/RowActions";
 import {
+  DeleteOutlined,
   CalendarCheckOutlined,
   DownloadOutlined,
   FileTextOutlined,
@@ -290,6 +291,18 @@ export const AdminBackupsPage = () => {
     }
   };
 
+  // Delete forgets + prunes the job's restic snapshots, then drops the row
+  // (GH #294). Available for any status so failed/stale backups can be cleared.
+  const handleDelete = async (row: BackupJob) => {
+    try {
+      await apiClient.delete(`/admin/backups/${row.id}`);
+      message.success("Backup deleted");
+      void reload();
+    } catch (err) {
+      message.error(extractApiError(err, "Delete failed"));
+    }
+  };
+
   const tableRows: TableRow[] = [
     ...runs.map<RunRow>((r) => ({ rowKey: `run:${r.run_id}`, isRun: true, run: r })),
     ...manual.map<ManualRow>((j) => ({ rowKey: `job:${j.id}`, isRun: false, job: j })),
@@ -357,6 +370,15 @@ export const AdminBackupsPage = () => {
                   confirm: { title: `Restore ${usernameById(row.user_id)}?`, description: "Overwrites the account's current files, databases, and mailboxes.", okText: "Restore" },
                 },
                 { key: "cancel", label: "Cancel", icon: <CloseOutlined />, danger: true, hidden: row.status !== "running", onClick: () => handleCancel(row) },
+                {
+                  key: "delete",
+                  label: "Delete",
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  hidden: row.status === "running",
+                  onClick: () => handleDelete(row),
+                  confirm: { title: "Delete this backup?", description: "Permanently removes this run's snapshots from the repository. Cannot be undone.", okText: "Delete" },
+                },
               ]}
             />
           ),
@@ -517,6 +539,27 @@ export const AdminBackupsPage = () => {
                 title: "Started",
                 render: (_: unknown, row: TableRow) =>
                   row.isRun ? row.run.started_at : row.job.created_at,
+              },
+              {
+                title: "Actions",
+                render: (_: unknown, row: TableRow) =>
+                  row.isRun ? (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>expand to manage</Typography.Text>
+                  ) : (
+                    <RowActions
+                      actions={[
+                        {
+                          key: "delete",
+                          label: "Delete",
+                          icon: <DeleteOutlined />,
+                          danger: true,
+                          hidden: row.job.status === "running",
+                          onClick: () => handleDelete(row.job),
+                          confirm: { title: "Delete this backup?", description: "Permanently removes this backup's snapshots from the repository. Cannot be undone.", okText: "Delete" },
+                        },
+                      ]}
+                    />
+                  ),
               },
             ]}
           />

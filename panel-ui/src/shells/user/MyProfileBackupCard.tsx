@@ -4,11 +4,12 @@
 // scoped via /me/backups (auth-gated to caller's user_id).
 import { Button, Card, Table, Tag, Typography, message } from "antd";
 import { RowActions } from "../../components/RowActions";
-import { DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
+import { DeleteOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
 import { useState } from "react";
 
 import { apiClient } from "../../apiClient";
 import { useListQuery } from "../../hooks/useQueries";
+import { extractApiError } from "../../apiErrors";
 import { humanBytes as formatBytes } from "../../utils/bytes";
 import { RestoreDrawer } from "./RestoreDrawer";
 
@@ -50,6 +51,16 @@ export const MyProfileBackupCard = () => {
       message.error(err instanceof Error ? err.message : "Create failed");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await apiClient.delete(`/me/backups/${id}`);
+      message.success("Backup deleted");
+      query.refetch();
+    } catch (err) {
+      message.error(extractApiError(err, "Delete failed"));
     }
   };
 
@@ -97,15 +108,26 @@ export const MyProfileBackupCard = () => {
           {
             title: "Actions",
             key: "actions",
-            render: (_, row) =>
-              row.status === "succeeded" ? (
-                <RowActions
-                  actions={[
-                    { key: "download", label: "Download", icon: <DownloadOutlined />, onClick: () => { window.location.href = `/api/v1/me/backups/${row.id}/download`; } },
-                    { key: "restore", label: "Restore", icon: <ReloadOutlined />, onClick: () => setRestoreId(row.id) },
-                  ]}
-                />
-              ) : null,
+            render: (_, row) => (
+              <RowActions
+                actions={[
+                  ...(row.status === "succeeded"
+                    ? [
+                        { key: "download", label: "Download", icon: <DownloadOutlined />, onClick: () => { window.location.href = `/api/v1/me/backups/${row.id}/download`; } },
+                        { key: "restore", label: "Restore", icon: <ReloadOutlined />, onClick: () => setRestoreId(row.id) },
+                      ]
+                    : []),
+                  {
+                    key: "delete",
+                    label: "Delete",
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: () => handleDelete(row.id),
+                    confirm: { title: "Delete this backup?", description: "This permanently removes the backup's snapshots from the repository and cannot be undone.", okText: "Delete" },
+                  },
+                ]}
+              />
+            ),
           },
         ]}
       />

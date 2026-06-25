@@ -98,6 +98,7 @@ func RegisterBackupRoutes(rg *gin.RouterGroup, cfg BackupHandlerConfig) {
 	admin.GET("/users/:id/backups", h.listForUser)
 	admin.GET("/backups", h.listAll)
 	admin.GET("/backups/:job_id", h.get)
+	admin.DELETE("/backups/:job_id", h.delete)
 	admin.GET("/backups/:job_id/status", h.status)
 	admin.GET("/backups/:job_id/download", h.download)
 	admin.POST("/backups/:job_id/cancel", h.cancel)
@@ -423,6 +424,68 @@ func (h *backupHandler) listAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": rows, "total": total, "page": page, "page_size": limit,
 	})
+}
+
+// delete removes a backup run: the agent forgets+prunes the run's restic
+// snapshots first, then the DB job row is dropped. forget-then-delete (like the
+// docker-app delete) so a failed forget leaves the row for retry rather than
+// orphaning snapshots (GH #294).
+func (h *backupHandler) delete(c *gin.Context) {
+	jobID := c.Param("job_id")
+	job, err := h.cfg.Jobs.Get(c.Request.Context(), jobID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
+		return
+	}
+	if h.cfg.Agent != nil {
+		if err := h.forgetBackup(c, job); err != nil {
+			return // forgetBackup wrote the response; leave the row
+		}
+	}
+	if err := h.cfg.Jobs.Delete(c.Request.Context(), jobID); err != nil {
+		h.cfg.logErr("delete backup job", err, "job_id", jobID)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "db_delete"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// forgetBackup asks the agent to forget+prune the run's snapshots from its
+// destination repo. Resolves the job's destination for repo URL + creds; a job
+// with no destination (or a since-deleted one) falls back to the default local
+// repo. Returns a non-nil error (response already written) on hard failure.
+func (h *backupHandler) forgetBackup(c *gin.Context, job *models.BackupJob) error {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), backupCallTimeout)
+	defer cancel()
+	params := map[string]any{"job_id": job.ID, "user_id": job.UserID, "kind": job.Kind}
+	var dest *models.BackupDestination
+	if job.DestinationID != nil && h.cfg.Destinations != nil {
+		if d, derr := h.cfg.Destinations.Get(ctx, *job.DestinationID); derr == nil {
+			dest = d
+			for k, v := range destWireParams(dest) {
+				params[k] = v
+			}
+		}
+	}
+	call := func(passwordFile string) error {
+		if passwordFile != "" {
+			params["password_file"] = passwordFile
+		}
+		_, err := h.cfg.Agent.Call(ctx, "backup.forget", params)
+		return err
+	}
+	var ferr error
+	if dest != nil {
+		ferr = backupwrapperhelpers.WithDestPasswordFile(ctx, dest, h.cfg.Agent, h.cfg.SSOKey, call)
+	} else {
+		ferr = call("")
+	}
+	if ferr != nil {
+		status, body := translateAgentError(ferr)
+		c.JSON(status, body)
+		return ferr
+	}
+	return nil
 }
 
 func (h *backupHandler) get(c *gin.Context) {
@@ -917,11 +980,44 @@ func RegisterMeBackupRoutes(rg *gin.RouterGroup, cfg MeBackupsHandlerConfig) {
 	g.POST("", h.create)
 	g.GET("", h.list)
 	g.GET("/:id/download", h.download)
+	g.DELETE("/:id", h.delete)
 	g.GET("/:id/manifest", h.manifest)
 	g.POST("/:id/restore", h.restoreSelective)
 }
 
 type meBackupHandler struct{ cfg MeBackupsHandlerConfig }
+
+// delete forgets the caller's own backup run (default local repo — me-backups
+// never use a destination) then drops the job row (GH #294).
+func (h *meBackupHandler) delete(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"status": "error", "error": "unauthenticated"})
+		return
+	}
+	jobID := c.Param("id")
+	job, err := h.cfg.Jobs.Get(c.Request.Context(), jobID)
+	if err != nil || job.UserID != claims.UserID {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
+		return
+	}
+	if h.cfg.Agent != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), backupCallTimeout)
+		defer cancel()
+		if _, err := h.cfg.Agent.Call(ctx, "backup.forget", map[string]any{
+			"job_id": job.ID, "user_id": job.UserID, "kind": job.Kind,
+		}); err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return // leave the row for retry
+		}
+	}
+	if err := h.cfg.Jobs.Delete(c.Request.Context(), jobID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "db_delete"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
 
 func (h *meBackupHandler) create(c *gin.Context) {
 	claims := ginctx.Claims(c)

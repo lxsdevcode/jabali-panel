@@ -22,6 +22,7 @@ import (
 // a real second caller appears.
 type BackupJobRepository interface {
 	Create(ctx context.Context, job *models.BackupJob) error
+	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*models.BackupJob, error)
 	ListForUser(ctx context.Context, userID string, limit, offset int) ([]models.BackupJob, int64, error)
 	ListAll(ctx context.Context, limit, offset int) ([]models.BackupJob, int64, error)
@@ -97,6 +98,12 @@ func (r *backupJobRepo) Get(ctx context.Context, id string) (*models.BackupJob, 
 		return nil, translate(err)
 	}
 	return &out, nil
+}
+
+// Delete removes a backup job row. The restic snapshots are forgotten
+// separately by the agent (backup.forget) before this is called.
+func (r *backupJobRepo) Delete(ctx context.Context, id string) error {
+	return translate(r.db.WithContext(ctx).Delete(&models.BackupJob{}, "id = ?", id).Error)
 }
 
 func (r *backupJobRepo) ListForUser(ctx context.Context, userID string, limit, offset int) ([]models.BackupJob, int64, error) {
