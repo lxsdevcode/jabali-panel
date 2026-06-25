@@ -172,7 +172,7 @@ func finalizeIngest(scope *filesafe.Scope, dst string, uid, gid int) (int64, *ag
 		_ = scope.RemoveInScope(dst, false)
 		return 0, classifyFSWriteErr("chown_ingest", err)
 	}
-	_ = f.Chmod(0o644)
+	_ = f.Chmod(sensitiveFileMode(dst, 0o644))
 	return size, nil
 }
 

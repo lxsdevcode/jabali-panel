@@ -178,7 +178,7 @@ func filesWriteHandler(ctx context.Context, params json.RawMessage) (any, error)
 
 		// Chmod to 0640 via the fd: owner rw, www-data group r (nginx static
 		// read), other none. Matches per-user FPM isolation.
-		if err := tmpFile.Chmod(0640); err != nil {
+		if err := tmpFile.Chmod(sensitiveFileMode(cleanPath, 0640)); err != nil {
 			tmpFile.Close()
 			_ = scope.RemoveInScope(tmpPath, false)
 			return nil, classifyFSWriteErr("chmod_tempfile", err)
@@ -199,7 +199,7 @@ func filesWriteHandler(ctx context.Context, params json.RawMessage) (any, error)
 	}
 
 	// Append mode: open existing file or create new one, escape-proof.
-	file, err := scope.OpenInScope(cleanPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
+	file, err := scope.OpenInScope(cleanPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, sensitiveFileMode(cleanPath, 0640))
 	if err != nil {
 		return nil, classifyFSWriteErr("open_append", err)
 	}

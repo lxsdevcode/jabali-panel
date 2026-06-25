@@ -725,6 +725,11 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
+	// #430 interim: self-healing re-tighten of docroot secrets (wp-config.php /
+	// .env) to 0600 every reconcile — backfills existing installs + re-tightens
+	// anything widened via the file manager.
+	hardenSensitiveFilesInScope(p.Username, p.DocRoot)
+
 	return domainCreateResponse{
 		Domain:     p.Domain,
 		DocRoot:    p.DocRoot,

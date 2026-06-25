@@ -16,20 +16,20 @@ import (
 
 // wordpressInstallReq is the input shape for wordpress.install.
 type wordpressInstallReq struct {
-	OSUser       string `json:"os_user"`       // domain owner (e.g. "shuki")
-	Docroot      string `json:"docroot"`       // /home/shuki/domains/example.com/public_html
-	DBName       string `json:"db_name"`       // already-provisioned
-	DBUser       string `json:"db_user"`       // already-provisioned
-	DBPassword   string `json:"db_password"`   // plaintext, single-use
-	DBHost       string `json:"db_host"`       // "localhost" (unix socket) or "127.0.0.1"
-	SiteURL      string `json:"site_url"`      // https://example.com
+	OSUser       string `json:"os_user"`     // domain owner (e.g. "shuki")
+	Docroot      string `json:"docroot"`     // /home/shuki/domains/example.com/public_html
+	DBName       string `json:"db_name"`     // already-provisioned
+	DBUser       string `json:"db_user"`     // already-provisioned
+	DBPassword   string `json:"db_password"` // plaintext, single-use
+	DBHost       string `json:"db_host"`     // "localhost" (unix socket) or "127.0.0.1"
+	SiteURL      string `json:"site_url"`    // https://example.com
 	SiteTitle    string `json:"site_title"`
 	AdminUser    string `json:"admin_user"`
 	AdminPass    string `json:"admin_pass"`
 	AdminEmail   string `json:"admin_email"`
 	Locale       string `json:"locale"`
-	UseWWW       bool   `json:"use_www"`       // prepend www. to domain in siteurl
-	Subdirectory string `json:"subdirectory"`  // install in subdirectory (optional)
+	UseWWW       bool   `json:"use_www"`      // prepend www. to domain in siteurl
+	Subdirectory string `json:"subdirectory"` // install in subdirectory (optional)
 
 	// M16 Wave D Step 7 — per-install OIDC plugin bootstrap. All three
 	// must be non-empty to trigger plugin install; any empty value
@@ -146,9 +146,12 @@ func normalizePermsToWwwData(ctx context.Context, installPath, osUser string) er
 	if err := exec.CommandContext(ctx, "find", installPath, "-type", "f", "-exec", "chmod", "0640", "{}", "+").Run(); err != nil {
 		return fmt.Errorf("chmod files 0640 under %s: %w", installPath, err)
 	}
+	// #430 interim: wp-config.php / .env hold DB + cache creds; keep them
+	// owner-only so another tenant's un-sandboxed cron-php can't read them across
+	// the shared www-data group.
+	hardenSensitiveFilesInScope(osUser, installPath)
 	return nil
 }
-
 
 // cleanupWordPressFiles performs best-effort cleanup on failure.
 func cleanupWordPressFiles(ctx context.Context, docroot string) error {
