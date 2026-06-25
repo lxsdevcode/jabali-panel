@@ -365,6 +365,10 @@ ensure_dbus() {
   fi
   _log "activating dbus.socket (was dormant; common on minimal LXC images)"
   systemctl start dbus.socket dbus.service >/dev/null 2>&1 || true
+  # Persist across reboots: on minimal images dbus.socket is static and nothing
+  # pulls it in at boot, so a start-only activation is lost on the next reboot
+  # and cron/systemd-user break again (GH #296). enable is best-effort.
+  systemctl enable dbus.socket dbus.service >/dev/null 2>&1 || true
   local attempt
   for attempt in 1 2 3 4 5; do
     [[ -S /run/dbus/system_bus_socket ]] && return 0

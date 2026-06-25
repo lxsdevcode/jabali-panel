@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/cronvalidate"
@@ -331,7 +332,33 @@ func checkUserLinger(ctx context.Context, username string) error {
 //     exists right now (enable-linger alone can be async).
 //
 // Both are no-ops when already in place.
+// ensureSystemBus makes sure the D-Bus system bus socket exists, starting
+// dbus.socket/dbus.service if not (the agent runs as root). On minimal
+// LXC/OpenVZ images dbus.socket is static and isn't pulled in at boot, so the
+// socket can be missing after a reboot even though install.sh activated it once
+// — every cron op then fails "Failed to connect to system scope bus" (GH #296).
+// Returns a clear, actionable error when the bus genuinely can't be brought up.
+func ensureSystemBus(ctx context.Context) error {
+	const sock = "/run/dbus/system_bus_socket"
+	if _, err := os.Stat(sock); err == nil {
+		return nil
+	}
+	_ = exec.CommandContext(ctx, "systemctl", "start", "dbus.socket", "dbus.service").Run()
+	for i := 0; i < 5; i++ {
+		if _, err := os.Stat(sock); err == nil {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("system D-Bus is unavailable (%s missing) and could not be started — cron needs a running system bus; on a minimal LXC/OpenVZ image enable it with `systemctl enable --now dbus.socket`", sock)
+}
+
 func ensureUserManager(ctx context.Context, username string, uid int, runtimeDir string) error {
+	// The user manager and `systemd-run --machine` both reach the user's
+	// systemd over the SYSTEM bus — make sure it's up first (GH #296).
+	if err := ensureSystemBus(ctx); err != nil {
+		return err
+	}
 	if err := checkUserLinger(ctx, username); err != nil {
 		if out, lErr := exec.CommandContext(ctx, "loginctl", "enable-linger", username).CombinedOutput(); lErr != nil {
 			return fmt.Errorf("enable-linger: %v: %s", lErr, strings.TrimSpace(string(out)))

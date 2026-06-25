@@ -66,8 +66,12 @@ var BaseAllowedServices = []string{
 	"docker",
 	"jabali-panel",
 	"jabali-agent",
-	"ssh",  // Debian unit name for OpenSSH is ssh.service, not sshd.service
-	"cron", // cron.service on Debian (cronie on RHEL — not our target OS)
+	"ssh", // Debian unit name for OpenSSH is ssh.service, not sshd.service
+	// NOTE: the system cron.service is intentionally NOT listed. jabali cron
+	// runs as per-user systemd-user timers (M8), never the stock cron daemon,
+	// so showing cron.service here was misleading — it sat OFF and "Start" did
+	// nothing for jabali cron jobs (GH #296). Cron jobs are managed in the Cron
+	// UI, not via a service toggle.
 }
 
 // optionalServices are included in the list only when active. Services that
