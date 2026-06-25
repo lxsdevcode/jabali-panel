@@ -180,3 +180,26 @@ func TestSnapshots_Roundtrip(t *testing.T) {
 		t.Fatalf("unexpected: %+v", got)
 	}
 }
+
+func TestForgetIDs_BuildsArgs(t *testing.T) {
+	r := &fakeRunner{stdout: []byte("ok")}
+	c := newClient(t, r)
+	if _, err := c.ForgetIDs(context.Background(), []string{"aaa", "bbb"}, true); err != nil {
+		t.Fatalf("ForgetIDs: %v", err)
+	}
+	args := strings.Join(r.calls[0].args, " ")
+	if !strings.Contains(args, "forget aaa bbb") || !strings.Contains(args, "--prune") {
+		t.Fatalf("args = %q", args)
+	}
+}
+
+func TestForgetIDs_EmptyIsNoop(t *testing.T) {
+	r := &fakeRunner{stdout: []byte("ok")}
+	c := newClient(t, r)
+	if _, err := c.ForgetIDs(context.Background(), nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.calls) != 0 {
+		t.Fatalf("empty ids must not invoke restic, got %d calls", len(r.calls))
+	}
+}

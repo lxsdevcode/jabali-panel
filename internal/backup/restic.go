@@ -317,6 +317,24 @@ func (c *Client) Forget(ctx context.Context, opts ForgetOpts) ([]byte, error) {
 	return out, err
 }
 
+// ForgetIDs forgets the EXACT snapshot IDs given (no keep-policy), optionally
+// pruning afterwards. Used by manual per-backup deletion: the caller first lists
+// the snapshots for a run (Snapshots with the job-id tag), collects their IDs,
+// and forgets precisely those — so a tag set we don't expect can never
+// over-match another run, and the removed set is deterministic + loggable.
+// No-op (nil) when ids is empty.
+func (c *Client) ForgetIDs(ctx context.Context, ids []string, prune bool) ([]byte, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := append([]string{"forget"}, ids...)
+	if prune {
+		args = append(args, "--prune")
+	}
+	out, _, err := c.run(ctx, args, nil)
+	return out, err
+}
+
 // Init runs `restic init` against the configured repo. Idempotent at
 // the call site: callers swallow `repository already initialized`.
 func (c *Client) Init(ctx context.Context) error {
