@@ -463,8 +463,14 @@ source ` + installSh + ` && install_nginx_default_vhost`
 			// install_sso_reaper_timer(), and install_kratos() in install.sh.
 			script := `set -e
 install -d -m 0755 /usr/local/libexec/jabali
+# #430: ensure setfacl is present (fpm-post-start ACLs the per-user FPM socket).
+command -v setfacl >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq acl >/dev/null 2>&1 || true
 install -m 0755 ` + repoDir + `/install/systemd/fpm-pre-start /usr/local/libexec/jabali/fpm-pre-start
 install -m 0755 ` + repoDir + `/install/systemd/fpm-exec /usr/local/libexec/jabali/fpm-exec
+# #430: fpm-post-start ExecStartPost (jabali-fpm@.service references it) — without
+# this, the update ships the unit + the www-data removal but not the socket-reach
+# fix, and the next FPM restart can't reach the socket. MUST land with the unit.
+install -m 0755 ` + repoDir + `/install/systemd/fpm-post-start /usr/local/libexec/jabali/fpm-post-start
 install -m 0755 ` + repoDir + `/install/systemd/cron-precheck /usr/local/libexec/jabali/cron-precheck
 install -m 0644 ` + repoDir + `/install/systemd/jabali.slice /etc/systemd/system/jabali.slice
 install -m 0644 ` + repoDir + `/install/systemd/jabali-user.slice /etc/systemd/system/jabali-user.slice
