@@ -76,10 +76,12 @@ func RegisterPublicBrandingRoutes(g *gin.RouterGroup, cfg BrandingHandlerConfig)
 type brandingHandler struct{ cfg BrandingHandlerConfig }
 
 type brandingInfoResponse struct {
-	PanelBrandText string `json:"panel_brand_text"`
-	PanelFontSize  string `json:"panel_font_size"`
-	HasLogoLight   bool   `json:"has_logo_light"`
-	HasLogoDark    bool   `json:"has_logo_dark"`
+	PanelBrandText    string `json:"panel_brand_text"`
+	PanelFontSize     string `json:"panel_font_size"`
+	PanelPrimaryColor string `json:"panel_primary_color"`
+	PanelAccentColor  string `json:"panel_accent_color"`
+	HasLogoLight      bool   `json:"has_logo_light"`
+	HasLogoDark       bool   `json:"has_logo_dark"`
 }
 
 func (h *brandingHandler) publicInfo(c *gin.Context) {
@@ -93,10 +95,12 @@ func (h *brandingHandler) publicInfo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, brandingInfoResponse{
-		PanelBrandText: s.PanelBrandText,
-		PanelFontSize:  fontSizeOrDefault(s.PanelFontSize),
-		HasLogoLight:   s.LogoLightPath != "" && fileExists(s.LogoLightPath),
-		HasLogoDark:    s.LogoDarkPath != "" && fileExists(s.LogoDarkPath),
+		PanelBrandText:    s.PanelBrandText,
+		PanelFontSize:     fontSizeOrDefault(s.PanelFontSize),
+		PanelPrimaryColor: s.PanelPrimaryColor,
+		PanelAccentColor:  s.PanelAccentColor,
+		HasLogoLight:      s.LogoLightPath != "" && fileExists(s.LogoLightPath),
+		HasLogoDark:       s.LogoDarkPath != "" && fileExists(s.LogoDarkPath),
 	})
 }
 

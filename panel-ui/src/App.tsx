@@ -137,22 +137,19 @@ const PANEL_FONT_PX: Record<string, number> = { small: 13, medium: 15, large: 17
 
 const ThemedApp = () => {
   const { mode } = useThemeMode();
-  const muiConfig = useMuiTheme(mode);
-  const { fontSize } = useBranding();
-  // #433: branding-driven panel font size overrides the seed token so antd
-  // scales every size-derived token (fontSizeSM/LG, line-height, controls).
-  const themedConfig = {
-    ...muiConfig,
-    theme: {
-      ...muiConfig.theme,
-      token: { ...muiConfig.theme?.token, fontSize: PANEL_FONT_PX[fontSize] ?? 15 },
-    },
-  };
+  const { fontSize, primaryColor, accentColor } = useBranding();
+  // Branding "Look and feel": font size + operator colors feed the antd
+  // ConfigProvider seed tokens so the whole panel scales/recolors for everyone.
+  const muiConfig = useMuiTheme(mode, {
+    fontSizePx: PANEL_FONT_PX[fontSize] ?? 15,
+    primaryColor,
+    accentColor,
+  });
 
   return (
     <BrowserRouter>
       <ConfigProvider
-        {...themedConfig}
+        {...muiConfig}
         renderEmpty={() => <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
       >
         <AntdApp>

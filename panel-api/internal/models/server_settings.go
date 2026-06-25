@@ -76,6 +76,12 @@ type ServerSettings struct {
 	// #433 panel font-size: "small" | "medium" | "large" (medium = default).
 	PanelFontSize string `gorm:"column:panel_font_size;type:varchar(10);not null;default:'medium'" json:"panel_font_size"`
 
+	// "Look and feel" panel colors. Empty string = built-in default. Hex
+	// (#rgb / #rrggbb / #rrggbbaa). PrimaryColor drives the antd colorPrimary
+	// token; AccentColor drives the selected sidebar-row / active-tab accent.
+	PanelPrimaryColor string `gorm:"column:panel_primary_color;type:varchar(9);not null;default:''" json:"panel_primary_color"`
+	PanelAccentColor  string `gorm:"column:panel_accent_color;type:varchar(9);not null;default:''"  json:"panel_accent_color"`
+
 	// M26 AppSec geoblock (migration 000067). Server-wide rule applied
 	// by crowdsec AppSec. Mode ∈ {"off", "allow", "deny"}:
 	//   off   — rule file written with no filter; all traffic passes

@@ -10,6 +10,8 @@ import { apiClient } from "../apiClient";
 type BrandingInfo = {
   panel_brand_text: string;
   panel_font_size: string;
+  panel_primary_color: string;
+  panel_accent_color: string;
   has_logo_light: boolean;
   has_logo_dark: boolean;
 };
@@ -32,12 +34,16 @@ export function useBranding() {
     | "small"
     | "medium"
     | "large";
+  const primaryColor = query.data?.panel_primary_color ?? "";
+  const accentColor = query.data?.panel_accent_color ?? "";
   const hasLogoLight = query.data?.has_logo_light ?? false;
   const hasLogoDark = query.data?.has_logo_dark ?? false;
 
   return {
     brandText,
     fontSize,
+    primaryColor,
+    accentColor,
     hasLogoLight,
     hasLogoDark,
     isLoading: query.isLoading,

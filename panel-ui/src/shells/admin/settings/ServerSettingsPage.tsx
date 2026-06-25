@@ -51,6 +51,7 @@ function useNotify() {
 
 import { apiClient } from "../../../apiClient";
 import { BrandingCard } from "./BrandingCard";
+import { LookAndFeelCard } from "./LookAndFeelCard";
 import { DatabasesCard } from "./DatabasesCard";
 import { DockerMarketplaceCard } from "./DockerMarketplaceCard";
 import { PythonAppsCard } from "./PythonAppsCard";
@@ -858,6 +859,7 @@ type SettingsTabKey =
 const BrandingSettingsTab = () => (
   <>
     <BrandingCard />
+      <LookAndFeelCard />
     <PageTemplatesCard />
   </>
 );

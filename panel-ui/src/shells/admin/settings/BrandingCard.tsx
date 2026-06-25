@@ -18,7 +18,6 @@ import {
   Form,
   Input,
   Row,
-  Segmented,
   Space,
   Typography,
   Upload,
@@ -34,7 +33,6 @@ import { useBranding } from "../../../hooks/useBranding";
 
 type ServerSettingsShape = {
   panel_brand_text: string;
-  panel_font_size: "small" | "medium" | "large";
 };
 
 const LOGO_ACCEPT = "image/png,image/svg+xml,image/webp,image/jpeg,image/gif";
@@ -51,17 +49,11 @@ export const BrandingCard = () => {
     let cancelled = false;
     (async () => {
       try {
-        const resp = await apiClient.get<{
-          panel_brand_text?: string;
-          panel_font_size?: string;
-        }>("/admin/settings");
+        const resp = await apiClient.get<{ panel_brand_text?: string }>(
+          "/admin/settings",
+        );
         if (cancelled) return;
-        form.setFieldsValue({
-          panel_brand_text: resp.data.panel_brand_text ?? "",
-          panel_font_size:
-            (resp.data.panel_font_size as ServerSettingsShape["panel_font_size"]) ??
-            "medium",
-        });
+        form.setFieldsValue({ panel_brand_text: resp.data.panel_brand_text ?? "" });
       } catch (err) {
         message.error(err instanceof Error ? err.message : "Load failed");
       } finally {
@@ -78,7 +70,6 @@ export const BrandingCard = () => {
     try {
       await apiClient.patch("/admin/settings", {
         panel_brand_text: values.panel_brand_text ?? "",
-        panel_font_size: values.panel_font_size ?? "medium",
       });
       qc.invalidateQueries({ queryKey: ["branding", "public"] });
       message.success("Branding text saved");
@@ -170,20 +161,6 @@ export const BrandingCard = () => {
             extra="Shown next to the logo and in the browser tab title. Empty falls back to 'Jabali'."
           >
             <Input placeholder="Jabali" maxLength={60} showCount />
-          </Form.Item>
-
-          <Form.Item
-            label="Panel font size"
-            name="panel_font_size"
-            extra="Applies to the whole panel for all users. Medium is the default."
-          >
-            <Segmented
-              options={[
-                { label: "Small", value: "small" },
-                { label: "Medium", value: "medium" },
-                { label: "Large", value: "large" },
-              ]}
-            />
           </Form.Item>
 
           <Space>

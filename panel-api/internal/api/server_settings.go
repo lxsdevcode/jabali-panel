@@ -93,6 +93,8 @@ type updateServerSettingsRequest struct {
 	SSHUserPasswordAuth          *bool   `json:"ssh_user_password_auth,omitempty"`
 	PanelBrandText               *string `json:"panel_brand_text,omitempty"`
 	PanelFontSize                *string `json:"panel_font_size,omitempty"`
+	PanelPrimaryColor            *string `json:"panel_primary_color,omitempty"`
+	PanelAccentColor             *string `json:"panel_accent_color,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
@@ -293,6 +295,28 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			})
 			return
 		}
+	}
+	if req.PanelPrimaryColor != nil {
+		v := strings.TrimSpace(*req.PanelPrimaryColor)
+		if !isValidHexColor(v) {
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_panel_primary_color",
+				"message": "must be empty or a hex color (#rgb, #rrggbb, #rrggbbaa)",
+			})
+			return
+		}
+		current.PanelPrimaryColor = v
+	}
+	if req.PanelAccentColor != nil {
+		v := strings.TrimSpace(*req.PanelAccentColor)
+		if !isValidHexColor(v) {
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_panel_accent_color",
+				"message": "must be empty or a hex color (#rgb, #rrggbb, #rrggbbaa)",
+			})
+			return
+		}
+		current.PanelAccentColor = v
 	}
 	if req.DiskQuotaEnabled != nil {
 		current.DiskQuotaEnabled = *req.DiskQuotaEnabled
@@ -948,3 +972,10 @@ func splitCIDRList(in string) []string {
 	}
 	return out
 }
+
+// hexColorRE matches an empty string (use default) or a #rgb / #rrggbb /
+// #rrggbbaa hex color — the accepted shapes for the "Look and feel" panel
+// colors.
+var hexColorRE = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
+
+func isValidHexColor(v string) bool { return v == "" || hexColorRE.MatchString(v) }

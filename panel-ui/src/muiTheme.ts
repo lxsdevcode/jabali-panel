@@ -11,8 +11,22 @@ import type { ConfigProviderProps } from "antd";
 
 import type { ThemeMode } from "./theme/ThemeModeContext";
 
-const useMuiTheme = (mode: ThemeMode): ConfigProviderProps =>
-  useMemo<ConfigProviderProps>(
+type LookAndFeel = {
+  fontSizePx?: number;
+  primaryColor?: string;
+  accentColor?: string;
+};
+
+const useMuiTheme = (
+  mode: ThemeMode,
+  opts?: LookAndFeel,
+): ConfigProviderProps => {
+  const fontSizePx = opts?.fontSizePx ?? 15;
+  const primaryColor = opts?.primaryColor || "";
+  // Selected sidebar-row / active-tab accent. Operator-overridable; falls back
+  // to the built-in red per algorithm when unset.
+  const accent = opts?.accentColor || (mode === "dark" ? "#ef4444" : "#dc2626");
+  return useMemo<ConfigProviderProps>(
     () => ({
       theme: {
         algorithm:
@@ -22,7 +36,8 @@ const useMuiTheme = (mode: ThemeMode): ConfigProviderProps =>
           // table cells, labels and menu items all read a shade larger.
           // Every size-derived token (fontSizeSM, fontSizeLG, heading
           // sizes, line heights, control heights) scales off this.
-          fontSize: 15,
+          fontSize: fontSizePx,
+          ...(primaryColor ? { colorPrimary: primaryColor } : {}),
           // Inter as primary face (self-hosted via @fontsource/inter
           // imported in main.tsx). Falls through to OS system font if
           // the woff2 fails to load — cron/SSH/log views keep their
@@ -70,13 +85,13 @@ const useMuiTheme = (mode: ThemeMode): ConfigProviderProps =>
                   // them in lockstep.
                   darkItemColor: "rgba(255, 255, 255, 0.85)",
                   darkItemSelectedBg: "#1f1f1f",
-                  darkItemSelectedColor: "#ef4444",
+                  darkItemSelectedColor: accent,
                   darkItemHoverBg: "#1f1f1f",
                   darkItemHoverColor: "rgba(255, 255, 255, 0.85)",
                 }
               : {
                   itemSelectedBg: "#f3f4f6",
-                  itemSelectedColor: "#dc2626",
+                  itemSelectedColor: accent,
                   itemHoverBg: "#f3f4f6",
                   itemHoverColor: "rgba(0, 0, 0, 0.88)",
                 },
@@ -86,15 +101,16 @@ const useMuiTheme = (mode: ThemeMode): ConfigProviderProps =>
           // the underline; itemSelectedColor the active tab label;
           // itemHoverColor keeps the subtle hover emphasis.
           Tabs: {
-            itemSelectedColor: mode === "dark" ? "#ef4444" : "#dc2626",
-            inkBarColor: mode === "dark" ? "#ef4444" : "#dc2626",
-            itemHoverColor: mode === "dark" ? "#ef4444" : "#dc2626",
-            itemActiveColor: mode === "dark" ? "#ef4444" : "#dc2626",
+            itemSelectedColor: accent,
+            inkBarColor: accent,
+            itemHoverColor: accent,
+            itemActiveColor: accent,
           },
         },
       },
     }),
-    [mode],
+    [mode, fontSizePx, primaryColor, accent],
   );
+};
 
 export default useMuiTheme;
