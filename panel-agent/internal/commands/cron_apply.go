@@ -269,6 +269,19 @@ func buildCronServiceContent(jobID, name string, cmd *cronvalidate.Command, user
 		condDocroot = "ConditionPathIsDirectory=" + docroot + "\n"
 	}
 
+	// ExecSearchPath prepends the per-user wrapper dir to systemd's binary
+	// search for ExecStart= (GH #299). systemd resolves the ExecStart binary
+	// against the MANAGER's path, NOT Environment=PATH — so a bare `php`
+	// resolved to /usr/bin/php (system default), ignoring the user's pinned
+	// version, and `php8.5` only worked because /usr/bin/php8.5 happened to
+	// exist. With .jabali/bin first, bare `php` follows the user's pinned
+	// wrapper (.jabali/bin/php -> their version) and `php8.5` follows
+	// .jabali/bin/php8.5, falling through to /usr/bin for anything not there.
+	// A version that is installed NOWHERE yields a clean 203/EXEC failure —
+	// never a silent wrong-version run. Environment=PATH is kept because wp's
+	// `#!/usr/bin/env php` shebang reads the running process's PATH, not
+	// ExecSearchPath. (GH #184, #256, #299.)
+	binDir := "/home/" + username + "/.jabali/bin"
 	return fmt.Sprintf(`[Unit]
 Description=Jabali cron job %s (%s)
 After=default.target
@@ -278,11 +291,13 @@ StartLimitBurst=1
 [Service]
 Type=oneshot
 RemainAfterExit=no
+ExecSearchPath=%s
 Environment=PATH=%s
 WorkingDirectory=%%h
 %s
 `, jobID, name, condDocroot,
-		"/home/"+username+"/.jabali/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
+		binDir,
+		binDir+":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
 		execStart)
 }
 

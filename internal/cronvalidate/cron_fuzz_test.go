@@ -1,6 +1,7 @@
 package cronvalidate
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -55,9 +56,11 @@ func FuzzValidateCommand(f *testing.F) {
 			if len(cmd.Argv) == 0 {
 				t.Fatalf("returned Command has empty Argv")
 			}
-			// First token must be wp or php
-			if cmd.Argv[0] != "wp" && cmd.Argv[0] != "php" {
-				t.Fatalf("first token is neither wp nor php: %s", cmd.Argv[0])
+			// First token must be wp, php, or a versioned php<X.Y>
+			// (bare or a full path ending in one of those).
+			b0 := filepath.Base(cmd.Argv[0])
+			if b0 != "wp" && b0 != "php" && !isVersionedPHP(b0) {
+				t.Fatalf("first token is not wp/php/php<X.Y>: %s", cmd.Argv[0])
 			}
 		}
 	})
@@ -67,15 +70,15 @@ func FuzzValidateCommand(f *testing.F) {
 // Property: validator must NEVER panic.
 func FuzzValidateSchedule(f *testing.F) {
 	// Seed with representative schedules
-	f.Add("0 * * * *")         // hourly
-	f.Add("0 3 * * *")         // 3 AM daily
-	f.Add("*/5 * * * *")       // every 5 min
-	f.Add("0 3 * * 0")         // Sunday 3 AM
-	f.Add("30 2 1 * *")        // 2:30 AM on 1st
-	f.Add("@hourly")           // shortcut (should reject)
-	f.Add("")                  // empty
-	f.Add("bad syntax here")   // invalid
-	f.Add("* * * * * *")       // 6 fields (too many)
+	f.Add("0 * * * *")       // hourly
+	f.Add("0 3 * * *")       // 3 AM daily
+	f.Add("*/5 * * * *")     // every 5 min
+	f.Add("0 3 * * 0")       // Sunday 3 AM
+	f.Add("30 2 1 * *")      // 2:30 AM on 1st
+	f.Add("@hourly")         // shortcut (should reject)
+	f.Add("")                // empty
+	f.Add("bad syntax here") // invalid
+	f.Add("* * * * * *")     // 6 fields (too many)
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// Call the validator - must not panic

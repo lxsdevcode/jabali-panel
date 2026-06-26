@@ -269,6 +269,14 @@ func TestBuildCronServiceContent(t *testing.T) {
 	if !contains(content, "Environment=PATH=/home/testuser/.jabali/bin:") {
 		t.Error("cron PATH must prepend the per-user .jabali/bin wrapper dir")
 	}
+
+	// GH #299: systemd resolves the ExecStart binary against the manager's
+	// path, not Environment=PATH, so the unit must add the per-user wrapper
+	// dir via ExecSearchPath for bare `php`/`php8.5` to follow the user's
+	// pinned version instead of /usr/bin/php.
+	if !contains(content, "ExecSearchPath=/home/testuser/.jabali/bin") {
+		t.Error("cron unit must set ExecSearchPath to the per-user .jabali/bin wrapper dir")
+	}
 }
 
 func TestBuildCronTimerContent(t *testing.T) {
@@ -331,7 +339,6 @@ func TestFileExists(t *testing.T) {
 		t.Error("fileExists returned false for existing file")
 	}
 }
-
 
 // TestBuildCronServiceContent_HTTPTrigger locks the GH #400 Part B unit
 // shape: a curl/wget self-domain cron is emitted as the rebind-safe

@@ -184,7 +184,9 @@ export const CreateCronModal = ({
 
         <Form.Item>
           <Typography.Text type="secondary">
-            Must start with <code>wp</code> or <code>php</code>. Shell operators (|, &, $, ...) are rejected.
+            Must start with <code>wp</code>, <code>php</code>, or a specific
+            version like <code>php8.5</code> (bare <code>php</code> uses your
+            assigned version). Shell operators (|, &, $, ...) are rejected.
           </Typography.Text>
         </Form.Item>
 

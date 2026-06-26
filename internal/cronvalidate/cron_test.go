@@ -256,6 +256,43 @@ func TestValidateCommand(t *testing.T) {
 			wantErr:  ErrCodeBadPathArg,
 			desc:     "php path not ending in .php",
 		},
+
+		// Versioned PHP interpreter (GH #299): same arg rules as bare php.
+		{
+			name:     "php_versioned_script",
+			raw:      "php8.5 /home/shuki/example.com/public_html/cron.php",
+			docroots: ownedDocroots,
+			wantErr:  "",
+			desc:     "Versioned php8.5 with an absolute .php script is allowed",
+		},
+		{
+			name:     "php_versioned_flag",
+			raw:      "php8.4 -v",
+			docroots: ownedDocroots,
+			wantErr:  "",
+			desc:     "Versioned php8.4 with a standalone flag is allowed",
+		},
+		{
+			name:     "php_versioned_relative_rejected",
+			raw:      "php8.5 tools/cleanup.php",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBadPathArg,
+			desc:     "Versioned php still requires an absolute path",
+		},
+		{
+			name:     "php_fake_version_rejected",
+			raw:      "php8 /home/shuki/example.com/public_html/cron.php",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBinaryNotAllowed,
+			desc:     "php<major> without a minor is not a versioned interpreter",
+		},
+		{
+			name:     "php_bogus_suffix_rejected",
+			raw:      "phpmyadmin /home/shuki/example.com/public_html/cron.php",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBinaryNotAllowed,
+			desc:     "A non-php binary is still rejected",
+		},
 	}
 
 	for _, tt := range tests {

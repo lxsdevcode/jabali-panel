@@ -6,7 +6,8 @@
 //   - Reject on ANY unescaped shell metacharacter before parsing (metachar defense).
 //   - Use pure-Go tokenizer (github.com/google/shlex) for shell-aware parsing.
 //   - Return parsed argv slice so caller feeds directly to systemd ExecStart.
-//   - Allow-list is closed-set: wp and php only, with strict path validation.
+//   - Allow-list is closed-set: wp, php, and versioned php<X.Y> only, with
+//     strict path validation.
 //   - No subprocess calls; all validation is in-process.
 package cronvalidate
 
@@ -24,7 +25,7 @@ import (
 const (
 	ErrCodeEmpty               = "empty"
 	ErrCodeTooLong             = "too_long"           // >1024 bytes
-	ErrCodeBinaryNotAllowed    = "binary_not_allowed" // not wp/php
+	ErrCodeBinaryNotAllowed    = "binary_not_allowed" // not wp/php/php<X.Y>
 	ErrCodeMetacharReject      = "metachar_reject"    // shell metacharacters
 	ErrCodeBadPathArg          = "bad_path_arg"       // --path= missing, not absolute, traversal, or not in owned docroot
 	ErrCodeBadScheduleSyntax   = "bad_schedule_syntax"
@@ -192,22 +193,60 @@ func ValidateCommand(raw string, ownedDocroots []string) (*Command, error) {
 		}
 	}
 
-	// First token must be wp or php (or full paths)
+	// First token must be wp, php, or a versioned php<X.Y> (or full paths).
+	// A versioned interpreter (e.g. `php8.5 script.php`) lets a cron job pin a
+	// specific PHP runtime instead of the user's default bare `php`. The
+	// per-user .jabali/bin/php<X.Y> wrappers (GH #256) already resolve these
+	// on the cron PATH, so the same arg rules as `php` apply (GH #299).
 	binary := argv[0]
 	switch {
 	case binary == "wp":
 		return validateWPCommand(argv, ownedDocroots)
 	case binary == "php" || strings.HasSuffix(binary, "/php"):
 		return validatePHPCommand(argv, ownedDocroots)
+	case isVersionedPHP(binary):
+		// Versioned interpreter is BARE only (php8.5, not a path): selecting an
+		// installed version never needs a path, and isVersionedPHP requires the
+		// token to start with "php", so a slash-bearing path never matches.
+		return validatePHPCommand(argv, ownedDocroots)
 	default:
 		return nil, &ValidationError{
 			Code: ErrCodeBinaryNotAllowed,
 			Detail: fmt.Sprintf(
-				"first token must be 'wp' or 'php', got %q",
+				"first token must be 'wp', 'php', or 'php<X.Y>', got %q",
 				binary,
 			),
 		}
 	}
+}
+
+// isVersionedPHP reports whether name is a versioned PHP CLI binary like
+// "php8.5" (php<MAJOR>.<MINOR>, digits only). Used so a cron command can pin a
+// specific interpreter; the per-user .jabali/bin/php<X.Y> wrappers (GH #256,
+// cPanel ea-phpNN style) resolve these on the cron PATH.
+func isVersionedPHP(name string) bool {
+	rest, ok := strings.CutPrefix(name, "php")
+	if !ok {
+		return false
+	}
+	dot := strings.IndexByte(rest, '.')
+	if dot <= 0 || dot == len(rest)-1 {
+		return false
+	}
+	return isAllDigits(rest[:dot]) && isAllDigits(rest[dot+1:])
+}
+
+// isAllDigits reports whether s is non-empty and all ASCII digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // validateWPCommand checks a wp command has required --path=<docroot> argument.
