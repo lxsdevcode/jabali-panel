@@ -5728,8 +5728,27 @@ ensure_wpcli_symlink() {
   local wp_root="${1:-/opt/wp-cli}"
   local bindir="${2:-/usr/local/bin}"
   local cur="$wp_root/current"
-  # Only act when wp-cli is actually installed under wp_root.
-  [[ -e "$cur" ]] || return 0
+  # Heal a missing/dangling /opt/wp-cli/current, not just the outer PATH link.
+  # `-e` follows the symlink, so this fires when `current` is absent OR points at
+  # a removed phar. Repoint it to the newest pinned phar; if no phar exists
+  # either, re-provision wp-cli fully. Previously this bailed here, so a host
+  # that lost /opt/wp-cli/current could never self-heal on update and wp stayed
+  # broken on the host AND inside the bubblewrap SSH sandbox that ro-binds it
+  # (GH #298).
+  if [[ ! -e "$cur" ]]; then
+    local phar
+    phar="$(ls -1 "$wp_root"/wp-cli-*.phar 2>/dev/null | sort -V | tail -1)"
+    if [[ -n "$phar" && -f "$phar" ]]; then
+      ln -sf "$phar" "$cur"
+      _log "healed wp-cli: $cur -> $phar (current was missing)"
+    elif [[ "$wp_root" == "/opt/wp-cli" ]] && declare -f install_wp_cli >/dev/null 2>&1; then
+      _log "wp-cli phar missing under $wp_root — reinstalling"
+      install_wp_cli   # re-downloads + recreates current + the outer link
+      return 0
+    else
+      return 0
+    fi
+  fi
   if [[ -L "$bindir/wp" && "$(readlink "$bindir/wp")" == "$cur" ]]; then
     return 0
   fi
