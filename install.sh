@@ -384,6 +384,28 @@ ensure_dbus() {
   return 1
 }
 
+# verify_runtime_health is an end-of-install canary for the runtime
+# capabilities jabali silently depends on: a live system D-Bus and the
+# ability to start systemd transient units. The classic failure (GH #296)
+# is a minimal image with no dbus, where systemd-user cron + transient
+# backup/cron units only break at runtime with a cryptic "connect to system
+# scope bus" days later. Catch it at install: ensure the bus, then run a
+# throwaway transient unit. Warn-only (the install already succeeded) with
+# the exact follow-up the operator needs.
+verify_runtime_health() {
+  _log "verifying runtime health (D-Bus + systemd transient units)"
+  if ensure_dbus; then
+    _ok "system D-Bus is up (/run/dbus/system_bus_socket)"
+  else
+    _warn "system D-Bus unavailable — cron, resolvectl + machinectl will not work until dbus is installed and the socket is up"
+  fi
+  if systemd-run --scope --quiet --collect -- /bin/true >/dev/null 2>&1; then
+    _ok "systemd transient units OK — cron execution path healthy"
+  else
+    _warn "systemd-run failed — per-user cron + transient units may not run. Check: systemctl is-system-running; systemctl status dbus.socket"
+  fi
+}
+
 # _flush_spin_log appends a wrapped command's captured output into the
 # main $LOG_FILE with a header so the post-mortem log reads top-to-bottom
 # as a sequence of {step, output} blocks. No-op when LOG_FILE is empty
@@ -564,6 +586,15 @@ preflight() {
       ;;
   esac
   export GO_ARCH
+
+  # systemd is assumed end-to-end: per-user FPM slices, systemd-user cron
+  # timers, transient backup/cron units, and service management all need
+  # systemctl + a live system bus. A non-systemd host (legacy OpenVZ, some
+  # minimal container images) cannot run jabali — fail fast with a clear
+  # message instead of cryptic systemctl errors several steps in.
+  if [[ ! -d /run/systemd/system ]]; then
+    _die "this host is not systemd-managed (/run/systemd/system missing). jabali requires systemd as PID 1 — provision a systemd-based VPS image."
+  fi
 }
 
 # ---------- step 0.5: server identity prompts -------------------------------
@@ -12210,6 +12241,11 @@ main() {
     echo "============================================================"
     echo ""
   fi
+
+  # Runtime canary — verify the D-Bus + systemd-transient-unit capabilities
+  # cron and backups depend on, so a broken minimal image is caught at
+  # install time rather than via a confusing bug report later (GH #296).
+  verify_runtime_health
 
   # End-of-install advisory: warn if reverse DNS (PTR) does not match the
   # hostname (mail deliverability).
