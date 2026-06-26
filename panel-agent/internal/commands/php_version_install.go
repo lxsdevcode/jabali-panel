@@ -41,9 +41,13 @@ func isVersionSupported(version string) bool {
 
 // isFPMAlreadyInstalledFunc is a function variable for testing.
 var isFPMAlreadyInstalledFunc = func(version string) bool {
-	cmd := exec.Command("command", "-v", fmt.Sprintf("php%s", version))
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
-	return cmd.Run() == nil
+	// `command` is a shell BUILTIN, not a binary — exec.Command("command",…)
+	// always errored, so this used to report "not installed" for every
+	// version. That made install never short-circuit on an already-installed
+	// version and re-run the whole apt+pool+mask flow each time (GH #293).
+	// LookPath is the correct "is phpX.Y on PATH" probe.
+	_, err := exec.LookPath(fmt.Sprintf("php%s", version))
+	return err == nil
 }
 
 // isFPMAlreadyInstalled checks if a PHP version is already installed.
