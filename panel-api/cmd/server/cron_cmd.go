@@ -269,23 +269,15 @@ func newCronRunNowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "run-now <job-id>",
 		Short: "Run a cron job immediately via the agent (synchronous)",
-		Long: `Triggers the systemd-user timer to fire now via the agent. The agent
-runs the command as the target user under their existing user-scope
-systemd manager.
+		Long: `Runs the job's command immediately as the target user via the agent
+(synchronous), returning its real exit code plus stdout/stderr.
 
-LIMITATION: requires the user's systemd-user manager to be running
-(linger enabled). On a fresh host, ` + "`jabali user create`" + ` calls
-` + "`loginctl enable-linger <user>`" + ` automatically. If you ever see
-
-    Failed to connect to user scope bus via local transport:
-    $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined
-
-then linger is off for that user. Re-enable with:
-
-    sudo loginctl enable-linger <username>
-
-Then ` + "`jabali cron run-now`" + ` will work for that user from any
-non-interactive context (cron, CI, headless ssh).`,
+The agent executes it with ` + "`runuser`" + ` -- a plain setuid/setgid drop --
+so run-now does NOT depend on the system D-Bus bus, the user's
+systemd-user manager, or linger being up (GH #296). It works from any
+non-interactive context (cron, CI, headless ssh) regardless of host
+shape. (The scheduled timer run still fires inside the user manager;
+this one-shot does not need the slice.)`,
 		Args:    cobra.ExactArgs(1),
 		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {

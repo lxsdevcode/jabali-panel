@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"os/user"
-	"strconv"
 	"strings"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
@@ -83,25 +82,30 @@ func cronRunNowHandler(ctx context.Context, params json.RawMessage) (any, error)
 			Message: fmt.Sprintf("user %s not found: %v", p.Username, err),
 		}
 	}
-	uid, _ := strconv.Atoi(u.Uid)
-	runtimeDir := fmt.Sprintf("/run/user/%d", uid)
-
-	// Ensure the user manager is up (linger + bus) so --machine can reach it.
-	if err := ensureUserManager(ctx, p.Username, uid, runtimeDir); err != nil {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("prepare user systemd manager for %s: %v", p.Username, err),
-		}
+	// Run the command directly as the owning user via `runuser` -- a plain
+	// setuid/setgid drop with NO dependency on the system D-Bus bus, the
+	// user's systemd manager, or linger. The former path
+	// (`systemd-run --user --machine=<user>@.host`) needed all three up and
+	// reachable, and failed on hosts where the user manager was not --
+	// "Failed to connect to system scope bus via local transport" /
+	// "Transport endpoint is not connected" -- even with dbus installed
+	// (GH #296). runuser propagates the command's real exit code and
+	// stdout/stderr exactly the same, and works on every host shape.
+	// (The scheduled timer run still executes inside the user manager; this
+	// is only the manual "Run now" one-shot, which does not need the slice.)
+	home := u.HomeDir
+	if home == "" {
+		home = "/home/" + p.Username
 	}
-
-	args := []string{
-		"--user",
-		"--machine=" + p.Username + "@.host",
-		"--pipe", "--wait", "--collect",
-		"--",
+	args := append([]string{"-u", p.Username, "--"}, validated.Argv...)
+	cmd := exec.CommandContext(ctx, "runuser", args...)
+	cmd.Dir = home
+	cmd.Env = []string{
+		"HOME=" + home,
+		"USER=" + p.Username,
+		"LOGNAME=" + p.Username,
+		"PATH=" + home + "/.jabali/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
 	}
-	args = append(args, validated.Argv...)
-	cmd := exec.CommandContext(ctx, "systemd-run", args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
