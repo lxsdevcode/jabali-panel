@@ -860,6 +860,11 @@ func expandDataStatePaths() []string {
 		"/var/lib/crowdsec",
 		"/var/lib/redis",
 		"/var/lib/jabali-panel-acme",
+		// Docker-app data (bind mounts + compose under dockerAppDataRoot).
+		// Without this a server migration restored only the docker_apps DB
+		// rows + re-provisioned EMPTY containers; the actual app volumes never
+		// transferred (GH #297). Stat-guarded, so absent on non-docker hosts.
+		"/var/lib/jabali/docker-apps",
 	} {
 		if _, err := os.Stat(p); err == nil {
 			out = append(out, p)
