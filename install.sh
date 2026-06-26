@@ -360,10 +360,16 @@ ensure_dbus() {
     return 0
   fi
   if ! command -v dbus-daemon >/dev/null 2>&1 && ! dpkg -s dbus >/dev/null 2>&1; then
-    _warn "dbus package not installed — skipping bus activation"
-    return 1
+    # dbus is a hard dependency (systemd-user cron, resolvectl, machinectl) but
+    # minimal Debian KVM / LXC images ship without it. Install it (+ the user
+    # session integration `systemctl --user` needs) rather than giving up. GH #296.
+    _log "dbus not installed — installing dbus + dbus-user-session (required for cron + resolvectl)"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dbus dbus-user-session >/dev/null 2>&1 || {
+      _warn "dbus install failed — system bus unavailable"
+      return 1
+    }
   fi
-  _log "activating dbus.socket (was dormant; common on minimal LXC images)"
+  _log "activating dbus.socket (was dormant; common on minimal images)"
   systemctl start dbus.socket dbus.service >/dev/null 2>&1 || true
   # Persist across reboots: on minimal images dbus.socket is static and nothing
   # pulls it in at boot, so a start-only activation is lost on the next reboot
@@ -974,6 +980,7 @@ POLICYEOF
       ufw yq \
       whois \
       redis-server redis-tools \
+      dbus dbus-user-session \
       bubblewrap debootstrap systemd-container \
       yara \
       ed inotify-tools \

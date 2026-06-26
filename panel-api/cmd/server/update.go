@@ -477,6 +477,21 @@ source ` + installSh + ` && install_nginx_default_vhost && install_nginx_websock
 			}
 			return nil
 		}},
+		{"ensure dbus (GH #296)", func() error {
+			// dbus is a hard dependency (systemd-user cron, resolvectl,
+			// machinectl) that minimal Debian KVM/LXC images ship without.
+			// ensure_dbus installs it if absent, then activates + enables the
+			// system bus; it returns early once the socket exists, so this is a
+			// cheap no-op on a healthy host.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			if err := run("", "bash", "-c", "source "+installSh+" && ensure_dbus"); err != nil {
+				fmt.Printf("  (ensure_dbus failed: %v -- continuing)\n", err)
+			}
+			return nil
+		}},
 	}
 
 	// Build/apply steps — run only when HEAD moved OR --force was passed.
