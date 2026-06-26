@@ -61,6 +61,17 @@ type backupCreateParams struct {
 	IsAdmin    bool     `json:"is_admin"`
 	Databases  []string `json:"databases,omitempty"`
 	Mailboxes  []string `json:"mailboxes,omitempty"`
+	// Content selects which stages run (GH #294): "" / "full" = home + db
+	// + mail; "files" = home only; "database" = db only (home excluded);
+	// "folders" = a subset of home (see Folders). db/mail are additionally
+	// gated by whether Databases/Mailboxes are non-empty, which panel-api
+	// sets per content choice.
+	Content string `json:"content,omitempty"`
+	// Folders restricts the home stage to these paths (relative to the
+	// account home, or absolute under it). Only meaningful with content=folders.
+	Folders []string `json:"folders,omitempty"`
+	// Compression is the restic level: "off" | "auto" | "max" (empty = auto).
+	Compression string `json:"compression,omitempty"`
 	// ScheduleID is the originating backup_schedules.id when the job
 	// was enqueued by the in-process scheduler. Empty for manual
 	// admin-create jobs. When set, snapshots receive a
@@ -171,6 +182,7 @@ func runBackupOrchestrator(ctx context.Context, req backupCreateParams) error {
 	if cerr != nil {
 		return fmt.Errorf("restic config: %w", cerr)
 	}
+	cfg.Compression = req.Compression
 	c := backup.New(cfg)
 	manifest := backup.AccountManifest{
 		SchemaVersion: backup.ManifestSchemaVersion,
@@ -183,9 +195,14 @@ func runBackupOrchestrator(ctx context.Context, req backupCreateParams) error {
 		},
 	}
 
-	// Stage: home
-	jl.Printf("stage=home start")
-	homeStage := runHomeStage(ctx, req)
+	// Stage: home (excluded when content=database)
+	jl.Printf("stage=home start content=%s", req.Content)
+	var homeStage backup.ManifestStage
+	if req.Content == "database" {
+		homeStage = backup.ManifestStage{Name: backup.StageHome, Tag: "stage=home", Status: backup.StageStatusSkipped, Warnings: []string{"content=database (home excluded)"}}
+	} else {
+		homeStage = runHomeStage(ctx, req)
+	}
 	jl.Printf("stage=home done status=%s bytes_added=%d bytes_total=%d warnings=%v",
 		homeStage.Status, homeStage.BytesAdded, homeStage.BytesTotal, homeStage.Warnings)
 	manifest.Stages = append(manifest.Stages, homeStage)
@@ -252,6 +269,7 @@ func runHomeStage(ctx context.Context, req backupCreateParams) backup.ManifestSt
 		JobID: req.JobID, UserID: req.UserID, Username: req.Username,
 		ScheduleID: req.ScheduleID, RepoURL: req.RepoURL,
 		CredentialsRef: req.CredentialsRef, ExtraOptions: req.ExtraOptions,
+		Compression: req.Compression, Folders: req.Folders,
 	})
 	out, err := backupHomeHandler(ctx, body)
 	if err != nil {
@@ -278,7 +296,7 @@ func runDatabaseStage(ctx context.Context, req backupCreateParams) []backup.Mani
 		JobID: req.JobID, UserID: req.UserID, Username: req.Username,
 		Databases: req.Databases, ScheduleID: req.ScheduleID,
 		RepoURL: req.RepoURL, CredentialsRef: req.CredentialsRef,
-		ExtraOptions: req.ExtraOptions,
+		ExtraOptions: req.ExtraOptions, Compression: req.Compression,
 	})
 	out, err := backupDatabasesHandler(ctx, body)
 	if err != nil {
@@ -409,7 +427,7 @@ func runMailStage(ctx context.Context, req backupCreateParams) backup.ManifestSt
 		JobID: req.JobID, UserID: req.UserID, Username: req.Username,
 		Mailboxes: req.Mailboxes, ScheduleID: req.ScheduleID,
 		RepoURL: req.RepoURL, CredentialsRef: req.CredentialsRef,
-		ExtraOptions: req.ExtraOptions,
+		ExtraOptions: req.ExtraOptions, Compression: req.Compression,
 	})
 	out, err := backupMailboxesHandler(ctx, body)
 	if err != nil {

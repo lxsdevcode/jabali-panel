@@ -30,6 +30,7 @@ type backupMailboxesParams struct {
 	PasswordFile   string   `json:"password_file,omitempty"`
 	CredentialsRef string   `json:"credentials_ref,omitempty"`
 	ExtraOptions   []string `json:"extra_options,omitempty"`
+	Compression    string   `json:"compression,omitempty"`
 }
 
 type backupMailboxesResult struct {
@@ -111,6 +112,7 @@ func backupMailboxesHandler(ctx context.Context, raw json.RawMessage) (any, erro
 	if cerr != nil {
 		return nil, bkInternal("restic config", cerr)
 	}
+	cfg.Compression = req.Compression
 	c := backup.New(cfg)
 	tags := backup.AccountBackupTags(req.JobID, req.UserID, req.ScheduleID, backup.StageMail)
 	for _, mb := range req.Mailboxes {

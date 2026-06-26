@@ -30,6 +30,7 @@ type backupDatabasesParams struct {
 	PasswordFile   string   `json:"password_file,omitempty"`
 	CredentialsRef    string   `json:"credentials_ref,omitempty"`
 	ExtraOptions      []string `json:"extra_options,omitempty"`
+	Compression    string   `json:"compression,omitempty"`
 }
 
 type backupDatabasesResult struct {
@@ -90,6 +91,7 @@ func backupDatabasesHandler(ctx context.Context, raw json.RawMessage) (any, erro
 	if cerr != nil {
 		return nil, bkInternal("restic config", cerr)
 	}
+	cfg.Compression = req.Compression
 	c := backup.New(cfg)
 	totalDbs := len(req.Databases) + len(req.DatabasesPostgres)
 	out := backupDatabasesResult{Snapshots: make([]backupDBStageSnapshot, 0, totalDbs)}

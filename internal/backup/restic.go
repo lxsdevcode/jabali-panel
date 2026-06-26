@@ -35,6 +35,12 @@ type ResticConfig struct {
 	// `sftp.command="..."`.
 	ExtraOptions []string
 	Bin          string // default "restic"; override for tests
+	// Compression is the restic repo-format-v2 compression level:
+	// "off" | "auto" | "max" (empty = restic default, "auto"). Applied
+	// via the RESTIC_COMPRESSION env so it covers every restic call on
+	// this client (GH #294). Note: restic has ONE compressor (zstd) —
+	// there is no gzip/xz; this only selects the level.
+	Compression string
 	// Runner intercepts every CLI invocation. Production uses
 	// realRunner (exec.CommandContext); tests inject a fake.
 	Runner Runner
@@ -120,7 +126,11 @@ func (c *Client) baseArgs() []string {
 // separately so callers can attach it to error envelopes.
 func (c *Client) run(ctx context.Context, args []string, stdin io.Reader) ([]byte, []byte, error) {
 	full := append(c.baseArgs(), args...)
-	stdout, stderr, err := c.cfg.Runner.Run(ctx, c.cfg.Bin, full, c.cfg.ExtraEnv, stdin)
+	env := c.cfg.ExtraEnv
+	if c.cfg.Compression != "" {
+		env = append(append([]string{}, env...), "RESTIC_COMPRESSION="+c.cfg.Compression)
+	}
+	stdout, stderr, err := c.cfg.Runner.Run(ctx, c.cfg.Bin, full, env, stdin)
 	if err != nil {
 		return stdout, stderr, fmt.Errorf("restic %s: %w (stderr: %s)", strings.Join(args, " "), err, strings.TrimSpace(string(stderr)))
 	}

@@ -2,7 +2,7 @@
 // backup of the caller's account; list recent self-backups; download
 // when a row is succeeded. Mirrors AdminBackupsPage data shape but
 // scoped via /me/backups (auth-gated to caller's user_id).
-import { Button, Card, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Select, Space, Table, Tag, Typography, message } from "antd";
 import { RowActions } from "../../components/RowActions";
 import { DeleteOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
 import { useState } from "react";
@@ -39,12 +39,14 @@ const statusColor = (status: string): string => {
 export const MyProfileBackupCard = () => {
   const [submitting, setSubmitting] = useState(false);
   const [restoreId, setRestoreId] = useState<string | null>(null);
+  const [content, setContent] = useState<string>("full");
+  const [compression, setCompression] = useState<string>("");
   const query = useListQuery<MyBackup>({ resource: "me/backups" });
 
   const handleCreate = async () => {
     setSubmitting(true);
     try {
-      await apiClient.post("/me/backups");
+      await apiClient.post("/me/backups", { content, compression });
       message.success("Backup queued");
       query.refetch();
     } catch (err) {
@@ -73,9 +75,31 @@ export const MyProfileBackupCard = () => {
         </span>
       }
       extra={
-        <Button type="primary" loading={submitting} onClick={handleCreate}>
-          Generate full backup
-        </Button>
+        <Space wrap>
+          <Select
+            value={content}
+            onChange={setContent}
+            style={{ minWidth: 150 }}
+            options={[
+              { value: "full", label: "Full account" },
+              { value: "files", label: "Files only" },
+              { value: "database", label: "Databases only" },
+            ]}
+          />
+          <Select
+            value={compression}
+            onChange={setCompression}
+            style={{ minWidth: 140 }}
+            options={[
+              { value: "", label: "Auto compression" },
+              { value: "max", label: "Max compression" },
+              { value: "off", label: "No compression" },
+            ]}
+          />
+          <Button type="primary" loading={submitting} onClick={handleCreate}>
+            Generate backup
+          </Button>
+        </Space>
       }
     >
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>

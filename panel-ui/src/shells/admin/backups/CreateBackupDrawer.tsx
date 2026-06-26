@@ -30,6 +30,9 @@ interface FormValues {
   destination_id?: string;
   databases?: string;
   mailboxes?: string;
+  content?: string;
+  folders?: string;
+  compression?: string;
 }
 
 type Destination = { id: string; name: string; kind: string; enabled: boolean };
@@ -40,6 +43,7 @@ export const CreateBackupDrawer = ({ open, onClose, onCreated }: CreateBackupDra
   const [form] = Form.useForm<FormValues>();
   const [submitting, setSubmitting] = useState(false);
   const kind = Form.useWatch("kind", form) ?? "account_backup";
+  const content = Form.useWatch("content", form) ?? "full";
 
   const usersQuery = useListQuery<User>({
     resource: "users",
@@ -88,6 +92,11 @@ export const CreateBackupDrawer = ({ open, onClose, onCreated }: CreateBackupDra
         mailboxes: values.mailboxes
           ? values.mailboxes.split(",").map((s) => s.trim()).filter(Boolean)
           : [],
+        content: values.content ?? "full",
+        folders: values.folders
+          ? values.folders.split(",").map((s) => s.trim()).filter(Boolean)
+          : [],
+        compression: values.compression ?? "",
       };
       await apiClient.post(`/admin/users/${values.user_id}/backups`, payload);
       message.success("Backup queued");
@@ -180,6 +189,43 @@ export const CreateBackupDrawer = ({ open, onClose, onCreated }: CreateBackupDra
               extra="user@domain pairs. Skips with warning when Stalwart is down."
             >
               <Input placeholder="alice@example.com, hello@example.com" />
+            </Form.Item>
+            <Form.Item
+              label="Content"
+              name="content"
+              extra="Full = home + databases + mailboxes. Files = home only. Databases = DBs only. Folders = a subset of the home directory."
+            >
+              <Select
+                options={[
+                  { value: "full", label: "Full account" },
+                  { value: "files", label: "Files only (home)" },
+                  { value: "database", label: "Databases only" },
+                  { value: "folders", label: "Specific folders" },
+                ]}
+              />
+            </Form.Item>
+            {content === "folders" && (
+              <Form.Item
+                label="Folders (comma-separated)"
+                name="folders"
+                rules={[{ required: true, message: "List at least one folder" }]}
+                extra="Paths relative to the account home, e.g. public_html, public_html/wp-content/uploads"
+              >
+                <Input placeholder="public_html, mail" />
+              </Form.Item>
+            )}
+            <Form.Item
+              label="Compression"
+              name="compression"
+              extra="restic compression level (zstd). Auto is recommended; Max is smaller but slower; Off is fastest."
+            >
+              <Select
+                options={[
+                  { value: "", label: "Auto (recommended)" },
+                  { value: "max", label: "Max (smallest)" },
+                  { value: "off", label: "Off (fastest)" },
+                ]}
+              />
             </Form.Item>
           </>
         )}

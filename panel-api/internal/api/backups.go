@@ -302,6 +302,42 @@ type createBackupRequest struct {
 	DestinationID string   `json:"destination_id,omitempty"`
 	Databases     []string `json:"databases,omitempty"`
 	Mailboxes     []string `json:"mailboxes,omitempty"`
+	// GH #294 options. Content: ""/"full" | "files" | "database" | "folders".
+	// Folders: home subpaths (content=folders). Compression: ""|"off"|"auto"|"max".
+	Content     string   `json:"content,omitempty"`
+	Folders     []string `json:"folders,omitempty"`
+	Compression string   `json:"compression,omitempty"`
+}
+
+// validBackupContent / validBackupCompression whitelist the GH #294 options so a
+// bad value can't reach the agent (restic has only off/auto/max — never gzip/xz).
+func validBackupContent(c string) bool {
+	switch c {
+	case "", "full", "files", "database", "folders":
+		return true
+	}
+	return false
+}
+
+func validBackupCompression(c string) bool {
+	switch c {
+	case "", "off", "auto", "max":
+		return true
+	}
+	return false
+}
+
+// applyBackupContent zeroes the db/mail selections a content mode excludes:
+// "files"/"folders" -> home only; "database" -> dbs only; else (full) unchanged.
+func applyBackupContent(content string, dbs, mbs, pgDbs []string) ([]string, []string, []string) {
+	switch content {
+	case "files", "folders":
+		return nil, nil, nil
+	case "database":
+		return dbs, nil, pgDbs
+	default:
+		return dbs, mbs, pgDbs
+	}
 }
 
 func (h *backupHandler) createForUser(c *gin.Context) {
@@ -315,6 +351,10 @@ func (h *backupHandler) createForUser(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, errEmptyBody) {
 		// errEmptyBody isn't a real symbol; tolerate empty bodies too.
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid_json"})
+		return
+	}
+	if !validBackupContent(req.Content) || !validBackupCompression(req.Compression) {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid_option", "detail": "content must be full/files/database/folders; compression must be off/auto/max"})
 		return
 	}
 	dest, derr := h.resolveDest(c, req.DestinationID)
@@ -353,6 +393,7 @@ func (h *backupHandler) createForUser(c *gin.Context) {
 		// M37: split mariadb and postgres dbs so the agent dispatches
 		// the right dump tool per engine.
 		pgDbs := h.cfg.allUserPostgresDatabases(c.Request.Context(), user.ID)
+		dbs, mbs, pgDbs = applyBackupContent(req.Content, dbs, mbs, pgDbs)
 		params := map[string]any{
 			"job_id":             job.ID,
 			"user_id":            user.ID,
@@ -362,6 +403,9 @@ func (h *backupHandler) createForUser(c *gin.Context) {
 			"databases":          dbs,
 			"databases_postgres": pgDbs,
 			"mailboxes":          mbs,
+			"content":            req.Content,
+			"folders":            req.Folders,
+			"compression":        req.Compression,
 			"metadata":           h.cfg.buildAccountMetadata(c.Request.Context(), user),
 		}
 		for k, v := range destWireParams(dest) {
@@ -1030,6 +1074,12 @@ func (h *meBackupHandler) create(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "user_not_found"})
 		return
 	}
+	var req createBackupRequest // reuse: content/folders/compression (destination ignored for me-backups)
+	_ = c.ShouldBindJSON(&req)
+	if !validBackupContent(req.Content) || !validBackupCompression(req.Compression) {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid_option", "detail": "content must be full/files/database/folders; compression must be off/auto/max"})
+		return
+	}
 	job := &models.BackupJob{
 		ID:        ids.NewULID(),
 		UserID:    user.ID,
@@ -1044,15 +1094,22 @@ func (h *meBackupHandler) create(c *gin.Context) {
 	if h.cfg.Agent != nil {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), backupCallTimeout)
 		defer cancel()
+		dbs, mbs, pgDbs := applyBackupContent(req.Content,
+			h.cfg.allUserDatabases(c.Request.Context(), user.ID),
+			h.cfg.allUserMailboxes(c.Request.Context(), user.ID),
+			h.cfg.allUserPostgresDatabases(c.Request.Context(), user.ID))
 		params := map[string]any{
 			"job_id":             job.ID,
 			"user_id":            user.ID,
 			"username":           user.Username,
 			"email":              user.Email,
 			"is_admin":           user.IsAdmin,
-			"databases":          h.cfg.allUserDatabases(c.Request.Context(), user.ID),
-			"databases_postgres": h.cfg.allUserPostgresDatabases(c.Request.Context(), user.ID),
-			"mailboxes":          h.cfg.allUserMailboxes(c.Request.Context(), user.ID),
+			"databases":          dbs,
+			"databases_postgres": pgDbs,
+			"mailboxes":          mbs,
+			"content":            req.Content,
+			"folders":            req.Folders,
+			"compression":        req.Compression,
 			"metadata":           h.cfg.buildAccountMetadata(c.Request.Context(), user),
 		}
 		if _, err := h.cfg.Agent.Call(ctx, "backup.create", params); err != nil {

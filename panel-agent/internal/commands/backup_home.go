@@ -34,6 +34,10 @@ type backupHomeParams struct {
 	PasswordFile   string   `json:"password_file,omitempty"`
 	CredentialsRef string   `json:"credentials_ref,omitempty"`
 	ExtraOptions   []string `json:"extra_options,omitempty"`
+	Compression    string   `json:"compression,omitempty"`
+	// Folders restricts the backup to these paths under the account home
+	// (relative or absolute-under-home). Empty = whole home (GH #294).
+	Folders []string `json:"folders,omitempty"`
 }
 
 type backupHomeResult struct {
@@ -80,11 +84,35 @@ func backupHomeHandler(ctx context.Context, raw json.RawMessage) (any, error) {
 	if cerr != nil {
 		return nil, bkInternal("restic config", cerr)
 	}
+	cfg.Compression = req.Compression
 	c := backup.New(cfg)
 	tags := backup.AccountBackupTags(req.JobID, req.UserID, req.ScheduleID, backup.StageHome)
 
+	// Restrict to selected folders when requested; each must resolve inside
+	// the account home (no escape). Missing folders are skipped (non-fatal).
+	paths := []string{homePath}
+	if len(req.Folders) > 0 {
+		paths = paths[:0]
+		for _, f := range req.Folders {
+			clean := filepath.Clean(f)
+			full := clean
+			if !filepath.IsAbs(clean) {
+				full = filepath.Join(homePath, clean)
+			}
+			if full != homePath && !strings.HasPrefix(full, homePath+string(os.PathSeparator)) {
+				return nil, bkInvalidArg(fmt.Sprintf("folder %q escapes the account home", f))
+			}
+			if _, err := os.Stat(full); err != nil {
+				continue
+			}
+			paths = append(paths, full)
+		}
+		if len(paths) == 0 {
+			return nil, bkInvalidArg("no valid folders to back up")
+		}
+	}
 	opts := backup.BackupOpts{
-		Paths: []string{homePath},
+		Paths: paths,
 		Tags:  tags,
 	}
 	if _, err := os.Stat(HomeExcludeFile); err == nil {
