@@ -293,6 +293,43 @@ func TestValidateCommand(t *testing.T) {
 			wantErr:  ErrCodeBinaryNotAllowed,
 			desc:     "A non-php binary is still rejected",
 		},
+
+		// Inline-code PHP flags are rejected (GH #440).
+		{
+			name:     "php_dash_r_rejected",
+			raw:      "php -r 'echo 1;'",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBinaryNotAllowed,
+			desc:     "php -r inline code is rejected",
+		},
+		{
+			name:     "php_dash_r_glued_rejected",
+			raw:      "php -rphpinfo",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBinaryNotAllowed,
+			desc:     "glued php -rCODE is rejected",
+		},
+		{
+			name:     "php_dash_R_rejected",
+			raw:      "php -R 'echo 1;'",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBinaryNotAllowed,
+			desc:     "php -R inline code is rejected",
+		},
+		{
+			name:     "php_dash_r_after_flag_rejected",
+			raw:      "php -d display_errors=0 -r 'echo 1;'",
+			docroots: ownedDocroots,
+			wantErr:  ErrCodeBinaryNotAllowed,
+			desc:     "php -r not at argv[1] is still rejected",
+		},
+		{
+			name:     "php_version_flag_still_allowed",
+			raw:      "php -v",
+			docroots: ownedDocroots,
+			wantErr:  "",
+			desc:     "harmless introspection flag -v stays allowed",
+		},
 	}
 
 	for _, tt := range tests {

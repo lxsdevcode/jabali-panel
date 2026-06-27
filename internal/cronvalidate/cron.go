@@ -289,7 +289,18 @@ var phpStandaloneFlags = map[string]bool{
 	"-m": true, "--modules": true,
 	"-i": true, "--info": true,
 	"-h": true, "--help": true,
-	"-r": true, // followed by code string, not file
+}
+
+// isInlineCodePHPFlag reports whether a PHP CLI token executes inline code
+// rather than naming a script file: -r/-R (run code), -B/-E (begin/end code),
+// in both separated (`-r`) and glued (`-rCODE`) forms (GH #440).
+func isInlineCodePHPFlag(a string) bool {
+	for _, f := range []string{"-r", "-R", "-B", "-E"} {
+		if a == f || strings.HasPrefix(a, f) {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePHPCommand(argv []string, ownedDocroots []string) (*Command, error) {
@@ -300,19 +311,22 @@ func validatePHPCommand(argv []string, ownedDocroots []string) (*Command, error)
 		}
 	}
 
-	// Check for standalone flags first
-	if phpStandaloneFlags[argv[1]] {
-		return &Command{Argv: argv}, nil
-	}
-
-	// Handle -r code execution
-	if argv[1] == "-r" {
-		if len(argv) < 3 {
+	// Reject inline-code PHP flags anywhere in the command (GH #440): -r/-R
+	// (run code), -B/-E (begin/end code), including glued forms like
+	// `-rCODE`. These execute arbitrary PHP that never lives in the tenant's
+	// docroot and never passes the owned-path check, bypassing the cron
+	// command model (allowlisted binary + absolute .php in an owned docroot).
+	for _, a := range argv[1:] {
+		if isInlineCodePHPFlag(a) {
 			return nil, &ValidationError{
-				Code:   ErrCodeBadPathArg,
-				Detail: "php -r requires code argument",
+				Code:   ErrCodeBinaryNotAllowed,
+				Detail: "php inline-code flags (-r/-R/-B/-E) are not allowed; a cron command must run an absolute .php file inside your docroot",
 			}
 		}
+	}
+
+	// Check for harmless standalone flags (introspection only: -v/-m/-i/-h)
+	if phpStandaloneFlags[argv[1]] {
 		return &Command{Argv: argv}, nil
 	}
 
