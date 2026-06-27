@@ -5456,6 +5456,17 @@ security.limit_extensions = .php
 ; same pool also serves Adminer at /var/www/jabali-adminer (M37).
 ; sso.key is out of scope — creds via the UDS SSO validator only.
 php_admin_value[open_basedir] = /opt/phpmyadmin:/var/www/jabali-adminer:/tmp:/var/tmp
+
+; Import limits (GH #285): the PHP defaults (upload_max_filesize=2M,
+; post_max_size=8M, memory_limit=128M, max_execution_time=30s) make
+; phpMyAdmin/Adminer SQL-file uploads fail on anything but tiny dumps.
+; Raise them so normal database imports work; very large dumps can still
+; use phpMyAdmin's chunked UploadDir.
+php_admin_value[upload_max_filesize] = 256M
+php_admin_value[post_max_size] = 256M
+php_value[memory_limit] = 512M
+php_value[max_execution_time] = 600
+php_value[max_input_time] = 600
 POOLEOF
   chmod 0644 /etc/php/${pma_phpver}/fpm/pool.d/jabali-pma.conf
   _ok "pool config written"
