@@ -1,0 +1,4 @@
+# Cloudflare Pages (or any host honoring _redirects): serve install.sh at the
+# short URL so `curl -fsSL https://get.jabali-panel.com | bash` works (GH #444).
+# 200 = rewrite (proxy the body) so there's no redirect hop for the pipe.
+/*  https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh  200

@@ -65,6 +65,19 @@ Not a first-class operation in the UI. The supported path:
 2. `/jabali-admin/ips` → Add.
 3. Assign per-domain via Domains → Edit → Listen IP.
 
+### Verify the public installer URL (get.jabali-panel.com)
+
+Short install URL (GH #444). After a release or any DNS/redirect change, confirm
+it still serves the installer:
+
+```bash
+curl -fsSL https://get.jabali-panel.com | head -5   # expect the bash shebang + installer header
+```
+
+If it fails, the canonical fallback always works:
+`curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh | sudo bash`.
+Setup + redirect config live in `deploy/get-installer/`.
+
 ### Add a new PHP version
 
 1. `apt install php8.x-fpm php8.x-cli php8.x-mbstring …`

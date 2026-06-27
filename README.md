@@ -77,6 +77,12 @@ are picked up on the next rebase.
 One-line install on a fresh Debian 13 box:
 
 ```
+curl -fsSL https://get.jabali-panel.com | sudo bash
+```
+
+Direct URL (fallback, always works):
+
+```
 curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh | sudo bash
 ```
 
@@ -94,7 +100,7 @@ Optional flags:
 Uninstall (rolls back system packages, optionally keeps `/home`):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh | sudo bash -s -- --uninstall
+curl -fsSL https://get.jabali-panel.com | sudo bash -s -- --uninstall
 ```
 
 After install:
