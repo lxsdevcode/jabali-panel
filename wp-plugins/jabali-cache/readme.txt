@@ -1,6 +1,6 @@
 === Jabali Cache ===
 Contributors: jabalipanel, apunker
-Tags: cache, redis, object cache, performance, page cache
+Tags: redis, object cache, cache, performance, page cache
 Requires at least: 5.6
 Tested up to: 7.0
 Requires PHP: 7.4
@@ -8,58 +8,129 @@ Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Redis-backed persistent object cache (and optional full-page cache) tuned for the Jabali hosting panel.
+Persistent Redis object cache for WordPress. Zero-config on the Jabali panel, works without the phpredis extension, and always fails safe.
 
 == Description ==
 
-Jabali Cache turns WordPress's transient/object cache into a persistent Redis-backed cache using the Redis instance the Jabali panel already provisions. It is purpose-built for the panel's shared-hosting model:
+**Jabali Cache makes WordPress fast by keeping its object cache in Redis instead of rebuilding it on every request.** WordPress normally throws away its internal cache at the end of each request, so the same expensive database queries run again and again. This plugin makes that cache persistent — backed by the Redis instance the [Jabali hosting panel](https://jabali-panel.com) already runs — so pages assemble from memory instead of hammering MySQL.
 
-* **Zero-config on Jabali.** Connects to the panel Redis over the unix socket `/run/redis/redis.sock`, logical database 1 (ADR-0059). No host/port to enter.
-* **Per-site isolation.** Every install gets a unique key prefix. The shared Redis database is namespaced per site; one site can never read or flush another's cache.
-* **LRU-safe.** The panel Redis runs `allkeys-lru`. Every read is best-effort, so an evicted key just falls through to the database — never an error.
-* **Works without phpredis.** If the `redis` PHP extension is not installed (the Jabali default), the plugin uses a dependency-free pure-PHP RESP client over the socket. If phpredis is present, it is used automatically.
-* **Fails safe.** If Redis is unreachable, WordPress keeps running with a normal per-request cache. The admin screen shows exactly why and how to fix it.
+It is purpose-built for shared hosting, where many sites share one Redis server. That shapes every design decision: strict per-site isolation, safe behaviour under memory pressure, and a hard rule that a caching layer must *never* take a site down.
 
-A full-page cache is included but **off by default**, because Jabali already provides an nginx fastcgi microcache at the edge (ADR-0108). Enable the WP page cache only if you turned the nginx one off.
+= Why you might want it =
+
+* **Fewer database queries, faster pages.** Options, post meta, terms, user data and transients come from Redis on repeat requests instead of MySQL.
+* **Lighter database load.** Especially noticeable on WooCommerce, membership, and query-heavy sites under traffic.
+* **Drop-in.** Activate it and WordPress's standard object-cache API (`wp_cache_*`, transients) starts using Redis. No theme or plugin changes.
+
+= Built for the way Jabali hosts sites =
+
+* **Zero-config on Jabali.** Connects to the panel Redis over the unix socket `/run/redis/redis.sock`, logical database 1. Nothing to type — no host, port, or password.
+* **Strict per-site isolation.** Every install gets its own key prefix. Sites share one Redis database but can never read or flush each other's cache. A site's flush only clears that site's keys.
+* **No phpredis required.** If the `redis` PHP extension is present it is used automatically; if not (the Jabali default), the plugin falls back to a dependency-free, pure-PHP RESP client over the same socket. Either way it just works.
+* **Safe under memory pressure.** The panel Redis runs an `allkeys-lru` policy, so it may evict keys at any time. Every read is best-effort — an evicted or missing key simply falls through to the database. An eviction is never an error.
+* **Fails safe, always.** If Redis is unreachable for any reason, WordPress keeps running with its normal per-request cache. Nothing breaks; caching just stops accelerating until the connection is back. The admin screen tells you exactly what is wrong and how to fix it.
+* **Multisite-aware.** On a network, per-blog data is namespaced per site while genuinely global groups (network, site meta) are shared correctly.
+
+= Object cache vs. page cache =
+
+The persistent **object cache** is the main event and is on as soon as you activate the plugin.
+
+A full **page cache** is also included, but it is **off by default**. Jabali already serves a faster page cache at the edge via nginx (FastCGI microcache), so turning on the WordPress page cache as well would just cache the same HTML twice. Enable the in-WordPress page cache only on hosts where the nginx one is not available.
+
+= Privacy =
+
+Jabali Cache stores WordPress's own cache data in your Redis server and nowhere else. It does not collect analytics, contact any external service, or send data off your server.
 
 == Installation ==
 
-1. Upload the `jabali-cache` folder to `wp-content/plugins/`.
-2. Activate **Jabali Cache** from Plugins. Activation installs the `object-cache.php` drop-in automatically.
-3. Visit **Settings → Jabali Cache** to confirm "Redis connection: Connected".
+= On the Jabali panel (recommended) =
 
-If the status shows "Not reachable", the screen prints the exact host prerequisite (see FAQ).
+1. Install and activate **Jabali Cache**. Activation drops in `object-cache.php` automatically.
+2. In the panel, enable caching for the site (Applications → cache toggle). This provisions the site's Redis socket access.
+3. Visit **Settings → Jabali Cache** and confirm **Redis connection: Connected**.
+
+= On any other host =
+
+1. Upload the `jabali-cache` folder to `wp-content/plugins/` (or install the zip from Plugins → Add New).
+2. Activate **Jabali Cache**.
+3. Point it at your Redis server with a few constants in `wp-config.php` (see the FAQ). Over a unix socket or TCP both work.
+4. Check **Settings → Jabali Cache** for a green connection status.
+
+If the status ever shows **Not reachable**, the screen prints the exact prerequisite to fix — and the site keeps working the whole time as a normal non-persistent cache.
 
 == Frequently Asked Questions ==
 
-= The status says Redis is not reachable. =
+= The status says Redis is "Not reachable". What do I do? =
 
-On the Jabali panel, socket access is provisioned automatically when you enable caching for the site (Applications → cache toggle). If the status still shows "Not reachable", re-run that toggle.
+On the Jabali panel, socket access is set up when you enable caching for the site (Applications → cache toggle). If the status still shows Not reachable, re-run that toggle.
 
-On a standalone host the site's PHP user needs two things:
+On a standalone host, the site's PHP-FPM user needs two things for a unix socket:
 
-1. **open_basedir** must allow the socket path — add `/run/redis` (or your socket's directory) to the pool's `open_basedir`.
-2. **Read access to the socket** for the PHP-FPM user.
+1. **open_basedir** must allow the socket's directory — add `/run/redis` (or wherever your socket lives) to the pool's `open_basedir`.
+2. **Read/write access to the socket** for the PHP-FPM user.
 
-Until then the plugin runs as a non-persistent per-request cache and the site keeps working normally — caching just isn't accelerated.
+Until that is in place the plugin runs as a normal per-request cache and the site is completely unaffected — caching just isn't persistent yet.
 
-= Does it need the phpredis extension? =
+= Does it need the phpredis (PECL redis) extension? =
 
-No. It auto-detects phpredis and uses it if present, otherwise a built-in pure-PHP client.
+No. It auto-detects phpredis and uses it when available; otherwise it uses a built-in pure-PHP client. You get persistent caching either way.
 
-= Will it conflict with the nginx page cache? =
+= How do I use it outside the Jabali panel? =
 
-No. The object cache complements the nginx microcache. The WP page cache is off by default to avoid double-caching.
+Define overrides in `wp-config.php`. With none of these set, it defaults to the Jabali socket and a per-site prefix.
 
-= Can I use it outside the Jabali panel? =
+`define( 'JABALI_CACHE_SOCKET', '/path/to/redis.sock' );` — unix socket, or:
+`define( 'JABALI_CACHE_HOST', '127.0.0.1' );`
+`define( 'JABALI_CACHE_PORT', 6379 );`
 
-Yes. Point it at any Redis over a unix socket or TCP. Define overrides in `wp-config.php`:
-`JABALI_CACHE_SOCKET`, or `JABALI_CACHE_HOST` + `JABALI_CACHE_PORT`, plus `JABALI_CACHE_DB`, `JABALI_CACHE_PASSWORD`, and `JABALI_CACHE_PREFIX`. With no overrides it defaults to the Jabali socket and derives a per-site key prefix.
+Optional:
+`define( 'JABALI_CACHE_DB', 1 );` — logical database number
+`define( 'JABALI_CACHE_PASSWORD', '...' );` — Redis AUTH password
+`define( 'JABALI_CACHE_PREFIX', 'mysite' );` — key prefix (auto-derived per site if unset)
+`define( 'JABALI_CACHE_DISABLED', true );` — force off without deactivating
+
+= Will it isolate my cache from other sites on the same server? =
+
+Yes. Each install uses a unique key prefix, so reads, writes, and flushes are scoped to your site only. One site cannot see or clear another's cache, even though they may share the same Redis database.
+
+= Is it safe if Redis runs out of memory? =
+
+Yes. The expected policy is `allkeys-lru` — Redis evicts least-recently-used keys when full. Every read in this plugin is best-effort, so an evicted key just rebuilds from the database. There is no error path that can break the site under memory pressure.
+
+= Does it work on WordPress Multisite? =
+
+Yes. Per-site cache data is namespaced per blog, while truly global cache groups are shared across the network as WordPress expects.
+
+= Should I also turn on the page cache? =
+
+Only if your host does not already have one. On Jabali, nginx serves a FastCGI microcache at the edge, which is faster than caching in PHP — so the WordPress page cache stays off by default to avoid double-caching. Off Jabali, you can enable it from the settings screen.
+
+= How do I manage it from WP-CLI? =
+
+    wp jabali-cache status          # connection, driver, prefix, key count, page-cache state
+    wp jabali-cache flush           # flush this site's object cache
+    wp jabali-cache flush --pages   # also purge page-cache entries
+    wp jabali-cache enable          # enable caching
+    wp jabali-cache disable         # disable caching
+    wp jabali-cache update-dropins  # (re)install the wp-content drop-ins
+    wp jabali-cache remove-dropins  # remove the drop-ins
+    wp jabali-cache diagnose        # full connectivity + environment report
+
+= What happens when I uninstall it? =
+
+Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress reverts to its built-in non-persistent cache. Uninstalling removes the plugin's options. Your Redis data is just a cache and is safe to discard.
 
 == Changelog ==
 
 = 1.0.0 =
-* Initial release: Redis object cache, optional page cache, WP-CLI, admin diagnostics.
+* Initial release.
+* Persistent Redis object cache with strict per-site key isolation.
+* Pure-PHP Redis client fallback when the phpredis extension is absent.
+* Optional full-page cache (off by default; complements the nginx edge cache).
+* WP-CLI commands: status, flush, enable, disable, update-dropins, remove-dropins, diagnose.
+* Admin diagnostics screen with live connection status and fix-it guidance.
+* Multisite-aware namespacing.
+* Fail-safe: WordPress keeps running normally whenever Redis is unavailable.
 
 == Upgrade Notice ==
 
