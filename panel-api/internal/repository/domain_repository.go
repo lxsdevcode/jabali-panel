@@ -306,7 +306,7 @@ func (r *domainRepo) Update(ctx context.Context, d *models.Domain) error {
 	// PHP per-domain settings have their own dedicated repo methods.
 	if err := r.db.WithContext(ctx).Model(d).Where("id = ?", d.ID).Select(
 		"name", "doc_root", "is_enabled", "nginx_custom_directives",
-		"nginx_rules",
+		"nginx_rules", "nginx_safe_options",
 		"redirect_all_to", "redirect_all_type", "page_redirects",
 		"index_priority", "ssl_enabled", "is_quota_suspended", "updated_at",
 	).Updates(d).Error; err != nil {
