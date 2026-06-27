@@ -100,6 +100,10 @@ type ServerSettings struct {
 	// "development" (track main). Default stable.
 	ReleaseChannel string `gorm:"column:release_channel;type:varchar(16);not null;default:'stable'" json:"release_channel"`
 
+	// DNSUserRecordPolicy — per-type create/edit/delete matrix for non-admin
+	// tenants (GH #466, ADR-0150). JSON object keyed by UPPERCASE record type.
+	DNSUserRecordPolicy DNSUserRecordPolicy `gorm:"column:dns_user_record_policy;type:longtext" json:"dns_user_record_policy"`
+
 	// M26 AppSec geoblock (migration 000067). Server-wide rule applied
 	// by crowdsec AppSec. Mode ∈ {"off", "allow", "deny"}:
 	//   off   — rule file written with no filter; all traffic passes

@@ -48,6 +48,10 @@ func RegisterDNSRoutes(g *gin.RouterGroup, cfg DNSHandlerConfig) {
 	rec := g.Group("/dns/records")
 	rec.PATCH("/:recordId", h.updateRecord)
 	rec.DELETE("/:recordId", h.deleteRecord)
+
+	// Effective per-type permission matrix for the calling user (GH #466),
+	// so the tenant DNS UI can reflect what it may create/edit/delete.
+	g.GET("/dns/policy", h.getPolicy)
 }
 
 type dnsHandler struct {
@@ -325,6 +329,17 @@ func (h *dnsHandler) createRecord(c *gin.Context) {
 		return
 	}
 
+	// Per-type permission gate for non-admin tenants (GH #466). Admins bypass.
+	if claims := ginctx.Claims(c); claims != nil && !claims.IsAdmin {
+		if !h.userRecordPolicy(c.Request.Context()).Allows(req.Type, "create") {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":  "record_type_forbidden",
+				"detail": "Your administrator does not allow creating " + strings.ToUpper(req.Type) + " records.",
+			})
+			return
+		}
+	}
+
 	// Load zone to get zone ID
 	zone, err := h.cfg.Zones.FindByDomainID(c.Request.Context(), domainID)
 	if err != nil {
@@ -419,6 +434,8 @@ func (h *dnsHandler) updateRecord(c *gin.Context) {
 		return
 	}
 
+	oldRecordType := record.Type
+
 	// Load zone to get domain ID
 	zone, err := h.cfg.Zones.FindByID(c.Request.Context(), record.ZoneID)
 	if err != nil {
@@ -482,6 +499,27 @@ func (h *dnsHandler) updateRecord(c *gin.Context) {
 	}
 	if req.IsEnabled != nil {
 		record.IsEnabled = *req.IsEnabled
+	}
+
+	// Per-type permission gate for non-admin tenants (GH #466): editing the
+	// record needs the edit right on its current type, and changing its type
+	// additionally needs the create right on the new type. Admins bypass.
+	if !claims.IsAdmin {
+		pol := h.userRecordPolicy(c.Request.Context())
+		if !pol.Allows(oldRecordType, "edit") {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":  "record_type_forbidden",
+				"detail": "Your administrator does not allow editing " + strings.ToUpper(oldRecordType) + " records.",
+			})
+			return
+		}
+		if !strings.EqualFold(record.Type, oldRecordType) && !pol.Allows(record.Type, "create") {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":  "record_type_forbidden",
+				"detail": "Your administrator does not allow creating " + strings.ToUpper(record.Type) + " records.",
+			})
+			return
+		}
 	}
 
 	// Validate updated record
@@ -578,6 +616,15 @@ func (h *dnsHandler) deleteRecord(c *gin.Context) {
 			"detail": "This " + record.Type + " record is zone" +
 				" infrastructure managed by jabali's nameserver and" +
 				" cannot be deleted directly.",
+		})
+		return
+	}
+
+	// Per-type permission gate for non-admin tenants (GH #466). Admins bypass.
+	if !claims.IsAdmin && !h.userRecordPolicy(c.Request.Context()).Allows(record.Type, "delete") {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":  "record_type_forbidden",
+			"detail": "Your administrator does not allow deleting " + strings.ToUpper(record.Type) + " records.",
 		})
 		return
 	}
@@ -744,4 +791,34 @@ func (h *dnsHandler) defaultRecordTTL(ctx context.Context) int {
 		return 300
 	}
 	return int(s.DefaultDNSTTL)
+}
+
+// userRecordPolicy returns the effective per-type permission matrix for
+// non-admin tenants (GH #466). An empty/absent stored policy falls back to the
+// permissive default so a misconfiguration never locks every tenant out of DNS.
+func (h *dnsHandler) userRecordPolicy(ctx context.Context) models.DNSUserRecordPolicy {
+	if h.cfg.ServerSettings == nil {
+		return models.DefaultDNSUserRecordPolicy()
+	}
+	s, err := h.cfg.ServerSettings.Get(ctx)
+	if err != nil || s == nil || len(s.DNSUserRecordPolicy) == 0 {
+		return models.DefaultDNSUserRecordPolicy()
+	}
+	return s.DNSUserRecordPolicy
+}
+
+// getPolicy returns the effective DNS record-type permissions for the caller so
+// the tenant UI can reflect them. Admins bypass the matrix, so they get an
+// all-permitted view.
+func (h *dnsHandler) getPolicy(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	if claims.IsAdmin {
+		c.JSON(http.StatusOK, gin.H{"policy": models.DefaultDNSUserRecordPolicy(), "is_admin": true})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"policy": h.userRecordPolicy(c.Request.Context()), "is_admin": false})
 }

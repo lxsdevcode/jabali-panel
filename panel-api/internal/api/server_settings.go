@@ -109,6 +109,10 @@ type updateServerSettingsRequest struct {
 	PanelLightTextColor          *string `json:"panel_light_text_color,omitempty"`
 	PanelDarkTextColor           *string `json:"panel_dark_text_color,omitempty"`
 	ReleaseChannel               *string `json:"release_channel,omitempty"`
+	// DNS record-type permissions (GH #466): supply either a named preset
+	// (permissive | hosting-safe | locked-down) or the full per-type matrix.
+	DNSUserRecordPolicy       *models.DNSUserRecordPolicy `json:"dns_user_record_policy,omitempty"`
+	DNSUserRecordPolicyPreset *string                     `json:"dns_user_record_policy_preset,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
@@ -381,6 +385,21 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			return
 		}
 		current.ReleaseChannel = ch
+	}
+	if req.DNSUserRecordPolicyPreset != nil {
+		pol, ok := models.DNSPolicyPreset(*req.DNSUserRecordPolicyPreset)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_dns_policy_preset",
+				"message": "must be 'permissive', 'hosting-safe', or 'locked-down'",
+			})
+			return
+		}
+		current.DNSUserRecordPolicy = pol
+	} else if req.DNSUserRecordPolicy != nil {
+		// Sanitize: drop NS/SOA and unknown types so a PUT can't grant a
+		// policy for an admin-only record type.
+		current.DNSUserRecordPolicy = req.DNSUserRecordPolicy.Sanitize()
 	}
 	if req.DiskQuotaEnabled != nil {
 		current.DiskQuotaEnabled = *req.DiskQuotaEnabled
