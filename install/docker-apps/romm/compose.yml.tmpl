@@ -1,0 +1,54 @@
+services:
+  romm:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      ROMM_DB_DRIVER: "mariadb"
+      DB_HOST: "db"
+      DB_PORT: "3306"
+      DB_NAME: "romm"
+      DB_USER: "romm"
+      DB_PASSWD: "{{ index .Env "DB_PASSWD" }}"
+      ROMM_AUTH_SECRET_KEY: "{{ index .Env "ROMM_AUTH_SECRET_KEY" }}"
+    volumes:
+      - {{ .DataRoot }}/resources:/romm/resources
+      - {{ .DataRoot }}/assets:/romm/assets
+      - {{ .DataRoot }}/config:/romm/config
+      - {{ .DataRoot }}/redis-data:/redis-data
+      - {{ .DataRoot }}/library:/romm/library
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/api/heartbeat -o /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  db:
+    image: mariadb:11@sha256:be1ef4fe5f14589325c08a41c76334097ce66c86264b75e1d28342c742782a61
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "romm"
+      MYSQL_USER: "romm"
+      MYSQL_PASSWORD: "{{ index .Env "DB_PASSWD" }}"
+      MYSQL_ROOT_PASSWORD: "{{ index .Env "MYSQL_ROOT_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

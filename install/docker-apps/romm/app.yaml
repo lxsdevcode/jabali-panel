@@ -1,0 +1,53 @@
+slug: romm
+name: RomM
+tags: ["Games", "Media", "Library"]
+version: "4.9.2"
+description: |
+  Self-hosted ROM manager and player with IGDB/MobyGames metadata.
+  App container (bundled Redis) + MariaDB. Mount your ROM library
+  into the 'library' volume after install.
+icon: icon.svg
+upstream: https://github.com/rommapp/romm
+documentation: https://docs.romm.app/
+
+image_channel: rommapp/romm:4@sha256:c81778afcafe7c865bdf156d1c62349aec3dfca3aca5ec0d6c2c2e8bfa9fb071
+update_mode: manual
+
+resources:
+  cpu: "1.5"
+  memory: "1g"
+  pids: 400
+
+volumes:
+  - name: resources
+    container_path: /romm/resources
+  - name: assets
+    container_path: /romm/assets
+  - name: config
+    container_path: /romm/config
+  - name: redis-data
+    container_path: /redis-data
+  - name: library
+    container_path: /romm/library
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_PASSWD
+    secret: true
+    generate: password32
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  - name: ROMM_AUTH_SECRET_KEY
+    secret: true
+    generate: password64
