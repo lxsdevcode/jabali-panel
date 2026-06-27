@@ -63,6 +63,17 @@ export const UserDockerAppsPage = () => {
   const [credsFor, setCredsFor] = useState<InstalledApp | null>(null);
 
   const catalog = useQuery({ queryKey: ["user-docker-catalog"], queryFn: listCatalog });
+  const [catalogTags, setCatalogTags] = useState<string[]>([]);
+  const allCatalogTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of catalog.data ?? []) for (const t of e.tags ?? []) set.add(t);
+    return Array.from(set).sort();
+  }, [catalog.data]);
+  const visibleCatalog = useMemo(() => {
+    const items = catalog.data ?? [];
+    if (catalogTags.length === 0) return items;
+    return items.filter((e) => (e.tags ?? []).some((t) => catalogTags.includes(t)));
+  }, [catalog.data, catalogTags]);
   const installed = useQuery({
     queryKey: ["user-docker-installed"],
     queryFn: listInstalled,
@@ -127,8 +138,30 @@ export const UserDockerAppsPage = () => {
         />
       )}
       <Typography.Title level={5}>Available apps</Typography.Title>
+      {allCatalogTags.length > 0 && (
+        <Space size={[8, 8]} wrap style={{ marginBottom: 16 }}>
+          {allCatalogTags.map((t) => (
+            <Tag.CheckableTag
+              key={t}
+              checked={catalogTags.includes(t)}
+              onChange={() =>
+                setCatalogTags((cur) =>
+                  cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t],
+                )
+              }
+            >
+              {t}
+            </Tag.CheckableTag>
+          ))}
+          {catalogTags.length > 0 && (
+            <Button type="link" size="small" onClick={() => setCatalogTags([])}>
+              Clear
+            </Button>
+          )}
+        </Space>
+      )}
       <Space wrap size={[16, 16]} style={{ marginBottom: 24 }}>
-        {(catalog.data ?? []).map((e) => (
+        {visibleCatalog.map((e) => (
           <Card
             key={e.slug}
             size="small"

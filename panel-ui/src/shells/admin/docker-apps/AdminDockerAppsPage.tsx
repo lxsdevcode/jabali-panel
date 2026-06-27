@@ -3,7 +3,7 @@
 import { App, Avatar, Button, Card, Col, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { humanBytes } from "../../../utils/bytes";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AppstoreOutlined,
   ContainerOutlined,
@@ -45,6 +45,7 @@ export const AdminDockerAppsPage = () => {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [installEntry, setInstallEntry] = useState<CatalogEntry | null>(null);
+  const [catalogTags, setCatalogTags] = useState<string[]>([]);
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
   const [editApp, setEditApp] = useState<InstalledApp | null>(null);
@@ -56,6 +57,17 @@ export const AdminDockerAppsPage = () => {
     queryKey: ["docker-apps-catalog"],
     queryFn: listCatalog,
   });
+
+  const allCatalogTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of catalog.data ?? []) for (const t of e.tags ?? []) set.add(t);
+    return Array.from(set).sort();
+  }, [catalog.data]);
+  const visibleCatalog = useMemo(() => {
+    const items = catalog.data ?? [];
+    if (catalogTags.length === 0) return items;
+    return items.filter((e) => (e.tags ?? []).some((t) => catalogTags.includes(t)));
+  }, [catalog.data, catalogTags]);
   const installed = useQuery({
     queryKey: ["docker-apps-installed"],
     queryFn: listInstalled,
@@ -346,6 +358,29 @@ export const AdminDockerAppsPage = () => {
             key: "catalog",
             label: "Catalog",
             children: (
+              <>
+              {allCatalogTags.length > 0 && (
+                <Space size={[8, 8]} wrap style={{ marginBottom: 16 }}>
+                  {allCatalogTags.map((t) => (
+                    <Tag.CheckableTag
+                      key={t}
+                      checked={catalogTags.includes(t)}
+                      onChange={() =>
+                        setCatalogTags((cur) =>
+                          cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t],
+                        )
+                      }
+                    >
+                      {t}
+                    </Tag.CheckableTag>
+                  ))}
+                  {catalogTags.length > 0 && (
+                    <Button type="link" size="small" onClick={() => setCatalogTags([])}>
+                      Clear
+                    </Button>
+                  )}
+                </Space>
+              )}
               <div
                 style={{
                   columnGap: 16,
@@ -356,7 +391,7 @@ export const AdminDockerAppsPage = () => {
                 }}
                 className="docker-apps-catalog-masonry"
               >
-                {(catalog.data ?? []).map((e) => (
+                {visibleCatalog.map((e) => (
                   <div
                     key={e.slug}
                     style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}
@@ -394,6 +429,7 @@ export const AdminDockerAppsPage = () => {
                   </div>
                 ))}
               </div>
+              </>
             ),
           },
           {

@@ -34,6 +34,7 @@ export interface CatalogEntry {
   name: string;
   version: string;
   description: string;
+  tags?: string[];
   icon: string;
   upstream?: string;
   documentation?: string;
