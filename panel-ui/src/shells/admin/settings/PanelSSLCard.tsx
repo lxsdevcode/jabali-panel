@@ -191,6 +191,18 @@ export function PanelSSLCard() {
           blocks the hostname cert. Self-signed remains the fallback.
         </Typography.Paragraph>
 
+        {!host.routable && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Let's Encrypt is unavailable for the panel"
+            description={
+              host.routable_reason
+                ? `${host.routable_reason}. Point the panel hostname's DNS A record at this server's public IP, then click Refresh.`
+                : "The panel hostname must resolve publicly to this server's IP. Point its DNS A record at the public IP, then click Refresh."
+            }
+          />
+        )}
         <Space wrap>
           <Switch
             checked={host.use_le}
