@@ -1,6 +1,6 @@
 # Blueprint: Admin-controlled DNS record-type permissions for tenants (Gitea #466)
 
-**Status:** Wave A shipped (2026-06-27); Waves B–D pending
+**Status:** Waves A–C shipped + deployed (2026-06-27); Wave D (E2E) pending a live browser run
 **ADR:** ADR-0150 (draft, in this change)
 **Next free migration:** `000197`
 
