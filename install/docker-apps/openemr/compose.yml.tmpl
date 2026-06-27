@@ -1,0 +1,51 @@
+services:
+  openemr:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      MYSQL_HOST: "db"
+      MYSQL_ROOT_PASS: "{{ index .Env "MYSQL_ROOT_PASSWORD" }}"
+      MYSQL_USER: "openemr"
+      MYSQL_PASS: "{{ index .Env "MYSQL_PASS" }}"
+      MYSQL_DATABASE: "openemr"
+      OE_USER: "admin"
+      OE_PASS: "{{ index .Env "OE_PASS" }}"
+    volumes:
+      - {{ .DataRoot }}/sites:/var/www/localhost/htdocs/openemr/sites
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/ -o /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  db:
+    image: mariadb:11@sha256:be1ef4fe5f14589325c08a41c76334097ce66c86264b75e1d28342c742782a61
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    command: --max-allowed-packet=64MB
+    environment:
+      MYSQL_DATABASE: "openemr"
+      MYSQL_USER: "openemr"
+      MYSQL_PASSWORD: "{{ index .Env "MYSQL_PASS" }}"
+      MYSQL_ROOT_PASSWORD: "{{ index .Env "MYSQL_ROOT_PASSWORD" }}"
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

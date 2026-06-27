@@ -1,0 +1,44 @@
+slug: openemr
+name: OpenEMR
+tags: ["Health", "Medical", "EMR"]
+version: "8.0.0.3"
+description: |
+  Open-source electronic medical records and practice management.
+  PHP/Apache app container with auto-setup + bundled MariaDB.
+icon: icon.svg
+upstream: https://github.com/openemr/openemr
+documentation: https://www.open-emr.org/wiki/index.php/OpenEMR_Wiki_Home_Page
+
+image_channel: openemr/openemr:8.0.0.3@sha256:3e72e656e30b7b60d3a45eb4f71e4967f7c3e19c67096941437c32983d128988
+update_mode: manual
+
+resources:
+  cpu: "1.5"
+  memory: "1g"
+  pids: 400
+
+volumes:
+  - name: sites
+    container_path: /var/www/localhost/htdocs/openemr/sites
+  - name: db
+    container_path: /var/lib/mysql
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: MYSQL_PASS
+    secret: true
+    generate: password32
+  - name: MYSQL_ROOT_PASSWORD
+    secret: true
+    generate: password32
+  - name: OE_PASS
+    secret: true
+    generate: password32
