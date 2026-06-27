@@ -62,6 +62,14 @@ type itflowInstallResp struct {
 const itflowRepoURL = "https://github.com/itflow-org/itflow.git"
 const itflowBranch = "master"
 
+// itflowPinnedCommit is the reviewed master commit the installer checks out
+// (GH #455). ITFlow ships no release tags and self-updates along master via
+// its admin UI, so we clone master (the in-app updater needs that .git) but
+// reset the working tree to this reviewed SHA at install time and verify HEAD
+// matches — installs are reproducible and never pull an unreviewed master tip.
+// Bump deliberately (code review) when adopting a newer ITFlow.
+const itflowPinnedCommit = "60563e33925bb3dc07911e8f6ad8b86dec89f552"
+
 // itflowSafeText guards the free-text fields that setup_cli.php
 // interpolates UNESCAPED into SQL INSERTs (company_name, admin_name).
 // Reject quotes, backslash, and control chars so a crafted value can't
@@ -90,11 +98,29 @@ func cloneITFlow(ctx context.Context, osUser, installPath string) error {
 	if err := exec.CommandContext(ctx, "chown", "-R", osUser+":"+osUser, stagingDir).Run(); err != nil {
 		return fmt.Errorf("chown staging: %w", err)
 	}
+	// Full clone (no --depth) so the reviewed pinned commit is reachable even
+	// after master advances upstream; master ref is kept for the in-app updater.
 	cloneCmd := buildSystemdRunCmd(ctx, osUser,
-		"git", "clone", "--depth", "1", "--branch", itflowBranch, itflowRepoURL, src,
+		"git", "clone", "--branch", itflowBranch, itflowRepoURL, src,
 	)
 	if out, err := runBoundedOutput(cloneCmd, 0); err != nil {
 		return fmt.Errorf("git clone: %w (output: %s)", err, truncateStr(string(out), 512))
+	}
+	// Pin the working tree (and master) to the reviewed commit (GH #455).
+	resetCmd := buildSystemdRunCmd(ctx, osUser,
+		"git", "-C", src, "reset", "--hard", itflowPinnedCommit,
+	)
+	if out, err := runBoundedOutput(resetCmd, 0); err != nil {
+		return fmt.Errorf("git reset to pinned commit %s: %w (output: %s)", itflowPinnedCommit, err, truncateStr(string(out), 512))
+	}
+	// Verify HEAD is exactly the pin — fail closed on any mismatch.
+	headCmd := buildSystemdRunCmd(ctx, osUser, "git", "-C", src, "rev-parse", "HEAD")
+	headOut, err := runBoundedOutput(headCmd, 0)
+	if err != nil {
+		return fmt.Errorf("git rev-parse HEAD: %w (output: %s)", err, truncateStr(string(headOut), 256))
+	}
+	if got := strings.TrimSpace(string(headOut)); got != itflowPinnedCommit {
+		return fmt.Errorf("itflow pin mismatch: HEAD=%s want=%s — refusing to install unreviewed code", got, itflowPinnedCommit)
 	}
 	cpCmd := buildSystemdRunCmd(ctx, osUser, "sh", "-c",
 		fmt.Sprintf("cp -a %s/. %s/", shellQuote(src), shellQuote(installPath)),
@@ -150,7 +176,6 @@ func runITFlowSetupCLI(ctx context.Context, req itflowInstallReq, installPath, b
 	}
 	return nil
 }
-
 
 func itflowInstallHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var req itflowInstallReq
