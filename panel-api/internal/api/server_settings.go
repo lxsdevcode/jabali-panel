@@ -114,6 +114,7 @@ type updateServerSettingsRequest struct {
 	DNSUserRecordPolicy       *models.DNSUserRecordPolicy `json:"dns_user_record_policy,omitempty"`
 	DNSUserRecordPolicyPreset *string                     `json:"dns_user_record_policy_preset,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
+	WebmailEnabled               *bool   `json:"webmail_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
 	UploadMaxSizeMB              *uint32 `json:"upload_max_size_mb,omitempty"`
@@ -403,6 +404,9 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.DiskQuotaEnabled != nil {
 		current.DiskQuotaEnabled = *req.DiskQuotaEnabled
+	}
+	if req.WebmailEnabled != nil {
+		current.WebmailEnabled = *req.WebmailEnabled
 	}
 	if req.RootTerminalEnabled != nil {
 		current.RootTerminalEnabled = *req.RootTerminalEnabled

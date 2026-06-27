@@ -99,6 +99,8 @@ type ServerSettings struct {
 	// ReleaseChannel (GH #445): "stable" (track the promoted `stable` tag) or
 	// "development" (track main). Default stable.
 	ReleaseChannel string `gorm:"column:release_channel;type:varchar(16);not null;default:'stable'" json:"release_channel"`
+	// WebmailEnabled toggles the Bulwark webmail client server-wide (GH #316).
+	WebmailEnabled bool `gorm:"column:webmail_enabled;type:tinyint(1);not null;default:1" json:"webmail_enabled"`
 
 	// DNSUserRecordPolicy — per-type create/edit/delete matrix for non-admin
 	// tenants (GH #466, ADR-0150). JSON object keyed by UPPERCASE record type.

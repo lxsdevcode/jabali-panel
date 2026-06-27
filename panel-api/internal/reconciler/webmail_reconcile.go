@@ -56,6 +56,29 @@ func (r *Reconciler) reconcileWebmailVhosts(ctx context.Context) {
 		return
 	}
 
+	// GH #316: admins can disable the Bulwark webmail client server-wide. When
+	// off, tear down every webmail vhost, clear the AppSec allowlist, and stop
+	// the daemon — then skip the apply loop. Default is enabled (the column
+	// defaults to 1), so this is a no-op unless an admin turns it off.
+	if r.serverSettings != nil {
+		if s, sErr := r.serverSettings.Get(ctx); sErr == nil && s != nil && !s.WebmailEnabled {
+			for i := range domains {
+				if domains[i].EmailEnabled {
+					r.removeWebmailVhost(ctx, domains[i].Name)
+				}
+			}
+			if _, werr := appseccfg.WriteWebmailHosts(appseccfg.WebmailHostsPath, nil); werr != nil {
+				r.log.Warn("webmail reconcile: clear webmail-hosts.list", "err", werr)
+			}
+			stopCtx, cancel := context.WithTimeout(ctx, webmailAgentTimeout)
+			defer cancel()
+			if _, err := r.agent.Call(stopCtx, "service.stop", map[string]any{"name": "jabali-webmail"}); err != nil {
+				r.log.Warn("webmail reconcile: service.stop jabali-webmail failed", "err", err)
+			}
+			return
+		}
+	}
+
 	anyEmailEnabled := false
 	webmailHosts := make([]string, 0, len(domains)*2)
 	for i := range domains {

@@ -59,6 +59,7 @@ import { DatabaseAdminSections } from "./DatabaseAdminSections";
 import { DNSResolversCard } from "./DNSResolversCard";
 import { DNSPermissionsCard } from "./DNSPermissionsCard";
 import { EmailCard } from "./EmailCard";
+import { WebmailToggleCard } from "./WebmailToggleCard";
 import { StalwartWebadminCard } from "./StalwartWebadminCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
 import { PanelSSLCard } from "./PanelSSLCard";
@@ -962,6 +963,7 @@ export const ServerSettingsPage = () => {
         {activeTab === "email" && (
           <>
             <EmailCard />
+            <WebmailToggleCard />
             <StalwartWebadminCard />
           </>
         )}
