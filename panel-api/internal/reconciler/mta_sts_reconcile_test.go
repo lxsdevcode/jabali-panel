@@ -61,7 +61,8 @@ func TestReconcileMTASts_AppliesWhenIdChangedAndCertReady(t *testing.T) {
 	require.Len(t, ag.calls, 1, "exactly one apply expected")
 	assert.Equal(t, "mail.mtasts.apply", ag.calls[0].Command)
 	assert.Equal(t, "example.com", ag.calls[0].Params["domain"])
-	assert.Equal(t, "host.example.com", ag.calls[0].Params["mx_host"])
+	// GH #441: policy mx: must be the domain MX (mail.<domain>), not the panel host.
+	assert.Equal(t, "mail.example.com", ag.calls[0].Params["mx_host"])
 	assert.Equal(t, "testing", ag.calls[0].Params["mode"])
 	assert.Equal(t, certPath, ag.calls[0].Params["ssl_cert"])
 	assert.Equal(t, uint64(12345), dr.domains["dom1"].MTASTSAppliedId, "applied_id should catch up to mta_sts_id")

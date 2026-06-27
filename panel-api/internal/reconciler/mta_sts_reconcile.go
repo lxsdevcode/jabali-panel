@@ -74,8 +74,14 @@ func (r *Reconciler) applyMTASts(ctx context.Context, domain *models.Domain) {
 	if cert.CertPath == nil || cert.KeyPath == nil {
 		return
 	}
-	mxHost := r.panelHostnameForMTASts(ctx)
-	if mxHost == "" {
+	// The policy mx: must match the domain's published MX host (RFC 8461),
+	// which for Jabali-managed mail is mail.<domain> — NOT the panel hostname
+	// (GH #441). For external mail providers Jabali does not own the MX, so it
+	// must not publish a policy that would mismatch or conflict with the
+	// provider's own MTA-STS.
+	mxHost, ok := mtaStsMXForDomain(domain)
+	if !ok {
+		r.log.Debug("mta-sts: skip non-jabali mail provider", "domain", domain.Name, "provider", domain.MailProvider)
 		return
 	}
 	cctx, cancel := context.WithTimeout(ctx, mtaStsCallTimeout)
@@ -117,18 +123,18 @@ func (r *Reconciler) disableMTASts(ctx context.Context, domain *models.Domain) {
 	r.log.Info("mta-sts: disabled", "domain", domain.Name)
 }
 
-// panelHostnameForMTASts returns the host published in the policy's
-// `mx:` line. We use the panel hostname — every hosted domain on a
-// jabali single-tenant install accepts mail at the same MX, so the
-// panel's own FQDN is the single source of truth. Empty when server
-// settings aren't wired (fresh install, pre-bootstrap).
-func (r *Reconciler) panelHostnameForMTASts(ctx context.Context) string {
-	if r.serverSettings == nil {
-		return ""
+// mtaStsMXForDomain returns the host to publish in the policy's `mx:` line and
+// whether MTA-STS should be applied at all (GH #441). RFC 8461 matches the
+// policy mx against the MX hostname the receiver resolves. For Jabali-managed
+// mail that is mail.<domain> (see dnscompile email/bootstrap records), so the
+// policy must use that, not the panel hostname. For external providers
+// (m365/google/none) Jabali does not control the MX and must not publish a
+// conflicting policy, so applying is skipped.
+func mtaStsMXForDomain(d *models.Domain) (string, bool) {
+	switch d.MailProvider {
+	case "", "jabali":
+		return "mail." + d.Name, true
+	default:
+		return "", false
 	}
-	s, err := r.serverSettings.Get(ctx)
-	if err != nil || s == nil {
-		return ""
-	}
-	return s.Hostname
 }
