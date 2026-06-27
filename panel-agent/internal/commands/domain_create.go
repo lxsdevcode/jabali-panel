@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"text/template"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
 // domainCreateParams is the input shape for domain.create.
@@ -652,37 +654,54 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
-	// Create doc_root directory
-	mkdirCmd := exec.CommandContext(ctx, "mkdir", "-p", p.DocRoot)
-	if err := mkdirCmd.Run(); err != nil {
+	// Provision the docroot through a filesafe scope rooted at the tenant's own
+	// home (Gitea #476). doc_root components (domains/<domain>/public_html) are
+	// tenant-controlled; a pre-planted symlink would let a plain root mkdir -p /
+	// chown / chmod be redirected outside the home subtree (or into another
+	// tenant). openat2 RESOLVE_BENEATH refuses any symlinked component and binds
+	// the path to /home/<user>.
+	homeDir := "/home/" + p.Username
+	docScope, scErr := filesafe.NewScope(p.Username, p.Username, []string{homeDir})
+	if scErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "scope init: " + scErr.Error()}
+	}
+	if _, err := docScope.MkdirInScope(p.DocRoot, true, 0o755); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("mkdir failed: %v", err),
 		}
 	}
 
-	// Chown + chmod every directory we created under /home/<user>/,
-	// not just the leaf. mkdir -p would have left intermediates as
-	// root:root; fix them so tenant data stays owned by the tenant.
+	// Resolve uid (tenant) + gid (www-data) for the fd-based chown.
+	docUser, duErr := user.Lookup(p.Username)
+	if duErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: fmt.Sprintf("user %q not found: %v", p.Username, duErr)}
+	}
+	docUID, _ := parseUID(docUser)
+	wwwGID, wgErr := lookupGroup("www-data")
+	if wgErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "lookup www-data: " + wgErr.Error()}
+	}
+
+	// Chown + chmod every directory we created under /home/<user>/, not just
+	// the leaf — via directory fds (fchown/fchmod, symlink-safe). 2750: the
+	// setgid bit makes files the app (PHP-FPM, group=<user>) later creates
+	// inherit the docroot's www-data group, so nginx can read uploads (GH
+	// #194-adjacent). os.ModeSetgid is the portable spelling of the 02000 bit.
 	for _, dir := range pathsUnderHome(p.Username, p.DocRoot) {
-		if err := exec.CommandContext(ctx, "chown", p.Username+":www-data", dir).Run(); err != nil {
-			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("chown %s: %v", dir, err),
-			}
+		df, derr := docScope.OpenDirInScope(dir)
+		if derr != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("open %s: %v", dir, derr)}
 		}
-		// 2750, not 0750: the setgid bit makes files and subdirs that the
-		// app (PHP-FPM, running with group=<user>) later creates inherit
-		// the docroot's www-data group instead of the user's primary
-		// group. Without it, new WordPress uploads land as <user>:<user>
-		// 0640 → nginx (www-data) is "other" → "Permission denied" → 403
-		// on freshly uploaded media (GH #194-adjacent; reviews-il.co.il).
-		if err := exec.CommandContext(ctx, "chmod", "2750", dir).Run(); err != nil {
-			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("chmod %s: %v", dir, err),
-			}
+		if err := df.Chown(docUID, wwwGID); err != nil {
+			_ = df.Close()
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chown %s: %v", dir, err)}
 		}
+		if err := df.Chmod(os.ModeSetgid | 0o750); err != nil {
+			_ = df.Close()
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chmod %s: %v", dir, err)}
+		}
+		_ = df.Close()
 	}
 
 	// Write a default index.html so a fresh domain serves a welcome
