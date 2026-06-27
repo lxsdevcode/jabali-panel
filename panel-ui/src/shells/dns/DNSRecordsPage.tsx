@@ -209,6 +209,12 @@ export const DNSRecordsPage = () => {
   const [formPriority, setFormPriority] = useState<number | null>(null);
   const [formTTL, setFormTTL] = useState(300);
   const [submitting, setSubmitting] = useState(false);
+  // DNS record-type permissions (GH #466). Fetched from /dns/policy; admins
+  // get an all-true matrix. On fetch failure we fall OPEN in the UI (server
+  // still enforces) so a hiccup never blocks the page.
+  const [recordPolicy, setRecordPolicy] = useState<Record<string, { create?: boolean; edit?: boolean; delete?: boolean }>>({});
+  const [policyIsAdmin, setPolicyIsAdmin] = useState(false);
+  const [policyLoaded, setPolicyLoaded] = useState(false);
 
   // Load domain data
   useEffect(() => {
@@ -290,10 +296,48 @@ export const DNSRecordsPage = () => {
     loadDnsData();
   }, [domainId, open]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<{ policy?: Record<string, { create?: boolean; edit?: boolean; delete?: boolean }>; is_admin?: boolean }>(
+          "/dns/policy",
+        );
+        if (!cancelled) {
+          setRecordPolicy(res.data.policy ?? {});
+          setPolicyIsAdmin(!!res.data.is_admin);
+          setPolicyLoaded(true);
+        }
+      } catch {
+        // Fall open in the UI; the server enforces the policy regardless.
+        if (!cancelled) setPolicyLoaded(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // allows reports whether the current user may op on a record type. Admins and
+  // the not-yet-loaded/failed state fall open (server-side enforcement is the
+  // real gate).
+  const allowsRecord = (t: string, op: "create" | "edit" | "delete") =>
+    policyIsAdmin || !policyLoaded || !!recordPolicy[t]?.[op];
+
+  const ALL_TYPE_OPTIONS = [
+    { value: "A", label: "A" },
+    { value: "AAAA", label: "AAAA" },
+    { value: "CNAME", label: "CNAME" },
+    { value: "MX", label: "MX" },
+    { value: "TXT", label: "TXT" },
+    { value: "NS", label: "NS" },
+  ];
+  const creatableTypeOptions = ALL_TYPE_OPTIONS.filter((o) => allowsRecord(o.value, "create"));
+
   // Drawer open helpers
   const openAddDrawer = () => {
     setEditingRecord(null);
-    setFormType("A");
+    setFormType((creatableTypeOptions[0]?.value as DNSRecordType) ?? "A");
     setFormName("");
     setFormContent("");
     setFormPriority(null);
@@ -518,13 +562,16 @@ export const DNSRecordsPage = () => {
         <Typography.Title level={3} style={{ margin: 0, wordBreak: "break-word" }}>
           DNS Records for {domain?.name}
         </Typography.Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={openAddDrawer}
-        >
-          Add Record
-        </Button>
+        <Tooltip title={creatableTypeOptions.length === 0 ? "Your administrator does not allow creating any DNS record types." : ""}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={openAddDrawer}
+            disabled={creatableTypeOptions.length === 0}
+          >
+            Add Record
+          </Button>
+        </Tooltip>
       </Flex>
 
       {zone && (
@@ -629,20 +676,37 @@ export const DNSRecordsPage = () => {
                     );
                   }
 
+                  // Gate per the admin's DNS record-type policy (GH #466).
+                  const canEdit = allowsRecord(record.type as string, "edit");
+                  const canDelete = allowsRecord(record.type as string, "delete");
+                  if (!canEdit && !canDelete) {
+                    return (
+                      <Tooltip title="Your administrator has restricted changes to this record type.">
+                        <Space>
+                          <LockOutlined />
+                          {!isCompact && <Typography.Text type="secondary">Restricted</Typography.Text>}
+                        </Space>
+                      </Tooltip>
+                    );
+                  }
+                  const rowActions = [];
+                  if (canEdit) {
+                    rowActions.push({ key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => openEditDrawer(record) });
+                  }
+                  if (canDelete) {
+                    rowActions.push({
+                      key: "delete",
+                      label: "Delete",
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      loading: deletingRecordId === record.id,
+                      onClick: () => handleDeleteRecord(record.id),
+                      confirm: { title: "Delete record?", description: "This action cannot be undone.", okText: "Delete" },
+                    });
+                  }
                   return (
                     <RowActions
-                      actions={[
-                        { key: "edit", label: "Edit", icon: <EditOutlined />, onClick: () => openEditDrawer(record) },
-                        {
-                          key: "delete",
-                          label: "Delete",
-                          icon: <DeleteOutlined />,
-                          danger: true,
-                          loading: deletingRecordId === record.id,
-                          onClick: () => handleDeleteRecord(record.id),
-                          confirm: { title: "Delete record?", description: "This action cannot be undone.", okText: "Delete" },
-                        },
-                      ]}
+                      actions={rowActions}
                     />
                   );
                 },
@@ -847,14 +911,7 @@ export const DNSRecordsPage = () => {
               value={formType}
               onChange={setFormType}
               disabled={!!editingRecord}
-              options={[
-                { value: "A", label: "A" },
-                { value: "AAAA", label: "AAAA" },
-                { value: "CNAME", label: "CNAME" },
-                { value: "MX", label: "MX" },
-                { value: "TXT", label: "TXT" },
-                { value: "NS", label: "NS" },
-              ]}
+              options={editingRecord ? ALL_TYPE_OPTIONS : creatableTypeOptions}
               style={{ width: "100%" }}
             />
           </Col>

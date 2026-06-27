@@ -57,6 +57,7 @@ import { DockerMarketplaceCard } from "./DockerMarketplaceCard";
 import { PythonAppsCard } from "./PythonAppsCard";
 import { DatabaseAdminSections } from "./DatabaseAdminSections";
 import { DNSResolversCard } from "./DNSResolversCard";
+import { DNSPermissionsCard } from "./DNSPermissionsCard";
 import { EmailCard } from "./EmailCard";
 import { StalwartWebadminCard } from "./StalwartWebadminCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
@@ -558,6 +559,7 @@ const DNSSettingsTab = () => {
   return (
     <>
       <DNSResolversCard />
+      <DNSPermissionsCard />
 
       <Form
         form={form}
