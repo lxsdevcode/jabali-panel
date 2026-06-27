@@ -323,7 +323,12 @@ func applyAccountRestore(
 					fmt.Sprintf("home: source %s missing: %v", src, err))
 				continue
 			}
-			if err := exec.CommandContext(ctx, "rsync", "-aHAX", "--delete", src, dst).Run(); err != nil {
+			// -aH (not -aHAX): do NOT restore ACLs/xattrs from the backup. The
+			// repository is untrusted (a poisoned snapshot could carry
+			// attacker-controlled ACL/xattr/capability metadata that root would
+			// otherwise apply into a live tenant home); owner/mode are
+			// re-normalized below regardless (Gitea #462).
+			if err := exec.CommandContext(ctx, "rsync", "-aH", "--delete", src, dst).Run(); err != nil {
 				warnings = append(warnings, fmt.Sprintf("home: rsync: %v", err))
 				continue
 			}

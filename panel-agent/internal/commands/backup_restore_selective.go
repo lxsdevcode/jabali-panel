@@ -324,7 +324,9 @@ func applySelectiveHome(ctx context.Context, stagingRoot, username string, st *b
 	if _, err := os.Stat(filepath.Clean(src)); err != nil {
 		return "home: staged source missing: " + err.Error()
 	}
-	if err := exec.CommandContext(ctx, "rsync", "-aHAX", src, dst).Run(); err != nil {
+	// -aH not -aHAX: skip untrusted ACL/xattr restore from the repo;
+	// owner/mode are re-normalized below (Gitea #462).
+	if err := exec.CommandContext(ctx, "rsync", "-aH", src, dst).Run(); err != nil {
 		return "home: rsync: " + err.Error()
 	}
 	if err := chownTreeRecursive(dst, uid, gid); err != nil {
