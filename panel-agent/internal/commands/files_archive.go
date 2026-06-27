@@ -113,7 +113,7 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 	tw := tar.NewWriter(gz)
 
 	for _, path := range resolved {
-		if err := addToTar(tw, path, filepath.Dir(path)); err != nil {
+		if err := addToTar(tw, scope, path, filepath.Dir(path)); err != nil {
 			tw.Close()
 			gz.Close()
 			f.Close()
@@ -165,8 +165,11 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 
 // addToTar walks `src` recursively and writes every entry into `tw`,
 // with paths rebased to be relative to `baseDir`. Symlinks are stored
-// as-is (tar's Typeflag=TypeSymlink) — we don't chase them.
-func addToTar(tw *tar.Writer, src, baseDir string) error {
+// as-is (tar's Typeflag=TypeSymlink) — we don't chase them. Regular-file
+// bodies are opened through the filesafe scope (openat2 RESOLVE_BENEATH),
+// so a tenant cannot race a checked file into a symlink between the walk's
+// Lstat and the body read to disclose host files (Gitea #471).
+func addToTar(tw *tar.Writer, scope *filesafe.Scope, src, baseDir string) error {
 	return filepath.Walk(src, func(p string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return &agentwire.AgentError{
@@ -201,9 +204,19 @@ func addToTar(tw *tar.Writer, src, baseDir string) error {
 		if !li.Mode().IsRegular() {
 			return nil
 		}
-		rf, err := os.Open(p)
+		// Open escape-proof: openat2 RESOLVE_BENEATH refuses any symlink in
+		// the path, closing the Lstat-to-open race (a swapped final component
+		// would otherwise be followed by os.Open and stream a host file back
+		// to the tenant).
+		rf, err := scope.OpenInScope(p, os.O_RDONLY, 0)
 		if err != nil {
 			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("open %q: %v", p, err)}
+		}
+		// Re-confirm regular via the fd: a swap to a fifo/device after the
+		// Lstat would otherwise have us copy from a special file.
+		if fi, fstatErr := rf.Stat(); fstatErr != nil || !fi.Mode().IsRegular() {
+			_ = rf.Close()
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("not a regular file after open: %q", p)}
 		}
 		defer rf.Close()
 		if _, err := io.Copy(tw, rf); err != nil {
