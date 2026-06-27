@@ -17,6 +17,7 @@
 // those remain Phase 2.
 import type { ReactNode } from "react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   Breadcrumb,
   Button,
@@ -320,6 +321,21 @@ export const FileManagerPage = () => {
 
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Directory is reflected in the URL (?path=) so browser back/forward and
+  // deep-links work (GH #315). navigateToPath pushes a history entry; the
+  // effect below flows URL changes (incl. back/forward) into currentPath,
+  // which the list-reload effect already keys on.
+  const navigateToPath = useCallback(
+    (p: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("path", p);
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
@@ -382,14 +398,36 @@ export const FileManagerPage = () => {
       try {
         const home = await filesHome();
         setRootPath(home.path);
-        setCurrentPath(home.path);
         setTreeData([makeTreeNode(home.path, home.path)]);
         setExpandedKeys([home.path]);
+        // Deep-link: honor ?path= on first load, else open home (replace so
+        // the initial entry isn't a dead back target).
+        const urlPath = searchParams.get("path");
+        if (urlPath) {
+          setCurrentPath(urlPath);
+        } else {
+          setCurrentPath(home.path);
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("path", home.path);
+              return next;
+            },
+            { replace: true },
+          );
+        }
       } catch (err) {
         message.error(`Cannot open file manager: ${errMessage(err)}`);
       }
     })();
   }, []);
+
+  // Flow URL changes (back/forward, deep-link) into currentPath. Guarded so
+  // our own navigateToPath set doesn't loop (GH #315).
+  useEffect(() => {
+    const p = searchParams.get("path");
+    if (p && p !== currentPath) setCurrentPath(p);
+  }, [searchParams, currentPath]);
 
   // --- list current dir ---
   const reloadList = useCallback(async (path: string) => {
@@ -452,7 +490,7 @@ export const FileManagerPage = () => {
     if (!currentPath) return;
     if (entry.is_dir) {
       const next = joinPath(currentPath, entry.name);
-      setCurrentPath(next);
+      navigateToPath(next);
       // Expand the parent (currentPath) and lazy-load its children so the
       // new child appears in the tree on the left. Without this, drilling
       // down via the table leaves the tree stuck at the last node the user
@@ -1161,7 +1199,7 @@ export const FileManagerPage = () => {
               <a
                 onClick={(e) => {
                   e.preventDefault();
-                  setCurrentPath(c.path);
+                  navigateToPath(c.path);
                 }}
               >
                 {c.title}
@@ -1318,7 +1356,7 @@ export const FileManagerPage = () => {
           onSelect={(keys) => {
             if (keys.length > 0) {
               const key = keys[0] as string;
-              setCurrentPath(key);
+              navigateToPath(key);
               setExpandedKeys((prev) =>
                 prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
               );
@@ -1370,7 +1408,7 @@ export const FileManagerPage = () => {
             onSelect={(keys) => {
               if (keys.length > 0) {
                 const key = keys[0] as string;
-                setCurrentPath(key);
+                navigateToPath(key);
                 setExpandedKeys((prev) =>
                   prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
                 );
