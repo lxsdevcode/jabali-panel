@@ -2,7 +2,7 @@
 // backup of the caller's account; list recent self-backups; download
 // when a row is succeeded. Mirrors AdminBackupsPage data shape but
 // scoped via /me/backups (auth-gated to caller's user_id).
-import { Button, Card, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Grid, Select, Space, Table, Tag, Typography, message } from "antd";
 import { RowActions } from "../../components/RowActions";
 import { DeleteOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
 import { useState } from "react";
@@ -37,6 +37,7 @@ const statusColor = (status: string): string => {
 };
 
 export const MyProfileBackupCard = () => {
+  const screens = Grid.useBreakpoint();
   const [submitting, setSubmitting] = useState(false);
   const [restoreId, setRestoreId] = useState<string | null>(null);
   const [content, setContent] = useState<string>("full");
@@ -66,15 +67,7 @@ export const MyProfileBackupCard = () => {
     }
   };
 
-  return (
-    <Card
-      title={
-        <span>
-          <SaveOutlined style={{ marginRight: 8 }} />
-          My backups
-        </span>
-      }
-      extra={
+  const backupActions = (
         <Space wrap>
           <Select
             value={content}
@@ -100,8 +93,21 @@ export const MyProfileBackupCard = () => {
             Generate backup
           </Button>
         </Space>
+  );
+
+  return (
+    <Card
+      title={
+        <span>
+          <SaveOutlined style={{ marginRight: 8 }} />
+          My backups
+        </span>
       }
+      extra={screens.md ? backupActions : undefined}
     >
+      {!screens.md ? (
+        <div style={{ width: "100%", marginBottom: 12 }}>{backupActions}</div>
+      ) : null}
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
         A full backup bundles your home directory, databases, and mailboxes
         into a portable tar.zst you can download. Backups are deduplicated

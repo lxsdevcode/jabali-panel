@@ -125,18 +125,18 @@ export function QuickStartModal() {
   return (
     <Modal
       title={
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "nowrap", minWidth: 0 }}>
           <div
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
+              width: 40,
+              height: 40,
+              borderRadius: 10,
               background: hexAlpha("#3b82f6", 0.18),
               color: "#3b82f6",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 22,
+              fontSize: 20,
               flexShrink: 0,
             }}
           >
@@ -144,7 +144,7 @@ export function QuickStartModal() {
               🐃
             </span>
           </div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
+          <Typography.Title level={4} style={{ margin: 0, minWidth: 0, fontSize: "clamp(16px, 4.5vw, 22px)" }}>
             Welcome to Jabali Panel!{" "}
             <span role="img" aria-label="wave">
               👋

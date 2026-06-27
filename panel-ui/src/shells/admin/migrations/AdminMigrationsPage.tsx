@@ -12,6 +12,7 @@
 // 5981541a).
 import { useEffect, useState } from "react";
 import {
+  Grid,
   Alert,
   Button,
   Card,
@@ -81,6 +82,7 @@ export const AdminMigrationsPage = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const screens = Grid.useBreakpoint();
 
   // M35.4 — auto-open wizard on landing if URL carries ?wizard=<id>.
   // Resume-draft buttons + bulk-create redirect both rely on this.
@@ -209,28 +211,7 @@ export const AdminMigrationsPage = () => {
   // visible list; the daily reaper (24h TTL on drafts) sweeps them.
   const rows = (list.data?.data ?? []).filter((r) => r.state !== "draft");
 
-  return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Alert
-        type="info"
-        showIcon
-        message="Account migration importer (M35)"
-        description={
-          <Typography.Paragraph style={{ marginBottom: 0 }}>
-            Read-only view of the migration_jobs table. Start new migrations
-            via the <Typography.Text code>jabali migrate import</Typography.Text>{" "}
-            CLI today; admin SPA mutation flows land once the JMAP-push and
-            per-area-builder follow-ups stabilise. See{" "}
-            <Typography.Text code>plans/m35-migration-importers-runbook.md</Typography.Text>{" "}
-            for the per-account workflow.
-          </Typography.Paragraph>
-        }
-      />
-
-      <Card
-        size="small"
-        title="Migration jobs"
-        extra={
+  const migrationsToolbar = (
           <Space wrap>
             <Tooltip
               title="Allow SSH to RFC1918 / loopback / link-local source hosts. Default off for production safety. Restart panel + agent after flipping to pick up the change."
@@ -259,8 +240,34 @@ export const AdminMigrationsPage = () => {
               New migration
             </Button>
           </Space>
+  );
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <Alert
+        type="info"
+        showIcon
+        message="Account migration importer (M35)"
+        description={
+          <Typography.Paragraph style={{ marginBottom: 0 }}>
+            Read-only view of the migration_jobs table. Start new migrations
+            via the <Typography.Text code>jabali migrate import</Typography.Text>{" "}
+            CLI today; admin SPA mutation flows land once the JMAP-push and
+            per-area-builder follow-ups stabilise. See{" "}
+            <Typography.Text code>plans/m35-migration-importers-runbook.md</Typography.Text>{" "}
+            for the per-account workflow.
+          </Typography.Paragraph>
         }
+      />
+
+      <Card
+        size="small"
+        title="Migration jobs"
+        extra={screens.md ? migrationsToolbar : undefined}
       >
+        {!screens.md ? (
+          <div style={{ width: "100%", marginBottom: 12 }}>{migrationsToolbar}</div>
+        ) : null}
         <Table<MigrationJob>
           dataSource={rows}
           rowKey="id"
