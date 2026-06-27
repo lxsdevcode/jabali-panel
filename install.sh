@@ -11630,19 +11630,22 @@ provision_new_software() {
       || _warn "provision: whois install had issues"
   fi
 
-  # Libexec helpers (fpm-pre-start, fpm-exec, cron-precheck) — generated
-  # systemd units reference these by absolute path. The fresh-install
-  # path installs them, and update.go's unit-sync heredoc re-copies them,
-  # but that heredoc runs the PRIOR binary embedded code on the first
-  # jabali update after a release that added one (one-update lag). This
-  # provision step is sourced FRESH from the just-pulled install.sh, so
-  # converging the helpers here installs them on the FIRST update — no
-  # lag. cron-precheck specifically: without it a tenant cron ExecStartPre
-  # dies 203/EXEC and the scheduled job never runs.
+  # Libexec helpers (fpm-pre-start, fpm-exec, fpm-post-start, cron-precheck)
+  # — generated systemd units reference these by absolute path. The
+  # fresh-install path installs them, and update.go's unit-sync heredoc
+  # re-copies them, but that heredoc runs the PRIOR binary embedded code on
+  # the first jabali update after a release that added one (one-update lag).
+  # This provision step is sourced FRESH from the just-pulled install.sh, so
+  # converging the helpers here installs them on the FIRST update — no lag.
+  # cron-precheck specifically: without it a tenant cron ExecStartPre dies
+  # 203/EXEC and the scheduled job never runs. fpm-post-start specifically
+  # (GH #302): it is the ExecStartPost that grants nginx the POSIX ACL on the
+  # per-user FPM socket (#430); if it is missing the ACL never lands and
+  # nginx gets "connect() ... failed (13: Permission denied)" on the socket.
   if [[ -d "$REPO_DIR/install/systemd" ]]; then
     install -d -m 0755 /usr/local/libexec/jabali
     local _h
-    for _h in fpm-pre-start fpm-exec cron-precheck; do
+    for _h in fpm-pre-start fpm-exec fpm-post-start cron-precheck; do
       if [[ -f "$REPO_DIR/install/systemd/$_h" ]]; then
         install -m 0755 "$REPO_DIR/install/systemd/$_h" "/usr/local/libexec/jabali/$_h"
       fi
