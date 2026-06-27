@@ -151,7 +151,7 @@ func validateDocumentRoot(docRoot, username, domainName string) error {
 }
 
 type updateDomainRequest struct {
-	IsEnabled             *bool                 `json:"is_enabled,omitempty"`
+	IsEnabled *bool `json:"is_enabled,omitempty"`
 	// DocRoot (GH #265) — admin-only change of the document root. Empty
 	// resets to the default /home/<user>/domains/<name>/public_html. The
 	// reconciler's per-tick domain.create mkdir -p's the new path + re-renders
@@ -1375,9 +1375,15 @@ func isValidNginxRuleType(s string) bool {
 // validateNginxRules checks each rule has the fields required by its
 // Type. Field-level constraints (e.g. header name format, valid CIDR)
 // are intentionally lenient — nginx -t on the agent is the final check.
+// maxNginxRules caps the number of typed nginx rules per domain. It is a
+// soft DoS/abuse bound, not a correctness limit -- `nginx -t` on the agent is
+// the real validator. Raised from 50 (GH #301): real .htaccess conversions and
+// framework routing can need hundreds of rewrites.
+const maxNginxRules = 500
+
 func validateNginxRules(rules models.NginxRules) error {
-	if len(rules) > 50 {
-		return fmt.Errorf("too many rules (max 50)")
+	if len(rules) > maxNginxRules {
+		return fmt.Errorf("too many rules (max %d)", maxNginxRules)
 	}
 	for i, r := range rules {
 		if !isValidNginxRuleType(r.Type) {

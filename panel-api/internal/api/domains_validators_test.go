@@ -362,7 +362,7 @@ func TestValidateNginxRules(t *testing.T) {
 			name: "many rules up to limit",
 			rules: func() []models.NginxRule {
 				var rules []models.NginxRule
-				for i := 0; i < 50; i++ {
+				for i := 0; i < 500; i++ {
 					rules = append(rules, models.NginxRule{
 						Type: "max_upload_size",
 						Size: "100M",
@@ -376,7 +376,7 @@ func TestValidateNginxRules(t *testing.T) {
 			name: "too many rules exceeds limit",
 			rules: func() []models.NginxRule {
 				var rules []models.NginxRule
-				for i := 0; i < 51; i++ {
+				for i := 0; i < 501; i++ {
 					rules = append(rules, models.NginxRule{
 						Type: "max_upload_size",
 						Size: "100M",
@@ -385,7 +385,7 @@ func TestValidateNginxRules(t *testing.T) {
 				return rules
 			}(),
 			wantError: true,
-			errorMsg:  "50",
+			errorMsg:  "500",
 		},
 	}
 

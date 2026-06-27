@@ -205,7 +205,7 @@ func scanMailDomains(parsed *ParsedTarball) map[string]bool {
 // applyMigratedHtaccess reads the .htaccess at path (if any), converts it to
 // typed NginxRules on d, and records counts/warnings on res. Best-effort: a
 // missing file is normal and silent; conversion never fails the migration.
-// Capped at the 50-rule API limit (extra rules are reported, not applied).
+// Capped at the per-domain rule limit (extra rules are reported, not applied).
 func applyMigratedHtaccess(path, domainName string, d *models.Domain, res *DomainImportResult) {
 	raw, err := os.ReadFile(path)
 	if err != nil || len(raw) == 0 {
@@ -213,10 +213,12 @@ func applyMigratedHtaccess(path, domainName string, d *models.Domain, res *Domai
 	}
 	conv := htaccess.Convert(string(raw), "/")
 	rules := conv.Rules
-	if len(rules) > 50 {
+	// Mirror the API's per-domain rule cap (GH #301).
+	const maxImportRules = 500
+	if len(rules) > maxImportRules {
 		res.HtaccessWarnings = append(res.HtaccessWarnings,
-			fmt.Sprintf("%s: .htaccess produced %d rules; only the first 50 were imported", domainName, len(rules)))
-		rules = rules[:50]
+			fmt.Sprintf("%s: .htaccess produced %d rules; only the first %d were imported", domainName, len(rules), maxImportRules))
+		rules = rules[:maxImportRules]
 	}
 	if len(rules) > 0 {
 		d.NginxRules = models.NginxRules(rules)

@@ -53,7 +53,7 @@ func TestApplyMigratedHtaccessRuleCap(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".htaccess")
 	var b []byte
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 520; i++ {
 		b = append(b, []byte("Header set X-N-"+itoa(i)+" v\n")...)
 	}
 	if err := os.WriteFile(path, b, 0o644); err != nil {
@@ -62,12 +62,12 @@ func TestApplyMigratedHtaccessRuleCap(t *testing.T) {
 	d := &models.Domain{Name: "big.com"}
 	res := &DomainImportResult{}
 	applyMigratedHtaccess(path, "big.com", d, res)
-	if len(d.NginxRules) != 50 {
-		t.Errorf("rules must be capped at 50, got %d", len(d.NginxRules))
+	if len(d.NginxRules) != 500 {
+		t.Errorf("rules must be capped at 500, got %d", len(d.NginxRules))
 	}
 	foundCap := false
 	for _, w := range res.HtaccessWarnings {
-		if len(w) > 0 && containsSub(w, "only the first 50") {
+		if len(w) > 0 && containsSub(w, "only the first 500") {
 			foundCap = true
 		}
 	}
