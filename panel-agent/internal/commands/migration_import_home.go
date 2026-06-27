@@ -31,7 +31,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
@@ -40,6 +39,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
 const (
@@ -102,18 +102,21 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 		}
 	}
 
-	// Path validation — refuse anything outside the staging root so
-	// a malformed call can't pull from arbitrary host paths.
-	srcAbs, err := filepath.Abs(p.SrcDir)
+	// Path validation — resolve src_dir symlink-safe under the staging root
+	// (Gitea #468). A bare strings.HasPrefix check is not symlink-aware: a
+	// symlink inside the staging tree could point rsync at arbitrary host
+	// files to copy into the tenant home. filesafe.Scope.Resolve rejects any
+	// path outside /var/lib/jabali-migrations and fails closed on a symlinked
+	// component.
+	srcScope, sErr := filesafe.NewScope(p.JobID, "migration", []string{migrationStagingRoot})
+	if sErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "src scope init: " + sErr.Error()}
+	}
+	srcAbs, err := srcScope.Resolve(p.SrcDir)
 	if err != nil {
 		return nil, &agentwire.AgentError{
-			Code: agentwire.CodeInvalidArgument, Message: "src_dir not absolute: " + err.Error(),
-		}
-	}
-	if !strings.HasPrefix(srcAbs+"/", migrationStagingRoot+"/") {
-		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
-			Message: fmt.Sprintf("src_dir must live under %s, got %q", migrationStagingRoot, srcAbs),
+			Message: fmt.Sprintf("src_dir must resolve under %s: %v", migrationStagingRoot, err),
 		}
 	}
 
@@ -184,6 +187,14 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 		}
 		args = append(args, "--exclude="+ex)
 	}
+	// Bind + symlink-safe resolve the destination to the dest user's own
+	// home (Gitea #468). os.MkdirAll + chown -R against a string path would
+	// follow a symlinked home component and redirect the root write/own
+	// outside the account tree.
+	destScope, dsErr := filesafe.NewScope(p.DestUser, p.DestUser, []string{u.HomeDir})
+	if dsErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "dest scope init: " + dsErr.Error()}
+	}
 	dest := u.HomeDir + "/"
 	if p.DestSubpath != "" {
 		// Defense: refuse absolute or escape paths.
@@ -194,15 +205,21 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 				Message: fmt.Sprintf("dest_subpath invalid: %q", p.DestSubpath),
 			}
 		}
-		dest = filepath.Join(u.HomeDir, clean) + "/"
-		// mkdir -p with target ownership so rsync doesn't write the
-		// new dirs as root.
-		if mkErr := os.MkdirAll(dest, 0o755); mkErr != nil {
+		resolvedDest, rErr := destScope.Resolve(filepath.Join(u.HomeDir, clean))
+		if rErr != nil {
 			return nil, &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("mkdir %s: %v", dest, mkErr),
+				Code:    agentwire.CodeInvalidArgument,
+				Message: fmt.Sprintf("dest_subpath %q must resolve under %s: %v", p.DestSubpath, u.HomeDir, rErr),
 			}
 		}
+		// Create the subpath escape-proof (openat2), then chown it.
+		if _, mkErr := destScope.MkdirInScope(resolvedDest, true, 0o755); mkErr != nil {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInternal,
+				Message: fmt.Sprintf("mkdir %s: %v", resolvedDest, mkErr),
+			}
+		}
+		dest = resolvedDest + "/"
 		_ = exec.CommandContext(subctx, "chown", "-R", fmt.Sprintf("%d:%d", uid, gid), dest).Run()
 	}
 	srcWithSlash := strings.TrimRight(srcAbs, "/") + "/"
