@@ -108,6 +108,7 @@ func newRootCmd() *cobra.Command {
 		newSystemCmd(),
 		newMigrateCmd(),
 		newUpdateCmd(),
+		newReleaseCmd(),
 		newLimitsCmd(),
 		newMailboxCmd(),
 		newSharedResourceCmd(),
@@ -135,9 +136,9 @@ func newRootCmd() *cobra.Command {
 		newDockerAppCmd(),
 		newPythonAppCmd(),
 	)
-rejectUnknownSubcommands(cmd)
+	rejectUnknownSubcommands(cmd)
 
-		// `jabali reconcile` was removed by M20 — the reconciler already ticks
+	// `jabali reconcile` was removed by M20 — the reconciler already ticks
 	// every cfg.Agent.ReconcilerInterval (default 60s), and the CLI's
 	// manual-trigger path relied on legacy JWT that the Kratos-era
 	// middleware ignores. Operators who need an immediate tick can restart

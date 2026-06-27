@@ -62,9 +62,9 @@ func recentCommits(ctx context.Context) []commitSummary {
 // (GH #300). Must be called AFTER `git fetch origin main`. Best-effort:
 // returns nil on any git error. Capped at 50 so a very stale host can't
 // produce an unbounded payload.
-func pendingCommits(ctx context.Context) []commitSummary {
+func pendingCommits(ctx context.Context, target string) []commitSummary {
 	out, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "log", "-50",
-		"--no-merges", "--format=%h%x09%cI%x09%s", "HEAD..origin/main")
+		"--no-merges", "--format=%h%x09%cI%x09%s", "HEAD.."+target)
 	if err != nil {
 		return nil
 	}
@@ -104,19 +104,44 @@ func runAsServiceUser(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func systemUpdateCheckHandler(ctx context.Context, _ json.RawMessage) (any, error) {
+// systemUpdateCheckParams carries the operator's release channel (GH #445);
+// empty/"development" = track origin/main, "stable" = track the `stable` tag.
+type systemUpdateCheckParams struct {
+	Channel string `json:"channel"`
+}
+
+func systemUpdateCheckHandler(ctx context.Context, raw json.RawMessage) (any, error) {
+	var p systemUpdateCheckParams
+	_ = json.Unmarshal(raw, &p) // best-effort; empty = development
 	current, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", "HEAD")
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
-	if _, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "origin", "main"); err != nil {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	// Resolve the channel target ref to compare against.
+	target := "origin/main"
+	if p.Channel == "stable" {
+		// Force-sync the movable stable tag alongside main.
+		if _, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "--force",
+			"origin", "main", "+refs/tags/stable:refs/tags/stable"); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+		}
+		if _, terr := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", "--verify", "--quiet", "refs/tags/stable^{commit}"); terr == nil {
+			target = "refs/tags/stable"
+		} else {
+			// No stable build promoted yet: nothing to update to. Report
+			// up-to-date against HEAD so a stable host isn't told to pull main.
+			target = "HEAD"
+		}
+	} else {
+		if _, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "origin", "main"); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+		}
 	}
-	remote, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", "origin/main")
+	remote, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", target)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
-	behind, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-list", "--count", "HEAD..origin/main")
+	behind, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-list", "--count", "HEAD.."+target)
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
@@ -128,7 +153,7 @@ func systemUpdateCheckHandler(ctx context.Context, _ json.RawMessage) (any, erro
 		BehindCount:    parseIntSafe(strings.TrimSpace(string(behind))),
 		Branch:         strings.TrimSpace(string(branchOut)),
 		RecentCommits:  recentCommits(ctx),
-		PendingCommits: pendingCommits(ctx),
+		PendingCommits: pendingCommits(ctx, target),
 	}, nil
 }
 

@@ -23,10 +23,11 @@ import (
 // running rows finished. State/History nil -> falls back to M29 proxy
 // behaviour (no persistence, /state + /history return 503).
 type AdminUpdatesHandlerConfig struct {
-	Agent      agent.AgentInterface
-	State      repository.UpdateStateRepository
-	History    repository.UpdateHistoryRepository
-	Autoupdate repository.UpdateAutoupdateConfigRepository
+	Agent          agent.AgentInterface
+	State          repository.UpdateStateRepository
+	History        repository.UpdateHistoryRepository
+	ServerSettings repository.ServerSettingsRepository
+	Autoupdate     repository.UpdateAutoupdateConfigRepository
 }
 
 const (
@@ -108,7 +109,15 @@ type jabaliCheckResult struct {
 }
 
 func (h *adminUpdatesHandler) jabaliCheck(c *gin.Context) {
-	raw, ok := h.callAgentRaw(c, "system.update_check", nil, 60*time.Second)
+	// Release channel (GH #445): tell the agent which ref to compare against
+	// so the "behind" count reflects stable vs development.
+	channel := "development"
+	if h.cfg.ServerSettings != nil {
+		if s, err := h.cfg.ServerSettings.Get(c.Request.Context()); err == nil && s != nil && s.ReleaseChannel == "stable" {
+			channel = "stable"
+		}
+	}
+	raw, ok := h.callAgentRaw(c, "system.update_check", map[string]any{"channel": channel}, 60*time.Second)
 	if !ok {
 		return
 	}

@@ -685,10 +685,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		})
 		// Admin: System Updates (M29). Thin proxy to agent's system.* commands.
 		api.RegisterAdminUpdatesRoutes(v1, api.AdminUpdatesHandlerConfig{
-			Agent:      deps.Agent,
-			State:      deps.UpdateState,
-			History:    deps.UpdateHistory,
-			Autoupdate: deps.UpdateAutoupdate,
+			Agent:          deps.Agent,
+			State:          deps.UpdateState,
+			History:        deps.UpdateHistory,
+			Autoupdate:     deps.UpdateAutoupdate,
+			ServerSettings: deps.ServerSettings,
 		})
 		// Tasks indicator: running update/backup/malware tasks for the top bar.
 		api.RegisterAdminActiveTasksRoutes(v1, api.AdminActiveTasksConfig{

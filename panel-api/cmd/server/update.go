@@ -321,7 +321,11 @@ WR=/var/www/jabali-acme
 chown root:www-data "$WR"
 chmod 0750 "$WR"`)
 		}},
-		{"git fetch + reset to origin/main", func() error {
+		{"git fetch + reset to release channel", func() error {
+			// Release channel (GH #445): "development" tracks origin/main
+			// (historical behavior); "stable" tracks the movable `stable`
+			// tag (a reviewed build promoted via `jabali release promote`).
+			channel := releaseChannelOrDefault()
 			// The VM is a deployment target, not a source of truth. Tracked-
 			// file drift (typical cause: operator `sed`/patches a file in
 			// place on the VM to test a fix, then later commits the same
@@ -338,8 +342,27 @@ chmod 0750 "$WR"`)
 			// content. Be LOUD about discarded drift so an operator who
 			// didn't expect it sees what's gone and can recover it from
 			// reflog if needed.
-			if err := asUser(repoDir, "git", "fetch", "origin", "main"); err != nil {
-				return err
+			resetRef := "origin/main"
+			if channel == "stable" {
+				// Force-sync the movable `stable` tag alongside main.
+				if err := asUser(repoDir, "git", "fetch", "--force", "origin",
+					"main", "+refs/tags/stable:refs/tags/stable"); err != nil {
+					return err
+				}
+				if asUser(repoDir, "git", "rev-parse", "--verify", "--quiet",
+					"refs/tags/stable^{commit}") == nil {
+					resetRef = "refs/tags/stable"
+					fmt.Println("  release channel: stable -> tracking the promoted `stable` tag")
+				} else {
+					// No stable build promoted yet: stay on the current
+					// build rather than jumping to main. Conservative by design.
+					fmt.Println("  release channel: stable, but no `stable` release has been promoted yet — staying on the current build (use `jabali release promote` to publish one, or switch to the development channel).")
+					resetRef = "HEAD"
+				}
+			} else {
+				if err := asUser(repoDir, "git", "fetch", "origin", "main"); err != nil {
+					return err
+				}
 			}
 			// Show diffstat of any local drift vs HEAD before we reset so
 			// the operator can see what was clobbered. Silent on clean tree.
@@ -350,7 +373,7 @@ chmod 0750 "$WR"`)
 					`  echo "$d" | sed "s/^/    /"; `+
 					`  echo "  (recover from reflog if this was a surprise: git reflog, git reset --hard <sha>)"; `+
 					`fi`)
-			if err := asUser(repoDir, "git", "reset", "--hard", "origin/main"); err != nil {
+			if err := asUser(repoDir, "git", "reset", "--hard", resetRef); err != nil {
 				return err
 			}
 			post, err := gitHead()

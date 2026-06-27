@@ -108,6 +108,7 @@ type updateServerSettingsRequest struct {
 	PanelDarkContainerColor      *string `json:"panel_dark_container_color,omitempty"`
 	PanelLightTextColor          *string `json:"panel_light_text_color,omitempty"`
 	PanelDarkTextColor           *string `json:"panel_dark_text_color,omitempty"`
+	ReleaseChannel               *string `json:"release_channel,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
@@ -369,6 +370,17 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if !validateColor(req.PanelDarkTextColor, &current.PanelDarkTextColor, "panel_dark_text_color") {
 		return
+	}
+	if req.ReleaseChannel != nil {
+		ch := strings.TrimSpace(*req.ReleaseChannel)
+		if ch != "stable" && ch != "development" {
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+				"error":   "invalid_release_channel",
+				"message": "must be 'stable' or 'development'",
+			})
+			return
+		}
+		current.ReleaseChannel = ch
 	}
 	if req.DiskQuotaEnabled != nil {
 		current.DiskQuotaEnabled = *req.DiskQuotaEnabled

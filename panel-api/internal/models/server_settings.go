@@ -96,6 +96,9 @@ type ServerSettings struct {
 	PanelDarkContainerColor  string `gorm:"column:panel_dark_container_color;type:varchar(9);not null;default:''" json:"panel_dark_container_color"`
 	PanelLightTextColor      string `gorm:"column:panel_light_text_color;type:varchar(9);not null;default:''" json:"panel_light_text_color"`
 	PanelDarkTextColor       string `gorm:"column:panel_dark_text_color;type:varchar(9);not null;default:''" json:"panel_dark_text_color"`
+	// ReleaseChannel (GH #445): "stable" (track the promoted `stable` tag) or
+	// "development" (track main). Default stable.
+	ReleaseChannel string `gorm:"column:release_channel;type:varchar(16);not null;default:'stable'" json:"release_channel"`
 
 	// M26 AppSec geoblock (migration 000067). Server-wide rule applied
 	// by crowdsec AppSec. Mode ∈ {"off", "allow", "deny"}:

@@ -13,6 +13,7 @@ import {
   Col,
   Empty,
   Row,
+  Segmented,
   Space,
   Spin,
   Switch,
@@ -38,6 +39,58 @@ import {
 } from "@icons";
 
 import { JobLogTail } from "../../../components/JobLogTail";
+import { apiClient } from "../../../apiClient";
+
+// ReleaseChannelCard — operator picks stable vs development (GH #445). Stable
+// tracks promoted, reviewed builds (the movable `stable` tag); Development
+// tracks the latest main commit. Persisted in server_settings; the updater +
+// behind-count honor it.
+const ReleaseChannelCard = () => {
+  const [channel, setChannel] = useState<string>("stable");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    apiClient
+      .get<{ release_channel?: string }>("/admin/settings")
+      .then((r) => setChannel(r.data?.release_channel === "development" ? "development" : "stable"))
+      .catch(() => {});
+  }, []);
+  const onChange = async (v: string | number) => {
+    const next = String(v);
+    const prev = channel;
+    setChannel(next);
+    setSaving(true);
+    try {
+      await apiClient.patch("/admin/settings", { release_channel: next });
+      message.success(`Release channel set to ${next}`);
+    } catch (e) {
+      setChannel(prev);
+      message.error(e instanceof Error ? e.message : "Failed to set release channel");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Card size="small" style={{ marginBottom: 16 }}>
+      <Space wrap align="center" size={12}>
+        <Typography.Text strong>Release channel</Typography.Text>
+        <Segmented
+          value={channel}
+          disabled={saving}
+          onChange={onChange}
+          options={[
+            { label: "Stable", value: "stable" },
+            { label: "Development", value: "development" },
+          ]}
+        />
+        <Tag color={channel === "stable" ? "green" : "orange"}>{channel}</Tag>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Stable tracks promoted, reviewed builds; Development follows the latest
+          main commit. Keep production on Stable.
+        </Typography.Text>
+      </Space>
+    </Card>
+  );
+};
 import { RepairCard } from "./RepairCard";
 import {
   useAptCheck,
@@ -122,6 +175,7 @@ systemctl restart jabali-panel jabali-agent nginx   # only after reading the log
           </div>
         }
       />
+      <ReleaseChannelCard />
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <StatCards
           state={state.data}
