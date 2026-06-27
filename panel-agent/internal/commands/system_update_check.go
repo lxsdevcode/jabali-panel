@@ -118,23 +118,24 @@ func systemUpdateCheckHandler(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
 	// Resolve the channel target ref to compare against.
+	// Always fetch main (required). It also keeps RemoteSHA/branch sane.
+	if _, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "origin", "main"); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
 	target := "origin/main"
 	if p.Channel == "stable" {
-		// Force-sync the movable stable tag alongside main.
-		if _, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "--force",
-			"origin", "main", "+refs/tags/stable:refs/tags/stable"); err != nil {
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
-		}
+		// Best-effort sync of the movable stable tag — it does NOT exist on
+		// origin until the first `jabali release promote`, and a combined
+		// `fetch main +refs/tags/stable` would hard-fail ("couldn't find
+		// remote ref") and break the whole check (GH #445). Separate + ignore.
+		_, _ = runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "--force",
+			"origin", "+refs/tags/stable:refs/tags/stable")
 		if _, terr := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", "--verify", "--quiet", "refs/tags/stable^{commit}"); terr == nil {
 			target = "refs/tags/stable"
 		} else {
-			// No stable build promoted yet: nothing to update to. Report
-			// up-to-date against HEAD so a stable host isn't told to pull main.
+			// No stable build promoted yet: nothing to move to. Compare HEAD
+			// to itself -> behind 0 -> "up to date" (conservative).
 			target = "HEAD"
-		}
-	} else {
-		if _, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "fetch", "--quiet", "origin", "main"); err != nil {
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 		}
 	}
 	remote, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", target)

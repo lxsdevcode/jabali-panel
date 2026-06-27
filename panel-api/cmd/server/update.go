@@ -342,13 +342,17 @@ chmod 0750 "$WR"`)
 			// content. Be LOUD about discarded drift so an operator who
 			// didn't expect it sees what's gone and can recover it from
 			// reflog if needed.
+			// Always fetch main (required).
+			if err := asUser(repoDir, "git", "fetch", "origin", "main"); err != nil {
+				return err
+			}
 			resetRef := "origin/main"
 			if channel == "stable" {
-				// Force-sync the movable `stable` tag alongside main.
-				if err := asUser(repoDir, "git", "fetch", "--force", "origin",
-					"main", "+refs/tags/stable:refs/tags/stable"); err != nil {
-					return err
-				}
+				// Best-effort: the `stable` tag is absent on origin until the
+				// first promote, so a combined fetch would hard-fail. Separate
+				// + ignore the error (GH #445).
+				_ = asUser(repoDir, "git", "fetch", "--force", "origin",
+					"+refs/tags/stable:refs/tags/stable")
 				if asUser(repoDir, "git", "rev-parse", "--verify", "--quiet",
 					"refs/tags/stable^{commit}") == nil {
 					resetRef = "refs/tags/stable"
@@ -358,10 +362,6 @@ chmod 0750 "$WR"`)
 					// build rather than jumping to main. Conservative by design.
 					fmt.Println("  release channel: stable, but no `stable` release has been promoted yet — staying on the current build (use `jabali release promote` to publish one, or switch to the development channel).")
 					resetRef = "HEAD"
-				}
-			} else {
-				if err := asUser(repoDir, "git", "fetch", "origin", "main"); err != nil {
-					return err
 				}
 			}
 			// Show diffstat of any local drift vs HEAD before we reset so
