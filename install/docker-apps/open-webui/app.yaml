@@ -12,7 +12,7 @@ icon: icon.svg
 upstream: https://github.com/open-webui/open-webui
 documentation: https://docs.openwebui.com/
 
-image_channel: ghcr.io/open-webui/open-webui:0.9.6
+image_channel: ghcr.io/open-webui/open-webui:0.9.6@sha256:90eae5b419e40b4c3dd684582b2c83440b36f9ae2f6532c09639b2ba4ee65158
 update_mode: manual
 
 resources:

@@ -39,14 +39,23 @@ func dockerAppCheckUpdateHandler(ctx context.Context, params json.RawMessage) (a
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "image_channel required"}
 	}
 
-	// Upstream digest via `docker manifest inspect`. -experimental
-	// flag was promoted to GA in compose v2 / docker 20.10; safe to
-	// invoke without flags.
-	upstream, err := dockerManifestDigest(ctx, p.ImageChannel)
-	if err != nil {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("docker manifest inspect failed: %v", err),
+	// Target digest. When the catalog pins the image (repo:tag@sha256:<digest>,
+	// the norm post-#458), the reviewed target IS the embedded digest — compare
+	// the running container against THAT, not the mutable tag's current registry
+	// digest. This also avoids a registry round-trip and an index-vs-per-arch
+	// digest mismatch that `docker manifest inspect --verbose` would introduce.
+	// Legacy un-pinned entries fall back to resolving the tag's current digest.
+	var upstream string
+	if i := strings.Index(p.ImageChannel, "@sha256:"); i >= 0 {
+		upstream = p.ImageChannel[i+1:]
+	} else {
+		var derr error
+		upstream, derr = dockerManifestDigest(ctx, p.ImageChannel)
+		if derr != nil {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInternal,
+				Message: fmt.Sprintf("docker manifest inspect failed: %v", derr),
+			}
 		}
 	}
 

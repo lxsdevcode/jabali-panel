@@ -67,7 +67,7 @@ configs:
 
 services:
   db:
-    image: mariadb:11
+    image: mariadb:11@sha256:be1ef4fe5f14589325c08a41c76334097ce66c86264b75e1d28342c742782a61
     container_name: jabali-app-{{ .Slug }}-db
     restart: unless-stopped
     environment:
@@ -88,19 +88,19 @@ services:
       start_period: 60s
 
   redis:
-    image: redis:7
+    image: redis:7@sha256:b2b95679e3b46fb51864949ed25ea976fc3a6bcc00a40a1bc00d568cb2822e50
     container_name: jabali-app-{{ .Slug }}-redis
     restart: unless-stopped
     volumes:
       - {{ .DataRoot }}/redis:/data
 
   gotenberg:
-    image: gotenberg/gotenberg:7
+    image: gotenberg/gotenberg:7@sha256:d03b8a04c6e6c5e568b38f57352266dee4674849b71818774025f8f48d869a9a
     container_name: jabali-app-{{ .Slug }}-gotenberg
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: jabali-app-{{ .Slug }}-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -117,7 +117,7 @@ services:
       start_period: 20s
 
   createbucket:
-    image: minio/mc:latest
+    image: minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: jabali-app-{{ .Slug }}-createbucket
     depends_on:
       minio:
@@ -186,12 +186,12 @@ services:
           memory: {{ .MemoryLimit }}
 
   webapp:
-    image: bigcapitalhq/webapp:v0.25.20
+    image: bigcapitalhq/webapp:v0.25.20@sha256:9e01ab6798882746428f42d710935cf4646b8aea33698bcb2fac607372042386
     container_name: jabali-app-{{ .Slug }}-webapp
     restart: unless-stopped
 
   proxy:
-    image: envoyproxy/envoy:v1.30-latest
+    image: envoyproxy/envoy:v1.30-latest@sha256:b5cc70f5fe5503858817e897ae1da5d873dc32cbc493790b4e330b8a42c4af9d
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     depends_on:

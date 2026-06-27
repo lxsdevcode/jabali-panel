@@ -13,6 +13,7 @@ package dockerapp
 
 import (
 	"errors"
+	"regexp"
 	"fmt"
 	"io/fs"
 	"os"
@@ -249,6 +250,22 @@ func loadOne(dir string) (Entry, error) {
 // at runtime — a dedicated test (TestCatalogLoad_ValidatesAllEntries)
 // validates every catalog entry against the schema in CI, which is
 // cheaper than dragging in a JSON-schema dependency at hot-path.
+
+// imageDigestRe requires an image reference to be digest-pinned
+// (repo[:tag]@sha256:<64 hex>) so a catalog install always resolves to the
+// exact reviewed image bytes — never a mutable tag that could be repushed or
+// regress (Gitea #458). A digest-pinned ref also makes ":latest" / floating
+// tags impossible to ship.
+var imageDigestRe = regexp.MustCompile(`@sha256:[0-9a-f]{64}$`)
+
+// validatePinnedImage enforces digest pinning on a catalog image reference.
+func validatePinnedImage(ref string) error {
+	if !imageDigestRe.MatchString(ref) {
+		return errors.New("must be digest-pinned: repo:tag@sha256:<digest>")
+	}
+	return nil
+}
+
 func (e Entry) validate() error {
 	if !isValidSlug(e.Slug) {
 		return fmt.Errorf("slug %q: must match ^[a-z][a-z0-9-]{1,31}$", e.Slug)
@@ -264,6 +281,9 @@ func (e Entry) validate() error {
 	}
 	if e.ImageChannel == "" {
 		return errors.New("image_channel is required")
+	}
+	if err := validatePinnedImage(e.ImageChannel); err != nil {
+		return fmt.Errorf("image_channel %q: %w", e.ImageChannel, err)
 	}
 	if e.UpdateMode != "" && e.UpdateMode != "manual" && e.UpdateMode != "auto" {
 		return fmt.Errorf("update_mode %q: must be 'manual' or 'auto'", e.UpdateMode)

@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/PhiTux/DailyTxt
 documentation: https://github.com/PhiTux/DailyTxt#readme
 
-image_channel: phitux/dailytxt:2.6.1
+image_channel: phitux/dailytxt:2.6.1@sha256:153bbda299d592c79a205609035bb0f48b02067f50b3fb7dc6e56a236797d6d4
 update_mode: manual
 
 resources:

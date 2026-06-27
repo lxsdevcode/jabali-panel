@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/plausible/community-edition
 documentation: https://plausible.io/docs
 
-image_channel: ghcr.io/plausible/community-edition:v3.2.1
+image_channel: ghcr.io/plausible/community-edition:v3.2.1@sha256:33e60bfb40f2df5da00f8753b76fad04f67dba3abe6d73eb516e440e3fb62985
 update_mode: manual
 
 resources:

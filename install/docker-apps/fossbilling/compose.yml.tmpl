@@ -44,7 +44,7 @@ services:
       start_period: 30s
 
   db:
-    image: mariadb:11
+    image: mariadb:11@sha256:be1ef4fe5f14589325c08a41c76334097ce66c86264b75e1d28342c742782a61
     container_name: jabali-app-{{ .Slug }}-db
     restart: unless-stopped
     environment:

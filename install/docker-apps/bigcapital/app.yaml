@@ -18,7 +18,7 @@ documentation: https://docs.bigcapital.app
 # Primary image (drives the server + migration services). The webapp,
 # envoy, mariadb, redis, minio and gotenberg images are pinned in the
 # compose template; keep the webapp tag in sync with this version on bump.
-image_channel: bigcapitalhq/server:v0.25.20
+image_channel: bigcapitalhq/server:v0.25.20@sha256:412e9edb0d3ddbf6f862d2dd31766f0b4008f5c0d0a0e8133d8570d9dc68dd38
 update_mode: manual
 
 resources:

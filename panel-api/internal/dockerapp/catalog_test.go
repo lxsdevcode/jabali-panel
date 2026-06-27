@@ -102,7 +102,7 @@ func TestEntry_Validate_RejectsBadSlug(t *testing.T) {
 				Name:         "x",
 				Version:      "0.1",
 				Description:  "x",
-				ImageChannel: "x:latest",
+				ImageChannel: "x:1@sha256:0000000000000000000000000000000000000000000000000000000000000000",
 				Volumes:      []Volume{{Name: "data", ContainerPath: "/data"}},
 				Ports: []PortSpec{
 					{Name: "http", ContainerPort: 80, Protocol: "tcp", DefaultEnabled: true, DefaultBind: "loopback", DefaultReverseProxy: true},
@@ -122,7 +122,7 @@ func TestEntry_Validate_RejectsReverseProxyOnPublicBind(t *testing.T) {
 		Name:         "x",
 		Version:      "0.1",
 		Description:  "x",
-		ImageChannel: "x:latest",
+		ImageChannel: "x:1@sha256:0000000000000000000000000000000000000000000000000000000000000000",
 		Volumes:      []Volume{{Name: "data", ContainerPath: "/data"}},
 		Ports: []PortSpec{
 			{Name: "http", ContainerPort: 80, Protocol: "tcp", DefaultEnabled: true, DefaultBind: "public", DefaultReverseProxy: true},
@@ -139,7 +139,7 @@ func TestEntry_Validate_RejectsReverseProxyOnUDP(t *testing.T) {
 		Name:         "x",
 		Version:      "0.1",
 		Description:  "x",
-		ImageChannel: "x:latest",
+		ImageChannel: "x:1@sha256:0000000000000000000000000000000000000000000000000000000000000000",
 		Volumes:      []Volume{{Name: "data", ContainerPath: "/data"}},
 		Ports: []PortSpec{
 			{Name: "udp1", ContainerPort: 53, Protocol: "udp", DefaultEnabled: true, DefaultBind: "loopback", DefaultReverseProxy: true},

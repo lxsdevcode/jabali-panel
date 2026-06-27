@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/linkwarden/linkwarden
 documentation: https://docs.linkwarden.app/
 
-image_channel: ghcr.io/linkwarden/linkwarden:v2.14.1
+image_channel: ghcr.io/linkwarden/linkwarden:v2.14.1@sha256:31cf4bd2a2e111991fa5c9de03174c8698869c83722105c6ce529e4c911e6861
 update_mode: manual
 
 resources:

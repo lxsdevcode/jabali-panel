@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/dokuwiki/dokuwiki
 documentation: https://www.dokuwiki.org/
 
-image_channel: lscr.io/linuxserver/dokuwiki:version-2025-05-14b
+image_channel: lscr.io/linuxserver/dokuwiki:version-2025-05-14b@sha256:414c4dd598d9128d71c92ed2e577a9215e6affd7d2b6e5281c9e084f5f4764e1
 update_mode: manual
 
 resources:

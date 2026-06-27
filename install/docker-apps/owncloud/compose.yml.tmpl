@@ -38,7 +38,7 @@ services:
       start_period: 90s
 
   db:
-    image: mariadb:11
+    image: mariadb:11@sha256:be1ef4fe5f14589325c08a41c76334097ce66c86264b75e1d28342c742782a61
     container_name: jabali-app-{{ .Slug }}-db
     restart: unless-stopped
     environment:
@@ -57,7 +57,7 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     container_name: jabali-app-{{ .Slug }}-redis
     restart: unless-stopped
     command: ["--databases", "1", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]

@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/nextcloud/server
 documentation: https://docs.nextcloud.com/
 
-image_channel: nextcloud:33-apache
+image_channel: nextcloud:33-apache@sha256:bb3672cdb9dfccb2159da88826981a8d749f5d4cd9a2816c1f32d93e08f541eb
 update_mode: manual
 
 resources:

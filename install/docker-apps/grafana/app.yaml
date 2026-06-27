@@ -13,7 +13,7 @@ icon: icon.svg
 upstream: https://github.com/grafana/grafana
 documentation: https://grafana.com/docs/grafana/latest/
 
-image_channel: grafana/grafana-oss:13.0.2
+image_channel: grafana/grafana-oss:13.0.2@sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2
 update_mode: manual
 
 resources:

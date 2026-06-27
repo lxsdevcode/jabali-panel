@@ -10,7 +10,7 @@ icon: icon.svg
 upstream: https://github.com/matomo-org/matomo
 documentation: https://matomo.org/docs/
 
-image_channel: matomo:5-apache
+image_channel: matomo:5-apache@sha256:492f499dbbe319e4183fb98706f047dc120fc1ae5ab5689c7730fe940fde2174
 update_mode: manual
 
 resources:

@@ -150,7 +150,7 @@ func tenantCatalog(t *testing.T) *dockerapp.Catalog {
 name: TDemo
 version: "1.0.0"
 description: tenant demo app
-image_channel: docker.io/library/busybox:latest
+image_channel: docker.io/library/busybox:1@sha256:0000000000000000000000000000000000000000000000000000000000000000
 tenant_installable: true
 tenant_caps: ["CHOWN"]
 volumes:

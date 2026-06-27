@@ -36,7 +36,7 @@ services:
       start_period: 120s
 
   mongodb:
-    image: mongo:6.0
+    image: mongo:6.0@sha256:8b6d8f5bbedb25cb73517b65cf99f13aeb75ad5b157a56c479287a840bbad3ac
     container_name: jabali-app-{{ .Slug }}-mongo
     restart: unless-stopped
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]

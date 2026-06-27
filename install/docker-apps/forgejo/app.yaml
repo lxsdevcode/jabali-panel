@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://codeberg.org/forgejo/forgejo
 documentation: https://forgejo.org/docs/
 
-image_channel: codeberg.org/forgejo/forgejo:15.0.3
+image_channel: codeberg.org/forgejo/forgejo:15.0.3@sha256:55bb42bec9abef5223744804f164e37d37b20df7e8b8b4807ba213ad4f071d6d
 volume_owner: "1000:1000"
 update_mode: manual
 
