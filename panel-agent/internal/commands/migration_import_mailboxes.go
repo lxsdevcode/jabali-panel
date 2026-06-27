@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
 const (
@@ -596,7 +597,7 @@ func importOneMessage(ctx context.Context, accountID, mailboxID, path string, si
 // uploadBlob streams the file at `path` to Stalwart's /jmap/upload/<accountId>
 // endpoint. Returns the produced blobId.
 func uploadBlob(ctx context.Context, accountID, path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := openMaildirFileInStaging(path)
 	if err != nil {
 		return "", err
 	}
@@ -758,7 +759,7 @@ func existingMessageIDs(ctx context.Context, accountID, mailboxID string) map[st
 // messageIDFromFile reads the Message-ID header from an RFC822 file.
 // Returns "" when absent (such messages can't be deduped — they import).
 func messageIDFromFile(path string) string {
-	f, err := os.Open(path)
+	f, err := openMaildirFileInStaging(path)
 	if err != nil {
 		return ""
 	}
@@ -784,4 +785,18 @@ func normMsgID(s string) string {
 	s = strings.TrimPrefix(s, "<")
 	s = strings.TrimSuffix(s, ">")
 	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// openMaildirFileInStaging opens a staged Maildir message escape-proof (openat2
+// RESOLVE_BENEATH under the migration staging root), so a symlinked message
+// file or a symlinked cur/new directory in a malicious source cannot redirect
+// the root agent into reading a host file and uploading it into a mailbox
+// (Gitea #477). ReadDir/Stat above may follow a symlink, but this open is the
+// gate: a symlinked component is refused here.
+func openMaildirFileInStaging(path string) (*os.File, error) {
+	scope, err := filesafe.NewScope("migration", "migration", []string{migrationStagingRoot})
+	if err != nil {
+		return nil, err
+	}
+	return scope.OpenInScope(path, os.O_RDONLY, 0)
 }
