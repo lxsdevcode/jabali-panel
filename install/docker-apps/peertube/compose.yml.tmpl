@@ -1,0 +1,68 @@
+services:
+  peertube:
+    image: {{ .ImageChannel }}
+    container_name: jabali-app-{{ .Slug }}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      PEERTUBE_WEBSERVER_HOSTNAME: "{{ .Domain }}"
+      PEERTUBE_WEBSERVER_PORT: "443"
+      PEERTUBE_WEBSERVER_HTTPS: "true"
+      PEERTUBE_TRUST_PROXY: '["127.0.0.1","loopback","172.16.0.0/12"]'
+      PEERTUBE_SECRET: "{{ index .Env "PEERTUBE_SECRET" }}"
+      PEERTUBE_DB_HOSTNAME: "postgres"
+      PEERTUBE_DB_USERNAME: "peertube"
+      PEERTUBE_DB_PASSWORD: "{{ index .Env "DB_PASSWORD" }}"
+      PEERTUBE_DB_SSL: "false"
+      PEERTUBE_REDIS_HOSTNAME: "redis"
+      PEERTUBE_ADMIN_EMAIL: "admin@{{ .Domain }}"
+    volumes:
+      - {{ .DataRoot }}/data:/data
+      - {{ .DataRoot }}/config:/config
+    ports:
+{{- with index .Ports "http" }}
+      - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
+{{- end }}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ .CPULimit }}"
+          memory: {{ .MemoryLimit }}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:9000/api/v1/config',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  postgres:
+    image: postgres:17-alpine@sha256:dc17045ccfd343b49600570ea734b9c4991cf1c3f3302e67df51e3b402dd55c4
+    container_name: jabali-app-{{ .Slug }}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "peertube"
+      POSTGRES_PASSWORD: "{{ index .Env "DB_PASSWORD" }}"
+      POSTGRES_DB: "peertube"
+    volumes:
+      - {{ .DataRoot }}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peertube -d peertube"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    container_name: jabali-app-{{ .Slug }}-redis
+    restart: unless-stopped
+    volumes:
+      - {{ .DataRoot }}/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s

@@ -1,0 +1,46 @@
+slug: peertube
+name: PeerTube
+tags: ["Media", "Video", "Streaming"]
+version: "8.2.1"
+description: |
+  Decentralized, federated (ActivityPub) video platform. App container
+  + PostgreSQL + Redis. Email is disabled by default; configure SMTP
+  post-install if needed.
+icon: icon.svg
+upstream: https://github.com/Chocobozzz/PeerTube
+documentation: https://docs.joinpeertube.org/
+
+image_channel: chocobozzz/peertube:v8.2.1-trixie@sha256:cd4e3004214f7869b9ab14a906b0b018c0711a202e2a35b199b5a4c83ee80a91
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 600
+
+volumes:
+  - name: data
+    container_path: /data
+  - name: config
+    container_path: /config
+  - name: redis
+    container_path: /data-redis
+  - name: db
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 9000
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_PASSWORD
+    secret: true
+    generate: password32
+  - name: PEERTUBE_SECRET
+    secret: true
+    generate: password64
