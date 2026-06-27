@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,6 +84,7 @@ func ParseDATarball(tarballPath, extractDir string) (*DAParsedTarball, error) {
 
 	const maxEntrySize = 100 << 30 // 100 GiB
 
+	budget := cpanel.NewExtractBudget()
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -124,7 +126,7 @@ func ParseDATarball(tarballPath, extractDir string) (*DAParsedTarball, error) {
 			if err != nil {
 				return nil, fmt.Errorf("open %s: %w", dest, err)
 			}
-			if _, err := io.Copy(w, io.LimitReader(tr, maxEntrySize)); err != nil {
+			if _, err := budget.Charge(w, tr); err != nil {
 				_ = w.Close()
 				return nil, fmt.Errorf("copy %s: %w", dest, err)
 			}

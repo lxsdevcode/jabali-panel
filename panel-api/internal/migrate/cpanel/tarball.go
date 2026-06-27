@@ -114,6 +114,7 @@ func ParseTarball(tarballPath, extractDir string) (*ParsedTarball, error) {
 	// QA: backup-1.22.2026_18-11-23_<user>/cp/<user>/...
 	wrapperPrefix := ""
 	wrapperDetected := false
+	budget := NewExtractBudget()
 
 	for {
 		hdr, err := tr.Next()
@@ -188,7 +189,7 @@ func ParseTarball(tarballPath, extractDir string) (*ParsedTarball, error) {
 			// io.LimitReader doubles as the size enforcement —
 			// even a header lying about Size can't write more
 			// than MaxEntrySize bytes.
-			if _, err := io.Copy(w, io.LimitReader(tr, MaxEntrySize)); err != nil {
+			if _, err := budget.Charge(w, tr); err != nil {
 				_ = w.Close()
 				return nil, fmt.Errorf("copy %s: %w", dest, err)
 			}
