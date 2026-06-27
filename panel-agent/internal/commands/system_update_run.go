@@ -38,6 +38,9 @@ func systemUpdateRunHandler(ctx context.Context, _ json.RawMessage) (any, error)
 	startedAt := time.Now().UTC()
 	cmd := exec.CommandContext(ctx, "systemd-run",
 		"--unit="+updateUnitName,
+		// Tell the CLI this run came from the panel so it does NOT also
+		// write an update_history row — the API already logged it (GH #300).
+		"--setenv=JABALI_UPDATE_FROM_PANEL=1",
 		"--no-block",
 		// No --collect: a *failed* oneshot lingers in "failed" state so the
 		// M50 run reconciler can read it as failed; a *successful* one is

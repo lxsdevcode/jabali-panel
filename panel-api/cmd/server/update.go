@@ -76,11 +76,19 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(cmd *cobra.Command, args []string) error {
+func runUpdate(cmd *cobra.Command, args []string) (retErr error) {
 	// Must run as root to install binaries and restart services.
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("jabali update must run as root (try: sudo jabali-panel update)")
 	}
+
+	// Record this run in the panel's update history so scheduled
+	// (jabali-autoupdate.timer) and manual-CLI updates appear in Recent
+	// Update History, not just panel-triggered ones (GH #300 follow-up).
+	// Best-effort: never affects the update. Skipped when invoked by the
+	// panel (which already logged the run via the API).
+	finishHistory := beginUpdateHistory()
+	defer func() { finishHistory(retErr) }()
 
 	repoDir := os.Getenv("JABALI_REPO_DIR")
 	if repoDir == "" {
