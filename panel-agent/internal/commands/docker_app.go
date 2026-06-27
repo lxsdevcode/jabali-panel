@@ -149,13 +149,11 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 			vd := filepath.Join(dir, v)
 			// Walk the subtree -- nested state under a compose bind
 			// mount (gitea data/git, nextcloud var/www/html/data, ...)
-			// needs the same ownership.
-			if werr := filepath.Walk(vd, func(path string, info os.FileInfo, _ error) error {
-				if info == nil {
-					return nil
-				}
-				return os.Chown(path, uid, gid)
-			}); werr != nil {
+			// needs the same ownership. The volume tree is writable by the
+			// app container, so a container can plant a symlink to a host
+			// path (e.g. /etc/shadow); use lchown so we change the link
+			// itself, never the symlink's target (Gitea #479).
+			if werr := lchownTree(vd, uid, gid); werr != nil {
 				return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chown %s: %v", vd, werr)}
 			}
 		}
@@ -698,4 +696,18 @@ func parseUIDGID(s string) (int, int, error) {
 		return 0, 0, fmt.Errorf("gid not a non-negative int")
 	}
 	return uid, gid, nil
+}
+
+// lchownTree recursively lchowns every entry under root to uid:gid. It uses
+// os.Lchown (not os.Chown) so a symlink entry has the LINK re-owned, never its
+// target — a container-writable volume cannot redirect a root-side chown to a
+// host path via a planted symlink (Gitea #479). filepath.Walk does not descend
+// into symlinked directories, so traversal stays inside the volume tree.
+func lchownTree(root string, uid, gid int) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, _ error) error {
+		if info == nil {
+			return nil
+		}
+		return os.Lchown(path, uid, gid)
+	})
 }
