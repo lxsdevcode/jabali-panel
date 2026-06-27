@@ -17,6 +17,7 @@ import (
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
@@ -143,6 +144,10 @@ type updateUserRequest struct {
 	// user.password command. Empty string is treated as "no change" so the
 	// admin UI can omit the field on submits where the form left it blank.
 	Password *string `json:"password,omitempty" binding:"omitempty,min=10"`
+	// CurrentPassword is required when a non-admin OWNER rotates their own
+	// password (GH #482): re-authentication before a password change. Admins
+	// resetting another user's password do not supply it.
+	CurrentPassword *string `json:"current_password,omitempty"`
 }
 
 type reprovisionRequest struct {
@@ -350,8 +355,11 @@ func (h *userHandler) update(c *gin.Context) {
 	if req.NameLast != nil {
 		existing.NameLast = *req.NameLast
 	}
-	// Validate and apply package_id if provided (including clearing it with empty string).
-	if req.PackageID != nil {
+	// Validate and apply package_id if provided (including clearing it with empty
+	// string). Admin-only (GH #481): package assignment controls quotas/feature
+	// limits, so a non-admin owner cannot move themselves between packages — the
+	// field is silently ignored for non-admins (the owner UI never sends it).
+	if req.PackageID != nil && claims.IsAdmin {
 		if *req.PackageID != "" {
 			if h.cfg.Packages == nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
@@ -413,6 +421,26 @@ func (h *userHandler) update(c *gin.Context) {
 	// OS sync is best-effort; failure surfaces as 502 with detail but the
 	// Kratos+DB sides have already converged so login still works.
 	if req.Password != nil && *req.Password != "" {
+		// Re-authentication (GH #482): a non-admin owner changing their OWN
+		// password must prove knowledge of the current one. Verified against the
+		// stored bcrypt hash (kept in sync on every rotation). Admins are exempt
+		// — they legitimately reset other accounts' passwords.
+		if !claims.IsAdmin {
+			if req.CurrentPassword == nil || *req.CurrentPassword == "" {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":  "current_password_required",
+					"detail": "changing your password requires current_password",
+				})
+				return
+			}
+			if existing.PasswordHash == "" || !auth.VerifyPassword(existing.PasswordHash, *req.CurrentPassword) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":  "current_password_invalid",
+					"detail": "current_password does not match",
+				})
+				return
+			}
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(*req.Password), h.cfg.BcryptCost)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
