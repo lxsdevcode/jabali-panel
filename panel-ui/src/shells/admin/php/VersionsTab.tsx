@@ -24,12 +24,6 @@ interface PHPVersionStatusResponse {
   versions: PHPVersionStatus[];
 }
 
-interface PHPVersionAction {
-  version: string;
-  installed: boolean;
-  fpm_running: boolean;
-}
-
 export const VersionsTab = () => {
   const [statusData, setStatusData] = useState<PHPVersionStatusResponse | null>(
     null
@@ -68,35 +62,41 @@ export const VersionsTab = () => {
   const handleInstall = async (version: string) => {
     setInstallingVersion(version);
     try {
-      // apt install of phpX.Y-fpm + extensions takes 30-90s. The
-      // default 15s axios ceiling fires a "timeout exceeded" error
-      // toast even when the install succeeds in the background. Bump
-      // per-request to 5 min — matches backend adminActionTimeout in
-      // panel-api/internal/api/php_versions.go.
-      const response = await apiClient.post<PHPVersionAction>(
-        `/admin/php/versions/${version}/install`,
-        undefined,
-        { timeout: 5 * 60 * 1000 },
-      );
-      notification.success({
-        message: `PHP ${version} installed successfully`,
-        duration: 3,
-      });
-      setStatusData((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          versions: prev.versions.map((v) =>
-            v.version === version
-              ? {
-                  ...v,
-                  installed: response.data.installed,
-                  fpm_running: response.data.fpm_running,
-                }
-              : v
-          ),
-        };
-      });
+      // The backend detaches the apt install and returns 202 immediately
+      // (GH #293) — a slow install no longer holds the request open past
+      // nginx's 300s timeout (which surfaced as a 502). Poll the status
+      // endpoint until the version reports installed.
+      await apiClient.post(`/admin/php/versions/${version}/install`);
+
+      const deadline = Date.now() + 20 * 60 * 1000; // generous: slow hosts
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await new Promise((r) => setTimeout(r, 5000));
+        if (Date.now() > deadline) {
+          notification.warning({
+            message: `PHP ${version} is still installing`,
+            description:
+              "The install is taking longer than expected; it will continue in the background. Refresh to check.",
+            duration: 6,
+          });
+          return;
+        }
+        let st;
+        try {
+          st = await apiClient.get<PHPVersionStatusResponse>("/admin/php/versions/status");
+        } catch {
+          continue; // transient — keep polling
+        }
+        const v = st.data.versions.find((x) => x.version === version);
+        if (v?.installed) {
+          setStatusData(st.data);
+          notification.success({
+            message: `PHP ${version} installed successfully`,
+            duration: 3,
+          });
+          return;
+        }
+      }
     } catch (error) {
       notification.error({
         message: `Failed to install PHP ${version}`,

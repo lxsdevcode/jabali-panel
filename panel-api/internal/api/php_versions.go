@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -162,16 +163,20 @@ func RegisterPHPVersionAdminRoutes(rg *gin.RouterGroup, cli agent.AgentInterface
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(c.Request.Context(), adminActionTimeout)
-		defer cancel()
-
-		raw, err := cli.Call(ctx, "php.version.install", map[string]string{"version": version})
-		if err != nil {
-			status, body := translateAgentError(err)
-			c.JSON(status, body)
-			return
-		}
-		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+		// Installing a PHP version (apt: phpX.Y-fpm + ~20 extensions + pool
+		// render) can run for several minutes on a slow/contended host and
+		// exceed nginx proxy_read_timeout (300s) → the browser sees a 502 even
+		// though the install completes (GH #293). Detach it: dispatch the agent
+		// install in the background and return 202 immediately; the SPA polls
+		// /admin/php/versions/status until the version shows installed.
+		go func() {
+			bgctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 30*time.Minute)
+			defer cancel()
+			if _, err := cli.Call(bgctx, "php.version.install", map[string]string{"version": version}); err != nil {
+				slog.Warn("php.version.install failed", "version", version, "err", err)
+			}
+		}()
+		c.JSON(http.StatusAccepted, gin.H{"status": "installing", "version": version})
 	})
 
 	// DELETE /php/versions/:version — uninstall a PHP version
