@@ -180,21 +180,38 @@ func installDrushViaComposer(ctx context.Context, osUser, installPath string) er
 		return fmt.Errorf("chown composer home: %w", err)
 	}
 
+	// Reproducible install (GH #459): write the reviewed, pinned composer.json
+	// + composer.lock over the extracted tree, then `composer install` — never
+	// an open-ended `composer require`, which would re-resolve Drush and its
+	// transitive deps against live upstream metadata on every install.
+	for name, data := range map[string][]byte{
+		"composer.json": drupalComposerJSON,
+		"composer.lock": drupalComposerLock,
+	} {
+		p := filepath.Join(installPath, name)
+		if err := os.WriteFile(p, data, 0o644); err != nil {
+			return fmt.Errorf("write pinned %s: %w", name, err)
+		}
+		if err := exec.CommandContext(ctx, "chown", osUser+":"+osUser, p).Run(); err != nil {
+			return fmt.Errorf("chown pinned %s: %w", name, err)
+		}
+	}
 	cmd := buildSystemdRunCmd(ctx, osUser,
 		"env",
 		"COMPOSER_HOME="+composerHome,
 		"COMPOSER_NO_INTERACTION=1",
 		"composer",
-		"require",
-		"drush/drush:^12",
+		"install",
 		"--working-dir="+installPath,
+		"--no-dev",
 		"--no-interaction",
 		"--no-progress",
+		"--prefer-dist",
 		"--optimize-autoloader",
 	)
 	out, err := runBoundedOutput(cmd, 0)
 	if err != nil {
-		return fmt.Errorf("composer require drush: %w (output: %s)", err, truncateStr(string(out), 1024))
+		return fmt.Errorf("composer install (pinned drush): %w (output: %s)", err, truncateStr(string(out), 1024))
 	}
 	return nil
 }
