@@ -140,11 +140,14 @@ func TestPHPVersionAdmin_Install_HappyPath(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
+	// Install is now asynchronous (GH #293): the handler returns 202 + a
+	// status immediately and runs the agent install in the background; the SPA
+	// polls /admin/php/versions/status until the version reports installed.
+	require.Equal(t, http.StatusAccepted, rec.Code)
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "8.4", body["version"])
-	assert.True(t, body["installed"].(bool))
+	assert.Equal(t, "installing", body["status"])
 }
 
 func TestPHPVersionAdmin_Install_InvalidVersion(t *testing.T) {
