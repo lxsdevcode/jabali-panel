@@ -20,6 +20,8 @@ export interface JabaliCheckResult {
   behind_count: number;
   branch: string;
   recent_commits?: CommitSummary[];
+  // Commits in HEAD..origin/main — what "Update now" will apply (GH #300).
+  pending_commits?: CommitSummary[];
 }
 
 export interface AptPackage {

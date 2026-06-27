@@ -293,6 +293,7 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
     since !== null && status.data !== undefined && !running && status.data.exit_code !== undefined;
   const succeeded = finished && status.data?.exit_code === 0;
   const commits = result?.recent_commits ?? [];
+  const pending = result?.pending_commits ?? [];
 
   const onRun = async () => {
     try {
@@ -395,6 +396,30 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
           Update now
         </Button>
       </Space>
+
+      {behind > 0 && pending.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <Text strong style={{ fontSize: 12 }}>
+            Included in this update ({behind})
+          </Text>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {pending.map((c) => (
+              <li key={c.sha} style={{ marginBottom: 4 }}>
+                <Text>{c.subject}</Text>{" "}
+                <Text type="secondary" code style={{ fontSize: 11 }}>{c.sha}</Text>{" "}
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {c.date ? dayjs(c.date).format("MMM D") : ""}
+                </Text>
+              </li>
+            ))}
+          </ul>
+          {behind > pending.length ? (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              + {behind - pending.length} more…
+            </Text>
+          ) : null}
+        </div>
+      ) : null}
 
       {commits.length > 0 ? (
         <div style={{ marginTop: 16 }}>

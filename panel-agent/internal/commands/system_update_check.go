@@ -19,6 +19,10 @@ type systemUpdateCheckResponse struct {
 	BehindCount   int             `json:"behind_count"`
 	Branch        string          `json:"branch"`
 	RecentCommits []commitSummary `json:"recent_commits"`
+	// PendingCommits are the commits in HEAD..origin/main — i.e. what a
+	// `jabali update` WOULD bring in, newest first (GH #300). Empty when
+	// up-to-date. Capped to keep the payload bounded on very stale hosts.
+	PendingCommits []commitSummary `json:"pending_commits"`
 }
 
 // commitSummary is one recent commit on the installed branch, for the
@@ -36,6 +40,31 @@ type commitSummary struct {
 func recentCommits(ctx context.Context) []commitSummary {
 	out, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "log", "-3",
 		"--no-merges", "--format=%h%x09%cI%x09%s", "HEAD")
+	if err != nil {
+		return nil
+	}
+	var commits []commitSummary
+	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		commits = append(commits, commitSummary{SHA: parts[0], Date: parts[1], Subject: parts[2]})
+	}
+	return commits
+}
+
+// pendingCommits returns the commits in HEAD..origin/main — what a
+// `jabali update` would apply — newest first, as {sha, subject, date}
+// (GH #300). Must be called AFTER `git fetch origin main`. Best-effort:
+// returns nil on any git error. Capped at 50 so a very stale host can't
+// produce an unbounded payload.
+func pendingCommits(ctx context.Context) []commitSummary {
+	out, err := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "log", "-50",
+		"--no-merges", "--format=%h%x09%cI%x09%s", "HEAD..origin/main")
 	if err != nil {
 		return nil
 	}
@@ -94,11 +123,12 @@ func systemUpdateCheckHandler(ctx context.Context, _ json.RawMessage) (any, erro
 	branchOut, _ := runAsServiceUser(ctx, "git", "-C", systemRepoDir, "rev-parse", "--abbrev-ref", "HEAD")
 
 	return systemUpdateCheckResponse{
-		CurrentSHA:    strings.TrimSpace(string(current)),
-		RemoteSHA:     strings.TrimSpace(string(remote)),
-		BehindCount:   parseIntSafe(strings.TrimSpace(string(behind))),
-		Branch:        strings.TrimSpace(string(branchOut)),
-		RecentCommits: recentCommits(ctx),
+		CurrentSHA:     strings.TrimSpace(string(current)),
+		RemoteSHA:      strings.TrimSpace(string(remote)),
+		BehindCount:    parseIntSafe(strings.TrimSpace(string(behind))),
+		Branch:         strings.TrimSpace(string(branchOut)),
+		RecentCommits:  recentCommits(ctx),
+		PendingCommits: pendingCommits(ctx),
 	}, nil
 }
 
