@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,6 +28,15 @@ import (
 )
 
 const restoreLockPath = "/var/lib/jabali-backups/.restore.lock"
+
+// restoreDBNameRe is the canonical database-identifier policy shared with
+// db.create / db.drop (^[a-zA-Z][a-zA-Z0-9_-]{0,63}$). Restore reads the
+// database name from the backup manifest — repository-controlled data — and
+// interpolates it into privileged psql/createdb/mariadb commands. A poisoned
+// manifest must not be able to inject SQL or shell-meaningful identifiers, so
+// every manifest db name is validated against this whitelist before use
+// (Gitea #463).
+var restoreDBNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 
 type backupRestoreParams struct {
 	JobID              string `json:"job_id"`
@@ -340,6 +350,11 @@ func applyAccountRestore(
 				continue
 			}
 			db := st.Items[0]
+			if !restoreDBNameRe.MatchString(db) {
+				warnings = append(warnings,
+					fmt.Sprintf("db: manifest name %q rejected (not a valid identifier)", db))
+				continue
+			}
 			// PG dump first — backup_databases.go writes "<db>.pgdump"
 			// for postgres engine. If present, route to pg_restore.
 			pgPath := filepath.Join(stagingRoot, "db", db+".pgdump")
