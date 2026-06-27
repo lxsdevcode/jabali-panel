@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/cronvalidate"
 )
 
@@ -142,20 +143,32 @@ func cronApplyHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	uidN, _ := strconv.Atoi(u.Uid)
 	gidN, _ := strconv.Atoi(u.Gid)
 	unitsDir := filepath.Join(u.HomeDir, ".config", "systemd", "user")
-	if err := os.MkdirAll(unitsDir, 0755); err != nil {
+	// All ~/.config/systemd/user writes go through a filesafe scope rooted at
+	// the user's home (Gitea #475). The agent is root, so if .config or any
+	// component is a tenant-planted symlink, plain MkdirAll/Chown/write/Rename
+	// would follow it and redirect root-side writes/chowns outside the home.
+	// openat2 RESOLVE_BENEATH refuses a symlinked component.
+	cronScope, scErr := filesafe.NewScope(p.Username, p.Username, []string{u.HomeDir})
+	if scErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "scope init: " + scErr.Error()}
+	}
+	if _, err := cronScope.MkdirInScope(unitsDir, true, 0o755); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to create units directory: %v", err),
 		}
 	}
-	// chown the dirs we may have just created (idempotent if already
-	// user-owned) so systemd --user + the user can manage them.
+	// chown the dirs we may have just created, via directory fds (fchown,
+	// symlink-safe) so systemd --user + the user can manage them.
 	for _, d := range []string{
 		filepath.Join(u.HomeDir, ".config"),
 		filepath.Join(u.HomeDir, ".config", "systemd"),
 		unitsDir,
 	} {
-		_ = os.Chown(d, uidN, gidN)
+		if df, derr := cronScope.OpenDirInScope(d); derr == nil {
+			_ = df.Chown(uidN, gidN)
+			_ = df.Close()
+		}
 	}
 	// Best-effort: clean up units stranded in the old non-search-path
 	// location from before this fix so they don't linger on disk.
@@ -187,22 +200,19 @@ func cronApplyHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}, nil
 	}
 
-	// Write unit files atomically
-	if err := writeFileAtomically(servicePath, []byte(serviceContent), 0644); err != nil {
+	// Write unit files atomically, escape-proof (openat2), owned by the user.
+	if err := writeUnitInScope(cronScope, servicePath, []byte(serviceContent), uidN, gidN); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to write service file: %v", err),
 		}
 	}
-
-	if err := writeFileAtomically(timerPath, []byte(timerContent), 0644); err != nil {
+	if err := writeUnitInScope(cronScope, timerPath, []byte(timerContent), uidN, gidN); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to write timer file: %v", err),
 		}
 	}
-	_ = os.Chown(servicePath, uidN, gidN)
-	_ = os.Chown(timerPath, uidN, gidN)
 
 	// Reload systemd as user and enable timer
 	if err := systemctlUserExec(ctx, p.Username, runtimeDir, "daemon-reload"); err != nil {
@@ -512,4 +522,31 @@ WantedBy=multi-user.target
 
 func init() {
 	Default.Register("cron.apply", cronApplyHandler)
+}
+
+// writeUnitInScope writes content to an in-home unit file via a temp file +
+// renameat, all through the escape-proof filesafe scope, owned by the user
+// (Gitea #475). Mirrors the .ssh/authorized_keys atomic write.
+func writeUnitInScope(scope *filesafe.Scope, path string, content []byte, uid, gid int) error {
+	tmp := path + ".tmp"
+	_ = scope.RemoveInScope(tmp, false)
+	f, err := scope.CreateExclInScope(tmp, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(content); err != nil {
+		_ = f.Close()
+		_ = scope.RemoveInScope(tmp, false)
+		return err
+	}
+	if err := f.Chown(uid, gid); err != nil {
+		_ = f.Close()
+		_ = scope.RemoveInScope(tmp, false)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = scope.RemoveInScope(tmp, false)
+		return err
+	}
+	return scope.RenameInScope(tmp, path)
 }
