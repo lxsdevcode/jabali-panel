@@ -46,6 +46,7 @@ import {
   ReloadOutlined,
 } from "@icons";
 import { RowActions } from "../../../components/RowActions";
+import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { ISO3166_COUNTRIES } from "../../../data/iso3166";
 import { CrowdsecTestIPCard } from "./CrowdsecTestIPCard";
 import { Sparkline } from "../../../components/Sparkline";
@@ -635,6 +636,7 @@ const BlocklistsCard = () => {
 
 const AllowlistsCard = () => {
   const allowlists = useCrowdsecAllowlists();
+  const [allowlistQuery, setAllowlistQuery] = useState("");
   const addEntry = useAddCrowdsecAllowlist();
   const removeEntry = useRemoveCrowdsecAllowlist();
   const [addOpen, setAddOpen] = useState(false);
@@ -679,13 +681,19 @@ const AllowlistsCard = () => {
           style={{ marginBottom: 12 }}
           message="Allowlisted IPs bypass every scenario, decision, and the AppSec geoblock. Use for your office, home IP, or CI runner CIDR."
         />
-        <Table<CrowdsecAllowlistEntry>
+        <SearchableTableStringQ<CrowdsecAllowlistEntry>
+          onSearchChange={setAllowlistQuery}
+          searchPlaceholder="Search IP or reason…"
           rowKey="value"
-          dataSource={allowlists.data ?? []}
+          dataSource={(allowlists.data ?? []).filter(
+            (e) =>
+              !allowlistQuery ||
+              e.value.toLowerCase().includes(allowlistQuery.toLowerCase()) ||
+              (e.reason ?? "").toLowerCase().includes(allowlistQuery.toLowerCase()),
+          )}
           loading={allowlists.isLoading}
           pagination={{ pageSize: 10, showSizeChanger: false }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No allowlist entries" /> }}
-          scroll={{ x: "max-content" }}
         >
           <Table.Column<CrowdsecAllowlistEntry>
             dataIndex="value"
@@ -723,7 +731,7 @@ const AllowlistsCard = () => {
               </Popconfirm>
             )}
           />
-        </Table>
+        </SearchableTableStringQ>
       </Card>
 
       <Drawer
