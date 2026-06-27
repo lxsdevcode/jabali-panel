@@ -41,6 +41,12 @@ A full **page cache** is also included, but it is **off by default**. Jabali alr
 
 Jabali Cache stores WordPress's own cache data in your Redis server and nowhere else. It does not collect analytics, contact any external service, or send data off your server.
 
+= Support =
+
+Development happens on GitHub. Found a bug, or have a feature request? Please open an issue:
+
+[https://github.com/shukiv/jabali-panel/issues](https://github.com/shukiv/jabali-panel/issues)
+
 == Installation ==
 
 = On the Jabali panel (recommended) =
