@@ -108,7 +108,14 @@ func backupMaterializeHandler(ctx context.Context, raw json.RawMessage) (any, er
 	stages := make([]string, 0, len(snaps))
 	for _, s := range snaps {
 		stage := stageFromTags(s.Tags)
-		if stage == "" {
+		// Restic snapshot tags are repository-controlled data. A poisoned
+		// remote backup repo could attach stage=../../etc or an absolute
+		// path and, via filepath.Join(target, stage) below, make the root
+		// restore write outside the download staging tree. Accept only a
+		// flat [A-Za-z0-9_-] stage name; anything else (path separators,
+		// "..", control chars, empty) falls back to the snapshot short ID,
+		// which is hex and always safe (Gitea #464).
+		if !materializeStageNameRe.MatchString(stage) {
 			stage = s.ID[:8]
 		}
 		// Restore each stage into a sibling subdir so the final
@@ -142,6 +149,10 @@ func backupMaterializeHandler(ctx context.Context, raw json.RawMessage) (any, er
 	}
 	return backupMaterializeResult{Path: target, Stages: stages}, nil
 }
+
+// materializeStageNameRe whitelists a flat restic stage tag used as a
+// filesystem path component under the download staging tree (Gitea #464).
+var materializeStageNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 // stageFromTags returns the stage name (e.g. "home") if a `stage=X`
 // tag is present on the snapshot. Empty when no stage tag matches —
