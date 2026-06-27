@@ -57,7 +57,7 @@ var opencartZipURL = fmt.Sprintf(
 //	curl -sSL -A 'jabali-panel-agent/1.0 (+https://jabali.local)' \
 //	  -L https://github.com/opencart/opencart/releases/download/4.0.2.3/opencart-4.0.2.3.zip \
 //	  | sha256sum
-const opencartZipSHA256 = ""
+const opencartZipSHA256 = "8d18dc67e23d9937925e2efb470f6fabed98aeafd64550c43b6f413d174e5117"
 
 // opencartAdminUserPattern: OpenCart admin usernames are 3-20 chars,
 // no special-character restriction beyond email-style chars.
@@ -146,7 +146,9 @@ func downloadOpenCartZip(ctx context.Context, dest string) error {
 
 func verifyOpenCartSHA256(path string) error {
 	if opencartZipSHA256 == "" {
-		return nil
+		// Fail closed (GH security batch): an unpinned hash must never
+		// silently accept arbitrary downloaded code.
+		return fmt.Errorf("OpenCart zip SHA-256 not pinned — refusing to install unverified code")
 	}
 	f, err := os.Open(path)
 	if err != nil {

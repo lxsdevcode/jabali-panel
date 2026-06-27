@@ -74,7 +74,7 @@ var drupalTarballURL = fmt.Sprintf(
 //
 // Left empty until the operator computes it on the test host — the
 // guard returns nil for empty per verifyDrupalSHA256 below.
-const drupalTarballSHA256 = ""
+const drupalTarballSHA256 = "524f51908b746280914744da0fb2cee38de8ca0b0f50f32ed2d12c0530640837"
 
 // drupalAdminUserPattern allows alnum + dot/dash/underscore. Drupal's
 // own constraint is "user.name must not contain @ or /"; this is
@@ -122,7 +122,9 @@ func downloadDrupalTarball(ctx context.Context, dest string) error {
 
 func verifyDrupalSHA256(path string) error {
 	if drupalTarballSHA256 == "" {
-		return nil
+		// Fail closed (GH security batch): an unpinned hash must never
+		// silently accept arbitrary downloaded code.
+		return fmt.Errorf("Drupal tarball SHA-256 not pinned — refusing to install unverified code")
 	}
 	f, err := os.Open(path)
 	if err != nil {

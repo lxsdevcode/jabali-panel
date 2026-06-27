@@ -73,7 +73,7 @@ var joomlaTarballURL = fmt.Sprintf(
 //	curl -sSL -A 'jabali-panel-agent/1.0 (+https://jabali.local)' \
 //	  https://downloads.joomla.org/cms/joomla5/5-2-0/Joomla_5-2-0-Stable-Full_Package.tar.gz \
 //	  | sha256sum
-const joomlaTarballSHA256 = ""
+const joomlaTarballSHA256 = "0124ebde9b535311bdba2e128f3f4928918c021491e4c81aa5373e1290f82329"
 
 // joomlaAdminUserPattern allows alnum + dot/dash/underscore. Joomla's
 // own constraint is roughly the same plus disallowing leading/trailing
@@ -122,7 +122,9 @@ func downloadJoomlaTarball(ctx context.Context, dest string) error {
 
 func verifyJoomlaSHA256(path string) error {
 	if joomlaTarballSHA256 == "" {
-		return nil
+		// Fail closed (GH security batch): an unpinned hash must never
+		// silently accept arbitrary downloaded code.
+		return fmt.Errorf("Joomla tarball SHA-256 not pinned — refusing to install unverified code")
 	}
 	f, err := os.Open(path)
 	if err != nil {

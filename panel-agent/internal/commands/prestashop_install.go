@@ -62,7 +62,7 @@ var prestashopOuterZipURL = fmt.Sprintf(
 // prestashopOuterZipSHA256 is the SHA-256 of the outer zip at
 // prestashopOuterZipURL as of the install-time pin. Empty value
 // disables the integrity check (DEV ONLY).
-const prestashopOuterZipSHA256 = ""
+const prestashopOuterZipSHA256 = "d512d05ffa30dcde9819b6a867694fa24b447ae32acaded6cce9d19472bc9cd1"
 
 // prestashopCountryPattern matches the two-letter ISO 3166-1 country
 // codes PrestaShop's installer accepts (lowercase).
@@ -105,7 +105,9 @@ func downloadPrestaShopZip(ctx context.Context, dest string) error {
 
 func verifyPrestaShopSHA256(path string) error {
 	if prestashopOuterZipSHA256 == "" {
-		return nil
+		// Fail closed (GH security batch): an unpinned hash must never
+		// silently accept arbitrary downloaded code.
+		return fmt.Errorf("PrestaShop zip SHA-256 not pinned — refusing to install unverified code")
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -124,11 +126,11 @@ func verifyPrestaShopSHA256(path string) error {
 }
 
 // extractPrestaShopZip handles PrestaShop's double-zip distribution:
-// 1. unzip outer.zip into staging/ → produces prestashop.zip + html
-// 2. unzip staging/prestashop.zip → produces install/, modules/, etc.
-//    landing directly at staging/prestashop/  (or directly at staging/
-//    depending on the release; we handle both)
-// 3. cp -a staging/<wherever>/. installPath/
+//  1. unzip outer.zip into staging/ → produces prestashop.zip + html
+//  2. unzip staging/prestashop.zip → produces install/, modules/, etc.
+//     landing directly at staging/prestashop/  (or directly at staging/
+//     depending on the release; we handle both)
+//  3. cp -a staging/<wherever>/. installPath/
 func extractPrestaShopZip(ctx context.Context, osUser, outerZip, installPath, stagingDir string) error {
 	cmd := buildSystemdRunCmd(ctx, osUser, "unzip", "-q", "-o", outerZip, "-d", stagingDir)
 	if out, err := runBoundedOutput(cmd, 0); err != nil {

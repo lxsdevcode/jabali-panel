@@ -68,7 +68,7 @@ var phpbbTarballURL = fmt.Sprintf(
 //	curl -sSL -A 'jabali-panel-agent/1.0 (+https://jabali.local)' \
 //	  https://download.phpbb.com/pub/release/3.3/3.3.13/phpBB-3.3.13.tar.bz2 \
 //	  | sha256sum
-const phpbbTarballSHA256 = ""
+const phpbbTarballSHA256 = "2990317d3bdbf39d38b36f182253cf389d7d43287a908f2ccc8bc36ae38b9267"
 
 // phpbbAdminUserPattern: phpBB usernames are 3-20 chars by default
 // (configurable post-install). Allow alnum + dot/dash/underscore;
@@ -114,7 +114,9 @@ func downloadPhpbbTarball(ctx context.Context, dest string) error {
 
 func verifyPhpbbSHA256(path string) error {
 	if phpbbTarballSHA256 == "" {
-		return nil
+		// Fail closed (GH security batch): an unpinned hash must never
+		// silently accept arbitrary downloaded code.
+		return fmt.Errorf("phpBB tarball SHA-256 not pinned — refusing to install unverified code")
 	}
 	f, err := os.Open(path)
 	if err != nil {
