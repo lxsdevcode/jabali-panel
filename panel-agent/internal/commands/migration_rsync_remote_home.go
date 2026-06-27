@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
 type migrationRsyncRemoteHomeParams struct {
@@ -56,12 +57,25 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
 			Message: "invalid dest_user"}
 	}
-	// Refuse src/dest paths outside the per-account home convention so a
-	// malformed call can't rsync arbitrary host filesystems.
-	if !strings.HasPrefix(p.DestPath, "/home/") {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
-			Message: "dest_path must be under /home/"}
+	// Bind the destination to the destination user's own home and resolve it
+	// symlink-safe (Gitea #465). A bare strings.HasPrefix(dest, "/home/") let a
+	// call pair dest_user=alice with dest_path=/home/bob/... — root would then
+	// rsync into and chown -R bob's tree to alice. filesafe.Scope.Resolve
+	// rejects any path outside /home/<dest_user> AND fails closed on a
+	// symlinked component (a swapped parent can't redirect the root write).
+	homeRoot := "/home/" + p.DestUser
+	destScope, scErr := filesafe.NewScope(p.DestUser, p.DestUser, []string{homeRoot})
+	if scErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
+			Message: "scope init: " + scErr.Error()}
 	}
+	resolvedDest, rsErr := destScope.Resolve(p.DestPath)
+	if rsErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
+			Message: fmt.Sprintf("dest_path %q must resolve under %s: %v", p.DestPath, homeRoot, rsErr)}
+	}
+	p.DestPath = resolvedDest
+	// src_path lives on the REMOTE source host; only a sanity prefix applies.
 	if !strings.HasPrefix(p.SrcPath, "/home/") {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
 			Message: "src_path must be under /home/ on source"}
@@ -75,7 +89,7 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 	subctx, cancel := context.WithTimeout(ctx, 4*time.Hour)
 	defer cancel()
 
-	if mkErr := os.MkdirAll(p.DestPath, 0o755); mkErr != nil {
+	if _, mkErr := destScope.MkdirInScope(p.DestPath, true, 0o755); mkErr != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
 			Message: fmt.Sprintf("mkdir %s: %v", p.DestPath, mkErr)}
 	}
