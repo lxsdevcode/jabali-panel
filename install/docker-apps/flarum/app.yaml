@@ -12,6 +12,7 @@ documentation: https://docs.flarum.org/
 
 image_channel: mondedie/flarum:stable@sha256:792eeb203f3edd8df665bc36d40a74891b8559eb4953834bb0341a3f2ec1a171
 update_mode: manual
+tenant_installable: true
 
 resources:
   cpu: "1.0"

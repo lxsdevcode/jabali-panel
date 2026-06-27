@@ -12,6 +12,7 @@ documentation: https://ghost.org/docs/
 
 image_channel: ghost:6-alpine@sha256:dc932c22add1906101fc034450392dbea107488b0ca191bb91cc0b2a667d652b
 update_mode: manual
+tenant_installable: true
 
 resources:
   cpu: "1.0"

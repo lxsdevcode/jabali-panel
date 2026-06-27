@@ -13,6 +13,7 @@ documentation: https://answer.apache.org/
 
 image_channel: apache/answer:2.0.1@sha256:406e742c72ac7f49056fd39930bcbd812933bfadf40636de0a047d9c78468cf1
 update_mode: manual
+tenant_installable: true
 
 resources:
   cpu: "0.5"
