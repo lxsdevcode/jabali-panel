@@ -22,6 +22,7 @@ var Drupal = App{
 	DisplayName:          "Drupal",
 	Icon:                 "ApiOutlined",
 	Description:          "Enterprise-grade open-source CMS — content modeling, taxonomies, multilingual, and the contrib module ecosystem.",
+	Tags:                 []string{"CMS"},
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

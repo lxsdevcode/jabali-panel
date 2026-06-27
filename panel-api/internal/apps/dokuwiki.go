@@ -15,6 +15,7 @@ var DokuWiki = App{
 	DisplayName:          "DokuWiki",
 	Icon:                 "BookOutlined",
 	Description:          "Simple flat-file wiki — no database, versioned plain-text pages, ACLs and plugins. Ideal for docs and knowledge bases.",
+	Tags:                 []string{"Wiki"},
 	DefaultSubdirectory:  "wiki",
 	RequiresDB:           false,
 	SupportedPHPVersions: nil,

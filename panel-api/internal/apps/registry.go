@@ -57,6 +57,10 @@ type App struct {
 	// Description is a one-line tagline shown beneath the icon in the
 	// install picker.
 	Description string `json:"description,omitempty"`
+	// Tags are catalog category/use-case labels for filtering the install
+	// picker (GH #448), e.g. ["CMS","Blog"]. Free-form but should reuse the
+	// shared vocabulary so the UI filter stays coherent across apps.
+	Tags []string `json:"tags,omitempty"`
 	// DefaultSubdirectory is the subdirectory the install form
 	// pre-fills for this app (e.g. "blog" for WordPress, "" for
 	// docroot-default apps). The user can still override.

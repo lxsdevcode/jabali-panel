@@ -17,6 +17,7 @@ var Joomla = App{
 	DisplayName:          "Joomla",
 	Icon:                 "AppstoreOutlined",
 	Description:          "Open-source CMS — multilingual core, fine-grained ACL, large extension marketplace; the long-time WordPress alternative.",
+	Tags:                 []string{"CMS"},
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

@@ -17,6 +17,7 @@ var MediaWiki = App{
 	DisplayName:          "MediaWiki",
 	Icon:                 "BookOutlined",
 	Description:          "The wiki engine behind Wikipedia — full revision history, namespaces, extensions, scales to encyclopaedias.",
+	Tags:                 []string{"Wiki"},
 	DefaultSubdirectory:  "wiki",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

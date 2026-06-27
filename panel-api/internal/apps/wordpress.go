@@ -15,6 +15,7 @@ var WordPress = App{
 	DisplayName:          "WordPress",
 	Icon:                 "WordPressOutlined",
 	Description:          "The most popular open-source CMS — blogs, marketing sites, online stores via WooCommerce.",
+	Tags:                 []string{"CMS", "Blog", "E-commerce"},
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,
@@ -22,9 +23,9 @@ var WordPress = App{
 	// The legacy wordpress.* commands stay registered on the agent for one
 	// release in case a stale panel build is rolled back; new traffic goes
 	// through app.* with app_type carried in the params.
-	AgentInstallCmd:      "app.install",
-	AgentDeleteCmd:       "app.delete",
-	AgentCloneCmd:        "app.clone",
+	AgentInstallCmd: "app.install",
+	AgentDeleteCmd:  "app.delete",
+	AgentCloneCmd:   "app.clone",
 	// admin_username intentionally NOT in this schema — the API
 	// generates a random 6-letter username server-side (per the
 	// operator's directive: "admin username is a bad idea, should be

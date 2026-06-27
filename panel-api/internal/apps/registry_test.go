@@ -336,3 +336,17 @@ func TestRegister_ConcurrentSafe(t *testing.T) {
 		t.Fatalf("expected 16 registrations, got %d", got)
 	}
 }
+
+// TestEveryAppHasTags ensures the catalog filter (GH #448) has something to
+// filter on: every registered app must carry at least one category tag.
+func TestEveryAppHasTags(t *testing.T) {
+	r := New()
+	if err := RegisterDefaults(r); err != nil {
+		t.Fatalf("RegisterDefaults: %v", err)
+	}
+	for _, a := range r.List() {
+		if len(a.Tags) == 0 {
+			t.Errorf("app %q has no tags", a.Name)
+		}
+	}
+}

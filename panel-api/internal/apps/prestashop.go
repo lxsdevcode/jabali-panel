@@ -14,6 +14,7 @@ var PrestaShop = App{
 	DisplayName:          "PrestaShop",
 	Icon:                 "ShoppingCartOutlined",
 	Description:          "Open-source e-commerce platform with a strong EU/SMB following — multi-store, multi-currency, large module marketplace.",
+	Tags:                 []string{"E-commerce"},
 	DefaultSubdirectory:  "shop",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

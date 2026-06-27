@@ -12,6 +12,7 @@ var OpenCart = App{
 	DisplayName:          "OpenCart",
 	Icon:                 "ShoppingCartOutlined",
 	Description:          "Open-source e-commerce platform — product catalog, carts, checkout, order management, and a marketplace of contributed extensions.",
+	Tags:                 []string{"E-commerce"},
 	DefaultSubdirectory:  "shop",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

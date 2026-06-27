@@ -93,6 +93,7 @@ type registryEntry struct {
 	DisplayName          string                    `json:"display_name"`
 	Icon                 string                    `json:"icon,omitempty"`
 	Description          string                    `json:"description,omitempty"`
+	Tags                 []string                  `json:"tags,omitempty"`
 	DefaultSubdirectory  string                    `json:"default_subdirectory"`
 	RequiresDB           bool                      `json:"requires_db"`
 	EmailLogin           bool                      `json:"email_login,omitempty"`
@@ -110,6 +111,7 @@ func (h *applicationsHandler) registry(c *gin.Context) {
 			DisplayName:          d.DisplayName,
 			Icon:                 d.Icon,
 			Description:          d.Description,
+			Tags:                 d.Tags,
 			DefaultSubdirectory:  d.DefaultSubdirectory,
 			RequiresDB:           d.RequiresDB,
 			EmailLogin:           d.EmailLogin,

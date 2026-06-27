@@ -22,6 +22,7 @@ var ITFlow = App{
 	DisplayName:          "ITFlow",
 	Icon:                 "AppstoreOutlined",
 	Description:          "Open-source MSP ERP — client management, ticketing, invoicing, documentation and assets for IT businesses.",
+	Tags:                 []string{"CRM", "Project management"},
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
 	EmailLogin:           true,

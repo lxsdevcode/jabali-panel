@@ -27,6 +27,7 @@ var Flarum = App{
 	DisplayName:          "Flarum",
 	Icon:                 "MessageOutlined",
 	Description:          "Modern, fast and free forum software — simple, extensible discussion platform with a clean mobile-first UI.",
+	Tags:                 []string{"Forum"},
 	DefaultSubdirectory:  "forum",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

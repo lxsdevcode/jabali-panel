@@ -15,6 +15,7 @@ var PhpBB = App{
 	DisplayName:          "phpBB",
 	Icon:                 "MessageOutlined",
 	Description:          "Mature open-source forum software — categories, sub-forums, ranks, MOD/extension ecosystem.",
+	Tags:                 []string{"Forum"},
 	DefaultSubdirectory:  "forum",
 	RequiresDB:           true,
 	SupportedPHPVersions: nil,

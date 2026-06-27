@@ -3,6 +3,7 @@
 // registered app descriptor (GET /applications/registry). Clicking a card
 // opens the Install drawer pre-targeted to that app_type.
 import { Alert, Button, Card, Empty, Space, Spin, Tag } from "antd";
+import { useMemo, useState } from "react";
 import { DatabaseOutlined } from "@icons";
 
 import { useAppRegistry } from "./appRegistry";
@@ -14,6 +15,25 @@ type Props = {
 
 export const CatalogTab = ({ onInstall }: Props) => {
   const { data: apps = [], isLoading, isError } = useAppRegistry();
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  // All tags present in the catalog, sorted, for the filter bar.
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of apps) for (const t of a.tags ?? []) set.add(t);
+    return Array.from(set).sort();
+  }, [apps]);
+
+  // OR-match: an app shows if it carries ANY selected tag (best for browsing).
+  const visibleApps = useMemo(() => {
+    if (selectedTags.length === 0) return apps;
+    return apps.filter((a) => (a.tags ?? []).some((t) => selectedTags.includes(t)));
+  }, [apps, selectedTags]);
+
+  const toggleTag = (t: string) =>
+    setSelectedTags((cur) =>
+      cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t],
+    );
 
   if (isLoading) {
     return (
@@ -44,16 +64,43 @@ export const CatalogTab = ({ onInstall }: Props) => {
   }
 
   return (
-    <div
-      style={{
-        columnGap: 16,
-        // As many >=320px columns as the viewport fits: 1 col mobile,
-        // 2 tablet, 3+ desktop, no media queries. Same trick as the
-        // docker-apps catalog masonry.
-        columns: "320px",
-      }}
-    >
-      {apps.map((app) => (
+    <>
+      {allTags.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Space size={[8, 8]} wrap>
+            {allTags.map((t) => (
+              <Tag.CheckableTag
+                key={t}
+                checked={selectedTags.includes(t)}
+                onChange={() => toggleTag(t)}
+              >
+                {t}
+              </Tag.CheckableTag>
+            ))}
+            {selectedTags.length > 0 && (
+              <Button type="link" size="small" onClick={() => setSelectedTags([])}>
+                Clear
+              </Button>
+            )}
+          </Space>
+        </div>
+      )}
+      {visibleApps.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="No applications match the selected tags"
+        />
+      ) : (
+        <div
+          style={{
+            columnGap: 16,
+            // As many >=320px columns as the viewport fits: 1 col mobile,
+            // 2 tablet, 3+ desktop, no media queries. Same trick as the
+            // docker-apps catalog masonry.
+            columns: "320px",
+          }}
+        >
+          {visibleApps.map((app) => (
         <div
           key={app.name}
           style={{
@@ -108,8 +155,10 @@ export const CatalogTab = ({ onInstall }: Props) => {
               }
             />
           </Card>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 };

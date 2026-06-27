@@ -24,6 +24,7 @@ export type AppDescriptor = {
   name: string;
   display_name: string;
   description?: string;
+  tags?: string[];
   default_subdirectory: string;
   requires_db: boolean;
   email_login?: boolean;
