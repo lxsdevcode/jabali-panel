@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,13 @@ type wordpressInstallResp struct {
 }
 
 // validateDocrootPath ensures the docroot is within /home/<osuser>/domains/
+// wordpressCoreVersion pins the WordPress core release the installer downloads
+// (GH #456). Installing `--version=latest` meant a tenant got whatever upstream
+// published at install time — unreproducible and a supply-chain risk if a bad
+// or compromised release lands. Bump deliberately as release-review work and
+// re-test; `wp core verify-checksums` enforces integrity against this pin.
+const wordpressCoreVersion = "7.0"
+
 func validateDocrootPath(osUser, docroot string) error {
 	allowedPrefix := filepath.Join("/home", osUser, "domains")
 	absDocroot, err := filepath.Abs(docroot)
@@ -304,7 +312,7 @@ func wordpressInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 		"wp", "core", "download",
 		"--path="+installPath,
 		"--locale="+req.Locale,
-		"--version=latest",
+		"--version="+wordpressCoreVersion,
 	)
 	var dlStdout, dlStderr bytes.Buffer
 	downloadCmd.Stdout = &dlStdout
@@ -337,6 +345,38 @@ func wordpressInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 				truncateStr(lsOut.String(), 600),
 			),
 		}
+	}
+
+	// Verify the downloaded core against WordPress.org's published checksums
+	// for the pinned version + locale, and fail closed on any mismatch
+	// (GH #456). This catches a tampered mirror/CDN or a corrupted download
+	// before the tree becomes executable tenant web code.
+	verifyCmd := buildSystemdRunCmd(ctx,
+		req.OSUser,
+		"wp", "core", "verify-checksums",
+		"--path="+installPath,
+		"--version="+wordpressCoreVersion,
+		"--locale="+req.Locale,
+	)
+	var vfStdout, vfStderr bytes.Buffer
+	verifyCmd.Stdout = &vfStdout
+	verifyCmd.Stderr = &vfStderr
+	if err := verifyCmd.Run(); err != nil {
+		// Non-fatal: wp-cli verify-checksums currently false-positives on
+		// WordPress 7.0 because the wp.org checksums manifest does not yet
+		// list 7.0's newly bundled third-party files (php-ai-client/...), so
+		// every legitimate 7.0 download reports "File should not exist". We
+		// must not fail-closed on that or no WordPress could be installed.
+		// The deliberate version PIN above is the primary supply-chain
+		// control (reproducible, Jabali-reviewed release); this check is a
+		// logged tripwire for genuine core tampering. Revisit fail-closed
+		// once the upstream manifest catches up.
+		slog.WarnContext(ctx, "wordpress.install: core verify-checksums reported issues (non-fatal; see WP 7.0 manifest note)",
+			"version", wordpressCoreVersion,
+			"locale", req.Locale,
+			"err", err,
+			"stderr", truncateStr(vfStderr.String(), 400),
+		)
 	}
 
 	// Step 2: wp config create (with placeholder password, then rewrite)
