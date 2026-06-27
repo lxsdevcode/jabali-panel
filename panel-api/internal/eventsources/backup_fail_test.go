@@ -20,6 +20,7 @@ type fakeBackupJobs struct {
 }
 
 func (f *fakeBackupJobs) Create(context.Context, *models.BackupJob) error { return nil }
+func (f *fakeBackupJobs) Delete(context.Context, string) error            { return nil }
 func (f *fakeBackupJobs) Get(context.Context, string) (*models.BackupJob, error) {
 	return nil, nil
 }
