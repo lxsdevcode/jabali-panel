@@ -5639,49 +5639,45 @@ install_wp_cli() {
   local wp_link="${wp_root}/current"
   local wp_archive="/tmp/wp-cli-${wp_version}.phar"
 
-  # Idempotency: if already installed, skip download + verify.
-  if [[ -f "$wp_phar" && -L "$wp_link" && -L /usr/local/bin/wp ]]; then
-    _ok "wp-cli $wp_version already installed at $wp_root"
-    return
-  fi
-
   # Ensure the root directory exists
   mkdir -p "$wp_root"
   chmod 0755 "$wp_root"
 
-  # Download the phar
-  _log "downloading wp-cli $wp_version"
-  if ! curl -fsSL -o "$wp_archive" \
-    "https://github.com/wp-cli/wp-cli/releases/download/v${wp_version}/wp-cli-${wp_version}.phar"; then
-    _die "failed to download wp-cli $wp_version phar"
+  # Download + verify the phar only when the pinned version isn't already on
+  # disk. The old idempotency guard skipped the whole function whenever the
+  # symlinks merely EXISTED (-L), so a dangling/mispointed `current` or
+  # /usr/local/bin/wp from a partial earlier install was never repaired —
+  # `wp` resolved to a missing target (GH #298). Download is gated on the phar;
+  # the symlinks are always re-pointed below.
+  if [[ ! -f "$wp_phar" ]]; then
+    _log "downloading wp-cli $wp_version"
+    if ! curl -fsSL -o "$wp_archive" \
+      "https://github.com/wp-cli/wp-cli/releases/download/v${wp_version}/wp-cli-${wp_version}.phar"; then
+      _die "failed to download wp-cli $wp_version phar"
+    fi
+    _log "verifying wp-cli checksum"
+    local expected_sum
+    expected_sum="$(grep -v '^#' "${REPO_DIR}/install/wp-cli.sha256" | awk '{print $1}')"
+    local actual_sum
+    actual_sum="$(sha256sum "$wp_archive" | awk '{print $1}')"
+    if [[ "$expected_sum" != "$actual_sum" ]]; then
+      rm -f "$wp_archive"
+      _die "wp-cli checksum mismatch: expected $expected_sum, got $actual_sum"
+    fi
+    _ok "checksum verified"
+    mv "$wp_archive" "$wp_phar"
+    chmod 0755 "$wp_phar"
+  else
+    _ok "wp-cli $wp_version phar already present"
   fi
 
-  # Verify checksum
-  _log "verifying wp-cli checksum"
-  local expected_sum
-  expected_sum="$(grep -v '^#' "${REPO_DIR}/install/wp-cli.sha256" | awk '{print $1}')"
-  local actual_sum
-  actual_sum="$(sha256sum "$wp_archive" | awk '{print $1}')"
-  if [[ "$expected_sum" != "$actual_sum" ]]; then
-    rm -f "$wp_archive"
-    _die "wp-cli checksum mismatch: expected $expected_sum, got $actual_sum"
-  fi
-  _ok "checksum verified"
+  # ALWAYS (re)point the symlinks — idempotent and self-healing for a missing
+  # or dangling `current` / /usr/local/bin/wp (GH #298). ln -sfn forces the
+  # replacement even when the link already exists or points at a directory.
+  ln -sfn "$wp_phar" "$wp_link"
+  ln -sfn "$wp_link" /usr/local/bin/wp
 
-  # Move to permanent location
-  _log "installing wp-cli to $wp_root"
-  mv "$wp_archive" "$wp_phar"
-  chmod 0755 "$wp_phar"
-
-  # Create symlink for easy access
-  rm -f "$wp_link"
-  ln -s "$wp_phar" "$wp_link"
-
-  # Create symlink in /usr/local/bin
-  rm -f /usr/local/bin/wp
-  ln -s "$wp_link" /usr/local/bin/wp
-
-  _ok "wp-cli extracted and symlinked"
+  _ok "wp-cli $wp_version installed; wp -> $wp_phar"
 }
 
 # ensure_snuffleupagus_bundle_synced — mirror the repo rule bundle into
