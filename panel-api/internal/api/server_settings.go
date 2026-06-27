@@ -100,6 +100,14 @@ type updateServerSettingsRequest struct {
 	PanelErrorColor              *string `json:"panel_error_color,omitempty"`
 	PanelInfoColor               *string `json:"panel_info_color,omitempty"`
 	PanelLinkColor               *string `json:"panel_link_color,omitempty"`
+	PanelLightTopbarColor        *string `json:"panel_light_topbar_color,omitempty"`
+	PanelDarkTopbarColor         *string `json:"panel_dark_topbar_color,omitempty"`
+	PanelLightBgColor            *string `json:"panel_light_bg_color,omitempty"`
+	PanelDarkBgColor             *string `json:"panel_dark_bg_color,omitempty"`
+	PanelLightContainerColor     *string `json:"panel_light_container_color,omitempty"`
+	PanelDarkContainerColor      *string `json:"panel_dark_container_color,omitempty"`
+	PanelLightTextColor          *string `json:"panel_light_text_color,omitempty"`
+	PanelDarkTextColor           *string `json:"panel_dark_text_color,omitempty"`
 	DiskQuotaEnabled             *bool   `json:"disk_quota_enabled,omitempty"`
 	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
 	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
@@ -336,6 +344,30 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 		return
 	}
 	if !validateColor(req.PanelLinkColor, &current.PanelLinkColor, "panel_link_color") {
+		return
+	}
+	if !validateColor(req.PanelLightTopbarColor, &current.PanelLightTopbarColor, "panel_light_topbar_color") {
+		return
+	}
+	if !validateColor(req.PanelDarkTopbarColor, &current.PanelDarkTopbarColor, "panel_dark_topbar_color") {
+		return
+	}
+	if !validateColor(req.PanelLightBgColor, &current.PanelLightBgColor, "panel_light_bg_color") {
+		return
+	}
+	if !validateColor(req.PanelDarkBgColor, &current.PanelDarkBgColor, "panel_dark_bg_color") {
+		return
+	}
+	if !validateColor(req.PanelLightContainerColor, &current.PanelLightContainerColor, "panel_light_container_color") {
+		return
+	}
+	if !validateColor(req.PanelDarkContainerColor, &current.PanelDarkContainerColor, "panel_dark_container_color") {
+		return
+	}
+	if !validateColor(req.PanelLightTextColor, &current.PanelLightTextColor, "panel_light_text_color") {
+		return
+	}
+	if !validateColor(req.PanelDarkTextColor, &current.PanelDarkTextColor, "panel_dark_text_color") {
 		return
 	}
 	if req.DiskQuotaEnabled != nil {

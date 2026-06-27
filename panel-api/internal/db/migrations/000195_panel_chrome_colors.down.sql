@@ -1,0 +1,9 @@
+ALTER TABLE server_settings
+  DROP COLUMN panel_light_topbar_color,
+  DROP COLUMN panel_dark_topbar_color,
+  DROP COLUMN panel_light_bg_color,
+  DROP COLUMN panel_dark_bg_color,
+  DROP COLUMN panel_light_container_color,
+  DROP COLUMN panel_dark_container_color,
+  DROP COLUMN panel_light_text_color,
+  DROP COLUMN panel_dark_text_color;

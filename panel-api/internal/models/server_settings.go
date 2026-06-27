@@ -86,6 +86,16 @@ type ServerSettings struct {
 	PanelErrorColor   string `gorm:"column:panel_error_color;type:varchar(9);not null;default:''"   json:"panel_error_color"`
 	PanelInfoColor    string `gorm:"column:panel_info_color;type:varchar(9);not null;default:''"    json:"panel_info_color"`
 	PanelLinkColor    string `gorm:"column:panel_link_color;type:varchar(9);not null;default:''"    json:"panel_link_color"`
+	// Per-theme chrome colors (GH #435): separate light+dark values for the
+	// top bar, page/sidebar bg, card/container bg, and text. Empty = default.
+	PanelLightTopbarColor    string `gorm:"column:panel_light_topbar_color;type:varchar(9);not null;default:''" json:"panel_light_topbar_color"`
+	PanelDarkTopbarColor     string `gorm:"column:panel_dark_topbar_color;type:varchar(9);not null;default:''" json:"panel_dark_topbar_color"`
+	PanelLightBgColor        string `gorm:"column:panel_light_bg_color;type:varchar(9);not null;default:''" json:"panel_light_bg_color"`
+	PanelDarkBgColor         string `gorm:"column:panel_dark_bg_color;type:varchar(9);not null;default:''" json:"panel_dark_bg_color"`
+	PanelLightContainerColor string `gorm:"column:panel_light_container_color;type:varchar(9);not null;default:''" json:"panel_light_container_color"`
+	PanelDarkContainerColor  string `gorm:"column:panel_dark_container_color;type:varchar(9);not null;default:''" json:"panel_dark_container_color"`
+	PanelLightTextColor      string `gorm:"column:panel_light_text_color;type:varchar(9);not null;default:''" json:"panel_light_text_color"`
+	PanelDarkTextColor       string `gorm:"column:panel_dark_text_color;type:varchar(9);not null;default:''" json:"panel_dark_text_color"`
 
 	// M26 AppSec geoblock (migration 000067). Server-wide rule applied
 	// by crowdsec AppSec. Mode ∈ {"off", "allow", "deny"}:

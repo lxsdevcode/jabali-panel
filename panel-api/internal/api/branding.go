@@ -76,17 +76,25 @@ func RegisterPublicBrandingRoutes(g *gin.RouterGroup, cfg BrandingHandlerConfig)
 type brandingHandler struct{ cfg BrandingHandlerConfig }
 
 type brandingInfoResponse struct {
-	PanelBrandText    string `json:"panel_brand_text"`
-	PanelFontSize     string `json:"panel_font_size"`
-	PanelPrimaryColor string `json:"panel_primary_color"`
-	PanelAccentColor  string `json:"panel_accent_color"`
-	PanelSuccessColor string `json:"panel_success_color"`
-	PanelWarningColor string `json:"panel_warning_color"`
-	PanelErrorColor   string `json:"panel_error_color"`
-	PanelInfoColor    string `json:"panel_info_color"`
-	PanelLinkColor    string `json:"panel_link_color"`
-	HasLogoLight      bool   `json:"has_logo_light"`
-	HasLogoDark       bool   `json:"has_logo_dark"`
+	PanelBrandText           string `json:"panel_brand_text"`
+	PanelFontSize            string `json:"panel_font_size"`
+	PanelPrimaryColor        string `json:"panel_primary_color"`
+	PanelAccentColor         string `json:"panel_accent_color"`
+	PanelSuccessColor        string `json:"panel_success_color"`
+	PanelWarningColor        string `json:"panel_warning_color"`
+	PanelErrorColor          string `json:"panel_error_color"`
+	PanelInfoColor           string `json:"panel_info_color"`
+	PanelLinkColor           string `json:"panel_link_color"`
+	PanelLightTopbarColor    string `json:"panel_light_topbar_color"`
+	PanelDarkTopbarColor     string `json:"panel_dark_topbar_color"`
+	PanelLightBgColor        string `json:"panel_light_bg_color"`
+	PanelDarkBgColor         string `json:"panel_dark_bg_color"`
+	PanelLightContainerColor string `json:"panel_light_container_color"`
+	PanelDarkContainerColor  string `json:"panel_dark_container_color"`
+	PanelLightTextColor      string `json:"panel_light_text_color"`
+	PanelDarkTextColor       string `json:"panel_dark_text_color"`
+	HasLogoLight             bool   `json:"has_logo_light"`
+	HasLogoDark              bool   `json:"has_logo_dark"`
 }
 
 func (h *brandingHandler) publicInfo(c *gin.Context) {
@@ -100,17 +108,25 @@ func (h *brandingHandler) publicInfo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, brandingInfoResponse{
-		PanelBrandText:    s.PanelBrandText,
-		PanelFontSize:     fontSizeOrDefault(s.PanelFontSize),
-		PanelPrimaryColor: s.PanelPrimaryColor,
-		PanelAccentColor:  s.PanelAccentColor,
-		PanelSuccessColor: s.PanelSuccessColor,
-		PanelWarningColor: s.PanelWarningColor,
-		PanelErrorColor:   s.PanelErrorColor,
-		PanelInfoColor:    s.PanelInfoColor,
-		PanelLinkColor:    s.PanelLinkColor,
-		HasLogoLight:      s.LogoLightPath != "" && fileExists(s.LogoLightPath),
-		HasLogoDark:       s.LogoDarkPath != "" && fileExists(s.LogoDarkPath),
+		PanelBrandText:           s.PanelBrandText,
+		PanelFontSize:            fontSizeOrDefault(s.PanelFontSize),
+		PanelPrimaryColor:        s.PanelPrimaryColor,
+		PanelAccentColor:         s.PanelAccentColor,
+		PanelSuccessColor:        s.PanelSuccessColor,
+		PanelWarningColor:        s.PanelWarningColor,
+		PanelErrorColor:          s.PanelErrorColor,
+		PanelInfoColor:           s.PanelInfoColor,
+		PanelLinkColor:           s.PanelLinkColor,
+		PanelLightTopbarColor:    s.PanelLightTopbarColor,
+		PanelDarkTopbarColor:     s.PanelDarkTopbarColor,
+		PanelLightBgColor:        s.PanelLightBgColor,
+		PanelDarkBgColor:         s.PanelDarkBgColor,
+		PanelLightContainerColor: s.PanelLightContainerColor,
+		PanelDarkContainerColor:  s.PanelDarkContainerColor,
+		PanelLightTextColor:      s.PanelLightTextColor,
+		PanelDarkTextColor:       s.PanelDarkTextColor,
+		HasLogoLight:             s.LogoLightPath != "" && fileExists(s.LogoLightPath),
+		HasLogoDark:              s.LogoDarkPath != "" && fileExists(s.LogoDarkPath),
 	})
 }
 
