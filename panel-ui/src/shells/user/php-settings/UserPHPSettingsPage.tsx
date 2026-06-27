@@ -334,7 +334,10 @@ export function UserPHPSettingsPage() {
             <Spin spinning={loading}>
               {selectedDomain && phpSettings && (
                 <>
-                  <Form.Item label="PHP Version">
+                  <Form.Item
+                    label="PHP Version"
+                    extra="Applies to your whole account — all your domains share one PHP version (one FPM pool per account). The resource limits below are per-domain."
+                  >
                     <Select
                       value={phpSettings.php_version ?? null}
                       loading={versionSaving}
