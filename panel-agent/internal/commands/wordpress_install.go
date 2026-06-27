@@ -133,7 +133,35 @@ func buildSystemdRunCmd(ctx context.Context, osUser string, args ...string) *exe
 // idempotency check) so the only index.html the user could lose here is
 // either the placeholder or a hand-uploaded file the user is intentionally
 // replacing by clicking "Install WordPress" on this domain.
+// assertSafeInstallRoot refuses root-side operations on an app install root
+// that is a symlink or a non-directory (GH #457). The attack: a tenant
+// pre-creates <docroot>/<subdir> as a symlink before clicking install, so a
+// later root-side `chown -R` / `rm -rf` / chmod dereferences it into a
+// directory the tenant does not own (privilege escalation / destruction).
+// Lstat (no-follow) detects the planted symlink; a not-yet-existing root is
+// fine (it will be created as a real dir). Shared by every app installer via
+// removePlaceholderIndex + normalizePermsToWwwData.
+func assertSafeInstallRoot(installPath string) error {
+	fi, err := os.Lstat(installPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat install root %s: %w", installPath, err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing install: root %s is a symlink", installPath)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("refusing install: root %s is not a directory", installPath)
+	}
+	return nil
+}
+
 func removePlaceholderIndex(ctx context.Context, installPath string) {
+	if err := assertSafeInstallRoot(installPath); err != nil {
+		return // never rm through a planted symlink (#457)
+	}
 	_ = exec.CommandContext(ctx, "rm", "-f", filepath.Join(installPath, "index.html")).Run()
 }
 
@@ -146,6 +174,11 @@ func removePlaceholderIndex(ctx context.Context, installPath string) {
 // the tenant being in www-data. A plain 0750 strips that, and new uploads land
 // group <user> -> nginx 403 (repair "docroot-www-data-group" flags exactly this).
 func normalizePermsToWwwData(ctx context.Context, installPath, osUser string) error {
+	// Fail closed before any root-side chown/chmod if the root was swapped for
+	// a symlink (#457) — chown -R would otherwise follow it off-tree.
+	if err := assertSafeInstallRoot(installPath); err != nil {
+		return err
+	}
 	if err := exec.CommandContext(ctx, "chown", "-R", osUser+":www-data", installPath).Run(); err != nil {
 		return fmt.Errorf("chown -R %s:www-data %s: %w", osUser, installPath, err)
 	}
