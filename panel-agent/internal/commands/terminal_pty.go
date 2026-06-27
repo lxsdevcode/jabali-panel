@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"golang.org/x/sys/unix"
 	"net"
 	"os"
 	"os/exec"
@@ -135,13 +136,35 @@ func StartTerminalPTYBroker(ctx context.Context, sockPath string, gid int, recor
 					continue
 				}
 			}
-			go handleTerminalConn(conn, recordDir, log)
+			go handleTerminalConn(conn, recordDir, gid, log)
 		}
 	}()
 }
 
-func handleTerminalConn(raw net.Conn, recordDir string, log *slog.Logger) {
+func handleTerminalConn(raw net.Conn, recordDir string, gid int, log *slog.Logger) {
 	defer raw.Close()
+
+	// Agent-side authorization (Gitea #469). The broker spawns a root shell,
+	// so connecting to its socket must be gated independently of panel-api's
+	// token/admin checks (socket group perms alone make any jabali-sockets
+	// member a root-shell endpoint). panel-api runs with systemd
+	// Group=jabali-sockets, i.e. its process PRIMARY gid is the jabali-sockets
+	// gid; a process merely ADDED to that group carries it as a SUPPLEMENTARY
+	// gid, not primary. SO_PEERCRED reports the peer's primary gid, so
+	// requiring peer-gid == jabali-sockets gid (or peer uid 0) accepts only
+	// panel-api (and root) and fails closed if creds are unreadable.
+	if gid >= 0 {
+		uid, pgid, ok := terminalPeerCred(raw)
+		if !ok {
+			log.Warn("terminal: refusing connection: cannot read peer credentials")
+			return
+		}
+		if uid != 0 && pgid != gid {
+			log.Warn("terminal: refusing connection: peer is not panel-api", "peer_uid", uid, "peer_gid", pgid, "want_gid", gid)
+			return
+		}
+	}
+
 	conn := &tpConn{c: raw}
 
 	// First frame must be init.
@@ -311,4 +334,27 @@ func sanitizeSessionID(s string) string {
 		return "invalid"
 	}
 	return string(out)
+}
+
+// terminalPeerCred reads the connecting peer's uid + primary gid via
+// SO_PEERCRED (Gitea #469). ok=false when the conn is not a unix socket or the
+// credentials cannot be read, so callers fail closed.
+func terminalPeerCred(c net.Conn) (uid, gid int, ok bool) {
+	uc, isUnix := c.(*net.UnixConn)
+	if !isUnix {
+		return 0, 0, false
+	}
+	sc, err := uc.SyscallConn()
+	if err != nil {
+		return 0, 0, false
+	}
+	var cred *unix.Ucred
+	var cerr error
+	ctrlErr := sc.Control(func(fd uintptr) {
+		cred, cerr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+	})
+	if ctrlErr != nil || cerr != nil || cred == nil {
+		return 0, 0, false
+	}
+	return int(cred.Uid), int(cred.Gid), true
 }
