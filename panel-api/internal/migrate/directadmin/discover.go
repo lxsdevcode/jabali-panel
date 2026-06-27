@@ -87,16 +87,11 @@ func (d *Discoverer) Connect(ctx context.Context, host, user string, secret migr
 	if err != nil {
 		return nil, fmt.Errorf("directadmin.Connect: load secret: %w", err)
 	}
-	// Pin the source host key (Gitea #461) instead of blindly trusting it.
-	khPath := migrate.KnownHostsPath(migrate.JobIDFromSecretPath(secret.Path))
-	hostKeyCB, hkErr := migrate.PinningHostKeyCallback(khPath, secret.ExpectedHostKey)
-	if hkErr != nil {
-		return nil, fmt.Errorf("%s.Connect: host-key pinning: %w", "directadmin", hkErr)
-	}
+	// Verify the source host key (Gitea #461) instead of blindly trusting it.
 	cfg := &ssh.ClientConfig{
 		User:            user,
 		Auth:            auth,
-		HostKeyCallback: hostKeyCB,
+		HostKeyCallback: migrate.PinningHostKeyCallback(secret.ExpectedHostKey),
 		Timeout:         15 * time.Second,
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
