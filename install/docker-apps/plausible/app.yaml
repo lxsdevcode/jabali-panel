@@ -1,5 +1,6 @@
 slug: plausible
 name: Plausible Analytics
+tags: ["Analytics"]
 version: "3.2.1"
 description: |
   Lightweight, open-source, privacy-focused web analytics. Three

@@ -1,5 +1,6 @@
 slug: odoo
 name: Odoo
+tags: ["ERP", "CRM"]
 version: "18.0"
 description: >-
   Open-source ERP and business suite: CRM, accounting, inventory, sales,

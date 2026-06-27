@@ -1,6 +1,7 @@
 slug: freshrss
 tenant_installable: true
 name: FreshRSS
+tags: ["Productivity"]
 version: "1.29.1"
 description: |
   Self-hosted RSS / Atom feed aggregator. Lightweight, extensible

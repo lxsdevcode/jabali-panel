@@ -1,6 +1,7 @@
 slug: privatebin
 tenant_installable: true
 name: PrivateBin
+tags: ["Developer tools"]
 version: "2.0.4"
 description: |
   Minimalist, open-source pastebin where the server has zero

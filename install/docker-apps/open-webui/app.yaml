@@ -1,5 +1,6 @@
 slug: open-webui
 name: Open WebUI
+tags: ["AI", "Developer tools"]
 version: "0.9.6"
 description: |
   Extensible, self-hosted AI chat interface that runs entirely offline.

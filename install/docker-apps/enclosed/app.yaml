@@ -1,6 +1,7 @@
 slug: enclosed
 tenant_installable: true
 name: Enclosed
+tags: ["Developer tools"]
 version: "latest"
 description: |
   Minimalist, open-source web app for sending private and encrypted

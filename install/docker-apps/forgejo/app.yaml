@@ -1,5 +1,6 @@
 slug: forgejo
 name: Forgejo
+tags: ["Developer tools"]
 version: "15.0.3"
 description: |
   Lightweight self-hosted Git forge — a community-run fork of Gitea.

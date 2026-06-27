@@ -1,6 +1,7 @@
 slug: paperless-ngx
 tenant_installable: true
 name: Paperless-ngx
+tags: ["Document management", "File sharing"]
 version: "2.20.15"
 description: |
   Self-hosted document management — scan + tag + full-text search.

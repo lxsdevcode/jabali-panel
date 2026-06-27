@@ -1,5 +1,6 @@
 slug: nextcloud
 name: Nextcloud
+tags: ["File sharing"]
 version: "33.0.5"
 description: |
   Self-hosted productivity platform: file sync, calendar, contacts,

@@ -1,5 +1,6 @@
 slug: gitea
 name: Gitea
+tags: ["Developer tools"]
 version: "1.26.2"
 description: |
   Lightweight self-hosted Git service. Bundled SQLite for v1; admin

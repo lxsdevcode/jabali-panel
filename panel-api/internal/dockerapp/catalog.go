@@ -29,6 +29,7 @@ type Entry struct {
 	Name          string     `yaml:"name"`
 	Version       string     `yaml:"version"`
 	Description   string     `yaml:"description"`
+	Tags          []string   `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Icon          string     `yaml:"icon,omitempty"`
 	Upstream      string     `yaml:"upstream,omitempty"`
 	Documentation string     `yaml:"documentation,omitempty"`

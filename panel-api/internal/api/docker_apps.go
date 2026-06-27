@@ -116,6 +116,7 @@ type catalogEntryResponse struct {
 	Name              string                  `json:"name"`
 	Version           string                  `json:"version"`
 	Description       string                  `json:"description"`
+	Tags              []string                `json:"tags,omitempty"`
 	Icon              string                  `json:"icon"`
 	Upstream          string                  `json:"upstream,omitempty"`
 	Documentation     string                  `json:"documentation,omitempty"`
@@ -203,6 +204,7 @@ func catalogEntryToResponse(e dockerapp.Entry) catalogEntryResponse {
 	}
 	return catalogEntryResponse{
 		Slug:              e.Slug,
+		Tags:              e.Tags,
 		Name:              e.Name,
 		Version:           e.Version,
 		Description:       e.Description,

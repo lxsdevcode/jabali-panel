@@ -1,5 +1,6 @@
 slug: n8n
 name: n8n
+tags: ["Automation", "Developer tools"]
 version: "2.25.5"
 description: |
   Workflow automation tool. Build, run, and share workflows that

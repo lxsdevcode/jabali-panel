@@ -1,5 +1,6 @@
 slug: joplin
 name: Joplin Server
+tags: ["Productivity"]
 version: "3.7.1"
 description: |
   Self-hosted sync server for Joplin (open-source note app with

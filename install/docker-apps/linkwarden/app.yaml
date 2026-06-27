@@ -1,6 +1,7 @@
 slug: linkwarden
 tenant_installable: true
 name: Linkwarden
+tags: ["Productivity"]
 version: "2.14.1"
 description: |
   Self-hosted bookmark and link manager with built-in archiving

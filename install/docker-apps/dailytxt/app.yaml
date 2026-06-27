@@ -1,6 +1,7 @@
 slug: dailytxt
 tenant_installable: true
 name: DailyTxt
+tags: ["Productivity"]
 version: "2.6.1"
 description: |
   Self-hosted, end-to-end encrypted diary application. Plain text +

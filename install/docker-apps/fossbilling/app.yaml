@@ -1,5 +1,6 @@
 slug: fossbilling
 name: FOSSBilling
+tags: ["Billing", "CRM"]
 version: "0.8.2"
 description: |
   Open-source billing and client management — invoices, orders, support

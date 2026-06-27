@@ -1,6 +1,7 @@
 slug: searxng
 tenant_installable: true
 name: SearXNG
+tags: ["Developer tools"]
 version: "2026.6.20"
 description: |
   Privacy-respecting metasearch engine — aggregates results from 70+ search

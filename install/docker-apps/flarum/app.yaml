@@ -1,5 +1,6 @@
 slug: flarum
 name: Flarum
+tags: ["Forum"]
 version: "1.8"
 description: |
   Modern, fast and free forum software. Clean mobile-first UI,

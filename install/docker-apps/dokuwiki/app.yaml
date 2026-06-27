@@ -1,6 +1,7 @@
 slug: dokuwiki
 tenant_installable: true
 name: DokuWiki
+tags: ["Wiki"]
 version: "2024-02-06b"
 description: |
   Simple, flat-file wiki — no database. Versioned plain-text pages,

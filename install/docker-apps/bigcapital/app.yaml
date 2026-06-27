@@ -1,5 +1,6 @@
 slug: bigcapital
 name: Bigcapital
+tags: ["Accounting", "ERP"]
 version: "0.25.20"
 description: |
   Open-source accounting and financial management — invoicing, expenses,

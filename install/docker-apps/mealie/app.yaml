@@ -1,6 +1,7 @@
 slug: mealie
 tenant_installable: true
 name: Mealie
+tags: ["Productivity"]
 version: "3.19.2"
 description: |
   Self-hosted recipe manager and meal planner. Single container,

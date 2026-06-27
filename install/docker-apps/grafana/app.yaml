@@ -1,5 +1,6 @@
 slug: grafana
 name: Grafana
+tags: ["Monitoring", "Analytics"]
 version: "13.0.2"
 description: >-
   Open-source observability and dashboards: query, visualize, and alert on

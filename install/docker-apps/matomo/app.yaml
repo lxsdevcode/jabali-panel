@@ -1,5 +1,6 @@
 slug: matomo
 name: Matomo
+tags: ["Analytics"]
 version: "5.10.1"
 description: |
   Open-source web analytics platform. Privacy-focused, fully

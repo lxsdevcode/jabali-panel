@@ -1,6 +1,7 @@
 slug: memos
 tenant_installable: true
 name: Memos
+tags: ["Productivity"]
 version: "0.29.1"
 description: |
   Self-hosted, open-source note-taking platform. Lightweight, single

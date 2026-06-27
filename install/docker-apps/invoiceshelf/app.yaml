@@ -1,5 +1,6 @@
 slug: invoiceshelf
 name: InvoiceShelf
+tags: ["Accounting", "Billing"]
 version: "2.4.1"
 description: |
   Open-source, self-hosted invoicing and estimates for freelancers and

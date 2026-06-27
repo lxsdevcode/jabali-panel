@@ -1,5 +1,6 @@
 slug: immich
 name: Immich
+tags: ["File sharing"]
 version: "2.7.5"
 description: |
   Self-hosted photo + video backup, ML-powered search. Four

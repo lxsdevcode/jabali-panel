@@ -1,5 +1,6 @@
 slug: onlyoffice
 name: ONLYOFFICE Docs
+tags: ["Productivity", "File sharing"]
 version: "9.4.0"
 description: >-
   ONLYOFFICE Document Server: online editors for documents, spreadsheets, and

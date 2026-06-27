@@ -1,5 +1,6 @@
 slug: ghost
 name: Ghost
+tags: ["Blog", "CMS"]
 version: "6.44.1"
 description: |
   Modern publishing platform. SQLite by default; the operator can

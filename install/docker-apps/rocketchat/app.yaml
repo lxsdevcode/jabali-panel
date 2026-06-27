@@ -1,5 +1,6 @@
 slug: rocketchat
 name: Rocket.Chat
+tags: ["Communication"]
 version: "6.13.1"
 description: |
   Self-hosted team chat / collaboration platform — channels, DMs, voice/
