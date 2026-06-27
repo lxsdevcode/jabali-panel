@@ -10,7 +10,7 @@ icon: icon.svg
 upstream: https://github.com/PrivateBin/PrivateBin
 documentation: https://github.com/PrivateBin/PrivateBin/wiki
 
-image_channel: privatebin/nginx-fpm-alpine:latest
+image_channel: privatebin/nginx-fpm-alpine:2.0.4
 update_mode: manual
 
 resources:

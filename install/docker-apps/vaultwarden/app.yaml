@@ -10,7 +10,7 @@ icon: icon.svg
 upstream: https://github.com/dani-garcia/vaultwarden
 documentation: https://github.com/dani-garcia/vaultwarden/wiki
 
-image_channel: vaultwarden/server:latest
+image_channel: vaultwarden/server:1.36.0
 update_mode: manual
 
 resources:

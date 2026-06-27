@@ -14,7 +14,7 @@ documentation: https://docs.enclosed.cc
 
 # Stable tag; the panel pins the digest at install time and tracks
 # updates separately (update_mode: manual).
-image_channel: corentinth/enclosed:latest
+image_channel: corentinth/enclosed:1.16.0
 update_mode: manual
 
 resources:

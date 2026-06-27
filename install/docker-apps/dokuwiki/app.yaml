@@ -10,7 +10,7 @@ icon: icon.svg
 upstream: https://github.com/dokuwiki/dokuwiki
 documentation: https://www.dokuwiki.org/
 
-image_channel: lscr.io/linuxserver/dokuwiki:latest
+image_channel: lscr.io/linuxserver/dokuwiki:version-2025-05-14b
 update_mode: manual
 
 resources:
