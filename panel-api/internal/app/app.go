@@ -386,7 +386,9 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		combinedAuth := middleware.RequireUserAuth(deps.UserAPITokens, deps.Users, authMiddleware)
 		// GH #245: scope-restricted API tokens are fail-closed here; full
 		// tokens + browser sessions pass through.
-		v1 := r.Group("/api/v1", combinedAuth, api.EnforceUserTokenScopes())
+		// CSRF: same-origin guard for cookie-authenticated mutations (GH #460),
+		// before scope enforcement. Bearer/automation auth is exempt inside it.
+		v1 := r.Group("/api/v1", combinedAuth, api.EnforceSameOriginForCookieMutations(), api.EnforceUserTokenScopes())
 		// Register the user-facing token management endpoints. These
 		// reject token-auth callers themselves (you can't mint new
 		// tokens from a token), so even though v1 accepts both auth
