@@ -15,7 +15,17 @@ import (
 // can resolve the path. Returns the install dir.
 func fakeWPInstall(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	// The SSO writer binds install_path to the os_user's home (Gitea #470),
+	// so the fixture must live under the current user's home, not /tmp.
+	me, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+	dir, err := os.MkdirTemp(me.HomeDir, "jabali-ssotest-")
+	if err != nil {
+		t.Fatalf("mkdtemp under home: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	if err := os.WriteFile(filepath.Join(dir, "wp-load.php"), []byte("<?php // stub\n"), 0o644); err != nil {
 		t.Fatalf("seed wp-load.php: %v", err)
 	}
