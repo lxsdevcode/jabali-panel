@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 )
 
 // sshAuthorizedKeysDeleteParams is the input shape for ssh.authorized_keys.delete.
@@ -41,6 +42,12 @@ func sshAuthorizedKeysDeleteHandler(ctx context.Context, params json.RawMessage)
 		}
 	}
 
+	// All .ssh ops are escape-proof via a home-rooted scope (Gitea #467).
+	scope, serr := filesafe.NewScope(p.Username, p.Username, []string{u.HomeDir})
+	if serr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "scope init: " + serr.Error()}
+	}
+
 	sshDir := filepath.Join(u.HomeDir, ".ssh")
 	authorizedKeysPath := filepath.Join(sshDir, "authorized_keys")
 
@@ -48,7 +55,7 @@ func sshAuthorizedKeysDeleteHandler(ctx context.Context, params json.RawMessage)
 	// whole file. Operator keys outside the markers survive (incident
 	// 2026-05-17: the every-tick reconciler delete was wiping operator
 	// SSH access on every jabali host).
-	existing, rerr := readAuthorizedKeys(authorizedKeysPath)
+	existing, rerr := readAuthorizedKeys(scope, authorizedKeysPath)
 	if rerr != nil {
 		return nil, rerr
 	}
@@ -58,13 +65,13 @@ func sshAuthorizedKeysDeleteHandler(ctx context.Context, params json.RawMessage)
 	remainder := applyManagedBlock(existing, nil)
 	if strings.TrimSpace(remainder) == "" {
 		// Nothing but the jabali block was present — clean removal.
-		if err := os.Remove(authorizedKeysPath); err != nil && !os.IsNotExist(err) {
+		if err := scope.RemoveInScope(authorizedKeysPath, false); err != nil && !os.IsNotExist(err) {
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
 				Message: fmt.Sprintf("failed to delete authorized_keys: %v", err),
 			}
 		}
-	} else if werr := writeAuthorizedKeysAtomic(u, sshDir, authorizedKeysPath, remainder); werr != nil {
+	} else if werr := writeAuthorizedKeysAtomic(scope, u, sshDir, authorizedKeysPath, remainder); werr != nil {
 		return nil, werr
 	}
 
