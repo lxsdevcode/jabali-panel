@@ -203,6 +203,11 @@ type Domain struct {
 	// and from PageRedirects (which has its own dedicated UI).
 	NginxRules NginxRules `gorm:"type:json" json:"nginx_rules,omitempty"`
 
+	// NginxSafeOptions is a curated, owner-settable set of vetted nginx options
+	// (GH #307) — rendered to fixed safe directives by the panel. Gated by
+	// server_settings.tenant_domain_options_enabled for non-admin owners.
+	NginxSafeOptions NginxSafeOptions `gorm:"column:nginx_safe_options;type:longtext" json:"nginx_safe_options"`
+
 	// IndexPriority picks which file(s) nginx serves as the default
 	// directory index. Enum values (html_first/php_first/html_only/
 	// php_only/full) map to nginx `index` directives in the agent.

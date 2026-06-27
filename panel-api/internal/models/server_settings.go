@@ -101,6 +101,9 @@ type ServerSettings struct {
 	ReleaseChannel string `gorm:"column:release_channel;type:varchar(16);not null;default:'stable'" json:"release_channel"`
 	// WebmailEnabled toggles the Bulwark webmail client server-wide (GH #316).
 	WebmailEnabled bool `gorm:"column:webmail_enabled;type:tinyint(1);not null;default:1" json:"webmail_enabled"`
+	// TenantDomainOptionsEnabled opts non-admin owners into the curated safe
+	// nginx domain options (GH #307). Default off.
+	TenantDomainOptionsEnabled bool `gorm:"column:tenant_domain_options_enabled;type:tinyint(1);not null;default:0" json:"tenant_domain_options_enabled"`
 
 	// DNSUserRecordPolicy — per-type create/edit/delete matrix for non-admin
 	// tenants (GH #466, ADR-0150). JSON object keyed by UPPERCASE record type.

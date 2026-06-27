@@ -49,6 +49,8 @@ type DomainHandlerConfig struct {
 	// source of truth) and GET responses skip the denormalized
 	// listen_ipv4 / listen_ipv6 nested objects.
 	ManagedIPs repository.ManagedIPRepository
+	// ServerSettings gates the tenant-safe nginx options opt-in (GH #307).
+	ServerSettings repository.ServerSettingsRepository
 }
 
 const (
@@ -162,6 +164,7 @@ type updateDomainRequest struct {
 	RedirectAllType       *string               `json:"redirect_all_type,omitempty"`
 	PageRedirects         *models.PageRedirects `json:"page_redirects,omitempty"`
 	NginxRules            *models.NginxRules    `json:"nginx_rules,omitempty"`
+	NginxSafeOptions      *models.NginxSafeOptions `json:"nginx_safe_options,omitempty"`
 	IndexPriority         *string               `json:"index_priority,omitempty"`
 	// GH#181: mail provider + optional DKIM tokens. Pointers so an absent
 	// field in the PATCH leaves the columns untouched. When MailProvider is
@@ -855,6 +858,28 @@ func (h *domainHandler) update(c *gin.Context) {
 			return
 		}
 		domain.IndexPriority = p
+	}
+
+	// Tenant-safe nginx options (GH #307). Owner-settable ONLY when the admin
+	// has opted in (server_settings.tenant_domain_options_enabled); admins may
+	// always set them. These render to fixed vetted directives (max body, HSTS,
+	// security headers, gzip) — never raw config — so they don't carry the
+	// admin-only raw-directive surface. A non-admin owner with the opt-in off
+	// has the field silently dropped (so other fields still PATCH).
+	if req.NginxSafeOptions != nil {
+		allowed := claims.IsAdmin
+		if !allowed && h.cfg.ServerSettings != nil {
+			if st, sErr := h.cfg.ServerSettings.Get(ctx); sErr == nil && st != nil && st.TenantDomainOptionsEnabled {
+				allowed = true
+			}
+		}
+		if allowed {
+			if err := req.NginxSafeOptions.Validate(); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_nginx_options", "detail": err.Error()})
+				return
+			}
+			domain.NginxSafeOptions = *req.NginxSafeOptions
+		}
 	}
 
 	// M24: per-domain IP binding — validate FK + family + (for non-admin)

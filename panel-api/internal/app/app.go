@@ -535,6 +535,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				// when unset, the listen-IP fields are 503 on PATCH and
 				// dropped from GET.
 				ManagedIPs: deps.ManagedIPs,
+				ServerSettings: deps.ServerSettings,
 			})
 		}
 		// M36 — per-domain IP allow/deny lists.

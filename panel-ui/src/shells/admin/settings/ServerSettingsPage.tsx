@@ -63,6 +63,7 @@ import { WebmailToggleCard } from "./WebmailToggleCard";
 import { StalwartWebadminCard } from "./StalwartWebadminCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
 import { PanelSSLCard } from "./PanelSSLCard";
+import { TenantDomainOptionsCard } from "./TenantDomainOptionsCard";
 import { NginxSettingsCard } from "./NginxSettingsCard";
 
 type ServerSettings = {
@@ -450,6 +451,7 @@ const GeneralSettingsTab = () => {
         </Row>
       </Card>
 
+      <TenantDomainOptionsCard />
 
       <Space>
         <Button

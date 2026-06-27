@@ -12,6 +12,7 @@ export interface ServerCapabilities {
   docker_marketplace_enabled: boolean;
   docker_apps_user_enabled: boolean;
   python_apps_enabled: boolean;
+  tenant_domain_options_enabled: boolean;
 }
 
 export function useServerCapabilities() {
@@ -24,6 +25,7 @@ export function useServerCapabilities() {
         docker_marketplace_enabled: !!data.docker_marketplace_enabled,
         docker_apps_user_enabled: !!data.docker_apps_user_enabled,
         python_apps_enabled: !!data.python_apps_enabled,
+        tenant_domain_options_enabled: !!data.tenant_domain_options_enabled,
       };
     },
     staleTime: 60_000,

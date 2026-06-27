@@ -32,6 +32,8 @@ import { DomainRedirectsButton } from "../../DomainRedirectsButton";
 import { DomainCacheButton } from "../../../components/DomainCacheButton";
 import { DomainIndexButton } from "../../DomainIndexButton";
 import { UserDomainDrawer } from "./UserDomainDrawer";
+import { DomainNginxOptionsModal } from "../../../components/DomainNginxOptionsModal";
+import { useServerCapabilities } from "../../../hooks/useServerCapabilities";
 
 const stripHomePrefix = (path: string): string => {
   if (path.startsWith("/home/")) {
@@ -167,12 +169,13 @@ export type Domain = {
   updated_at: string;
 };
 
-type ActiveModal = { domainId: string; type: "redirects" | "index" | "directory-privacy" | "caching" } | null;
+type ActiveModal = { domainId: string; type: "redirects" | "index" | "directory-privacy" | "caching" | "nginx-options" } | null;
 
 export const UserDomainList = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const { data: caps } = useServerCapabilities();
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const query = useTableURL<Domain>({
@@ -323,6 +326,16 @@ export const UserDomainList = () => {
                         icon: <ThunderboltOutlined />,
                         onClick: () => setActiveModal({ domainId: r.id, type: "caching" }),
                       },
+                      ...(caps?.tenant_domain_options_enabled
+                        ? [
+                            {
+                              key: "nginx-options",
+                              label: "Domain options",
+                              icon: <ThunderboltOutlined />,
+                              onClick: () => setActiveModal({ domainId: r.id, type: "nginx-options" }),
+                            },
+                          ]
+                        : []),
                       {
                         key: "toggle",
                         label: r.is_enabled ? "Disable" : "Enable",
@@ -399,6 +412,12 @@ export const UserDomainList = () => {
                     open={true}
                     domainId={r.id}
                     domainName={r.name}
+                    onClose={() => setActiveModal(null)}
+                  />
+                )}
+                {activeModal?.domainId === r.id && activeModal.type === "nginx-options" && (
+                  <DomainNginxOptionsModal
+                    domainId={r.id}
                     onClose={() => setActiveModal(null)}
                   />
                 )}

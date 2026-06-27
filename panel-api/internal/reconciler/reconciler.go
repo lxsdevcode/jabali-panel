@@ -1330,11 +1330,21 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		params["php_max_input_time"] = *domain.PHPMaxInputTime
 	}
 
+	cust := ""
 	if domain.NginxCustomDirectives != nil {
-		params["custom_directives"] = *domain.NginxCustomDirectives
-	} else {
-		params["custom_directives"] = ""
+		cust = *domain.NginxCustomDirectives
 	}
+	// Append the owner-set curated safe options (GH #307). These render to
+	// fixed, vetted directives (max body size, HSTS, security headers, gzip) —
+	// no caller-supplied target/path — so they're safe to inject alongside the
+	// admin-only raw directives.
+	if safe := domain.NginxSafeOptions.Render(); safe != "" {
+		if cust != "" && !strings.HasSuffix(cust, "\n") {
+			cust += "\n"
+		}
+		cust += safe
+	}
+	params["custom_directives"] = cust
 
 	params["redirect_directives"] = redirects.Compile(domain)
 	params["rule_directives"] = nginxrules.Compile(domain)
