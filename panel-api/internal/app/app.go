@@ -1085,6 +1085,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				ServerSettings: deps.ServerSettings,
 				Domains:        deps.Domains,
 				Agent:          deps.Agent,
+				Users:          deps.Users,
 				Log:            deps.Log,
 			})
 		}

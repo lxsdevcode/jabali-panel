@@ -74,7 +74,7 @@ func RegisterUserDockerAppRoutes(g *gin.RouterGroup, cfg UserDockerAppHandlerCon
 	}
 	h := &userDockerAppHandler{
 		cfg:   cfg,
-		admin: &dockerAppHandler{cfg: DockerAppHandlerConfig{Repo: cfg.Repo, Agent: cfg.Agent, Catalog: cfg.Catalog}},
+		admin: &dockerAppHandler{cfg: DockerAppHandlerConfig{Repo: cfg.Repo, Agent: cfg.Agent, Catalog: cfg.Catalog, Users: cfg.Users, Domains: cfg.Domains}},
 	}
 	grp := g.Group("/docker-apps")
 	grp.Use(h.requireTenantDockerEnabled)

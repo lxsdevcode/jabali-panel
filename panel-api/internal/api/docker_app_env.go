@@ -201,12 +201,17 @@ func (h *dockerAppHandler) applyEnv(ctx context.Context, app *models.DockerApp, 
 	_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusUpdating, nil)
 	callCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	_, callErr := h.cfg.Agent.Call(callCtx, "docker_app.update", map[string]any{
+	envUpdateParams := map[string]any{
 		"slug":                        app.EffectiveSlug(),
 		"compose_yml":                 composeYML,
 		"env_file":                    envFile,
 		"healthcheck_timeout_seconds": 300,
-	})
+	}
+	if v, caps := h.tenantValidateParams(app); v {
+		envUpdateParams["tenant_validate"] = true
+		envUpdateParams["tenant_caps"] = caps
+	}
+	_, callErr := h.cfg.Agent.Call(callCtx, "docker_app.update", envUpdateParams)
 	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer persistCancel()
 	if callErr != nil {

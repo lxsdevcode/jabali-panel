@@ -41,6 +41,11 @@ type dockerAppUpdateParams struct {
 	// existing installs on update.
 	ComposeYML string `json:"compose_yml,omitempty"`
 	EnvFile    string `json:"env_file,omitempty"`
+	// TenantValidate / TenantCaps mirror the install path (Gitea #480): when a
+	// tenant-owned app is re-rendered on update/env-edit, run the same agent-side
+	// compose safety gate so a re-render cannot bring up an unhardened compose.
+	TenantValidate bool     `json:"tenant_validate,omitempty"`
+	TenantCaps     []string `json:"tenant_caps,omitempty"`
 }
 
 type dockerAppUpdateResponse struct {
@@ -77,6 +82,16 @@ func dockerAppUpdateHandler(ctx context.Context, params json.RawMessage) (any, e
 	if p.EnvFile != "" {
 		if err := writeAtomicDockerApp(filepath.Join(dir, ".env"), []byte(p.EnvFile), 0o600); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write .env: %v", err)}
+		}
+	}
+
+	// Tenant safety gate on the RE-RENDERED compose (Gitea #480): refuse to
+	// recreate a tenant app whose compose lost its sandbox (privileged
+	// container, foreign capability, host bind-mount), mirroring the install
+	// path's M49 validation.
+	if p.TenantValidate {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "tenant compose rejected: " + err.Error()}
 		}
 	}
 

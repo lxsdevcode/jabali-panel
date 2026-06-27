@@ -61,7 +61,10 @@ type DockerAppHandlerConfig struct {
 	// ADR-0116 Decision 4.
 	Domains repository.DomainRepository
 	Agent   agent.AgentInterface
-	Log     *slog.Logger
+	// Users resolves a tenant app's OS username for re-render hardening
+	// (Gitea #480). Optional; required only for tenant-owned app re-renders.
+	Users repository.UserRepository
+	Log   *slog.Logger
 }
 
 type dockerAppHandler struct{ cfg DockerAppHandlerConfig }
@@ -739,6 +742,21 @@ func (h *dockerAppHandler) installDomain(ctx context.Context, appID string) stri
 	return ""
 }
 
+
+// tenantValidateParams returns whether a re-render dispatch should carry the
+// agent-side tenant compose validation, plus the catalog tenant-cap allowlist,
+// for a tenant-owned app (Gitea #480). Returns (false, nil) for admin apps.
+func (h *dockerAppHandler) tenantValidateParams(app *models.DockerApp) (bool, []string) {
+	if app == nil || app.UserID == nil || h.cfg.Catalog == nil {
+		return false, nil
+	}
+	entry, ok := h.cfg.Catalog.Get(app.Slug)
+	if !ok {
+		return false, nil
+	}
+	return true, dockerapp.TenantCapAllowlist(entry.TenantCaps)
+}
+
 // renderInstallCompose re-renders an install's compose.yml from the CURRENT
 // catalog template, preserving its domain, ports, limits and existing secrets
 // (via the on-disk .env). Used by update so catalog fixes + version bumps
@@ -786,17 +804,38 @@ func (h *dockerAppHandler) renderInstallCompose(ctx context.Context, app *models
 	if app.PIDsLimit != nil {
 		pids = *app.PIDsLimit
 	}
+	// Preserve tenant sandbox hardening on EVERY re-render (Gitea #480). The
+	// initial tenant install injects TenantHardening (cap_drop ALL, no-new-
+	// privileges, tenant cgroup parent, PIDs limit); this shared re-render path
+	// is reused by admin update + env edit, so without re-injecting it a later
+	// re-render would rewrite a tenant compose as an unhardened admin compose.
+	var tenantHardening *dockerapp.TenantHardening
+	if app.UserID != nil {
+		if h.cfg.Users == nil {
+			return "", "", fmt.Errorf("users repo unavailable for tenant app re-render")
+		}
+		u, uerr := h.cfg.Users.FindByID(ctx, *app.UserID)
+		if uerr != nil || u == nil || u.Username == nil || *u.Username == "" {
+			return "", "", fmt.Errorf("resolve tenant username for hardening: %v", uerr)
+		}
+		tenantHardening = &dockerapp.TenantHardening{
+			CgroupParent: "jabali-user-" + *u.Username + ".slice",
+			Caps:         dockerapp.TenantCapAllowlist(entry.TenantCaps),
+			PIDsLimit:    pids,
+		}
+	}
 	composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-		Slug:         app.EffectiveSlug(),
-		Name:         app.Name,
-		Domain:       domain,
-		ImageChannel: entry.ImageChannel,
-		DataRoot:     "/var/lib/jabali/docker-apps/" + app.EffectiveSlug(),
-		CPULimit:     cpu,
-		MemoryLimit:  mem,
-		PIDsLimit:    pids,
-		Ports:        runtimePorts,
-		Env:          envMap,
+		Slug:            app.EffectiveSlug(),
+		Name:            app.Name,
+		Domain:          domain,
+		ImageChannel:    entry.ImageChannel,
+		DataRoot:        "/var/lib/jabali/docker-apps/" + app.EffectiveSlug(),
+		CPULimit:        cpu,
+		MemoryLimit:     mem,
+		PIDsLimit:       pids,
+		Ports:           runtimePorts,
+		Env:             envMap,
+		TenantHardening: tenantHardening,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("render: %w", err)
@@ -1259,6 +1298,10 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	} else {
 		updateParams["compose_yml"] = composeYML
 		updateParams["env_file"] = envFile
+		if v, caps := h.tenantValidateParams(app); v {
+			updateParams["tenant_validate"] = true
+			updateParams["tenant_caps"] = caps
+		}
 	}
 
 	// docker_app.update pulls a new image + recreates containers, which can
