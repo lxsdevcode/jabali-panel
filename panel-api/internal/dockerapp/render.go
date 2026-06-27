@@ -236,6 +236,14 @@ func generateSecret(scheme string) (string, error) {
 		nbytes = 24 // base64-rounded to ~32 chars
 	case "password64":
 		nbytes = 48 // base64-rounded to ~64 chars
+	case "laravel_key":
+		// Laravel APP_KEY: literal "base64:" + standard-base64 of exactly 32
+		// random bytes (Snipe-IT and other Laravel apps validate this shape).
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return "base64:" + base64.StdEncoding.EncodeToString(buf), nil
 	default:
 		return "", fmt.Errorf("unknown secret scheme %q", scheme)
 	}
