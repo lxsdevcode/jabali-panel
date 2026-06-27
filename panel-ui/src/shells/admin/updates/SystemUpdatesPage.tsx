@@ -457,7 +457,7 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
         />
       ) : null}
 
-      <Space style={{ marginTop: 16 }}>
+      <Space wrap style={{ marginTop: 16 }}>
         <Button icon={<ReloadOutlined />} loading={check.isPending} onClick={() => check.mutate()}>
           Check for updates
         </Button>
@@ -635,7 +635,7 @@ function SystemPackagesCard({ check }: { check: ReturnType<typeof useAptCheck> }
         />
       ) : null}
 
-      <Space style={{ marginTop: 12 }}>
+      <Space wrap style={{ marginTop: 12 }}>
         <Button icon={<ReloadOutlined />} loading={check.isPending} onClick={() => check.mutate()}>
           Check for updates
         </Button>

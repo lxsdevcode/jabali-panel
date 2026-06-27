@@ -9,6 +9,7 @@ import {
   App,
   Button,
   Card,
+  Grid,
   List,
   Popconfirm,
   Space,
@@ -59,6 +60,7 @@ function parseDiagnose(text: string): RepairItem[] {
 
 export function RepairCard() {
   const { message } = App.useApp();
+  const screens = Grid.useBreakpoint();
   const diagnose = useRepairDiagnose();
   const run = useRepairRun();
   const [since, setSince] = useState<string | null>(null);
@@ -91,6 +93,35 @@ export function RepairCard() {
     }
   };
 
+  const repairActions = (
+    <Space wrap>
+      <Button
+        icon={<ReloadOutlined />}
+        loading={diagnose.isPending}
+        onClick={() => diagnose.mutate()}
+      >
+        Run Diagnostics
+      </Button>
+      <Popconfirm
+        title="Auto-repair safe issues?"
+        description="Applies non-destructive fixes only (jabali repair --auto). The panel may briefly restart."
+        okText="Run"
+        cancelText="Cancel"
+        onConfirm={onAutoRepair}
+        disabled={running}
+      >
+        <Button
+          type="primary"
+          icon={<ToolOutlined />}
+          loading={run.isPending || running}
+          disabled={parsedOk && brokenCount === 0}
+        >
+          Auto-Repair safe issues
+        </Button>
+      </Popconfirm>
+    </Space>
+  );
+
   return (
     <Card
       title={
@@ -99,36 +130,12 @@ export function RepairCard() {
           Repair Center
         </Space>
       }
-      extra={
-        <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            loading={diagnose.isPending}
-            onClick={() => diagnose.mutate()}
-          >
-            Run Diagnostics
-          </Button>
-          <Popconfirm
-            title="Auto-repair safe issues?"
-            description="Applies non-destructive fixes only (jabali repair --auto). The panel may briefly restart."
-            okText="Run"
-            cancelText="Cancel"
-            onConfirm={onAutoRepair}
-            disabled={running}
-          >
-            <Button
-              type="primary"
-              icon={<ToolOutlined />}
-              loading={run.isPending || running}
-              disabled={parsedOk && brokenCount === 0}
-            >
-              Auto-Repair safe issues
-            </Button>
-          </Popconfirm>
-        </Space>
-      }
+      extra={screens.md ? repairActions : undefined}
     >
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        {/* On narrow viewports the header `extra` overflows, so the actions
+            move into the card body and wrap (Gitea #472). */}
+        {!screens.md ? <div style={{ width: "100%" }}>{repairActions}</div> : null}
         <Text type="secondary">
           Detect and fix common install problems (git pointers, file
           permissions, stale units, AppArmor profiles, and more). Destructive
