@@ -95,6 +95,7 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
   const [sourceUser, setSourceUser] = useState<string>("");
   const [credKind, setCredKind] = useState<"password" | "key">("password");
   const [credValue, setCredValue] = useState<string>("");
+  const [expectedHostKey, setExpectedHostKey] = useState<string>("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // ADR-0095 decision 5 — wizard URL persistence. When the drawer
@@ -179,6 +180,7 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
       await apiClient.patch(`/admin/migrations/${draftId}`, {
         source_host: sourceHost,
         source_user: sourceUser,
+        expected_host_key: expectedHostKey.trim(),
       });
       const body: Record<string, string> =
         credKind === "password"
@@ -450,6 +452,25 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
                 />
               )}
             </Form.Item>
+            <Form.Item
+              label="Source host key fingerprint (optional)"
+              help="SHA256 fingerprint of the source server's SSH host key, e.g. from `ssh-keyscan -t ed25519 HOST | ssh-keygen -lf -`. When set, the connection is rejected unless the host key matches — protecting against a man-in-the-middle on the source even on first connect."
+            >
+              <Input
+                value={expectedHostKey}
+                onChange={(e) => setExpectedHostKey(e.target.value)}
+                placeholder="SHA256:abc123…"
+              />
+            </Form.Item>
+            {!expectedHostKey.trim() && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 8 }}
+                message="First connection is unverified"
+                description="Without a fingerprint, the first connection to the source is trusted blindly (trust-on-first-use). For a hostile network, paste the source host key fingerprint above to verify it."
+              />
+            )}
           </Form>
           <Space>
             <Button onClick={() => setStep(0)}>Back</Button>

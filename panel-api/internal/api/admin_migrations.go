@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,6 +167,9 @@ type createMigrationRequest struct {
 	SourceHost string `json:"source_host"`
 	SourceUser string `json:"source_user" binding:"required"`
 	State      string `json:"state,omitempty"`
+	// ExpectedHostKey — optional SHA256 fingerprint of the source SSH host key
+	// (GH #461). When set, the connector verifies the host key against it.
+	ExpectedHostKey string `json:"expected_host_key,omitempty"`
 }
 
 // create inserts a fresh migration_jobs row with state='pending'.
@@ -187,6 +191,10 @@ func (h *adminMigrationsHandler) create(c *gin.Context) {
 			"error":  "unknown_source_kind",
 			"detail": "supported kinds: cpanel, whm_pkgacct, directadmin, hestiacp",
 		})
+		return
+	}
+	if !validMigrationFingerprint(req.ExpectedHostKey) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_fingerprint", "detail": "expected_host_key must be a SHA256 fingerprint (optionally SHA256:-prefixed)"})
 		return
 	}
 	// Refuse duplicates on the natural-key tuple — the UNIQUE on
@@ -224,12 +232,23 @@ func (h *adminMigrationsHandler) create(c *gin.Context) {
 		SourceHost: req.SourceHost,
 		SourceUser: req.SourceUser,
 		State:      state,
+		ExpectedHostKey: strings.TrimSpace(req.ExpectedHostKey),
 	}
 	if err := h.cfg.Jobs.Create(c.Request.Context(), row); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "detail": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, row)
+}
+
+
+// validMigrationFingerprint accepts an empty value (TOFU) or a SHA256 host-key
+// fingerprint: an optional "SHA256:" prefix over 43 base64 chars (Gitea #461).
+var migrationFingerprintRe = regexp.MustCompile(`^(SHA256:)?[A-Za-z0-9+/]{43}=?$`)
+
+func validMigrationFingerprint(fp string) bool {
+	fp = strings.TrimSpace(fp)
+	return fp == "" || migrationFingerprintRe.MatchString(fp)
 }
 
 // isKnownSourceKind gates against the closed set of source-kinds
@@ -718,9 +737,10 @@ func (h *adminMigrationsHandler) tarballStatus(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 type patchDraftRequest struct {
-	SourceHost   *string `json:"source_host,omitempty"`
-	SourceUser   *string `json:"source_user,omitempty"`
-	TargetUserID *string `json:"target_user_id,omitempty"`
+	SourceHost      *string `json:"source_host,omitempty"`
+	SourceUser      *string `json:"source_user,omitempty"`
+	TargetUserID    *string `json:"target_user_id,omitempty"`
+	ExpectedHostKey *string `json:"expected_host_key,omitempty"`
 }
 
 // patchDraft updates a draft-state job. Allows the wizard to keep the
@@ -733,7 +753,11 @@ func (h *adminMigrationsHandler) patchDraft(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
-	if err := h.cfg.Jobs.PatchDraft(c.Request.Context(), id, req.SourceHost, req.SourceUser, req.TargetUserID); err != nil {
+	if req.ExpectedHostKey != nil && !validMigrationFingerprint(*req.ExpectedHostKey) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_fingerprint", "detail": "expected_host_key must be a SHA256 fingerprint (optionally SHA256:-prefixed)"})
+		return
+	}
+	if err := h.cfg.Jobs.PatchDraft(c.Request.Context(), id, req.SourceHost, req.SourceUser, req.TargetUserID, req.ExpectedHostKey); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusConflict, gin.H{"error": "not_draft", "detail": "job missing or not in draft state"})
 			return
@@ -1104,7 +1128,7 @@ func (h *adminMigrationsHandler) discoverAccounts(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	sess, err := disc.Connect(ctx, job.SourceHost, job.SourceUser, migrate.SecretRef{Path: secretPath})
+	sess, err := disc.Connect(ctx, job.SourceHost, job.SourceUser, migrate.SecretRef{Path: secretPath, ExpectedHostKey: job.ExpectedHostKey})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "connect_failed", "detail": err.Error()})
 		return
@@ -1263,7 +1287,7 @@ func (h *adminMigrationsHandler) accountSizeProbe(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 	defer cancel()
 
-	sess, err := disc.Connect(ctx, job.SourceHost, job.SourceUser, migrate.SecretRef{Path: secretPath})
+	sess, err := disc.Connect(ctx, job.SourceHost, job.SourceUser, migrate.SecretRef{Path: secretPath, ExpectedHostKey: job.ExpectedHostKey})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "connect_failed", "detail": err.Error()})
 		return

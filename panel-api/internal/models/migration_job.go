@@ -43,6 +43,7 @@ type MigrationJob struct {
 	SourceKind    string     `gorm:"column:source_kind;type:varchar(32);not null;uniqueIndex:uq_migration_source,priority:3" json:"source_kind"`
 	SourceHost    string     `gorm:"column:source_host;type:varchar(255);not null;uniqueIndex:uq_migration_source,priority:1" json:"source_host"`
 	SourceUser    string     `gorm:"column:source_user;type:varchar(64);not null;uniqueIndex:uq_migration_source,priority:2" json:"source_user"`
+	ExpectedHostKey string   `gorm:"column:expected_host_key;type:varchar(128);not null;default:''" json:"expected_host_key"`
 	TargetUserID  *string    `gorm:"column:target_user_id;type:char(26);index:idx_migration_target_user" json:"target_user_id,omitempty"`
 	State         string     `gorm:"column:state;type:varchar(32);not null;default:'pending';index:idx_migration_state" json:"state"`
 	StartedAt     time.Time  `gorm:"column:started_at;type:datetime(6);not null" json:"started_at"`
