@@ -155,7 +155,13 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 	}
 
 	// Build rsync argv. Trailing slash on source = copy contents.
-	sshOpt := "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+	// Host-key pinning (Gitea #461): consume the per-job known_hosts the
+	// panel-api discover stage pinned (sibling of the secret file) and use
+	// accept-new, so a key already pinned at discover is verified (a
+	// mid-migration key flip is rejected) and an unpinned host is captured on
+	// first use — never the old blind StrictHostKeyChecking=no + /dev/null.
+	knownHosts := strings.TrimSuffix(p.SecretPath, ".env") + ".known_hosts"
+	sshOpt := "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=" + knownHosts
 	if keyTmp != "" {
 		sshOpt += " -i " + keyTmp + " -o IdentitiesOnly=yes"
 	}

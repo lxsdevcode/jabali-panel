@@ -30,6 +30,12 @@ func WipeJobSecret(jobID string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
+	// Also remove the per-job pinned known_hosts (Gitea #461) so a re-created
+	// job with the same id starts from a clean trust slate.
+	kh := filepath.Join(SecretsDir, jobID+".known_hosts")
+	if err := os.Remove(kh); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", kh, err)
+	}
 	return nil
 }
 

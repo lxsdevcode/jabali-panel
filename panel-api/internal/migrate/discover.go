@@ -85,4 +85,9 @@ type SecretRef struct {
 	// Path is /etc/jabali-panel/migration-secrets/<job-id>.env
 	// (root:jabali 0640) per ADR-0094 §"tracked risks".
 	Path string
+	// ExpectedHostKey is an optional admin-supplied SHA256 fingerprint of the
+	// source SSH host key (Gitea #461). When set, the connector verifies the
+	// presented key against it (fail-hard on mismatch); when empty, the
+	// connector trusts on first use and pins the key for later stages.
+	ExpectedHostKey string
 }
