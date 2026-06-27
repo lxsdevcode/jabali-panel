@@ -333,7 +333,10 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
   return (
     <Header
       style={{
-        backgroundColor: token.colorBgElevated,
+        // Operator-set top-bar color (GH #435) via CSS var, set per-mode by
+        // App.tsx; falls back to colorBgElevated when unset. Using a var here
+        // avoids tinting every elevated surface (dropdowns/modals).
+        backgroundColor: `var(--jabali-header-bg, ${token.colorBgElevated})`,
         height: 64,
         lineHeight: "normal",
         padding: isWide ? "0 24px" : "0 12px",

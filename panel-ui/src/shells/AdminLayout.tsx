@@ -46,7 +46,9 @@ export function AdminLayout() {
   // active menu row reads slightly darker than the sidebar body. Dark
   // mode keeps the layout-bg token (it already pairs well with the
   // algorithm-derived itemSelectedBg).
-  const siderBg = mode === "dark" ? token.colorBgLayout : "#f9fafb";
+  // siderBg follows colorBgLayout in both modes so the operator page/sidebar
+  // chrome color (GH #435) applies; muiTheme sets the light default + override.
+  const siderBg = token.colorBgLayout;
 
   // Single source of truth for the menu items — used by both <Sider>
   // and <Drawer> so the two shell variants stay in lock-step.

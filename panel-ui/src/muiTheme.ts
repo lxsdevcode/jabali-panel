@@ -17,6 +17,8 @@ type LookAndFeel = {
   // antd seed-token overrides (colorPrimary/colorSuccess/colorLink/...). Only
   // non-empty entries should be passed; empty = use the algorithm default.
   seedColors?: Record<string, string>;
+  // Per-theme chrome overrides for the CURRENT mode (GH #435). Empty = default.
+  chrome?: { bg?: string; container?: string; text?: string };
 };
 
 const useMuiTheme = (
@@ -25,6 +27,7 @@ const useMuiTheme = (
 ): ConfigProviderProps => {
   const fontSizePx = opts?.fontSizePx ?? 15;
   const seed = opts?.seedColors ?? {};
+  const chrome = opts?.chrome ?? {};
   // Selected sidebar-row / active-tab accent. Operator-overridable; falls back
   // to the built-in red per algorithm when unset.
   const accent = opts?.accentColor || (mode === "dark" ? "#ef4444" : "#dc2626");
@@ -40,6 +43,14 @@ const useMuiTheme = (
           // sizes, line heights, control heights) scales off this.
           fontSize: fontSizePx,
           ...seed,
+          // Per-theme chrome (GH #435): page/sidebar bg, card bg, text.
+          ...(chrome.bg
+            ? { colorBgLayout: chrome.bg }
+            : mode === "light"
+              ? { colorBgLayout: "#f9fafb" }
+              : {}),
+          ...(chrome.container ? { colorBgContainer: chrome.container } : {}),
+          ...(chrome.text ? { colorTextBase: chrome.text } : {}),
           // Inter as primary face (self-hosted via @fontsource/inter
           // imported in main.tsx). Falls through to OS system font if
           // the woff2 fails to load — cron/SSH/log views keep their
@@ -59,7 +70,13 @@ const useMuiTheme = (
           // on top stay white (colorBgContainer) and read as raised.
           Layout: {
             triggerBg: "transparent",
-            ...(mode === "light" ? { bodyBg: "#f9fafb" } : {}),
+            // bodyBg follows the chrome bg override; else the light-mode
+            // gray-50 default (dark mode uses colorBgLayout).
+            ...(chrome.bg
+              ? { bodyBg: chrome.bg }
+              : mode === "light"
+                ? { bodyBg: "#f9fafb" }
+                : {}),
           },
           // Sidebar Menu selected-row styling per operator. Red
           // accent on both algorithms, bg tuned per mode.
@@ -111,7 +128,7 @@ const useMuiTheme = (
         },
       },
     }),
-    [mode, fontSizePx, accent, JSON.stringify(seed)],
+    [mode, fontSizePx, accent, JSON.stringify(seed), JSON.stringify(chrome)],
   );
 };
 

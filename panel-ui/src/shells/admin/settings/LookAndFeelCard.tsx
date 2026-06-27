@@ -13,6 +13,8 @@ import {
   Segmented,
   Space,
   Tooltip,
+  Typography,
+  Divider,
   message,
 } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,13 +22,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { QuestionCircleOutlined, SaveOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
-import { PANEL_COLORS } from "../../../lib/panelColors";
+import { PANEL_COLORS, PANEL_CHROME_COLORS } from "../../../lib/panelColors";
 
 type FormShape = Record<string, unknown> & {
   panel_font_size: "small" | "medium" | "large";
 };
 
-const COLOR_FIELDS = PANEL_COLORS.map((c) => c.field);
+const COLOR_FIELDS = [
+  ...PANEL_COLORS.map((c) => c.field),
+  ...PANEL_CHROME_COLORS.map((c) => c.field),
+];
 
 // ColorPicker yields an antd Color object on change, a hex string on load, and a
 // fully-transparent colour when cleared — normalize all to a hex string, mapping
@@ -124,6 +129,41 @@ export const LookAndFeelCard = () => {
 
         <Row gutter={[24, 0]}>
           {PANEL_COLORS.map((c) => (
+            <Col xs={24} md={12} key={c.field}>
+              <Form.Item
+                name={c.field}
+                getValueProps={(v) => ({ value: v || undefined })}
+                label={
+                  <Space size={4}>
+                    {c.label}
+                    <Tooltip title={c.tip}>
+                      <QuestionCircleOutlined style={{ opacity: 0.55 }} />
+                    </Tooltip>
+                  </Space>
+                }
+              >
+                <ColorPicker
+                  allowClear
+                  showText
+                  disabledAlpha
+                  format="hex"
+                  onClear={() => form.setFieldValue(c.field, "")}
+                />
+              </Form.Item>
+            </Col>
+          ))}
+        </Row>
+
+        <Divider />
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          Panel chrome (per theme)
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          Background, top bar and text colors — separate values for light and
+          dark mode, since one color can&apos;t read well in both. Clear = default.
+        </Typography.Paragraph>
+        <Row gutter={[24, 0]}>
+          {PANEL_CHROME_COLORS.map((c) => (
             <Col xs={24} md={12} key={c.field}>
               <Form.Item
                 name={c.field}

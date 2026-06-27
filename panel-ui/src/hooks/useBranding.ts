@@ -17,6 +17,14 @@ type BrandingInfo = {
   panel_error_color: string;
   panel_info_color: string;
   panel_link_color: string;
+  panel_light_topbar_color: string;
+  panel_dark_topbar_color: string;
+  panel_light_bg_color: string;
+  panel_dark_bg_color: string;
+  panel_light_container_color: string;
+  panel_dark_container_color: string;
+  panel_light_text_color: string;
+  panel_dark_text_color: string;
   has_logo_light: boolean;
   has_logo_dark: boolean;
 };
@@ -49,6 +57,16 @@ export function useBranding() {
     panel_info_color: d?.panel_info_color ?? "",
     panel_link_color: d?.panel_link_color ?? "",
   };
+  const chrome: Record<string, string> = {
+    panel_light_topbar_color: d?.panel_light_topbar_color ?? "",
+    panel_dark_topbar_color: d?.panel_dark_topbar_color ?? "",
+    panel_light_bg_color: d?.panel_light_bg_color ?? "",
+    panel_dark_bg_color: d?.panel_dark_bg_color ?? "",
+    panel_light_container_color: d?.panel_light_container_color ?? "",
+    panel_dark_container_color: d?.panel_dark_container_color ?? "",
+    panel_light_text_color: d?.panel_light_text_color ?? "",
+    panel_dark_text_color: d?.panel_dark_text_color ?? "",
+  };
   const hasLogoLight = d?.has_logo_light ?? false;
   const hasLogoDark = d?.has_logo_dark ?? false;
 
@@ -56,6 +74,7 @@ export function useBranding() {
     brandText,
     fontSize,
     colors,
+    chrome,
     hasLogoLight,
     hasLogoDark,
     isLoading: query.isLoading,

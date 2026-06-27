@@ -44,7 +44,9 @@ export function UserLayout() {
 
   const selected = selectedNavKey(visibleNav, location.pathname);
 
-  const siderBg = mode === "dark" ? token.colorBgLayout : "#f9fafb";
+  // siderBg follows colorBgLayout in both modes so the operator page/sidebar
+  // chrome color (GH #435) applies; muiTheme sets the light default + override.
+  const siderBg = token.colorBgLayout;
 
   // User panel takes the AntD-default blue accent on the selected menu
   // row; admin keeps red (set globally in muiTheme.ts). The nested

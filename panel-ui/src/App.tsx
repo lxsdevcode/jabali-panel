@@ -22,6 +22,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { App as AntdApp, ConfigProvider, Empty, Spin } from "antd";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { RequireAdmin } from "./auth/RequireAdmin";
@@ -138,17 +139,30 @@ const PANEL_FONT_PX: Record<string, number> = { small: 13, medium: 15, large: 17
 
 const ThemedApp = () => {
   const { mode } = useThemeMode();
-  const { fontSize, colors } = useBranding();
+  const { fontSize, colors, chrome } = useBranding();
   // Branding "Look and feel": font size + operator colors feed the antd
   // ConfigProvider seed tokens so the whole panel scales/recolors for everyone.
   const seedColors: Record<string, string> = {};
   for (const c of PANEL_COLORS) {
     if (c.token && colors[c.field]) seedColors[c.token] = colors[c.field];
   }
+  // Per-theme chrome colors for the active mode (GH #435). Empty = default.
+  const chromeKey = (base: string) => chrome[`panel_${mode}_${base}_color`] || "";
+  const headerBg = chromeKey("topbar");
+  useEffect(() => {
+    const root = document.documentElement;
+    if (headerBg) root.style.setProperty("--jabali-header-bg", headerBg);
+    else root.style.removeProperty("--jabali-header-bg");
+  }, [headerBg]);
   const muiConfig = useMuiTheme(mode, {
     fontSizePx: PANEL_FONT_PX[fontSize] ?? 15,
     accentColor: colors.panel_accent_color || "",
     seedColors,
+    chrome: {
+      bg: chromeKey("bg"),
+      container: chromeKey("container"),
+      text: chromeKey("text"),
+    },
   });
 
   return (
