@@ -1,5 +1,5 @@
 === Jabali Cache ===
-Contributors: jabalipanel, apunker
+Contributors: apunker
 Tags: redis, object cache, cache, performance, page cache
 Requires at least: 5.6
 Tested up to: 7.0
