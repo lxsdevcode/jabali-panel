@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { getIdentity, type Identity } from "../../identity";
+import { getActAs } from "../../impersonation";
 import {
   csrfToken,
   flowMessages,
@@ -44,6 +45,10 @@ export function MyProfile() {
   const location = useLocation();
   const [me, setMe] = useState<Identity | null>(null);
 
+  // While an admin is acting as another user (#319), the Kratos session
+  // cookie is still the admin's — a settings flow here would edit the ADMIN's
+  // password/2FA, not the impersonated user's. Block it and explain.
+  const impersonating = getActAs() !== null;
   const flowID = useMemo(() => {
     return new URLSearchParams(location.search).get("flow");
   }, [location.search]);
@@ -64,7 +69,7 @@ export function MyProfile() {
   // states: flow ready (render), refresh required (kick a Kratos
   // login flow with refresh=true), or unauthenticated (back to login).
   useEffect(() => {
-    if (flowID) return;
+    if (flowID || impersonating) return;
     let cancelled = false;
     setFlowLoading(true);
     initSettingsFlow().then((res) => {
@@ -95,7 +100,7 @@ export function MyProfile() {
     return () => {
       cancelled = true;
     };
-  }, [flowID, location.pathname, navigate]);
+  }, [flowID, impersonating, location.pathname, navigate]);
 
   useEffect(() => {
     if (!flowID) {
@@ -206,6 +211,15 @@ export function MyProfile() {
 
         <div style={{ breakInside: "avoid", marginBottom: 16, display: "inline-block", width: "100%" }}>
         <Card title="Security">
+          {impersonating ? (
+            <Alert
+              type="info"
+              showIcon
+              message="Security settings unavailable while acting as another user"
+              description="Password and two-factor (2FA/TOTP) settings always apply to your own admin account — there is no separate login session for the user you are acting as, so changing them here would change YOUR credentials, not theirs. Exit impersonation to manage your own security. To reset a user's 2FA, go to Users → the user → Reset 2FA."
+            />
+          ) : (
+          <>
           {!flowID && (
             // The first useEffect above kicked window.location to the
             // Kratos browser flow — show a spinner during the round-trip.
@@ -235,6 +249,8 @@ export function MyProfile() {
 
           {flow && !flowError && (
             <SettingsFlowForms flow={flow} onSubmit={onSubmit} />
+          )}
+          </>
           )}
         </Card>
         </div>
