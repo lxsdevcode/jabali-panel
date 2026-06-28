@@ -2,6 +2,7 @@
 // Scheduler-fired jobs roll up under their run_id (one parent row,
 // expandable to per-user children). Manual creates render flat.
 import { Badge, Button, Card, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { shortDateTime } from "../../../utils/datetime";
 import { useTabParam } from "../../../hooks/useTabParam";
 import { RowActions } from "../../../components/RowActions";
 import {
@@ -549,8 +550,11 @@ export const AdminBackupsPage = () => {
               },
               {
                 title: "Started",
+                sorter: (a, b) =>
+                  ((a.isRun ? a.run.started_at : a.job.created_at) ? +new Date(a.isRun ? a.run.started_at : a.job.created_at) : 0) -
+                  ((b.isRun ? b.run.started_at : b.job.created_at) ? +new Date(b.isRun ? b.run.started_at : b.job.created_at) : 0),
                 render: (_: unknown, row: TableRow) =>
-                  row.isRun ? row.run.started_at : row.job.created_at,
+                  shortDateTime(row.isRun ? row.run.started_at : row.job.created_at),
               },
               {
                 title: "Actions",

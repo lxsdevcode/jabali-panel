@@ -54,6 +54,14 @@ func ResolveImpersonation(
 			return
 		}
 		gid := c.GetHeader(ImpersonateHeader)
+		if gid == "" && c.Request.Method == http.MethodGet {
+			// Full-navigation downloads (window.location.href) can't set the
+			// X-Jabali-Act-As header, so honor an ?act_as=<grant> query param
+			// on GET requests. Validation is identical (the grant must belong
+			// to the real admin), so this grants nothing the header wouldn't.
+			// GET-only keeps mutations on the header path. (GH #320)
+			gid = c.Query("act_as")
+		}
 		if gid == "" {
 			c.Next()
 			return
