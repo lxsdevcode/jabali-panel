@@ -22,6 +22,7 @@
 package reconciler
 
 import (
+	"sort"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -51,11 +52,87 @@ func (r *Reconciler) reconcileDockerApps(ctx context.Context) {
 		r.log.Warn("dockerapp: listAll failed", "err", err)
 		return
 	}
+	// Enforce per-package Docker entitlement (Gitea #521): a package downgrade
+	// or a user moved to a smaller package can leave a tenant running more apps
+	// than allowed. Stop the newest excess (keep the oldest N), fail-safe — we
+	// stop, never delete, so raising the limit lets the tenant start them again.
+	r.enforceDockerEntitlements(ctx, apps)
 	for _, app := range apps {
 		if app == nil {
 			continue
 		}
 		r.reconcileOneDockerApp(ctx, app)
+	}
+}
+
+// enforceDockerEntitlements stops a tenant's over-the-limit Docker apps. Groups
+// tenant-owned apps by user, keeps the oldest <limit> and stops the newer
+// excess that is still running/installing. Admin/server apps (UserID nil) are
+// exempt.
+func (r *Reconciler) enforceDockerEntitlements(ctx context.Context, apps []*models.DockerApp) {
+	if r.users == nil || r.packages == nil {
+		return
+	}
+	byUser := map[string][]*models.DockerApp{}
+	for _, a := range apps {
+		if a == nil || a.UserID == nil {
+			continue
+		}
+		byUser[*a.UserID] = append(byUser[*a.UserID], a)
+	}
+	for uid, list := range byUser {
+		limit := r.effectiveDockerLimit(ctx, uid)
+		sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.After(list[j].CreatedAt) })
+		// newest-first: the first (len-limit) entries are over the limit.
+		over := len(list) - limit
+		if over <= 0 {
+			continue
+		}
+		for i := 0; i < over; i++ {
+			a := list[i]
+			if a.Status != models.DockerAppStatusRunning && a.Status != models.DockerAppStatusInstalling {
+				continue
+			}
+			r.stopOverEntitlement(ctx, a)
+		}
+	}
+}
+
+// effectiveDockerLimit is the tenant's allowed running Docker app count. No
+// package = 0 (tenant Docker requires a package, Gitea #511); otherwise the
+// package's MaxDockerApps.
+func (r *Reconciler) effectiveDockerLimit(ctx context.Context, userID string) int {
+	u, err := r.users.FindByID(ctx, userID)
+	if err != nil || u == nil || u.PackageID == nil {
+		return 0
+	}
+	pkg, perr := r.packages.FindByID(ctx, *u.PackageID)
+	if perr != nil || pkg == nil {
+		return 0
+	}
+	return int(pkg.MaxDockerApps)
+}
+
+func (r *Reconciler) stopOverEntitlement(ctx context.Context, a *models.DockerApp) {
+	callCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if _, err := r.agent.Call(callCtx, "docker_app.stop", map[string]any{"slug": a.EffectiveSlug()}); err != nil {
+		r.log.Warn("dockerapp: entitlement stop failed", "id", a.ID, "slug", a.Slug, "err", err)
+		return
+	}
+	msg := "stopped: over the hosting package's Docker app limit"
+	if err := r.dockerApps.UpdateStatus(ctx, a.ID, models.DockerAppStatusStopped, &msg); err != nil {
+		r.log.Warn("dockerapp: entitlement status update failed", "id", a.ID, "err", err)
+	}
+	r.log.Info("dockerapp: stopped over-entitlement app", "id", a.ID, "slug", a.Slug, "user_id", *a.UserID)
+	if r.notificationQueue != nil {
+		_, _ = r.notificationQueue.Publish(ctx, notifications.Envelope{
+			EventKind: "docker_app.entitlement_stopped",
+			Severity:  "warning",
+			Title:     fmt.Sprintf("Docker app stopped: %s", a.Name),
+			Body:      fmt.Sprintf("%s was stopped because it exceeds your hosting package's Docker app limit. Ask your administrator to raise the limit to start it again.", a.Name),
+			Deeplink:  "/jabali-panel/docker-apps",
+		})
 	}
 }
 
