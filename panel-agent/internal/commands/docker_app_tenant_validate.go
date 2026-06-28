@@ -38,6 +38,15 @@ type composeConfigService struct {
 		Source string `json:"source"`
 		Target string `json:"target"`
 	} `json:"volumes"`
+	// Resolved published ports. `docker compose config --format json` renders
+	// each as an object with host_ip/published/target/protocol.
+	Ports []struct {
+		Mode      string `json:"mode"`
+		HostIP    string `json:"host_ip"`
+		Published string `json:"published"`
+		Target    int    `json:"target"`
+		Protocol  string `json:"protocol"`
+	} `json:"ports"`
 }
 
 type composeConfigDoc struct {
@@ -140,8 +149,27 @@ func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot str
 				return fmt.Errorf("service %q bind-mounts %q outside the app data tree %q: forbidden for tenant installs", name, v.Source, root)
 			}
 		}
+		// Published ports MUST bind loopback only (#508). The catalog filter +
+		// panel resolver already enforce loopback, but a template regression or
+		// a bad re-render could publish 0.0.0.0:<port>; the agent is the trust
+		// boundary, so reject any published port whose host_ip is not 127.0.0.1
+		// / ::1 (empty host_ip means docker binds 0.0.0.0 — also rejected).
+		for _, p := range svc.Ports {
+			if p.Published == "" {
+				continue // not host-published (internal only) — fine
+			}
+			if !isLoopbackHostIP(p.HostIP) {
+				return fmt.Errorf("service %q publishes port %s on host_ip %q (not loopback): forbidden for tenant installs", name, p.Published, p.HostIP)
+			}
+		}
 	}
 	return nil
+}
+
+// isLoopbackHostIP reports whether a docker-published host_ip is loopback.
+// Empty (docker defaults to 0.0.0.0) and any non-loopback address are NOT.
+func isLoopbackHostIP(ip string) bool {
+	return ip == "127.0.0.1" || ip == "::1"
 }
 
 // runTenantComposeValidation resolves the on-disk compose (dir) via

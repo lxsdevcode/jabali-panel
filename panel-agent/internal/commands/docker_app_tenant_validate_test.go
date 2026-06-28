@@ -98,3 +98,24 @@ func TestValidateTenantCompose_AllowsBenignNamespaceModes(t *testing.T) {
 		t.Fatalf("benign namespace modes should pass: %v", err)
 	}
 }
+
+func TestValidateTenantCompose_RejectsPublicPort(t *testing.T) {
+	root := "/var/lib/jabali/docker-apps/x"
+	j := cfg(`"web":{"ports":[{"published":"8080","host_ip":"0.0.0.0","target":80,"protocol":"tcp"}]}`)
+	if err := validateTenantCompose(j, nil, root); err == nil {
+		t.Error("public 0.0.0.0 published port must be rejected for tenant installs")
+	}
+	// empty host_ip = docker binds 0.0.0.0 → also rejected
+	j2 := cfg(`"web":{"ports":[{"published":"8080","host_ip":"","target":80,"protocol":"tcp"}]}`)
+	if err := validateTenantCompose(j2, nil, root); err == nil {
+		t.Error("empty host_ip (defaults to 0.0.0.0) must be rejected")
+	}
+}
+
+func TestValidateTenantCompose_AllowsLoopbackPort(t *testing.T) {
+	root := "/var/lib/jabali/docker-apps/x"
+	j := cfg(`"web":{"ports":[{"published":"10001","host_ip":"127.0.0.1","target":80,"protocol":"tcp"}]}`)
+	if err := validateTenantCompose(j, nil, root); err != nil {
+		t.Errorf("loopback-published port must be allowed: %v", err)
+	}
+}
