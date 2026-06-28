@@ -1461,6 +1461,20 @@ test -x node_modules/.bin/tsc || {
 					`echo "  removed $u from docker group (#487)"; `+
 					`fi`)
 		}},
+		{"harden /proc hidepid (Gitea #499)", func() error {
+			// jabali update doesn't run install.sh main(), so the hidepid mount
+			// (which hides other users' /proc cmdline) only reaches fresh
+			// installs without this heal. Idempotent; no-op when already set or
+			// when the container denies the remount.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			if err := run("", "bash", "-c", "source "+installSh+" && harden_proc_hidepid"); err != nil {
+				fmt.Printf("  (harden_proc_hidepid failed: %v -- continuing)\n", err)
+			}
+			return nil
+		}},
 		{"reapply PHP pools from template (GH #401)", func() error {
 			// The pool template was re-synced above, but ReconcilePHPPools
 			// skips ACTIVE pools, so template hardening (e.g. the GH #401
