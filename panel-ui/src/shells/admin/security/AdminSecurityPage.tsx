@@ -67,10 +67,10 @@ const isTabKey = (s: string | null): s is TabKey =>
 export const AdminSecurityPage = () => {
   const screens = Grid.useBreakpoint();
   // 7 outer tabs + 10 inner CrowdSec subtabs = ~17 horizontal items.
-  // At mobile widths the tab bar overflows the viewport; AntD's "more"
-  // dropdown doesn't engage reliably with Card.tabList. Collapse labels
-  // to icons-only under md (768px); tooltip keeps the label discoverable.
-  const compactTabs = !(screens.md ?? true);
+  // 7 outer tabs don't fit even at the md (768px) tablet width, so AntD's
+  // "more" dropdown clips a tab to a sliver. Collapse labels to icons-only
+  // below lg (992px); tooltip keeps the label discoverable. Gitea #484.
+  const compactTabs = !(screens.lg ?? true);
   const [params, setParams] = useSearchParams();
   // Backwards-compat redirect: ?tab=trust now points at the Test IP
   // sub-tab inside CrowdSec. Older bookmarks/notification deeplinks
