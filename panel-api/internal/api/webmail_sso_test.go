@@ -101,7 +101,12 @@ func (r *ssoFakeMailboxRepo) UpdateDisplayName(_ context.Context, _ string, _ st
 	return nil
 }
 func (r *ssoFakeMailboxRepo) SetDisabled(_ context.Context, _ string, _ bool) error { return nil }
-func (r *ssoFakeMailboxRepo) ListAllWithDomain(_ context.Context) ([]repository.MailboxWithDomain, error) { return nil, nil }
+func (r *ssoFakeMailboxRepo) ListAllWithDomain(_ context.Context) ([]repository.MailboxWithDomain, error) {
+	return nil, nil
+}
+func (r *ssoFakeMailboxRepo) ListByOwnerWithDomain(_ context.Context, _ string) ([]repository.MailboxWithDomain, error) {
+	return nil, nil
+}
 func (r *ssoFakeMailboxRepo) UpdateDisabled(ctx context.Context, id string, disabled bool) error {
 	return nil
 }

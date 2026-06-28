@@ -21,6 +21,7 @@ type MailboxRepository interface {
 	FindByEmail(ctx context.Context, email string) (*models.Mailbox, error)
 	ListByDomainID(ctx context.Context, domainID string, opts ListOptions) ([]models.Mailbox, int64, error)
 	ListAllWithDomain(ctx context.Context) ([]MailboxWithDomain, error)
+	ListByOwnerWithDomain(ctx context.Context, userID string) ([]MailboxWithDomain, error)
 	CountByDomainID(ctx context.Context, domainID string) (int64, error)
 	Create(ctx context.Context, mb *models.Mailbox) error
 	Delete(ctx context.Context, id string) error
@@ -114,6 +115,21 @@ func (r *mailboxRepo) ListAllWithDomain(ctx context.Context) ([]MailboxWithDomai
 		Select("m.*, d.name AS domain_name, d.user_id AS owner_user_id, COALESCE(u.username, '') AS user_username").
 		Joins("JOIN domains d ON d.id = m.domain_id").
 		Joins("LEFT JOIN users u ON u.id = d.user_id").
+		Order("m.email_cached ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// ListByOwnerWithDomain is ListAllWithDomain scoped to a single owner (the
+// owning domain's user_id), for the admin owner-scoped Mail view (#483).
+func (r *mailboxRepo) ListByOwnerWithDomain(ctx context.Context, userID string) ([]MailboxWithDomain, error) {
+	var rows []MailboxWithDomain
+	err := r.db.WithContext(ctx).
+		Table("mailboxes m").
+		Select("m.*, d.name AS domain_name, d.user_id AS owner_user_id, COALESCE(u.username, '') AS user_username").
+		Joins("JOIN domains d ON d.id = m.domain_id").
+		Joins("LEFT JOIN users u ON u.id = d.user_id").
+		Where("d.user_id = ?", userID).
 		Order("m.email_cached ASC").
 		Scan(&rows).Error
 	return rows, err

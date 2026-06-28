@@ -11,6 +11,7 @@ import (
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	ginctx "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -86,7 +87,16 @@ func (h *pythonAppHandler) list(c *gin.Context) {
 	var apps []*models.PythonApp
 	var err error
 	if claims.IsAdmin {
-		apps, err = h.cfg.Apps.ListAll(c.Request.Context())
+		// Admin owner-scope via ?user_id (#483).
+		if uid := c.Query("user_id"); uid != "" {
+			if !ids.IsValidULID(uid) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+				return
+			}
+			apps, err = h.cfg.Apps.ListByUser(c.Request.Context(), uid)
+		} else {
+			apps, err = h.cfg.Apps.ListAll(c.Request.Context())
+		}
 	} else {
 		apps, err = h.cfg.Apps.ListByUser(c.Request.Context(), claims.UserID)
 	}

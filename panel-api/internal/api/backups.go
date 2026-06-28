@@ -33,35 +33,35 @@ import (
 // backup routes. RestoreStaging is the local path the agent restores
 // stages into; download materializes from there.
 type BackupHandlerConfig struct {
-	Agent           agent.AgentInterface
-	Jobs            repository.BackupJobRepository
-	Destinations    repository.BackupDestinationRepository
-	Users           repository.UserRepository
-	Databases       repository.DatabaseRepository
-	DatabaseUsers   repository.DatabaseUserRepository
-	DatabaseGrants  repository.DatabaseUserGrantRepository
-	Domains         repository.DomainRepository
-	Mailboxes       repository.MailboxRepository
-	AppInstalls     repository.ApplicationInstallRepository
+	Agent          agent.AgentInterface
+	Jobs           repository.BackupJobRepository
+	Destinations   repository.BackupDestinationRepository
+	Users          repository.UserRepository
+	Databases      repository.DatabaseRepository
+	DatabaseUsers  repository.DatabaseUserRepository
+	DatabaseGrants repository.DatabaseUserGrantRepository
+	Domains        repository.DomainRepository
+	Mailboxes      repository.MailboxRepository
+	AppInstalls    repository.ApplicationInstallRepository
 
 	// Schema-v2 metadata producers — every nullable repo here is queried
 	// when building the per-user metadata bundle so disaster recovery
 	// can rebuild full panel state. Each is optional; missing repos
 	// log + skip the corresponding section.
-	SSLCerts        repository.SSLCertificateRepository
-	PHPPools        repository.PHPPoolRepository
-	PHPPoolIni      repository.PHPPoolIniOverrideRepository
-	Forwarders      repository.EmailForwarderRepository
-	Autoresponders  repository.EmailAutoresponderRepository
-	MailboxShares   repository.MailboxShareRepository
-	DNSSECKeys      repository.DNSSECKeyRepository
-	DNSZones        repository.DNSZoneRepository
-	DNSRecords      repository.DNSRecordRepository
-	SSHKeys         repository.SSHKeyRepository
-	CronJobs        repository.CronJobRepository
-	LimitOverrides  repository.UserLimitOverrideRepository
-	EgressPolicies  repository.UserEgressPolicyRepository
-	EgressRequests  repository.UserEgressRequestRepository
+	SSLCerts       repository.SSLCertificateRepository
+	PHPPools       repository.PHPPoolRepository
+	PHPPoolIni     repository.PHPPoolIniOverrideRepository
+	Forwarders     repository.EmailForwarderRepository
+	Autoresponders repository.EmailAutoresponderRepository
+	MailboxShares  repository.MailboxShareRepository
+	DNSSECKeys     repository.DNSSECKeyRepository
+	DNSZones       repository.DNSZoneRepository
+	DNSRecords     repository.DNSRecordRepository
+	SSHKeys        repository.SSHKeyRepository
+	CronJobs       repository.CronJobRepository
+	LimitOverrides repository.UserLimitOverrideRepository
+	EgressPolicies repository.UserEgressPolicyRepository
+	EgressRequests repository.UserEgressRequestRepository
 
 	// M30.2.x — sso key for unsealing per-destination restic
 	// passwords before the agent dispatch. Optional; when nil the
@@ -458,7 +458,20 @@ func (h *backupHandler) listForUser(c *gin.Context) {
 
 func (h *backupHandler) listAll(c *gin.Context) {
 	limit, offset := paginationFromQuery(c, 50, 200)
-	rows, total, err := h.cfg.Jobs.ListAll(c.Request.Context(), limit, offset)
+	ctx := c.Request.Context()
+	var rows []models.BackupJob
+	var total int64
+	var err error
+	// Admin owner-scope via ?user_id (#483).
+	if uid := c.Query("user_id"); uid != "" {
+		if !ids.IsValidULID(uid) {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid user_id"})
+			return
+		}
+		rows, total, err = h.cfg.Jobs.ListForUser(ctx, uid, limit, offset)
+	} else {
+		rows, total, err = h.cfg.Jobs.ListAll(ctx, limit, offset)
+	}
 	if err != nil {
 		h.cfg.logErr("list backups", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "db_list"})
@@ -845,7 +858,6 @@ func (cfg BackupHandlerConfig) buildAccountMetadata(ctx context.Context, user *m
 	})
 }
 
-
 // allUserDatabases returns every MariaDB database name owned by a user.
 // Used by manual + self-shell backup paths to default to "everything"
 // when the operator submits an empty list. Errors are logged + an
@@ -949,7 +961,7 @@ type MeBackupsHandlerConfig struct {
 	EgressPolicies repository.UserEgressPolicyRepository
 	EgressRequests repository.UserEgressRequestRepository
 
-	Log            *slog.Logger
+	Log *slog.Logger
 }
 
 // buildAccountMetadata projects MeBackupsHandlerConfig into the shared

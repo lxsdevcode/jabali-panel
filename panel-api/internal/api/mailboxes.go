@@ -686,7 +686,19 @@ type adminMailboxResponse struct {
 // listAllAdmin returns every mailbox on the server (admin-only) for the
 // server-wide Mail tab. GET /api/v1/admin/mailboxes.
 func (h *mailboxHandler) listAllAdmin(c *gin.Context) {
-	rows, err := h.cfg.Mailboxes.ListAllWithDomain(c.Request.Context())
+	ctx := c.Request.Context()
+	var rows []repository.MailboxWithDomain
+	var err error
+	// Admin owner-scope via ?user_id (#483).
+	if uid := c.Query("user_id"); uid != "" {
+		if !ids.IsValidULID(uid) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+			return
+		}
+		rows, err = h.cfg.Mailboxes.ListByOwnerWithDomain(ctx, uid)
+	} else {
+		rows, err = h.cfg.Mailboxes.ListAllWithDomain(ctx)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 		return

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"strings"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -148,7 +148,16 @@ func (h *databaseHandler) list(c *gin.Context) {
 
 	// Admins see all databases; users see only their own
 	if claims.IsAdmin {
-		dbs, total, err = h.cfg.Databases.List(c.Request.Context(), opts)
+		// Admin owner-scope via ?user_id (#483).
+		if uid := c.Query("user_id"); uid != "" {
+			if !ids.IsValidULID(uid) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+				return
+			}
+			dbs, total, err = h.cfg.Databases.ListByUserID(c.Request.Context(), uid, opts)
+		} else {
+			dbs, total, err = h.cfg.Databases.List(c.Request.Context(), opts)
+		}
 	} else {
 		dbs, total, err = h.cfg.Databases.ListByUserID(c.Request.Context(), claims.UserID, opts)
 	}
@@ -590,4 +599,3 @@ func (h *databaseHandler) restore(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
-

@@ -158,14 +158,14 @@ type updateDomainRequest struct {
 	// resets to the default /home/<user>/domains/<name>/public_html. The
 	// reconciler's per-tick domain.create mkdir -p's the new path + re-renders
 	// the vhost, so changing it is safe (old files are not moved).
-	DocRoot               *string               `json:"doc_root,omitempty"`
-	NginxCustomDirectives *string               `json:"nginx_custom_directives,omitempty"`
-	RedirectAllTo         *string               `json:"redirect_all_to,omitempty"`
-	RedirectAllType       *string               `json:"redirect_all_type,omitempty"`
-	PageRedirects         *models.PageRedirects `json:"page_redirects,omitempty"`
-	NginxRules            *models.NginxRules    `json:"nginx_rules,omitempty"`
+	DocRoot               *string                  `json:"doc_root,omitempty"`
+	NginxCustomDirectives *string                  `json:"nginx_custom_directives,omitempty"`
+	RedirectAllTo         *string                  `json:"redirect_all_to,omitempty"`
+	RedirectAllType       *string                  `json:"redirect_all_type,omitempty"`
+	PageRedirects         *models.PageRedirects    `json:"page_redirects,omitempty"`
+	NginxRules            *models.NginxRules       `json:"nginx_rules,omitempty"`
 	NginxSafeOptions      *models.NginxSafeOptions `json:"nginx_safe_options,omitempty"`
-	IndexPriority         *string               `json:"index_priority,omitempty"`
+	IndexPriority         *string                  `json:"index_priority,omitempty"`
 	// GH#181: mail provider + optional DKIM tokens. Pointers so an absent
 	// field in the PATCH leaves the columns untouched. When MailProvider is
 	// present, EmailEnabled + SkipAutoSAN are re-derived from it.
@@ -264,7 +264,17 @@ func (h *domainHandler) list(c *gin.Context) {
 	var err error
 
 	if claims.IsAdmin {
-		domains, total, err = h.cfg.Domains.List(c.Request.Context(), opts)
+		// Admins can scope to a single owner via ?user_id (admin breadcrumbs /
+		// cross-entity links, #483). Validated as a ULID; empty = all domains.
+		if uid := c.Query("user_id"); uid != "" {
+			if !ids.IsValidULID(uid) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+				return
+			}
+			domains, total, err = h.cfg.Domains.ListByUserID(c.Request.Context(), uid, opts)
+		} else {
+			domains, total, err = h.cfg.Domains.List(c.Request.Context(), opts)
+		}
 	} else {
 		domains, total, err = h.cfg.Domains.ListByUserID(c.Request.Context(), claims.UserID, opts)
 	}

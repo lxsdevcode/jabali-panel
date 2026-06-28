@@ -38,6 +38,7 @@ import (
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -233,7 +234,19 @@ type installedResponse struct {
 
 func (h *dockerAppHandler) list(c *gin.Context) {
 	ctx := c.Request.Context()
-	apps, err := h.cfg.Repo.ListAll(ctx)
+	var apps []*models.DockerApp
+	var err error
+	// Admin owner-scope via ?user_id (#483). Server-level installs (NULL
+	// user_id) are excluded from an owner view by ListByUserID.
+	if uid := c.Query("user_id"); uid != "" {
+		if !ids.IsValidULID(uid) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+			return
+		}
+		apps, err = h.cfg.Repo.ListByUserID(ctx, uid)
+	} else {
+		apps, err = h.cfg.Repo.ListAll(ctx)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
 		return
@@ -741,7 +754,6 @@ func (h *dockerAppHandler) installDomain(ctx context.Context, appID string) stri
 	}
 	return ""
 }
-
 
 // tenantValidateParams returns whether a re-render dispatch should carry the
 // agent-side tenant compose validation, plus the catalog tenant-cap allowlist,
