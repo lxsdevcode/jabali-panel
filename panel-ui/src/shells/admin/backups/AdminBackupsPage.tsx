@@ -323,6 +323,7 @@ export const AdminBackupsPage = () => {
         {
           title: "Job ID",
           dataIndex: "id",
+          sorter: (a, b) => a.id.localeCompare(b.id),
           render: (id: string) => (
             <Tooltip title={id}>
               <code>{id.slice(0, 8)}…</code>
@@ -332,26 +333,31 @@ export const AdminBackupsPage = () => {
         {
           title: "User",
           dataIndex: "user_id",
+          sorter: (a, b) => usernameById(a.user_id).localeCompare(usernameById(b.user_id)),
           render: (id: string) => usernameById(id),
         },
         {
           title: "Destination",
           dataIndex: "destination_id",
+          sorter: (a, b) => (a.destination_id ?? "").localeCompare(b.destination_id ?? ""),
           render: (id?: string) => destNameById(id),
         },
         {
           title: "Status",
           dataIndex: "status",
+          sorter: (a, b) => a.status.localeCompare(b.status),
           render: (s: string) => <BackupStatusTag status={s} />,
         },
         {
           title: "Added",
           dataIndex: "bytes_added",
+          sorter: (a, b) => (a.bytes_added ?? 0) - (b.bytes_added ?? 0),
           render: (n: number) => formatBytes(n),
         },
         {
           title: "Size",
           dataIndex: "bytes_total",
+          sorter: (a, b) => (a.bytes_total ?? 0) - (b.bytes_total ?? 0),
           render: (n: number) => formatBytes(n),
         },
         {

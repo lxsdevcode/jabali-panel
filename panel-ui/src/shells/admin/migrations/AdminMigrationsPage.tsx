@@ -286,6 +286,7 @@ export const AdminMigrationsPage = () => {
           <Table.Column<MigrationJob>
             title="Source"
             dataIndex="source_kind"
+            sorter={(a, b) => (a.source_kind ?? "").localeCompare(b.source_kind ?? "")}
             render={(k: string) => {
               const b = SOURCE_BADGE[k] ?? { color: "default", label: k };
               return <Tag color={b.color}>{b.label}</Tag>;
@@ -294,6 +295,7 @@ export const AdminMigrationsPage = () => {
           <Table.Column<MigrationJob>
             title="Source host"
             dataIndex="source_host"
+            sorter={(a, b) => (a.source_host ?? "").localeCompare(b.source_host ?? "")}
             render={(s: string) => (
               <Typography.Text code style={{ fontSize: 12 }}>
                 {s}
@@ -303,6 +305,7 @@ export const AdminMigrationsPage = () => {
           <Table.Column<MigrationJob>
             title="Batch"
             dataIndex="batch_id"
+            sorter={(a, b) => (a.batch_id ?? "").localeCompare(b.batch_id ?? "")}
             render={(b: string | null) =>
               b ? (
                 <Popconfirm
@@ -329,6 +332,7 @@ export const AdminMigrationsPage = () => {
           <Table.Column<MigrationJob>
             title="Source user"
             dataIndex="source_user"
+            sorter={(a, b) => (a.source_user ?? "").localeCompare(b.source_user ?? "")}
             render={(s: string) => (
               <Typography.Text code style={{ fontSize: 12 }}>
                 {s}
@@ -338,6 +342,7 @@ export const AdminMigrationsPage = () => {
           <Table.Column<MigrationJob>
             title="State"
             dataIndex="state"
+            sorter={(a, b) => (a.state ?? "").localeCompare(b.state ?? "")}
             render={(s: string) => {
               const t = STATE_TAG[s] ?? { color: "default", label: s };
               return <Tag color={t.color}>{t.label}</Tag>;
@@ -346,11 +351,13 @@ export const AdminMigrationsPage = () => {
           <Table.Column<MigrationJob>
             title="Started"
             dataIndex="started_at"
+            sorter={(a, b) => (a.started_at ? +new Date(a.started_at) : 0) - (b.started_at ? +new Date(b.started_at) : 0)}
             render={(s: string) => new Date(s).toLocaleString()}
           />
           <Table.Column<MigrationJob>
             title="Ended"
             dataIndex="ended_at"
+            sorter={(a, b) => (a.ended_at ? +new Date(a.ended_at) : 0) - (b.ended_at ? +new Date(b.ended_at) : 0)}
             render={(s: string | null) =>
               s ? new Date(s).toLocaleString() : "—"
             }
