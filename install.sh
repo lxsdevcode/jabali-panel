@@ -11752,7 +11752,13 @@ provision_new_software() {
   for _pv in 8.4 8.3 8.2 8.1 8.0 7.4; do
     if echo "$_upd_php_versions" | grep -qw "$_pv"; then continue; fi
     if dpkg -l "php${_pv}-cli" 2>/dev/null | grep -q "^ii"; then
-      _log "provision: purging stale php${_pv} (not in JABALI_PHP_VERSIONS)"
+      # Preserve admin-installed versions (apt-manual, via the panel PHP
+      # version manager) — only purge transitive/auto pulls (GH #302).
+      if apt-mark showmanual "php${_pv}-cli" 2>/dev/null | grep -qx "php${_pv}-cli"; then
+        _log "provision: keeping admin-installed php${_pv} (apt-manual)"
+        continue
+      fi
+      _log "provision: purging stale php${_pv} (auto/transitive, not in JABALI_PHP_VERSIONS)"
       apt-get purge -y -qq "php${_pv}*" 2>/dev/null || true
       apt-get autoremove -y -qq 2>/dev/null || true
     fi
