@@ -72,16 +72,19 @@ func computeMoodleInstallPath(docroot, subdirectory string) string {
 }
 
 // computeMoodleDataRoot derives the moodledata directory — deterministic from
-// the owner + install location so the deleter can find it. It lives under the
-// owner's home, OUTSIDE any docroot, so it is never web-served (a hard Moodle
-// requirement). The key is the subdirectory (or "root" for a docroot install).
-func computeMoodleDataRoot(osUser, subdirectory string) string {
+// the install location so the deleter can find it. It sits as a sibling of the
+// docroot (e.g. /home/<u>/domains/<d>/.moodledata/<key>), which is OUTSIDE
+// public_html so nginx never serves it (a hard Moodle requirement), yet inside
+// the tenant-owned domain dir so the unprivileged owner can create it — the
+// home root itself is root:<user> 0751 and is NOT tenant-writable. The key is
+// the subdirectory (or "root" for a docroot install).
+func computeMoodleDataRoot(docroot, subdirectory string) string {
 	key := strings.TrimSuffix(subdirectory, "/")
 	if key == "" {
 		key = "root"
 	}
 	key = regexp.MustCompile(`[^A-Za-z0-9._-]`).ReplaceAllString(key, "_")
-	return filepath.Join("/home", osUser, ".moodledata", key)
+	return filepath.Join(filepath.Dir(docroot), ".moodledata", key)
 }
 
 // moodleShortName slugifies the site title into a Moodle shortname (alnum,
@@ -239,7 +242,7 @@ func moodleInstallHandler(ctx context.Context, params json.RawMessage) (any, err
 	}
 
 	installPath := computeMoodleInstallPath(req.Docroot, req.Subdirectory)
-	dataRoot := computeMoodleDataRoot(req.OSUser, req.Subdirectory)
+	dataRoot := computeMoodleDataRoot(req.Docroot, req.Subdirectory)
 
 	if req.Subdirectory != "" {
 		mkdirCmd := buildSystemdRunCmd(ctx, req.OSUser, "mkdir", "-p", installPath)

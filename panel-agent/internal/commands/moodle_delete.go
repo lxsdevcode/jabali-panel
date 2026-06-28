@@ -59,7 +59,7 @@ func moodleDeleteHandler(ctx context.Context, params json.RawMessage) (any, erro
 	}
 
 	installPath := computeMoodleInstallPath(req.Docroot, req.Subdirectory)
-	dataRoot := computeMoodleDataRoot(req.OSUser, req.Subdirectory)
+	dataRoot := computeMoodleDataRoot(req.Docroot, req.Subdirectory)
 
 	if req.Subdirectory != "" {
 		_ = buildSystemdRunCmd(ctx, req.OSUser, "rm", "-rf", installPath).Run()
