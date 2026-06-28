@@ -2346,12 +2346,14 @@ DOCKER_EOF
   # Per-app data root.
   install -d -m 0750 -o root -g "$SERVICE_USER" /var/lib/jabali/docker-apps
 
-  # Operator console convenience: jabali user in `docker` group.
+  # SECURITY (#487): the panel service user must NOT be in the `docker` group.
+  # Docker group membership is root-equivalent, and panel-api (which runs as
+  # $SERVICE_USER) never issues docker commands directly -- the privileged
+  # agent (root) does all docker work. Strip the legacy membership on existing
+  # hosts; the end-of-install panel restart drops it from the running process.
   if id -nG "$SERVICE_USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
-    _log "$SERVICE_USER already in docker group"
-  else
-    usermod -aG docker "$SERVICE_USER"
-    _log "added $SERVICE_USER to docker group (takes effect on next login)"
+    gpasswd -d "$SERVICE_USER" docker >/dev/null 2>&1 || true
+    _log "removed $SERVICE_USER from docker group (#487: docker group is root-equivalent)"
   fi
 
   # Ensure restic is present -- the per-app backup flow (Phase 8) relies
@@ -2367,7 +2369,7 @@ DOCKER_EOF
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends zstd
   fi
 
-  _ok "docker engine ready (live-restore + journald + jabali in docker group)"
+  _ok "docker engine ready (live-restore + journald; panel user NOT in docker group)"
 }
 
 # Package redis-server is installed in install_base_packages' one-shot
