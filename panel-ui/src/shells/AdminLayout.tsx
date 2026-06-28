@@ -107,9 +107,26 @@ export function AdminLayout() {
                 {collapsed ? <RightOutlined /> : <LeftOutlined />}
               </div>
             }
-            style={{ background: siderBg, paddingTop: 16, paddingInline: 8 }}
+            style={{
+              background: siderBg,
+              paddingTop: 16,
+              paddingInline: 8,
+              height: "100vh",
+              position: "sticky",
+              top: 0,
+              overflow: "hidden",
+            }}
           >
-            {menu}
+            <div
+              style={{
+                height: "100%",
+                overflowY: "auto",
+                overflowX: "hidden",
+                paddingBottom: 48,
+              }}
+            >
+              {menu}
+            </div>
           </Sider>
         ) : (
           <Drawer
