@@ -226,6 +226,12 @@ func migrationImportRunHandler(ctx context.Context, raw json.RawMessage) (any, e
 		args = append(args, "--target-email="+p.TargetEmail)
 	}
 	if p.TargetPassword != "" {
+		// Reject control chars so a crafted password can't inject extra
+		// KEY=VALUE lines into the EnvironmentFile (env-injection). A real
+		// account password never contains these.
+		if strings.ContainsAny(p.TargetPassword, "\n\r\x00") {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "target password contains invalid control characters"}
+		}
 		// #496: never put the password on the systemd-run argv (it lands in
 		// /proc/<pid>/cmdline AND the transient unit's ExecStart). Hand it to
 		// the unit via a 0600 EnvironmentFile; `jabali migrate import` reads

@@ -208,6 +208,9 @@ func tearOffStrings() {
 // in the agent's private /tmp) for imapsync's --passfileN, so the password
 // never appears in argv / /proc/<pid>/cmdline. Caller removes it.
 func writeImapsyncPassfile(secret string) (string, error) {
+	if strings.ContainsAny(secret, "\n\r\x00") {
+		return "", fmt.Errorf("mailbox password contains invalid control characters")
+	}
 	f, err := os.CreateTemp("", "jabali-imapsync-*.pw")
 	if err != nil {
 		return "", err
