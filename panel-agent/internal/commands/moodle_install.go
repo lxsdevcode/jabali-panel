@@ -176,7 +176,13 @@ func runMoodleCLIInstaller(ctx context.Context, req moodleInstallReq, installPat
 		lang = "en"
 	}
 	args := []string{
-		phpCLIFor(req.OSUser), filepath.Join(installPath, "admin", "cli", "install.php"),
+		// CLI php.ini ships max_input_vars=1000; Moodle's environment check
+		// requires >=5000. The per-domain FPM pool sets this for the runtime,
+		// but the CLI installer uses the CLI ini, so override inline.
+		phpCLIFor(req.OSUser),
+		"-d", "max_input_vars=5000",
+		"-d", "memory_limit=256M",
+		filepath.Join(installPath, "admin", "cli", "install.php"),
 		"--non-interactive",
 		"--agree-license",
 		"--lang=" + lang,
