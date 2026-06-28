@@ -129,23 +129,6 @@
     white-space: normal !important;
     line-height: 1.2 !important;
   }
-  /* When AntD's overflow "more" dropdown does not engage — the tabs stay
-     in the nav-list but exceed the nav-wrap, leaving the last visible tab
-     clipped to a sliver before the … menu — let the nav-wrap scroll
-     horizontally so every tab is fully reachable instead of partially
-     clipped. Additive: when AntD's collapse DOES engage, the collapsed
-     list fits and no scrollbar appears. Gitea #485. */
-  .ant-tabs-nav-wrap {
-    overflow-x: auto !important;
-    scrollbar-width: thin;
-  }
-  .ant-tabs-nav-wrap::-webkit-scrollbar {
-    height: 4px;
-  }
-  .ant-tabs-nav-wrap::-webkit-scrollbar-thumb {
-    background: var(--jabali-scroll-thumb, rgba(140, 140, 140, 0.5));
-    border-radius: 4px;
-  }
   /* Notification + user-menu dropdowns: cap to viewport so the panel
      doesn't render half-off-screen when triggered from the right edge
      of the JabaliHeader. */
@@ -175,6 +158,23 @@
  * here also implies overflow-y:auto in browsers, which painted a
  * vertical scrollbar on every dashboard table. Per-component
  * scroll prop is the right knob; CSS shouldn't second-guess it. */
+/* AntD Tabs: when the overflow "more" dropdown does not engage, the tabs
+   exceed the nav-wrap and the last visible tab is clipped to a sliver
+   before the … menu (Gitea #484/#485). Let the nav-wrap scroll
+   horizontally at ALL widths so every tab stays reachable. Additive:
+   when AntD's collapse DOES engage the list fits and no scrollbar shows. */
+.ant-tabs-nav-wrap {
+  overflow-x: auto !important;
+  scrollbar-width: thin;
+}
+.ant-tabs-nav-wrap::-webkit-scrollbar {
+  height: 4px;
+}
+.ant-tabs-nav-wrap::-webkit-scrollbar-thumb {
+  background: var(--jabali-scroll-thumb, rgba(140, 140, 140, 0.5));
+  border-radius: 4px;
+}
+
 .ant-table-container {
   max-width: 100%;
 }
