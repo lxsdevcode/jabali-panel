@@ -116,6 +116,14 @@ export const CreateBackupDrawer = ({ open, onClose, onCreated }: CreateBackupDra
       width={isDesktop ? 520 : undefined}
       placement="right"
       destroyOnClose
+      extra={
+        <Space>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="primary" loading={submitting} onClick={() => form.submit()}>
+            Create backup
+          </Button>
+        </Space>
+      }
     >
       <Alert
         type="info"
@@ -230,12 +238,6 @@ export const CreateBackupDrawer = ({ open, onClose, onCreated }: CreateBackupDra
           </>
         )}
 
-        <Space>
-          <Button type="primary" htmlType="submit" loading={submitting}>
-            Create backup
-          </Button>
-          <Button onClick={onClose}>Cancel</Button>
-        </Space>
       </Form>
     </Drawer>
   );

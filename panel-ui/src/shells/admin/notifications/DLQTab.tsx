@@ -133,7 +133,7 @@ export const DLQTab = () => {
             ? "No dead-letter entries — every envelope reached its destination."
             : `${total} envelope${total === 1 ? "" : "s"} in the dead-letter queue. Replay re-publishes to the main stream; Drop deletes just that entry.`}
         </Typography.Text>
-        <Space>
+        <Space wrap>
           <Button
             icon={<ReloadOutlined />}
             onClick={() => qc.invalidateQueries({ queryKey: ["notifications", "dlq"] })}

@@ -5,6 +5,7 @@
 import { useMemo, useState } from "react";
 import {
   Button,
+  Flex,
   Empty,
   Form,
   Input,
@@ -84,14 +85,14 @@ export const SharedResourcesTab = () => {
 
   return (
     <>
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+      <Flex wrap align="center" justify="space-between" gap="small" style={{ width: "100%", marginBottom: 12 }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Shared Resources
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
           New shared resource
         </Button>
-      </Space>
+      </Flex>
 
       <Table<Row>
         rowKey="id"

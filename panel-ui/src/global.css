@@ -77,9 +77,13 @@
 }
 /* When the impersonation banner is up it eats viewport height — drop the modal
    below it and shrink the body cap by the banner height. (GH #502 case 8) */
+/* The modal-wrap already gets padding-top: banner (below), which clears the
+   fixed banner. Adding the banner to the modal's own `top` too double-counted
+   it and pushed the footer below the fold when impersonating on a small phone
+   (GH #503 case 6). Keep the base 8px offset only. */
 body.imp-active .ant-modal,
 body.imp-active .ant-modal-centered .ant-modal {
-  top: calc(8px + var(--imp-banner-h, 40px)) !important;
+  top: 8px !important;
 }
 body.imp-active .ant-modal-body {
   max-height: calc(100vh - 124px - var(--imp-banner-h, 40px)) !important;
@@ -114,6 +118,18 @@ body.imp-active .ant-modal-body {
   }
   .ant-modal {
     margin: 8px auto;
+  }
+  /* Alert with an `action` (e.g. UFW "Firewall DISABLED" + Enable button):
+     AntD lays content + action in one flex row, so on a phone the action
+     button squeezes the text column until it wraps one word per line. Stack
+     the action below the message instead. (GH #503 case 4) */
+  .ant-alert-action {
+    margin-inline-start: 0 !important;
+    margin-top: 8px;
+    width: 100%;
+  }
+  .ant-alert {
+    flex-wrap: wrap;
   }
   /* Layout content padding tightens so cards aren't squeezed. */
   .ant-layout-content {
