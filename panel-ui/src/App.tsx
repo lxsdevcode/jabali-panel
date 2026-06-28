@@ -35,6 +35,7 @@ import { LandingRedirect } from "./shells/LandingRedirect";
 import { ThemeModeProvider, useThemeMode } from "./theme/ThemeModeContext";
 import { Dashboard } from "./shells/admin/Dashboard";
 import { UserList } from "./shells/admin/users/UserList";
+import { AdminUserOverview } from "./shells/admin/users/AdminUserOverview";
 import { AdminIPList } from "./shells/admin/ips/AdminIPList";
 import { AdminMailPage } from "./shells/admin/mail/AdminMailPage";
 import { AdminAuditList } from "./shells/admin/audit/AdminAuditList";
@@ -191,6 +192,8 @@ const ThemedApp = () => {
                   is the new create/edit surface (M28 follow-up). */}
               <Route path="create" element={<Navigate to="/jabali-admin/users" replace />} />
               <Route path="edit/:id" element={<Navigate to="/jabali-admin/users" replace />} />
+              {/* #483: per-user hub — declared after create so it can't shadow it. */}
+              <Route path=":id" element={<AdminUserOverview />} />
             </Route>
             <Route path="packages">
               <Route index element={<PackageList />} />
