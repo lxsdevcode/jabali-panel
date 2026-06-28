@@ -1,4 +1,4 @@
-import { SiWordpress, SiWikipedia, SiDrupal, SiJoomla, SiPhpbb, SiPrestashop } from "react-icons/si";
+import { SiWordpress, SiWikipedia, SiDrupal, SiJoomla, SiPhpbb, SiPrestashop, SiMoodle } from "react-icons/si";
 import { FaOpencart, FaRegComments, FaBriefcase } from "react-icons/fa6";
 import { BookOutlined } from "@icons";
 import type { CSSProperties } from "react";
@@ -21,7 +21,30 @@ const BRAND_COLOR: Record<string, string> = {
   prestashop: "#DF0067",
   flarum: "#5d61d6",
   itflow: "#0d6efd",
+  moodle: "#f98012",
 };
+
+// DokuWikiMark — react-icons has no DokuWiki brand glyph, so render its logo
+// inline (mirrors the docker-app catalog icon.svg).
+function DokuWikiMark({ size }: { size: number }) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      style={{ flexShrink: 0 }}
+      role="img"
+      aria-label="DokuWiki"
+    >
+      <rect width="64" height="64" rx="12" fill="#88bb11" />
+      <path
+        fill="#fff"
+        d="M18 16h17a13 13 0 0 1 0 26H18a2 2 0 0 1-2-2V18a2 2 0 0 1 2-2zm6 6v14h11a7 7 0 0 0 0-14H24z"
+      />
+      <rect x="16" y="46" width="32" height="4" rx="2" fill="#fff" opacity="0.85" />
+    </svg>
+  );
+}
 
 // CmsIcon renders the brand logo for an app_type. Unknown app_type falls
 // back to the AntD BookOutlined generic icon.
@@ -62,6 +85,12 @@ export function CmsIcon({ appType, size = 18 }: CmsIconProps) {
   }
   if (key === "itflow") {
     return <FaBriefcase style={style} />;
+  }
+  if (key === "moodle") {
+    return <SiMoodle style={style} />;
+  }
+  if (key === "dokuwiki") {
+    return <DokuWikiMark size={size} />;
   }
   return <BookOutlined style={style} />;
 }
