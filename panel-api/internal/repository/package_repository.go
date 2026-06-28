@@ -106,7 +106,7 @@ func (r *packageRepo) Update(ctx context.Context, p *models.HostingPackage) erro
 		"name", "disk_quota_mb", "bandwidth_quota_mb", "max_domains",
 		"max_email_accounts", "max_databases",
 		"cpu_quota_percent", "memory_limit_mb", "io_read_mbps", "io_write_mbps",
-		"max_tasks", "max_docker_apps", "docker_app_slugs",
+		"max_tasks", "max_docker_apps", "max_python_apps", "docker_app_slugs",
 		"ssh_enabled", "cgi_enabled", "php_exec_enabled",
 		"nspawn_image_version", "updated_at",
 	).Updates(p).Error; err != nil {
