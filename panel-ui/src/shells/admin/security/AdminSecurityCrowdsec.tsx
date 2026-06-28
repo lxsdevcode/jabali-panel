@@ -215,11 +215,11 @@ export const AdminSecurityCrowdsec = () => {
       size="small"
       title="Active decisions"
       extra={
-        <Space>
+        <Space wrap>
           <Select
             size="small"
             value={scope}
-            style={{ minWidth: 160 }}
+            style={{ minWidth: 140 }}
             options={SCOPE_OPTIONS}
             onChange={(v) => setScope(v)}
           />
