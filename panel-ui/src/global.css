@@ -103,9 +103,11 @@ body.imp-active .ant-modal-body {
   }
   .ant-drawer-extra {
     margin-inline-start: 0 !important;
-    /* Force the header actions onto their own full-width line below the title
-       (the title section flex-grows, so wrap alone won't move them). */
-    flex-basis: 100% !important;
+    /* Force the header actions onto their own full-width line below the title.
+       flex-shrink defaults to 1, so flex-basis:100% alone just shrinks onto
+       line 1; flex:0 0 100% (no shrink) makes it wrap. */
+    flex: 0 0 100% !important;
+    justify-content: flex-end;
   }
   .ant-modal {
     margin: 8px auto;
