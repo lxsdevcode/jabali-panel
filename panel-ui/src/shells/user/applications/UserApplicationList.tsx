@@ -4,6 +4,7 @@
 // transitional statuses (pending/installing/cloning/deleting) poll
 // until ready.
 import { useEffect, useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import { useTabParam } from "../../../hooks/useTabParam";
 import {
   Button,
@@ -541,7 +542,7 @@ export const UserApplicationList = () => {
             title="Created"
             key="created_at"
             sorter={{ multiple: 2 }}
-            render={(date: string) => new Date(date).toLocaleDateString()}
+            render={(date: string) => shortDateTime(date)}
           />
           <Table.Column<ApplicationInstall>
             title="Cache"

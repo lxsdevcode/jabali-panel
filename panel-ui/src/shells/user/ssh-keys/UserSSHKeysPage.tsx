@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import {
   Alert,
   Button,
@@ -318,7 +319,7 @@ export const UserSSHKeysPage = () => {
               sorter: (a, b) =>
                 new Date(a.created_at).getTime() -
                 new Date(b.created_at).getTime(),
-              render: (date: string) => new Date(date).toLocaleDateString(),
+              render: (date: string) => shortDateTime(date),
             },
             {
               title: "Actions",

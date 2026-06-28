@@ -6,6 +6,7 @@
 // Status badge styling is inlined from UserApplicationList to keep
 // coupling low and avoid tight dependency on that component.
 import { useEffect, useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -317,7 +318,7 @@ export const AdminApplicationList = () => {
             key="created_at"
             sorter={{ multiple: 2 }}
             defaultSortOrder="descend"
-            render={(date: string) => new Date(date).toLocaleDateString()}
+            render={(date: string) => shortDateTime(date)}
           />
           <Table.Column<ApplicationInstall>
             title="Actions"

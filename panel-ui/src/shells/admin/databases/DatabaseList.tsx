@@ -2,6 +2,7 @@
 // databases mount in App.tsx) but kept Refine-free so a future route
 // wire-up doesn't have to touch this file again.
 import { Button, Card, Space, Table, Tag, Typography } from "antd";
+import { shortDateTime } from "../../../utils/datetime";
 import { useNavigate } from "react-router";
 import type { SorterResult } from "antd/es/table/interface";
 
@@ -135,7 +136,7 @@ export const DatabaseList = () => {
             title="Created"
             key="created_at"
             sorter={{ multiple: 2 }}
-            render={(date: string) => new Date(date).toLocaleDateString()}
+            render={(date: string) => shortDateTime(date)}
           />
           <Table.Column<Database>
             title="Actions"

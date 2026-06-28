@@ -3,6 +3,7 @@
 // apiClient helper; a blank tab is opened synchronously to dodge
 // popup blockers while the SSO call runs.
 import { useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Space, Table, Typography, message } from "antd";
 import {
@@ -246,7 +247,7 @@ export const UserDatabaseList = () => {
             title="Created"
             key="created_at"
             sorter={{ multiple: 2 }}
-            render={(date: string) => new Date(date).toLocaleDateString()}
+            render={(date: string) => shortDateTime(date)}
           />
           <Table.Column<Database>
             title="Actions"

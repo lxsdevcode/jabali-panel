@@ -6,6 +6,7 @@
 // (open AddGrantModal), Password (rotate + reveal modal), and Delete
 // (drops the whole user, cascading all grants).
 import { useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import { Button, Card, Space, Table, Tag, Typography, message } from "antd";
 import { KeyOutlined, PlusOutlined, UserOutlined, DeleteOutlined } from "@icons";
 import { RowActions } from "../../../components/RowActions";
@@ -243,7 +244,7 @@ export const DatabaseUsersList = () => {
             dataIndex="created_at"
             title="Created"
             sorter={{ multiple: 2 }}
-            render={(date: string) => new Date(date).toLocaleDateString()}
+            render={(date: string) => shortDateTime(date)}
             width={120}
           />
           <Table.Column<DatabaseUser>

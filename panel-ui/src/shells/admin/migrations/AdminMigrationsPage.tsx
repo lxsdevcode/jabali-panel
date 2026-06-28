@@ -11,6 +11,7 @@
 // Backed by panel-api/internal/api/admin_migrations.go (commit
 // 5981541a).
 import { useEffect, useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import {
   Grid,
   Alert,
@@ -352,14 +353,14 @@ export const AdminMigrationsPage = () => {
             title="Started"
             dataIndex="started_at"
             sorter={(a, b) => (a.started_at ? +new Date(a.started_at) : 0) - (b.started_at ? +new Date(b.started_at) : 0)}
-            render={(s: string) => new Date(s).toLocaleString()}
+            render={(s: string) => shortDateTime(s)}
           />
           <Table.Column<MigrationJob>
             title="Ended"
             dataIndex="ended_at"
             sorter={(a, b) => (a.ended_at ? +new Date(a.ended_at) : 0) - (b.ended_at ? +new Date(b.ended_at) : 0)}
             render={(s: string | null) =>
-              s ? new Date(s).toLocaleString() : "—"
+              s ? shortDateTime(s) : "—"
             }
           />
           <Table.Column<MigrationJob>

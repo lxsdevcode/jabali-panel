@@ -3,6 +3,7 @@
 // when a row is succeeded. Mirrors AdminBackupsPage data shape but
 // scoped via /me/backups (auth-gated to caller's user_id).
 import { Button, Card, Grid, Select, Space, Table, Tag, Typography, message } from "antd";
+import { shortDateTime } from "../../utils/datetime";
 import { RowActions } from "../../components/RowActions";
 import { DeleteOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from "@icons";
 import { useState } from "react";
@@ -123,7 +124,7 @@ export const MyProfileBackupCard = () => {
           {
             title: "Created",
             dataIndex: "created_at",
-            render: (t: string) => t,
+            render: (t: string) => shortDateTime(t),
           },
           {
             title: "Status",

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { shortDateTime } from "../../../utils/datetime";
 import {
   Alert,
   DatePicker,
@@ -253,7 +254,7 @@ export const BackupLogsTab = () => {
             title: "Created",
             dataIndex: "created_at",
             width: 180,
-            render: (v: string) => v ? new Date(v).toLocaleString() : "—",
+            render: (v: string) => shortDateTime(v),
           },
           {
             title: "Finished",

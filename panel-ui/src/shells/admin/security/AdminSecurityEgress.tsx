@@ -20,6 +20,7 @@ import {
   message,
 } from "antd";
 import { CheckOutlined, CloseOutlined } from "@icons";
+import { shortDateTime } from "../../../utils/datetime";
 import { RowActions } from "../../../components/RowActions";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -335,7 +336,7 @@ const PendingRequestsTable = ({ rows }: { rows: EgressRequest[] }) => {
       <Table.Column<EgressRequest>
         title="Submitted"
         dataIndex="created_at"
-        render={(s: string) => new Date(s).toLocaleString()}
+        render={(s: string) => shortDateTime(s)}
       />
       <Table.Column<EgressRequest>
         title="Actions"

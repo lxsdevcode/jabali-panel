@@ -20,6 +20,7 @@ import {
   message,
 } from "antd";
 import { RowActions } from "../../../components/RowActions";
+import { shortDateTime } from "../../../utils/datetime";
 import dayjs, { type Dayjs } from "dayjs";
 import {
   CalendarCheckOutlined,
@@ -552,7 +553,7 @@ export function SchedulesTab() {
         <Table.Column
           dataIndex="last_run_at"
           title="Last run"
-          render={(v: string | null) => v ?? "—"}
+          render={(v: string | null) => shortDateTime(v)}
         />
         <Table.Column<BackupSchedule>
           title="Actions"
