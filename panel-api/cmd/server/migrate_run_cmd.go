@@ -58,6 +58,17 @@ failed stage. Already-done stages are skipped.`,
 			if jobID == "" {
 				return errors.New("--job-id is required")
 			}
+			// #496: accept the target password from the environment so it never
+			// has to ride argv (/proc/<pid>/cmdline). The agent's systemd-run
+			// passes it via an EnvironmentFile and the offline restore via the
+			// child env, both as JABALI_TARGET_PASSWORD.
+			if targetPassword == "" {
+				targetPassword = os.Getenv("JABALI_TARGET_PASSWORD")
+			}
+			// Consume + delete the secret env-file the agent wrote (#496).
+			if f := os.Getenv("JABALI_TARGET_PASSWORD_FILE"); f != "" {
+				_ = os.Remove(f)
+			}
 			ctx := cmd.Context()
 
 			jobsRepo := repository.NewMigrationJobRepository(sharedDB)

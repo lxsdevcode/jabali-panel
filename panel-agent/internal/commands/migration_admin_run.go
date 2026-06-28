@@ -226,7 +226,17 @@ func migrationImportRunHandler(ctx context.Context, raw json.RawMessage) (any, e
 		args = append(args, "--target-email="+p.TargetEmail)
 	}
 	if p.TargetPassword != "" {
-		args = append(args, "--target-password="+p.TargetPassword)
+		// #496: never put the password on the systemd-run argv (it lands in
+		// /proc/<pid>/cmdline AND the transient unit's ExecStart). Hand it to
+		// the unit via a 0600 EnvironmentFile; `jabali migrate import` reads
+		// JABALI_TARGET_PASSWORD and removes the file after consuming it.
+		envPath := fmt.Sprintf("/run/jabali-migrate-%s.env", p.JobID)
+		content := "JABALI_TARGET_PASSWORD=" + p.TargetPassword + "\n" +
+			"JABALI_TARGET_PASSWORD_FILE=" + envPath + "\n"
+		if werr := os.WriteFile(envPath, []byte(content), 0o600); werr != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write target-password env: %v", werr)}
+		}
+		args = append(args, "--property=EnvironmentFile="+envPath)
 	}
 	if p.TargetPackageID != "" {
 		args = append(args, "--target-package-id="+p.TargetPackageID)
