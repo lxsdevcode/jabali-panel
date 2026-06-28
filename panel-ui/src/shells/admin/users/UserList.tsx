@@ -11,6 +11,8 @@ import { useState } from "react";
 import { Badge, Button, Card, Input, message, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, EditOutlined, LoginOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
 import { RowActions, type RowAction } from "../../../components/RowActions";
+import { Link } from "react-router";
+import { adminLinks } from "../../../components/admin/entityLinks";
 
 import { startImpersonation } from "../../../impersonation";
 import type { SorterResult } from "antd/es/table/interface";
@@ -250,15 +252,11 @@ function UsersShellTable({
         title="Username"
         dataIndex="username"
         key="username"
-        render={(v: string | null | undefined) =>
-          v ? (
-            <Typography.Text style={{ fontFamily: "monospace" }}>
-              {v}
-            </Typography.Text>
-          ) : (
-            <Typography.Text type="secondary">\u2014</Typography.Text>
-          )
-        }
+        render={(v: string | null | undefined, record: User) => (
+          <Link to={adminLinks.user(record.id)} style={{ fontFamily: "monospace" }}>
+            {v || record.id.substring(0, 8)}
+          </Link>
+        )}
       />
       <Table.Column<User>
         title="Name"

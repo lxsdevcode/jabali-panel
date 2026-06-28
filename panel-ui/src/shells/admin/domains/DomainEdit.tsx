@@ -21,6 +21,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { useOneQuery, useUpdateMutation } from "../../../hooks/useQueries";
+import { AdminBreadcrumb } from "../../../components/admin/AdminBreadcrumb";
+import { ownerResourceCrumbs, adminLinks, ownerLabel } from "../../../components/admin/entityLinks";
 import type { Domain } from "./DomainList";
 import { DomainEmailSection } from "./DomainEmailSection";
 import { DomainMailProviderSection } from "./DomainMailProviderSection";
@@ -253,12 +255,23 @@ export const DomainEdit = () => {
         emailTab,
       ];
 
+  const ownerRef = { id: domain.user_id, username: domain.username };
+
   return (
     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+      <AdminBreadcrumb
+        items={[
+          ...ownerResourceCrumbs(ownerRef, { key: "domains", label: "Domains" }),
+          { title: domain.name },
+        ]}
+      />
       <Card>
-        <Typography.Title level={3} style={{ marginTop: 0 }}>
+        <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 4 }}>
           Edit domain — {domain.name}
         </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+          Owner: <Link to={adminLinks.user(domain.user_id)}>{ownerLabel(ownerRef)}</Link>
+        </Typography.Paragraph>
         {isPanelPrimary && (
           <Alert
             type="info"

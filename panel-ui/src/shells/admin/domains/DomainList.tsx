@@ -17,7 +17,7 @@ import {
   SwapOutlined,
   ThunderboltOutlined,
 } from "@icons";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams, Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SorterResult } from "antd/es/table/interface";
 
@@ -27,7 +27,9 @@ import { RowActionButton } from "../../../components/RowActionButton";
 import { humanBytes } from "../../../utils/bytes";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
-import { useDeleteMutation } from "../../../hooks/useQueries";
+import { useDeleteMutation, useOneQuery } from "../../../hooks/useQueries";
+import { AdminBreadcrumb } from "../../../components/admin/AdminBreadcrumb";
+import { ownerResourceCrumbs, adminLinks, ownerLabel } from "../../../components/admin/entityLinks";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { DomainSettingsButton } from "../../DomainSettingsButton";
 import { DomainRedirectsButton } from "../../DomainRedirectsButton";
@@ -171,11 +173,27 @@ export const DomainList = () => {
   const qc = useQueryClient();
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ownerId = searchParams.get("user_id") ?? undefined;
   const query = useTableURL<Domain>({
     resource: "domains",
     defaultSort: "name",
     defaultOrder: "asc",
+    extraParams: ownerId ? { user_id: ownerId } : undefined,
   });
+  // Owner-scoped view (#483): fetch the owner so the breadcrumb + chip can
+  // name them even when the filtered list is empty.
+  const ownerQ = useOneQuery<{ id: string; username?: string | null }>({
+    resource: "users",
+    id: ownerId,
+    enabled: !!ownerId,
+  });
+  const clearOwner = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("user_id");
+    next.delete("page");
+    setSearchParams(next);
+  };
   const deleteMutation = useDeleteMutation({ resource: "domains" });
 
   const handleToggle = async (r: Domain) => {
@@ -213,8 +231,17 @@ export const DomainList = () => {
     });
   };
 
+  const ownerRef = ownerId
+    ? { id: ownerId, username: ownerQ.data?.username }
+    : undefined;
+
   return (
     <div>
+      {ownerRef && (
+        <AdminBreadcrumb
+          items={ownerResourceCrumbs(ownerRef, { key: "domains", label: "Domains" })}
+        />
+      )}
       <Space
         wrap
         align="center"
@@ -224,9 +251,16 @@ export const DomainList = () => {
           justifyContent: "space-between",
         }}
       >
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          <GlobalOutlined /> Domains
-        </Typography.Title>
+        <Space wrap align="center">
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            <GlobalOutlined /> Domains
+          </Typography.Title>
+          {ownerRef && (
+            <Tag closable onClose={clearOwner} color="blue">
+              Owner: {ownerLabel(ownerRef)}
+            </Tag>
+          )}
+        </Space>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -280,9 +314,11 @@ export const DomainList = () => {
             title="User"
             key="username"
             sorter={{ multiple: 1 }}
-            render={(username: string | null | undefined, record: Domain) =>
-              username ?? <Typography.Text type="secondary">{record.user_id.substring(0, 8)}</Typography.Text>
-            }
+            render={(username: string | null | undefined, record: Domain) => (
+              <Link to={adminLinks.user(record.user_id)}>
+                {username ?? record.user_id.substring(0, 8)}
+              </Link>
+            )}
           />
           <Table.Column<Domain>
             dataIndex="is_enabled"
