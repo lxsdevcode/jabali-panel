@@ -14,6 +14,7 @@ import { DeleteOutlined, EditOutlined, LoginOutlined, PauseCircleOutlined, PlayC
 import { RowActions, type RowAction } from "../../../components/RowActions";
 import { Link } from "react-router";
 import { adminLinks } from "../../../components/admin/entityLinks";
+import { shortDateTime } from "../../../utils/datetime";
 
 import { startImpersonation } from "../../../impersonation";
 import type { SorterResult } from "antd/es/table/interface";
@@ -48,7 +49,7 @@ type User = {
 
 type HostingPackage = { id: string; name: string };
 
-const renderCreated = (ts: string) => new Date(ts).toLocaleString();
+const renderCreated = (ts: string) => shortDateTime(ts);
 
 // Shared row-action buttons for both tables. Wired to react-router
 // directly — no <EditButton> wrapper around a plain <Button>.

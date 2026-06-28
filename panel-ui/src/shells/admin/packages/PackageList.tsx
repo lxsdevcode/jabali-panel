@@ -13,6 +13,7 @@ import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
+import { shortDateTime } from "../../../utils/datetime";
 
 type Package = {
   id: string;
@@ -192,6 +193,7 @@ export const PackageList = () => {
             title="Created"
             key="created_at"
             sorter={{ multiple: 1 }}
+            render={(ts: string) => shortDateTime(ts)}
           />
           <Table.Column
             title="Actions"
