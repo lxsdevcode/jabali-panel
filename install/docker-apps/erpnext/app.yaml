@@ -1,0 +1,59 @@
+slug: erpnext
+name: ERPNext
+tags: ["ERP", "CRM", "Accounting"]
+version: "16.25.0"
+description: >-
+  Full open-source ERP: accounting, inventory, manufacturing, HR, CRM, projects
+  and a website/e-commerce builder, built on the Frappe framework. This is a
+  multi-service stack — a Frappe/ERPNext app server (backend), an nginx
+  frontend, a realtime websocket, two RQ background workers (short + long), a
+  scheduler, MariaDB, and two Redis instances (cache + queue), plus one-shot
+  configurator and site-creation steps that run on first boot. First boot runs
+  database migrations for several minutes before the site is reachable. The
+  admin user is "Administrator"; its password is generated at install and shown
+  once. Resource-hungry — give it at least 2 GB of RAM.
+icon: icon.svg
+upstream: https://github.com/frappe/erpnext
+documentation: https://docs.frappe.io/erpnext
+
+image_channel: frappe/erpnext:v16.25.0@sha256:42cfca4dbd8abe6b2af551e7fb79e9e8b0879f03d4f31c789a268c02e5af4f6c
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 1024
+
+# Every Frappe service runs as the image's `frappe` user (uid 1000, gid 1000)
+# and writes to the shared sites/ + logs/ bind mounts on first boot — without
+# pre-chowning those dirs the configurator/create-site steps EACCES. MariaDB
+# (root entrypoint) re-chowns its own /var/lib/mysql, and the redis image's
+# root entrypoint re-chowns /data, so 1000:1000 across all subdirs is safe.
+volume_owner: "1000:1000"
+
+volumes:
+  - name: sites
+    container_path: /home/frappe/frappe-bench/sites
+  - name: logs
+    container_path: /home/frappe/frappe-bench/logs
+  - name: db-data
+    container_path: /var/lib/mysql
+  - name: redis-queue-data
+    container_path: /data
+
+ports:
+  - name: http
+    container_port: 8080
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /api/method/ping
+
+env:
+  - name: ADMIN_PASSWORD
+    secret: true
+    generate: password32
+  - name: DB_ROOT_PASSWORD
+    secret: true
+    generate: password32
