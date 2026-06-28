@@ -217,6 +217,7 @@ export const UserCronList = () => {
           {
             title: "Schedule",
             dataIndex: "schedule",
+            sorter: (a, b) => a.schedule.localeCompare(b.schedule),
             render: (schedule: string) => (
               <Tooltip title={schedule}>
                 <span>{humanizeSchedule(schedule)}</span>
@@ -226,6 +227,7 @@ export const UserCronList = () => {
           {
             title: "Command",
             dataIndex: "command",
+            sorter: (a, b) => a.command.localeCompare(b.command),
             render: (command: string) => (
               <Tooltip title={command}>
                 <span
@@ -241,12 +243,14 @@ export const UserCronList = () => {
           {
             title: "Last Run",
             dataIndex: "last_run_at",
+            sorter: (a, b) => (a.last_run_at ? +new Date(a.last_run_at) : 0) - (b.last_run_at ? +new Date(b.last_run_at) : 0),
             render: (lastRunAt: string | null) =>
               lastRunAt ? dayjs(lastRunAt).fromNow() : "Never",
           },
           {
             title: "Last Exit",
             dataIndex: "last_exit_code",
+            sorter: (a, b) => (a.last_exit_code ?? -1) - (b.last_exit_code ?? -1),
             render: (code: number | null) => {
               if (code === null) return <Typography.Text type="secondary">—</Typography.Text>;
               if (code === 0)
@@ -257,6 +261,7 @@ export const UserCronList = () => {
           {
             title: "Enabled",
             dataIndex: "enabled",
+            sorter: (a, b) => Number(a.enabled) - Number(b.enabled),
             render: (enabled: boolean, record) => (
               <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />}
                 checked={enabled}

@@ -224,6 +224,8 @@ export function UserAPITokensPage(): JSX.Element {
       {
         title: "Name",
         dataIndex: "name",
+        sorter: (a, b) => a.name.localeCompare(b.name),
+        defaultSortOrder: "ascend" as const,
         render: (name: string, row) => (
           <Space>
             <KeyOutlined />
@@ -254,6 +256,7 @@ export function UserAPITokensPage(): JSX.Element {
       {
         title: "Created",
         dataIndex: "created_at",
+        sorter: (a, b) => (a.created_at ? +new Date(a.created_at) : 0) - (b.created_at ? +new Date(b.created_at) : 0),
         render: fmtDate,
       },
       {
@@ -273,6 +276,7 @@ export function UserAPITokensPage(): JSX.Element {
       {
         title: "Expires",
         dataIndex: "expires_at",
+        sorter: (a, b) => (a.expires_at ? +new Date(a.expires_at) : 0) - (b.expires_at ? +new Date(b.expires_at) : 0),
         render: fmtDate,
       },
       {
