@@ -59,6 +59,31 @@
   max-height: calc(100vh - 140px);
   overflow-y: auto;
 }
+
+/* Short viewports (small phones / short windows): AntD centers modals
+   vertically, so a modal taller than the viewport pushes its footer (the
+   primary actions) below the fold. Top-anchor the modal and tighten the body
+   cap so header + body + footer all fit. (GH #502) */
+@media (max-height: 720px) {
+  .ant-modal,
+  .ant-modal-centered .ant-modal {
+    top: 8px !important;
+    vertical-align: top !important;
+    padding-bottom: 0 !important;
+  }
+  .ant-modal-body {
+    max-height: calc(100vh - 124px) !important;
+  }
+}
+/* When the impersonation banner is up it eats viewport height — drop the modal
+   below it and shrink the body cap by the banner height. (GH #502 case 8) */
+body.imp-active .ant-modal,
+body.imp-active .ant-modal-centered .ant-modal {
+  top: calc(8px + var(--imp-banner-h, 40px)) !important;
+}
+body.imp-active .ant-modal-body {
+  max-height: calc(100vh - 124px - var(--imp-banner-h, 40px)) !important;
+}
 .ant-drawer-content-wrapper {
   max-width: 100vw !important;
 }
