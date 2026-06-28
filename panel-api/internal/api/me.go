@@ -68,8 +68,13 @@ func (h *meExtHandler) serverCapabilities(c *gin.Context) {
 	dockerUser := settings.DockerMarketplaceEnabled && settings.DockerAppsForUsersEnabled && tenantDockerHostReady()
 	if dockerUser && h.cfg.Users != nil && h.cfg.Packages != nil {
 		if claims := ginctx.Claims(c); claims != nil {
-			if u, uerr := h.cfg.Users.FindByID(ctx, claims.UserID); uerr == nil && u != nil && u.PackageID != nil {
-				if pkg, perr := h.cfg.Packages.FindByID(ctx, *u.PackageID); perr != nil || pkg == nil || pkg.MaxDockerApps == 0 {
+			if u, uerr := h.cfg.Users.FindByID(ctx, claims.UserID); uerr == nil && u != nil {
+				// Tenant Docker requires a package that includes it (Gitea #511):
+				// a package-less tenant is denied at install, so don't advertise
+				// the capability either (keeps the nav honest).
+				if u.PackageID == nil {
+					dockerUser = false
+				} else if pkg, perr := h.cfg.Packages.FindByID(ctx, *u.PackageID); perr != nil || pkg == nil || pkg.MaxDockerApps == 0 {
 					dockerUser = false
 				}
 			}

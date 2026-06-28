@@ -362,12 +362,20 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 		return
 	}
 
-	// Resolve the caller. A user MUST have a Linux account; the package quota
-	// gate is enforced ONLY when the user has a package — no package means no
-	// docker limit (admin/power users; GH #282).
+	// Resolve the caller. A user MUST have a Linux account AND a hosting
+	// package that includes Docker apps. Tenant Docker is a privileged feature,
+	// so — unlike the GH #282 "no package = unrestricted" default for ordinary
+	// resources — a package-less tenant is DENIED here (Gitea #511); without it
+	// a no-package account would skip the MaxDockerApps count, the docker-data
+	// disk gate, and the CPU/mem/PID clamps. (Admins are panel-only with no
+	// Linux account, so they never reach this tenant route.)
 	user, err := h.cfg.Users.FindByID(ctx, claims.UserID)
 	if err != nil || user == nil || user.Username == nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "no_account", "detail": "account has no Linux user"})
+		return
+	}
+	if user.PackageID == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "docker_apps_require_package", "detail": "Docker apps require a hosting package that includes them"})
 		return
 	}
 	var pkg *models.HostingPackage
