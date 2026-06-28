@@ -4931,6 +4931,34 @@ seed_last_built_sha() {
 
 # ---------- nginx WebSocket upgrade map ----
 
+# harden_proc_hidepid mounts /proc with hidepid=2 so a tenant can't read another
+# process's /proc/<pid>/cmdline (Gitea #499): several app installers + DB tools
+# must pass secrets on the command line because the upstream CLIs offer no
+# env/stdin alternative. The privileged agent + systemd run as root and bypass
+# hidepid; panel-api (jabali) never reads other procs' /proc, so nothing in the
+# panel breaks. Idempotent; persisted via fstab; remount is best-effort
+# (unprivileged containers may deny it, in which case fstab applies on reboot).
+harden_proc_hidepid() {
+  if findmnt -no OPTIONS /proc 2>/dev/null | grep -q 'hidepid'; then
+    _ok "/proc hidepid already enabled"
+  else
+    # Persist: add a /proc fstab line if none exists, else append hidepid=2 to
+    # the existing one (guarded against double-adding).
+    if ! grep -qE '^[^#]*[[:space:]]/proc[[:space:]]+proc[[:space:]]' /etc/fstab; then
+      echo 'proc /proc proc defaults,hidepid=2 0 0' >> /etc/fstab
+      _log "added /proc hidepid=2 to /etc/fstab"
+    elif ! grep -E '^[^#]*[[:space:]]/proc[[:space:]]+proc[[:space:]]' /etc/fstab | grep -q hidepid; then
+      sed -i -E '/^[^#]*[[:space:]]\/proc[[:space:]]+proc[[:space:]]/ s/([[:space:]]proc[[:space:]]+[^[:space:]]+)/\1,hidepid=2/' /etc/fstab
+      _log "added hidepid=2 to the existing /proc fstab entry"
+    fi
+    if mount -o remount,hidepid=2 /proc 2>/dev/null; then
+      _ok "/proc hidepid=2 applied (tenants cannot read other processes' cmdline)"
+    else
+      _warn "/proc hidepid remount denied (container?) — applies on next boot via fstab"
+    fi
+  fi
+}
+
 install_nginx_ssl_hardening() {
   # OpenSSL 3.5 enabled post-quantum hybrid key exchange (X25519MLKEM768,
   # group 0x11ec) by DEFAULT for TLS 1.3. Cloudflare's origin pull (and
@@ -12212,6 +12240,7 @@ main() {
   install_nginx_websocket_map
   install_nginx_fastcgi_cache
   install_nginx_ssl_hardening
+  harden_proc_hidepid
   install_nginx_tunables
   # M25 Step 4: install the nginx vhost on :8443 that terminates TLS and
   # proxies to the panel-api Unix socket. Runs AFTER install_nginx_default_vhost
