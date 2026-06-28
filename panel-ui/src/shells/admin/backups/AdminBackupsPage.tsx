@@ -500,6 +500,7 @@ export const AdminBackupsPage = () => {
             columns={[
               {
                 title: "ID",
+                sorter: (a, b) => (a.isRun ? a.run.run_id : a.job.id).localeCompare(b.isRun ? b.run.run_id : b.job.id),
                 render: (_: unknown, row: TableRow) => {
                   const id = row.isRun ? row.run.run_id : row.job.id;
                   return (
@@ -511,6 +512,7 @@ export const AdminBackupsPage = () => {
               },
               {
                 title: "Source",
+                sorter: (a, b) => Number(a.isRun) - Number(b.isRun),
                 render: (_: unknown, row: TableRow) =>
                   row.isRun ? (
                     <Tag color="geekblue">scheduled run</Tag>
@@ -520,6 +522,7 @@ export const AdminBackupsPage = () => {
               },
               {
                 title: "Type",
+                sorter: (a, b) => (a.isRun ? a.run.kind : a.job.kind).localeCompare(b.isRun ? b.run.kind : b.job.kind),
                 render: (_: unknown, row: TableRow) =>
                   renderTypeTag(row.isRun ? row.run.kind : row.job.kind),
               },
@@ -534,11 +537,13 @@ export const AdminBackupsPage = () => {
               },
               {
                 title: "Added (dedup win)",
+                sorter: (a, b) => (a.isRun ? a.run.bytes_added : a.job.bytes_added) - (b.isRun ? b.run.bytes_added : b.job.bytes_added),
                 render: (_: unknown, row: TableRow) =>
                   formatBytes(row.isRun ? row.run.bytes_added : row.job.bytes_added),
               },
               {
                 title: "Logical size",
+                sorter: (a, b) => (a.isRun ? a.run.bytes_total : a.job.bytes_total) - (b.isRun ? b.run.bytes_total : b.job.bytes_total),
                 render: (_: unknown, row: TableRow) =>
                   formatBytes(row.isRun ? row.run.bytes_total : row.job.bytes_total),
               },
