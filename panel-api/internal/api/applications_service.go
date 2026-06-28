@@ -519,6 +519,32 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			UseWWW:       k.UseWWW,
 		}, deps)
 		adminPassword = mwPass
+	case "moodle":
+		moodlePass := paramOr(k.Params, "admin_password", "")
+		if moodlePass == "" {
+			// Moodle's default policy needs upper+lower+digit+symbol. A ULID is
+			// upper+digit only, so lowercase the first chars + append a digit and
+			// symbol to satisfy the policy while keeping the ULID entropy.
+			u := ids.NewULID()
+			moodlePass = strings.ToLower(u[:5]) + u[5:] + "7#"
+		}
+		go createMoodleInstallAndKickAgent(ctx, moodleKickArgs{
+			InstallID:    k.InstallID,
+			UserID:       k.UserID,
+			OSUser:       k.OSUser,
+			DocRoot:      k.DocRoot,
+			Subdirectory: k.Subdirectory,
+			SiteURL:      k.SiteURL,
+			DBName:       k.Chain.DBName,
+			DBUser:       k.Chain.DBUsername,
+			DBPassword:   k.Chain.DBPassword,
+			SiteTitle:    paramOr(k.Params, "site_title", "My Moodle"),
+			AdminUser:    k.AdminUsername,
+			AdminPass:    moodlePass,
+			AdminEmail:   k.AdminEmail,
+			Language:     paramOr(k.Params, "language", "en"),
+		}, deps)
+		adminPassword = moodlePass
 	}
 	return adminPassword
 }

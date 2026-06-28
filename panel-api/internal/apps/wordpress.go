@@ -93,5 +93,8 @@ func RegisterDefaults(r *Registry) error {
 	if err := r.Register(ITFlow); err != nil {
 		return err
 	}
+	if err := r.Register(Moodle); err != nil {
+		return err
+	}
 	return nil
 }

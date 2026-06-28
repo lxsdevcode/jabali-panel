@@ -1,0 +1,301 @@
+package commands
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+)
+
+// moodleInstallReq is the input for the Moodle 1-click installer (GH #310).
+// Moodle is a PHP + MariaDB app; the agent runs its headless
+// `admin/cli/install.php` with pre-supplied credentials so the user never
+// sees the web installer. Unlike the other apps, Moodle keeps its uploaded
+// content + cache in a `moodledata` directory OUTSIDE the web root, created
+// here and removed by the deleter.
+type moodleInstallReq struct {
+	AppType      string `json:"app_type"` // present, ignored
+	OSUser       string `json:"os_user"`
+	Docroot      string `json:"docroot"`
+	Subdirectory string `json:"subdirectory"`
+	SiteURL      string `json:"site_url"`
+	DBName       string `json:"db_name"`
+	DBUser       string `json:"db_user"`
+	DBPassword   string `json:"db_password"`
+	DBHost       string `json:"db_host"`
+	SiteTitle    string `json:"site_title"`
+	AdminUser    string `json:"admin_user"`
+	AdminPass    string `json:"admin_pass"`
+	AdminEmail   string `json:"admin_email"`
+	Language     string `json:"language"`
+}
+
+type moodleInstallResp struct {
+	Version string `json:"version"`
+}
+
+// moodleVersion / moodleTarballURL / moodleTarballSHA256 pin the upstream
+// release. Moodle 4.5 is the current LTS. Bump the version + SHA together;
+// the versioned URL under stable405 is stable (unlike moodle-latest-405).
+//
+// To recompute on a host with the URL reachable:
+//
+//	curl -sSL -A 'jabali-panel-agent/1.0' \
+//	  https://download.moodle.org/download.php/direct/stable405/moodle-4.5.12.tgz \
+//	  | sha256sum
+const moodleVersion = "4.5.12"
+const moodleTarballURL = "https://download.moodle.org/download.php/direct/stable405/moodle-" + moodleVersion + ".tgz"
+const moodleTarballSHA256 = "1363537dc7d371903e1a661d2055a66da3344b5fb299414a28d4b244d6b53e86"
+
+// moodleAdminUserPattern: Moodle usernames are lowercase alnum plus a few
+// punctuation chars (it lowercases on save). Keep it conservative.
+var moodleAdminUserPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._@-]{1,99}$`)
+
+// moodleLanguagePattern matches Moodle language packs (en, fr, es, pt_br…).
+var moodleLanguagePattern = regexp.MustCompile(`^[a-z]{2,3}(_[a-z0-9]{1,8})?$`)
+
+func computeMoodleInstallPath(docroot, subdirectory string) string {
+	if subdirectory == "" {
+		return docroot
+	}
+	return filepath.Join(docroot, subdirectory)
+}
+
+// computeMoodleDataRoot derives the moodledata directory — deterministic from
+// the owner + install location so the deleter can find it. It lives under the
+// owner's home, OUTSIDE any docroot, so it is never web-served (a hard Moodle
+// requirement). The key is the subdirectory (or "root" for a docroot install).
+func computeMoodleDataRoot(osUser, subdirectory string) string {
+	key := strings.TrimSuffix(subdirectory, "/")
+	if key == "" {
+		key = "root"
+	}
+	key = regexp.MustCompile(`[^A-Za-z0-9._-]`).ReplaceAllString(key, "_")
+	return filepath.Join("/home", osUser, ".moodledata", key)
+}
+
+// moodleShortName slugifies the site title into a Moodle shortname (alnum,
+// non-empty). Falls back to "moodle".
+func moodleShortName(title string) string {
+	s := regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(title, "")
+	if s == "" {
+		return "moodle"
+	}
+	if len(s) > 64 {
+		s = s[:64]
+	}
+	return s
+}
+
+func downloadMoodleTarball(ctx context.Context, dest string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, moodleTarballURL, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("User-Agent", userAgent)
+	client := &http.Client{Timeout: 15 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download %s: %w", moodleTarballURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: HTTP %d", moodleTarballURL, resp.StatusCode)
+	}
+	out, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", dest, err)
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+	return nil
+}
+
+func verifyMoodleSHA256(path string) error {
+	if moodleTarballSHA256 == "" {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("hash %s: %w", path, err)
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(got, moodleTarballSHA256) {
+		return fmt.Errorf("moodle tarball sha256 mismatch: got %s want %s", got, moodleTarballSHA256)
+	}
+	return nil
+}
+
+// extractMoodleTarball untars into installPath; the tarball wraps content
+// under a top-level `moodle/` dir, so --strip-components=1 flattens it.
+func extractMoodleTarball(ctx context.Context, osUser, tarballPath, installPath string) error {
+	cmd := buildSystemdRunCmd(ctx, osUser,
+		"tar", "--extract", "--gzip", "--strip-components=1",
+		"--file", tarballPath, "--directory", installPath,
+	)
+	out, err := runBoundedOutput(cmd, 0)
+	if err != nil {
+		return fmt.Errorf("tar extract: %w (output: %s)", err, truncateStr(string(out), 512))
+	}
+	return nil
+}
+
+// runMoodleCLIInstaller drives admin/cli/install.php headless. Moodle is
+// strict about --wwwroot matching the URL the site is served on. The DB +
+// admin passwords ride argv only for the brief install window (Moodle's CLI
+// installer reads neither from env nor stdin) — /proc hidepid (GH #499)
+// keeps them unreadable by other tenants.
+func runMoodleCLIInstaller(ctx context.Context, req moodleInstallReq, installPath, dataRoot string) error {
+	dbHost := req.DBHost
+	if dbHost == "" {
+		dbHost = "localhost"
+	}
+	lang := req.Language
+	if lang == "" {
+		lang = "en"
+	}
+	args := []string{
+		phpCLIFor(req.OSUser), filepath.Join(installPath, "admin", "cli", "install.php"),
+		"--non-interactive",
+		"--agree-license",
+		"--lang=" + lang,
+		"--wwwroot=" + strings.TrimSuffix(req.SiteURL, "/"),
+		"--dataroot=" + dataRoot,
+		"--dbtype=mariadb",
+		"--dbhost=" + dbHost,
+		"--dbname=" + req.DBName,
+		"--dbuser=" + req.DBUser,
+		"--dbpass=" + req.DBPassword,
+		"--fullname=" + req.SiteTitle,
+		"--shortname=" + moodleShortName(req.SiteTitle),
+		"--summary=",
+		"--adminuser=" + req.AdminUser,
+		"--adminpass=" + req.AdminPass,
+		"--adminemail=" + req.AdminEmail,
+	}
+	cmd := buildSystemdRunCmd(ctx, req.OSUser, args...)
+	cmd.Dir = installPath
+	out, err := runBoundedOutput(cmd, 0)
+	if err != nil {
+		return fmt.Errorf("php admin/cli/install.php: %w (output: %s)", err, truncateStr(string(out), 1024))
+	}
+	return nil
+}
+
+func moodleInstallHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var req moodleInstallReq
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("failed to parse params: %v", err)}
+	}
+	if req.OSUser == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "os_user is required"}
+	}
+	if req.Docroot == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "docroot is required"}
+	}
+	if req.DBName == "" || req.DBUser == "" || req.DBPassword == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "db_name, db_user, db_password are required"}
+	}
+	if req.SiteTitle == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "site_title is required"}
+	}
+	if req.SiteURL == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "site_url is required (Moodle wwwroot must match the served URL)"}
+	}
+	if req.AdminUser == "" || !moodleAdminUserPattern.MatchString(req.AdminUser) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_user must be lowercase alphanumeric (plus . _ - @)"}
+	}
+	// Moodle's default password policy: >=8 chars with upper, lower, digit and a
+	// non-alphanumeric. Require a caller-supplied password (no auto-generate)
+	// since a generated ULID wouldn't satisfy it; surface a clear error early.
+	if len(req.AdminPass) < 8 {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_pass must be at least 8 characters (Moodle policy: upper, lower, digit + symbol)"}
+	}
+	if req.AdminEmail == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "admin_email is required"}
+	}
+	if req.Language != "" && !moodleLanguagePattern.MatchString(req.Language) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("language %q does not match expected Moodle pack form", req.Language)}
+	}
+	if err := validateDocrootPath(req.OSUser, req.Docroot); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
+	}
+
+	installPath := computeMoodleInstallPath(req.Docroot, req.Subdirectory)
+	dataRoot := computeMoodleDataRoot(req.OSUser, req.Subdirectory)
+
+	if req.Subdirectory != "" {
+		mkdirCmd := buildSystemdRunCmd(ctx, req.OSUser, "mkdir", "-p", installPath)
+		if out, err := runBoundedOutput(mkdirCmd, 0); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("mkdir %s: %v (output: %s)", installPath, err, truncateStr(string(out), 256))}
+		}
+	}
+	// moodledata: created as the owner, mode 0770 (Moodle wants the web user to
+	// own it; nginx/php-fpm run as the owner). Outside the docroot so it is
+	// never web-served.
+	dataCmd := buildSystemdRunCmd(ctx, req.OSUser, "mkdir", "-p", "-m", "0770", dataRoot)
+	if out, err := runBoundedOutput(dataCmd, 0); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("mkdir moodledata: %v (output: %s)", err, truncateStr(string(out), 256))}
+	}
+
+	removePlaceholderIndex(ctx, installPath)
+
+	tmpDir, err := stagingMkdirTemp("moodle-")
+	if err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("staging mktemp: %v", err)}
+	}
+	defer os.RemoveAll(tmpDir)
+	tarballPath := filepath.Join(tmpDir, "moodle.tgz")
+
+	dlCtx, dlCancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer dlCancel()
+	if err := downloadMoodleTarball(dlCtx, tarballPath); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+	if err := verifyMoodleSHA256(tarballPath); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+	if err := os.Chmod(tarballPath, 0o644); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("chmod tarball: %v", err)}
+	}
+	if err := extractMoodleTarball(ctx, req.OSUser, tarballPath, installPath); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+
+	if err := runMoodleCLIInstaller(ctx, req, installPath, dataRoot); err != nil {
+		// Best-effort cleanup so a retry isn't blocked by config.php / the
+		// moodledata tree from the failed attempt.
+		_ = buildSystemdRunCmd(ctx, req.OSUser, "rm", "-f", filepath.Join(installPath, "config.php")).Run()
+		_ = buildSystemdRunCmd(ctx, req.OSUser, "rm", "-rf", dataRoot).Run()
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+
+	// config.php holds the DB password in plaintext; normalize the tree to
+	// owner+group read (same as the other PHP apps).
+	if err := normalizePermsToWwwData(ctx, installPath, req.OSUser); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
+	}
+
+	return moodleInstallResp{Version: moodleVersion}, nil
+}
+
+func init() {
+	RegisterAppInstaller("moodle", moodleInstallHandler)
+}

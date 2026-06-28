@@ -526,6 +526,75 @@ func createMediaWikiInstallAndKickAgent(parentCtx context.Context, args mediaWik
 	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
+type moodleKickArgs struct {
+	InstallID    string
+	UserID       string
+	OSUser       string
+	DocRoot      string
+	Subdirectory string
+	SiteURL      string
+	DBName       string
+	DBUser       string
+	DBPassword   string
+	SiteTitle    string
+	AdminUser    string
+	AdminPass    string
+	AdminEmail   string
+	Language     string
+}
+
+// createMoodleInstallAndKickAgent flips the install row to "installing",
+// dispatches app.install with app_type="moodle", and updates the row to
+// ready/failed. Mirrors createMediaWikiInstallAndKickAgent with Moodle's
+// param shape (GH #310).
+func createMoodleInstallAndKickAgent(parentCtx context.Context, args moodleKickArgs, cfg ApplicationHandlerConfig) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	if err := cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "installing", nil, nil); err != nil {
+		return
+	}
+	if cfg.Agent == nil {
+		errMsg := "agent not configured"
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+
+	agentResp, err := cfg.Agent.Call(ctx, "app.install", map[string]any{
+		"app_type":     "moodle",
+		"os_user":      args.OSUser,
+		"docroot":      args.DocRoot,
+		"subdirectory": args.Subdirectory,
+		"site_url":     args.SiteURL,
+		"db_name":      args.DBName,
+		"db_user":      args.DBUser,
+		"db_password":  args.DBPassword,
+		"db_host":      "localhost",
+		"site_title":   args.SiteTitle,
+		"admin_user":   args.AdminUser,
+		"admin_pass":   args.AdminPass,
+		"admin_email":  args.AdminEmail,
+		"language":     args.Language,
+	})
+	if err != nil {
+		errMsg := truncateError(fmt.Sprintf("agent install failed: %v", err), 1024)
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+	var respMap map[string]any
+	if err := json.Unmarshal(agentResp, &respMap); err != nil {
+		errMsg := truncateError(fmt.Sprintf("failed to parse agent response: %v", err), 1024)
+		cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "failed", &errMsg, nil)
+		return
+	}
+	version := ""
+	if v, ok := respMap["version"].(string); ok {
+		version = v
+	}
+	createAppCrons(ctx, cfg, args.UserID, "moodle", appInstallPath(args.DocRoot, args.Subdirectory))
+	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
+}
+
 // dokuWikiKickArgs is what the install-row kicker passes to the agent's
 // DokuWiki installer. No DB fields — DokuWiki is flat-file (RequiresDB
 // false), so the framework never provisions a schema.
@@ -1053,6 +1122,9 @@ func appCronSpecs(appType, installPath string) []appCron {
 	case "mediawiki":
 		return []appCron{{"MediaWiki Job Queue", "*/15 * * * *",
 			fmt.Sprintf("php %s/maintenance/run.php runJobs", installPath)}}
+	case "moodle":
+		return []appCron{{"Moodle Cron", "*/5 * * * *",
+			fmt.Sprintf("php %s/admin/cli/cron.php", installPath)}}
 	}
 	return nil
 }

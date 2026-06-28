@@ -19,6 +19,7 @@ func TestAppArtifactSHA256RejectsMismatch(t *testing.T) {
 		"drupal":     verifyDrupalSHA256,
 		"joomla":     verifyJoomlaSHA256,
 		"prestashop": verifyPrestaShopSHA256,
+		"moodle":     verifyMoodleSHA256,
 	}
 	for name, verify := range verifiers {
 		t.Run(name, func(t *testing.T) {
