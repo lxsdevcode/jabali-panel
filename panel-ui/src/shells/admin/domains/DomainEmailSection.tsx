@@ -28,6 +28,9 @@ import {
   useEnableDomainEmail,
   type DomainEmailDNSHint,
 } from "../../../hooks/useMailboxes";
+import { useOneQuery } from "../../../hooks/useQueries";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "../../../apiClient";
 
 type Props = {
   domainId: string;
@@ -47,6 +50,24 @@ export const DomainEmailSection = ({ domainId }: Props) => {
   const enableMutation = useEnableDomainEmail();
   const disableMutation = useDisableDomainEmail();
   const [flipping, setFlipping] = useState(false);
+  const qc = useQueryClient();
+  const { data: domain } = useOneQuery<{ webmail_enabled: boolean }>({
+    resource: "domains",
+    id: domainId,
+  });
+  const [wmFlipping, setWmFlipping] = useState(false);
+  const onWebmailFlip = async (next: boolean) => {
+    setWmFlipping(true);
+    try {
+      await apiClient.patch(`/domains/${domainId}`, { webmail_enabled: next });
+      qc.invalidateQueries({ queryKey: ["one", "domains", domainId] });
+      message.success(next ? "Webmail enabled for this domain" : "Webmail disabled for this domain");
+    } catch {
+      message.error("Failed to toggle webmail");
+    } finally {
+      setWmFlipping(false);
+    }
+  };
 
   const onFlip = async (next: boolean) => {
     setFlipping(true);
@@ -86,6 +107,21 @@ export const DomainEmailSection = ({ domainId }: Props) => {
           <Typography.Text code>{data.domain_name}</Typography.Text>
         </span>
       </Space>
+
+      {enabled && (
+        <Space size="middle" align="center" wrap>
+          <Switch
+            checked={domain?.webmail_enabled ?? true}
+            loading={wmFlipping}
+            onChange={onWebmailFlip}
+          />
+          <span>
+            Webmail client (Bulwark) for this domain — turn off to drop just the
+            <Typography.Text code> mail.{data.domain_name}</Typography.Text> webmail
+            vhost; mail delivery is unaffected.
+          </span>
+        </Space>
+      )}
 
       {enabled && !dkim && (
         // Paranoid guard: the panel is in an inconsistent state (enabled
