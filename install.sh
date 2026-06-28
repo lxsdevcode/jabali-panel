@@ -2327,8 +2327,32 @@ install_docker_engine() {
   # we dont restart docker on every install.sh run.
   install -d -m 0755 /etc/docker
   local dropin="/etc/docker/daemon.json"
+
+  # SECURITY (#506): preserve userns-remap. `jabali docker enable-tenant` adds
+  # "userns-remap":"default" so tenant containers map container-root to the
+  # unprivileged dockremap range. A plain whole-file rewrite here would drop it
+  # on the next install/update while /etc/jabali/docker-tenant-enabled stays —
+  # silently running tenant containers as host root. Re-add it whenever the
+  # tenant flag exists OR the current daemon.json already has it.
+  local want_userns="no"
+  if [[ -f /etc/jabali/docker-tenant-enabled ]] || { [[ -f "$dropin" ]] && grep -q '"userns-remap"' "$dropin"; }; then
+    want_userns="yes"
+  fi
   local desired_json
-  desired_json=$(cat <<'DOCKER_EOF'
+  if [[ "$want_userns" == "yes" ]]; then
+    desired_json=$(cat <<'DOCKER_EOF'
+{
+  "userns-remap": "default",
+  "live-restore": true,
+  "log-driver": "journald",
+  "default-ulimits": {
+    "nofile": { "Name": "nofile", "Soft": 8192, "Hard": 8192 }
+  }
+}
+DOCKER_EOF
+)
+  else
+    desired_json=$(cat <<'DOCKER_EOF'
 {
   "live-restore": true,
   "log-driver": "journald",
@@ -2338,16 +2362,29 @@ install_docker_engine() {
 }
 DOCKER_EOF
 )
+  fi
   if [[ ! -f "$dropin" ]] || ! cmp -s <(printf '%s\n' "$desired_json") "$dropin"; then
     local tmp
     tmp="$(mktemp --tmpdir jabali-docker-daemon.XXXXXX)"
     printf '%s\n' "$desired_json" > "$tmp"
     install -m 0644 -o root -g root "$tmp" "$dropin"
     rm -f "$tmp"
-    _log "wrote $dropin; restarting docker"
+    _log "wrote $dropin (userns-remap=$want_userns); restarting docker"
     systemctl restart docker
   else
     _log "$dropin already current"
+  fi
+
+  # SECURITY (#506): fail closed. If tenant Docker is enabled the live daemon
+  # MUST be running with userns-remap — never leave tenant containers mapped to
+  # host root. We re-added the key above, so a restart should restore it; this
+  # verifies the live daemon (not just the config) and screams if it didn't.
+  if [[ -f /etc/jabali/docker-tenant-enabled ]]; then
+    if ! docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -q userns; then
+      _err "tenant Docker is enabled (/etc/jabali/docker-tenant-enabled) but the Docker daemon is NOT running with userns-remap. Refusing to leave tenant containers mapped to host root — re-run 'jabali docker enable-tenant', or remove the flag if tenant Docker is no longer wanted."
+      return 1
+    fi
+    _log "verified live userns-remap active (tenant Docker enabled)"
   fi
 
   # Per-app data root.
