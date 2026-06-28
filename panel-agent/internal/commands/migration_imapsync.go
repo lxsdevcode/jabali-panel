@@ -25,6 +25,7 @@
 package commands
 
 import (
+	"os"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -102,15 +103,29 @@ func migrationImapsyncHandler(ctx context.Context, raw json.RawMessage) (any, er
 		srcSSL = *p.Src.SSL
 	}
 
+	// Keep both mailbox passwords OUT of argv (Gitea #500) — argv is visible
+	// via /proc/<pid>/cmdline to any local process. imapsync reads them from
+	// 0600 passfiles instead.
+	pf1, perr := writeImapsyncPassfile(p.Src.Password)
+	if perr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("passfile1: %v", perr)}
+	}
+	defer os.Remove(pf1)
+	pf2, perr := writeImapsyncPassfile(p.Dest.Password)
+	if perr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("passfile2: %v", perr)}
+	}
+	defer os.Remove(pf2)
+
 	args := []string{
 		"--host1", p.Src.Host,
 		"--port1", strconv.Itoa(srcPort),
 		"--user1", p.Src.User,
-		"--password1", p.Src.Password,
+		"--passfile1", pf1,
 		"--host2", "127.0.0.1",
 		"--port2", "993",
 		"--user2", p.Dest.Email,
-		"--password2", p.Dest.Password,
+		"--passfile2", pf2,
 		// Header dedup — Message-ID stable across re-runs.
 		"--useheader", "Message-ID",
 		// Quiet imapsync's per-message progress; the summary
@@ -187,4 +202,26 @@ func truncForLogImapsync(s string, n int) string {
 //nolint:unused // reserved for follow-up
 func tearOffStrings() {
 	_ = strings.Contains("", "")
+}
+
+// writeImapsyncPassfile writes a secret to a fresh 0600 temp file (root-owned,
+// in the agent's private /tmp) for imapsync's --passfileN, so the password
+// never appears in argv / /proc/<pid>/cmdline. Caller removes it.
+func writeImapsyncPassfile(secret string) (string, error) {
+	f, err := os.CreateTemp("", "jabali-imapsync-*.pw")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	_ = f.Chmod(0o600)
+	if _, werr := f.WriteString(secret + "\n"); werr != nil {
+		_ = f.Close()
+		_ = os.Remove(name)
+		return "", werr
+	}
+	if cerr := f.Close(); cerr != nil {
+		_ = os.Remove(name)
+		return "", cerr
+	}
+	return name, nil
 }

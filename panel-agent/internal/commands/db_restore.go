@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
 	"os"
 	"os/exec"
 	"regexp"
@@ -65,23 +66,23 @@ func dbRestoreHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		}
 	}
 
-	// Validate path is under an allowed restore directory.
-	// /var/lib/jabali/restore/    — interactive restores
-	// /var/lib/jabali-migrations/ — migration importer
-	if !strings.HasPrefix(p.Path, "/var/lib/jabali/restore/") &&
-		!strings.HasPrefix(p.Path, "/var/lib/jabali-migrations/") {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInvalidArgument,
-			Message: "restore path must be under /var/lib/jabali/restore/ or /var/lib/jabali-migrations/",
-		}
+	// Validate + open the restore file under an allowed directory using a
+	// symlink-safe scope (Gitea #501). Raw string-prefix checks let a planted
+	// symlink / .. component escape; filesafe resolves symlinks, verifies the
+	// real path stays beneath an allowed root, and opens with O_NOFOLLOW.
+	//   /var/lib/jabali/restore/    — interactive restores
+	//   /var/lib/jabali-migrations/ — migration importer
+	restoreScope, scErr := filesafe.NewScope("system", "system", []string{
+		"/var/lib/jabali/restore", "/var/lib/jabali-migrations",
+	})
+	if scErr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("scope: %v", scErr)}
 	}
-
-	// Ensure the file exists and is readable.
-	f, err := os.Open(p.Path)
+	f, err := restoreScope.Open(p.Path, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
-			Message: "restore file not found or not readable",
+			Message: "restore path invalid, outside an allowed directory, or not readable",
 		}
 	}
 	defer f.Close()
