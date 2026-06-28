@@ -57,6 +57,9 @@ func moodleDeleteHandler(ctx context.Context, params json.RawMessage) (any, erro
 	if err := validateDocrootPath(req.OSUser, req.Docroot); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("invalid docroot: %v", err)}
 	}
+	if err := validateMoodleSubdir(req.Docroot, req.Subdirectory); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
+	}
 
 	installPath := computeMoodleInstallPath(req.Docroot, req.Subdirectory)
 	dataRoot := computeMoodleDataRoot(req.Docroot, req.Subdirectory)

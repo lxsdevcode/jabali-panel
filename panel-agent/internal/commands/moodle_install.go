@@ -88,6 +88,22 @@ func computeMoodleDataRoot(docroot, subdirectory string) string {
 	return filepath.Join(filepath.Dir(docroot), ".moodledata", key)
 }
 
+// validateMoodleSubdir rejects a subdirectory that escapes the docroot. The
+// panel validates it at create, but the agent is the trust boundary — never
+// trust the wire value (mirrors wordpress_delete's defense-in-depth check).
+func validateMoodleSubdir(docroot, subdirectory string) error {
+	sub := strings.Trim(subdirectory, "/")
+	if sub == "" {
+		return nil
+	}
+	installPath := filepath.Join(docroot, sub)
+	if rel, err := filepath.Rel(docroot, installPath); err != nil ||
+		rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("subdirectory escapes docroot: %q", subdirectory)
+	}
+	return nil
+}
+
 // moodleShortName slugifies the site title into a Moodle shortname (alnum,
 // non-empty). Falls back to "moodle".
 func moodleShortName(title string) string {
@@ -245,6 +261,9 @@ func moodleInstallHandler(ctx context.Context, params json.RawMessage) (any, err
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("language %q does not match expected Moodle pack form", req.Language)}
 	}
 	if err := validateDocrootPath(req.OSUser, req.Docroot); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
+	}
+	if err := validateMoodleSubdir(req.Docroot, req.Subdirectory); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
 	}
 
