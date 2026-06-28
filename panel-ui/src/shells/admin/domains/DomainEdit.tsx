@@ -56,6 +56,13 @@ export const DomainEdit = () => {
   const updateMutation = useUpdateMutation<Domain, DomainEditInput>({
     resource: "domains",
   });
+  // The single-domain GET doesn't carry the owner's username (only the list
+  // enriches it), so fetch the owner for the breadcrumb + Owner link (#483).
+  const ownerQ = useOneQuery<{ id: string; username?: string | null }>({
+    resource: "users",
+    id: domain?.user_id,
+    enabled: !!domain?.user_id,
+  });
 
   useEffect(() => {
     if (domain) {
@@ -255,7 +262,7 @@ export const DomainEdit = () => {
         emailTab,
       ];
 
-  const ownerRef = { id: domain.user_id, username: domain.username };
+  const ownerRef = { id: domain.user_id, username: ownerQ.data?.username ?? domain.username };
 
   return (
     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
