@@ -391,6 +391,23 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "docker_app_quota_exceeded", "detail": "you have reached your Docker app limit"})
 			return
 		}
+		// Disk gate (Gitea #489): tenant docker-app data lives under
+		// /var/lib/jabali/docker-apps, outside the home POSIX quota, so block a
+		// NEW install once the tenant's docker footprint already meets/exceeds
+		// the package disk allowance. (A hard runtime cap needs fs project
+		// quotas — tracked separately; this makes the gate enforcing, not
+		// advisory.) DiskQuotaMB==0 = unlimited.
+		if pkg.DiskQuotaMB > 0 {
+			used, derr := h.cfg.Repo.SumDataBytesByUserID(ctx, claims.UserID)
+			if derr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "disk_check_failed"})
+				return
+			}
+			if used >= int64(pkg.DiskQuotaMB)*1024*1024 {
+				c.JSON(http.StatusConflict, gin.H{"error": "disk_quota_exceeded", "detail": "your Docker app disk usage has reached your hosting package quota"})
+				return
+			}
+		}
 	}
 
 	// Domain ownership: must be a domain the caller owns, or a free hostname
@@ -575,8 +592,9 @@ func (h *userDockerAppHandler) failInstall(c *gin.Context, appID, code string, e
 }
 
 // usage reports the tenant's docker-app disk footprint vs their package disk
-// quota (M49 soft meter). over_quota is advisory — the UI warns; it does not
-// block a running app (the load-bearing gate is the install-time count quota).
+// quota (M49 soft meter). over_quota is advisory for a RUNNING app (the UI
+// warns; a true runtime cap needs fs project quotas) — but NEW installs are
+// blocked at create once usage meets the package quota (Gitea #489).
 func (h *userDockerAppHandler) usage(c *gin.Context) {
 	ctx := c.Request.Context()
 	claims := ginctx.Claims(c)
