@@ -370,12 +370,14 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "no_account", "detail": "account has no Linux user"})
 		return
 	}
+	var pkg *models.HostingPackage
 	if user.PackageID != nil {
-		pkg, perr := h.cfg.Packages.FindByID(ctx, *user.PackageID)
-		if perr != nil || pkg == nil {
+		p, perr := h.cfg.Packages.FindByID(ctx, *user.PackageID)
+		if perr != nil || p == nil {
 			c.JSON(http.StatusForbidden, gin.H{"error": "no_package"})
 			return
 		}
+		pkg = p
 		if pkg.MaxDockerApps == 0 {
 			c.JSON(http.StatusForbidden, gin.H{"error": "docker_apps_not_in_package", "detail": "your hosting package does not include Docker apps"})
 			return
@@ -413,6 +415,15 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 	pids := entry.Resources.PIDs
 	if req.PIDsLimit != nil {
 		pids = *req.PIDsLimit
+	}
+
+	// Clamp per-app limits to the hosting package ceilings (#488): a tenant
+	// must not be able to request more CPU / memory / PIDs than their plan's
+	// per-user budget. A package ceiling of 0 means "unlimited" -> no clamp.
+	if pkg != nil {
+		mem = clampDockerMemory(mem, pkg.MemoryLimitMB)
+		cpu = clampDockerCPU(cpu, pkg.CPUQuotaPercent)
+		pids = clampPIDs(pids, pkg.MaxTasks)
 	}
 
 	app := &models.DockerApp{
@@ -662,4 +673,79 @@ func tenantInstanceSlug(slug, userID, name string) string {
 	sum := sha256.Sum256([]byte(userID))
 	short := hex.EncodeToString(sum[:])[:10]
 	return strings.ToLower(slug + "-" + short + "-" + name)
+}
+
+// clampDockerMemory caps a docker memory string (e.g. "512m", "1g") to capMB
+// megabytes. capMB==0 = unlimited. Unparseable input is returned unchanged (the
+// catalog default is trusted); values over the cap become "<capMB>m" (#488).
+func clampDockerMemory(s string, capMB uint32) string {
+	if capMB == 0 {
+		return s
+	}
+	b, ok := parseDockerSize(s)
+	if !ok {
+		return s
+	}
+	capBytes := int64(capMB) * 1024 * 1024
+	if b > capBytes {
+		return strconv.Itoa(int(capMB)) + "m"
+	}
+	return s
+}
+
+// parseDockerSize parses a docker-style size ("512m","1g","1024k","536870912")
+// into bytes. Returns ok=false for empty/unparseable input.
+func parseDockerSize(s string) (int64, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return 0, false
+	}
+	mult := int64(1)
+	switch {
+	case strings.HasSuffix(s, "gb"), strings.HasSuffix(s, "g"):
+		mult = 1024 * 1024 * 1024
+		s = strings.TrimRight(s, "gb")
+	case strings.HasSuffix(s, "mb"), strings.HasSuffix(s, "m"):
+		mult = 1024 * 1024
+		s = strings.TrimRight(s, "mb")
+	case strings.HasSuffix(s, "kb"), strings.HasSuffix(s, "k"):
+		mult = 1024
+		s = strings.TrimRight(s, "kb")
+	case strings.HasSuffix(s, "b"):
+		s = strings.TrimRight(s, "b")
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return int64(n * float64(mult)), true
+}
+
+// clampDockerCPU caps a docker cpu string (cores, e.g. "0.5","2") to the
+// package CPU budget (capPct percent = capPct/100 cores). capPct==0 = unlimited.
+func clampDockerCPU(s string, capPct uint32) string {
+	if capPct == 0 {
+		return s
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return s
+	}
+	capCores := float64(capPct) / 100.0
+	if f > capCores {
+		return strconv.FormatFloat(capCores, 'f', -1, 64)
+	}
+	return s
+}
+
+// clampPIDs caps a PID limit to the package MaxTasks. capTasks==0 = unlimited.
+// A non-positive request (unlimited) is forced down to the cap.
+func clampPIDs(p int, capTasks uint32) int {
+	if capTasks == 0 {
+		return p
+	}
+	if p <= 0 || p > int(capTasks) {
+		return int(capTasks)
+	}
+	return p
 }
