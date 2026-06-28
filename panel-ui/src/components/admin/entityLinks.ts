@@ -79,3 +79,18 @@ export function ownerResourceCrumbs(
 export function resourceListCrumbs(label: string): Crumb[] {
   return [{ title: label }];
 }
+
+// crumbsToMenuItems flattens the whole trail into a single dropdown's worth of
+// navigable entries, for the tablet/mobile breadcrumb that collapses to one
+// "current page ▾" button (#483 follow-up). Every crumb with an href becomes an
+// entry, and any sibling-menu items a crumb carried are inlined too, so the one
+// dropdown exposes every page in the trail (plus the owner's sibling resources).
+// The leaf/current crumb has no href, so it's the button label, not a menu row.
+export function crumbsToMenuItems(items: Crumb[]): CrumbMenuItem[] {
+  const out: CrumbMenuItem[] = [];
+  items.forEach((c, i) => {
+    if (c.href) out.push({ key: `crumb-${i}`, label: c.title, href: c.href });
+    if (c.menu) out.push(...c.menu);
+  });
+  return out;
+}

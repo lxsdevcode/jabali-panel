@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   adminLinks,
+  crumbsToMenuItems,
   ownerLabel,
   ownerCrumbs,
   ownerResourceCrumbs,
@@ -79,5 +80,32 @@ describe("crumb builders", () => {
 
   it("resourceListCrumbs is a single leaf", () => {
     expect(resourceListCrumbs("Domains")).toEqual([{ title: "Domains" }]);
+  });
+});
+
+describe("crumbsToMenuItems (mobile collapse)", () => {
+  const user = { id: "u1", username: "alice" };
+
+  it("flattens the trail into navigable entries + inlined sibling menus", () => {
+    // Users(href) / alice(href) / Domains(menu) / example.com(leaf)
+    const items = [
+      ...ownerResourceCrumbs(user, { key: "domains", label: "Domains" }),
+      { title: "example.com" },
+    ];
+    const menu = crumbsToMenuItems(items);
+    // Users + alice hrefs, then Domains' siblings inlined; leaf has no href.
+    expect(menu.map((m) => m.label)).toEqual([
+      "Users",
+      "alice",
+      "Mailboxes",
+      "Docker Apps",
+      "Backups",
+    ]);
+    expect(menu.find((m) => m.label === "Users")?.href).toBe("/jabali-admin/users");
+    expect(menu.find((m) => m.label === "alice")?.href).toBe("/jabali-admin/users/u1");
+  });
+
+  it("omits leaf-only crumbs that have no href", () => {
+    expect(crumbsToMenuItems([{ title: "Domains" }])).toEqual([]);
   });
 });
