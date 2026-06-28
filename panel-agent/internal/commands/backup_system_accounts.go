@@ -22,8 +22,10 @@ import (
 	mathRand "math/rand"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -186,10 +188,17 @@ func restoreAccounts(ctx context.Context, c *backup.Client, jobID, stagingRoot s
 			if err := rsyncOnto(ctx, homeSrc+"/", "/home/"+username+"/"); err != nil {
 				warnings = append(warnings, fmt.Sprintf("user=%s home rsync: %v", username, err))
 			} else {
-				if out, cerr := exec.CommandContext(ctx, "chown", "-R",
-					username+":"+username, "/home/"+username).CombinedOutput(); cerr != nil {
-					warnings = append(warnings, fmt.Sprintf("user=%s home chown: %v (%s)",
-						username, cerr, strings.TrimSpace(string(out))))
+				// Symlink-safe recursive chown (Gitea #498): the restored
+				// home tree is snapshot-controlled, so Walk+Lchown instead of
+				// `chown -R` (which follows symlinks out of /home/<user>).
+				if u, lerr := user.Lookup(username); lerr != nil {
+					warnings = append(warnings, fmt.Sprintf("user=%s home chown lookup: %v", username, lerr))
+				} else {
+					uid, _ := strconv.Atoi(u.Uid)
+					gid, _ := strconv.Atoi(u.Gid)
+					if cerr := chownTreeRecursive("/home/"+username, uid, gid); cerr != nil {
+						warnings = append(warnings, fmt.Sprintf("user=%s home chown: %v", username, cerr))
+					}
 				}
 				applied = append(applied, fmt.Sprintf("home: %s -> /home/%s", username, username))
 			}

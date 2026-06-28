@@ -220,7 +220,9 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 			}
 		}
 		dest = resolvedDest + "/"
-		_ = exec.CommandContext(subctx, "chown", "-R", fmt.Sprintf("%d:%d", uid, gid), dest).Run()
+		// Symlink-safe chown (Gitea #497): Walk+Lchown stays inside the tree,
+		// never following a symlink the source tarball may have planted.
+		_ = chownTreeRecursive(dest, uid, gid)
 	}
 	srcWithSlash := strings.TrimRight(srcAbs, "/") + "/"
 	args = append(args, srcWithSlash, dest)
@@ -256,12 +258,13 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 	if p.DestSubpath == "" {
 		chownTarget = u.HomeDir
 	}
-	chownCmd := exec.CommandContext(subctx, "chown", "-R",
-		fmt.Sprintf("%d:%d", uid, groupID), chownTarget)
-	if cout, cerr := chownCmd.CombinedOutput(); cerr != nil {
+	// Symlink-safe recursive chown (Gitea #497): the rsync'd tree is
+	// source-tarball-controlled, so use Walk+Lchown (never `chown -R`, which
+	// follows symlinks out of the tree).
+	if cerr := chownTreeRecursive(chownTarget, uid, groupID); cerr != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("chown failed: %v: %s", cerr, truncate(string(cout), 1024)),
+			Message: fmt.Sprintf("chown failed: %v", cerr),
 		}
 	}
 	// Apply group-rx on directories + group-r on files so nginx
