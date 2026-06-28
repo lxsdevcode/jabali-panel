@@ -194,6 +194,8 @@ export const DatabaseUsersList = () => {
           <Table.Column<DatabaseUser>
             dataIndex="engine"
             title="Engine"
+            key="engine"
+            sorter={{ multiple: 1 }}
             width={140}
             render={(engine: string | undefined) => (
               <EngineTag engine={engine} />

@@ -114,6 +114,9 @@ const ZonesTab = () => {
           <Table.Column<Domain>
             dataIndex="name"
             title="Domain Name"
+            key="name"
+            sorter={{ multiple: 1 }}
+            defaultSortOrder="ascend"
             {...columnSearchProps<Domain>({
               placeholder: "Search by domain name",
               currentQ: query.params.q,
@@ -123,6 +126,8 @@ const ZonesTab = () => {
           <Table.Column<Domain>
             dataIndex="username"
             title="Owner"
+            key="username"
+            sorter={{ multiple: 1 }}
             render={(username: string | null | undefined, record: Domain) =>
               username ?? record.user_id.substring(0, 8)
             }

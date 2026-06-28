@@ -41,7 +41,7 @@ func (r *databaseUserRepo) FindByID(ctx context.Context, id string) (*models.Dat
 // databaseUserListCols — only the database username is free-text searchable.
 var databaseUserListCols = ListCols{
 	Search:      []string{"username"},
-	Sort:        []string{"username", "created_at"},
+	Sort:        []string{"username", "engine", "created_at"},
 	DefaultSort: "created_at",
 }
 

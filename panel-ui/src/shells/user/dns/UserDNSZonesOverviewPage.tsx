@@ -111,6 +111,9 @@ const ZonesTab = () => {
           <Table.Column<Domain>
             dataIndex="name"
             title="Domain Name"
+            key="name"
+            sorter={{ multiple: 1 }}
+            defaultSortOrder="ascend"
             {...columnSearchProps<Domain>({
               placeholder: "Search by domain name",
               currentQ: query.params.q,
