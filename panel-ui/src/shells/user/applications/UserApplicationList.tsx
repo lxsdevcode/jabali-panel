@@ -492,22 +492,42 @@ export const UserApplicationList = () => {
               const label = `${base}${path}`;
               const isLink = record.status === "ready" && !!domainName;
               const appKey = record.app_type || "wordpress";
+              const meta = STATUS_META[record.status] ?? STATUS_META.pending;
+              const statusTag = (
+                <Tag color={meta.color} icon={meta.icon}>
+                  {meta.label}
+                </Tag>
+              );
+              const statusEl =
+                record.status === "failed" && record.last_error ? (
+                  <Tooltip title={record.last_error}>{statusTag}</Tooltip>
+                ) : (
+                  statusTag
+                );
               return (
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: 8 }}
-                >
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <CmsIcon appType={appKey} />
-                  {isLink ? (
-                    <a
-                      href={`https://${domainName}${path}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {label}
-                    </a>
-                  ) : (
-                    <span>{label}</span>
-                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    {isLink ? (
+                      <a
+                        href={`https://${domainName}${path}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {label}
+                      </a>
+                    ) : (
+                      <span>{label}</span>
+                    )}
+                    {statusEl}
+                  </div>
                 </div>
               );
             }}
@@ -521,22 +541,6 @@ export const UserApplicationList = () => {
                 <span>{version || "-"}</span>
               </Space>
             )}
-          />
-          <Table.Column<ApplicationInstall>
-            dataIndex="status"
-            title="Status"
-            render={(status: ApplicationInstall["status"], record) => {
-              const meta = STATUS_META[status] ?? STATUS_META.pending;
-              const tag = (
-                <Tag color={meta.color} icon={meta.icon}>
-                  {meta.label}
-                </Tag>
-              );
-              if (status === "failed" && record.last_error) {
-                return <Tooltip title={record.last_error}>{tag}</Tooltip>;
-              }
-              return tag;
-            }}
           />
           <Table.Column<ApplicationInstall>
             dataIndex="admin_email"
