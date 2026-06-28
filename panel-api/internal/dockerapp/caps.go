@@ -20,6 +20,31 @@ import "strings"
 // so all su-exec/gosu apps were unrunnable.)
 var TenantBaselineCaps = []string{"CHOWN", "SETUID", "SETGID"}
 
+// tenantForbiddenCaps are capabilities NEVER granted to a tenant container,
+// even if a catalog entry declares them in tenant_caps (Gitea #515). The
+// catalog is the policy boundary, so a single metadata mistake must not be able
+// to hand a tenant a host-affecting capability. These either escape userns
+// confinement, touch the host kernel/network/devices, or defeat the sandbox.
+var tenantForbiddenCaps = map[string]bool{
+	"SYS_ADMIN": true, "SYS_MODULE": true, "SYS_RAWIO": true, "SYS_PTRACE": true,
+	"SYS_BOOT": true, "SYS_TIME": true, "NET_ADMIN": true, "MAC_ADMIN": true,
+	"MAC_OVERRIDE": true, "DAC_READ_SEARCH": true, "LINUX_IMMUTABLE": true,
+	"AUDIT_CONTROL": true, "BPF": true, "PERFMON": true, "SYSLOG": true,
+	"SYS_PACCT": true, "WAKE_ALARM": true, "BLOCK_SUSPEND": true,
+}
+
+// normalizeCapName upper-cases + strips the CAP_ prefix + trims.
+func normalizeCapName(c string) string {
+	return strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(c)), "CAP_")
+}
+
+// IsForbiddenTenantCap reports whether a capability may never be granted to a
+// tenant container. Used by catalog validation (reject at load) and the
+// allowlist builder (drop at runtime). Accepts CAP_-prefixed or bare names.
+func IsForbiddenTenantCap(c string) bool {
+	return tenantForbiddenCaps[normalizeCapName(c)]
+}
+
 // TenantCapAllowlist returns the effective capability set for a tenant install:
 // the baseline union the catalog-declared extras, normalised (upper-case, no
 // CAP_ prefix) and de-duplicated, baseline first then extras in declared order.
@@ -29,9 +54,10 @@ func TenantCapAllowlist(catalogCaps []string) []string {
 	out := make([]string, 0, len(TenantBaselineCaps)+len(catalogCaps))
 	seen := make(map[string]bool)
 	add := func(c string) {
-		c = strings.ToUpper(strings.TrimSpace(c))
-		c = strings.TrimPrefix(c, "CAP_")
-		if c == "" || seen[c] {
+		c = normalizeCapName(c)
+		// Drop forbidden caps even if the catalog declared them (Gitea #515) —
+		// defence in depth behind catalog-load validation.
+		if c == "" || seen[c] || tenantForbiddenCaps[c] {
 			return
 		}
 		seen[c] = true

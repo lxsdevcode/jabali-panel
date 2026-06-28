@@ -33,6 +33,11 @@ type composeConfigService struct {
 	DeviceCgroupRules []string `json:"device_cgroup_rules"`
 	SecurityOpt       []string `json:"security_opt"`
 	VolumesFrom       []string `json:"volumes_from"`
+	CapDrop           []string `json:"cap_drop"`
+	Build             json.RawMessage `json:"build"`
+	EnvFile           json.RawMessage `json:"env_file"`
+	Secrets           []any    `json:"secrets"`
+	Configs           []any    `json:"configs"`
 	Volumes           []struct {
 		Type   string `json:"type"`
 		Source string `json:"source"`
@@ -51,6 +56,8 @@ type composeConfigService struct {
 
 type composeConfigDoc struct {
 	Services map[string]composeConfigService `json:"services"`
+	Secrets  map[string]any                  `json:"secrets"`
+	Configs  map[string]any                  `json:"configs"`
 }
 
 // normalizeCap upper-cases and strips a leading CAP_ so "cap_chown",
@@ -92,6 +99,13 @@ func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot str
 	}
 	if len(doc.Services) == 0 {
 		return fmt.Errorf("compose config has no services")
+	}
+	// Top-level secrets/configs expose host files into containers (#518).
+	if len(doc.Secrets) > 0 {
+		return fmt.Errorf("top-level secrets are forbidden for tenant installs")
+	}
+	if len(doc.Configs) > 0 {
+		return fmt.Errorf("top-level configs are forbidden for tenant installs")
 	}
 	allow := make(map[string]bool, len(allowedCaps))
 	for _, c := range allowedCaps {
@@ -140,9 +154,47 @@ func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot str
 				return fmt.Errorf("service %q sets security_opt %q outside the allowed no-new-privileges:true: forbidden for tenant installs", name, so)
 			}
 		}
+		// #516: the tenant hardening profile must actually be PRESENT on every
+		// service — the render injects it, so its absence means an unhardened
+		// compose slipped in. Require cap_drop: ALL and no-new-privileges:true.
+		hasCapDropAll := false
+		for _, c := range svc.CapDrop {
+			if normalizeCap(c) == "ALL" {
+				hasCapDropAll = true
+			}
+		}
+		if !hasCapDropAll {
+			return fmt.Errorf("service %q is missing cap_drop: ALL (tenant hardening absent): forbidden for tenant installs", name)
+		}
+		hasNoNewPriv := false
+		for _, so := range svc.SecurityOpt {
+			if normalizeSecurityOpt(so) == "no-new-privileges:true" {
+				hasNoNewPriv = true
+			}
+		}
+		if !hasNoNewPriv {
+			return fmt.Errorf("service %q is missing security_opt no-new-privileges:true (tenant hardening absent): forbidden for tenant installs", name)
+		}
+		// #518: build runs arbitrary build-time code; env_file/secrets/configs
+		// read host files into the container outside the bind-mount check.
+		if len(svc.Build) > 0 && string(svc.Build) != "null" {
+			return fmt.Errorf("service %q sets build: forbidden for tenant installs", name)
+		}
+		if len(svc.EnvFile) > 0 && string(svc.EnvFile) != "null" {
+			return fmt.Errorf("service %q sets env_file: forbidden for tenant installs", name)
+		}
+		if len(svc.Secrets) > 0 {
+			return fmt.Errorf("service %q uses secrets: forbidden for tenant installs", name)
+		}
+		if len(svc.Configs) > 0 {
+			return fmt.Errorf("service %q uses configs: forbidden for tenant installs", name)
+		}
 		for _, v := range svc.Volumes {
+			// #514: tenant data must live under the bind-mounted app data tree
+			// so disk accounting + backups cover it. Named/anonymous volumes
+			// live in docker's volume store outside that tree — reject them.
 			if v.Type != "bind" {
-				continue // named/anonymous volumes are docker-managed — fine
+				return fmt.Errorf("service %q uses a %q volume (target %q): only bind mounts under the app data tree are allowed for tenant installs", name, v.Type, v.Target)
 			}
 			src := filepath.Clean(v.Source)
 			if src != root && !strings.HasPrefix(src, root+string(filepath.Separator)) {

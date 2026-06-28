@@ -288,6 +288,16 @@ func (e Entry) validate() error {
 	if e.UpdateMode != "" && e.UpdateMode != "manual" && e.UpdateMode != "auto" {
 		return fmt.Errorf("update_mode %q: must be 'manual' or 'auto'", e.UpdateMode)
 	}
+	// Tenant-installable apps may not declare a forbidden capability (Gitea
+	// #515): the catalog is the policy boundary, so reject the dangerous cap at
+	// load rather than relying on the runtime allowlist drop alone.
+	if e.TenantInstallable {
+		for _, c := range e.TenantCaps {
+			if IsForbiddenTenantCap(c) {
+				return fmt.Errorf("tenant_caps %q is forbidden for tenant_installable apps", c)
+			}
+		}
+	}
 	if len(e.Volumes) == 0 {
 		return errors.New("at least one volume is required")
 	}
