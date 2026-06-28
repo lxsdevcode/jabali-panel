@@ -45,17 +45,18 @@ type moodleInstallResp struct {
 }
 
 // moodleVersion / moodleTarballURL / moodleTarballSHA256 pin the upstream
-// release. Moodle 4.5 is the current LTS. Bump the version + SHA together;
-// the versioned URL under stable405 is stable (unlike moodle-latest-405).
+// release. Moodle 5.0 supports PHP 8.2-8.4 (4.5 caps at PHP 8.3, so it cannot
+// run on a PHP-8.4-only host). Bump the version + SHA together; the versioned
+// URL under stable500 is stable (unlike moodle-latest-500).
 //
 // To recompute on a host with the URL reachable:
 //
 //	curl -sSL -A 'jabali-panel-agent/1.0' \
-//	  https://download.moodle.org/download.php/direct/stable405/moodle-4.5.12.tgz \
+//	  https://download.moodle.org/download.php/direct/stable500/moodle-5.0.8.tgz \
 //	  | sha256sum
-const moodleVersion = "4.5.12"
-const moodleTarballURL = "https://download.moodle.org/download.php/direct/stable405/moodle-" + moodleVersion + ".tgz"
-const moodleTarballSHA256 = "1363537dc7d371903e1a661d2055a66da3344b5fb299414a28d4b244d6b53e86"
+const moodleVersion = "5.0.8"
+const moodleTarballURL = "https://download.moodle.org/download.php/direct/stable500/moodle-" + moodleVersion + ".tgz"
+const moodleTarballSHA256 = "76e44d24956701b97583dd2d7d5339a0fe5917b8c795845579b4b1bc0fbfe9c6"
 
 // moodleAdminUserPattern: Moodle usernames are lowercase alnum plus a few
 // punctuation chars (it lowercases on save). Keep it conservative.
