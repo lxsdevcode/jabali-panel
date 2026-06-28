@@ -1250,7 +1250,14 @@ EARLYDNS
       continue
     fi
     if dpkg -l "php${_pv}-cli" 2>/dev/null | grep -q "^ii"; then
-      _log "purging stale php${_pv}-cli (not in JABALI_PHP_VERSIONS)"
+      # Preserve versions an admin installed on purpose via the panel PHP
+      # version manager (GH #302): those packages are apt-"manual". Only purge
+      # transitive/auto pulls (e.g. php8.4-cli dragged in by a meta-package).
+      if apt-mark showmanual "php${_pv}-cli" 2>/dev/null | grep -qx "php${_pv}-cli"; then
+        _log "keeping admin-installed php${_pv} (apt-manual, not auto-purged)"
+        continue
+      fi
+      _log "purging stale php${_pv}-cli (auto/transitive, not in JABALI_PHP_VERSIONS)"
       apt-get purge -y -qq "php${_pv}*" 2>/dev/null || true
       apt-get autoremove -y -qq 2>/dev/null || true
     fi
