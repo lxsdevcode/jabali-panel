@@ -383,6 +383,7 @@ export const MailboxesTab = () => {
           {
             title: "Quota",
             dataIndex: "quota_bytes",
+            sorter: (a, b) => (a.quota_bytes ?? 0) - (b.quota_bytes ?? 0),
             width: 220,
             render: (quota: number, row) => {
               const used = row.last_usage_bytes ?? 0;
@@ -408,6 +409,7 @@ export const MailboxesTab = () => {
           {
             title: "Last usage",
             dataIndex: "last_usage_at",
+            sorter: (a, b) => (a.last_usage_at ? +new Date(a.last_usage_at) : 0) - (b.last_usage_at ? +new Date(b.last_usage_at) : 0),
             width: 160,
             render: (v: string | null | undefined) =>
               v ? (
@@ -419,6 +421,7 @@ export const MailboxesTab = () => {
           {
             title: "Status",
             dataIndex: "is_disabled",
+            sorter: (a, b) => Number(a.is_disabled) - Number(b.is_disabled),
             width: 100,
             render: (disabled: boolean) =>
               disabled ? (

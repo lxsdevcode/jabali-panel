@@ -140,29 +140,38 @@ export const AdminIPList = () => {
             dataIndex="address"
             title="Address"
             key="address"
+            sorter={(a: ManagedIP, b: ManagedIP) => a.address.localeCompare(b.address)}
             render={(addr: string) => <code>{addr}</code>}
           />
           <Table.Column
             dataIndex="family"
             title="Family"
+            sorter={(a: ManagedIP, b: ManagedIP) => a.family.localeCompare(b.family)}
             render={(family: ManagedIP["family"]) => (
               <Tag color={family === "ipv4" ? "blue" : "purple"}>{family}</Tag>
             )}
           />
-          <Table.Column dataIndex="label" title="Label" />
+          <Table.Column
+            dataIndex="label"
+            title="Label"
+            sorter={(a: ManagedIP, b: ManagedIP) => (a.label ?? "").localeCompare(b.label ?? "")}
+          />
           <Table.Column
             dataIndex="is_default"
             title="Default"
+            sorter={(a: ManagedIP, b: ManagedIP) => Number(a.is_default) - Number(b.is_default)}
             render={(v: boolean) => (v ? <Tag color="gold">default</Tag> : null)}
           />
           <Table.Column
             title="Bound"
             key="is_bound"
+            sorter={(a: ManagedIP, b: ManagedIP) => Number(a.is_bound) - Number(b.is_bound)}
             render={(_: unknown, row: ManagedIP) => renderBoundTag(row)}
           />
           <Table.Column
             dataIndex="is_user_selectable"
             title="User-selectable"
+            sorter={(a: ManagedIP, b: ManagedIP) => Number(a.is_user_selectable) - Number(b.is_user_selectable)}
             render={(v: boolean) =>
               v ? <Tag color="cyan">yes</Tag> : <Tag>no</Tag>
             }
@@ -170,6 +179,7 @@ export const AdminIPList = () => {
           <Table.Column
             dataIndex="degraded"
             title="Status"
+            sorter={(a: ManagedIP, b: ManagedIP) => Number(a.degraded) - Number(b.degraded)}
             render={(v: boolean) =>
               v ? <Tag color="red">degraded</Tag> : <Tag color="green">ok</Tag>
             }

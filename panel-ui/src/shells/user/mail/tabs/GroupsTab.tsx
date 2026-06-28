@@ -101,6 +101,8 @@ export function GroupsTab() {
             {
               title: "Group",
               dataIndex: "email",
+              sorter: (a, b) => a.email.localeCompare(b.email),
+              defaultSortOrder: "ascend" as const,
               render: (email: string, row) => (
                 <Space direction="vertical" size={0}>
                   <Typography.Text strong>{row.display_name || row.local_part}</Typography.Text>
@@ -124,6 +126,7 @@ export function GroupsTab() {
             {
               title: "Members",
               dataIndex: "member_count",
+              sorter: (a, b) => (a.member_count ?? 0) - (b.member_count ?? 0),
               width: 110,
               render: (n: number) => <Tag>{n}</Tag>,
             },

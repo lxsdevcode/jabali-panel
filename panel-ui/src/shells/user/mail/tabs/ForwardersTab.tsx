@@ -298,13 +298,21 @@ function DomainScopedForwarders() {
         columns={[
           {
             title: "Source",
+            sorter: (a, b) =>
+              `${a.local_part}@${a.domain_name}`.localeCompare(`${b.local_part}@${b.domain_name}`),
+            defaultSortOrder: "ascend" as const,
             render: (_, r) => `${r.local_part}@${r.domain_name}`,
           },
-          { title: "Target", dataIndex: "target" },
+          {
+            title: "Target",
+            dataIndex: "target",
+            sorter: (a, b) => (a.target ?? "").localeCompare(b.target ?? ""),
+          },
           {
             title: "Source",
             dataIndex: "managed_by",
             width: 160,
+            sorter: (a, b) => (a.managed_by ?? "").localeCompare(b.managed_by ?? ""),
             render: (v: string) => <Tag>{v}</Tag>,
           },
         ]}

@@ -103,14 +103,25 @@ export const SharedResourcesTab = () => {
           {
             title: "Type",
             dataIndex: "kind",
+            sorter: (a: Row, b: Row) => a.kind.localeCompare(b.kind),
             width: 120,
             render: (k: SharedResourceKind) => <Tag color={KIND_COLOR[k]}>{KIND_LABEL[k]}</Tag>,
           },
-          { title: "Name", dataIndex: "display_name", render: (v, r) => v || r.email || r.id },
-          { title: "Domain", dataIndex: "domain_name" },
+          {
+            title: "Name",
+            dataIndex: "display_name",
+            sorter: (a: Row, b: Row) => (a.display_name || a.email || a.id).localeCompare(b.display_name || b.email || b.id),
+            render: (v, r) => v || r.email || r.id,
+          },
+          {
+            title: "Domain",
+            dataIndex: "domain_name",
+            sorter: (a: Row, b: Row) => (a.domain_name ?? "").localeCompare(b.domain_name ?? ""),
+          },
           {
             title: "Address",
             dataIndex: "email",
+            sorter: (a: Row, b: Row) => (a.email ?? "").localeCompare(b.email ?? ""),
             render: (v: string | null) =>
               v ? <Typography.Text style={{ fontFamily: "monospace" }}>{v}</Typography.Text> : "—",
           },

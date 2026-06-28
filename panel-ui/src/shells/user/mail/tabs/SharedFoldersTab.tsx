@@ -148,6 +148,7 @@ export const SharedFoldersTab = () => {
             {
               title: "Owner",
               dataIndex: "owner_mailbox_email",
+              sorter: (a, b) => (a.owner_mailbox_email ?? "").localeCompare(b.owner_mailbox_email ?? ""),
               render: (v?: string) => (
                 <Typography.Text style={{ fontFamily: "monospace" }}>{v ?? "—"}</Typography.Text>
               ),
@@ -155,6 +156,7 @@ export const SharedFoldersTab = () => {
             {
               title: "Shared with",
               dataIndex: "shared_with_mailbox_email",
+              sorter: (a, b) => (a.shared_with_mailbox_email ?? "").localeCompare(b.shared_with_mailbox_email ?? ""),
               render: (v?: string) => (
                 <Typography.Text style={{ fontFamily: "monospace" }}>{v ?? "—"}</Typography.Text>
               ),
