@@ -50,6 +50,15 @@
 .ant-modal {
   max-width: calc(100vw - 16px);
 }
+/* Tall modals (multi-field create dialogs like Python/Docker app create)
+   overflow short / mobile viewports — the footer renders below the fold and
+   fields aren't reachable. Cap the modal body to the viewport and scroll it so
+   every field + the footer actions stay reachable. Additive: only scrolls when
+   the content would actually overflow. (Gitea #492) */
+.ant-modal-body {
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
 .ant-drawer-content-wrapper {
   max-width: 100vw !important;
 }
