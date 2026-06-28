@@ -341,10 +341,19 @@ func (r *Reconciler) pollImageUpdate(ctx context.Context, app *models.DockerApp)
 		r.log.Info("dockerapp: auto-update dispatching", "id", app.ID, "slug", app.Slug)
 		updateCtx, ucancel := context.WithTimeout(ctx, 6*time.Minute)
 		defer ucancel()
-		_, err := r.agent.Call(updateCtx, "docker_app.update", map[string]any{
+		updateParams := map[string]any{
 			"slug":                        app.EffectiveSlug(),
 			"healthcheck_timeout_seconds": 300,
-		})
+		}
+		// Tenant-owned app (Gitea #510): make the agent re-run the tenant
+		// compose safety gate on the on-disk compose before `up`, so an
+		// auto-update can never bring up an unhardened/unsafe compose — it
+		// fails closed instead. Mirrors the manual updateImage path.
+		if app.UserID != nil {
+			updateParams["tenant_validate"] = true
+			updateParams["tenant_caps"] = dockerapp.TenantCapAllowlist(entry.TenantCaps)
+		}
+		_, err := r.agent.Call(updateCtx, "docker_app.update", updateParams)
 		if err != nil {
 			msg := firstLineString(err.Error())
 			_ = r.dockerApps.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)

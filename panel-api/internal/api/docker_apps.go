@@ -1071,46 +1071,16 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 		}
 
 		// --- re-render compose + re-dispatch ---
-		// Preserve the install's existing secrets — MaterialiseEnv(entry, nil)
-		// would regenerate DB passwords / masterkeys and break stateful
-		// services. Best-effort: a read failure falls back to fresh (old
-		// behaviour) but is logged.
-		existingEnv, envErr := h.readInstallEnv(ctx, app.EffectiveSlug())
-		if envErr != nil {
-			slog.Warn("docker-app edit: read env failed, secrets may regenerate", "id", app.ID, "err", envErr)
-		}
-		envMap, err := dockerapp.MaterialiseEnv(entry, existingEnv)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "env_materialise_failed", "detail": err.Error()})
-			return
-		}
-		dataRoot := "/var/lib/jabali/docker-apps/" + app.EffectiveSlug()
-		cpu := ""
-		if app.CPULimit != nil {
-			cpu = *app.CPULimit
-		}
-		mem := ""
-		if app.MemoryLimit != nil {
-			mem = *app.MemoryLimit
-		}
-		pids := 0
-		if app.PIDsLimit != nil {
-			pids = *app.PIDsLimit
-		}
-		composeYML, err := dockerapp.Render(entry, dockerapp.RenderParams{
-			Slug:         app.EffectiveSlug(),
-			Name:         app.Name,
-			Domain:       newDomain,
-			ImageChannel: entry.ImageChannel,
-			DataRoot:     dataRoot,
-			CPULimit:     cpu,
-			MemoryLimit:  mem,
-			PIDsLimit:    pids,
-			Ports:        runtimePorts,
-			Env:          envMap,
-		})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "render_failed", "detail": err.Error()})
+		// Use the shared tenant-aware helper (Gitea #505): for a tenant-owned
+		// app it re-injects TenantHardening (cap_drop ALL, no-new-privileges,
+		// cgroup parent, PIDs) and the install call carries tenant_validate /
+		// tenant_caps so the agent re-runs the forbidden-namespace/device/bind
+		// checks. The ports persisted just above are what renderInstallCompose
+		// reads back. Rendering raw here would silently strip the sandbox.
+		composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, newDomain, nil)
+		_ = runtimePorts // ports already persisted above; helper reads them from the repo
+		if rerr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "render_failed", "detail": rerr.Error()})
 			return
 		}
 		if h.cfg.Agent != nil {
@@ -1120,8 +1090,7 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 			for _, v := range entry.Volumes {
 				volumeNames = append(volumeNames, v.Name)
 			}
-			envFile := buildEnvFile(envMap)
-			if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", map[string]any{
+			installParams := map[string]any{
 				"slug":                        app.EffectiveSlug(),
 				"compose_yml":                 composeYML,
 				"env_file":                    envFile,
@@ -1129,7 +1098,12 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 				"volume_owner":                entry.VolumeOwner,
 				"wait_healthy":                false,
 				"healthcheck_timeout_seconds": 60,
-			}); agentErr != nil {
+			}
+			if v, caps := h.tenantValidateParams(app); v {
+				installParams["tenant_validate"] = true
+				installParams["tenant_caps"] = caps
+			}
+			if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", installParams); agentErr != nil {
 				msg := firstLineString(agentErr.Error())
 				c.JSON(http.StatusBadGateway, gin.H{"error": "agent_redispatch_failed", "detail": msg})
 				return
@@ -1533,6 +1507,13 @@ func (h *dockerAppHandler) restoreBackup(c *gin.Context) {
 	rsParams := map[string]any{"slug": app.EffectiveSlug(), "snapshot_id": bid}
 	if app.BackupDestinationID != nil {
 		rsParams["destination_id"] = *app.BackupDestinationID
+	}
+	// Tenant-owned restore (Gitea #509): a snapshot can replace compose.yml /
+	// .env with an old or unsafe version. Carry the tenant gate so the agent
+	// re-validates the restored compose before `up` and fails closed otherwise.
+	if v, caps := h.tenantValidateParams(app); v {
+		rsParams["tenant_validate"] = true
+		rsParams["tenant_caps"] = caps
 	}
 	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.restore", rsParams)
 	if err != nil {
