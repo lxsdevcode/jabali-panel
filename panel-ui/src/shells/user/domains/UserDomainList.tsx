@@ -13,6 +13,7 @@ import {
   DeleteOutlined,
   LockOutlined,
   ThunderboltOutlined,
+  ToolOutlined,
 } from "@icons";
 import { Button, Card, Dropdown, Modal, Space, Table, Tag, Tooltip, Typography, notification } from "antd";
 import { useState } from "react";
@@ -29,6 +30,7 @@ import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { DomainDirectoryPrivacyModal } from "../../../components/DomainDirectoryPrivacyModal";
 import { DomainRedirectsButton } from "../../DomainRedirectsButton";
+import { TenantNginxRulesButton } from "../../DomainSettingsButton";
 import { DomainCacheButton } from "../../../components/DomainCacheButton";
 import { DomainIndexButton } from "../../DomainIndexButton";
 import { UserDomainDrawer } from "./UserDomainDrawer";
@@ -169,7 +171,7 @@ export type Domain = {
   updated_at: string;
 };
 
-type ActiveModal = { domainId: string; type: "redirects" | "index" | "directory-privacy" | "caching" | "nginx-options" } | null;
+type ActiveModal = { domainId: string; type: "redirects" | "index" | "directory-privacy" | "caching" | "nginx-options" | "rewrite-rules" } | null;
 
 export const UserDomainList = () => {
   const navigate = useNavigate();
@@ -334,6 +336,12 @@ export const UserDomainList = () => {
                               icon: <ThunderboltOutlined />,
                               onClick: () => setActiveModal({ domainId: r.id, type: "nginx-options" }),
                             },
+                            {
+                              key: "rewrite-rules",
+                              label: "Rewrite rules",
+                              icon: <ToolOutlined />,
+                              onClick: () => setActiveModal({ domainId: r.id, type: "rewrite-rules" }),
+                            },
                           ]
                         : []),
                       {
@@ -418,6 +426,13 @@ export const UserDomainList = () => {
                 {activeModal?.domainId === r.id && activeModal.type === "nginx-options" && (
                   <DomainNginxOptionsModal
                     domainId={r.id}
+                    onClose={() => setActiveModal(null)}
+                  />
+                )}
+                {activeModal?.domainId === r.id && activeModal.type === "rewrite-rules" && (
+                  <TenantNginxRulesButton
+                    domain={r}
+                    open={true}
                     onClose={() => setActiveModal(null)}
                   />
                 )}

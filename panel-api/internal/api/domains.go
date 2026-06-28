@@ -829,6 +829,27 @@ func (h *domainHandler) update(c *gin.Context) {
 		}
 	}
 
+	// GH #307: a non-admin owner may set a SAFE SUBSET of the Rule Builder
+	// (rewrite + custom_header) on their own domain when the admin has opted in
+	// (server_settings.tenant_domain_options_enabled). proxy_pass/ip_access stay
+	// admin-only (see the admin block above). The field is silently dropped when
+	// the opt-in is off, mirroring nginx_safe_options, so other fields still PATCH.
+	if !claims.IsAdmin && req.NginxRules != nil {
+		allowed := false
+		if h.cfg.ServerSettings != nil {
+			if st, sErr := h.cfg.ServerSettings.Get(ctx); sErr == nil && st != nil && st.TenantDomainOptionsEnabled {
+				allowed = true
+			}
+		}
+		if allowed {
+			if err := validateTenantNginxRules(*req.NginxRules); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_nginx_rules", "detail": err.Error()})
+				return
+			}
+			domain.NginxRules = *req.NginxRules
+		}
+	}
+
 	if req.RedirectAllTo != nil {
 		trimmed := strings.TrimSpace(*req.RedirectAllTo)
 		if trimmed == "" {
@@ -1495,6 +1516,35 @@ func validateNginxRules(rules models.NginxRules) error {
 		}
 	}
 	return nil
+}
+
+// tenantSafeNginxRuleTypes are the Rule Builder types a non-admin owner may set
+// on their own domain (GH #307). proxy_pass is excluded (SSRF to localhost
+// services — panel-api/Bulwark/Stalwart/other tenants' FPM sockets), as are
+// ip_access/php_setting/max_upload_size (admin surface / covered by
+// nginx_safe_options).
+var tenantSafeNginxRuleTypes = map[string]struct{}{
+	"rewrite":       {},
+	"custom_header": {},
+}
+
+// validateTenantNginxRules enforces the tenant-safe subset on top of the full
+// structural validateNginxRules: only rewrite + custom_header, and a rewrite
+// replacement must be a LOCAL path (no scheme or host) so it can never become
+// an open redirect or a proxy to an internal service.
+func validateTenantNginxRules(rules models.NginxRules) error {
+	for i, r := range rules {
+		if _, ok := tenantSafeNginxRuleTypes[r.Type]; !ok {
+			return fmt.Errorf("rule %d: type %q is not available to tenants", i, r.Type)
+		}
+		if r.Type == "rewrite" {
+			rep := strings.TrimSpace(r.Replacement)
+			if strings.Contains(rep, "://") || strings.HasPrefix(rep, "//") {
+				return fmt.Errorf("rule %d: rewrite target must be a local path (no scheme or host)", i)
+			}
+		}
+	}
+	return validateNginxRules(rules)
 }
 
 func isValidIndexPriority(s string) bool {

@@ -634,9 +634,13 @@ const SortableRuleCard = ({
 const RuleBuilder = ({
   rules,
   onRulesChange,
+  allowedTypes,
 }: {
   rules: NginxRule[];
   onRulesChange: (rules: NginxRule[]) => void;
+  // When set, the "Add Rule" menu is limited to these rule types (GH #307
+  // tenant subset). Omitted = all types (admin).
+  allowedTypes?: NginxRule["type"][];
 }) => {
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
 
@@ -704,7 +708,9 @@ const RuleBuilder = ({
     { key: "ip_access", label: "IP Access", icon: <PlusOutlined /> },
     { key: "php_setting", label: "PHP Setting", icon: <PlusOutlined /> },
     { key: "max_upload_size", label: "Max Upload Size", icon: <PlusOutlined /> },
-  ];
+  ].filter(
+    (it) => !allowedTypes || allowedTypes.includes(it.key as NginxRule["type"]),
+  );
 
   return (
     <div>
@@ -1242,5 +1248,88 @@ export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget })
         </Button>
       </div>
     </div>
+  );
+};
+
+
+// TenantNginxRulesButton — GH #307. A pared-down Rule Builder for tenants:
+// rewrite + custom_header only (no Raw Directives tab, no proxy_pass/ip_access).
+// Mounted on the user domain list ONLY when the admin has opted in
+// (caps.tenant_domain_options_enabled); the backend re-enforces the safe subset
+// (validateTenantNginxRules) so the type filter here is UX, not the security
+// boundary.
+export const TenantNginxRulesButton = ({
+  domain,
+  open: controlledOpen,
+  onClose,
+}: {
+  domain: DomainSettingsTarget;
+  open?: boolean;
+  onClose?: () => void;
+}) => {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const close = () => (onClose ? onClose() : setInternalOpen(false));
+  const [rules, setRules] = useState<NginxRule[]>(domain.nginx_rules ?? []);
+  const [saving, setSaving] = useState(false);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (open) setRules(domain.nginx_rules ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, domain.id, JSON.stringify(domain.nginx_rules)]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Send ONLY nginx_rules — never nginx_custom_directives (admin-only).
+      await apiClient.patch(`/domains/${domain.id}`, { nginx_rules: rules });
+      notification.success({ message: "Rewrite rules saved — applied on the next reconcile" });
+      qc.invalidateQueries({ queryKey: ["list", "domains"] });
+      qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
+      close();
+    } catch (err) {
+      const e = err as {
+        response?: { data?: { detail?: string } };
+        message?: string;
+      };
+      notification.error({
+        message: "Failed to save rules",
+        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      {controlledOpen === undefined && (
+        <Button icon={<ToolOutlined />} onClick={() => setInternalOpen(true)}>
+          Rewrite rules
+        </Button>
+      )}
+      <Modal
+        open={open}
+        title="Rewrite & header rules"
+        onCancel={close}
+        onOk={handleSave}
+        okText="Save"
+        confirmLoading={saving}
+        width={720}
+        destroyOnClose
+      >
+        <Typography.Paragraph type="secondary">
+          Add rewrite rules and custom response headers for this domain. Rewrites
+          must point to a local path on your own site (no external URLs or
+          proxying).
+        </Typography.Paragraph>
+        <RuleBuilder
+          rules={rules}
+          onRulesChange={setRules}
+          allowedTypes={["rewrite", "custom_header"]}
+        />
+      </Modal>
+    </>
   );
 };
