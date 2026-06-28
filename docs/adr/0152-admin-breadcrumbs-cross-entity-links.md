@@ -1,6 +1,6 @@
 # ADR-0152: Admin breadcrumbs + cross-entity navigation
 
-**Status:** Proposed (2026-06-28).
+**Status:** Accepted (2026-06-28) — shipped (Waves A–E).
 **Driven by:** Gitea #483.
 **Plan:** `plans/m-admin-breadcrumbs-crosslinks.md`.
 

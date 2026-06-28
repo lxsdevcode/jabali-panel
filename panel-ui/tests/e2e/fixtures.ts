@@ -13,6 +13,7 @@ import { test as base, expect } from "@playwright/test";
 export type MockUser = {
   id: string;
   email: string;
+  username?: string | null;
   name_first?: string;
   name_last?: string;
   is_admin: boolean;
@@ -37,6 +38,7 @@ export type MockPackage = {
 export type MockDomain = {
   id: string;
   user_id: string;
+  username?: string | null;
   name: string;
   doc_root: string;
   is_enabled: boolean;
