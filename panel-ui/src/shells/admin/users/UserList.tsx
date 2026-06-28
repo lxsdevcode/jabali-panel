@@ -167,8 +167,8 @@ function UsersShellTable({
 
   const query = useTableURL<User>({
     resource: "users",
-    defaultSort: "created_at",
-    defaultOrder: "desc",
+    defaultSort: "username",
+    defaultOrder: "asc",
     extraParams,
   });
   // Package lookup — single /packages list, reused across both tabs
@@ -253,6 +253,8 @@ function UsersShellTable({
         title="Username"
         dataIndex="username"
         key="username"
+        sorter={{ multiple: 1 }}
+        defaultSortOrder="ascend"
         render={(v: string | null | undefined, record: User) => (
           <Link to={adminLinks.user(record.id)} style={{ fontFamily: "monospace" }}>
             {v || record.id.substring(0, 8)}
@@ -261,7 +263,8 @@ function UsersShellTable({
       />
       <Table.Column<User>
         title="Name"
-        key="name"
+        key="name_first"
+        sorter={{ multiple: 1 }}
         filterIcon={() => (
           <SearchOutlined
             style={{ color: query.params.q ? "#ef4444" : undefined }}
@@ -322,6 +325,8 @@ function UsersShellTable({
         <Table.Column<User>
           title="Package"
           dataIndex="package_id"
+          key="package_id"
+          sorter={{ multiple: 1 }}
           render={(pid: string | null | undefined) => {
             if (!pid) return <Typography.Text type="secondary">—</Typography.Text>;
             const name = packageNameById.get(pid);
@@ -340,7 +345,6 @@ function UsersShellTable({
         title="Created"
         key="created_at"
         sorter={{ multiple: 1 }}
-        defaultSortOrder="descend"
         render={renderCreated}
       />
       {showDiskUsageColumn && (

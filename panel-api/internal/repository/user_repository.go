@@ -128,7 +128,7 @@ func repoErrNotFound() error { return ErrNotFound }
 // targets. Sort allows flipping between recency and alphabetical.
 var userListCols = ListCols{
 	Search:      []string{"email", "username", "name_first", "name_last"},
-	Sort:        []string{"email", "created_at", "is_admin"},
+	Sort:        []string{"email", "username", "name_first", "package_id", "created_at", "is_admin"},
 	DefaultSort: "created_at",
 }
 

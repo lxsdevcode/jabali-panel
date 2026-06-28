@@ -137,31 +137,43 @@ export const PackageList = () => {
           <Table.Column
             dataIndex="disk_quota_mb"
             title="Disk (MB)"
+            key="disk_quota_mb"
+            sorter={{ multiple: 1 }}
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="bandwidth_quota_mb"
             title="Bandwidth (MB)"
+            key="bandwidth_quota_mb"
+            sorter={{ multiple: 1 }}
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="max_domains"
             title="Domains"
+            key="max_domains"
+            sorter={{ multiple: 1 }}
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="max_email_accounts"
             title="Email"
+            key="max_email_accounts"
+            sorter={{ multiple: 1 }}
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="max_databases"
             title="DB"
+            key="max_databases"
+            sorter={{ multiple: 1 }}
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="ssh_enabled"
             title="SSH"
+            key="ssh_enabled"
+            sorter={{ multiple: 1 }}
             render={(enabled: boolean) =>
               enabled ? <Tag color="green">yes</Tag> : <Tag>no</Tag>
             }
@@ -169,6 +181,8 @@ export const PackageList = () => {
           <Table.Column
             dataIndex="php_exec_enabled"
             title="PHP exec"
+            key="php_exec_enabled"
+            sorter={{ multiple: 1 }}
             render={(enabled: boolean) =>
               enabled ? <Tag color="red">on</Tag> : <Tag>off</Tag>
             }

@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   Modal,
+  Card,
   Progress,
   Skeleton,
   Space,
@@ -28,9 +29,9 @@ import {
   type AdminMailbox,
 } from "../../../hooks/useMailboxes";
 import { useListQuery, useOneQuery } from "../../../hooks/useQueries";
-import { useSearchParams } from "react-router";
+import { useSearchParams, Link } from "react-router";
 import { AdminBreadcrumb } from "../../../components/admin/AdminBreadcrumb";
-import { ownerResourceCrumbs, ownerLabel } from "../../../components/admin/entityLinks";
+import { ownerResourceCrumbs, ownerLabel, adminLinks } from "../../../components/admin/entityLinks";
 import type { Domain } from "../../user/domains/UserDomainList";
 import { EditMailboxModal } from "../../../components/mail/EditMailboxModal";
 import { AdminGroupsTab } from "./AdminGroupsTab";
@@ -164,6 +165,22 @@ export function AdminMailPage() {
           items={ownerResourceCrumbs(ownerRef, { key: "mailboxes", label: "Mailboxes" })}
         />
       )}
+      <Space
+        wrap
+        align="center"
+        style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }}
+      >
+        <Space wrap align="center">
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            <MailOutlined /> Mail
+          </Typography.Title>
+          {ownerRef && (
+            <Tag closable onClose={clearOwner} color="blue">
+              Owner: {ownerLabel(ownerRef)}
+            </Tag>
+          )}
+        </Space>
+      </Space>
       <Tabs
         activeKey={tab}
         onChange={setTab}
@@ -174,35 +191,23 @@ export function AdminMailPage() {
       />
       {tab === "groups" && <AdminGroupsTab />}
       {tab === "mailboxes" && (
-      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <Space wrap align="center">
-            <Typography.Title level={3} style={{ margin: 0 }}>
-              Mail
-            </Typography.Title>
-            {ownerRef && (
-              <Tag closable onClose={clearOwner} color="blue">
-                Owner: {ownerLabel(ownerRef)}
-              </Tag>
-            )}
-          </Space>
-          <Space wrap>
-            <Input.Search
-              placeholder="Search email, name, domain, owner"
-              allowClear
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ maxWidth: 320 }}
-            />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              disabled={emailDomains.length === 0}
-              onClick={() => setCreateOpen(true)}
-            >
-              New mailbox
-            </Button>
-          </Space>
+      <Card>
+        <Space style={{ width: "100%", justifyContent: "flex-end", marginBottom: 16 }} wrap>
+          <Input.Search
+            placeholder="Search email, name, domain, owner"
+            allowClear
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ maxWidth: 320 }}
+          />
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={emailDomains.length === 0}
+            onClick={() => setCreateOpen(true)}
+          >
+            New mailbox
+          </Button>
         </Space>
 
         <Table<AdminMailbox>
@@ -216,6 +221,7 @@ export function AdminMailPage() {
             {
               title: "Email",
               dataIndex: "email",
+              defaultSortOrder: "ascend",
               sorter: (a, b) => a.email.localeCompare(b.email),
               render: (v: string) => (
                 <Typography.Text style={{ fontFamily: "monospace" }}>{v}</Typography.Text>
@@ -225,6 +231,7 @@ export function AdminMailPage() {
               title: "Name",
               dataIndex: "display_name",
               ellipsis: true,
+              sorter: (a, b) => (a.display_name ?? "").localeCompare(b.display_name ?? ""),
               render: (v: string) =>
                 v ? v : <Typography.Text type="secondary">—</Typography.Text>,
             },
@@ -236,13 +243,19 @@ export function AdminMailPage() {
             {
               title: "Owner",
               dataIndex: "user_username",
-              render: (v: string) =>
-                v ? v : <Typography.Text type="secondary">—</Typography.Text>,
+              sorter: (a, b) => (a.user_username ?? "").localeCompare(b.user_username ?? ""),
+              render: (v: string, row) =>
+                v ? (
+                  <Link to={adminLinks.user(row.owner_user_id)}>{v}</Link>
+                ) : (
+                  <Typography.Text type="secondary">—</Typography.Text>
+                ),
             },
             {
               title: "Quota",
               dataIndex: "quota_bytes",
               width: 200,
+              sorter: (a, b) => (a.quota_bytes ?? 0) - (b.quota_bytes ?? 0),
               render: (quota: number, row) => {
                 const used = row.last_usage_bytes ?? 0;
                 const pct = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
@@ -262,6 +275,7 @@ export function AdminMailPage() {
               title: "Status",
               dataIndex: "is_disabled",
               width: 100,
+              sorter: (a, b) => Number(a.is_disabled) - Number(b.is_disabled),
               render: (disabled: boolean) =>
                 disabled ? <Tag color="red">disabled</Tag> : <Tag color="green">active</Tag>,
             },
@@ -295,7 +309,7 @@ export function AdminMailPage() {
             },
           ]}
         />
-      </Space>
+      </Card>
       )}
 
       <CreateMailboxWizardModal

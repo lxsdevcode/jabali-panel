@@ -65,7 +65,11 @@ func (r *packageRepo) FindByName(ctx context.Context, name string) (*models.Host
 // search. Sort allows name/created_at. Historical default was name ASC.
 var packageListCols = ListCols{
 	Search:      []string{"name"},
-	Sort:        []string{"name", "created_at"},
+	Sort: []string{
+		"name", "disk_quota_mb", "bandwidth_quota_mb", "max_domains",
+		"max_email_accounts", "max_databases", "ssh_enabled", "php_exec_enabled",
+		"created_at",
+	},
 	DefaultSort: "name",
 }
 

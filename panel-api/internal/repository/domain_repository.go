@@ -222,7 +222,7 @@ func (r *domainRepo) FindByName(ctx context.Context, name string) (*models.Domai
 // passing opts down to applyListOptions.
 var domainListCols = ListCols{
 	Search:      []string{"domains.name"},
-	Sort:        []string{"domains.name", "domains.created_at", "users.username"},
+	Sort:        []string{"domains.name", "domains.created_at", "users.username", "domains.is_enabled"},
 	DefaultSort: "domains.name",
 }
 
@@ -237,6 +237,8 @@ func rewriteDomainSort(sort string) string {
 		return "domains.created_at"
 	case "username":
 		return "users.username"
+	case "is_enabled":
+		return "domains.is_enabled"
 	}
 	return sort
 }

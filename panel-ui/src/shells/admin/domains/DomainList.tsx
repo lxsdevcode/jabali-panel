@@ -323,6 +323,8 @@ export const DomainList = () => {
           <Table.Column<Domain>
             dataIndex="is_enabled"
             title="Status"
+            key="is_enabled"
+            sorter={{ multiple: 1 }}
             render={(enabled: boolean) =>
               enabled ? (
                 <Tag color="green">active</Tag>
