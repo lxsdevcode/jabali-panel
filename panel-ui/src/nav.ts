@@ -240,6 +240,10 @@ export const userNav: NavItem[] = [
     label: "Mail",
     icon: navIcon(MailOutlined),
     path: "/jabali-panel/mail/mailboxes",
+    // The link targets the default subtab, but the item owns every mail
+    // subtab (groups/forwarders/…) — keep it highlighted across all of them
+    // (GH #314). matchPatterns win over the longest-path-prefix match.
+    matchPatterns: [/^\/jabali-panel\/mail(?:\/|$)/],
   },
   {
     key: "applications",
