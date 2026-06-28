@@ -84,7 +84,7 @@ func RegisterUserDockerAppRoutes(g *gin.RouterGroup, cfg UserDockerAppHandlerCon
 	grp.GET("/:id", h.get)
 	grp.POST("", h.install)
 	grp.DELETE("/:id", h.delete)
-	grp.POST("/:id/start", h.lifecycle(models.DockerAppStatusRunning, "up", "-d"))
+	grp.POST("/:id/start", h.lifecycle(models.DockerAppStatusRunning, "start"))
 	grp.POST("/:id/stop", h.lifecycle(models.DockerAppStatusStopped, "stop"))
 	grp.POST("/:id/restart", h.lifecycle(models.DockerAppStatusRunning, "restart"))
 	grp.GET("/:id/logs", h.logs)
@@ -266,7 +266,17 @@ func (h *userDockerAppHandler) lifecycle(statusOnSuccess string, composeArgs ...
 		if h.cfg.Agent != nil {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
 			defer cancel()
-			if _, err := h.cfg.Agent.Call(ctx, "docker_app."+composeArgs[0], map[string]any{"slug": app.EffectiveSlug()}); err != nil {
+			params := map[string]any{"slug": app.EffectiveSlug()}
+			// Bring-up lifecycle (start/restart) re-runs `compose up` from the
+			// on-disk compose — make the agent re-validate the tenant gate first
+			// (Gitea #513), the same as install/update/restore.
+			if statusOnSuccess == models.DockerAppStatusRunning {
+				if entry, ok := h.cfg.Catalog.Get(app.Slug); ok {
+					params["tenant_validate"] = true
+					params["tenant_caps"] = dockerapp.TenantCapAllowlist(entry.TenantCaps)
+				}
+			}
+			if _, err := h.cfg.Agent.Call(ctx, "docker_app."+composeArgs[0], params); err != nil {
 				c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "detail": firstLineString(err.Error())})
 				return
 			}

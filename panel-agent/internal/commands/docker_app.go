@@ -228,6 +228,11 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 type dockerAppLifecycleParams struct {
 	Slug         string `json:"slug"`
 	PurgeVolumes bool   `json:"purge_volumes,omitempty"` // delete only
+	// TenantValidate / TenantCaps (Gitea #513): when a tenant-owned app is
+	// brought back up (start/restart/rebuild), re-run the tenant compose safety
+	// gate on the on-disk compose before `up`.
+	TenantValidate bool     `json:"tenant_validate,omitempty"`
+	TenantCaps     []string `json:"tenant_caps,omitempty"`
 }
 
 type dockerAppLifecycleResponse struct {
@@ -267,6 +272,14 @@ func runLifecycle(ctx context.Context, params json.RawMessage, statusOnSuccess s
 	dir := filepath.Join(dockerAppDataRoot, p.Slug)
 	if _, err := os.Stat(filepath.Join(dir, "compose.yml")); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeNotFound, Message: fmt.Sprintf("%s/compose.yml not found", dir)}
+	}
+	// Re-validate the tenant gate before any bring-up (Gitea #513): start /
+	// restart / rebuild all `compose up` from the on-disk compose, which could
+	// be stale or unhardened. Fail-safe (leave it down) rather than start it.
+	if p.TenantValidate && len(composeArgs) > 0 && composeArgs[0] == "up" {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: fmt.Sprintf("tenant compose validation failed: %v", err)}
+		}
 	}
 	if out, err := runDockerCompose(ctx, dir, composeArgs...); err != nil {
 		return nil, &agentwire.AgentError{
