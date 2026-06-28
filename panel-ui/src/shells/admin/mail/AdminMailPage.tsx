@@ -27,7 +27,10 @@ import {
   useRotateMailboxPassword,
   type AdminMailbox,
 } from "../../../hooks/useMailboxes";
-import { useListQuery } from "../../../hooks/useQueries";
+import { useListQuery, useOneQuery } from "../../../hooks/useQueries";
+import { useSearchParams } from "react-router";
+import { AdminBreadcrumb } from "../../../components/admin/AdminBreadcrumb";
+import { ownerResourceCrumbs, ownerLabel } from "../../../components/admin/entityLinks";
 import type { Domain } from "../../user/domains/UserDomainList";
 import { EditMailboxModal } from "../../../components/mail/EditMailboxModal";
 import { AdminGroupsTab } from "./AdminGroupsTab";
@@ -46,6 +49,18 @@ function formatBytes(n: number): string {
 export function AdminMailPage() {
   const { message } = App.useApp();
   const { data: rows, isLoading } = useAdminMailboxes();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ownerId = searchParams.get("user_id") ?? undefined;
+  const ownerQ = useOneQuery<{ id: string; username?: string | null }>({
+    resource: "users",
+    id: ownerId,
+    enabled: !!ownerId,
+  });
+  const clearOwner = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("user_id");
+    setSearchParams(next);
+  };
   const { items: domains } = useListQuery<Domain>({
     resource: "domains",
     params: { page: 1, pageSize: 500, sort: "name", order: "asc" },
@@ -102,7 +117,8 @@ export function AdminMailPage() {
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
-    const list = rows ?? [];
+    let list = rows ?? [];
+    if (ownerId) list = list.filter((m) => m.owner_user_id === ownerId);
     if (!search.trim()) return list;
     const q = search.toLowerCase();
     return list.filter(
@@ -112,7 +128,7 @@ export function AdminMailPage() {
         m.domain_name.toLowerCase().includes(q) ||
         (m.user_username ?? "").toLowerCase().includes(q),
     );
-  }, [rows, search]);
+  }, [rows, search, ownerId]);
 
   const submitReset = async () => {
     if (!resetTarget) return;
@@ -137,8 +153,17 @@ export function AdminMailPage() {
 
   if (isLoading && !rows) return <Skeleton active paragraph={{ rows: 6 }} />;
 
+  const ownerRef = ownerId
+    ? { id: ownerId, username: ownerQ.data?.username }
+    : undefined;
+
   return (
     <>
+      {ownerRef && (
+        <AdminBreadcrumb
+          items={ownerResourceCrumbs(ownerRef, { key: "mailboxes", label: "Mailboxes" })}
+        />
+      )}
       <Tabs
         activeKey={tab}
         onChange={setTab}
@@ -151,9 +176,16 @@ export function AdminMailPage() {
       {tab === "mailboxes" && (
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            Mail
-          </Typography.Title>
+          <Space wrap align="center">
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Mail
+            </Typography.Title>
+            {ownerRef && (
+              <Tag closable onClose={clearOwner} color="blue">
+                Owner: {ownerLabel(ownerRef)}
+              </Tag>
+            )}
+          </Space>
           <Space wrap>
             <Input.Search
               placeholder="Search email, name, domain, owner"

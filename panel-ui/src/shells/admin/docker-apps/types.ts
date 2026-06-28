@@ -60,6 +60,7 @@ export interface InstalledPort {
 
 export interface InstalledApp {
   id: string;
+  user_id?: string | null;
   slug: string;
   name: string;
   catalog_version: string;

@@ -22,6 +22,10 @@ import { RowActions, type RowAction } from "../../../components/RowActions";
 
 import { deleteApp, lifecycleAction, listCatalog, listInstalled, updateApp } from "./api";
 import type { CatalogEntry, InstalledApp } from "./types";
+import { useSearchParams } from "react-router";
+import { useOneQuery } from "../../../hooks/useQueries";
+import { AdminBreadcrumb } from "../../../components/admin/AdminBreadcrumb";
+import { ownerResourceCrumbs, ownerLabel } from "../../../components/admin/entityLinks";
 import { InstallDrawer } from "./InstallDrawer";
 import { LogsDrawer } from "./LogsDrawer";
 import { ExecDrawer } from "./ExecDrawer";
@@ -52,6 +56,18 @@ export const AdminDockerAppsPage = () => {
   const [activeTab, setActiveTab] = useState<string>("installed");
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
   const [installedSearch, setInstalledSearch] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ownerId = searchParams.get("user_id") ?? undefined;
+  const ownerQ = useOneQuery<{ id: string; username?: string | null }>({
+    resource: "users",
+    id: ownerId,
+    enabled: !!ownerId,
+  });
+  const clearOwner = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("user_id");
+    setSearchParams(next);
+  };
 
   const catalog = useQuery({
     queryKey: ["docker-apps-catalog"],
@@ -102,11 +118,27 @@ export const AdminDockerAppsPage = () => {
     onError: (e: unknown) => message.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
+  const ownerRef = ownerId
+    ? { id: ownerId, username: ownerQ.data?.username }
+    : undefined;
+
   return (
     <div>
-      <Typography.Title level={3} style={{ margin: 0, marginBottom: 16 }}>
-        <ContainerOutlined /> Docker Apps
-      </Typography.Title>
+      {ownerRef && (
+        <AdminBreadcrumb
+          items={ownerResourceCrumbs(ownerRef, { key: "docker-apps", label: "Docker Apps" })}
+        />
+      )}
+      <Space wrap align="center" style={{ marginBottom: 16 }}>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          <ContainerOutlined /> Docker Apps
+        </Typography.Title>
+        {ownerRef && (
+          <Tag closable onClose={clearOwner} color="blue">
+            Owner: {ownerLabel(ownerRef)}
+          </Tag>
+        )}
+      </Space>
 
       <Tabs
         activeKey={activeTab}
@@ -118,7 +150,7 @@ export const AdminDockerAppsPage = () => {
             children: (
               <div>
                 {(() => {
-                  const rows = installed.data ?? [];
+                  const rows = (installed.data ?? []).filter((r) => !ownerId || r.user_id === ownerId);
                   const installedCount = rows.length;
                   const runningCount = rows.filter(r => r.status === "running").length;
                   const stoppedCount = rows.filter(r => r.status === "stopped").length;
@@ -172,6 +204,7 @@ export const AdminDockerAppsPage = () => {
                 size="small"
                 loading={installed.isLoading}
                 dataSource={(installed.data ?? []).filter((r) => {
+                  if (ownerId && r.user_id !== ownerId) return false;
                   const q = installedSearch.trim().toLowerCase();
                   if (!q) return true;
                   return (
