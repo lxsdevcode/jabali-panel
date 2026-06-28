@@ -48,6 +48,19 @@ function DokuWikiMark({ size }: { size: number }) {
 
 // CmsIcon renders the brand logo for an app_type. Unknown app_type falls
 // back to the AntD BookOutlined generic icon.
+// appDisplayName maps an app_type to its proper display name (for table badges
+// where the icon alone isn't enough — GH #504). Falls back to title-case.
+const APP_DISPLAY_NAMES: Record<string, string> = {
+  wordpress: "WordPress", moodle: "Moodle", dokuwiki: "DokuWiki",
+  mediawiki: "MediaWiki", drupal: "Drupal", joomla: "Joomla", phpbb: "phpBB",
+  opencart: "OpenCart", prestashop: "PrestaShop", flarum: "Flarum",
+  itflow: "ITFlow",
+};
+export function appDisplayName(appType?: string): string {
+  if (!appType) return "WordPress";
+  return APP_DISPLAY_NAMES[appType] || appType.charAt(0).toUpperCase() + appType.slice(1);
+}
+
 export function CmsIcon({ appType, size = 18 }: CmsIconProps) {
   const key = appType || "wordpress";
   const color = BRAND_COLOR[key];

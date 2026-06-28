@@ -47,7 +47,7 @@ import { useMagicLink } from "../../../hooks/useMagicLink";
 import { InstallApplicationModal } from "./InstallApplicationModal";
 import { CloneApplicationModal } from "./CloneApplicationModal";
 import { CatalogTab } from "./CatalogTab";
-import { CmsIcon } from "./CmsIcon";
+import { CmsIcon, appDisplayName } from "./CmsIcon";
 import { useAppRegistry } from "./appRegistry";
 import { StatCard } from "../../../components/StatCard";
 
@@ -514,8 +514,13 @@ export const UserApplicationList = () => {
           />
           <Table.Column<ApplicationInstall>
             dataIndex="version"
-            title="Version"
-            render={(version: string | null) => version || "-"}
+            title="App / Version"
+            render={(version: string | null, record) => (
+              <Space size={6}>
+                <Tag style={{ marginInlineEnd: 0 }}>{appDisplayName(record.app_type)}</Tag>
+                <span>{version || "-"}</span>
+              </Space>
+            )}
           />
           <Table.Column<ApplicationInstall>
             dataIndex="status"
