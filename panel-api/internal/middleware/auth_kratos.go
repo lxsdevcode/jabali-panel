@@ -92,6 +92,14 @@ func RequireKratosSession(kratosClient *kratosclient.Client, users repository.Us
 			return
 		}
 
+		// A suspended account must not authenticate (Gitea #522). Kratos
+		// inactive state usually blocks the session, but enforce it from our
+		// own DB so a suspend takes effect regardless of Kratos propagation.
+		if panelUser.Suspended {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account_suspended", "message": "this account is suspended"})
+			c.Abort()
+			return
+		}
 		// Prefer the panel row's fields as the source of truth: is_admin must
 		// match what our own DB says, not the trait Kratos happened to have
 		// cached, so an admin demotion takes effect on the next request

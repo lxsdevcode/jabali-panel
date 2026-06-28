@@ -521,6 +521,15 @@ func (h *userDockerAppHandler) install(c *gin.Context) {
 		}
 	}
 
+	// Validate tenant-supplied env overrides the same way the env-edit path
+	// does (Gitea #517) — the install path accepted them unchecked.
+	for k, v := range req.EnvOverride {
+		if msg := validateEnvKV(k, v); msg != "" {
+			_ = h.cfg.Repo.Delete(ctx, app.ID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_env", "detail": msg})
+			return
+		}
+	}
 	envMap, err := dockerapp.MaterialiseEnv(entry, req.EnvOverride)
 	if err != nil {
 		_ = h.cfg.Repo.Delete(ctx, app.ID)

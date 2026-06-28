@@ -157,6 +157,12 @@ func authenticateUserAPIToken(c *gin.Context, tokens repository.UserAPITokenRepo
 		})
 		return
 	}
+	// A suspended account must not authenticate via API token (Gitea #522) —
+	// Kratos can block browser sessions, but API tokens bypass Kratos.
+	if panelUser.Suspended {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account_suspended", "message": "this account is suspended"})
+		return
+	}
 
 	claims := &auth.AccessClaims{
 		UserID:  panelUser.ID,

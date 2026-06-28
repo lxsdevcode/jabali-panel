@@ -678,7 +678,10 @@ func (h *userHandler) delete(c *gin.Context) {
 		}
 		for _, app := range apps {
 			agentCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
-			_, delErr := h.cfg.Agent.Call(agentCtx, "docker_app.delete", map[string]any{"slug": app.EffectiveSlug()})
+			// purge_volumes=true so the agent rm -rf's the app data tree, not
+			// just `compose down` — otherwise a deleted user's docker data is
+			// orphaned under /var/lib/jabali/docker-apps (Gitea #523).
+			_, delErr := h.cfg.Agent.Call(agentCtx, "docker_app.delete", map[string]any{"slug": app.EffectiveSlug(), "purge_volumes": true})
 			cancel()
 			if delErr != nil {
 				slog.Warn("cascade delete: docker_app.delete failed",

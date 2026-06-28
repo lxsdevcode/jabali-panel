@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
@@ -95,6 +99,24 @@ func (h *userHandler) suspend(c *gin.Context) {
 	var domainWarn string
 	if dErr != nil {
 		domainWarn = "domain_bulk_disable_failed: " + dErr.Error()
+	}
+
+	// Step 3b — stop the tenant's Docker apps (Gitea #520): a suspended user's
+	// containers must not keep running/serving. Best-effort; logged on failure.
+	if h.cfg.DockerApps != nil && h.cfg.Agent != nil {
+		if apps, aerr := h.cfg.DockerApps.ListByUserID(ctx, userID); aerr == nil {
+			for _, app := range apps {
+				actx, acancel := context.WithTimeout(ctx, 2*time.Minute)
+				if _, serr := h.cfg.Agent.Call(actx, "docker_app.stop", map[string]any{"slug": app.EffectiveSlug()}); serr != nil {
+					slog.Warn("suspend: docker_app.stop failed", "user_id", userID, "slug", app.EffectiveSlug(), "err", serr)
+				} else {
+					_ = h.cfg.DockerApps.UpdateStatus(ctx, app.ID, models.DockerAppStatusStopped, nil)
+				}
+				acancel()
+			}
+		} else {
+			slog.Warn("suspend: list user docker apps failed", "user_id", userID, "err", aerr)
+		}
 	}
 
 	// Step 4 — agent-side OS cascade: remove from jabali-sftp group +
