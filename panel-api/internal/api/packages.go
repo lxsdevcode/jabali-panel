@@ -80,6 +80,7 @@ type createPackageRequest struct {
 	MaxEmailAccounts uint32 `json:"max_email_accounts"`
 	MaxDatabases     uint32 `json:"max_databases"`
 	MaxDockerApps    uint32 `json:"max_docker_apps"`
+	MaxPythonApps    uint32 `json:"max_python_apps"`
 	SSHEnabled       bool   `json:"ssh_enabled"`
 	CGIEnabled       bool   `json:"cgi_enabled"`
 	PHPExecEnabled   bool   `json:"php_exec_enabled"`
@@ -101,6 +102,7 @@ type updatePackageRequest struct {
 	MaxEmailAccounts   *uint32 `json:"max_email_accounts"`
 	MaxDatabases       *uint32 `json:"max_databases"`
 	MaxDockerApps      *uint32 `json:"max_docker_apps"`
+	MaxPythonApps      *uint32 `json:"max_python_apps"`
 	SSHEnabled         *bool   `json:"ssh_enabled"`
 	CGIEnabled         *bool   `json:"cgi_enabled"`
 	PHPExecEnabled     *bool   `json:"php_exec_enabled"`
@@ -148,6 +150,7 @@ func (h *packageHandler) create(c *gin.Context) {
 		MaxEmailAccounts: req.MaxEmailAccounts,
 		MaxDatabases:     req.MaxDatabases,
 		MaxDockerApps:    req.MaxDockerApps,
+		MaxPythonApps:    req.MaxPythonApps,
 		SSHEnabled:       req.SSHEnabled,
 		CGIEnabled:       req.CGIEnabled,
 		PHPExecEnabled:   req.PHPExecEnabled,
@@ -269,6 +272,9 @@ func (h *packageHandler) update(c *gin.Context) {
 	}
 	if req.MaxDockerApps != nil {
 		pkg.MaxDockerApps = *req.MaxDockerApps
+	}
+	if req.MaxPythonApps != nil {
+		pkg.MaxPythonApps = *req.MaxPythonApps
 	}
 	if req.SSHEnabled != nil {
 		pkg.SSHEnabled = *req.SSHEnabled

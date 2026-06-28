@@ -31,6 +31,11 @@ type HostingPackage struct {
 	// this plan. 0 = docker apps NOT included (safe default, opt-in per plan).
 	MaxDockerApps uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_docker_apps"`
 
+	// MaxPythonApps caps simultaneous tenant python-app installs for users on
+	// this plan (Gitea #491). 0 = python apps NOT included (safe default,
+	// opt-in per plan), mirroring MaxDockerApps.
+	MaxPythonApps uint32 `gorm:"type:int unsigned;not null;default:0" json:"max_python_apps"`
+
 	// DockerAppSlugs (GH #170 #3) is a CSV allowlist of catalog slugs a tenant
 	// on this package may install. Empty = fall back to the server-wide
 	// docker_tenant_apps curation. Always AND-ed with MaxDockerApps>0 +

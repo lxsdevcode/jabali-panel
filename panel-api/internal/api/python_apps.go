@@ -21,6 +21,8 @@ import (
 type PythonAppHandlerConfig struct {
 	Apps       repository.PythonAppRepository
 	Domains    repository.DomainRepository
+	Users      repository.UserRepository
+	Packages   repository.PackageRepository
 	Settings   repository.ServerSettingsRepository
 	Agent      agent.AgentInterface
 	Reconciler interface{ Schedule(id string) }
@@ -170,6 +172,37 @@ func (h *pythonAppHandler) create(c *gin.Context) {
 	if !claims.IsAdmin && domain.UserID != claims.UserID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
+	}
+
+	// Package entitlement + per-user quota (Gitea #491). Mirrors the tenant
+	// Docker path: gate only when the user has a package (no package = no
+	// quota gate, same as docker). Admins bypass.
+	if !claims.IsAdmin && h.cfg.Users != nil && h.cfg.Packages != nil {
+		user, uerr := h.cfg.Users.FindByID(ctx, claims.UserID)
+		if uerr != nil || user == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "user_lookup_failed"})
+			return
+		}
+		if user.PackageID != nil {
+			pkg, perr := h.cfg.Packages.FindByID(ctx, *user.PackageID)
+			if perr != nil || pkg == nil {
+				c.JSON(http.StatusForbidden, gin.H{"error": "no_package"})
+				return
+			}
+			if pkg.MaxPythonApps == 0 {
+				c.JSON(http.StatusForbidden, gin.H{"error": "python_apps_not_in_package", "detail": "your hosting package does not include Python apps"})
+				return
+			}
+			existing, lerr := h.cfg.Apps.ListByUser(ctx, claims.UserID)
+			if lerr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "quota_check_failed"})
+				return
+			}
+			if int64(len(existing)) >= int64(pkg.MaxPythonApps) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "quota_exceeded", "detail": "Python app limit reached for your hosting package"})
+				return
+			}
+		}
 	}
 
 	port, err := h.cfg.Apps.FindFreeLoopbackPort(ctx)

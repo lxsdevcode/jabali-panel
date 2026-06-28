@@ -39,6 +39,7 @@ type PackageCreateInput = {
   max_email_accounts: number;
   max_databases: number;
   max_docker_apps: number;
+  max_python_apps: number;
   ssh_enabled: boolean;
   cgi_enabled: boolean;
   php_exec_enabled: boolean;
@@ -129,6 +130,7 @@ export const PackageCreate = () => {
           max_email_accounts: 0,
           max_databases: 0,
           max_docker_apps: 0,
+          max_python_apps: 0,
         }}
         onFinish={handleFinish}
       >
@@ -263,6 +265,15 @@ export const PackageCreate = () => {
               label="Max Docker Apps"
               name="max_docker_apps"
               tooltip="0 = Docker apps not included in this package"
+            >
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Form.Item
+              label="Max Python Apps"
+              name="max_python_apps"
+              tooltip="0 = Python apps not included in this package"
             >
               <InputNumber min={0} style={{ width: "100%" }} />
             </Form.Item>

@@ -1109,6 +1109,8 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			api.RegisterPythonAppRoutes(v1, api.PythonAppHandlerConfig{
 				Apps:       deps.PythonApps,
 				Domains:    deps.Domains,
+				Users:      deps.Users,
+				Packages:   deps.Packages,
 				Settings:   deps.ServerSettings,
 				Agent:      deps.Agent,
 				Reconciler: deps.Reconciler,
