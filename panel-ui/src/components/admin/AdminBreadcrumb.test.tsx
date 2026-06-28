@@ -20,8 +20,10 @@ describe("AdminBreadcrumb", () => {
     expect(users?.getAttribute("href")).toBe("/jabali-admin/users");
     const alice = getByText("alice").closest("a");
     expect(alice?.getAttribute("href")).toBe("/jabali-admin/users/u1");
-    // Domains leaf is not a link.
-    expect(getByText("Domains").closest("a")).toBeNull();
+    // Domains crumb is now a link to its owner-scoped list.
+    expect(getByText("Domains").closest("a")?.getAttribute("href")).toBe(
+      "/jabali-admin/domains?user_id=u1",
+    );
   });
 
   it("renders a sibling dropdown caret when a crumb has a menu", () => {

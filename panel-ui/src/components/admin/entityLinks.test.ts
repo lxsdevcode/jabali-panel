@@ -74,7 +74,7 @@ describe("crumb builders", () => {
     expect(c[0]).toEqual({ title: "Users", href: "/jabali-admin/users" });
     expect(c[1]).toEqual({ title: "alice", href: "/jabali-admin/users/u1" });
     expect(c[2].title).toBe("Domains");
-    expect(c[2].href).toBeUndefined();
+    expect(c[2].href).toBe("/jabali-admin/domains?user_id=u1");
     expect(c[2].menu?.map((m) => m.key)).toEqual(["mailboxes", "docker-apps", "backups"]);
   });
 
@@ -97,6 +97,7 @@ describe("crumbsToMenuItems (mobile collapse)", () => {
     expect(menu.map((m) => m.label)).toEqual([
       "Users",
       "alice",
+      "Domains",
       "Mailboxes",
       "Docker Apps",
       "Backups",

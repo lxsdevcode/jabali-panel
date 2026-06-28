@@ -68,10 +68,18 @@ export function ownerResourceCrumbs(
   user: OwnerRef,
   resource: { key: string; label: string },
 ): Crumb[] {
+  const self = OWNER_RESOURCES.find((r) => r.key === resource.key);
   return [
     { title: "Users", href: adminLinks.users() },
     { title: ownerLabel(user), href: adminLinks.user(user.id) },
-    { title: resource.label, menu: userResourceSiblings(user.id, resource.key) },
+    {
+      title: resource.label,
+      // The resource crumb links to its own owner-scoped list (so it's
+      // reachable from the mobile dropdown + clickable when it's a mid-trail
+      // crumb, e.g. on DomainEdit) and carries the sibling dropdown.
+      href: self ? self.href(user.id) : undefined,
+      menu: userResourceSiblings(user.id, resource.key),
+    },
   ];
 }
 
