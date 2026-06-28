@@ -13,6 +13,7 @@ services:
     entrypoint: ["bash", "-c"]
     command:
       - >
+        [ -f sites/common_site_config.json ] || echo '{}' > sites/common_site_config.json;
         ls -1 apps > sites/apps.txt;
         bench set-config -g db_host $$DB_HOST;
         bench set-config -gp db_port $$DB_PORT;
