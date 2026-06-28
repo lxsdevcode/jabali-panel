@@ -83,7 +83,7 @@ func (r *Reconciler) reconcileWebmailVhosts(ctx context.Context) {
 	webmailHosts := make([]string, 0, len(domains)*2)
 	for i := range domains {
 		d := &domains[i]
-		if d.EmailEnabled {
+		if d.EmailEnabled && d.WebmailEnabled {
 			anyEmailEnabled = true
 			r.applyWebmailVhost(ctx, d)
 			// Mirror what the agent's mail vhost template emits as

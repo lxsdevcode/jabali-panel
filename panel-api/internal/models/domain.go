@@ -281,6 +281,9 @@ type Domain struct {
 	// its `DEFAULT 1` from migration 000123 for any non-API insert; the
 	// API always sets this field explicitly via DeriveMailFlags.
 	EmailEnabled    bool       `gorm:"type:tinyint(1);not null" json:"email_enabled"`
+	// WebmailEnabled (GH #316) gates the per-domain Bulwark webmail vhost,
+	// AND-ed with server_settings.webmail_enabled. Default ON.
+	WebmailEnabled  bool       `gorm:"column:webmail_enabled;type:tinyint(1);not null;default:1" json:"webmail_enabled"`
 	// SkipAutoSAN opts the domain out of ADR-0070 auto-added mail/
 	// autoconfig SAN entries on the LE cert. Set when the tenant runs
 	// mail elsewhere (or has no mail subdomain DNS) — without this the

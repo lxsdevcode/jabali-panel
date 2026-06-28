@@ -166,6 +166,7 @@ type updateDomainRequest struct {
 	NginxRules            *models.NginxRules       `json:"nginx_rules,omitempty"`
 	NginxSafeOptions      *models.NginxSafeOptions `json:"nginx_safe_options,omitempty"`
 	IndexPriority         *string                  `json:"index_priority,omitempty"`
+	WebmailEnabled        *bool                    `json:"webmail_enabled,omitempty"`
 	// GH#181: mail provider + optional DKIM tokens. Pointers so an absent
 	// field in the PATCH leaves the columns untouched. When MailProvider is
 	// present, EmailEnabled + SkipAutoSAN are re-derived from it.
@@ -861,6 +862,9 @@ func (h *domainHandler) update(c *gin.Context) {
 		domain.PageRedirects = *req.PageRedirects
 	}
 
+	if req.WebmailEnabled != nil {
+		domain.WebmailEnabled = *req.WebmailEnabled
+	}
 	if req.IndexPriority != nil {
 		p := strings.TrimSpace(*req.IndexPriority)
 		if !isValidIndexPriority(p) {
