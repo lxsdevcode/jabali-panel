@@ -1447,6 +1447,20 @@ test -x node_modules/.bin/tsc || {
 					`echo "  fixed BOUNCING_ON_TYPE (was ban,captcha -> ban)"; `+
 					`fi`)
 		}},
+		{"remove panel user from docker group (#487: root-equivalent)", func() error {
+			// install_docker_engine is opt-in and doesn't run on every update,
+			// so the docker-group strip there never reaches existing hosts.
+			// Do it here on every update: derive the actual service user from
+			// the unit, drop it from the docker group (idempotent), and
+			// restart so the running process loses the supplementary group.
+			return run("", "bash", "-c",
+				`u="$(systemctl show -p User --value jabali-panel.service 2>/dev/null)"; [ -z "$u" ] && u=jabali; `+
+					`if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then `+
+					`gpasswd -d "$u" docker >/dev/null 2>&1 || true; `+
+					`systemctl try-restart jabali-panel.service >/dev/null 2>&1 || true; `+
+					`echo "  removed $u from docker group (#487)"; `+
+					`fi`)
+		}},
 		{"reapply PHP pools from template (GH #401)", func() error {
 			// The pool template was re-synced above, but ReconcilePHPPools
 			// skips ACTIVE pools, so template hardening (e.g. the GH #401
