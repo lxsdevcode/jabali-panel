@@ -236,6 +236,8 @@ export const AdminDockerAppsPage = () => {
                     title: "Name",
                     dataIndex: "name",
                     width: 260,
+                    sorter: (a, b) => a.name.localeCompare(b.name),
+                    defaultSortOrder: "ascend",
                     render: (n, r) => (
                       <Space size={12} align="start">
                         <Avatar
@@ -269,6 +271,7 @@ export const AdminDockerAppsPage = () => {
                     title: "Status",
                     dataIndex: "status",
                     width: 180,
+                    sorter: (a, b) => a.status.localeCompare(b.status),
                     render: (s, r) => (
                       <Space direction="vertical" size={4}>
                         <Space size={4}>
@@ -340,6 +343,7 @@ export const AdminDockerAppsPage = () => {
                     title: "Disk",
                     dataIndex: "data_bytes",
                     width: 110,
+                    sorter: (a, b) => (a.data_bytes ?? 0) - (b.data_bytes ?? 0),
                     render: (_, r) => (
                       <Tooltip
                         title={

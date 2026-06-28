@@ -60,6 +60,8 @@ export const AdminAuditList = () => {
             dataIndex="ts"
             title={`When (${tz})`}
             key="ts"
+            sorter={{ multiple: 1 }}
+            defaultSortOrder="descend"
             render={(ts: string) => <code>{fmtTSInTz(ts, tz)}</code>}
           />
           <Table.Column
@@ -79,6 +81,7 @@ export const AdminAuditList = () => {
           <Table.Column
             title="Action"
             key="action"
+            sorter={{ multiple: 1 }}
             render={(_: unknown, r: AuditRow) => <AuditActionLabel row={r} />}
           />
           <Table.Column
@@ -98,6 +101,7 @@ export const AdminAuditList = () => {
             dataIndex="result"
             title="Result"
             key="result"
+            sorter={{ multiple: 1 }}
             render={resultTag}
           />
         </SearchableTableStringQ>

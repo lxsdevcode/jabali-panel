@@ -233,6 +233,8 @@ export const SSLManagerTable = ({
     {
       title: "Domain",
       dataIndex: "domain_name",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => a.domain_name.localeCompare(b.domain_name),
+      defaultSortOrder: "ascend" as const,
       key: "domain_name",
       ...columnSearchProps<SSLCertificate>({
         placeholder: "Search by domain or owner",
@@ -272,6 +274,7 @@ export const SSLManagerTable = ({
           {
             title: "Owner",
             dataIndex: "user_username",
+            sorter: (a: SSLCertificate, b: SSLCertificate) => (a.user_username ?? "").localeCompare(b.user_username ?? ""),
             key: "user_username",
             ...columnSearchProps<SSLCertificate>({
               placeholder: "Search by domain or owner",
@@ -284,6 +287,7 @@ export const SSLManagerTable = ({
     {
       title: "Service",
       dataIndex: "service",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => a.service.localeCompare(b.service),
       key: "service",
       render: (service: string) =>
         service ? <Tag color="geekblue">{service}</Tag> : <span>—</span>,
@@ -291,6 +295,7 @@ export const SSLManagerTable = ({
     {
       title: "Status",
       dataIndex: "status",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => a.status.localeCompare(b.status),
       key: "status",
       render: (status: string, record: SSLCertificate) => {
         let tooltip = "";
@@ -329,6 +334,7 @@ export const SSLManagerTable = ({
     {
       title: "Last check",
       dataIndex: "last_attempt_at",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => (a.last_attempt_at ? +new Date(a.last_attempt_at) : 0) - (b.last_attempt_at ? +new Date(b.last_attempt_at) : 0),
       key: "last_attempt_at",
       render: (dateStr: string | null) => {
         if (!dateStr) return "—";
@@ -343,12 +349,14 @@ export const SSLManagerTable = ({
     {
       title: "Issued",
       dataIndex: "issued_at",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => (a.issued_at ? +new Date(a.issued_at) : 0) - (b.issued_at ? +new Date(b.issued_at) : 0),
       key: "issued_at",
       render: (dateStr: string | null) => formatDate(dateStr),
     },
     {
       title: "Expires",
       dataIndex: "expires_at",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => (a.expires_at ? +new Date(a.expires_at) : 0) - (b.expires_at ? +new Date(b.expires_at) : 0),
       key: "expires_at",
       render: (dateStr: string | null, record: SSLCertificate) => {
         if (record.status === "self_signed") {
@@ -364,6 +372,7 @@ export const SSLManagerTable = ({
     {
       title: "Staging",
       dataIndex: "staging",
+      sorter: (a: SSLCertificate, b: SSLCertificate) => Number(a.staging) - Number(b.staging),
       key: "staging",
       render: (isStaging: boolean) =>
         isStaging ? <Tag color="blue">staging</Tag> : null,

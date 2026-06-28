@@ -171,6 +171,8 @@ export const AdminCronList = () => {
               {
                 title: "Name",
                 dataIndex: "name",
+                sorter: (a, b) => a.name.localeCompare(b.name),
+                defaultSortOrder: "ascend",
                 render: (name: string, row) => (
                   <Space direction="vertical" size={0}>
                     <Typography.Text strong>{name}</Typography.Text>
@@ -185,6 +187,7 @@ export const AdminCronList = () => {
               {
                 title: "Schedule",
                 dataIndex: "schedule",
+                sorter: (a, b) => a.schedule.localeCompare(b.schedule),
                 width: 200,
                 render: (sch: string) => (
                   <Tooltip title={sch}>
@@ -195,6 +198,7 @@ export const AdminCronList = () => {
               {
                 title: "Command",
                 dataIndex: "command",
+                sorter: (a, b) => a.command.localeCompare(b.command),
                 render: (cmd: string) => (
                   <Tooltip title={cmd}>
                     <Typography.Text code>{truncate(cmd)}</Typography.Text>
@@ -204,6 +208,7 @@ export const AdminCronList = () => {
               {
                 title: "Enabled",
                 dataIndex: "enabled",
+                sorter: (a, b) => Number(a.enabled) - Number(b.enabled),
                 width: 90,
                 render: (_: boolean, row) => (
                   <Switch
@@ -219,6 +224,7 @@ export const AdminCronList = () => {
               {
                 title: "Last run",
                 dataIndex: "last_run_at",
+                sorter: (a, b) => (a.last_run_at ? +new Date(a.last_run_at) : 0) - (b.last_run_at ? +new Date(b.last_run_at) : 0),
                 width: 160,
                 render: (ts: string | null, row) =>
                   ts ? (
