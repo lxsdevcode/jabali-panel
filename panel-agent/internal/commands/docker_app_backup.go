@@ -178,6 +178,10 @@ type dockerAppRestoreParams struct {
 	Slug          string `json:"slug"`
 	SnapshotID    string `json:"snapshot_id"`
 	DestinationID string `json:"destination_id,omitempty"`
+	// TenantValidate / TenantCaps (Gitea #509): when the app is tenant-owned,
+	// re-run the tenant compose safety gate on the RESTORED compose before up.
+	TenantValidate bool     `json:"tenant_validate,omitempty"`
+	TenantCaps     []string `json:"tenant_caps,omitempty"`
 }
 
 type dockerAppRestoreResponse struct {
@@ -232,6 +236,14 @@ func dockerAppRestoreHandler(ctx context.Context, params json.RawMessage) (any, 
 		}
 	}
 
+	// Tenant-owned restore (Gitea #509): the restored snapshot may carry an
+	// old/unsafe compose.yml. Re-run the tenant safety gate before bringing it
+	// up; fail closed (leave it down) rather than start an unhardened compose.
+	if p.TenantValidate {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: fmt.Sprintf("restored compose failed tenant validation: %v", err)}
+		}
+	}
 	if out, err := runDockerCompose(ctx, dir, "up", "-d"); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
