@@ -4,6 +4,7 @@
 // label, controlled activeTabKey, panel-attached strip. Both tabs
 // view the same `domains` list so the badge total matches on both.
 import { useEffect, useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { Alert, Button, Card, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import { ServerOutlined } from "@icons";
 import { useNavigate } from "react-router";
@@ -199,7 +200,7 @@ const DNSSECTab = () => (
 );
 
 export const DNSZonesOverviewPage = () => {
-  const [activeTab, setActiveTab] = useState<"zones" | "dnssec">("zones");
+  const [activeTab, setActiveTab] = useTabParam<"zones" | "dnssec">("zones");
   return (
     <div>
       <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 16 }}>

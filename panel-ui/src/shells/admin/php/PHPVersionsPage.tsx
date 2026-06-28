@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { Card, Typography } from "antd";
 import { CodeOutlined } from "@icons";
 import { VersionsTab } from "./VersionsTab";
@@ -7,7 +7,7 @@ import { PHPExtensionsTab } from "./PHPExtensionsTab";
 type TabKey = "versions" | "extensions";
 
 export const PHPVersionsPage = () => {
-  const [active, setActive] = useState<TabKey>("versions");
+  const [active, setActive] = useTabParam<TabKey>("versions");
 
   return (
     <div >

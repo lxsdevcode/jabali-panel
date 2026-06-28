@@ -2,6 +2,7 @@
 // Scheduler-fired jobs roll up under their run_id (one parent row,
 // expandable to per-user children). Manual creates render flat.
 import { Badge, Button, Card, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { RowActions } from "../../../components/RowActions";
 import {
   DeleteOutlined,
@@ -144,7 +145,7 @@ const RunStatusSummary = ({ run }: { run: BackupRun }) => {
 export const AdminBackupsPage = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logJob, setLogJob] = useState<BackupJob | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("backups");
+  const [activeTab, setActiveTab] = useTabParam<TabKey>("backups");
   const [runs, setRuns] = useState<BackupRun[]>([]);
   const [manual, setManual] = useState<BackupJob[]>([]);
   const [loading, setLoading] = useState(false);

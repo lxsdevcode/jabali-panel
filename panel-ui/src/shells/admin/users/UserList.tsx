@@ -8,6 +8,7 @@
 // the ?is_admin filter is applied before search/sort so the paginated
 // total stays correct per tab.
 import { useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { Badge, Button, Card, Input, message, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, EditOutlined, LoginOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
 import { RowActions, type RowAction } from "../../../components/RowActions";
@@ -359,7 +360,7 @@ function UsersShellTable({
 }
 
 export const UserList = () => {
-  const [activeTab, setActiveTab] = useState<"users" | "admins">("users");
+  const [activeTab, setActiveTab] = useTabParam<"users" | "admins">("users");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
 

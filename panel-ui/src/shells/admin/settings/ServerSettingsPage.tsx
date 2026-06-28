@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import {
   BgColorsOutlined,
   CheckOutlined,
@@ -870,7 +871,7 @@ const BrandingSettingsTab = () => (
 );
 
 export const ServerSettingsPage = () => {
-  const [activeTab, setActiveTab] = useState<SettingsTabKey>("general");
+  const [activeTab, setActiveTab] = useTabParam<SettingsTabKey>("general");
 
   return (
     <div style={{ maxWidth: 960 }}>

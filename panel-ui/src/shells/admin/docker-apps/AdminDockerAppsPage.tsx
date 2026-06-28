@@ -1,6 +1,7 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
 import { App, Avatar, Button, Card, Col, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { humanBytes } from "../../../utils/bytes";
 import { useMemo, useState } from "react";
@@ -53,7 +54,7 @@ export const AdminDockerAppsPage = () => {
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
   const [editApp, setEditApp] = useState<InstalledApp | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("installed");
+  const [activeTab, setActiveTab] = useTabParam<string>("installed");
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
   const [installedSearch, setInstalledSearch] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();

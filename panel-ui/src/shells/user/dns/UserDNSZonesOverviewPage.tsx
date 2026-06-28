@@ -3,6 +3,7 @@
 // count Tag in each tab label, panel-attached strip. Both tabs view
 // the same `domains` list.
 import { useEffect, useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { Alert, Button, Card, Empty, Spin, Table, Tag, Tooltip, Typography } from "antd";
 import { CloudServerOutlined } from "@icons";
 import { useNavigate } from "react-router";
@@ -189,7 +190,7 @@ const DNSSECTab = () => (
 );
 
 export const UserDNSZonesOverviewPage = () => {
-  const [activeTab, setActiveTab] = useState<"zones" | "dnssec">("zones");
+  const [activeTab, setActiveTab] = useTabParam<"zones" | "dnssec">("zones");
   return (
     <div>
       <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 16 }}>

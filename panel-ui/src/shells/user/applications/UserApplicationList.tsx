@@ -4,6 +4,7 @@
 // transitional statuses (pending/installing/cloning/deleting) poll
 // until ready.
 import { useEffect, useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import {
   Button,
   Card,
@@ -202,7 +203,7 @@ export const UserApplicationList = () => {
 
   const [installOpen, setInstallOpen] = useState(false);
   const [presetAppType, setPresetAppType] = useState<string | undefined>(undefined);
-  const [activeTab, setActiveTab] = useState<string>("installed");
+  const [activeTab, setActiveTab] = useTabParam<string>("installed");
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloningId, setCloningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);

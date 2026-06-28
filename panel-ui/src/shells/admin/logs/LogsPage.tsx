@@ -4,7 +4,7 @@
 //   Audit    — the admin audit log (moved off its own sidebar entry)
 //   Backups  — backup job logs (reused from the Backups page)
 //   Mail     — the mail trace log (admin sees all domains)
-import { useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import { Tabs, Typography } from "antd";
 
 import { DomainLogsTab } from "./DomainLogsTab";
@@ -16,7 +16,7 @@ import { UpdatesLogTab } from "./UpdatesLogTab";
 const { Title } = Typography;
 
 export const LogsPage = () => {
-  const [activeTab, setActiveTab] = useState("domains");
+  const [activeTab, setActiveTab] = useTabParam<string>("domains");
 
   return (
     <div>
