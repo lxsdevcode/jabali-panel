@@ -94,6 +94,16 @@ body.imp-active .ant-modal-body {
   .ant-drawer-content-wrapper {
     width: 100vw !important;
   }
+  /* Drawer header: when actions live in the header `extra` (e.g. New mailbox
+     Cancel/Create), they collide with the title at 320px. Let the header wrap
+     so the actions drop below the title instead of overlapping. (GH #502) */
+  .ant-drawer-header {
+    flex-wrap: wrap !important;
+    row-gap: 8px !important;
+  }
+  .ant-drawer-extra {
+    margin-inline-start: 0 !important;
+  }
   .ant-modal {
     margin: 8px auto;
   }
