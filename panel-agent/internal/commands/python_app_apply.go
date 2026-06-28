@@ -228,6 +228,11 @@ func renderPythonUnit(p pythonAppApplyParams, appRoot, envPath, start string) st
 	fmt.Fprintf(&b, "[Unit]\nDescription=Jabali Python app %s\nAfter=network.target\n\n", p.AppID)
 	b.WriteString("[Service]\n")
 	fmt.Fprintf(&b, "User=%s\nGroup=%s\n", p.Username, p.Username)
+	// Place the app inside the owner's M18 user slice (ADR-0131, Gitea #490) so
+	// the package's cgroup CPU/memory/PID limits apply to it via the slice,
+	// independent of the optional per-app caps below. systemd nests it under
+	// jabali.slice/jabali-user.slice automatically via the slice unit.
+	fmt.Fprintf(&b, "Slice=jabali-user-%s.slice\n", p.Username)
 	fmt.Fprintf(&b, "WorkingDirectory=%s\n", appRoot)
 	fmt.Fprintf(&b, "EnvironmentFile=%s\n", envPath)
 	fmt.Fprintf(&b, "ExecStart=%s\n", start)
