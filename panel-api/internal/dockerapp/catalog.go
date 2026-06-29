@@ -248,10 +248,38 @@ func loadOne(dir string) (Entry, error) {
 		return Entry{}, fmt.Errorf("stat icon %q: %w", iconName, ierr)
 	}
 
+	// Gitea #530: every literal service image in the compose must be digest-pinned
+	// too, not just image_channel. A templated image ({{ .ImageChannel }}) resolves
+	// to the already-validated image_channel; any literal sidecar/support image
+	// (e.g. postgres) must carry an @sha256 digest so a future app can't ship a
+	// mutable tag and pass loading.
+	if err := validateComposeImages(e.composeTmpl); err != nil {
+		return Entry{}, err
+	}
+
 	if e.UpdateMode == "" {
 		e.UpdateMode = "manual"
 	}
 	return e, nil
+}
+
+// composeImageRe captures the value of an `image:` key in a compose template.
+var composeImageRe = regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
+
+// validateComposeImages requires every LITERAL service image in the compose
+// template to be digest-pinned (Gitea #530). Templated images (containing
+// "{{") resolve to image_channel, which validatePinnedImage already covers.
+func validateComposeImages(tmpl string) error {
+	for _, m := range composeImageRe.FindAllStringSubmatch(tmpl, -1) {
+		img := strings.Trim(strings.TrimSpace(m[1]), "\"'")
+		if strings.Contains(img, "{{") {
+			continue // templated -> image_channel, validated separately
+		}
+		if !imageDigestRe.MatchString(img) {
+			return fmt.Errorf("compose image %q must be digest-pinned: repo:tag@sha256:<digest>", img)
+		}
+	}
+	return nil
 }
 
 // validate enforces the rules from the JSON schema. We re-check here

@@ -72,6 +72,8 @@ type dockerAppInstallParams struct {
 	// TenantCaps is the catalog-verified capability allowlist for this app.
 	TenantValidate bool     `json:"tenant_validate,omitempty"`
 	TenantCaps     []string `json:"tenant_caps,omitempty"`
+	// TenantCgroup is the exact owner slice the compose must declare (Gitea #525).
+	TenantCgroup   string   `json:"tenant_cgroup,omitempty"`
 }
 
 type dockerAppInstallResponse struct {
@@ -178,7 +180,7 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 	// privileged container / foreign capability / host bind-mount can never be
 	// brought up for a tenant even if the rendered compose was wrong.
 	if p.TenantValidate {
-		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps, p.TenantCgroup); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "tenant compose rejected: " + err.Error()}
 		}
 	}
@@ -233,6 +235,8 @@ type dockerAppLifecycleParams struct {
 	// gate on the on-disk compose before `up`.
 	TenantValidate bool     `json:"tenant_validate,omitempty"`
 	TenantCaps     []string `json:"tenant_caps,omitempty"`
+	// TenantCgroup is the exact owner slice the compose must declare (Gitea #525).
+	TenantCgroup   string   `json:"tenant_cgroup,omitempty"`
 }
 
 type dockerAppLifecycleResponse struct {
@@ -277,7 +281,7 @@ func runLifecycle(ctx context.Context, params json.RawMessage, statusOnSuccess s
 	// restart / rebuild all `compose up` from the on-disk compose, which could
 	// be stale or unhardened. Fail-safe (leave it down) rather than start it.
 	if p.TenantValidate && len(composeArgs) > 0 && composeArgs[0] == "up" {
-		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps, p.TenantCgroup); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: fmt.Sprintf("tenant compose validation failed: %v", err)}
 		}
 	}

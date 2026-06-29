@@ -1,12 +1,12 @@
 package commands
 
 import (
-	"regexp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -25,21 +25,21 @@ type composeConfigService struct {
 	CapAdd     []string `json:"cap_add"`
 	// Host-namespace / device escapes (GH #450). docker compose config
 	// normalizes these to scalars/arrays; extends is already resolved away.
-	NetworkMode       string   `json:"network_mode"`
-	Pid               string   `json:"pid"`
-	Ipc               string   `json:"ipc"`
-	Uts               string   `json:"uts"`
-	UsernsMode        string   `json:"userns_mode"`
-	Devices           []any    `json:"devices"`
-	DeviceCgroupRules []string `json:"device_cgroup_rules"`
-	SecurityOpt       []string `json:"security_opt"`
-	VolumesFrom       []string `json:"volumes_from"`
-	CapDrop           []string `json:"cap_drop"`
-	CgroupParent      string   `json:"cgroup_parent"`
+	NetworkMode       string          `json:"network_mode"`
+	Pid               string          `json:"pid"`
+	Ipc               string          `json:"ipc"`
+	Uts               string          `json:"uts"`
+	UsernsMode        string          `json:"userns_mode"`
+	Devices           []any           `json:"devices"`
+	DeviceCgroupRules []string        `json:"device_cgroup_rules"`
+	SecurityOpt       []string        `json:"security_opt"`
+	VolumesFrom       []string        `json:"volumes_from"`
+	CapDrop           []string        `json:"cap_drop"`
+	CgroupParent      string          `json:"cgroup_parent"`
 	Build             json.RawMessage `json:"build"`
 	EnvFile           json.RawMessage `json:"env_file"`
-	Secrets           []any    `json:"secrets"`
-	Configs           []any    `json:"configs"`
+	Secrets           []any           `json:"secrets"`
+	Configs           []any           `json:"configs"`
 	Volumes           []struct {
 		Type   string `json:"type"`
 		Source string `json:"source"`
@@ -98,7 +98,7 @@ func normalizeSecurityOpt(s string) string {
 // cgroup_parent, e.g. "jabali-user-bob.slice".
 var tenantCgroupRE = regexp.MustCompile(`^jabali-user-[A-Za-z0-9._-]+\.slice$`)
 
-func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot string) error {
+func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot, expectedCgroup string) error {
 	var doc composeConfigDoc
 	if err := json.Unmarshal(configJSON, &doc); err != nil {
 		return fmt.Errorf("parse compose config: %w", err)
@@ -186,7 +186,15 @@ func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot str
 		// injects (it gates the M18 cpu/mem limits, the #519 loopback-port
 		// isolation, and the M34 egress firewall). Require it as defense-in-depth
 		// against a render/re-render path dropping it.
-		if !tenantCgroupRE.MatchString(svc.CgroupParent) {
+		// Gitea #525: when the panel passes the expected owner slice, require an
+		// EXACT match — a generic-pattern match would let a tenant compose declare
+		// ANOTHER tenant's slice and pass, applying M18 limits / loopback / egress
+		// isolation + audit attribution to the wrong owner.
+		if expectedCgroup != "" {
+			if svc.CgroupParent != expectedCgroup {
+				return fmt.Errorf("service %q cgroup_parent %q does not match the owner slice %q (cross-tenant or missing hardening): forbidden for tenant installs", name, svc.CgroupParent, expectedCgroup)
+			}
+		} else if !tenantCgroupRE.MatchString(svc.CgroupParent) {
 			return fmt.Errorf("service %q cgroup_parent %q is not a jabali tenant slice (tenant hardening absent): forbidden for tenant installs", name, svc.CgroupParent)
 		}
 		// #518: build runs arbitrary build-time code; env_file/secrets/configs
@@ -213,6 +221,12 @@ func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot str
 			src := filepath.Clean(v.Source)
 			if src != root && !strings.HasPrefix(src, root+string(filepath.Separator)) {
 				return fmt.Errorf("service %q bind-mounts %q outside the app data tree %q: forbidden for tenant installs", name, v.Source, root)
+			}
+			// Gitea #531: a lexical prefix check accepts a source that is (or
+			// passes through) a symlink resolving outside the data tree. Resolve
+			// symlinks on the longest existing prefix and re-check containment.
+			if pathEscapesRoot(v.Source, dataRoot) {
+				return fmt.Errorf("service %q bind-mounts %q which resolves (via symlink) outside the app data tree %q: forbidden for tenant installs", name, v.Source, root)
 			}
 		}
 		// Published ports MUST bind loopback only (#508). The catalog filter +
@@ -241,12 +255,44 @@ func isLoopbackHostIP(ip string) bool {
 // runTenantComposeValidation resolves the on-disk compose (dir) via
 // `docker compose config --format json` and runs validateTenantCompose.
 // Called by the install handler before `up` when the install is tenant-owned.
-func runTenantComposeValidation(ctx context.Context, dir string, allowedCaps []string) error {
+func runTenantComposeValidation(ctx context.Context, dir string, allowedCaps []string, expectedCgroup string) error {
 	cmd := exec.CommandContext(ctx, "docker", "compose", "config", "--format", "json")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker compose config failed: %v: %s", err, lastNonEmptyLines(string(out), 5))
 	}
-	return validateTenantCompose(out, allowedCaps, dir)
+	return validateTenantCompose(out, allowedCaps, dir, expectedCgroup)
+}
+
+// realPath resolves symlinks on the longest existing prefix of p and rejoins the
+// non-existent tail (bind sources may not exist until `up`). Clean fallback to
+// the lexical path when nothing resolves.
+func realPath(p string) string {
+	p = filepath.Clean(p)
+	cur := p
+	rel := ""
+	for {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			if rel == "" {
+				return resolved
+			}
+			return filepath.Join(resolved, rel)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rel = filepath.Join(filepath.Base(cur), rel)
+		cur = parent
+	}
+}
+
+// pathEscapesRoot reports whether src, after symlink resolution, falls outside
+// root (also symlink-resolved). Used to reject tenant bind mounts that escape
+// the app data tree through a symlink (Gitea #531).
+func pathEscapesRoot(src, root string) bool {
+	rroot := realPath(filepath.Clean(root))
+	rsrc := realPath(src)
+	return rsrc != rroot && !strings.HasPrefix(rsrc, rroot+string(filepath.Separator))
 }

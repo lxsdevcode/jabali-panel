@@ -60,3 +60,16 @@ func TestCatalogImagesDigestPinned(t *testing.T) {
 		t.Fatalf("catalog images not digest-pinned (GH #458):\n  %s", strings.Join(unpinned, "\n  "))
 	}
 }
+
+// Gitea #530: validateComposeImages rejects a literal sidecar image with a
+// mutable (non-digest) tag, and accepts pinned + templated images.
+func TestValidateComposeImages_RejectsMutableSidecar(t *testing.T) {
+	bad := "services:\n  app:\n    image: {{ .ImageChannel }}\n  db:\n    image: postgres:17-alpine\n"
+	if err := validateComposeImages(bad); err == nil {
+		t.Error("mutable sidecar tag must be rejected (#530)")
+	}
+	good := "services:\n  app:\n    image: {{ .ImageChannel }}\n  db:\n    image: postgres:17-alpine@sha256:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" + "\n"
+	if err := validateComposeImages(good); err != nil {
+		t.Errorf("pinned + templated images must pass: %v", err)
+	}
+}

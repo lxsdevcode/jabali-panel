@@ -46,6 +46,7 @@ type dockerAppUpdateParams struct {
 	// compose safety gate so a re-render cannot bring up an unhardened compose.
 	TenantValidate bool     `json:"tenant_validate,omitempty"`
 	TenantCaps     []string `json:"tenant_caps,omitempty"`
+	TenantCgroup   string   `json:"tenant_cgroup,omitempty"`
 }
 
 type dockerAppUpdateResponse struct {
@@ -90,7 +91,7 @@ func dockerAppUpdateHandler(ctx context.Context, params json.RawMessage) (any, e
 	// container, foreign capability, host bind-mount), mirroring the install
 	// path's M49 validation.
 	if p.TenantValidate {
-		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps); err != nil {
+		if err := runTenantComposeValidation(ctx, dir, p.TenantCaps, p.TenantCgroup); err != nil {
 			return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "tenant compose rejected: " + err.Error()}
 		}
 	}
