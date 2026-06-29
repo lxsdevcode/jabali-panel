@@ -179,6 +179,16 @@ export function AdminMailPage() {
             </Tag>
           )}
         </Space>
+        {tab === "mailboxes" && (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={emailDomains.length === 0}
+            onClick={() => setCreateOpen(true)}
+          >
+            New mailbox
+          </Button>
+        )}
       </Space>
       {/* Card.tabList = tabs attached inside the card, matching the admin
           Users reference layout (Gitea #524). */}
@@ -193,7 +203,7 @@ export function AdminMailPage() {
       {tab === "groups" && <AdminGroupsTab />}
       {tab === "mailboxes" && (
       <>
-        <Space style={{ width: "100%", justifyContent: "flex-end", marginBottom: 16 }} wrap>
+        <Space style={{ width: "100%", justifyContent: "flex-start", marginBottom: 16 }} wrap>
           <Input.Search
             placeholder="Search email, name, domain, owner"
             allowClear
@@ -201,14 +211,6 @@ export function AdminMailPage() {
             onChange={(e) => setSearch(e.target.value)}
             style={{ maxWidth: 320 }}
           />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            disabled={emailDomains.length === 0}
-            onClick={() => setCreateOpen(true)}
-          >
-            New mailbox
-          </Button>
         </Space>
 
         <Table<AdminMailbox>
