@@ -34,6 +34,12 @@ not the `SearchableTableStringQ` component.
   reference. Was `<Tabs>` outside a separate content `<Card>`. Verified live.
 - **User Applications** → `Card.tabList` (Installed/Catalog inside the card,
   StatCards + table in the body). Was `<Tabs>` outside. Verified live.
+- **User mail secondary tabs** → `SearchableTableStringQ`: SharedResources,
+  SharedFolders, Groups, and the main Forwarders list. Each was a bare `<Table>`
+  with no search; now card + debounced search like the panel default. Filter is
+  client-side (these lists are already fully loaded in one query). The DA-migration
+  redirect-alias table inside ForwardersTab stays a bare `<Table>` (read-only
+  "rows shown for visibility" artifact, not a managed list).
 
 ## Assessed — no change needed
 - **Cron** (admin + user): already `<Card>` + `Input.Search` + `<Table>` — i.e.
@@ -51,11 +57,11 @@ not the `SearchableTableStringQ` component.
   Email + aliases stay (folded under the address); the data-bearing columns
   (Groups/Auto-replies/Quota/Last-usage) stay (no data lost). Owner remains an
   admin-only column. Verified live (seed15: 0 row avatars, search retained).
-- **Per-mail-tab search**: the secondary mail tabs (Forwarders/Groups/Catch-All/
-  Disclaimer/Shared Folders/Shared Resources/Logs) use bare `<Table>` without a
-  search box. They live inside the mail `Card.tabList` (card present) and mostly
-  hold a handful of rows, so a search box is low-value clutter. Left as-is;
-  revisit Logs specifically if mail logs grow large.
+- **Per-mail-tab search**: the LIST mail tabs (Forwarders/Groups/Shared Folders/
+  Shared Resources) now use `SearchableTableStringQ` (card + debounced search),
+  matching the panel default. Catch-All/Disclaimer are single-record config
+  forms (not lists → no search). Logs is a streaming/paged view kept bare for
+  now; revisit if mail logs grow large.
 
 ## Remaining parity work (prioritised)
 
@@ -64,11 +70,13 @@ not the `SearchableTableStringQ` component.
    "look the same" the column sets should converge — but this is a PRODUCT
    decision (admin gains the richer columns across domains, or user drops some).
    Owner stays admin-only. Needs a decision before implementing.
-2. **Other user mail tabs** (Forwarders / Groups / Catch-All / Disclaimer /
-   Shared Folders / Shared Resources / Logs) use bare `<Table>`. Mechanical
-   conversion to `SearchableTableStringQ`; low urgency (most hold few rows).
-3. **Cron** (admin + user) both bare. Convert both to the standard for
-   consistency with Domains/Databases.
+2. ~~Other user mail tabs use bare `<Table>`.~~ **DONE** — the list tabs
+   (Forwarders/Groups/Shared Folders/Shared Resources) now use
+   `SearchableTableStringQ`. Catch-All/Disclaimer are config forms (not lists);
+   Logs left bare (streaming view).
+3. **Cron** (admin + user) both `<Card>` + `Input.Search` + `<Table>` — visually
+   the standard layout already, just not the shared component. Not converting
+   (pure churn; see "Assessed — no change needed").
 4. **Admin mail** → swap the hand-rolled `Input.Search`+`<Table>` for
    `SearchableTableStringQ` (component parity; low visual gain, layout churn —
    only if we want strict component uniformity).

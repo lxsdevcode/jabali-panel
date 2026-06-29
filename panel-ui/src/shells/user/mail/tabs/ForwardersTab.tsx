@@ -24,11 +24,13 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../../../../apiClient";
 import { RowActionButton } from "../../../../components/RowActionButton";
+import { SearchableTableStringQ } from "../../../../components/SearchableTable";
 import { useListQuery } from "../../../../hooks/useQueries";
 import {
   useForwarders,
   useCreateForwarder,
   useDeleteForwarder,
+  type Forwarder,
 } from "../../../../hooks/useForwarders";
 import type { Domain } from "../../domains/UserDomainList";
 
@@ -78,7 +80,23 @@ export const ForwardersTab = () => {
   const deleteMut = useDeleteForwarder();
 
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [form] = Form.useForm<FormValues>();
+
+  const filteredForwarders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return forwarders;
+    return forwarders.filter((f) => {
+      const source =
+        f.type === "alias" ? `${f.local_part}@${f.domain_name}` : f.mailbox_email;
+      const target = f.type === "alias" ? f.mailbox_email : f.target;
+      return (
+        source.toLowerCase().includes(q) ||
+        target.toLowerCase().includes(q) ||
+        f.type.toLowerCase().includes(q)
+      );
+    });
+  }, [forwarders, search]);
   const type = Form.useWatch("type", form);
 
   const submit = async () => {
@@ -127,12 +145,13 @@ export const ForwardersTab = () => {
           </Button>
         </Space>
 
-        <Table
+        <SearchableTableStringQ<Forwarder>
           rowKey="id"
           loading={isLoading}
-          dataSource={forwarders}
+          dataSource={filteredForwarders}
+          searchPlaceholder="Search forwarders…"
+          onSearchChange={setSearch}
           pagination={{ pageSize: 20 }}
-          scroll={{ x: "max-content" }}
           columns={[
             {
               title: "Source",

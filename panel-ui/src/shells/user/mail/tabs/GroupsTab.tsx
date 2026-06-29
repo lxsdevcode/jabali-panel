@@ -14,7 +14,6 @@ import {
   Select,
   Skeleton,
   Space,
-  Table,
   Tag,
   Segmented,
   Typography,
@@ -28,6 +27,7 @@ import {
 } from "@icons";
 
 import { useListQuery } from "../../../../hooks/useQueries";
+import { SearchableTableStringQ } from "../../../../components/SearchableTable";
 import type { Domain } from "../../domains/UserDomainList";
 import { useMailboxes } from "../../../../hooks/useMailboxes";
 import {
@@ -57,6 +57,7 @@ export function GroupsTab() {
 
   const [editTarget, setEditTarget] = useState<MailGroup | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [membersTarget, setMembersTarget] = useState<MailGroup | null>(null);
 
   const del = useDeleteMailGroup();
@@ -89,10 +90,21 @@ export function GroupsTab() {
       {isLoading && !groups ? (
         <Skeleton active paragraph={{ rows: 4 }} />
       ) : (
-        <Table<MailGroup>
+        <SearchableTableStringQ<MailGroup>
           scroll={{ x: "max-content" }}
           rowKey="id"
-          dataSource={groups ?? []}
+          dataSource={(groups ?? []).filter((g) => {
+            const q = search.trim().toLowerCase();
+            if (!q) return true;
+            return (
+              (g.email ?? "").toLowerCase().includes(q) ||
+              (g.display_name ?? "").toLowerCase().includes(q) ||
+              (g.local_part ?? "").toLowerCase().includes(q)
+            );
+          })}
+          searchPlaceholder="Search group name…"
+          initialSearch={search}
+          onSearchChange={setSearch}
           pagination={{ pageSize: 25 }}
           locale={{
             emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No groups" />,

@@ -15,7 +15,6 @@ import {
   Select,
   Skeleton,
   Space,
-  Table,
   Tag,
   Typography,
 } from "antd";
@@ -24,6 +23,7 @@ import { DeleteOutlined, PlusOutlined, TeamOutlined } from "@icons";
 
 import { apiClient } from "../../../../apiClient";
 import { useListQuery } from "../../../../hooks/useQueries";
+import { SearchableTableStringQ } from "../../../../components/SearchableTable";
 import { RowActions } from "../../../../components/RowActions";
 import type { Domain } from "../../domains/UserDomainList";
 import type { Mailbox } from "../../../../hooks/useMailboxes";
@@ -74,6 +74,17 @@ export const SharedResourcesTab = () => {
   });
   const anyLoading = results.some((r) => r.isLoading);
   const rows: Row[] = useMemo(() => results.flatMap((r) => r.data ?? []), [results]);
+  const [search, setSearch] = useState("");
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        (r.display_name ?? "").toLowerCase().includes(q) ||
+        (r.email ?? "").toLowerCase().includes(q) ||
+        (r.domain_name ?? "").toLowerCase().includes(q),
+    );
+  }, [rows, search]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [grantsTarget, setGrantsTarget] = useState<Row | null>(null);
@@ -94,10 +105,13 @@ export const SharedResourcesTab = () => {
         </Button>
       </Flex>
 
-      <Table<Row>
+      <SearchableTableStringQ<Row>
         rowKey="id"
         loading={anyLoading && rows.length === 0}
-        dataSource={rows}
+        dataSource={filteredRows}
+        searchPlaceholder="Search name, email, domain…"
+        initialSearch={search}
+        onSearchChange={setSearch}
         pagination={false}
         scroll={{ x: "max-content" }}
         columns={[

@@ -13,7 +13,6 @@ import {
   Select,
   Skeleton,
   Space,
-  Table,
   Tag,
   Tooltip,
   Typography,
@@ -24,6 +23,7 @@ import { useQueries } from "@tanstack/react-query";
 
 import { apiClient } from "../../../../apiClient";
 import { useListQuery } from "../../../../hooks/useQueries";
+import { SearchableTableStringQ } from "../../../../components/SearchableTable";
 import {
   useAllShares,
   useCreateShare,
@@ -84,6 +84,16 @@ export const SharedFoldersTab = () => {
   }, [mailboxResults]);
 
   const { data: shares = [], isLoading: sharesLoading } = useAllShares();
+  const [search, setSearch] = useState("");
+  const filteredShares = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return shares;
+    return shares.filter(
+      (sh) =>
+        (sh.owner_mailbox_email ?? "").toLowerCase().includes(q) ||
+        (sh.shared_with_mailbox_email ?? "").toLowerCase().includes(q),
+    );
+  }, [shares, search]);
   const createMut = useCreateShare();
   const deleteMut = useDeleteShare();
 
@@ -138,10 +148,13 @@ export const SharedFoldersTab = () => {
           </Button>
         </Space>
 
-        <Table
+        <SearchableTableStringQ
           rowKey="id"
           loading={sharesLoading}
-          dataSource={shares}
+          dataSource={filteredShares}
+          searchPlaceholder="Search owner or shared-with…"
+          initialSearch={search}
+          onSearchChange={setSearch}
           pagination={{ pageSize: 20 }}
           scroll={{ x: "max-content" }}
           columns={[
