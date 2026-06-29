@@ -16,7 +16,6 @@ import {
   Table,
   Tag,
   Tooltip,
-  Tabs,
   Typography,
 } from "antd";
 import { DeleteOutlined, EditOutlined, KeyOutlined, MailOutlined, PlusOutlined } from "@icons";
@@ -181,17 +180,19 @@ export function AdminMailPage() {
           )}
         </Space>
       </Space>
-      <Tabs
-        activeKey={tab}
-        onChange={setTab}
-        items={[
-          { key: "mailboxes", label: "Mailboxes" },
-          { key: "groups", label: "Groups" },
+      {/* Card.tabList = tabs attached inside the card, matching the admin
+          Users reference layout (Gitea #524). */}
+      <Card
+        tabList={[
+          { key: "mailboxes", tab: "Mailboxes" },
+          { key: "groups", tab: "Groups" },
         ]}
-      />
+        activeTabKey={tab}
+        onTabChange={setTab}
+      >
       {tab === "groups" && <AdminGroupsTab />}
       {tab === "mailboxes" && (
-      <Card>
+      <>
         <Space style={{ width: "100%", justifyContent: "flex-end", marginBottom: 16 }} wrap>
           <Input.Search
             placeholder="Search email, name, domain, owner"
@@ -309,8 +310,9 @@ export function AdminMailPage() {
             },
           ]}
         />
-      </Card>
+      </>
       )}
+      </Card>
 
       <CreateMailboxWizardModal
         open={createOpen}
