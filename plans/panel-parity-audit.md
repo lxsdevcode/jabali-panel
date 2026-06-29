@@ -1,9 +1,12 @@
-# Admin/User panel parity audit
+# Admin/User panel parity audit (Gitea #524)
 
-Goal: admin and user shells should look + behave the same for shared features —
-same table chrome (the panel-wide `SearchableTableStringQ`: card + debounced
-search + sortable + `RowActions`), same column conventions (role-specific
-columns like Owner are the only allowed delta), same tab structure.
+Goal: admin and user shells should look + behave the same for shared features.
+**Reference layout = the admin Users page** (`admin/users/UserList.tsx`):
+title + primary-action in a `Space` header → `<Card tabList=… activeTabKey…>`
+(tabs INSIDE the card) → `SearchableTableStringQ` (card + debounced search +
+sortable + `RowActions`). Role-specific columns (e.g. Owner) are the only
+allowed delta. Migrate page-by-page to this composition (a single forced shared
+shell is risky across pages with different needs).
 
 Legend: **S** = standard `SearchableTableStringQ`, **B** = bare antd `<Table>`,
 **—** = no list / different view.
@@ -23,10 +26,12 @@ Legend: **S** = standard `SearchableTableStringQ`, **B** = bare antd `<Table>`,
 \* admin mail = `<Card>` + `Input.Search` + `<Table>` — visually standard, but
 not the `SearchableTableStringQ` component.
 
-## Done this session
+## Done
 - **User mail Mailboxes** → `SearchableTableStringQ` (`dcb9202a`). Was a bare
   `<Table>` with no search; now matches the panel default. Verified live
   (seed15: search box renders + filters 16→2).
+- **Admin Mail** → `Card.tabList` (tabs inside the card), matching the Users
+  reference. Was `<Tabs>` outside a separate content `<Card>`. Verified live.
 
 ## Remaining parity work (prioritised)
 
