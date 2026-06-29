@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { shortDateTime } from "../../../utils/datetime";
+import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
 import {
   Alert,
   Button,
@@ -357,8 +358,20 @@ export const UserSSHKeysPage = () => {
         width={isDesktop ? 520 : undefined}
         placement="right"
         destroyOnClose
+        footer={
+          <StandardDrawerFooter
+            formId="ssh-add-form"
+            primaryText="Add Key"
+            primaryLoading={loading}
+            onCancel={() => {
+              setModalOpen(false);
+              form.resetFields();
+            }}
+          />
+        }
       >
         <Form
+          id="ssh-add-form"
           form={form}
           layout="vertical"
           onFinish={handleAddKey}
@@ -393,21 +406,6 @@ export const UserSSHKeysPage = () => {
             />
           </Form.Item>
 
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" loading={loading}>
-                Add Key
-              </Button>
-              <Button
-                onClick={() => {
-                  setModalOpen(false);
-                  form.resetFields();
-                }}
-              >
-                Cancel
-              </Button>
-            </Space>
-          </Form.Item>
         </Form>
       </Drawer>
 
@@ -425,13 +423,24 @@ export const UserSSHKeysPage = () => {
         width={isDesktop ? 520 : undefined}
         placement="right"
         destroyOnClose
+        footer={
+          <StandardDrawerFooter
+            formId="ssh-gen-form"
+            primaryText="Generate Keypair"
+            primaryLoading={generating}
+            onCancel={() => {
+              setGenOpen(false);
+              genForm.resetFields();
+            }}
+          />
+        }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           Generates an Ed25519 keypair in your browser. The private key
           is shown once after creation — save it somewhere safe because
           we never see it and cannot recover it.
         </Typography.Paragraph>
-        <Form form={genForm} layout="vertical" onFinish={handleGenerate}>
+        <Form id="ssh-gen-form" form={genForm} layout="vertical" onFinish={handleGenerate}>
           <Form.Item
             label="Name"
             name="name"
@@ -448,26 +457,6 @@ export const UserSSHKeysPage = () => {
             extra="Embedded in the public key as a label; defaults to 'jabali'."
           >
             <Input placeholder="user@host" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button
-                type="primary"
-                icon={<KeyOutlined />}
-                htmlType="submit"
-                loading={generating}
-              >
-                Generate Keypair
-              </Button>
-              <Button
-                onClick={() => {
-                  setGenOpen(false);
-                  genForm.resetFields();
-                }}
-              >
-                Cancel
-              </Button>
-            </Space>
           </Form.Item>
         </Form>
       </Drawer>

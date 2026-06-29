@@ -2,6 +2,7 @@
 // Kind-specific fields are sourced from channelKindConfig so adding a
 // new channel type is a single-file diff.
 import { useEffect, useMemo } from "react";
+import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
 import {
   Alert,
   Button,
@@ -11,7 +12,6 @@ import {
   Input,
   InputNumber,
   Select,
-  Space,
   Switch,
   message,
 } from "antd";
@@ -120,15 +120,18 @@ export function AdminChannelDrawer({ open, onClose, existing }: AdminChannelDraw
       width={isDesktop ? 520 : undefined}
       placement="right"
       destroyOnClose
-      extra={
-        isEdit ? (
-          <Space>
-            <a onClick={handleSendTest}>Send test</a>
-          </Space>
-        ) : null
+      footer={
+        <StandardDrawerFooter
+          formId="channel-form"
+          primaryText={isEdit ? "Save" : "Create"}
+          primaryLoading={create.isPending || update.isPending}
+          onCancel={onClose}
+          extra={isEdit ? <Button onClick={handleSendTest}>Send test</Button> : null}
+        />
       }
     >
       <Form<FormValues>
+        id="channel-form"
         form={form}
         layout="vertical"
         onFinish={handleSubmit}
@@ -203,18 +206,6 @@ export function AdminChannelDrawer({ open, onClose, existing }: AdminChannelDraw
           );
         })}
 
-        <Form.Item>
-          <Space>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={create.isPending || update.isPending}
-            >
-              {isEdit ? "Save" : "Create"}
-            </Button>
-            <Button onClick={onClose}>Cancel</Button>
-          </Space>
-        </Form.Item>
       </Form>
     </Drawer>
   );

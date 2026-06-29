@@ -9,6 +9,7 @@
 // Revocation is soft (sets revoked_at). Operators can audit which
 // admin minted what + when it was last used.
 import { useState } from "react";
+import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Alert,
@@ -217,8 +218,17 @@ export const AdminAutomationTokensPage = () => {
         onClose={() => setDrawerOpen(false)}
         width={500}
         destroyOnClose
+        footer={
+          <StandardDrawerFooter
+            formId="mint-token-form"
+            primaryText="Mint"
+            primaryLoading={mint.isPending}
+            onCancel={() => setDrawerOpen(false)}
+          />
+        }
       >
         <Form
+          id="mint-token-form"
           form={form}
           layout="vertical"
           onFinish={handleMint}
@@ -245,12 +255,6 @@ export const AdminAutomationTokensPage = () => {
             <Checkbox.Group options={SCOPE_OPTIONS} style={{ display: "flex", flexDirection: "column", gap: 8 }} />
           </Form.Item>
 
-          <Space>
-            <Button type="primary" htmlType="submit" loading={mint.isPending}>
-              Mint
-            </Button>
-            <Button onClick={() => setDrawerOpen(false)}>Cancel</Button>
-          </Space>
         </Form>
       </Drawer>
 
