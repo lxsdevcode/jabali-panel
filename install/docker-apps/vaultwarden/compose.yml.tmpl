@@ -5,19 +5,22 @@ services:
     restart: unless-stopped
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
-      SMTP_HOST: "{{ index .Env "SMTP_HOST" }}"
-      SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
+      SMTP_HOST: {{ q (index .Env "SMTP_HOST") }}
+      SMTP_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
       SMTP_SECURITY: "{{ if eq (index .Env "SMTP_PORT") "465" }}force_tls{{ else }}starttls{{ end }}"
-      SMTP_USERNAME: "{{ index .Env "SMTP_USER" }}"
-      SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
-      SMTP_FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}vaultwarden@{{ .Domain }}{{ end }}"
-      SMTP_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Vaultwarden{{ end }}"
+      SMTP_USERNAME: {{ q (index .Env "SMTP_USER") }}
+      SMTP_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
+      SMTP_FROM: {{ q (or (index .Env "SMTP_FROM") (printf "vaultwarden@%s" .Domain)) }}
+      SMTP_FROM_NAME: {{ q (or (index .Env "SMTP_FROM_NAME") "Vaultwarden") }}
 {{- end }}
       DOMAIN: "https://{{ .Domain }}"
       WEBSOCKET_ENABLED: "true"
 {{- range $name, $val := .Env }}
-      {{ $name }}: "{{ $val }}"
+{{- if not (hasPrefix $name "SMTP_") }}
+      {{ $name }}: {{ q $val }}
+{{- end }}
 {{- end }}
     volumes:
       - {{ .DataRoot }}/data:/data

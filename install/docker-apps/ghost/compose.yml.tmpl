@@ -5,18 +5,21 @@ services:
     restart: unless-stopped
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
       mail__transport: "SMTP"
-      mail__options__host: "{{ index .Env "SMTP_HOST" }}"
-      mail__options__port: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      mail__options__host: {{ q (index .Env "SMTP_HOST") }}
+      mail__options__port: "{{ or (index .Env "SMTP_PORT") "587" }}"
       mail__options__secure: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
-      mail__options__auth__user: "{{ index .Env "SMTP_USER" }}"
-      mail__options__auth__pass: "{{ index .Env "SMTP_PASSWORD" }}"
-      mail__from: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}ghost@{{ .Domain }}{{ end }}"
+      mail__options__auth__user: {{ q (index .Env "SMTP_USER") }}
+      mail__options__auth__pass: {{ q (index .Env "SMTP_PASSWORD") }}
+      mail__from: {{ q (or (index .Env "SMTP_FROM") (printf "ghost@%s" .Domain)) }}
 {{- end }}
       url: "https://{{ .Domain }}"
 {{- range $name, $val := .Env }}
-      {{ $name }}: "{{ $val }}"
+{{- if not (hasPrefix $name "SMTP_") }}
+      {{ $name }}: {{ q $val }}
+{{- end }}
 {{- end }}
     volumes:
       - {{ .DataRoot }}/content:/var/lib/ghost/content

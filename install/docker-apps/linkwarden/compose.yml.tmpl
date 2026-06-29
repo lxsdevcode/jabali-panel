@@ -7,10 +7,11 @@ services:
       - db
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
       NEXT_PUBLIC_EMAIL_PROVIDER: "true"
-      EMAIL_FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}linkwarden@{{ .Domain }}{{ end }}"
-      EMAIL_SERVER: "{{ if eq (index .Env "SMTP_PORT") "465" }}smtps{{ else }}smtp{{ end }}://{{ index .Env "SMTP_USER" }}:{{ index .Env "SMTP_PASSWORD" }}@{{ index .Env "SMTP_HOST" }}:{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      EMAIL_FROM: {{ q (or (index .Env "SMTP_FROM") (printf "linkwarden@%s" .Domain)) }}
+      EMAIL_SERVER: {{ $scheme := "smtp" }}{{ if eq (index .Env "SMTP_PORT") "465" }}{{ $scheme = "smtps" }}{{ end }}{{ q (printf "%s://%s:%s@%s:%s" $scheme (urlquery (index .Env "SMTP_USER")) (urlquery (index .Env "SMTP_PASSWORD")) (index .Env "SMTP_HOST") (or (index .Env "SMTP_PORT") "587")) }}
 {{- end }}
       DATABASE_URL: "postgresql://postgres:{{ index .Env "POSTGRES_PASSWORD" }}@db:5432/postgres"
       NEXTAUTH_SECRET: "{{ index .Env "NEXTAUTH_SECRET" }}"

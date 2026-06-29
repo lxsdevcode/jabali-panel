@@ -5,18 +5,21 @@ services:
     restart: unless-stopped
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
       GITEA__mailer__ENABLED: "true"
-      GITEA__mailer__SMTP_ADDR: "{{ index .Env "SMTP_HOST" }}"
-      GITEA__mailer__SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      GITEA__mailer__SMTP_ADDR: {{ q (index .Env "SMTP_HOST") }}
+      GITEA__mailer__SMTP_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
       GITEA__mailer__PROTOCOL: "{{ if eq (index .Env "SMTP_PORT") "465" }}smtps{{ else }}smtp+starttls{{ end }}"
-      GITEA__mailer__USER: "{{ index .Env "SMTP_USER" }}"
-      GITEA__mailer__PASSWD: "{{ index .Env "SMTP_PASSWORD" }}"
-      GITEA__mailer__FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}gitea@{{ .Domain }}{{ end }}"
+      GITEA__mailer__USER: {{ q (index .Env "SMTP_USER") }}
+      GITEA__mailer__PASSWD: {{ q (index .Env "SMTP_PASSWORD") }}
+      GITEA__mailer__FROM: {{ q (or (index .Env "SMTP_FROM") (printf "gitea@%s" .Domain)) }}
 {{- end }}
       ROOT_URL: "https://{{ .Domain }}/"
 {{- range $name, $val := .Env }}
-      {{ $name }}: "{{ $val }}"
+{{- if not (hasPrefix $name "SMTP_") }}
+      {{ $name }}: {{ q $val }}
+{{- end }}
 {{- end }}
     volumes:
       - {{ .DataRoot }}/data:/data

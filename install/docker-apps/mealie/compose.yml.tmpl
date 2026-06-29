@@ -5,18 +5,21 @@ services:
     restart: unless-stopped
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
-      SMTP_HOST: "{{ index .Env "SMTP_HOST" }}"
-      SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
-      SMTP_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Mealie{{ end }}"
-      SMTP_FROM_EMAIL: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}mealie@{{ .Domain }}{{ end }}"
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
+      SMTP_HOST: {{ q (index .Env "SMTP_HOST") }}
+      SMTP_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
+      SMTP_FROM_NAME: {{ q (or (index .Env "SMTP_FROM_NAME") "Mealie") }}
+      SMTP_FROM_EMAIL: {{ q (or (index .Env "SMTP_FROM") (printf "mealie@%s" .Domain)) }}
       SMTP_AUTH_STRATEGY: "{{ if eq (index .Env "SMTP_PORT") "465" }}SSL{{ else }}TLS{{ end }}"
-      SMTP_USER: "{{ index .Env "SMTP_USER" }}"
-      SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      SMTP_USER: {{ q (index .Env "SMTP_USER") }}
+      SMTP_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
 {{- end }}
       BASE_URL: "https://{{ .Domain }}"
 {{- range $name, $val := .Env }}
-      {{ $name }}: "{{ $val }}"
+{{- if not (hasPrefix $name "SMTP_") }}
+      {{ $name }}: {{ q $val }}
+{{- end }}
 {{- end }}
     volumes:
       - {{ .DataRoot }}/data:/app/data

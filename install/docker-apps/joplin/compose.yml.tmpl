@@ -7,15 +7,16 @@ services:
       - db
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
       MAILER_ENABLED: "true"
-      MAILER_HOST: "{{ index .Env "SMTP_HOST" }}"
-      MAILER_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      MAILER_HOST: {{ q (index .Env "SMTP_HOST") }}
+      MAILER_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
       MAILER_SECURITY: "{{ if eq (index .Env "SMTP_PORT") "465" }}tls{{ else }}starttls{{ end }}"
-      MAILER_AUTH_USER: "{{ index .Env "SMTP_USER" }}"
-      MAILER_AUTH_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
-      MAILER_NOREPLY_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Joplin Server{{ end }}"
-      MAILER_NOREPLY_EMAIL: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}joplin@{{ .Domain }}{{ end }}"
+      MAILER_AUTH_USER: {{ q (index .Env "SMTP_USER") }}
+      MAILER_AUTH_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
+      MAILER_NOREPLY_NAME: {{ q (or (index .Env "SMTP_FROM_NAME") "Joplin Server") }}
+      MAILER_NOREPLY_EMAIL: {{ q (or (index .Env "SMTP_FROM") (printf "joplin@%s" .Domain)) }}
 {{- end }}
       APP_BASE_URL: "{{ if .Domain }}https://{{ .Domain }}{{ else }}http://localhost{{ end }}"
       APP_PORT: "22300"

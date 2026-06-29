@@ -3,6 +3,8 @@ package dockerapp
 import (
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestRender_SMTPMapping_AllApps renders every smtp:true app with operator
@@ -63,6 +65,45 @@ func TestRender_SMTPMapping_AllApps(t *testing.T) {
 			if !strings.Contains(out, w) {
 				t.Errorf("%s: missing %q", app, w)
 			}
+		}
+	}
+}
+
+// TestRender_SMTPSpecialCharPassword_ValidYAML renders every smtp:true app with
+// an SMTP password full of YAML-hostile characters and asserts the output is
+// still valid YAML — guards the GH #322 502 regression where an unescaped
+// API-key password broke the compose and the container failed to start.
+func TestRender_SMTPSpecialCharPassword_ValidYAML(t *testing.T) {
+	cat, _ := LoadDir(repoCatalogDir(t))
+	nasty := map[string]string{
+		"SMTP_HOST": "smtp.provider.com", "SMTP_PORT": "587", "SMTP_USER": "ap!key:user",
+		"SMTP_PASSWORD": `p@ss"with"quotes:and#hash {braces} $dollar \back`,
+		"SMTP_FROM":     "noreply@example.com", "SMTP_FROM_NAME": `Acme, "Inc"`, "SMTP_TLS": "true",
+	}
+	for _, e := range cat.All() {
+		if !e.SMTP {
+			continue
+		}
+		slug := e.Slug
+		env, err := MaterialiseEnv(e, nasty)
+		if err != nil {
+			t.Errorf("%s MaterialiseEnv: %v", slug, err)
+			continue
+		}
+		out, err := Render(e, RenderParams{
+			Slug: slug, Name: "t", Domain: "t.example.com", ImageChannel: "img",
+			DataRoot: "/d", CPULimit: "1.0", MemoryLimit: "1g", Env: env,
+		})
+		if err != nil {
+			t.Errorf("%s Render: %v", slug, err)
+			continue
+		}
+		// Parse into a Node (not a map) so the check targets YAML well-formedness
+		// from special chars — not duplicate-key strictness, which docker compose
+		// tolerates (last value wins) and is a separate, pre-existing concern.
+		var node yaml.Node
+		if e := yaml.Unmarshal([]byte(out), &node); e != nil {
+			t.Errorf("%s: special-char SMTP password produced INVALID YAML: %v", slug, e)
 		}
 	}
 }

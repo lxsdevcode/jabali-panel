@@ -8,12 +8,13 @@ services:
       - broker
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
-      PAPERLESS_EMAIL_HOST: "{{ index .Env "SMTP_HOST" }}"
-      PAPERLESS_EMAIL_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
-      PAPERLESS_EMAIL_HOST_USER: "{{ index .Env "SMTP_USER" }}"
-      PAPERLESS_EMAIL_HOST_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
-      PAPERLESS_EMAIL_FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}paperless@{{ .Domain }}{{ end }}"
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
+      PAPERLESS_EMAIL_HOST: {{ q (index .Env "SMTP_HOST") }}
+      PAPERLESS_EMAIL_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
+      PAPERLESS_EMAIL_HOST_USER: {{ q (index .Env "SMTP_USER") }}
+      PAPERLESS_EMAIL_HOST_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
+      PAPERLESS_EMAIL_FROM: {{ q (or (index .Env "SMTP_FROM") (printf "paperless@%s" .Domain)) }}
       PAPERLESS_EMAIL_USE_TLS: "{{ if eq (index .Env "SMTP_PORT") "465" }}false{{ else }}true{{ end }}"
       PAPERLESS_EMAIL_USE_SSL: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
 {{- end }}

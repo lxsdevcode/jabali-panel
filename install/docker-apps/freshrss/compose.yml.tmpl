@@ -5,7 +5,9 @@ services:
     restart: unless-stopped
     environment:
 {{- range $name, $val := .Env }}
-      {{ $name }}: "{{ $val }}"
+{{- if not (hasPrefix $name "SMTP_") }}
+      {{ $name }}: {{ q $val }}
+{{- end }}
 {{- end }}
     volumes:
       - {{ .DataRoot }}/data:/var/www/FreshRSS/data

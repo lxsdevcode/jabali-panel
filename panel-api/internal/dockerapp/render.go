@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -75,7 +76,16 @@ type RuntimePort struct {
 // unrenderable template because catalog loading runs validate()
 // before exposing the entry.
 func Render(entry Entry, params RenderParams) (string, error) {
-	tmpl, err := template.New(entry.Slug).Parse(entry.ComposeTemplate())
+	// q renders a string as a YAML-safe double-quoted scalar (JSON encoding is a
+	// valid YAML scalar), so operator-supplied values with quotes/colons/#/etc.
+	// (e.g. SMTP API-key passwords) can't break the rendered compose (GH #322).
+	tmpl, err := template.New(entry.Slug).Funcs(template.FuncMap{
+		"q": func(v string) (string, error) {
+			b, e := json.Marshal(v)
+			return string(b), e
+		},
+		"hasPrefix": strings.HasPrefix,
+	}).Parse(entry.ComposeTemplate())
 	if err != nil {
 		return "", fmt.Errorf("parse compose template for %q: %w", entry.Slug, err)
 	}

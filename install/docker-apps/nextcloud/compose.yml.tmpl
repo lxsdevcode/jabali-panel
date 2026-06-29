@@ -7,13 +7,14 @@ services:
       - db
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
-      SMTP_HOST: "{{ index .Env "SMTP_HOST" }}"
-      SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
+      SMTP_HOST: {{ q (index .Env "SMTP_HOST") }}
+      SMTP_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
       SMTP_SECURE: "{{ if eq (index .Env "SMTP_PORT") "465" }}ssl{{ else }}tls{{ end }}"
       SMTP_AUTHTYPE: "LOGIN"
-      SMTP_NAME: "{{ index .Env "SMTP_USER" }}"
-      SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      SMTP_NAME: {{ q (index .Env "SMTP_USER") }}
+      SMTP_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
       MAIL_FROM_ADDRESS: "no-reply"
       MAIL_DOMAIN: "{{ .Domain }}"
 {{- end }}

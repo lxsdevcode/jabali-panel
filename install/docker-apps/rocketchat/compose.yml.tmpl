@@ -8,13 +8,14 @@ services:
         condition: service_healthy
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
-      OVERWRITE_SETTING_SMTP_Host: "{{ index .Env "SMTP_HOST" }}"
-      OVERWRITE_SETTING_SMTP_Port: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
-      OVERWRITE_SETTING_SMTP_Username: "{{ index .Env "SMTP_USER" }}"
-      OVERWRITE_SETTING_SMTP_Password: "{{ index .Env "SMTP_PASSWORD" }}"
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
+      OVERWRITE_SETTING_SMTP_Host: {{ q (index .Env "SMTP_HOST") }}
+      OVERWRITE_SETTING_SMTP_Port: "{{ or (index .Env "SMTP_PORT") "587" }}"
+      OVERWRITE_SETTING_SMTP_Username: {{ q (index .Env "SMTP_USER") }}
+      OVERWRITE_SETTING_SMTP_Password: {{ q (index .Env "SMTP_PASSWORD") }}
       OVERWRITE_SETTING_SMTP_Protocol: "{{ if eq (index .Env "SMTP_PORT") "465" }}smtps{{ else }}smtp{{ end }}"
-      OVERWRITE_SETTING_From_Email: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}rocketchat@{{ .Domain }}{{ end }}"
+      OVERWRITE_SETTING_From_Email: {{ q (or (index .Env "SMTP_FROM") (printf "rocketchat@%s" .Domain)) }}
 {{- end }}
       PORT: "3000"
       ROOT_URL: "{{ if .Domain }}https://{{ .Domain }}{{ else }}http://localhost:3000{{ end }}"

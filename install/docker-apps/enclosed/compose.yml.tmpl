@@ -7,7 +7,9 @@ services:
       # Absolute base URL so shared note links + QR codes are correct.
       BASE_URL: "https://{{ .Domain }}"
 {{- range $name, $val := .Env }}
-      {{ $name }}: "{{ $val }}"
+{{- if not (hasPrefix $name "SMTP_") }}
+      {{ $name }}: {{ q $val }}
+{{- end }}
 {{- end }}
     volumes:
       - {{ .DataRoot }}/data:/app/.data

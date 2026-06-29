@@ -171,14 +171,15 @@ services:
       SIGNUP_DISABLED: "false"
       SIGNUP_EMAIL_CONFIRMATION: "false"
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
-      MAIL_HOST: "{{ index .Env "SMTP_HOST" }}"
-      MAIL_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
-      MAIL_USERNAME: "{{ index .Env "SMTP_USER" }}"
-      MAIL_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
+      MAIL_HOST: {{ q (index .Env "SMTP_HOST") }}
+      MAIL_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
+      MAIL_USERNAME: {{ q (index .Env "SMTP_USER") }}
+      MAIL_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
       MAIL_SECURE: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
-      MAIL_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Bigcapital{{ end }}"
-      MAIL_FROM_ADDRESS: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}bigcapital@{{ .Domain }}{{ end }}"
+      MAIL_FROM_NAME: {{ q (or (index .Env "SMTP_FROM_NAME") "Bigcapital") }}
+      MAIL_FROM_ADDRESS: {{ q (or (index .Env "SMTP_FROM") (printf "bigcapital@%s" .Domain)) }}
 {{- end }}
       GOTENBERG_URL: "http://gotenberg:3000"
       GOTENBERG_DOCS_URL: "http://server:3000/public/"

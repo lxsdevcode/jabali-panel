@@ -7,14 +7,15 @@ services:
       - db
     environment:
 {{- if (index .Env "SMTP_HOST") }}
-      # Operator-supplied SMTP (GH #322).
+      # Operator-supplied SMTP (GH #322) — values q-escaped so special chars
+      # (e.g. API-key passwords) can't break the rendered compose YAML.
       MAIL_MAILER: "smtp"
-      MAIL_HOST: "{{ index .Env "SMTP_HOST" }}"
-      MAIL_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
-      MAIL_USERNAME: "{{ index .Env "SMTP_USER" }}"
-      MAIL_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
-      MAIL_FROM_ADDR: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}snipeit@{{ .Domain }}{{ end }}"
-      MAIL_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Snipe-IT{{ end }}"
+      MAIL_HOST: {{ q (index .Env "SMTP_HOST") }}
+      MAIL_PORT: "{{ or (index .Env "SMTP_PORT") "587" }}"
+      MAIL_USERNAME: {{ q (index .Env "SMTP_USER") }}
+      MAIL_PASSWORD: {{ q (index .Env "SMTP_PASSWORD") }}
+      MAIL_FROM_ADDR: {{ q (or (index .Env "SMTP_FROM") (printf "snipeit@%s" .Domain)) }}
+      MAIL_FROM_NAME: {{ q (or (index .Env "SMTP_FROM_NAME") "Snipe-IT") }}
       MAIL_TLS_VERIFY_PEER: "false"
 {{- end }}
       APP_ENV: "production"
