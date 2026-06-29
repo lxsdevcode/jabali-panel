@@ -15,7 +15,6 @@ import {
   Space,
   Switch,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
@@ -394,14 +393,17 @@ export const UserApplicationList = () => {
         installId={cloningId ?? ""}
       />
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: "installed",
-            label: "Installed",
-            children: (
+      {/* Card.tabList = tabs inside the card, matching the admin Users
+          reference layout (Gitea #524). */}
+      <Card
+        tabList={[
+          { key: "installed", tab: "Installed" },
+          { key: "catalog", tab: "Catalog" },
+        ]}
+        activeTabKey={activeTab}
+        onTabChange={setActiveTab}
+      >
+        {activeTab === "installed" && (
               <div>
                 {(() => {
                   const rows = tableQuery.items;
@@ -449,7 +451,6 @@ export const UserApplicationList = () => {
                     </Row>
                   );
                 })()}
-              <Card>
         <SearchableTableStringQ<ApplicationInstall>
           rowKey="id"
           loading={tableQuery.isLoading}
@@ -610,24 +611,17 @@ export const UserApplicationList = () => {
             }}
           />
         </SearchableTableStringQ>
-              </Card>
               </div>
-            ),
-          },
-          {
-            key: "catalog",
-            label: "Catalog",
-            children: (
+        )}
+        {activeTab === "catalog" && (
               <CatalogTab
                 onInstall={(appType) => {
                   setPresetAppType(appType);
                   setInstallOpen(true);
                 }}
               />
-            ),
-          },
-        ]}
-      />
+        )}
+      </Card>
     </div>
   );
 };
