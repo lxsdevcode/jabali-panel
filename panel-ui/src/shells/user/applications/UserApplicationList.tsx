@@ -416,21 +416,21 @@ export const UserApplicationList = () => {
                     rows.length > 0 ? Math.round((n / rows.length) * 100) : 0;
                   return (
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                      <Col xs={24} sm={12} lg={6}>
+                      <Col xs={12} sm={12} lg={6}>
                         <StatCard
                           iconBg="rgba(207, 19, 34, 0.12)" iconColor="#cf1322" Icon={AppstoreOutlined}
                           label="Installed Apps" value={installedCount}
                           subtitle={<Typography.Text type="secondary">{catalogCount} in catalog</Typography.Text>}
                         />
                       </Col>
-                      <Col xs={24} sm={12} lg={6}>
+                      <Col xs={12} sm={12} lg={6}>
                         <StatCard
                           iconBg="rgba(63, 134, 0, 0.12)" iconColor="#3f8600" Icon={CheckCircleOutlined}
                           label="Ready" value={readyCount}
                           subtitle={<Typography.Text type="secondary">{pct(readyCount)}% of installed</Typography.Text>}
                         />
                       </Col>
-                      <Col xs={24} sm={12} lg={6}>
+                      <Col xs={12} sm={12} lg={6}>
                         <StatCard
                           iconBg="rgba(22, 119, 255, 0.12)" iconColor="#1677ff" Icon={SyncOutlined}
                           label="In Progress" value={inProgressCount}
@@ -439,7 +439,7 @@ export const UserApplicationList = () => {
                             : <Typography.Text type="secondary">Idle</Typography.Text>}
                         />
                       </Col>
-                      <Col xs={24} sm={12} lg={6}>
+                      <Col xs={12} sm={12} lg={6}>
                         <StatCard
                           iconBg="rgba(212, 107, 8, 0.12)" iconColor="#d46b08" Icon={ExclamationCircleOutlined}
                           label="Failed" value={failedCount}
