@@ -26,7 +26,6 @@ import {
   KeyOutlined,
   MailOutlined,
 } from "@icons";
-import { LibravatarAvatar } from "../../../../components/LibravatarAvatar";
 import { useQueries } from "@tanstack/react-query";
 
 import { AutoReplyModal } from "../AutoReplyModal";
@@ -292,11 +291,7 @@ export const MailboxesTab = () => {
             render: (v: string, record: MailboxRow) => {
               const fwd = fwdByMailbox[record.id];
               return (
-                <span
-                  style={{ display: "inline-flex", alignItems: "flex-start", gap: 8 }}
-                >
-                  <LibravatarAvatar email={v} size={24} />
-                  <span style={{ display: "inline-flex", flexDirection: "column" }}>
+                <span style={{ display: "inline-flex", flexDirection: "column" }}>
                     {record.display_name ? (
                       <Typography.Text strong>
                         {record.display_name}
@@ -323,7 +318,6 @@ export const MailboxesTab = () => {
                         {fwd.forwards.some((f) => f.keep_copy) ? " (keeps copy)" : ""}
                       </Typography.Text>
                     ) : null}
-                  </span>
                 </span>
               );
             },
