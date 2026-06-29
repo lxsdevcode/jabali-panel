@@ -138,6 +138,9 @@ type updateUserRequest struct {
 	NameLast  *string `json:"name_last,omitempty"`
 	IsAdmin   *bool   `json:"is_admin,omitempty"`
 	PackageID *string `json:"package_id,omitempty"`
+	// WebmailEnabled (GH #316) toggles webmail for all of this user's domains.
+	// Admin-only; mirrors PackageID handling.
+	WebmailEnabled *bool `json:"webmail_enabled,omitempty"`
 	// Password, when set, rotates the user's auth password: bcrypt-hashed
 	// into the DB row, pushed to Kratos via Identity API, and (for users
 	// with an OS account) synced to the system passwd via the agent's
@@ -382,6 +385,12 @@ func (h *userHandler) update(c *gin.Context) {
 			// Empty string means clear the package assignment
 			existing.PackageID = nil
 		}
+	}
+
+	// Per-user webmail toggle (GH #316): admin-only, like package_id. The owner
+	// UI never sends it, so silently ignore for non-admins.
+	if req.WebmailEnabled != nil && claims.IsAdmin {
+		existing.WebmailEnabled = *req.WebmailEnabled
 	}
 
 	if err := h.cfg.Repo.Update(ctx, existing); err != nil {

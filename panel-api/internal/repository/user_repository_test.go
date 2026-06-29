@@ -50,6 +50,7 @@ func TestUserRepository_Create(t *testing.T) {
 			false,            // suspended (migration 000132)
 			nil,              // suspended_at
 			"",               // suspend_reason
+			true,             // webmail_enabled (GORM default:1 promotes the zero-value bool)
 			sqlmock.AnyArg(), // created_at
 			sqlmock.AnyArg(), // updated_at
 		).

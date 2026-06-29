@@ -84,6 +84,12 @@ type User struct {
 	SuspendedAt   *time.Time `gorm:"column:suspended_at;type:datetime(6)"                                            json:"suspended_at,omitempty"`
 	SuspendReason string     `gorm:"column:suspend_reason;type:varchar(255);not null;default:''"                     json:"suspend_reason"`
 
+	// WebmailEnabled (GH #316) gates the Bulwark webmail vhost for ALL of this
+	// user's domains. AND-ed with global server_settings.webmail_enabled and the
+	// per-domain domains.webmail_enabled flags by the webmail reconciler. Default
+	// 1 = ON (migration 000203). Mail delivery (IMAP/SMTP/JMAP) is unaffected.
+	WebmailEnabled bool `gorm:"column:webmail_enabled;type:tinyint(1);not null;default:1" json:"webmail_enabled"`
+
 	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null" json:"updated_at"`
 }

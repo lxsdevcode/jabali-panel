@@ -79,11 +79,26 @@ func (r *Reconciler) reconcileWebmailVhosts(ctx context.Context) {
 		}
 	}
 
+	// GH #316: per-user webmail toggle AND-gates ALL of a user's domains. Build a
+	// set of user IDs whose webmail is OFF; absent = ON (column default 1).
+	webmailOffUsers := map[string]bool{}
+	if r.users != nil {
+		if users, _, uErr := r.users.List(ctx, repository.ListOptions{Limit: 100000}); uErr == nil {
+			for i := range users {
+				if !users[i].WebmailEnabled {
+					webmailOffUsers[users[i].ID] = true
+				}
+			}
+		} else {
+			r.log.Warn("webmail reconcile: list users for per-user toggle", "err", uErr)
+		}
+	}
+
 	anyEmailEnabled := false
 	webmailHosts := make([]string, 0, len(domains)*2)
 	for i := range domains {
 		d := &domains[i]
-		if d.EmailEnabled && d.WebmailEnabled {
+		if d.EmailEnabled && d.WebmailEnabled && !webmailOffUsers[d.UserID] {
 			anyEmailEnabled = true
 			r.applyWebmailVhost(ctx, d)
 			// Mirror what the agent's mail vhost template emits as

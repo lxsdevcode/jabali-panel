@@ -33,6 +33,7 @@ type UserFormInput = {
   name_last?: string;
   is_admin: boolean;
   package_id?: string | null;
+  webmail_enabled?: boolean;
 };
 
 type UserRecord = UserFormInput & {
@@ -75,7 +76,7 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
       form.setFieldsValue(rest);
     } else if (!isEdit) {
       form.resetFields();
-      form.setFieldsValue({ is_admin: false });
+      form.setFieldsValue({ is_admin: false, webmail_enabled: true });
     }
   }, [open, isEdit, existing, form]);
 
@@ -126,7 +127,7 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
         <Form<UserFormInput>
           form={form}
           layout="vertical"
-          initialValues={{ is_admin: false }}
+          initialValues={{ is_admin: false, webmail_enabled: true }}
           onFinish={handleFinish}
         >
           <Form.Item
@@ -202,6 +203,15 @@ export function UserDrawer({ open, onClose, editingId }: UserDrawerProps) {
 
           <Form.Item label="Hosting package" name="package_id">
             <PackageSelect />
+          </Form.Item>
+
+          <Form.Item
+            name="webmail_enabled"
+            label="Webmail client"
+            valuePropName="checked"
+            tooltip="Turn the Bulwark webmail UI on/off for all of this user's domains. Mail delivery (IMAP/SMTP/JMAP) is unaffected."
+          >
+            <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
           </Form.Item>
 
           <Form.Item>
