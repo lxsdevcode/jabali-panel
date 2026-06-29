@@ -12,13 +12,13 @@ import {
   Progress,
   Skeleton,
   Space,
-  Table,
   Tag,
   Tooltip,
   Typography,
   message,
 } from "antd";
 import { RowActions } from "../../../../components/RowActions";
+import { SearchableTableStringQ } from "../../../../components/SearchableTable";
 import {
   DeleteOutlined,
   EditOutlined,
@@ -252,6 +252,16 @@ export const MailboxesTab = () => {
   };
 
   const loading = loadingDomains || mailboxResults.some((r) => r.isLoading);
+  const [search, setSearch] = useState("");
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.email.toLowerCase().includes(q) ||
+        (r.domain_name ?? "").toLowerCase().includes(q),
+    );
+  }, [rows, search]);
 
   if (loading && rows.length === 0) {
     return <Skeleton active paragraph={{ rows: 4 }} />;
@@ -263,11 +273,14 @@ export const MailboxesTab = () => {
 
   return (
     <>
-      <Table<MailboxRow>
+      <SearchableTableStringQ<MailboxRow>
         scroll={{ x: "max-content" }}
         rowKey="id"
         loading={loading && rows.length === 0}
-        dataSource={rows}
+        dataSource={filteredRows}
+        searchPlaceholder="Search email, name, domain…"
+        initialSearch={search}
+        onSearchChange={setSearch}
         pagination={{ pageSize: 20 }}
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No mailboxes" /> }}
         columns={[
