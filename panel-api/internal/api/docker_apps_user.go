@@ -304,8 +304,16 @@ func (h *userDockerAppHandler) delete(c *gin.Context) {
 			"slug":          app.EffectiveSlug(),
 			"purge_volumes": true,
 		}); err != nil {
-			slog.Warn("tenant docker delete: agent teardown failed, soft-deleting anyway",
+			// Gitea #528: a soft-delete here would hide a workload that may still
+			// be running + consuming resources/network. Keep the row VISIBLE in a
+			// failed state so it stays in quota/disk/entitlement accounting and
+			// the tenant can retry — don't mark it deleted on teardown failure.
+			msg := "teardown failed: " + firstLineString(err.Error())
+			_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+			slog.Warn("tenant docker delete: agent teardown failed, keeping row visible",
 				"app_id", app.ID, "slug", app.EffectiveSlug(), "err", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "teardown_failed", "detail": msg})
+			return
 		}
 	}
 

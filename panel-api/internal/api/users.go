@@ -685,6 +685,7 @@ func (h *userHandler) delete(c *gin.Context) {
 		if derr != nil {
 			slog.Warn("cascade delete: list user docker apps failed", "user_id", id, "err", derr)
 		}
+		var teardownFailed []string
 		for _, app := range apps {
 			agentCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
 			// purge_volumes=true so the agent rm -rf's the app data tree, not
@@ -695,7 +696,19 @@ func (h *userHandler) delete(c *gin.Context) {
 			if delErr != nil {
 				slog.Warn("cascade delete: docker_app.delete failed",
 					"user_id", id, "slug", app.EffectiveSlug(), "err", delErr)
+				teardownFailed = append(teardownFailed, app.EffectiveSlug())
 			}
+		}
+		// Gitea #532: if any Docker teardown failed, do NOT remove the owner — the
+		// container/data may still exist on the host and would be left with no
+		// owner row, quota accounting, suspension, or lifecycle controls. Block
+		// the delete so the operator can resolve it (and retry).
+		if len(teardownFailed) > 0 {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":  "docker_teardown_failed",
+				"detail": "refusing to delete user: Docker app teardown failed for " + strings.Join(teardownFailed, ", ") + " — resolve on the host and retry",
+			})
+			return
 		}
 	}
 
