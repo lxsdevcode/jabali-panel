@@ -81,8 +81,15 @@ func Render(entry Entry, params RenderParams) (string, error) {
 	// (e.g. SMTP API-key passwords) can't break the rendered compose (GH #322).
 	tmpl, err := template.New(entry.Slug).Funcs(template.FuncMap{
 		"q": func(v string) (string, error) {
+			// JSON encoding yields a valid YAML double-quoted scalar (handles
+			// quotes/colons/#/braces/backslash). Also double any '$' so docker
+			// compose's ${VAR} interpolation leaves it literal (GH #322) — else a
+			// password like "p@ss$x" would have $x interpolated to "".
 			b, e := json.Marshal(v)
-			return string(b), e
+			if e != nil {
+				return "", e
+			}
+			return strings.ReplaceAll(string(b), "$", "$$"), nil
 		},
 		"hasPrefix": strings.HasPrefix,
 	}).Parse(entry.ComposeTemplate())

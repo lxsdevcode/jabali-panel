@@ -105,5 +105,11 @@ func TestRender_SMTPSpecialCharPassword_ValidYAML(t *testing.T) {
 		if e := yaml.Unmarshal([]byte(out), &node); e != nil {
 			t.Errorf("%s: special-char SMTP password produced INVALID YAML: %v", slug, e)
 		}
+		// The password contains '$dollar'; q must double '$' so docker compose
+		// interpolation leaves it literal — else $dollar resolves to "".
+		// linkwarden is exempt: it URL-encodes creds (urlquery), so '$' -> %24.
+		if slug != "linkwarden" && !strings.Contains(out, "$$") {
+			t.Errorf("%s: '$' not doubled — docker compose would interpolate it away", slug)
+		}
 	}
 }
