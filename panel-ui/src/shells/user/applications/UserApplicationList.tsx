@@ -536,6 +536,7 @@ export const UserApplicationList = () => {
           <Table.Column<ApplicationInstall>
             dataIndex="version"
             title="App / Version"
+            responsive={["lg"]}
             render={(version: string | null, record) => (
               <Space size={6}>
                 <Tag style={{ marginInlineEnd: 0 }}>{appDisplayName(record.app_type)}</Tag>
@@ -546,10 +547,12 @@ export const UserApplicationList = () => {
           <Table.Column<ApplicationInstall>
             dataIndex="admin_email"
             title="Admin email"
+            responsive={["md"]}
           />
           <Table.Column<ApplicationInstall>
             dataIndex="created_at"
             title="Created"
+            responsive={["lg"]}
             key="created_at"
             sorter={{ multiple: 2 }}
             render={(date: string) => shortDateTime(date)}
@@ -557,6 +560,7 @@ export const UserApplicationList = () => {
           <Table.Column<ApplicationInstall>
             title="Cache"
             dataIndex="cache_enabled"
+            responsive={["md"]}
             render={(_, r) => {
               const supported =
                 (r.app_type ?? "wordpress") === "wordpress" &&
