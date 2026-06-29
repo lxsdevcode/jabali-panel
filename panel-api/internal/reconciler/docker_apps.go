@@ -81,19 +81,37 @@ func (r *Reconciler) enforceDockerEntitlements(ctx context.Context, apps []*mode
 		byUser[*a.UserID] = append(byUser[*a.UserID], a)
 	}
 	for uid, list := range byUser {
-		limit := r.effectiveDockerLimit(ctx, uid)
 		sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.After(list[j].CreatedAt) })
-		// newest-first: the first (len-limit) entries are over the limit.
+		// --- count cap (Gitea #521): keep oldest <limit>, stop newer excess ---
+		limit := r.effectiveDockerLimit(ctx, uid)
 		over := len(list) - limit
-		if over <= 0 {
-			continue
-		}
 		for i := 0; i < over; i++ {
 			a := list[i]
-			if a.Status != models.DockerAppStatusRunning && a.Status != models.DockerAppStatusInstalling {
-				continue
+			if a.Status == models.DockerAppStatusRunning || a.Status == models.DockerAppStatusInstalling {
+				r.stopOverEntitlement(ctx, a)
 			}
-			r.stopOverEntitlement(ctx, a)
+		}
+		// --- disk cap (Gitea #489): a tenant's total docker footprint must not
+		// exceed the package disk quota. Stopping doesn't reclaim disk (data
+		// persists on the bind mount) but HALTS further growth — the tenant
+		// frees space by deleting an app, then can restart. install-time gate
+		// (b6ad0317) already blocks new installs over quota; this is the runtime
+		// half. Skip apps already stopped above by the count cap. ---
+		quotaBytes := r.effectiveDockerDiskQuotaBytes(ctx, uid)
+		if quotaBytes <= 0 {
+			continue
+		}
+		var used int64
+		for _, a := range list {
+			used += a.DataBytes
+		}
+		if used <= quotaBytes {
+			continue
+		}
+		for _, a := range list {
+			if a.Status == models.DockerAppStatusRunning || a.Status == models.DockerAppStatusInstalling {
+				r.stopOverDiskQuota(ctx, a)
+			}
 		}
 	}
 }
@@ -111,6 +129,43 @@ func (r *Reconciler) effectiveDockerLimit(ctx context.Context, userID string) in
 		return 0
 	}
 	return int(pkg.MaxDockerApps)
+}
+
+// effectiveDockerDiskQuotaBytes is the tenant's package disk quota in bytes
+// (DiskQuotaMB). 0 = unlimited / no package.
+func (r *Reconciler) effectiveDockerDiskQuotaBytes(ctx context.Context, userID string) int64 {
+	u, err := r.users.FindByID(ctx, userID)
+	if err != nil || u == nil || u.PackageID == nil {
+		return 0
+	}
+	pkg, perr := r.packages.FindByID(ctx, *u.PackageID)
+	if perr != nil || pkg == nil {
+		return 0
+	}
+	return int64(pkg.DiskQuotaMB) * 1024 * 1024
+}
+
+func (r *Reconciler) stopOverDiskQuota(ctx context.Context, a *models.DockerApp) {
+	callCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if _, err := r.agent.Call(callCtx, "docker_app.stop", map[string]any{"slug": a.EffectiveSlug()}); err != nil {
+		r.log.Warn("dockerapp: disk-quota stop failed", "id", a.ID, "slug", a.Slug, "err", err)
+		return
+	}
+	msg := "stopped: tenant Docker disk usage is over the hosting package quota"
+	if err := r.dockerApps.UpdateStatus(ctx, a.ID, models.DockerAppStatusStopped, &msg); err != nil {
+		r.log.Warn("dockerapp: disk-quota status update failed", "id", a.ID, "err", err)
+	}
+	r.log.Info("dockerapp: stopped over-disk-quota app", "id", a.ID, "slug", a.Slug, "user_id", *a.UserID)
+	if r.notificationQueue != nil {
+		_, _ = r.notificationQueue.Publish(ctx, notifications.Envelope{
+			EventKind: "docker_app.disk_quota_stopped",
+			Severity:  "warning",
+			Title:     fmt.Sprintf("Docker app stopped (disk quota): %s", a.Name),
+			Body:      fmt.Sprintf("%s was stopped because your Docker apps exceed your hosting package's disk quota. Delete an app to free space, then start it again.", a.Name),
+			Deeplink:  "/jabali-panel/docker-apps",
+		})
+	}
 }
 
 func (r *Reconciler) stopOverEntitlement(ctx context.Context, a *models.DockerApp) {
