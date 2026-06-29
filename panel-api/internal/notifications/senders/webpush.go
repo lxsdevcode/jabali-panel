@@ -138,6 +138,7 @@ func (w *WebPush) Send(ctx context.Context, channel models.NotificationChannel, 
 	}
 
 	var firstTransient error
+	delivered := 0
 	for _, row := range rows {
 		sub := &webpush.Subscription{
 			Endpoint: row.Endpoint,
@@ -162,10 +163,14 @@ func (w *WebPush) Send(ctx context.Context, channel models.NotificationChannel, 
 			_, _ = buf.ReadFrom(http.MaxBytesReader(nil, resp.Body, 512))
 			switch {
 			case resp.StatusCode >= 200 && resp.StatusCode < 300:
+				delivered++
 				_ = w.subs.TouchLastUsed(ctx, row.ID)
-			case resp.StatusCode == http.StatusGone, resp.StatusCode == http.StatusNotFound:
-				// Subscription retired by the browser. Delete + keep
-				// processing — per-sub permanent, not per-envelope.
+			case resp.StatusCode == http.StatusGone, resp.StatusCode == http.StatusNotFound, resp.StatusCode == http.StatusBadRequest:
+				// Subscription retired/invalid (410 Gone, 404 Not Found, 400 Bad
+				// Request — dead endpoint or bad keys). Delete + keep processing;
+				// this is per-sub permanent, NOT a per-envelope failure, so a
+				// single dead browser can't keep flooding the DLQ (GH: webpush
+				// resilience).
 				if delErr := w.subs.DeleteByEndpoint(ctx, row.Endpoint); delErr != nil {
 					w.log.Warn("webpush: delete retired sub failed", "endpoint_host", endpointHost(row.Endpoint), "err", delErr)
 				} else {
@@ -178,6 +183,12 @@ func (w *WebPush) Send(ctx context.Context, channel models.NotificationChannel, 
 				w.log.Warn("webpush: non-2xx", "endpoint_host", endpointHost(row.Endpoint), "status", resp.StatusCode)
 			}
 		}()
+	}
+	// At least one browser got it → success (don't DLQ the whole envelope just
+	// because another sub was dead/slow). Only a genuine transient failure with
+	// ZERO deliveries retries; an all-pruned batch returns nil (nothing left).
+	if delivered > 0 {
+		return nil
 	}
 	return firstTransient
 }

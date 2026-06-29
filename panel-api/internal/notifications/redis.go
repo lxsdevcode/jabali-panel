@@ -14,6 +14,11 @@ import (
 const (
 	StreamQueue    = "jabali:notifications:queue"
 	StreamDLQ      = "jabali:notifications:dlq"
+	// Stream length caps (approximate, ~ trimming): a stuck channel or a
+	// producer flood can otherwise grow these unbounded (a real install hit
+	// 26549 DLQ entries). Approximate trimming is O(1)-ish on XADD.
+	maxQueueLen int64 = 20000
+	maxDLQLen   int64 = 5000
 	ConsumerGroup  = "dispatcher"
 	defaultRetries = 5
 )
@@ -54,6 +59,8 @@ func (q *Queue) EnsureGroup(ctx context.Context) error {
 func (q *Queue) Publish(ctx context.Context, env Envelope) (string, error) {
 	id, err := q.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: StreamQueue,
+		MaxLen: maxQueueLen,
+		Approx: true,
 		Values: env.StreamMap(),
 	}).Result()
 	if err != nil {
@@ -144,7 +151,7 @@ func (q *Queue) ToDLQ(ctx context.Context, id string, reason string, values map[
 		dlqValues[k] = v
 	}
 	pipe := q.rdb.TxPipeline()
-	pipe.XAdd(ctx, &redis.XAddArgs{Stream: StreamDLQ, Values: dlqValues})
+	pipe.XAdd(ctx, &redis.XAddArgs{Stream: StreamDLQ, MaxLen: maxDLQLen, Approx: true, Values: dlqValues})
 	pipe.XAck(ctx, StreamQueue, ConsumerGroup, id)
 	pipe.XDel(ctx, StreamQueue, id)
 	_, err := pipe.Exec(ctx)

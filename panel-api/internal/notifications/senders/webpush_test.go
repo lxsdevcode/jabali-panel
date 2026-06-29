@@ -194,3 +194,41 @@ func TestWebPush_5xxReturnsTransient(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, errors.Is(err, notifications.ErrPermanent))
 }
+
+// One dead/slow sub must NOT fail the whole envelope when another delivered —
+// otherwise a single stale browser floods the DLQ (webpush resilience).
+func TestWebPush_PartialSuccessNotDLQ(t *testing.T) {
+	t.Parallel()
+	row := &models.ServerSettings{ID: 1, VAPIDPublicKey: strPtr("pub"), VAPIDPrivateKey: strPtr("priv"), VAPIDSubject: strPtr("mailto:a@b")}
+	byUser := map[string][]models.WebPushSubscription{
+		"u1": {
+			{ID: "s1", Endpoint: "https://push.example/dead", Auth: "a", P256dh: "p"},
+			{ID: "s2", Endpoint: "https://push.example/live", Auth: "a", P256dh: "p"},
+		},
+	}
+	w, subs := newWithFakes(t, row, byUser, func(ctx context.Context, msg []byte, s *webpush.Subscription, o *webpush.Options) (*http.Response, error) {
+		if s.Endpoint == "https://push.example/dead" {
+			return cannedResp(http.StatusBadGateway), nil // transient on a dead sub
+		}
+		return cannedResp(http.StatusCreated), nil
+	})
+	// delivered>0 → success, no DLQ; the transient sub is left for next time.
+	require.NoError(t, w.Send(context.Background(), models.NotificationChannel{Kind: "webpush"}, notifications.Envelope{Title: "x", UserID: "u1"}))
+	require.Equal(t, []string{"s2"}, subs.touched)
+	require.Empty(t, subs.deleted)
+}
+
+// A 400 Bad Request endpoint is pruned (invalid keys/endpoint), and with no
+// other subs the envelope succeeds (nothing left to deliver to) — no DLQ.
+func TestWebPush_400PrunesAndSucceeds(t *testing.T) {
+	t.Parallel()
+	row := &models.ServerSettings{ID: 1, VAPIDPublicKey: strPtr("pub"), VAPIDPrivateKey: strPtr("priv"), VAPIDSubject: strPtr("mailto:a@b")}
+	byUser := map[string][]models.WebPushSubscription{
+		"u1": {{ID: "s1", Endpoint: "https://push.example/bad", Auth: "a", P256dh: "p"}},
+	}
+	w, subs := newWithFakes(t, row, byUser, func(ctx context.Context, msg []byte, s *webpush.Subscription, o *webpush.Options) (*http.Response, error) {
+		return cannedResp(http.StatusBadRequest), nil
+	})
+	require.NoError(t, w.Send(context.Background(), models.NotificationChannel{Kind: "webpush"}, notifications.Envelope{Title: "x", UserID: "u1"}))
+	require.Equal(t, []string{"https://push.example/bad"}, subs.deleted)
+}
