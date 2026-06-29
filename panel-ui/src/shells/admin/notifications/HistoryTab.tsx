@@ -215,6 +215,7 @@ export const HistoryTab = () => {
         <Table.Column<NotificationHistoryRow>
           title="Body"
           dataIndex="body"
+          width={420}
           render={(v: string) => (
             <Typography.Paragraph
               style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}
