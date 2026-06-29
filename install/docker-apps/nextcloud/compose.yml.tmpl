@@ -6,6 +6,17 @@ services:
     depends_on:
       - db
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      SMTP_HOST: "{{ index .Env "SMTP_HOST" }}"
+      SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      SMTP_SECURE: "{{ if eq (index .Env "SMTP_PORT") "465" }}ssl{{ else }}tls{{ end }}"
+      SMTP_AUTHTYPE: "LOGIN"
+      SMTP_NAME: "{{ index .Env "SMTP_USER" }}"
+      SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      MAIL_FROM_ADDRESS: "no-reply"
+      MAIL_DOMAIN: "{{ .Domain }}"
+{{- end }}
       MYSQL_HOST: "db"
       MYSQL_DATABASE: "nextcloud"
       MYSQL_USER: "nextcloud"

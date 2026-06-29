@@ -4,6 +4,16 @@ services:
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: "{{ index .Env "SMTP_HOST" }}:{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      GF_SMTP_USER: "{{ index .Env "SMTP_USER" }}"
+      GF_SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      GF_SMTP_FROM_ADDRESS: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}grafana@{{ .Domain }}{{ end }}"
+      GF_SMTP_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Grafana{{ end }}"
+      GF_SMTP_STARTTLS_POLICY: "{{ if eq (index .Env "SMTP_PORT") "465" }}NoStartTLS{{ else }}OpportunisticStartTLS{{ end }}"
+{{- end }}
       # Tells Grafana its public URL so generated links + OAuth redirects
       # are correct behind the TLS-terminating nginx vhost.
       GF_SERVER_ROOT_URL: "https://{{ .Domain }}"

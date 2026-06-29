@@ -4,6 +4,16 @@ services:
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      FORGEJO__mailer__ENABLED: "true"
+      FORGEJO__mailer__SMTP_ADDR: "{{ index .Env "SMTP_HOST" }}"
+      FORGEJO__mailer__SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      FORGEJO__mailer__PROTOCOL: "{{ if eq (index .Env "SMTP_PORT") "465" }}smtps{{ else }}smtp+starttls{{ end }}"
+      FORGEJO__mailer__USER: "{{ index .Env "SMTP_USER" }}"
+      FORGEJO__mailer__PASSWD: "{{ index .Env "SMTP_PASSWORD" }}"
+      FORGEJO__mailer__FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}forgejo@{{ .Domain }}{{ end }}"
+{{- end }}
       ROOT_URL: "https://{{ .Domain }}/"
 {{- range $name, $val := .Env }}
       {{ $name }}: "{{ $val }}"

@@ -7,6 +7,15 @@ services:
       mongodb:
         condition: service_healthy
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      OVERWRITE_SETTING_SMTP_Host: "{{ index .Env "SMTP_HOST" }}"
+      OVERWRITE_SETTING_SMTP_Port: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      OVERWRITE_SETTING_SMTP_Username: "{{ index .Env "SMTP_USER" }}"
+      OVERWRITE_SETTING_SMTP_Password: "{{ index .Env "SMTP_PASSWORD" }}"
+      OVERWRITE_SETTING_SMTP_Protocol: "{{ if eq (index .Env "SMTP_PORT") "465" }}smtps{{ else }}smtp{{ end }}"
+      OVERWRITE_SETTING_From_Email: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}rocketchat@{{ .Domain }}{{ end }}"
+{{- end }}
       PORT: "3000"
       ROOT_URL: "{{ if .Domain }}https://{{ .Domain }}{{ else }}http://localhost:3000{{ end }}"
       MONGO_URL: "mongodb://mongodb:27017/rocketchat?replicaSet=rs0"

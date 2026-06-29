@@ -38,3 +38,7 @@ env:
     value: "UTC"
   - name: BASE_URL
     value: ""
+
+# Operator-supplied SMTP (GH #322): auto-injects standard SMTP_* install fields;
+# compose maps them to this app's SMTP env.
+smtp: true

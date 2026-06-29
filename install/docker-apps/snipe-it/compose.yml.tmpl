@@ -6,6 +6,17 @@ services:
     depends_on:
       - db
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      MAIL_MAILER: "smtp"
+      MAIL_HOST: "{{ index .Env "SMTP_HOST" }}"
+      MAIL_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      MAIL_USERNAME: "{{ index .Env "SMTP_USER" }}"
+      MAIL_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      MAIL_FROM_ADDR: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}snipeit@{{ .Domain }}{{ end }}"
+      MAIL_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Snipe-IT{{ end }}"
+      MAIL_TLS_VERIFY_PEER: "false"
+{{- end }}
       APP_ENV: "production"
       APP_URL: "https://{{ .Domain }}"
       APP_KEY: "{{ index .Env "APP_KEY" }}"

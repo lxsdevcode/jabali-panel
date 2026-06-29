@@ -4,6 +4,16 @@ services:
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      mail__transport: "SMTP"
+      mail__options__host: "{{ index .Env "SMTP_HOST" }}"
+      mail__options__port: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      mail__options__secure: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
+      mail__options__auth__user: "{{ index .Env "SMTP_USER" }}"
+      mail__options__auth__pass: "{{ index .Env "SMTP_PASSWORD" }}"
+      mail__from: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}ghost@{{ .Domain }}{{ end }}"
+{{- end }}
       url: "https://{{ .Domain }}"
 {{- range $name, $val := .Env }}
       {{ $name }}: "{{ $val }}"

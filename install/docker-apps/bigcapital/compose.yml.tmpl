@@ -170,6 +170,16 @@ services:
       BASE_URL: "https://{{ .Domain }}"
       SIGNUP_DISABLED: "false"
       SIGNUP_EMAIL_CONFIRMATION: "false"
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      MAIL_HOST: "{{ index .Env "SMTP_HOST" }}"
+      MAIL_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      MAIL_USERNAME: "{{ index .Env "SMTP_USER" }}"
+      MAIL_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      MAIL_SECURE: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
+      MAIL_FROM_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Bigcapital{{ end }}"
+      MAIL_FROM_ADDRESS: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}bigcapital@{{ .Domain }}{{ end }}"
+{{- end }}
       GOTENBERG_URL: "http://gotenberg:3000"
       GOTENBERG_DOCS_URL: "http://server:3000/public/"
       EXCHANGE_RATE_SERVICE: "open-exchange-rate"

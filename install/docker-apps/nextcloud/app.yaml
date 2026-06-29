@@ -50,3 +50,7 @@ env:
   - name: NEXTCLOUD_ADMIN_PASSWORD
     secret: true
     generate: password32
+
+# Operator-supplied SMTP (GH #322): auto-injects standard SMTP_* install fields;
+# compose maps them to this app's SMTP env.
+smtp: true

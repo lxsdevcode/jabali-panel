@@ -6,6 +6,12 @@ services:
     depends_on:
       - db
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      NEXT_PUBLIC_EMAIL_PROVIDER: "true"
+      EMAIL_FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}linkwarden@{{ .Domain }}{{ end }}"
+      EMAIL_SERVER: "{{ if eq (index .Env "SMTP_PORT") "465" }}smtps{{ else }}smtp{{ end }}://{{ index .Env "SMTP_USER" }}:{{ index .Env "SMTP_PASSWORD" }}@{{ index .Env "SMTP_HOST" }}:{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+{{- end }}
       DATABASE_URL: "postgresql://postgres:{{ index .Env "POSTGRES_PASSWORD" }}@db:5432/postgres"
       NEXTAUTH_SECRET: "{{ index .Env "NEXTAUTH_SECRET" }}"
       NEXTAUTH_URL: "https://{{ .Domain }}/api/v1/auth"

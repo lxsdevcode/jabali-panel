@@ -7,6 +7,16 @@ services:
       - postgres
       - redis
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      PEERTUBE_SMTP_HOSTNAME: "{{ index .Env "SMTP_HOST" }}"
+      PEERTUBE_SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      PEERTUBE_SMTP_USERNAME: "{{ index .Env "SMTP_USER" }}"
+      PEERTUBE_SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      PEERTUBE_SMTP_TLS: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
+      PEERTUBE_SMTP_DISABLE_STARTTLS: "false"
+      PEERTUBE_SMTP_FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}peertube@{{ .Domain }}{{ end }}"
+{{- end }}
       PEERTUBE_WEBSERVER_HOSTNAME: "{{ .Domain }}"
       PEERTUBE_WEBSERVER_PORT: "443"
       PEERTUBE_WEBSERVER_HTTPS: "true"

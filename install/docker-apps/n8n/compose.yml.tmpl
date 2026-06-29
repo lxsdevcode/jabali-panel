@@ -4,6 +4,16 @@ services:
     container_name: jabali-app-{{ .Slug }}
     restart: unless-stopped
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      N8N_EMAIL_MODE: "smtp"
+      N8N_SMTP_HOST: "{{ index .Env "SMTP_HOST" }}"
+      N8N_SMTP_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      N8N_SMTP_USER: "{{ index .Env "SMTP_USER" }}"
+      N8N_SMTP_PASS: "{{ index .Env "SMTP_PASSWORD" }}"
+      N8N_SMTP_SENDER: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}n8n@{{ .Domain }}{{ end }}"
+      N8N_SMTP_SSL: "{{ if eq (index .Env "SMTP_PORT") "465" }}true{{ else }}false{{ end }}"
+{{- end }}
       N8N_HOST: "0.0.0.0"
       WEBHOOK_URL: "https://{{ .Domain }}/"
       N8N_EDITOR_BASE_URL: "https://{{ .Domain }}/"

@@ -6,6 +6,17 @@ services:
     depends_on:
       - db
     environment:
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322).
+      MAILER_ENABLED: "true"
+      MAILER_HOST: "{{ index .Env "SMTP_HOST" }}"
+      MAILER_PORT: "{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      MAILER_SECURITY: "{{ if eq (index .Env "SMTP_PORT") "465" }}tls{{ else }}starttls{{ end }}"
+      MAILER_AUTH_USER: "{{ index .Env "SMTP_USER" }}"
+      MAILER_AUTH_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      MAILER_NOREPLY_NAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}Joplin Server{{ end }}"
+      MAILER_NOREPLY_EMAIL: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}joplin@{{ .Domain }}{{ end }}"
+{{- end }}
       APP_BASE_URL: "{{ if .Domain }}https://{{ .Domain }}{{ else }}http://localhost{{ end }}"
       APP_PORT: "22300"
       DB_CLIENT: "pg"
