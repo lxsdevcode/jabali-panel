@@ -32,6 +32,30 @@ not the `SearchableTableStringQ` component.
   (seed15: search box renders + filters 16→2).
 - **Admin Mail** → `Card.tabList` (tabs inside the card), matching the Users
   reference. Was `<Tabs>` outside a separate content `<Card>`. Verified live.
+- **User Applications** → `Card.tabList` (Installed/Catalog inside the card,
+  StatCards + table in the body). Was `<Tabs>` outside. Verified live.
+
+## Assessed — no change needed
+- **Cron** (admin + user): already `<Card>` + `Input.Search` + `<Table>` — i.e.
+  visually card+search+table, and they match each other. Only nit is they use a
+  hand-rolled `Input.Search`+`<Table>` rather than the `SearchableTableStringQ`
+  component. Visually equivalent → not migrating (pure churn).
+- **Table styling** (header bg, row height, status badges, action buttons):
+  already consistent everywhere via the shared AntD theme + `RowActions` +
+  shared status-tag helpers. #524's styling acceptance is met by the theme.
+
+## Intentional deviations (documented per #524 acceptance)
+- **User mail Mailboxes columns** vs admin Mail: the user table shows avatar +
+  aliases + Groups + Auto-replies + Last-usage; admin shows Name + Owner. These
+  are role-appropriate (Owner is admin-only; the rich per-mailbox columns are
+  tenant self-service info). Chrome + styling are standardised; the column SET
+  is a deliberate role difference. Converging them is a PRODUCT call (admin
+  gains the rich columns, or user slims to admin's) — defer until decided.
+- **Per-mail-tab search**: the secondary mail tabs (Forwarders/Groups/Catch-All/
+  Disclaimer/Shared Folders/Shared Resources/Logs) use bare `<Table>` without a
+  search box. They live inside the mail `Card.tabList` (card present) and mostly
+  hold a handful of rows, so a search box is low-value clutter. Left as-is;
+  revisit Logs specifically if mail logs grow large.
 
 ## Remaining parity work (prioritised)
 
