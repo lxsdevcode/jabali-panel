@@ -46,3 +46,9 @@ env:
   - name: ADMIN_PASSWORD
     secret: true
     generate: password32
+
+# Operator-supplied SMTP (GH #322): auto-injects the standard SMTP_* env
+# (host/port/user/password/from/from_name/tls) as optional install fields. The
+# compose maps them to ZITADEL's default email provider. Set at install time —
+# ZITADEL applies DefaultInstance SMTP only at first init.
+smtp: true

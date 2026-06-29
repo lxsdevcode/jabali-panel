@@ -331,7 +331,11 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
                 Secrets are auto-generated — view or change them later from Edit. Set any plain values here.
               </Typography.Paragraph>
               {(entry.env ?? []).map((ev) => {
-                const auto = ev.secret || !!ev.generate;
+                // Only generated vars are auto-filled. A secret WITHOUT a
+                // generator (e.g. operator-supplied SMTP_PASSWORD, GH #322) is
+                // operator input -> masked field, not "leave blank".
+                const auto = !!ev.generate;
+                const InputComp = ev.secret && !ev.generate ? Input.Password : Input;
                 return (
                   <Form.Item
                     key={ev.name}
@@ -343,9 +347,9 @@ export const InstallDrawer = ({ open, entry, onClose, onInstalled }: Props) => {
                       </Space>
                     }
                   >
-                    <Input
+                    <InputComp
                       value={envVals[ev.name] ?? ""}
-                      placeholder={auto ? "auto-generated (leave blank)" : ev.value ?? ""}
+                      placeholder={auto ? "auto-generated (leave blank)" : ev.value ?? "optional"}
                       onChange={(e) => setEnvVals((st) => ({ ...st, [ev.name]: e.target.value }))}
                     />
                   </Form.Item>

@@ -40,6 +40,11 @@ type Entry struct {
 	Volumes       []Volume   `yaml:"volumes"`
 	Ports         []PortSpec `yaml:"ports"`
 	Env           []EnvVar   `yaml:"env,omitempty"`
+	// SMTP (GH #322), when true, auto-injects the standard SMTP_* env vars
+	// (host/port/user/password/from/from_name/tls) as optional, operator-
+	// supplied install fields. The app's compose.yml.tmpl maps them to its own
+	// SMTP env, guarded by {{ if (index .Env "SMTP_HOST") }}.
+	SMTP bool `yaml:"smtp,omitempty" json:"smtp,omitempty"`
 	// TenantInstallable (M49, GH #170): when true, this app appears in the
 	// TENANT catalog and a tenant may install it. Default false — admin-only,
 	// the M48 behaviour. Only flip true for an app verified to run under the
@@ -213,6 +218,10 @@ func loadOne(dir string) (Entry, error) {
 	if err := yaml.Unmarshal(yamlBytes, &e); err != nil {
 		return Entry{}, fmt.Errorf("parse app.yaml: %w", err)
 	}
+	// GH #322: smtp:true auto-injects the standard operator-supplied SMTP_* env.
+	if e.SMTP {
+		e.Env = injectStandardSMTPEnv(e.Env)
+	}
 	if err := e.validate(); err != nil {
 		return Entry{}, err
 	}
@@ -373,3 +382,31 @@ func isValidVolumeName(s string) bool {
 }
 
 func isValidPortName(s string) bool { return isValidVolumeName(s) }
+
+// standardSMTPEnvNames lists the panel-standard, operator-supplied SMTP env
+// keys auto-injected for apps that declare `smtp: true` (GH #322). Each app's
+// compose.yml.tmpl maps these to its own SMTP env, guarded by an
+// `{{ if (index .Env "SMTP_HOST") }}` block so they're a no-op when unset.
+var standardSMTPEnvNames = []string{
+	"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+	"SMTP_FROM", "SMTP_FROM_NAME", "SMTP_TLS",
+}
+
+// injectStandardSMTPEnv appends the standard SMTP_* env vars (operator-supplied,
+// no default/generator) to the entry's env, skipping any an app already
+// declares explicitly (so an app can pin a specific one). SMTP_PASSWORD is
+// marked secret so the UI masks it and the env view redacts it.
+func injectStandardSMTPEnv(existing []EnvVar) []EnvVar {
+	have := make(map[string]bool, len(existing))
+	for _, e := range existing {
+		have[e.Name] = true
+	}
+	out := existing
+	for _, name := range standardSMTPEnvNames {
+		if have[name] {
+			continue
+		}
+		out = append(out, EnvVar{Name: name, Secret: name == "SMTP_PASSWORD"})
+	}
+	return out
+}

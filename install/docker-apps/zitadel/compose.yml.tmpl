@@ -47,6 +47,19 @@ services:
       # locked out. Login then goes straight to the change-password prompt.
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: "admin@{{ .Domain }}"
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+{{- if (index .Env "SMTP_HOST") }}
+      # Operator-supplied SMTP (GH #322) — sets the instance default email
+      # provider so user verification / password-reset mails actually send.
+      # Applied at first init only (ZITADEL DefaultInstance semantics).
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: "{{ index .Env "SMTP_HOST" }}:{{ if (index .Env "SMTP_PORT") }}{{ index .Env "SMTP_PORT" }}{{ else }}587{{ end }}"
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: "{{ index .Env "SMTP_USER" }}"
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: "{{ index .Env "SMTP_PASSWORD" }}"
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "{{ if (index .Env "SMTP_TLS") }}{{ index .Env "SMTP_TLS" }}{{ else }}true{{ end }}"
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: "{{ if (index .Env "SMTP_FROM") }}{{ index .Env "SMTP_FROM" }}{{ else }}admin@{{ .Domain }}{{ end }}"
+      ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: "{{ if (index .Env "SMTP_FROM_NAME") }}{{ index .Env "SMTP_FROM_NAME" }}{{ else }}ZITADEL{{ end }}"
+      # From may differ from the instance ExternalDomain.
+      ZITADEL_DEFAULTINSTANCE_DOMAINPOLICY_SMTPSENDERADDRESSMATCHESINSTANCEDOMAIN: "false"
+{{- end }}
     ports:
 {{- with index .Ports "http" }}
       - "{{ .BindInterface }}:{{ .HostPort }}:{{ .ContainerPort }}/{{ .Protocol }}"
