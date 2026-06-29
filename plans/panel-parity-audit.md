@@ -44,13 +44,13 @@ not the `SearchableTableStringQ` component.
   already consistent everywhere via the shared AntD theme + `RowActions` +
   shared status-tag helpers. #524's styling acceptance is met by the theme.
 
-## Intentional deviations (documented per #524 acceptance)
-- **User mail Mailboxes columns** vs admin Mail: the user table shows avatar +
-  aliases + Groups + Auto-replies + Last-usage; admin shows Name + Owner. These
-  are role-appropriate (Owner is admin-only; the rich per-mailbox columns are
-  tenant self-service info). Chrome + styling are standardised; the column SET
-  is a deliberate role difference. Converging them is a PRODUCT call (admin
-  gains the rich columns, or user slims to admin's) — defer until decided.
+## Resolved decisions
+- **Mail columns** (decided 2026-06-29: "user adopts admin's clean style"):
+  removed the per-row LibravatarAvatar from the user mail Mailboxes table — no
+  other panel table has row avatars, so it was the most divergent element.
+  Email + aliases stay (folded under the address); the data-bearing columns
+  (Groups/Auto-replies/Quota/Last-usage) stay (no data lost). Owner remains an
+  admin-only column. Verified live (seed15: 0 row avatars, search retained).
 - **Per-mail-tab search**: the secondary mail tabs (Forwarders/Groups/Catch-All/
   Disclaimer/Shared Folders/Shared Resources/Logs) use bare `<Table>` without a
   search box. They live inside the mail `Card.tabList` (card present) and mostly
