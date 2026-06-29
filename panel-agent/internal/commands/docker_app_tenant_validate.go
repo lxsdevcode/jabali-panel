@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"regexp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,7 @@ type composeConfigService struct {
 	SecurityOpt       []string `json:"security_opt"`
 	VolumesFrom       []string `json:"volumes_from"`
 	CapDrop           []string `json:"cap_drop"`
+	CgroupParent      string   `json:"cgroup_parent"`
 	Build             json.RawMessage `json:"build"`
 	EnvFile           json.RawMessage `json:"env_file"`
 	Secrets           []any    `json:"secrets"`
@@ -91,6 +93,10 @@ func normalizeSecurityOpt(s string) string {
 	}
 	return s
 }
+
+// tenantCgroupRE matches the per-tenant M18 slice the render sets as
+// cgroup_parent, e.g. "jabali-user-bob.slice".
+var tenantCgroupRE = regexp.MustCompile(`^jabali-user-[A-Za-z0-9._-]+\.slice$`)
 
 func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot string) error {
 	var doc composeConfigDoc
@@ -174,6 +180,14 @@ func validateTenantCompose(configJSON []byte, allowedCaps []string, dataRoot str
 		}
 		if !hasNoNewPriv {
 			return fmt.Errorf("service %q is missing security_opt no-new-privileges:true (tenant hardening absent): forbidden for tenant installs", name)
+		}
+		// cgroup_parent must place the container under the owner's M18 tenant
+		// slice (Gitea #516) — it is the load-bearing isolation the render
+		// injects (it gates the M18 cpu/mem limits, the #519 loopback-port
+		// isolation, and the M34 egress firewall). Require it as defense-in-depth
+		// against a render/re-render path dropping it.
+		if !tenantCgroupRE.MatchString(svc.CgroupParent) {
+			return fmt.Errorf("service %q cgroup_parent %q is not a jabali tenant slice (tenant hardening absent): forbidden for tenant installs", name, svc.CgroupParent)
 		}
 		// #518: build runs arbitrary build-time code; env_file/secrets/configs
 		// read host files into the container outside the bind-mount check.

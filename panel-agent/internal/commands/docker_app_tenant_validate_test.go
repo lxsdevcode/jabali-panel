@@ -7,7 +7,7 @@ const root = "/var/lib/jabali/docker-apps/memos-u01-notes"
 func cfg(svc string) []byte { return []byte(`{"services":{` + svc + `}}`) }
 
 func TestValidateTenantCompose_OK(t *testing.T) {
-	j := cfg(`"memos":{"cap_add":["CHOWN","SETUID"],"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"volumes":[{"type":"bind","source":"` + root + `/data","target":"/data"}]}`)
+	j := cfg(`"memos":{"cap_add":["CHOWN","SETUID"],"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"cgroup_parent":"jabali-user-test.slice","volumes":[{"type":"bind","source":"` + root + `/data","target":"/data"}]}`)
 	if err := validateTenantCompose(j, []string{"CHOWN", "SETUID", "SETGID"}, root); err != nil {
 		t.Fatalf("expected clean, got %v", err)
 	}
@@ -29,7 +29,7 @@ func TestValidateTenantCompose_RejectsForeignCap(t *testing.T) {
 
 func TestValidateTenantCompose_CapPrefixNormalised(t *testing.T) {
 	// "CAP_CHOWN" in config vs "chown" in allowlist must still match.
-	j := cfg(`"memos":{"cap_add":["CAP_CHOWN"],"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"target":"/x"}`)
+	j := cfg(`"memos":{"cap_add":["CAP_CHOWN"],"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"cgroup_parent":"jabali-user-test.slice","target":"/x"}`)
 	if err := validateTenantCompose(j, []string{"chown"}, root); err != nil {
 		t.Fatalf("normalised cap should match: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestValidateTenantCompose_RejectsHostEscapes(t *testing.T) {
 func TestValidateTenantCompose_AllowsInjectedSecurityOpt(t *testing.T) {
 	// The panel injects no-new-privileges:true — must pass (both : and = forms).
 	for _, so := range []string{"no-new-privileges:true", "no-new-privileges=true"} {
-		j := cfg(`"memos":{"cap_drop":["ALL"],"security_opt":["` + so + `"]}`)
+		j := cfg(`"memos":{"cap_drop":["ALL"],"cgroup_parent":"jabali-user-test.slice","security_opt":["` + so + `"]}`)
 		if err := validateTenantCompose(j, []string{"CHOWN"}, root); err != nil {
 			t.Fatalf("injected security_opt %q should pass: %v", so, err)
 		}
@@ -93,7 +93,7 @@ func TestValidateTenantCompose_AllowsInjectedSecurityOpt(t *testing.T) {
 
 func TestValidateTenantCompose_AllowsBenignNamespaceModes(t *testing.T) {
 	// none/private/service refs are not host escapes.
-	j := cfg(`"memos":{"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"network_mode":"none","ipc":"private"}`)
+	j := cfg(`"memos":{"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"cgroup_parent":"jabali-user-test.slice","network_mode":"none","ipc":"private"}`)
 	if err := validateTenantCompose(j, []string{"CHOWN"}, root); err != nil {
 		t.Fatalf("benign namespace modes should pass: %v", err)
 	}
@@ -114,14 +114,14 @@ func TestValidateTenantCompose_RejectsPublicPort(t *testing.T) {
 
 func TestValidateTenantCompose_AllowsLoopbackPort(t *testing.T) {
 	root := "/var/lib/jabali/docker-apps/x"
-	j := cfg(`"web":{"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"ports":[{"published":"10001","host_ip":"127.0.0.1","target":80,"protocol":"tcp"}]}`)
+	j := cfg(`"web":{"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"cgroup_parent":"jabali-user-test.slice","ports":[{"published":"10001","host_ip":"127.0.0.1","target":80,"protocol":"tcp"}]}`)
 	if err := validateTenantCompose(j, nil, root); err != nil {
 		t.Errorf("loopback-published port must be allowed: %v", err)
 	}
 }
 
 func TestValidateTenantCompose_RejectsNamedVolume(t *testing.T) {
-	j := cfg(`"memos":{"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"volumes":[{"type":"volume","source":"vol","target":"/x"}]}`)
+	j := cfg(`"memos":{"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"cgroup_parent":"jabali-user-test.slice","volumes":[{"type":"volume","source":"vol","target":"/x"}]}`)
 	if err := validateTenantCompose(j, []string{"CHOWN"}, "/var/lib/jabali/docker-apps/x"); err == nil {
 		t.Error("named volume must be rejected for tenant installs (#514)")
 	}
@@ -141,7 +141,7 @@ func TestValidateTenantCompose_RequiresHardening(t *testing.T) {
 
 func TestValidateTenantCompose_RejectsHostFileInputs(t *testing.T) {
 	root := "/var/lib/jabali/docker-apps/x"
-	hard := `"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],`
+	hard := `"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"],"cgroup_parent":"jabali-user-test.slice",`
 	for _, field := range []string{
 		`"build":"."`,
 		`"env_file":[".env"]`,
@@ -157,5 +157,22 @@ func TestValidateTenantCompose_RejectsHostFileInputs(t *testing.T) {
 	j := []byte(`{"services":{"memos":{` + hard + `}},"secrets":{"s1":{"file":"/etc/x"}}}`)
 	if err := validateTenantCompose(j, nil, root); err == nil {
 		t.Error("top-level secrets must be rejected (#518)")
+	}
+}
+
+func TestValidateTenantCompose_RequiresTenantCgroupParent(t *testing.T) {
+	root := "/var/lib/jabali/docker-apps/x"
+	base := `"cap_drop":["ALL"],"security_opt":["no-new-privileges:true"]`
+	// missing cgroup_parent
+	if err := validateTenantCompose(cfg(`"memos":{`+base+`}`), nil, root); err == nil {
+		t.Error("missing cgroup_parent must be rejected (#516)")
+	}
+	// wrong cgroup_parent (not a tenant slice)
+	if err := validateTenantCompose(cfg(`"memos":{`+base+`,"cgroup_parent":"system.slice"}`), nil, root); err == nil {
+		t.Error("non-tenant cgroup_parent must be rejected (#516)")
+	}
+	// correct tenant slice passes
+	if err := validateTenantCompose(cfg(`"memos":{`+base+`,"cgroup_parent":"jabali-user-bob.slice"}`), nil, root); err != nil {
+		t.Errorf("valid tenant cgroup_parent must pass: %v", err)
 	}
 }
