@@ -47,6 +47,26 @@ func (r *Reconciler) reconcileDockerApps(ctx context.Context) {
 		return
 	}
 
+	// Keep the tenant-Docker gate honest (Gitea #512): the agent verifies the
+	// LIVE daemon still has userns-remap and removes the tenant flag if not, so
+	// panel-api's flag-stat gate fails closed instead of admitting tenants to a
+	// non-remapped daemon. Best-effort, once per tick; no-op when the flag is
+	// absent. (#506 covers install/update; this covers out-of-band drift.)
+	func() {
+		hctx, hcancel := context.WithTimeout(ctx, 15*time.Second)
+		defer hcancel()
+		raw, herr := r.agent.Call(hctx, "docker.tenant_health", map[string]any{})
+		if herr != nil {
+			return
+		}
+		var h struct {
+			FlagRemoved bool `json:"flag_removed"`
+		}
+		if json.Unmarshal(raw, &h) == nil && h.FlagRemoved {
+			r.log.Warn("dockerapp: removed tenant flag — live daemon lacks userns-remap (Gitea #512)")
+		}
+	}()
+
 	apps, err := r.dockerApps.ListAll(ctx)
 	if err != nil {
 		r.log.Warn("dockerapp: listAll failed", "err", err)
