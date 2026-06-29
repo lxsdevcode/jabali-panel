@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1449,6 +1451,15 @@ func (r *Reconciler) reconcileDockerAppDomain(ctx context.Context, domain *model
 			"domain", domain.Name, "domain_id", domain.ID)
 		return
 	}
+	// Gitea #533: the proxy_pass target must be one of THIS app's own enabled
+	// reverse-proxy ports. A stale/imported/edited docker-app domain row could
+	// otherwise render a public vhost to another app's backend or an unrelated
+	// loopback service (the agent only checks the http://127.0.0.1:<port> shape).
+	if !r.dockerAppOwnsUpstreamPort(ctx, domain, upstream) {
+		r.log.Warn("docker-app domain proxy_pass target is not an owned reverse-proxy port; skipping vhost",
+			"domain", domain.Name, "domain_id", domain.ID, "upstream", upstream)
+		return
+	}
 
 	// Cert must be on disk before the :443 block renders.
 	// reconcileSSLForDomain (run by the loop before us) drops a
@@ -1492,6 +1503,35 @@ func (r *Reconciler) reconcileDockerAppDomain(ctx context.Context, domain *model
 		r.log.Error("docker-app vhost apply failed",
 			"domain", domain.Name, "domain_id", domain.ID, "err", err)
 	}
+}
+
+// dockerAppOwnsUpstreamPort reports whether upstream's port is one of the
+// docker app's own enabled reverse-proxy ports (Gitea #533). Fails closed when
+// the app link, repo, or port can't be resolved.
+func (r *Reconciler) dockerAppOwnsUpstreamPort(ctx context.Context, domain *models.Domain, upstream string) bool {
+	if r.dockerApps == nil || domain.DockerAppID == nil {
+		return false
+	}
+	u, err := url.Parse(upstream)
+	if err != nil {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		return false
+	}
+	pCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ports, err := r.dockerApps.ListPortsForApp(pCtx, *domain.DockerAppID)
+	if err != nil {
+		return false
+	}
+	for _, p := range ports {
+		if p.ReverseProxy && p.Enabled && strconv.Itoa(p.HostPort) == port {
+			return true
+		}
+	}
+	return false
 }
 
 // removeDockerAppVhost tears down a docker-app proxy vhost (disabled or
