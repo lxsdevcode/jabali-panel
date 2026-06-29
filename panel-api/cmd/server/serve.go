@@ -724,6 +724,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}()
 	}
 
+	// GH #322: build the notification sender registry (with the provisioned
+	// notify-mailbox creds) before routes so the channels handler can send the
+	// "Send test" synchronously and report the real delivery result.
+	if deps.Redis != nil && deps.NotificationChannels != nil {
+		deps.NotificationRegistry = buildNotificationRegistry(context.Background(), deps, log)
+	}
+
 	// ---- HTTP(S) ----
 	handler := app.NewWithDeps(cfg, deps)
 
@@ -1056,6 +1063,26 @@ func loadSSOKey(keyPath string, log *slog.Logger) *ssokey.Key {
 	return nil
 }
 
+// buildNotificationRegistry wires the concrete channel senders once at boot and
+// provisions the notify mailbox so local-mode email can authenticate (GH #322).
+// Shared by the dispatcher and the channels handler's synchronous test send.
+func buildNotificationRegistry(parent context.Context, deps app.Deps, log *slog.Logger) *notifications.Registry {
+	registry := notifications.NewRegistry()
+	registry.Register(senders.NewSlack())
+	registry.Register(senders.NewDiscord())
+	registry.Register(senders.NewNtfy())
+	registry.Register(senders.NewWebhook())
+	registry.Register(senders.NewSMS())
+	notifyEmail := provisionNotifyMailbox(parent, deps, log)
+	registry.Register(senders.NewEmail("127.0.0.1:587").WithLocalCreds(notifyLocalCreds(deps, notifyEmail)))
+	if deps.ServerSettings != nil && deps.WebPushSubs != nil {
+		registry.Register(senders.NewWebPush(deps.ServerSettings, deps.WebPushSubs, log))
+	} else {
+		log.Warn("notifications: webpush sender skipped — server_settings or webpush_subscriptions repo missing")
+	}
+	return registry
+}
+
 // startNotificationDispatcher wires the M14 Redis Streams consumer. It
 // returns a done channel that closes once Start() returns, and a stop
 // function the shutdown path calls to cancel the dispatcher context.
@@ -1071,21 +1098,10 @@ func startNotificationDispatcher(parent context.Context, deps app.Deps, log *slo
 		log.Warn("notifications dispatcher: not starting — notification repos missing")
 		return nil, nil
 	}
-	registry := notifications.NewRegistry()
-	registry.Register(senders.NewSlack())
-	registry.Register(senders.NewDiscord())
-	registry.Register(senders.NewNtfy())
-	registry.Register(senders.NewWebhook())
-	registry.Register(senders.NewSMS())
-	registry.Register(senders.NewEmail("127.0.0.1:587"))
-	// WebPush reads VAPID keys from server_settings on every send; if
-	// the keypair is absent (EnsureVAPID hasn't run) Send returns
-	// ErrPermanent and the envelope lands in the DLQ — surfaces as a
-	// clear operator signal instead of silently dropping.
-	if deps.ServerSettings != nil && deps.WebPushSubs != nil {
-		registry.Register(senders.NewWebPush(deps.ServerSettings, deps.WebPushSubs, log))
-	} else {
-		log.Warn("notifications dispatcher: webpush sender skipped — server_settings or webpush_subscriptions repo missing")
+	registry := deps.NotificationRegistry
+	if registry == nil {
+		log.Warn("notifications dispatcher: not starting — sender registry not built")
+		return nil, nil
 	}
 	queue := deps.NotificationQueue
 	if queue == nil {

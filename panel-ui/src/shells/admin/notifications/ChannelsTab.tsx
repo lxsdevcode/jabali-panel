@@ -52,9 +52,14 @@ export const ChannelsTab = () => {
 
   const handleTest = async (row: NotificationChannel) => {
     try {
-      await apiClient.post(`/${RESOURCE}/${row.id}/test`);
-      message.success(`Test envelope fired for ${row.name}`);
+      const res = await apiClient.post<{ delivered?: boolean }>(`/${RESOURCE}/${row.id}/test`);
+      if (res.data?.delivered) {
+        message.success(`Test delivered to ${row.name}`);
+      } else {
+        message.success(`Test queued for ${row.name} — see the History tab for the result`);
+      }
     } catch (err) {
+      // Synchronous send surfaces the real delivery error (e.g. SMTP auth).
       message.error(err instanceof Error ? err.message : "Test failed");
     }
   };

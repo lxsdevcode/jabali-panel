@@ -186,6 +186,11 @@ type Deps struct {
 	// write to this Queue. Nil when Redis is not configured; handlers
 	// must 503 rather than panic.
 	NotificationQueue *notifications.Queue
+
+	// NotificationRegistry maps channel kinds to their senders. Built once in
+	// serve.go (with the provisioned notify-mailbox creds) and shared by the
+	// dispatcher and the channels handler's synchronous "Send test" (GH #322).
+	NotificationRegistry *notifications.Registry
 	// AuditRecorder is the M49 one-write-path into the unified audit
 	// log (ADR-0106): the recorder middleware + domain emitters call
 	// Record(). Nil when Redis is not configured (same posture as
@@ -844,6 +849,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Channels:        deps.NotificationChannels,
 				Webhooks:        deps.WebhookEndpoints,
 				Queue:           deps.NotificationQueue,
+				Registry:        deps.NotificationRegistry,
 				Log:             deps.Log,
 				StrictRateLimit: rl.Strict(),
 			})

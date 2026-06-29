@@ -30,10 +30,23 @@ type implicitTLSSendFunc func(addr string, a smtp.Auth, from string, to []string
 // default — ADR-0041) or an externally-configured SMTP relay. Per-row
 // config drives the recipient + envelope sender; the body is rendered
 // via RenderForChannel's "email" branch into a minimal HTML document.
+// localAuthSendFunc is the test seam for the loopback-authenticated submission
+// path (GH #322): local Stalwart on :587 requires AUTH, so this dials, does
+// STARTTLS (skip-verify — loopback to our own host), authenticates as the
+// provisioned notify mailbox, and sends.
+type localAuthSendFunc func(addr, user, pass, from string, to []string, msg []byte) error
+
+// Email delivers via either the local Stalwart submission port (the default)
+// or an externally-configured SMTP relay.
 type Email struct {
-	addr     string // local Stalwart fallback when channel.Config.SMTPMode is empty/"local"
-	send     smtpSendFunc
-	sendTLS  implicitTLSSendFunc
+	addr    string // local Stalwart fallback when channel.Config.SMTPMode is empty/"local"
+	send    smtpSendFunc
+	sendTLS implicitTLSSendFunc
+	// localCreds, when set, supplies the provisioned notify-mailbox credentials
+	// used to authenticate loopback submission in local mode (GH #322). nil =
+	// legacy unauthenticated behaviour (Stalwart will reject 587 with 503).
+	localCreds func(ctx context.Context) (user, pass string, ok bool)
+	sendAuth   localAuthSendFunc
 }
 
 // NewEmail builds an Email sender that talks to Stalwart at the given
@@ -43,13 +56,25 @@ func NewEmail(addr string) *Email {
 	if addr == "" {
 		addr = "127.0.0.1:587"
 	}
-	return &Email{addr: addr, send: smtp.SendMail, sendTLS: sendImplicitTLS}
+	return &Email{addr: addr, send: smtp.SendMail, sendTLS: sendImplicitTLS, sendAuth: sendLocalAuthenticated}
 }
 
 func (e *Email) Kind() string { return models.NotificationChannelKindEmail }
 
+// WithLocalCreds wires the provisioned notify-mailbox credential loader used to
+// authenticate loopback submission in local mode (GH #322).
+func (e *Email) WithLocalCreds(fn func(ctx context.Context) (user, pass string, ok bool)) *Email {
+	e.localCreds = fn
+	return e
+}
+
+func isLocalMode(mode string) bool { return mode == "" || mode == "local" }
+
 // withSender is a test hook to swap the smtp.SendMail-compatible func.
 func (e *Email) withSender(fn smtpSendFunc) *Email { e.send = fn; return e }
+
+// withAuthSender is a test hook to swap the local-authenticated send path.
+func (e *Email) withAuthSender(fn localAuthSendFunc) *Email { e.sendAuth = fn; return e }
 
 // withTLSSender is a test hook to swap the implicit-TLS path.
 func (e *Email) withTLSSender(fn implicitTLSSendFunc) *Email { e.sendTLS = fn; return e }
@@ -80,6 +105,19 @@ func (e *Email) Send(ctx context.Context, channel models.NotificationChannel, en
 	addr, auth, useImplicitTLS, err := resolveTransport(e.addr, channel.Config)
 	if err != nil {
 		return fmt.Errorf("email: %w", err)
+	}
+
+	// Local mode (loopback Stalwart): :587 requires authentication, so send as
+	// the provisioned notify mailbox (the envelope sender). The channel's
+	// from_email stays the visible From: header (already built into msg). When
+	// no notify creds are available we fall through to the legacy unauth path.
+	if isLocalMode(channel.Config.SMTPMode) && e.localCreds != nil {
+		if user, pass, ok := e.localCreds(ctx); ok {
+			if err := e.sendAuth(e.addr, user, pass, user, []string{channel.Config.ToEmail}, []byte(msg)); err != nil {
+				return fmt.Errorf("email: smtp send (local auth): %w", err)
+			}
+			return nil
+		}
 	}
 
 	var sendErr error
@@ -201,4 +239,52 @@ func buildMIME(from, to, subject, htmlBody string) string {
 	b.WriteString(htmlBody)
 	b.WriteString("\r\n")
 	return b.String()
+}
+
+// sendLocalAuthenticated dials the loopback Stalwart submission port, upgrades
+// with STARTTLS (skip-verify: the cert is for the panel hostname, not
+// 127.0.0.1, and the connection never leaves the host), authenticates with the
+// notify-mailbox credentials, and runs the SMTP exchange (GH #322).
+func sendLocalAuthenticated(addr, user, pass, from string, to []string, msg []byte) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("split host: %w", err)
+	}
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("dial: %w", err)
+	}
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("smtp new client: %w", err)
+	}
+	defer c.Close()
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err := c.StartTLS(&tls.Config{InsecureSkipVerify: true, ServerName: host}); err != nil { //nolint:gosec // loopback to our own Stalwart; cert CN won't match 127.0.0.1
+			return fmt.Errorf("starttls: %w", err)
+		}
+	}
+	if err := c.Auth(smtp.PlainAuth("", user, pass, host)); err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+	if err := c.Mail(from); err != nil {
+		return fmt.Errorf("smtp MAIL: %w", err)
+	}
+	for _, rcpt := range to {
+		if err := c.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("smtp RCPT: %w", err)
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return fmt.Errorf("smtp DATA: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("smtp write: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp close data: %w", err)
+	}
+	return c.Quit()
 }

@@ -26,6 +26,9 @@ type NotificationsChannelsHandlerConfig struct {
 	Channels        repository.NotificationChannelRepository
 	Webhooks        repository.WebhookEndpointRepository
 	Queue           *notifications.Queue
+	// Registry, when set, lets the "Send test" endpoint deliver synchronously
+	// and report the real result instead of only enqueuing (GH #322).
+	Registry        *notifications.Registry
 	Log             *slog.Logger
 	StrictRateLimit gin.HandlerFunc
 }
@@ -230,6 +233,27 @@ func (h *notificationsChannelsHandler) test(c *gin.Context) {
 		Deeplink:   "/admin/notifications/channels/" + ch.ID,
 		ChannelIDs: []string{ch.ID},
 	}
+	// Synchronous send (GH #322): deliver now and report the real result so a
+	// misconfigured channel (e.g. SMTP auth failure) surfaces immediately
+	// instead of failing silently in the async dispatcher.
+	if h.cfg.Registry != nil {
+		sender, lerr := h.cfg.Registry.Lookup(ch.Kind)
+		if lerr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no sender for channel kind " + ch.Kind})
+			return
+		}
+		if !ch.Enabled {
+			c.JSON(http.StatusConflict, gin.H{"error": "channel is disabled — enable it before testing"})
+			return
+		}
+		if serr := sender.Send(ctx, *ch, env); serr != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "delivery failed: " + serr.Error(), "channel_id": ch.ID})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"delivered": true, "channel_id": ch.ID})
+		return
+	}
+
 	streamID, err := h.cfg.Queue.Publish(ctx, env)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "publish: " + err.Error()})

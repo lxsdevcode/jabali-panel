@@ -108,7 +108,10 @@ func TestEmail_SMTPModeImplicitTLSUsesTLSSeam(t *testing.T) {
 func TestEmail_StripsCRLFFromSubject(t *testing.T) {
 	t.Parallel()
 	var gotMsg string
-	fake := func(addr string, a smtp.Auth, from string, to []string, msg []byte) error { gotMsg = string(msg); return nil }
+	fake := func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		gotMsg = string(msg)
+		return nil
+	}
 	e := NewEmail("").withSender(fake)
 	ch := models.NotificationChannel{Kind: "email", Config: models.NotificationChannelConfig{ToEmail: "a@b", FromEmail: "c@d"}}
 	env := notifications.Envelope{Title: "line1\r\nBcc: attacker@x", Body: "ok", Severity: "info"}
@@ -127,4 +130,53 @@ func TestEmail_StripsCRLFFromSubject(t *testing.T) {
 	}
 	require.Len(t, subjectLines, 1)
 	require.True(t, strings.HasPrefix(subjectLines[0], "Subject:"))
+}
+
+// TestEmail_LocalAuthUsesNotifyMailbox verifies that in local mode with notify
+// creds set (GH #322), the sender authenticates as the notify mailbox and uses
+// it as the envelope sender, while the configured from_email stays the visible
+// From: header.
+func TestEmail_LocalAuthUsesNotifyMailbox(t *testing.T) {
+	t.Parallel()
+	var gotAddr, gotUser, gotPass, gotEnvFrom string
+	var gotTo []string
+	var gotMsg string
+	authFake := func(addr, user, pass, from string, to []string, msg []byte) error {
+		gotAddr, gotUser, gotPass, gotEnvFrom, gotTo, gotMsg = addr, user, pass, from, to, string(msg)
+		return nil
+	}
+	legacyCalled := false
+	e := NewEmail("127.0.0.1:587").
+		withAuthSender(authFake).
+		withSender(func(string, smtp.Auth, string, []string, []byte) error { legacyCalled = true; return nil }).
+		WithLocalCreds(func(context.Context) (string, string, bool) {
+			return "jabali-notify@panel.example.com", "s3cret", true
+		})
+	ch := models.NotificationChannel{Kind: "email", Config: models.NotificationChannelConfig{
+		ToEmail: "admin@example.com", FromEmail: "alerts@example.com", // local mode (SMTPMode empty)
+	}}
+	env := notifications.Envelope{Title: "test", Body: "hi", Severity: "info"}
+	require.NoError(t, e.Send(context.Background(), ch, env))
+
+	require.False(t, legacyCalled, "legacy unauth path must not be used when notify creds present")
+	require.Equal(t, "127.0.0.1:587", gotAddr)
+	require.Equal(t, "jabali-notify@panel.example.com", gotUser)
+	require.Equal(t, "s3cret", gotPass)
+	require.Equal(t, "jabali-notify@panel.example.com", gotEnvFrom, "envelope sender = notify mailbox")
+	require.Equal(t, []string{"admin@example.com"}, gotTo)
+	require.Contains(t, gotMsg, "From: alerts@example.com", "visible From: stays the configured from_email")
+}
+
+// TestEmail_LocalNoCredsFallsBack verifies that without notify creds the sender
+// falls back to the legacy (unauthenticated) path — preserving prior behaviour.
+func TestEmail_LocalNoCredsFallsBack(t *testing.T) {
+	t.Parallel()
+	legacyCalled := false
+	e := NewEmail("127.0.0.1:587").withSender(func(string, smtp.Auth, string, []string, []byte) error {
+		legacyCalled = true
+		return nil
+	})
+	ch := models.NotificationChannel{Kind: "email", Config: models.NotificationChannelConfig{ToEmail: "a@example.com", FromEmail: "b@example.com"}}
+	require.NoError(t, e.Send(context.Background(), ch, notifications.Envelope{Title: "t", Body: "b"}))
+	require.True(t, legacyCalled, "no notify creds → legacy path")
 }
