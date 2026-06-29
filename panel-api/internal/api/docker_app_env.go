@@ -207,9 +207,8 @@ func (h *dockerAppHandler) applyEnv(ctx context.Context, app *models.DockerApp, 
 		"env_file":                    envFile,
 		"healthcheck_timeout_seconds": 300,
 	}
-	if v, caps := h.tenantValidateParams(app); v {
-		envUpdateParams["tenant_validate"] = true
-		envUpdateParams["tenant_caps"] = caps
+	if verr := h.applyTenantValidateParams(ctx, app, envUpdateParams); verr != nil {
+		return verr
 	}
 	_, callErr := h.cfg.Agent.Call(callCtx, "docker_app.update", envUpdateParams)
 	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

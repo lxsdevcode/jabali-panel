@@ -758,15 +758,46 @@ func (h *dockerAppHandler) installDomain(ctx context.Context, appID string) stri
 // tenantValidateParams returns whether a re-render dispatch should carry the
 // agent-side tenant compose validation, plus the catalog tenant-cap allowlist,
 // for a tenant-owned app (Gitea #480). Returns (false, nil) for admin apps.
-func (h *dockerAppHandler) tenantValidateParams(app *models.DockerApp) (bool, []string) {
-	if app == nil || app.UserID == nil || h.cfg.Catalog == nil {
-		return false, nil
+func (h *dockerAppHandler) tenantValidateParams(ctx context.Context, app *models.DockerApp) (validate bool, caps []string, cgroup string, err error) {
+	// Admin/server-owned app: legitimately no tenant validation.
+	if app == nil || app.UserID == nil {
+		return false, nil, "", nil
+	}
+	// Gitea #529: for a TENANT app, missing metadata is NOT "no validation
+	// needed" — it means we can't resolve the safety profile and must fail
+	// closed so callers don't bring the app up/update/restore unvalidated.
+	if h.cfg.Catalog == nil {
+		return false, nil, "", fmt.Errorf("catalog unavailable: cannot resolve tenant validation metadata")
 	}
 	entry, ok := h.cfg.Catalog.Get(app.Slug)
 	if !ok {
-		return false, nil
+		return false, nil, "", fmt.Errorf("catalog entry %q not found: cannot resolve tenant validation metadata", app.Slug)
 	}
-	return true, dockerapp.TenantCapAllowlist(entry.TenantCaps)
+	if h.cfg.Users == nil {
+		return false, nil, "", fmt.Errorf("users repo unavailable: cannot resolve owner slice")
+	}
+	u, uerr := h.cfg.Users.FindByID(ctx, *app.UserID)
+	if uerr != nil || u == nil || u.Username == nil || *u.Username == "" {
+		return false, nil, "", fmt.Errorf("cannot resolve tenant owner slice for app %s: %v", app.ID, uerr)
+	}
+	// Gitea #525: the exact owner slice the compose must declare.
+	return true, dockerapp.TenantCapAllowlist(entry.TenantCaps), "jabali-user-" + *u.Username + ".slice", nil
+}
+
+// applyTenantValidateParams sets tenant_validate/tenant_caps/tenant_cgroup on an
+// agent param map for a tenant-owned app, or returns an error when the metadata
+// can't be resolved (fail closed, Gitea #529). No-op for admin apps.
+func (h *dockerAppHandler) applyTenantValidateParams(ctx context.Context, app *models.DockerApp, params map[string]any) error {
+	v, caps, cgroup, err := h.tenantValidateParams(ctx, app)
+	if err != nil {
+		return err
+	}
+	if v {
+		params["tenant_validate"] = true
+		params["tenant_caps"] = caps
+		params["tenant_cgroup"] = cgroup
+	}
+	return nil
 }
 
 // renderInstallCompose re-renders an install's compose.yml from the CURRENT
@@ -1099,9 +1130,9 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 				"wait_healthy":                false,
 				"healthcheck_timeout_seconds": 60,
 			}
-			if v, caps := h.tenantValidateParams(app); v {
-				installParams["tenant_validate"] = true
-				installParams["tenant_caps"] = caps
+			if verr := h.applyTenantValidateParams(callCtx, app, installParams); verr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant_validation_unavailable", "detail": firstLineString(verr.Error())})
+				return
 			}
 			if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", installParams); agentErr != nil {
 				msg := firstLineString(agentErr.Error())
@@ -1214,7 +1245,18 @@ func (h *dockerAppHandler) lifecycle(action string) gin.HandlerFunc {
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		raw, err := h.cfg.Agent.Call(callCtx, verb, map[string]any{"slug": app.EffectiveSlug()})
+		lifeParams := map[string]any{"slug": app.EffectiveSlug()}
+		// Gitea #526: start/restart/rebuild bring the stack up from the on-disk
+		// compose; for a tenant app that compose is the last-mile trust boundary
+		// and may have drifted (restore/manual edit). Carry the tenant gate so
+		// the agent re-validates before `up`. (stop tears down — no gate needed.)
+		if action == "start" || action == "restart" || action == "rebuild" {
+			if verr := h.applyTenantValidateParams(callCtx, app, lifeParams); verr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant_validation_unavailable", "detail": firstLineString(verr.Error())})
+				return
+			}
+		}
+		raw, err := h.cfg.Agent.Call(callCtx, verb, lifeParams)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_call_failed", "detail": err.Error()})
 			return
@@ -1275,18 +1317,27 @@ func (h *dockerAppHandler) updateImage(c *gin.Context) {
 	}
 	domain := h.installDomain(ctx, app.ID)
 	if composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, domain, nil); rerr != nil {
-		// Fall back to the on-disk compose so a transient read-env failure
-		// or missing catalog entry never blocks the update. Log it — a
-		// silent no-rerender reads as "catalog fix propagated" when it
-		// didn't.
+		// Gitea #527: for a tenant-owned app, falling back to the on-disk compose
+		// would recreate the container WITHOUT the tenant validation gate (the
+		// on-disk compose may be stale/restored/unsafe). Fail closed.
+		if app.UserID != nil {
+			msg := "re-render failed; refusing to update tenant app from unvalidated on-disk compose: " + firstLineString(rerr.Error())
+			_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "rerender_failed", "detail": msg})
+			return
+		}
+		// Admin/server app: fall back to the on-disk compose so a transient
+		// read-env failure or missing catalog entry never blocks the update.
 		slog.Warn("docker-app update: re-render skipped, using on-disk compose",
 			"id", app.ID, "slug", app.Slug, "err", rerr)
 	} else {
 		updateParams["compose_yml"] = composeYML
 		updateParams["env_file"] = envFile
-		if v, caps := h.tenantValidateParams(app); v {
-			updateParams["tenant_validate"] = true
-			updateParams["tenant_caps"] = caps
+		if verr := h.applyTenantValidateParams(ctx, app, updateParams); verr != nil {
+			msg := firstLineString(verr.Error())
+			_ = h.cfg.Repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusFailed, &msg)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant_validation_unavailable", "detail": msg})
+			return
 		}
 	}
 
@@ -1511,9 +1562,9 @@ func (h *dockerAppHandler) restoreBackup(c *gin.Context) {
 	// Tenant-owned restore (Gitea #509): a snapshot can replace compose.yml /
 	// .env with an old or unsafe version. Carry the tenant gate so the agent
 	// re-validates the restored compose before `up` and fails closed otherwise.
-	if v, caps := h.tenantValidateParams(app); v {
-		rsParams["tenant_validate"] = true
-		rsParams["tenant_caps"] = caps
+	if verr := h.applyTenantValidateParams(callCtx, app, rsParams); verr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant_validation_unavailable", "detail": firstLineString(verr.Error())})
+		return
 	}
 	raw, err := h.cfg.Agent.Call(callCtx, "docker_app.restore", rsParams)
 	if err != nil {
