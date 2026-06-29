@@ -22,6 +22,7 @@
 package reconciler
 
 import (
+	"strings"
 	"sort"
 	"context"
 	"encoding/json"
@@ -133,6 +134,69 @@ func (r *Reconciler) enforceDockerEntitlements(ctx context.Context, apps []*mode
 				r.stopOverDiskQuota(ctx, a)
 			}
 		}
+
+		// --- allowlist cap (Gitea #521 follow-up): if the package pins a
+		// DockerAppSlugs allowlist and an app's catalog slug is no longer on it
+		// (admin removed it), stop the running instance. Empty allowlist = no
+		// restriction. ---
+		allow := r.dockerAppAllowlist(ctx, uid)
+		if allow != nil {
+			for _, a := range list {
+				if allow[a.Slug] {
+					continue
+				}
+				if a.Status == models.DockerAppStatusRunning || a.Status == models.DockerAppStatusInstalling {
+					r.stopDisallowedApp(ctx, a)
+				}
+			}
+		}
+	}
+}
+
+// dockerAppAllowlist returns the package's DockerAppSlugs allowlist as a set, or
+// nil when the user has no package or the allowlist is empty (no restriction).
+func (r *Reconciler) dockerAppAllowlist(ctx context.Context, userID string) map[string]bool {
+	u, err := r.users.FindByID(ctx, userID)
+	if err != nil || u == nil || u.PackageID == nil {
+		return nil
+	}
+	pkg, perr := r.packages.FindByID(ctx, *u.PackageID)
+	if perr != nil || pkg == nil {
+		return nil
+	}
+	csv := strings.TrimSpace(pkg.DockerAppSlugs)
+	if csv == "" {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, sl := range strings.Split(csv, ",") {
+		if v := strings.TrimSpace(sl); v != "" {
+			set[v] = true
+		}
+	}
+	return set
+}
+
+func (r *Reconciler) stopDisallowedApp(ctx context.Context, a *models.DockerApp) {
+	callCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if _, err := r.agent.Call(callCtx, "docker_app.stop", map[string]any{"slug": a.EffectiveSlug()}); err != nil {
+		r.log.Warn("dockerapp: allowlist stop failed", "id", a.ID, "slug", a.Slug, "err", err)
+		return
+	}
+	msg := "stopped: this app is no longer included in the hosting package"
+	if err := r.dockerApps.UpdateStatus(ctx, a.ID, models.DockerAppStatusStopped, &msg); err != nil {
+		r.log.Warn("dockerapp: allowlist status update failed", "id", a.ID, "err", err)
+	}
+	r.log.Info("dockerapp: stopped app removed from package allowlist", "id", a.ID, "slug", a.Slug, "user_id", *a.UserID)
+	if r.notificationQueue != nil {
+		_, _ = r.notificationQueue.Publish(ctx, notifications.Envelope{
+			EventKind: "docker_app.removed_from_package",
+			Severity:  "warning",
+			Title:     fmt.Sprintf("Docker app stopped (not in package): %s", a.Name),
+			Body:      fmt.Sprintf("%s was stopped because its app type is no longer included in your hosting package. Contact your administrator.", a.Name),
+			Deeplink:  "/jabali-panel/docker-apps",
+		})
 	}
 }
 
