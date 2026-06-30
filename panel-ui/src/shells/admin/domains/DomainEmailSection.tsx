@@ -11,6 +11,7 @@ import { useState } from "react";
 import {
   Alert,
   Button,
+  Popconfirm,
   Card,
   Skeleton,
   Space,
@@ -56,6 +57,23 @@ export const DomainEmailSection = ({ domainId }: Props) => {
     id: domainId,
   });
   const [wmFlipping, setWmFlipping] = useState(false);
+  const [rotating, setRotating] = useState(false);
+
+  // Rotate DKIM (Gitea #542): the agent generates a fresh keypair, the panel
+  // republishes the DKIM TXT. Remote receivers may need DNS propagation time.
+  const onRotateDKIM = async () => {
+    setRotating(true);
+    try {
+      await apiClient.post(`/domains/${domainId}/email/dkim-rotate`);
+      qc.invalidateQueries({ queryKey: ["one", "domain-email", domainId] });
+      message.success("DKIM rotated — new key published; allow time for DNS propagation");
+    } catch (err) {
+      const resp = (err as { response?: { data?: { detail?: string; error?: string } } })?.response?.data;
+      message.error(resp?.detail ?? resp?.error ?? "DKIM rotation failed");
+    } finally {
+      setRotating(false);
+    }
+  };
   const onWebmailFlip = async (next: boolean) => {
     setWmFlipping(true);
     try {
@@ -133,6 +151,18 @@ export const DomainEmailSection = ({ domainId }: Props) => {
           title="DKIM key missing"
           description="Email is enabled but no DKIM public key is stored. Toggle off and back on to regenerate."
         />
+      )}
+
+      {enabled && dkim && (
+        <Popconfirm
+          title="Rotate DKIM key?"
+          description="A fresh DKIM keypair is generated and the DNS TXT record changes. Remote receivers may need propagation time before they accept the new signature; the old key is kept as a backup."
+          okText="Rotate"
+          okButtonProps={{ danger: true }}
+          onConfirm={onRotateDKIM}
+        >
+          <Button danger loading={rotating}>Rotate DKIM</Button>
+        </Popconfirm>
       )}
 
       {enabled && data.warnings && data.warnings.length > 0 && (

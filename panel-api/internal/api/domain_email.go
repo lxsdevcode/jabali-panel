@@ -203,9 +203,81 @@ func RegisterDomainEmailRoutes(g *gin.RouterGroup, cfg DomainEmailHandlerConfig)
 	g.GET("/domains/:id/email", h.get)
 	g.POST("/domains/:id/email", h.enable)
 	g.DELETE("/domains/:id/email", h.disable)
+	g.POST("/domains/:id/email/dkim-rotate", h.rotateDKIM)
 }
 
 type domainEmailHandler struct{ cfg DomainEmailHandlerConfig }
+
+// rotateDKIM rotates the domain's DKIM keypair (Gitea #542): the agent
+// generates a fresh ed25519 key (snapshotting the old), we persist the new
+// public key, then wipe + republish the M6 email DNS so the new DKIM TXT lands
+// at jabali._domainkey.<domain>. The reconciler also re-converges, so this is
+// belt-and-suspenders for an immediate UI refresh. Admin or the domain owner.
+func (h *domainEmailHandler) rotateDKIM(c *gin.Context) {
+	ctx := c.Request.Context()
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	dom, err := h.cfg.Domains.FindByID(ctx, c.Param("id"))
+	if err != nil {
+		if isNotFound(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "domain_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	if !claims.IsAdmin && dom.UserID != claims.UserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if !dom.EmailEnabled {
+		c.JSON(http.StatusConflict, gin.H{"error": "email_not_enabled", "detail": "enable email on this domain before rotating DKIM"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unconfigured"})
+		return
+	}
+	raw, err := h.cfg.Agent.Call(ctx, "domain.email_dkim_rotate", map[string]any{"domain_name": dom.Name})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_rotate_failed", "detail": firstLineString(err.Error())})
+		return
+	}
+	var resp struct {
+		OldDKIMPublicKey string `json:"old_dkim_public_key"`
+		NewDKIMPublicKey string `json:"new_dkim_public_key"`
+		OldKeyBackupPath string `json:"old_key_backup_path"`
+	}
+	if jerr := json.Unmarshal(raw, &resp); jerr != nil || resp.NewDKIMPublicKey == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_bad_response", "detail": "agent returned no new DKIM key"})
+		return
+	}
+	selector := "jabali" // EmailRecordsSelector — stable across rotations
+	if uerr := h.cfg.Domains.UpdateEmailState(ctx, dom.ID, repository.DomainEmailState{
+		Enabled:       true,
+		DkimSelector:  &selector,
+		DkimPublicKey: &resp.NewDKIMPublicKey,
+	}); uerr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist_failed", "detail": firstLineString(uerr.Error())})
+		return
+	}
+	// Wipe the old M6-managed records + republish so the new DKIM TXT replaces
+	// the old one immediately (reconciler re-converges on its next tick too).
+	h.deleteEmailDNSOnDisable(ctx, dom.ID)
+	warnings := h.syncEmailDNSOnEnable(ctx, dom.ID, selector, resp.NewDKIMPublicKey)
+	c.JSON(http.StatusOK, gin.H{
+		"domain_id":           dom.ID,
+		"domain_name":         dom.Name,
+		"dkim_selector":       selector,
+		"old_dkim_public_key": resp.OldDKIMPublicKey,
+		"new_dkim_public_key": resp.NewDKIMPublicKey,
+		"old_key_backup_path": resp.OldKeyBackupPath,
+		"warnings":            warnings,
+	})
+}
 
 // domainEmailResponse is what the UI reads on every poll. `warnings`
 // surface operator-actionable messages — typically a conflict with a
