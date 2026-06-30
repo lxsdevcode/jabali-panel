@@ -120,6 +120,11 @@ func main() {
 	// active ones). Best-effort, runs once at boot.
 	commands.BackfillUserCLIPHP(log)
 
+	// GH #594: re-render the CRS "before" exclusion plugin on boot so a shipped
+	// AppSec exclusion change self-heals on the `jabali update` restart, on
+	// every server, with no operator step. Write-on-diff; best-effort.
+	commands.ApplyAppSecBeforePlugin(ctx, log)
+
 	if err := srv.Serve(ctx); err != nil {
 		log.Error("agent serve failed", "err", err)
 		os.Exit(1)
