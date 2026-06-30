@@ -140,6 +140,8 @@ func newRootCmd() *cobra.Command {
 		newCrowdsecCmd(),
 		newMalwareCmd(),
 		newPhpDefenseCmd(),
+		newPageTemplateCmd(),
+		newActiveTasksCmd(),
 		newIPManagerCmd(),
 		newServiceCmd(),
 		newMailAdminCmd(),

@@ -16,6 +16,14 @@ jabali
 - `--config` — config file path (default: /etc/jabali/config.toml)
 - `--json` — output as JSON
 
+### `jabali active-tasks`
+
+Show running/queued tasks (updates, backups, malware scans)
+
+```
+jabali active-tasks
+```
+
 ### `jabali admin`
 
 Operator-only administrative subcommands
@@ -2702,6 +2710,50 @@ List hosting packages (direct DB — M20-safe)
 ```
 jabali package list
 ```
+
+### `jabali page-template`
+
+Manage error/index page templates
+
+```
+jabali page-template
+```
+
+#### `jabali page-template get`
+
+Print a page template's content
+
+```
+jabali page-template get <key>
+```
+
+#### `jabali page-template list`
+
+List page templates
+
+```
+jabali page-template list
+```
+
+#### `jabali page-template reset`
+
+Reset a page template to the built-in default
+
+```
+jabali page-template reset <key>
+```
+
+#### `jabali page-template set`
+
+Set a page template's content from a file
+
+```
+jabali page-template set <key> [flags]
+```
+
+**Flags:**
+
+- `--file` — path to the template content (required)
 
 ### `jabali panel-primary`
 
