@@ -188,6 +188,7 @@ func newMailboxAutoresponderSetCmd() *cobra.Command {
 					"subject": subject,
 				})
 			}
+			cliAuditOK(ctx, "mailbox.autoresponder_set", "mailbox", email, nil)
 			fmt.Printf("Autoresponder enabled for %s\n", email)
 			return nil
 		},
@@ -223,6 +224,7 @@ func newMailboxAutoresponderClearCmd() *cobra.Command {
 				"mailbox_email": mb.LocalPart + "@" + dom.Name,
 				"enabled":       false,
 			})
+			cliAuditOK(ctx, "mailbox.autoresponder_clear", "mailbox", email, nil)
 			fmt.Printf("Autoresponder cleared for %s\n", email)
 			return nil
 		},
@@ -351,6 +353,7 @@ func newMailboxForwarderAddCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(f)
 			}
+			cliAuditOK(ctx, "mailbox.forwarder_add", "forwarder", f.ID, nil)
 			fmt.Printf("Forwarder %s added (id=%s)\n", fwdType, f.ID)
 			if fwdType == "alias" {
 				fmt.Printf("  %s@%s -> %s\n", localPart, dom.Name, f.Target)
@@ -442,6 +445,7 @@ func newMailboxForwarderRemoveCmd() *cobra.Command {
 					applyForwardersCLI(ctx, mb.ID, mb.LocalPart+"@"+dom.Name)
 				}
 			}
+			cliAuditOK(ctx, "mailbox.forwarder_delete", "forwarder", id, nil)
 			fmt.Printf("Forwarder %s deleted\n", id)
 			return nil
 		},

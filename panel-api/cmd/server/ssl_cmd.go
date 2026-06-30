@@ -128,6 +128,7 @@ func newSSLEnableCmd() *cobra.Command {
 					"detail": "reconciler tick will issue cert",
 				})
 			}
+			cliAuditOK(ctx, "ssl.enable", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("SSL enabled for %s — reconciler will issue cert within ≤60s.\n", dom.Name)
 			return nil
 		},
@@ -157,6 +158,7 @@ func newSSLDisableCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]any{"domain": dom.Name, "ssl_enabled": false})
 			}
+			cliAuditOK(ctx, "ssl.disable", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("SSL disabled for %s — reconciler will revoke + clean up.\n", dom.Name)
 			return nil
 		},
@@ -212,6 +214,7 @@ func newSSLRenewCmd() *cobra.Command {
 				fmt.Printf("Renewal skipped for %s (cert not yet within renewal window — use --force to override).\n", dom.Name)
 				return nil
 			}
+			cliAuditOK(ctx, "ssl.renew", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("Renewed %s\n  cert:    %s\n  key:     %s\n  issued:  %s\n  expires: %s\n",
 				dom.Name, resp.CertPath, resp.KeyPath, resp.IssuedAt, resp.ExpiresAt)
 			return nil

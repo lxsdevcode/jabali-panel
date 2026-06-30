@@ -117,6 +117,7 @@ func newSharedResourceCreateCmd() *cobra.Command {
 			if err := sharedResourceRepoFromDB().Create(ctx, sr); err != nil {
 				return fmt.Errorf("create: %w", err)
 			}
+			cliAuditOK(ctx, "shared_resource.create", "shared_resource", sr.ID, nil)
 			fmt.Printf("created %s (%s) %s — converges on next reconcile pass\n", sr.ID, kind, email)
 			return nil
 		},
@@ -235,6 +236,7 @@ func newSharedResourceRevokeCmd() *cobra.Command {
 			if err := repo.ReplaceGrants(ctx, resourceID, next); err != nil {
 				return fmt.Errorf("replace grants: %w", err)
 			}
+			cliAuditOK(ctx, "shared_resource.revoke", "shared_resource", resourceID, nil)
 			fmt.Printf("revoked %s on %s\n", granteeID, resourceID)
 			return nil
 		},
@@ -271,6 +273,7 @@ func newSharedResourceRemoveCmd() *cobra.Command {
 			if err := repo.Delete(ctx, resourceID); err != nil {
 				return fmt.Errorf("delete: %w", err)
 			}
+			cliAuditOK(ctx, "shared_resource.remove", "shared_resource", resourceID, nil)
 			fmt.Printf("removed %s\n", resourceID)
 			return nil
 		},

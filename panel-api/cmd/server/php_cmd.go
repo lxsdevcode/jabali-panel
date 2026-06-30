@@ -96,6 +96,7 @@ func newPHPVersionInstallCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(resp)
 			}
+			cliAuditOK(ctx, "php.version_install", "php_version", resp.Version, nil)
 			fmt.Printf("PHP %s installed=%t fpm_running=%t\n", resp.Version, resp.Installed, resp.FPMRunning)
 			return nil
 		},
@@ -216,6 +217,7 @@ func newPHPExtApplyCmd(action, short string) *cobra.Command {
 			if jsonOutput {
 				return printJSON(resp)
 			}
+			cliAuditOK(ctx, "php.ext_apply", "php_extension", resp.Ext, nil)
 			fmt.Printf("php%s %s %s: installed=%t enabled=%t\n", resp.Version, action, resp.Ext, resp.Installed, resp.Enabled)
 			if resp.LastError != "" {
 				fmt.Printf("  warning: %s\n", resp.LastError)
@@ -374,6 +376,7 @@ func newPHPPoolSetCmd() *cobra.Command {
 			if created {
 				verb = "Created"
 			}
+			cliAuditOK(ctx, "php.pool_set", "php_pool", u.ID, &u.ID)
 			fmt.Printf("%s pool for %s with PHP version %s. Reconciler tick (≤60s) generates pool conf + reloads php-fpm.\n", verb, derefStr(u.Username), version)
 			return nil
 		},

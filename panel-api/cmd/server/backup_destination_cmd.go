@@ -168,6 +168,7 @@ func newBackupDestinationCreateCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(d)
 			}
+			cliAuditOK(ctx, "backup_destination.create", "backup_destination", d.ID, nil)
 			fmt.Printf("Created destination %s (%s, %s)\n", d.ID, d.Name, d.Kind)
 			return nil
 		},
@@ -346,6 +347,7 @@ func newBackupDestinationUpdateCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(d)
 			}
+			cliAuditOK(ctx, "backup_destination.update", "backup_destination", d.ID, nil)
 			fmt.Printf("Updated destination %s (%s)\n", d.ID, d.Name)
 			return nil
 		},
@@ -398,6 +400,7 @@ func newBackupDestinationDeleteCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]string{"deleted": d.ID})
 			}
+			cliAuditOK(ctx, "backup_destination.delete", "backup_destination", d.ID, nil)
 			fmt.Printf("Deleted destination %s (%s)\n", d.ID, d.Name)
 			return nil
 		},

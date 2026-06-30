@@ -116,6 +116,7 @@ no IP literals). Bare hostnames like 'invalid' are rejected.`,
 					"warnings": warnings,
 				})
 			}
+			cliAuditOK(ctx, "domain.create", "domain", d.ID, &d.UserID)
 			fmt.Printf("Domain created: %s (ID: %s)\n", d.Name, d.ID)
 			if d.EmailEnabled {
 				selector := ""
@@ -157,6 +158,7 @@ func newDomainEnableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "domain.enable", "domain", d.ID, &d.UserID)
 			fmt.Printf("Domain %s enabled\n", d.Name)
 			return nil
 		},
@@ -182,6 +184,7 @@ func newDomainDisableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "domain.disable", "domain", d.ID, &d.UserID)
 			fmt.Printf("Domain %s disabled\n", d.Name)
 			return nil
 		},
@@ -226,6 +229,7 @@ func newDomainDeleteCmd() *cobra.Command {
 			if _, err := deleteDomainDirect(ctx, d.ID); err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "domain.delete", "domain", d.ID, &d.UserID)
 			fmt.Printf("Domain %s deleted (reconciler will tear down nginx vhost within %s)\n",
 				d.Name, sharedCfg.Agent.ReconcilerInterval)
 			return nil

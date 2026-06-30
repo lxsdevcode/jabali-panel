@@ -132,6 +132,7 @@ func newPythonAppDeleteCmd() *cobra.Command {
 			if err := repo.Delete(ctx, app.ID); err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "python_app.delete", "python_app", app.ID, &app.UserID)
 			fmt.Printf("deleted %s (%s)\n", app.Name, app.ID)
 			return nil
 		},

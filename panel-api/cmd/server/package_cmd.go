@@ -130,6 +130,7 @@ func newPackageCreateCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(p)
 			}
+			cliAuditOK(ctx, "package.create", "package", p.ID, nil)
 			fmt.Printf("Created package %s (%s)\n", p.ID, p.Name)
 			return nil
 		},
@@ -258,6 +259,7 @@ func newPackageEditCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(p)
 			}
+			cliAuditOK(ctx, "package.update", "package", p.ID, nil)
 			fmt.Printf("Updated package %s (%s)\n", p.ID, p.Name)
 			return nil
 		},
@@ -314,6 +316,7 @@ func newPackageDeleteCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]string{"deleted": p.ID})
 			}
+			cliAuditOK(ctx, "package.delete", "package", p.ID, nil)
 			fmt.Printf("Deleted package %s (%s)\n", p.ID, p.Name)
 			return nil
 		},

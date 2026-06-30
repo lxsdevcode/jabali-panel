@@ -137,6 +137,7 @@ func newSSHKeyAddCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(key)
 			}
+			cliAuditOK(ctx, "sshkey.add", "ssh_key", key.ID, &u.ID)
 			fmt.Printf("Added SSH key %s (%s) for user %s\n  fingerprint: %s\n", key.ID, key.Name, derefStr(u.Username), fingerprint)
 			fmt.Println("Reconciler tick (≤60s) will write authorized_keys.")
 			return nil
@@ -186,6 +187,7 @@ func newSSHKeyDeleteCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]string{"deleted": k.ID})
 			}
+			cliAuditOK(ctx, "sshkey.delete", "ssh_key", k.ID, nil)
 			fmt.Printf("Deleted SSH key %s. Reconciler tick (≤60s) will rewrite authorized_keys.\n", k.ID)
 			return nil
 		},

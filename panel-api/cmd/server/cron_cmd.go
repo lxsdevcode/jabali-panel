@@ -134,6 +134,7 @@ func newCronAddCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(job)
 			}
+			cliAuditOK(ctx, "cron.create", "cron_job", job.ID, nil)
 			fmt.Printf("Created cron job %s (%s) for %s (applied).\n",
 				job.ID, job.Name, derefStr(u.Username))
 			return nil
@@ -211,6 +212,7 @@ func newCronUpdateCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(updated)
 			}
+			cliAuditOK(ctx, "cron.update", "cron_job", updated.ID, nil)
 			fmt.Printf("Updated cron job %s (applied).\n", updated.ID)
 			return nil
 		},
@@ -257,6 +259,7 @@ func newCronDeleteCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]string{"deleted": job.ID})
 			}
+			cliAuditOK(ctx, "cron.delete", "cron_job", job.ID, nil)
 			fmt.Printf("Deleted cron job %s.\n", job.ID)
 			return nil
 		},

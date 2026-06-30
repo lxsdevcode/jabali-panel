@@ -214,6 +214,7 @@ func newBackupScheduleCreateCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(s)
 			}
+			cliAuditOK(ctx, "backup_schedule.create", "backup_schedule", s.ID, nil)
 			fmt.Printf("Created schedule %s (%s, cron=%s, next=%s)\n",
 				s.ID, s.Kind, s.CronExpr, next.Format(time.RFC3339))
 			return nil
@@ -346,6 +347,7 @@ func newBackupScheduleUpdateCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(s)
 			}
+			cliAuditOK(ctx, "backup_schedule.update", "backup_schedule", s.ID, nil)
 			fmt.Printf("Updated schedule %s\n", s.ID)
 			return nil
 		},
@@ -402,6 +404,7 @@ func newBackupScheduleDeleteCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]string{"deleted": s.ID})
 			}
+			cliAuditOK(ctx, "backup_schedule.delete", "backup_schedule", s.ID, nil)
 			fmt.Printf("Deleted schedule %s\n", s.ID)
 			return nil
 		},

@@ -93,6 +93,7 @@ Idempotent — calling it twice is harmless.`,
 					"warnings":        warnings,
 				})
 			}
+			cliAuditOK(ctx, "domain.email_enable", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("Email enabled for %s\n", dom.Name)
 			fmt.Printf("DKIM selector:   %s\n", resp.DkimSelector)
 			fmt.Printf("DKIM public key: %s\n", resp.DkimPublicKey)
@@ -125,6 +126,7 @@ downstream receivers (ADR-0043).`,
 			if err := disableDomainEmailDirect(ctx, deps, dom); err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "domain.email_disable", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("Email disabled for %s\n", dom.Name)
 			return nil
 		},

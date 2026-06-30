@@ -295,6 +295,9 @@ func newLimitsPackageCmd() *cobra.Command {
 					fmt.Printf("ok   %s\n", *u.Username)
 				}
 			}
+			if !dryRun {
+				cliAuditOK(ctx, "limits.apply", "package", pkgID, nil)
+			}
 			fmt.Printf("\n%d users matched package %s (dry-run=%v)\n", matched, pkgID, dryRun)
 			return nil
 		},

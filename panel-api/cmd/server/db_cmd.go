@@ -125,6 +125,7 @@ func newDBCreateCmd() *cobra.Command {
 			if err != nil {
 				return mapDBopsErr(err)
 			}
+			cliAuditOK(ctx, "database.create", "database", row.ID, nil)
 			fmt.Fprintf(os.Stdout, "Created database %s (id=%s, engine=%s)\n", row.Name, row.ID, row.Engine)
 			return nil
 		},
@@ -151,6 +152,7 @@ func newDBDeleteCmd() *cobra.Command {
 			if err := dbops.Delete(ctx, dbopsDeps(), dbops.DeleteInput{ID: id}); err != nil {
 				return mapDBopsErr(err)
 			}
+			cliAuditOK(ctx, "database.delete", "database", id, nil)
 			fmt.Fprintf(os.Stdout, "Deleted database id=%s\n", id)
 			return nil
 		},

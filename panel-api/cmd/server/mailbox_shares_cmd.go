@@ -128,6 +128,7 @@ func newMailboxSharesAddCmd() *cobra.Command {
 			if err := mailboxShareRepoFromDB().Create(ctx, row); err != nil {
 				return fmt.Errorf("create share: %w", err)
 			}
+			cliAuditOK(ctx, "mailbox.share_add", "mailbox_share", row.ID, nil)
 			fmt.Fprintf(os.Stdout, "Share added id=%s rights=%s\n", row.ID, summariseRights(rights))
 			fmt.Fprintln(os.Stdout, "Reconciler converges via mailbox.share_set on next sweep (~60s).")
 			return nil
@@ -154,6 +155,7 @@ func newMailboxSharesRemoveCmd() *cobra.Command {
 			if err := mailboxShareRepoFromDB().Delete(ctx, id); err != nil {
 				return fmt.Errorf("delete share: %w", err)
 			}
+			cliAuditOK(ctx, "mailbox.share_remove", "mailbox_share", id, nil)
 			fmt.Fprintf(os.Stdout, "Share id=%s removed (reconciler converges within ~60s).\n", id)
 			return nil
 		},

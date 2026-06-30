@@ -89,6 +89,7 @@ func newPdnsDNSSECEnableCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(resp)
 			}
+			cliAuditOK(ctx, "dnssec.enable", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("DNSSEC enabled for %s (%d keys)\n", dom.Name, len(resp.Keys))
 			for _, k := range resp.Keys {
 				fmt.Printf("  %s tag=%d alg=%d active=%t\n", k.KeyType, k.KeyTag, k.Algorithm, k.Active)
@@ -133,6 +134,7 @@ func newPdnsDNSSECDisableCmd() *cobra.Command {
 			if jsonOutput {
 				return printJSON(map[string]any{"domain": dom.Name, "dnssec_enabled": false})
 			}
+			cliAuditOK(ctx, "dnssec.disable", "domain", dom.ID, &dom.UserID)
 			fmt.Printf("DNSSEC disabled for %s. Remove DS records at registrar to complete deactivation.\n", dom.Name)
 			return nil
 		},
