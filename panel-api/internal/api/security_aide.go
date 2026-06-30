@@ -44,4 +44,22 @@ func RegisterSecurityAideRoutes(rg *gin.RouterGroup, cli agent.AgentInterface) {
 		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	})
+
+	// Gitea #561: rebuild the AIDE baseline (aideinit -y -f). dry_run returns
+	// the plan only. Destructive — replaces the integrity baseline.
+	g.POST("/rebuild", func(c *gin.Context) {
+		var body struct {
+			DryRun bool `json:"dry_run"`
+		}
+		_ = c.ShouldBindJSON(&body)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 16*time.Minute)
+		defer cancel()
+		raw, err := cli.Call(ctx, "security.aide.rebuild", map[string]any{"dry_run": body.DryRun})
+		if err != nil {
+			status, ebody := translateAgentError(err)
+			c.JSON(status, ebody)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
 }

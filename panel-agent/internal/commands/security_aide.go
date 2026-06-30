@@ -315,7 +315,41 @@ func mwAideCheckHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 	return resp, nil
 }
 
+// mwAideRebuildHandler re-initialises the AIDE database from the current
+// filesystem state (aideinit -y -f), replacing the integrity baseline. With
+// dry_run it returns the plan without touching the DB. Gitea #561 — the GUI
+// rebuild action dispatches this; the CLI `jabali aide rebuild` still execs
+// aideinit directly on the host.
+func mwAideRebuildHandler(ctx context.Context, payload json.RawMessage) (any, error) {
+	var req struct {
+		DryRun bool `json:"dry_run"`
+	}
+	_ = json.Unmarshal(payload, &req)
+	if req.DryRun {
+		return map[string]any{"dry_run": true, "plan": "/usr/sbin/aideinit -y -f"}, nil
+	}
+	if _, err := os.Stat("/usr/sbin/aideinit"); err != nil {
+		return nil, mwInternal("aideinit not found (install aide-common)", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	out, err := osexec.CommandContext(ctx, "/usr/sbin/aideinit", "-y", "-f").CombinedOutput()
+	if err != nil {
+		tail := string(out)
+		if len(tail) > 500 {
+			tail = tail[len(tail)-500:]
+		}
+		return nil, mwInternal("aideinit failed: "+tail, err)
+	}
+	resp := map[string]any{"rebuilt": true}
+	if st, serr := os.Stat(aideDBPath); serr == nil {
+		resp["db_mtime"] = st.ModTime().UTC().Format(time.RFC3339)
+	}
+	return resp, nil
+}
+
 func init() {
 	Default.Register("security.aide.status", mwAideStatusHandler)
 	Default.Register("security.aide.check", mwAideCheckHandler)
+	Default.Register("security.aide.rebuild", mwAideRebuildHandler)
 }

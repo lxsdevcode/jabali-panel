@@ -48,3 +48,19 @@ export function useRunAideCheck() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["security", "aide"] }),
   });
 }
+
+// useRunAideRebuild rebuilds the AIDE baseline (aideinit). dryRun returns the
+// plan only. Gitea #561.
+export function useRunAideRebuild() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (dryRun: boolean) => {
+      const { data } = await apiClient.post<{ rebuilt?: boolean; dry_run?: boolean; plan?: string }>(
+        `${BASE}/rebuild`,
+        { dry_run: dryRun },
+      );
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["security", "aide"] }),
+  });
+}

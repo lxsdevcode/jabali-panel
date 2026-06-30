@@ -1,11 +1,12 @@
 // AdminSecurityAide — admin Security tab "AIDE" sub-tab (M42, ADR-0087).
 // Read-only FIM status + manual recheck trigger.
-import { Alert, Badge, Button, Card, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Badge, Button, Card, Popconfirm, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
 
 import {
   type AideSampleRow,
   useAideStatus,
   useRunAideCheck,
+  useRunAideRebuild,
 } from "../../../hooks/useSecurityAide";
 
 const CHANGE_COLOR: Record<AideSampleRow["change_type"], string> = {
@@ -27,6 +28,7 @@ function humanizeAge(seconds: number): string {
 export const AdminSecurityAide = () => {
   const { data, isLoading, refetch } = useAideStatus();
   const runCheck = useRunAideCheck();
+  const runRebuild = useRunAideRebuild();
 
   if (isLoading) {
     return (
@@ -73,6 +75,34 @@ export const AdminSecurityAide = () => {
           >
             Run check now
           </Button>
+          <Button
+            size="small"
+            loading={runRebuild.isPending}
+            onClick={() =>
+              runRebuild.mutate(true, {
+                onSuccess: (d) => message.info(`Dry run: would run ${d.plan ?? "aideinit -y -f"}`),
+                onError: () => message.error("Dry run failed — see agent logs"),
+              })
+            }
+          >
+            Rebuild (dry run)
+          </Button>
+          <Popconfirm
+            title="Rebuild the AIDE baseline?"
+            description="This replaces the integrity baseline with the current filesystem state (aideinit -y -f). Only do this after deliberate changes — any tampering present now becomes the new 'clean' baseline."
+            okText="Rebuild"
+            okButtonProps={{ danger: true }}
+            onConfirm={() =>
+              runRebuild.mutate(false, {
+                onSuccess: () => message.success("Baseline rebuilt"),
+                onError: () => message.error("Rebuild failed — see agent logs"),
+              })
+            }
+          >
+            <Button size="small" danger loading={runRebuild.isPending}>
+              Rebuild baseline
+            </Button>
+          </Popconfirm>
         </Space>
       }
     >
