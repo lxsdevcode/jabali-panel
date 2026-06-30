@@ -1851,6 +1851,47 @@ WHOIS lookup for a domain
 jabali domain whois <domain-name|domain-id>
 ```
 
+### `jabali impersonation`
+
+Manage admin act-as impersonation grants (list / create / end)
+
+```
+jabali impersonation
+```
+
+#### `jabali impersonation create`
+
+Create a 60-minute impersonation grant for an admin to act as a target user
+
+```
+jabali impersonation create --admin <admin> --target <user> [flags]
+```
+
+**Flags:**
+
+- `--admin` — admin who will act-as (email|username|id, required)
+- `--target` — target user to impersonate (email|username|id, required)
+
+#### `jabali impersonation end`
+
+End an active impersonation grant
+
+```
+jabali impersonation end <grant-id>
+```
+
+#### `jabali impersonation list`
+
+List active impersonation grants (all, or for one admin)
+
+```
+jabali impersonation list [flags]
+```
+
+**Flags:**
+
+- `--admin` — scope to one admin (email|username|id); default = all admins
+
 ### `jabali ip`
 
 Admin IP address pool (managed_ips): list / add / update / delete

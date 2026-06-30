@@ -22,6 +22,8 @@ type ImpersonationGrantRepository interface {
 	// End marks a grant ended (idempotent: a no-op if already ended).
 	End(ctx context.Context, id string, endedAt time.Time) error
 	ListActiveByAdmin(ctx context.Context, adminUserID string, now time.Time) ([]models.ImpersonationGrant, error)
+	// ListAllActive returns every active grant (all admins) — operator/CLI view.
+	ListAllActive(ctx context.Context, now time.Time) ([]models.ImpersonationGrant, error)
 	// ReapExpired hard-deletes grants whose expires_at is before `before`.
 	ReapExpired(ctx context.Context, before time.Time) (int64, error)
 }
@@ -64,6 +66,15 @@ func (r *impersonationGrantRepo) ListActiveByAdmin(ctx context.Context, adminUse
 	var out []models.ImpersonationGrant
 	err := r.db.WithContext(ctx).
 		Where("admin_user_id = ? AND ended_at IS NULL AND expires_at > ?", adminUserID, now).
+		Order("created_at DESC").
+		Find(&out).Error
+	return out, err
+}
+
+func (r *impersonationGrantRepo) ListAllActive(ctx context.Context, now time.Time) ([]models.ImpersonationGrant, error) {
+	var out []models.ImpersonationGrant
+	err := r.db.WithContext(ctx).
+		Where("ended_at IS NULL AND expires_at > ?", now).
 		Order("created_at DESC").
 		Find(&out).Error
 	return out, err
