@@ -147,7 +147,8 @@ func CRSPluginBefore() string {
 # Elementor saves post their payload under actions/data JSON blobs, so 942151
 # ("SQL function name", PL1/CRITICAL → +5 = anomaly threshold → bans alone)
 # still fires. The explicit attack-sqli;ARGS drop on the builder rules below is
-# what neutralizes the whole SQLi family on builder ARGS.
+# what neutralizes the SQLi family on builder ARGS (broad on elementor/post.php;
+# Elementor-action-gated on admin-ajax — see 9599210 below).
 SecAction "id:9599000,phase:1,nolog,pass,setvar:tx.wordpress-rule-exclusions-plugin_enabled=1"
 #
 # 933120 vs WordPress admin search: editing a custom post type issues
@@ -171,18 +172,28 @@ SecRule REQUEST_URI "@beginsWith /wp-admin/"     "id:9599100,phase:1,pass,nolog,
 # (surgical, not a path-allow). Replaces the rejected on_match
 # blanket-allow exemption (ADR-0147 revised).
 #
-# PLUS ctl:ruleRemoveTargetByTag=attack-sqli;ARGS (GH #594): drop the WHOLE
-# SQLi family's inspection of request ARGS on these three builder endpoints.
-# Builder JSON (actions/data blobs) is inherently full of SQL-ish tokens
-# (if(/char/concat/left(/…) that trip 942151 + 942150/180/200/260/… — adding
-# them by ID is endless whack-a-mole. Still surgical: only the attack-sqli
-# tag, only on ARGS, only on the 3 builder paths. Request BODY, headers,
-# cookies, and every non-SQLi family (XSS 941, RCE 932/933, LFI 930,
-# traversal) keep inspecting these paths. admin-ajax/post.php are auth+nonce
-# gated, so dropping ARGS SQLi there is an acceptable tradeoff.
+# PLUS the whole attack-sqli family on ARGS (GH #594): builder JSON
+# (actions/data blobs) is full of SQL-ish tokens (if(/char/concat/left(/…)
+# that trip 942151 + 942150/180/200/… — dropping them by ID is endless
+# whack-a-mole, so drop the attack-sqli TAG on ARGS instead. SCOPING matters:
+#  - /wp-json/elementor/ + /wp-admin/post.php are all-Elementor / cap+nonce
+#    editor paths — broad attack-sqli;ARGS drop is fine.
+#  - admin-ajax.php is NOT (it also serves UNAUTHENTICATED wp_ajax_nopriv_*
+#    handlers — jet_ajax_search, cx_search_posts, … — that route untrusted
+#    args into queries). A broad drop there removes SQLi-args coverage from a
+#    live unauthenticated surface. So on admin-ajax keep the narrow ById drops
+#    broad, and drop attack-sqli;ARGS ONLY when the action is Elementor's
+#    (chained phase:2 rule 9599210 — ARGS:action is parsed in phase 2;
+#    jabali-before loads before CRS, so the ctl disables the 942 ARGS target
+#    before those rules evaluate). elementor_ajax / elementor_save_builder both
+#    match ^elementor. Every other admin-ajax handler (incl. nopriv) keeps full
+#    SQLi-args inspection. Still surgical, ADR-0147-consistent: only attack-sqli,
+#    only ARGS; BODY/headers/cookies + every non-SQLi family stay active.
 SecRule REQUEST_URI "@rx ^/wp-json/elementor/"       "id:9599200,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370,ctl:ruleRemoveTargetByTag=attack-sqli;ARGS"
-SecRule REQUEST_URI "@rx ^/wp-admin/admin-ajax\.php" "id:9599201,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370,ctl:ruleRemoveTargetByTag=attack-sqli;ARGS"
 SecRule REQUEST_URI "@rx ^/wp-admin/post\.php"       "id:9599202,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370,ctl:ruleRemoveTargetByTag=attack-sqli;ARGS"
+SecRule REQUEST_URI "@rx ^/wp-admin/admin-ajax\.php" "id:9599201,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"
+SecRule REQUEST_FILENAME "@endsWith /wp-admin/admin-ajax.php" "id:9599210,phase:2,pass,nolog,chain"
+    SecRule ARGS:action "@rx ^elementor" "t:none,t:lowercase,ctl:ruleRemoveTargetByTag=attack-sqli;ARGS"
 `
 }
 

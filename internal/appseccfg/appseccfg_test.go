@@ -198,11 +198,14 @@ func TestCRSPluginBefore_WordPressBuilderExclusions(t *testing.T) {
 	// GH #594: the upstream WordPress CRS-exclusion plugin is activated, which
 	// covers admin-ajax/builder false positives (incl. 942151) comprehensively.
 	mustContain(t, out, "tx.wordpress-rule-exclusions-plugin_enabled=1", "WP exclusion plugin activated")
-	// GH #594: the whole attack-sqli family is dropped on builder ARGS so 942151
-	// (and 942150/180/200/…) can't ban owners on Elementor admin-ajax saves.
-	if c := strings.Count(out, `ctl:ruleRemoveTargetByTag=attack-sqli;ARGS"`); c != 3 {
-		t.Errorf("attack-sqli ARGS drop should be on all 3 builder rules, found %d", c)
-	}
+	// GH #594: SQLi-on-ARGS is dropped for Elementor saves so 942151 (+942150/
+	// 180/200/…) can't ban owners — broad on elementor/post.php, but on
+	// admin-ajax ONLY for action=^elementor (chained), so unauthenticated
+	// wp_ajax_nopriv_* handlers keep full SQLi-args inspection.
+	mustContain(t, out, `id:9599210,phase:2,pass,nolog,chain`, "admin-ajax SQLi drop is a chained phase-2 rule")
+	mustContain(t, out, `SecRule ARGS:action "@rx ^elementor"`, "chained on action=^elementor")
+	// admin-ajax phase-1 rule must NOT carry the broad tag drop (only narrow ById).
+	mustContain(t, out, `^/wp-admin/admin-ajax\.php" "id:9599201,phase:1,pass,nolog,ctl:ruleRemoveById=911100,ctl:ruleRemoveById=942550,ctl:ruleRemoveById=932370"`, "admin-ajax phase-1 keeps only narrow ById drops")
 	// Surgical, not blanket: no path-allow, no remediation override.
 	mustNotContain(t, out, `SetRemediation`, "before-plugin must not blanket-allow")
 }
