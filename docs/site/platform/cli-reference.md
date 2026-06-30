@@ -2171,6 +2171,95 @@ Show a domain's mail certificate state
 jabali mail-cert show <domain-name|domain-id>
 ```
 
+### `jabali mail-group`
+
+Manage mail groups (distribution lists + shared-resource groups) and members
+
+```
+jabali mail-group
+```
+
+#### `jabali mail-group add-member`
+
+Add one member to a mail group
+
+```
+jabali mail-group add-member <group-email|group-id> <member-email-or-id>
+```
+
+#### `jabali mail-group create`
+
+Create a mail group on a domain
+
+```
+jabali mail-group create <domain-name|domain-id> <local-part> [flags]
+```
+
+**Flags:**
+
+- `--description` — description
+- `--display-name` — display name (the From name)
+- `--kind` — group kind: resource | distribution (default `resource`)
+
+#### `jabali mail-group delete`
+
+Delete a mail group (strips the Stalwart principal first)
+
+```
+jabali mail-group delete <group-email|group-id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm deletion
+
+#### `jabali mail-group list`
+
+List mail groups (all, or scoped to one domain)
+
+```
+jabali mail-group list [domain-name|domain-id]
+```
+
+#### `jabali mail-group remove-member`
+
+Remove one member from a mail group
+
+```
+jabali mail-group remove-member <group-email|group-id> <member-email-or-id>
+```
+
+#### `jabali mail-group set-members`
+
+Replace the full member set of a mail group
+
+```
+jabali mail-group set-members <group-email|group-id> [member-email-or-id ...]
+```
+
+#### `jabali mail-group set-resources`
+
+Toggle a resource group's shared collections (mailbox/calendar/addressbook/files)
+
+```
+jabali mail-group set-resources <group-email|group-id> [flags]
+```
+
+**Flags:**
+
+- `--addressbook` — shared addressbook (true|false)
+- `--calendar` — shared calendar (true|false)
+- `--files` — shared files (true|false)
+- `--mailbox` — shared mailbox (true|false)
+
+#### `jabali mail-group show`
+
+Show a mail group and its members
+
+```
+jabali mail-group show <group-email|group-id>
+```
+
 ### `jabali mailbox`
 
 Manage mailboxes (M6 Email via Stalwart)
