@@ -1343,9 +1343,20 @@ test -x node_modules/.bin/tsc || {
 			if _, err := os.Stat(installSh); err != nil {
 				return nil
 			}
+			// Version-bump aware: install_bulwark writes the pinned version to
+			// /opt/jabali-webmail/VERSION. If the repo pins a newer Bulwark than
+			// what's installed, re-run the FULL install_bulwark (download + verify
+			// + swap) so a bump (GH #325) actually reaches existing hosts — the
+			// systemd/env sync alone never touches the tarball. Otherwise just
+			// re-sync the unit/env (idempotent).
 			if err := run("", "bash", "-c",
-				"source "+installSh+" && _install_bulwark_systemd"); err != nil {
-				fmt.Printf("  (_install_bulwark_systemd failed: %v — continuing)\n", err)
+				"set -e; source "+installSh+"; "+
+					"want=$(grep -m1 'local bulwark_version=' "+installSh+" | sed -E 's/.*\"([^\"]+)\".*/\\1/'); "+
+					"have=$(cat /opt/jabali-webmail/VERSION 2>/dev/null || true); "+
+					"if [ -n \"$want\" ] && [ \"$want\" != \"$have\" ]; then "+
+					"echo \"  bulwark: installed=[$have] pinned=[$want] — reinstalling tarball\"; install_bulwark; "+
+					"else _install_bulwark_systemd; fi"); err != nil {
+				fmt.Printf("  (bulwark sync/upgrade failed: %v — continuing)\n", err)
 			}
 			return nil
 		}},
