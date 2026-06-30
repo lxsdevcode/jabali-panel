@@ -1807,6 +1807,105 @@ Show live resource usage for one user
 jabali limits status <username>
 ```
 
+### `jabali mail`
+
+Admin mail queue + outbound throttle management
+
+```
+jabali mail
+```
+
+#### `jabali mail queue`
+
+Inspect / retry / delete queued mail
+
+```
+jabali mail queue
+```
+
+##### `jabali mail queue delete`
+
+Delete a queued message
+
+```
+jabali mail queue delete <id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm deletion
+
+##### `jabali mail queue list`
+
+List queued mail
+
+```
+jabali mail queue list
+```
+
+##### `jabali mail queue retry`
+
+Retry a queued message
+
+```
+jabali mail queue retry <id>
+```
+
+#### `jabali mail throttle`
+
+Outbound mail throttle policies
+
+```
+jabali mail throttle
+```
+
+##### `jabali mail throttle create`
+
+Create an outbound throttle policy
+
+```
+jabali mail throttle create [flags]
+```
+
+**Flags:**
+
+- `--disabled` — create disabled
+- `--max-per-day` — max messages/day (0 = unlimited) (default `0`)
+- `--max-per-hour` — max messages/hour (0 = unlimited) (default `0`)
+- `--scope` — user|domain|global (required)
+- `--scope-ref` — email (user) or FQDN (domain); omit for global
+
+##### `jabali mail throttle delete`
+
+Delete a throttle policy
+
+```
+jabali mail throttle delete <id>
+```
+
+##### `jabali mail throttle list`
+
+List outbound throttle policies
+
+```
+jabali mail throttle list
+```
+
+##### `jabali mail throttle update`
+
+Update a throttle policy's limits / enabled flag
+
+```
+jabali mail throttle update <id> [flags]
+```
+
+**Flags:**
+
+- `--disable` — disable the policy
+- `--enable` — enable the policy
+- `--max-per-day` — max messages/day (default `0`)
+- `--max-per-hour` — max messages/hour (default `0`)
+
 ### `jabali mailbox`
 
 Manage mailboxes (M6 Email via Stalwart)
