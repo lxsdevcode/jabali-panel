@@ -149,6 +149,7 @@ func newRootCmd() *cobra.Command {
 		newImpersonationCmd(),
 		newLogCmd(),
 		newDiskUsageCmd(),
+		newNotificationCmd(),
 		newIPManagerCmd(),
 		newServiceCmd(),
 		newMailAdminCmd(),

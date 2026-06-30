@@ -2850,6 +2850,58 @@ Run pending database migrations
 jabali migrate up
 ```
 
+### `jabali notification`
+
+Inspect notification channels and toggle event notifications
+
+```
+jabali notification
+```
+
+#### `jabali notification channels`
+
+Notification channels
+
+```
+jabali notification channels
+```
+
+##### `jabali notification channels list`
+
+List configured notification channels
+
+```
+jabali notification channels list
+```
+
+#### `jabali notification events`
+
+Per-event notification toggles
+
+```
+jabali notification events
+```
+
+##### `jabali notification events list`
+
+List notification event kinds and whether each is enabled
+
+```
+jabali notification events list
+```
+
+##### `jabali notification events set`
+
+Enable or disable notifications for an event kind
+
+```
+jabali notification events set <event-kind> --enabled <true|false> [flags]
+```
+
+**Flags:**
+
+- `--enabled` — true|false (required)
+
 ### `jabali nspawn`
 
 Manage SSH sandbox nspawn images (M13)
