@@ -2131,6 +2131,46 @@ jabali mail throttle update <id> [flags]
 - `--max-per-day` — max messages/day (default `0`)
 - `--max-per-hour` — max messages/hour (default `0`)
 
+### `jabali mail-cert`
+
+Manage a domain's mail TLS certificate (mail.<domain> SAN)
+
+```
+jabali mail-cert
+```
+
+#### `jabali mail-cert disable`
+
+Disable the mail certificate for a domain
+
+```
+jabali mail-cert disable <domain-name|domain-id>
+```
+
+#### `jabali mail-cert enable`
+
+Enable the mail certificate for a domain (issues on the next reconcile pass)
+
+```
+jabali mail-cert enable <domain-name|domain-id>
+```
+
+#### `jabali mail-cert reissue`
+
+Clear backoff and re-issue a domain's mail certificate
+
+```
+jabali mail-cert reissue <domain-name|domain-id>
+```
+
+#### `jabali mail-cert show`
+
+Show a domain's mail certificate state
+
+```
+jabali mail-cert show <domain-name|domain-id>
+```
+
 ### `jabali mailbox`
 
 Manage mailboxes (M6 Email via Stalwart)
@@ -2754,6 +2794,43 @@ jabali page-template set <key> [flags]
 **Flags:**
 
 - `--file` — path to the template content (required)
+
+### `jabali panel-cert`
+
+Manage the panel's own TLS certificates (hostname + mail)
+
+```
+jabali panel-cert
+```
+
+#### `jabali panel-cert issue`
+
+Request (re)issuance of a panel certificate on the next reconcile pass
+
+```
+jabali panel-cert issue [hostname|mail]
+```
+
+#### `jabali panel-cert status`
+
+Show both panel certificates (hostname + mail)
+
+```
+jabali panel-cert status
+```
+
+#### `jabali panel-cert toggle`
+
+Enable/disable Let's Encrypt (or staging) for a panel certificate
+
+```
+jabali panel-cert toggle [hostname|mail] [flags]
+```
+
+**Flags:**
+
+- `--le` — enable Let's Encrypt issuance (true|false)
+- `--staging` — use the LE staging environment (true|false)
 
 ### `jabali panel-primary`
 

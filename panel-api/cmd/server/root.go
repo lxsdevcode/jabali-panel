@@ -142,6 +142,8 @@ func newRootCmd() *cobra.Command {
 		newPhpDefenseCmd(),
 		newPageTemplateCmd(),
 		newActiveTasksCmd(),
+		newPanelCertCmd(),
+		newMailCertCmd(),
 		newIPManagerCmd(),
 		newServiceCmd(),
 		newMailAdminCmd(),
