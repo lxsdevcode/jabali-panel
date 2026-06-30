@@ -1561,6 +1561,61 @@ jabali domain prune-orphans [flags]
 
 - `--apply` — Actually delete orphans (default: dry-run)
 
+### `jabali ip`
+
+Admin IP address pool (managed_ips): list / add / update / delete
+
+```
+jabali ip
+```
+
+#### `jabali ip add`
+
+Add an IP to the managed pool
+
+```
+jabali ip add <address> [flags]
+```
+
+**Flags:**
+
+- `--label` — human label
+- `--user-selectable` — tenants may pick this IP
+
+#### `jabali ip delete`
+
+Delete an IP from the pool
+
+```
+jabali ip delete <id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm deletion
+
+#### `jabali ip list`
+
+List managed IP addresses
+
+```
+jabali ip list
+```
+
+#### `jabali ip update`
+
+Update an IP's label / user-selectable / default flag
+
+```
+jabali ip update <id> [flags]
+```
+
+**Flags:**
+
+- `--default` — promote to per-family default
+- `--label` — new label
+- `--user-selectable` — tenants may pick this IP
+
 ### `jabali limits`
 
 Per-user resource limits (cgroups v2 + POSIX quota + nginx)
