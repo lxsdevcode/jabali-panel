@@ -134,6 +134,7 @@ and cannot be recovered.`,
 					"password":    generatedPassword, // empty when caller supplied
 				})
 			}
+			cliAuditOK(ctx, "mailbox.create", "mailbox", mb.EmailCached, &dom.UserID)
 			fmt.Printf("Created %s (quota %s)\n", mb.EmailCached, fmtBytesHuman(mb.QuotaBytes))
 			if generatedPassword != "" {
 				fmt.Printf("Password: %s\n", generatedPassword)
@@ -176,6 +177,7 @@ func newMailboxDeleteCmd() *cobra.Command {
 			if err := deleteMailboxDirect(ctx, mailboxRepoFromDB(), callAgentMailbox, email); err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "mailbox.delete", "mailbox", email, nil)
 			fmt.Printf("Mailbox %s deleted\n", email)
 			return nil
 		},

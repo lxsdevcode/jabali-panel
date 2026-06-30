@@ -104,6 +104,7 @@ to rotate). Run domain email-enable first if needed.`,
 					"warnings":            warnings,
 				})
 			}
+			cliAuditOK(ctx, "domain.email_dkim_rotate", "domain", dom.Name, &dom.UserID)
 			fmt.Printf("DKIM rotated for %s\n", dom.Name)
 			if resp.OldDKIMPublicKey != "" {
 				fmt.Printf("Old DKIM TXT: %s\n", resp.OldDKIMPublicKey)

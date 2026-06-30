@@ -185,6 +185,7 @@ func newDBUserCreateCmd() *cobra.Command {
 			if err := repo.Create(ctx, du); err != nil {
 				return fmt.Errorf("db_user row insert: %w", err)
 			}
+			cliAuditOK(ctx, "db_user.create", "database_user", du.ID, &panelUser.ID)
 			fmt.Fprintf(os.Stdout, "Created db user %s (id=%s, engine=%s)\n", finalName, du.ID, engine)
 			if password == "" {
 				fmt.Fprintf(os.Stdout, "Generated password: %s\n", pw)
@@ -231,6 +232,7 @@ func newDBUserDeleteCmd() *cobra.Command {
 			if err := repo.Delete(ctx, du.ID); err != nil {
 				return fmt.Errorf("delete row: %w", err)
 			}
+			cliAuditOK(ctx, "db_user.delete", "database_user", du.ID, &du.UserID)
 			fmt.Fprintf(os.Stdout, "Deleted db user %s (engine=%s)\n", du.Username, du.Engine)
 			return nil
 		},

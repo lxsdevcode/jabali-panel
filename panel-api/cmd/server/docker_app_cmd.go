@@ -270,6 +270,7 @@ func newDockerAppInstallCmd() *cobra.Command {
 				return fmt.Errorf("agent install: %s", msg)
 			}
 			_ = repo.UpdateStatus(ctx, app.ID, models.DockerAppStatusRunning, nil)
+			cliAuditOK(ctx, "docker_app.install", "docker_app", app.ID, nil)
 			fmt.Printf("ok: installed %s (%s) status=running\n", name, app.ID)
 			return nil
 		},
@@ -434,6 +435,7 @@ func newDockerAppDeleteCmd() *cobra.Command {
 			if err := repo.Delete(ctx, app.ID); err != nil {
 				return err
 			}
+			cliAuditOK(ctx, "docker_app.delete", "docker_app", app.ID, nil)
 			fmt.Println("ok: deleted", app.Slug, "("+app.ID+")")
 			return nil
 		},
