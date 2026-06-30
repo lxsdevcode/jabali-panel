@@ -992,6 +992,14 @@ Manage user databases (mariadb / postgres)
 jabali db
 ```
 
+#### `jabali db backup`
+
+Create a backup of a database (returns the dump path)
+
+```
+jabali db backup <db-id|db-name>
+```
+
 #### `jabali db create`
 
 Create a database for a user
@@ -1019,6 +1027,19 @@ jabali db delete [flags]
 
 - `--id` — Database ID (ULID)
 
+#### `jabali db kill`
+
+Kill/terminate a database process
+
+```
+jabali db kill <process-id> [flags]
+```
+
+**Flags:**
+
+- `--engine` — mariadb|postgres (default `mariadb`)
+- `--force` — confirm the kill
+
 #### `jabali db list`
 
 List databases (filtered by user, or all)
@@ -1030,6 +1051,64 @@ jabali db list [flags]
 **Flags:**
 
 - `--user` — Filter by user (email or username)
+
+#### `jabali db maintenance`
+
+Run optimize/analyze (mariadb) or vacuum/analyze (postgres)
+
+```
+jabali db maintenance [flags]
+```
+
+**Flags:**
+
+- `--engine` — mariadb|postgres (default `mariadb`)
+- `--scope` — 'all' or a database name (default `all`)
+
+#### `jabali db maintenance-status`
+
+Show a maintenance job's status
+
+```
+jabali db maintenance-status <job-id>
+```
+
+#### `jabali db processes`
+
+List database processes/activity
+
+```
+jabali db processes [flags]
+```
+
+**Flags:**
+
+- `--engine` — mariadb|postgres (default `mariadb`)
+
+#### `jabali db restore`
+
+Restore a database from a .sql dump on the host
+
+```
+jabali db restore <db-id|db-name> [flags]
+```
+
+**Flags:**
+
+- `--file` — path to a .sql dump on the host (required)
+- `--force` — confirm the overwrite
+
+#### `jabali db root-password`
+
+Rotate the database root/superuser password (revealed once)
+
+```
+jabali db root-password [flags]
+```
+
+**Flags:**
+
+- `--engine` — mariadb|postgres (default `mariadb`)
 
 #### `jabali db user`
 

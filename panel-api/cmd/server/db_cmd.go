@@ -50,6 +50,7 @@ func newDBCmd() *cobra.Command {
 		newDBDeleteCmd(),
 		newDBUserCmd(),
 	)
+	registerDBOpsCmds(cmd)
 	return cmd
 }
 
