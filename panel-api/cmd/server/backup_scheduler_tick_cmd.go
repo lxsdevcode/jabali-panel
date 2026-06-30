@@ -74,11 +74,17 @@ inFlight map dedupe duplicate dispatches.`,
 				EgressPolicies: repository.NewUserEgressPolicyRepository(sharedDB),
 				EgressRequests: repository.NewUserEgressRequestRepository(sharedDB),
 				Agent:          sharedAgent,
-				SSOKey:         nil, // tick path only enqueues; sso key needed only for cred decrypt during dispatch
+				// TickOnce dispatches too, and dispatch unseals per-destination restic
+				// passwords — wire the same SSO key the production scheduler uses, else
+				// sealed-password destinations fail before the agent call (Gitea #538).
+				SSOKey:         ssoKeyForCLI(),
 				Log:            sharedLog,
 			})
 			if s == nil {
 				return fmt.Errorf("scheduler.New returned nil — required deps missing (check serve.go's Deps assembly)")
+			}
+			if ssoKeyForCLI() == nil {
+				fmt.Fprintln(cmd.OutOrStderr(), "warning: SSO key unavailable — dispatch of destinations with a sealed per-destination restic password will fail (set sso.key_path / run on the panel host)")
 			}
 			s.TickOnce(ctx)
 			fmt.Fprintln(cmd.OutOrStdout(), "scheduler tick: enqueue + dispatch passes complete")
