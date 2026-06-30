@@ -2048,6 +2048,52 @@ Show a user's live limit usage (disk/cpu/mem/io/tasks)
 jabali limits usage <username|user-id>
 ```
 
+### `jabali log`
+
+Inspect log types and mint/revoke log-stream access grants
+
+```
+jabali log
+```
+
+#### `jabali log access`
+
+Mint or revoke log-stream access grants
+
+```
+jabali log access
+```
+
+##### `jabali log access create`
+
+Mint a 15-minute log-stream access grant for a user
+
+```
+jabali log access create --user <user> --type <access|error|goaccess> [--domain <domain>] [flags]
+```
+
+**Flags:**
+
+- `--domain` — scope to one domain (optional)
+- `--type` — log type: access|error|goaccess (required)
+- `--user` — grant owner (email|username|id, required)
+
+##### `jabali log access revoke`
+
+Revoke a log-stream access grant
+
+```
+jabali log access revoke <stream-key>
+```
+
+#### `jabali log types`
+
+List the supported log types
+
+```
+jabali log types
+```
+
 ### `jabali mail`
 
 Admin mail queue + outbound throttle management
