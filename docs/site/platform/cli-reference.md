@@ -1105,6 +1105,34 @@ Show a maintenance job's status
 jabali db maintenance-status <job-id>
 ```
 
+#### `jabali db postgres`
+
+PostgreSQL lifecycle: status / uninstall
+
+```
+jabali db postgres
+```
+
+##### `jabali db postgres status`
+
+Show PostgreSQL installed/active/version
+
+```
+jabali db postgres status
+```
+
+##### `jabali db postgres uninstall`
+
+DESTROY PostgreSQL: purge packages + delete all data dirs
+
+```
+jabali db postgres uninstall [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm permanent destruction of all PostgreSQL data
+
 #### `jabali db processes`
 
 List database processes/activity
@@ -3369,6 +3397,14 @@ System information and services
 jabali system
 ```
 
+#### `jabali system diagnostic`
+
+Generate a redacted, encrypted diagnostic bundle for support handoff
+
+```
+jabali system diagnostic
+```
+
 #### `jabali system info`
 
 Show system info (hostname, uptime, CPU, memory, disk)
@@ -3376,6 +3412,63 @@ Show system info (hostname, uptime, CPU, memory, disk)
 ```
 jabali system info
 ```
+
+#### `jabali system process`
+
+List / kill host processes (admin)
+
+```
+jabali system process
+```
+
+##### `jabali system process kill`
+
+Kill a process (TERM, or KILL with --force)
+
+```
+jabali system process kill <pid> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm the kill (and use SIGKILL)
+
+##### `jabali system process list`
+
+List host processes
+
+```
+jabali system process list
+```
+
+#### `jabali system resolver`
+
+Show / set system DNS resolvers
+
+```
+jabali system resolver
+```
+
+##### `jabali system resolver get`
+
+Show current resolver source + addresses
+
+```
+jabali system resolver get
+```
+
+##### `jabali system resolver set`
+
+Set resolver addresses (validated; same rules as the UI)
+
+```
+jabali system resolver set [flags]
+```
+
+**Flags:**
+
+- `--addr` — resolver IP (repeatable, IPv4 or IPv6) (default `[]`)
+- `--search-domain` — optional search domain
 
 #### `jabali system restore`
 
