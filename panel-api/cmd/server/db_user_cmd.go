@@ -44,6 +44,7 @@ func newDBUserCmd() *cobra.Command {
 		newDBUserCreateCmd(),
 		newDBUserDeleteCmd(),
 		newDBUserGrantCmd(),
+		newDBUserRotatePasswordCmd(),
 	)
 	return cmd
 }
@@ -299,5 +300,6 @@ Mariadb-only in v1; postgres grants land via panel UI / admin REST.`,
 	cmd.Flags().StringVar(&dbName, "db-name", "", "Database name (with panel-prefix) — required")
 	cmd.Flags().StringVar(&level, "level", "", "Shortcut: 'rw' or 'ro' (alternative to --privileges)")
 	cmd.Flags().StringSliceVar(&privileges, "privileges", nil, "MariaDB privilege list (e.g. SELECT,INSERT,UPDATE)")
+	cmd.AddCommand(newDBUserGrantUpdateCmd(), newDBUserGrantRevokeCmd())
 	return cmd
 }

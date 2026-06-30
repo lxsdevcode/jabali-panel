@@ -739,6 +739,26 @@ jabali db user grant [flags]
 - `--level` — Shortcut: 'rw' or 'ro' (alternative to --privileges)
 - `--privileges` — MariaDB privilege list (e.g. SELECT,INSERT,UPDATE) (default `[]`)
 
+###### `jabali db user grant revoke`
+
+Revoke a single grant, keeping the database user
+
+```
+jabali db user grant revoke <grant-id>
+```
+
+###### `jabali db user grant update`
+
+Change a grant's level (rw|ro)
+
+```
+jabali db user grant update <grant-id> [flags]
+```
+
+**Flags:**
+
+- `--level` — new grant level: 'rw' or 'ro' (required)
+
 ##### `jabali db user list`
 
 List database users (filtered by panel user, or all)
@@ -750,6 +770,14 @@ jabali db user list [flags]
 **Flags:**
 
 - `--user` — Filter by panel user (email or username)
+
+##### `jabali db user rotate-password`
+
+Rotate a database user's password (revealed once)
+
+```
+jabali db user rotate-password <db-user-id>
+```
 
 ### `jabali docker`
 
