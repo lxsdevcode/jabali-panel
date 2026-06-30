@@ -13,8 +13,9 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { ReloadOutlined, PauseCircleOutlined, FileTextOutlined, DeleteOutlined } from "@icons";
+import { ReloadOutlined, PauseCircleOutlined, FileTextOutlined, DeleteOutlined, SettingOutlined } from "@icons";
 import { RowActions } from "../../../components/RowActions";
+import { PythonAppEnvDrawer } from "./PythonAppEnvDrawer";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -62,6 +63,7 @@ export function PythonAppsPage() {
   const [form] = Form.useForm<CreatePythonAppInput>();
   const [logsApp, setLogsApp] = useState<PythonApp | null>(null);
   const [logsText, setLogsText] = useState("");
+  const [envApp, setEnvApp] = useState<PythonApp | null>(null);
 
   const submit = async () => {
     const values = await form.validateFields();
@@ -149,6 +151,7 @@ export function PythonAppsPage() {
                 { key: "restart", label: "Restart", icon: <ReloadOutlined />, onClick: () => void doControl(r.id, "restart") },
                 { key: "stop", label: "Stop", icon: <PauseCircleOutlined />, onClick: () => void doControl(r.id, "stop") },
                 { key: "logs", label: "Logs", icon: <FileTextOutlined />, onClick: () => void openLogs(r) },
+                { key: "env", label: "Environment", icon: <SettingOutlined />, onClick: () => setEnvApp(r) },
                 {
                   key: "delete",
                   label: "Delete",
@@ -227,6 +230,8 @@ export function PythonAppsPage() {
           {logsText}
         </pre>
       </Modal>
+
+      <PythonAppEnvDrawer app={envApp} onClose={() => setEnvApp(null)} />
     </div>
   );
 }

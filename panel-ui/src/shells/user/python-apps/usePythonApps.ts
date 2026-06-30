@@ -86,3 +86,25 @@ export async function fetchPythonAppLogs(id: string): Promise<string> {
   );
   return data.logs ?? "";
 }
+
+export type PythonAppEnvVar = { key: string; value: string };
+
+// fetchPythonAppEnv reads the current env via GET /:id (returns {app, env}).
+export async function fetchPythonAppEnv(id: string): Promise<PythonAppEnvVar[]> {
+  const { data } = await apiClient.get<{ env?: PythonAppEnvVar[] }>(
+    `/python-apps/${id}`,
+  );
+  return (data.env ?? []).map((e) => ({ key: e.key, value: e.value }));
+}
+
+// useUpdatePythonAppEnv replaces the whole env set via the existing PUT
+// /python-apps/:id/env contract ({env: {KEY: VALUE}}).
+export function useUpdatePythonAppEnv() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { id: string; env: Record<string, string> }) => {
+      await apiClient.put(`/python-apps/${vars.id}/env`, { env: vars.env });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
