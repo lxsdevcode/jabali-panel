@@ -1963,6 +1963,26 @@ Manage Python apps (ADR-0131; admin-only)
 jabali python-app
 ```
 
+#### `jabali python-app create`
+
+Create a Python app (same validation + port/proxy allocation as the UI)
+
+```
+jabali python-app create [flags]
+```
+
+**Flags:**
+
+- `--app-root` — app root under the owner's home (required)
+- `--app-type` — wsgi|asgi (default `wsgi`)
+- `--base-uri` — mount path on the domain (default `/`)
+- `--domain` — domain name to mount on (resolved to its id)
+- `--domain-id` — domain id to mount on (or use --domain)
+- `--entrypoint` — module:callable, e.g. myapp.wsgi:application (required)
+- `--env` — KEY=VALUE (repeatable) (default `[]`)
+- `--name` — app name (required)
+- `--python-version` — Python version, e.g. 3.12 (required)
+
 #### `jabali python-app delete`
 
 Stop + remove an app (app files are kept)
@@ -1970,6 +1990,34 @@ Stop + remove an app (app files are kept)
 ```
 jabali python-app delete <app-id>
 ```
+
+#### `jabali python-app env`
+
+View or update a Python app's environment variables
+
+```
+jabali python-app env
+```
+
+##### `jabali python-app env get`
+
+List the app's environment variables (values are not masked — python_app_env has no secret flag)
+
+```
+jabali python-app env get <app-id>
+```
+
+##### `jabali python-app env set`
+
+Set env vars (merge by default; --replace swaps the whole set)
+
+```
+jabali python-app env set <app-id> <KEY=VALUE> [<KEY=VALUE>...] [flags]
+```
+
+**Flags:**
+
+- `--replace` — replace the entire env set instead of merging
 
 #### `jabali python-app list`
 

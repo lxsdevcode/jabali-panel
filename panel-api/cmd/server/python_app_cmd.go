@@ -29,6 +29,8 @@ func newPythonAppCmd() *cobra.Command {
 		newPythonAppControlCmd("restart", "Restart an app"),
 		newPythonAppLogsCmd(),
 		newPythonAppDeleteCmd(),
+		newPythonAppCreateCmd(),
+		newPythonAppEnvCmd(),
 	)
 	return cmd
 }
