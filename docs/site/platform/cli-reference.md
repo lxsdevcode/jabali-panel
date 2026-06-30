@@ -414,6 +414,14 @@ List backup destinations
 jabali backup destination list
 ```
 
+##### `jabali backup destination rotate-password`
+
+Rotate a backup destination's restic password (revealed once)
+
+```
+jabali backup destination rotate-password <id-or-name>
+```
+
 ##### `jabali backup destination test`
 
 Test connectivity (auto-inits restic repo if missing)
@@ -434,6 +442,8 @@ jabali backup destination update <id-or-name> [flags]
 
 - `--disable` — mark destination disabled
 - `--enable` — mark destination enabled
+- `--env` — rewrite credential env: KEY=VALUE (repeatable; s3/b2/azure/gcs/rest/sftp secrets) (default `[]`)
+- `--env-stdin` — read additional KEY=VALUE credential lines from stdin
 - `--name` — new name
 - `--url` — new restic repo URL (validated against existing kind)
 

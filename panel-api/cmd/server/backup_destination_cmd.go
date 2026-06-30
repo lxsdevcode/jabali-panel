@@ -38,6 +38,7 @@ func newBackupDestinationCmd() *cobra.Command {
 		newBackupDestinationGetCmd(),
 		newBackupDestinationCreateCmd(),
 		newBackupDestinationUpdateCmd(),
+		newBackupDestinationRotatePasswordCmd(),
 		newBackupDestinationDeleteCmd(),
 		newBackupDestinationTestCmd(),
 	)
@@ -186,18 +187,27 @@ func newBackupDestinationCreateCmd() *cobra.Command {
 
 func newBackupDestinationUpdateCmd() *cobra.Command {
 	var (
-		name    string
-		url     string
-		enable  bool
-		disable bool
+		name     string
+		url      string
+		enable   bool
+		disable  bool
+		envKV    []string
+		envStdin bool
 	)
 	cmd := &cobra.Command{
 		Use:     "update <id-or-name>",
 		Short:   "Update a backup destination",
 		Args:    cobra.ExactArgs(1),
-		PreRunE: requireDB,
+		// Credential rewrites (--env/--env-stdin) talk to the agent; everything
+		// else is a DB-only update. Require the agent only when needed.
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("env") || cmd.Flags().Changed("env-stdin") {
+				return requireDBAndAgent(cmd, args)
+			}
+			return requireDB(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
 			d, err := resolveBackupDestination(ctx, args[0])
 			if err != nil {
@@ -230,6 +240,27 @@ func newBackupDestinationUpdateCmd() *cobra.Command {
 				d.Enabled = false
 				changed = true
 			}
+			// Rewrite cloud/SFTP credentials (s3/b2/azure/gcs/rest secrets,
+			// or sftp key material) via the same agent path create uses.
+			if cmd.Flags().Changed("env") || cmd.Flags().Changed("env-stdin") {
+				env, err := collectEnv(envKV, envStdin)
+				if err != nil {
+					return err
+				}
+				if len(env) > 0 {
+					if _, err := sharedAgent.Call(ctx, "backup.dest.creds_write", map[string]any{
+						"dest_id": d.ID,
+						"env":     env,
+					}); err != nil {
+						return fmt.Errorf("write credentials: %w", err)
+					}
+					if d.CredentialsRef == nil {
+						ref := filepath.Join(credsDir, d.ID+".env")
+						d.CredentialsRef = &ref
+					}
+					changed = true
+				}
+			}
 			if !changed {
 				return fmt.Errorf("no changes specified")
 			}
@@ -247,6 +278,8 @@ func newBackupDestinationUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&url, "url", "", "new restic repo URL (validated against existing kind)")
 	cmd.Flags().BoolVar(&enable, "enable", false, "mark destination enabled")
 	cmd.Flags().BoolVar(&disable, "disable", false, "mark destination disabled")
+	cmd.Flags().StringArrayVar(&envKV, "env", nil, "rewrite credential env: KEY=VALUE (repeatable; s3/b2/azure/gcs/rest/sftp secrets)")
+	cmd.Flags().BoolVar(&envStdin, "env-stdin", false, "read additional KEY=VALUE credential lines from stdin")
 	cmd.MarkFlagsMutuallyExclusive("enable", "disable")
 	return cmd
 }
