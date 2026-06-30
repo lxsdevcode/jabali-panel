@@ -534,7 +534,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 
 	// Validate — reject obviously bad input so we don't persist garbage.
-	if err := validateServerSettings(current); err != nil {
+	if err := ValidateServerSettings(current); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_settings", "detail": err.Error()})
 		return
 	}
@@ -800,8 +800,10 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	c.JSON(http.StatusOK, current)
 }
 
-// validateServerSettings does lenient input validation matching the installer.
-func validateServerSettings(s *models.ServerSettings) error {
+// ValidateServerSettings does lenient input validation matching the installer.
+// Exported so the `jabali settings` CLI applies the same rules as the REST PATCH
+// (Gitea #539).
+func ValidateServerSettings(s *models.ServerSettings) error {
 	if s.Hostname != "" && !isValidHostname(s.Hostname) {
 		return fmt.Errorf("invalid hostname")
 	}

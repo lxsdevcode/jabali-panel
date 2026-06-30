@@ -1960,6 +1960,38 @@ Start the Jabali Panel HTTP(S) server
 jabali serve
 ```
 
+### `jabali settings`
+
+Inspect and patch server settings (headless equivalent of /admin/settings)
+
+```
+jabali settings
+```
+
+#### `jabali settings get`
+
+Print current server settings (JSON or key=value)
+
+```
+jabali settings get
+```
+
+#### `jabali settings keys`
+
+List the settable keys for `settings set`
+
+```
+jabali settings keys
+```
+
+#### `jabali settings set`
+
+Patch one or more server settings (same validation + side effects as the UI)
+
+```
+jabali settings set <key>=<value> [<key>=<value>...]
+```
+
 ### `jabali shared-resource`
 
 Manage shared mail resources — calendars, contacts, files (M52)
