@@ -374,7 +374,22 @@ chmod 0750 "$WR"`)
 					`  echo "  (recover from reflog if this was a surprise: git reflog, git reset --hard <sha>)"; `+
 					`fi`)
 			if err := asUser(repoDir, "git", "reset", "--hard", resetRef); err != nil {
-				return err
+				// A reset that dies with "unable to unlink ... Permission
+				// denied" means a root-owned tracked file is in the repo (a
+				// file written by a root-run command, or a manually-added
+				// docker-app under install/). The reset runs as the service
+				// user, so it can't replace those — and without this retry the
+				// update aborts and the host silently stays on OLD code (the
+				// GH #298 wp-cli self-heal, and every other fix, then never
+				// land). Self-heal: chown the whole working tree back to the
+				// service user and retry once.
+				fmt.Println("  git reset failed (likely root-owned files in the repo) — re-chowning the tree to " + serviceUser + " and retrying")
+				if cerr := run("", "chown", "-R", serviceUser+":"+serviceUser, repoDir); cerr != nil {
+					return fmt.Errorf("git reset --hard %s failed and chown repair failed: %w (original reset error: %v)", resetRef, cerr, err)
+				}
+				if err2 := asUser(repoDir, "git", "reset", "--hard", resetRef); err2 != nil {
+					return fmt.Errorf("git reset --hard %s failed even after re-chowning the repo to %s: %w", resetRef, serviceUser, err2)
+				}
 			}
 			post, err := gitHead()
 			if err != nil {
