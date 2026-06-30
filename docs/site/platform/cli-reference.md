@@ -207,6 +207,19 @@ List available app types and their parameter schemas (direct read — no DB)
 jabali app registry
 ```
 
+#### `jabali app scan`
+
+Scan a user's homedir for unregistered apps and register them
+
+```
+jabali app scan [flags]
+```
+
+**Flags:**
+
+- `--admin-email` — admin email for discovered installs (default: user's email)
+- `--user` — user (id or username) whose homedir to scan (required)
+
 ### `jabali apparmor`
 
 AppArmor profile management (M40) operator commands
