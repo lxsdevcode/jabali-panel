@@ -30,6 +30,7 @@ func newSystemCmd() *cobra.Command {
 		newSystemResolverCmd(),
 		newSystemDiagnosticCmd(),
 		newSystemProcessCmd(),
+		newSystemSSHKeysCmd(),
 	)
 	return cmd
 }

@@ -1546,6 +1546,14 @@ Manage hosted domains
 jabali domain
 ```
 
+#### `jabali domain browse`
+
+List a path under the domain's docroot (as the domain owner)
+
+```
+jabali domain browse <domain-name|domain-id> [relative-path]
+```
+
 #### `jabali domain catchall`
 
 Manage per-domain catch-all routing
@@ -1758,6 +1766,14 @@ Show a domain's full advanced-settings state (JSON)
 
 ```
 jabali domain show <domain-name|domain-id>
+```
+
+#### `jabali domain whois`
+
+WHOIS lookup for a domain
+
+```
+jabali domain whois <domain-name|domain-id>
 ```
 
 ### `jabali ip`
@@ -3498,6 +3514,35 @@ Show systemd service status
 
 ```
 jabali system services
+```
+
+#### `jabali system ssh-keys`
+
+System SSH keys for backup destinations (list/generate)
+
+```
+jabali system ssh-keys
+```
+
+##### `jabali system ssh-keys generate`
+
+Generate a system SSH keypair (for sftp backup destinations)
+
+```
+jabali system ssh-keys generate [flags]
+```
+
+**Flags:**
+
+- `--name` — key name (required)
+- `--type` — key type (ed25519|rsa) (default `ed25519`)
+
+##### `jabali system ssh-keys list`
+
+List system SSH keys
+
+```
+jabali system ssh-keys list
 ```
 
 ### `jabali ufw`
