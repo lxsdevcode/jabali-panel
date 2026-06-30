@@ -207,6 +207,14 @@ List installed apps (direct DB — M20-safe)
 jabali app list
 ```
 
+#### `jabali app magic-link`
+
+Mint a one-time magic-link login for an installed app (sensitive, ~60s)
+
+```
+jabali app magic-link <install-id>
+```
+
 #### `jabali app registry`
 
 List available app types and their parameter schemas (direct read — no DB)

@@ -37,6 +37,7 @@ func newAppCmd() *cobra.Command {
 		newAppGetCmd(),
 		newAppInstallCmd(),
 		newAppScanCmd(),
+		newAppMagicLinkCmd(),
 		newAppDeleteCmd(),
 		newAppE2ECmd(),
 	)

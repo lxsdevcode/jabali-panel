@@ -82,6 +82,21 @@ func ssoAgentCommandFor(appType string) (string, bool) {
 // Pre-rework this function took a *gin.Engine for the unauthenticated
 // validate endpoint mounted on the root. The validate endpoint is gone;
 // the second arg is gone with it.
+// SSOAgentCommandFor / ComposeInstallPath / ComposeSSOURL / SSOTTLSeconds are
+// exported for the `jabali app magic-link` CLI (#573) so it mints against the
+// SAME supported-app map, path composition, URL shape, and TTL as this endpoint
+// — no drift.
+func SSOAgentCommandFor(appType string) (string, bool) { return ssoAgentCommandFor(appType) }
+func ComposeInstallPath(docRoot, subdirectory string) string {
+	return composeInstallPath(docRoot, subdirectory)
+}
+func ComposeSSOURL(domainName, subdirectory, fileName string) string {
+	return composeSSOURL(domainName, subdirectory, fileName)
+}
+
+// SSOTTLSeconds is the magic-link lifetime in seconds (ADR-0040).
+const SSOTTLSeconds = ssoTTLSeconds
+
 func RegisterMagicLinkRoutes(v1 *gin.RouterGroup, cfg MagicLinkHandlerConfig) {
 	h := &magicLinkHandlers{cfg: cfg}
 	v1.POST("/applications/:id/magic-link", h.mint)
