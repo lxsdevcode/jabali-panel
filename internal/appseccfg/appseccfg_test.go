@@ -198,6 +198,11 @@ func TestCRSPluginBefore_WordPressBuilderExclusions(t *testing.T) {
 	// GH #594: the upstream WordPress CRS-exclusion plugin is activated, which
 	// covers admin-ajax/builder false positives (incl. 942151) comprehensively.
 	mustContain(t, out, "tx.wordpress-rule-exclusions-plugin_enabled=1", "WP exclusion plugin activated")
+	// GH #594: the whole attack-sqli family is dropped on builder ARGS so 942151
+	// (and 942150/180/200/…) can't ban owners on Elementor admin-ajax saves.
+	if c := strings.Count(out, `ctl:ruleRemoveTargetByTag=attack-sqli;ARGS"`); c != 3 {
+		t.Errorf("attack-sqli ARGS drop should be on all 3 builder rules, found %d", c)
+	}
 	// Surgical, not blanket: no path-allow, no remediation override.
 	mustNotContain(t, out, `SetRemediation`, "before-plugin must not blanket-allow")
 }
