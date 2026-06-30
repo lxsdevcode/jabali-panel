@@ -2626,6 +2626,22 @@ install_redis() {
 # still ON, reload, restart panel (it now authenticates as jabali_panel), THEN
 # lock default.
 install_redis_acl() {
+  # Fast-path convergence guard (#595): if every piece of ADR-0148 state is
+  # already in place, return WITHOUT restarting redis-server / jabali-panel.
+  # Lets provision_new_software call install_redis_acl on EVERY `jabali update`
+  # so existing (pre-ADR-0148) hosts self-heal — without flushing the WP cache
+  # or bouncing the panel on already-provisioned hosts.
+  if getent group jabali-redis-clients >/dev/null 2>&1 \
+     && [[ -f /etc/systemd/system/redis-server.service.d/20-jabali-redis-clients.conf ]] \
+     && grep -q '^JABALI_REDIS_PANEL_TOKEN=' "$ENV_FILE" 2>/dev/null \
+     && grep -q '^JABALI_WP_CACHE_HMAC_SECRET=' "$ENV_FILE" 2>/dev/null \
+     && [[ -f /etc/redis/users.acl ]] \
+     && grep -q '^user jabali_panel ' /etc/redis/users.acl 2>/dev/null \
+     && grep -q '^user default off' /etc/redis/users.acl 2>/dev/null \
+     && [[ -f /etc/redis/redis.conf.d/20-jabali-acl.conf ]]; then
+    return 0
+  fi
+
   _log "configuring Redis multi-tenant ACLs (#406 / ADR-0148)"
   local sock="/run/redis/redis.sock"
   local aclfile="/etc/redis/users.acl"
@@ -12096,6 +12112,16 @@ EOF
     install_aide
   fi
 
+  # Redis multi-tenant ACL provisioning (#595 / #406 / ADR-0148). install.sh-only
+  # provisioning meant existing servers never got the jabali-redis-clients group,
+  # users.acl, or the JABALI_REDIS_PANEL_TOKEN / JABALI_WP_CACHE_HMAC_SECRET env —
+  # so the per-app WP-cache toggle 503'd ("redis_unavailable" though Redis was up,
+  # CacheTokenSecret empty). Self-heal here on every `jabali update`. The function
+  # fast-returns when already converged, so steady-state cost is a few greps and
+  # NO redis/panel restart. Guarded on redis-server being installed.
+  if declare -f install_redis_acl >/dev/null 2>&1 && command -v redis-server >/dev/null 2>&1; then
+    install_redis_acl
+  fi
 
 }
 
