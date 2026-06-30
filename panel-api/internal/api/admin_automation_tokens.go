@@ -169,14 +169,4 @@ func (h *adminAutoTokensHandler) revoke(c *gin.Context) {
 // anything else so a typo doesn't slip in and silently fail
 // authorization checks. write:* is explicitly denied at mint time —
 // no write routes exist yet (per plans/automation-api-tokens.md).
-func isAllowedAutoScope(s string) bool {
-	switch s {
-	case "read:*",
-		"read:domains",
-		"read:users",
-		"read:applications",
-		"read:status":
-		return true
-	}
-	return false
-}
+func isAllowedAutoScope(s string) bool { return models.IsAllowedAutomationScope(s) }

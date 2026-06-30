@@ -134,6 +134,7 @@ func newRootCmd() *cobra.Command {
 		newDBCmd(),
 		newAuditCmd(),
 		newDockerAppCmd(),
+		newAutomationTokenCmd(),
 		newPythonAppCmd(),
 	)
 	rejectUnknownSubcommands(cmd)

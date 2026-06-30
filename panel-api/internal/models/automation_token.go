@@ -81,3 +81,24 @@ func (s AutomationScopes) Has(want string) bool {
 	}
 	return false
 }
+
+// AllowedAutomationScopes is the single source of truth for valid automation
+// token scopes, shared by the admin REST handler and the root CLI (Gitea #544)
+// so scope validation can't drift between the two surfaces.
+var AllowedAutomationScopes = []string{
+	"read:*",
+	"read:domains",
+	"read:users",
+	"read:applications",
+	"read:status",
+}
+
+// IsAllowedAutomationScope reports whether s is a recognised automation scope.
+func IsAllowedAutomationScope(s string) bool {
+	for _, a := range AllowedAutomationScopes {
+		if a == s {
+			return true
+		}
+	}
+	return false
+}

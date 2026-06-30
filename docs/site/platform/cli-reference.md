@@ -289,6 +289,42 @@ Recompute the hash chain and report tamper-evidence integrity
 jabali audit verify
 ```
 
+### `jabali automation-token`
+
+Manage Automation API tokens (headless provisioning)
+
+```
+jabali automation-token
+```
+
+#### `jabali automation-token list`
+
+List automation tokens (never reveals secrets)
+
+```
+jabali automation-token list
+```
+
+#### `jabali automation-token mint`
+
+Mint an automation token; reveals the secret once
+
+```
+jabali automation-token mint <name> [flags]
+```
+
+**Flags:**
+
+- `--scope` — grant a scope (repeatable), e.g. --scope read:status (default `[]`)
+
+#### `jabali automation-token revoke`
+
+Revoke an automation token
+
+```
+jabali automation-token revoke <id-or-name>
+```
+
 ### `jabali backup`
 
 Backup & restore subcommands (M30 — restic-backed; ADR-0075 / 0080)
