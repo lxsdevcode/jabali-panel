@@ -1748,6 +1748,19 @@ List domains (direct DB — M20-safe)
 jabali domain list
 ```
 
+#### `jabali domain mta-sts`
+
+Enable/disable MTA-STS for a mail domain (ADR-0109)
+
+```
+jabali domain mta-sts <domain-name|domain-id> [flags]
+```
+
+**Flags:**
+
+- `--disable` — disable MTA-STS
+- `--enable` — enable MTA-STS
+
 #### `jabali domain prune-orphans`
 
 List sites in nginx sites-enabled that have no panel DB row (and optionally delete them)
@@ -1760,6 +1773,23 @@ jabali domain prune-orphans [flags]
 
 - `--apply` — Actually delete orphans (default: dry-run)
 
+#### `jabali domain set`
+
+Set advanced domain settings (redirect / nginx directives / index / ssl mode / cache)
+
+```
+jabali domain set <domain-name|domain-id> [flags]
+```
+
+**Flags:**
+
+- `--cache` — on|off — nginx fastcgi page cache
+- `--index-priority` — directory index priority (e.g. html_first, php_first)
+- `--nginx-directives` — raw custom nginx directives for the server block
+- `--redirect-all-to` — redirect the whole domain to this URL ('' clears)
+- `--redirect-type` — permanent|temporary
+- `--ssl-mode` — le|self|none (custom = install a cert)
+
 #### `jabali domain show`
 
 Show a domain's full advanced-settings state (JSON)
@@ -1767,6 +1797,19 @@ Show a domain's full advanced-settings state (JSON)
 ```
 jabali domain show <domain-name|domain-id>
 ```
+
+#### `jabali domain skip-auto-san`
+
+Opt a domain in/out of the panel-cert auto-SAN (M50)
+
+```
+jabali domain skip-auto-san <domain-name|domain-id> [flags]
+```
+
+**Flags:**
+
+- `--disable` — include this domain in the panel cert SAN
+- `--enable` — exclude this domain from the panel cert SAN
 
 #### `jabali domain whois`
 

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -152,4 +153,152 @@ func newDomainIPACLDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// --- #558 domain set (scalar advanced settings) + #583 skip-auto-san / mta-sts ---
+// All are DB writes; the live panel-api reconciler ReconcileAll converges them
+// (nginx re-render/reload, SSL re-issue, mta-sts DNS publish) within ~60s — same
+// end-state as the GUI (feedback_cli_reconcile_apply).
+
+func newDomainSetCmd() *cobra.Command {
+	var (
+		redirectTo    string
+		redirectType  string
+		indexPriority string
+		nginxDirs     string
+		sslMode       string
+		cache         string
+	)
+	cmd := &cobra.Command{
+		Use:     "set <domain-name|domain-id>",
+		Short:   "Set advanced domain settings (redirect / nginx directives / index / ssl mode / cache)",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDB,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+			d, err := resolveDomainCLI(ctx, args[0])
+			if err != nil {
+				return err
+			}
+			changed := false
+			if cmd.Flags().Changed("redirect-all-to") {
+				v := strings.TrimSpace(redirectTo)
+				d.RedirectAllTo = &v
+				changed = true
+			}
+			if cmd.Flags().Changed("redirect-type") {
+				if redirectType != "permanent" && redirectType != "temporary" {
+					return fmt.Errorf("--redirect-type must be permanent|temporary")
+				}
+				d.RedirectAllType = &redirectType
+				changed = true
+			}
+			if cmd.Flags().Changed("index-priority") {
+				d.IndexPriority = indexPriority
+				changed = true
+			}
+			if cmd.Flags().Changed("nginx-directives") {
+				v := nginxDirs
+				d.NginxCustomDirectives = &v
+				changed = true
+			}
+			if cmd.Flags().Changed("ssl-mode") {
+				if sslMode == models.SSLModeCustom {
+					return fmt.Errorf("--ssl-mode=custom is set by installing a custom cert, not here")
+				}
+				if !models.ValidSSLMode(sslMode) {
+					return fmt.Errorf("--ssl-mode must be le|self|none")
+				}
+				d.SSLMode = sslMode
+				d.SSLEnabled = models.SSLEnabledForMode(sslMode)
+				changed = true
+			}
+			if cmd.Flags().Changed("cache") {
+				b, perr := parseBool(cache)
+				if perr != nil {
+					return perr
+				}
+				d.CacheEnabled = b
+				changed = true
+			}
+			if !changed {
+				return fmt.Errorf("no settings specified (--redirect-all-to/--redirect-type/--index-priority/--nginx-directives/--ssl-mode/--cache)")
+			}
+			if err := domainRepoFromDB().Update(ctx, d); err != nil {
+				return fmt.Errorf("update domain: %w", err)
+			}
+			cliAuditOK(ctx, "domain.settings_update", "domain", d.ID, &d.UserID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated %s. Converges on the next reconcile pass (≤60s): nginx re-render/reload%s.\n",
+				d.Name, map[bool]string{true: " + SSL re-issue", false: ""}[cmd.Flags().Changed("ssl-mode")])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&redirectTo, "redirect-all-to", "", "redirect the whole domain to this URL ('' clears)")
+	cmd.Flags().StringVar(&redirectType, "redirect-type", "", "permanent|temporary")
+	cmd.Flags().StringVar(&indexPriority, "index-priority", "", "directory index priority (e.g. html_first, php_first)")
+	cmd.Flags().StringVar(&nginxDirs, "nginx-directives", "", "raw custom nginx directives for the server block")
+	cmd.Flags().StringVar(&sslMode, "ssl-mode", "", "le|self|none (custom = install a cert)")
+	cmd.Flags().StringVar(&cache, "cache", "", "on|off — nginx fastcgi page cache")
+	return cmd
+}
+
+func newDomainSkipAutoSANCmd() *cobra.Command {
+	var enable, disable bool
+	cmd := &cobra.Command{
+		Use:     "skip-auto-san <domain-name|domain-id>",
+		Short:   "Opt a domain in/out of the panel-cert auto-SAN (M50)",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDB,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if enable == disable {
+				return fmt.Errorf("pass exactly one of --enable / --disable")
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+			d, err := resolveDomainCLI(ctx, args[0])
+			if err != nil {
+				return err
+			}
+			if err := domainRepoFromDB().UpdateSkipAutoSAN(ctx, d.ID, enable); err != nil {
+				return fmt.Errorf("update skip_auto_san: %w", err)
+			}
+			cliAuditOK(ctx, "domain.skip_auto_san", "domain", d.ID, &d.UserID)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s skip-auto-SAN=%v. Converges on the next reconcile pass.\n", d.Name, enable)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&enable, "enable", false, "exclude this domain from the panel cert SAN")
+	cmd.Flags().BoolVar(&disable, "disable", false, "include this domain in the panel cert SAN")
+	return cmd
+}
+
+func newDomainMTAStsCmd() *cobra.Command {
+	var enable, disable bool
+	cmd := &cobra.Command{
+		Use:     "mta-sts <domain-name|domain-id>",
+		Short:   "Enable/disable MTA-STS for a mail domain (ADR-0109)",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDB,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if enable == disable {
+				return fmt.Errorf("pass exactly one of --enable / --disable")
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+			d, err := resolveDomainCLI(ctx, args[0])
+			if err != nil {
+				return err
+			}
+			if _, err := domainRepoFromDB().UpdateMTASTSEnabled(ctx, d.ID, enable); err != nil {
+				return fmt.Errorf("update mta_sts_enabled: %w", err)
+			}
+			cliAuditOK(ctx, "domain.mta_sts", "domain", d.ID, &d.UserID)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s MTA-STS=%v. The reconciler publishes/removes the DNS + policy on the next pass.\n", d.Name, enable)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&enable, "enable", false, "enable MTA-STS")
+	cmd.Flags().BoolVar(&disable, "disable", false, "disable MTA-STS")
+	return cmd
 }
