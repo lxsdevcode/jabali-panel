@@ -4084,6 +4084,44 @@ jabali user password <email|username|user-id> [flags]
 - `--password` — explicit new password (omit to auto-generate)
 - `--password-stdin` — read new password from stdin (no prompt, no echo)
 
+### `jabali user-token`
+
+Manage a user's API tokens (mint / list / revoke)
+
+```
+jabali user-token
+```
+
+#### `jabali user-token list`
+
+List a user's API tokens (active + revoked)
+
+```
+jabali user-token list <user-email|username|id>
+```
+
+#### `jabali user-token mint`
+
+Mint a new API token for a user (secret shown once)
+
+```
+jabali user-token mint <user-email|username|id> --name <name> [--scope read:dns ...] [flags]
+```
+
+**Flags:**
+
+- `--expires-in` — token lifetime (e.g. 720h); 0 = no expiry; max 8760h (default `0s`)
+- `--name` — token name (required)
+- `--scope` — scope to grant (repeatable; empty = full owner access) (default `[]`)
+
+#### `jabali user-token revoke`
+
+Revoke a user's API token
+
+```
+jabali user-token revoke <token-id>
+```
+
 ### `jabali version`
 
 Print Jabali version, commit, and runtime info

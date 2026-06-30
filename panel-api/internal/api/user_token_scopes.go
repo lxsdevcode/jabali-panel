@@ -52,6 +52,13 @@ func init() {
 // update ONLY those DNS records via the DDNS shim.
 var recordScopeRe = regexp.MustCompile(`^record:[0-9A-Za-z]{26}$`)
 
+// ValidateUserScopes is the exported entry point for non-handler callers (the
+// `jabali user-token` CLI, #570) so they validate against the SAME closed scope
+// catalog as the REST mint endpoint — no drift. Returns (badScope, ok).
+func ValidateUserScopes(scopes models.UserAPIScopes) (string, bool) {
+	return validateUserScopes(scopes)
+}
+
 func validateUserScopes(scopes models.UserAPIScopes) (string, bool) {
 	for _, s := range scopes {
 		if strings.HasPrefix(s, "record:") {
