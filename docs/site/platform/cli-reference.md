@@ -440,11 +440,19 @@ jabali backup destination update <id-or-name> [flags]
 
 **Flags:**
 
+- `--clear-creds` — delete stored credential env for this destination
 - `--disable` — mark destination disabled
 - `--enable` — mark destination enabled
 - `--env` — rewrite credential env: KEY=VALUE (repeatable; s3/b2/azure/gcs/rest/sftp secrets) (default `[]`)
 - `--env-stdin` — read additional KEY=VALUE credential lines from stdin
 - `--name` — new name
+- `--sftp-auth` — sftp auth: 'key' or 'password'
+- `--sftp-host` — sftp host (sftp kind)
+- `--sftp-key-path` — absolute path to private key (auth=key)
+- `--sftp-password` — sftp password (auth=password; stored as SSHPASS)
+- `--sftp-path` — sftp remote path
+- `--sftp-port` — sftp port (default 22) (default `0`)
+- `--sftp-user` — sftp user
 - `--url` — new restic repo URL (validated against existing kind)
 
 #### `jabali backup retention`

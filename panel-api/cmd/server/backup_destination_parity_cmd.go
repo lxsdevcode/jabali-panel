@@ -15,10 +15,35 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 )
+
+// validateSFTPOpts mirrors the REST handler's validateSFTPInputs: host+user
+// and path are required; auth ∈ {key, password, ""}; key path must be absolute
+// when set. Operated on the model type so CLI overlays validate identically.
+func validateSFTPOpts(s *models.SFTPOptions) error {
+	if s.Host == "" || s.User == "" {
+		return errors.New("sftp host and user are required")
+	}
+	if s.Path == "" {
+		return errors.New("sftp path is required")
+	}
+	switch s.Auth {
+	case models.SFTPAuthKey:
+		if s.KeyPath != "" && !strings.HasPrefix(s.KeyPath, "/") {
+			return errors.New("sftp key-path must be an absolute path")
+		}
+	case models.SFTPAuthPassword, "":
+	default:
+		return errors.New("sftp auth must be 'key' or 'password'")
+	}
+	return nil
+}
 
 func newBackupDestinationRotatePasswordCmd() *cobra.Command {
 	return &cobra.Command{

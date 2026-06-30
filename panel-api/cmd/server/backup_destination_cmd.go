@@ -187,21 +187,31 @@ func newBackupDestinationCreateCmd() *cobra.Command {
 
 func newBackupDestinationUpdateCmd() *cobra.Command {
 	var (
-		name     string
-		url      string
-		enable   bool
-		disable  bool
-		envKV    []string
-		envStdin bool
+		name        string
+		url         string
+		enable      bool
+		disable     bool
+		envKV       []string
+		envStdin    bool
+		sftpHost    string
+		sftpUser    string
+		sftpPort    int
+		sftpPath    string
+		sftpAuth    string
+		sftpKeyPath string
+		sftpPass    string
+		clearCreds  bool
 	)
 	cmd := &cobra.Command{
 		Use:     "update <id-or-name>",
 		Short:   "Update a backup destination",
 		Args:    cobra.ExactArgs(1),
-		// Credential rewrites (--env/--env-stdin) talk to the agent; everything
-		// else is a DB-only update. Require the agent only when needed.
+		// Credential writes (--env/--env-stdin/--sftp-password/--clear-creds)
+		// talk to the agent; structured SFTP field edits and name/url/enable
+		// are DB-only. Require the agent only when a credential flag is set.
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("env") || cmd.Flags().Changed("env-stdin") {
+			if cmd.Flags().Changed("env") || cmd.Flags().Changed("env-stdin") ||
+				cmd.Flags().Changed("sftp-password") || cmd.Flags().Changed("clear-creds") {
 				return requireDBAndAgent(cmd, args)
 			}
 			return requireDB(cmd, args)
@@ -238,6 +248,72 @@ func newBackupDestinationUpdateCmd() *cobra.Command {
 			}
 			if disable {
 				d.Enabled = false
+				changed = true
+			}
+			// Structured SFTP field edits (host/user/port/path/auth/key-path),
+			// overlaid on the existing block so unspecified fields survive.
+			// Same validation + URL/extra_options compose as the REST handler.
+			sftpTouched := false
+			for _, f := range []string{"sftp-host", "sftp-user", "sftp-port", "sftp-path", "sftp-auth", "sftp-key-path", "sftp-password"} {
+				if cmd.Flags().Changed(f) {
+					sftpTouched = true
+					break
+				}
+			}
+			if sftpTouched {
+				if d.Kind != models.BackupDestinationKindSFTP {
+					return fmt.Errorf("--sftp-* flags only apply to sftp destinations (kind=%s)", d.Kind)
+				}
+				opts := d.ExtraOptionsTyped().SFTP
+				if opts == nil {
+					opts = &models.SFTPOptions{}
+				}
+				if cmd.Flags().Changed("sftp-host") {
+					opts.Host = sftpHost
+				}
+				if cmd.Flags().Changed("sftp-user") {
+					opts.User = sftpUser
+				}
+				if cmd.Flags().Changed("sftp-port") {
+					opts.Port = sftpPort
+				}
+				if cmd.Flags().Changed("sftp-path") {
+					opts.Path = sftpPath
+				}
+				if cmd.Flags().Changed("sftp-auth") {
+					opts.Auth = sftpAuth
+				}
+				if cmd.Flags().Changed("sftp-key-path") {
+					opts.KeyPath = sftpKeyPath
+				}
+				if err := validateSFTPOpts(opts); err != nil {
+					return err
+				}
+				d.URL = internalbackup.ComposeSFTPURL(internalbackup.SFTPInputs{Host: opts.Host, User: opts.User, Path: opts.Path})
+				raw, _ := json.Marshal(models.BackupDestinationExtraOptions{SFTP: opts})
+				d.ExtraOptions = raw
+				changed = true
+				if opts.Auth == models.SFTPAuthPassword && cmd.Flags().Changed("sftp-password") {
+					if _, err := sharedAgent.Call(ctx, "backup.dest.creds_write", map[string]any{
+						"dest_id": d.ID,
+						"env":     map[string]string{"SSHPASS": sftpPass},
+					}); err != nil {
+						return fmt.Errorf("write sftp password: %w", err)
+					}
+					if d.CredentialsRef == nil {
+						ref := filepath.Join(credsDir, d.ID+".env")
+						d.CredentialsRef = &ref
+					}
+				}
+			}
+			// Clear stored credential env (cloud secrets / sftp SSHPASS).
+			if clearCreds {
+				if d.CredentialsRef != nil {
+					if _, err := sharedAgent.Call(ctx, "backup.dest.creds_delete", map[string]any{"dest_id": d.ID}); err != nil {
+						return fmt.Errorf("clear credentials: %w", err)
+					}
+				}
+				d.CredentialsRef = nil
 				changed = true
 			}
 			// Rewrite cloud/SFTP credentials (s3/b2/azure/gcs/rest secrets,
@@ -280,6 +356,14 @@ func newBackupDestinationUpdateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&disable, "disable", false, "mark destination disabled")
 	cmd.Flags().StringArrayVar(&envKV, "env", nil, "rewrite credential env: KEY=VALUE (repeatable; s3/b2/azure/gcs/rest/sftp secrets)")
 	cmd.Flags().BoolVar(&envStdin, "env-stdin", false, "read additional KEY=VALUE credential lines from stdin")
+	cmd.Flags().StringVar(&sftpHost, "sftp-host", "", "sftp host (sftp kind)")
+	cmd.Flags().StringVar(&sftpUser, "sftp-user", "", "sftp user")
+	cmd.Flags().IntVar(&sftpPort, "sftp-port", 0, "sftp port (default 22)")
+	cmd.Flags().StringVar(&sftpPath, "sftp-path", "", "sftp remote path")
+	cmd.Flags().StringVar(&sftpAuth, "sftp-auth", "", "sftp auth: 'key' or 'password'")
+	cmd.Flags().StringVar(&sftpKeyPath, "sftp-key-path", "", "absolute path to private key (auth=key)")
+	cmd.Flags().StringVar(&sftpPass, "sftp-password", "", "sftp password (auth=password; stored as SSHPASS)")
+	cmd.Flags().BoolVar(&clearCreds, "clear-creds", false, "delete stored credential env for this destination")
 	cmd.MarkFlagsMutuallyExclusive("enable", "disable")
 	return cmd
 }
