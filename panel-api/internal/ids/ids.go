@@ -11,6 +11,7 @@ package ids
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"regexp"
 	"sync"
 	"time"
@@ -43,4 +44,16 @@ func NewULID() string {
 // IsValidULID reports whether s is a well-formed canonical ULID string.
 func IsValidULID(s string) bool {
 	return ulidRE.MatchString(s)
+}
+
+// NewSecret returns a 192-bit cryptographically-random, URL-safe secret string
+// for passwords/tokens. Unlike NewULID (an identifier with a predictable
+// timestamp prefix and limited entropy), this is suitable as secret material.
+// Panics only if the crypto/rand source fails, which is fatal anyway.
+func NewSecret() string {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		panic("ids: crypto/rand failed: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
 }

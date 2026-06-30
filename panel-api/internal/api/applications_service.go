@@ -172,12 +172,12 @@ func InstallApplication(ctx context.Context, deps ApplicationHandlerConfig, p In
 	if descriptor.RequiresDB {
 		adminPassword, _ = paramString(p.Params, "admin_password")
 		if adminPassword == "" {
-			adminPassword = ids.NewULID()
+			adminPassword = ids.NewSecret()
 		}
 		// DB password is ALWAYS its own generated secret, never the admin
 		// password (GH #226). The admin password (above) is only for the
 		// app's admin account; the DB credential is independent.
-		dbPassword := ids.NewULID()
+		dbPassword := ids.NewSecret()
 		chain, err = provisionDBChain(ctx, deps, p.UserID, osUser, descriptor.Name, domain.Name, p.Subdirectory, dbPassword)
 		if err != nil {
 			slog.ErrorContext(ctx, "applications create: provision db chain", "err", err)

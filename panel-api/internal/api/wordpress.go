@@ -251,7 +251,7 @@ func (h *wordPressHandler) create(c *gin.Context) {
 	// Generate admin password if not provided
 	adminPassword := req.AdminPassword
 	if adminPassword == "" {
-		adminPassword = ids.NewULID()
+		adminPassword = ids.NewSecret()
 	}
 
 	now := time.Now().UTC()
@@ -790,7 +790,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 	destDBUserID := ids.NewULID()
 	destDBUserSuffix := strings.ToLower(destDBUserID[len(destDBUserID)-6:])
 	destDBUsername := osUser + "_wp_" + destDBUserSuffix
-	plainPassword := ids.NewULID()
+	plainPassword := ids.NewSecret()
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		h.cfg.Databases.Delete(ctx, destDBID)
@@ -1284,7 +1284,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	}
 
 	// Generate new password for destination database user (can't decrypt stored hash)
-	plainPassword := ids.NewULID()
+	plainPassword := ids.NewSecret()
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to hash new password: %v", err), 1024)

@@ -44,7 +44,7 @@ func newDBUserRotatePasswordCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("find db user: %w", err)
 			}
-			plain := ids.NewULID()
+			plain := ids.NewSecret()
 			hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
 			if err != nil {
 				return fmt.Errorf("hash password: %w", err)

@@ -57,11 +57,11 @@ func provisionNotifyMailbox(ctx context.Context, deps app.Deps, log *slog.Logger
 		return email
 	}
 
-	// Strong random password — two ULIDs of entropy. Stored bcrypt-hashed (for
+	// Strong random password (crypto/rand). Stored bcrypt-hashed (for
 	// Stalwart auth) plus sealed with the SSO key (so the Email sender can
 	// recover the plaintext to authenticate). Same envelope mailbox creation
 	// uses (createMailboxDirect).
-	password := ids.NewULID() + ids.NewULID()
+	password := ids.NewSecret()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Warn("notify mailbox: hash failed", "err", err)

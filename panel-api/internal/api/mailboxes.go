@@ -276,7 +276,7 @@ func (h *mailboxHandler) create(c *gin.Context) {
 		// ULID as password — 26 chars of Crockford base32 is ~130 bits
 		// of entropy. Adequate for "reveal once, user copies to a
 		// client". No hidden dependency, no extra import.
-		password = ids.NewULID()
+		password = ids.NewSecret()
 		generatedPassword = password
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), mailboxBcryptCost)
@@ -472,7 +472,7 @@ func (h *mailboxHandler) rotatePassword(c *gin.Context) {
 	password := req.NewPassword
 	generated := ""
 	if password == "" {
-		password = ids.NewULID()
+		password = ids.NewSecret()
 		generated = password
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), mailboxBcryptCost)

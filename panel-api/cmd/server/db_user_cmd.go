@@ -151,7 +151,7 @@ func newDBUserCreateCmd() *cobra.Command {
 
 			pw := password
 			if pw == "" {
-				pw = ids.NewULID()
+				pw = ids.NewSecret()
 			}
 			hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 			if err != nil {

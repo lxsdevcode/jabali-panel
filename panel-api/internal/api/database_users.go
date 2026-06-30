@@ -458,7 +458,7 @@ func (h *databaseUserHandler) create(c *gin.Context) {
 		return
 	}
 
-	plainPassword := ids.NewULID()
+	plainPassword := ids.NewSecret()
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
@@ -880,7 +880,7 @@ func (h *databaseUserHandler) rotatePassword(c *gin.Context) {
 	}
 
 	// Generate new password
-	plainPassword := ids.NewULID()
+	plainPassword := ids.NewSecret()
 
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)

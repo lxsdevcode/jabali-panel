@@ -131,7 +131,7 @@ func createMailboxDirect(ctx context.Context, repo repository.MailboxRepository,
 
 	generated := ""
 	if password == "" {
-		password = ids.NewULID()
+		password = ids.NewSecret()
 		generated = password
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), cliMailboxBcryptCost)
@@ -267,7 +267,7 @@ func rotateMailboxPasswordDirect(ctx context.Context, repo repository.MailboxRep
 
 	generated := ""
 	if newPassword == "" {
-		newPassword = ids.NewULID()
+		newPassword = ids.NewSecret()
 		generated = newPassword
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), cliMailboxBcryptCost)
