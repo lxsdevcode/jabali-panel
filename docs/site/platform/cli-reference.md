@@ -96,6 +96,14 @@ AIDE file integrity monitor (M42) operator commands
 jabali aide
 ```
 
+#### `jabali aide check`
+
+Trigger an on-demand AIDE integrity check
+
+```
+jabali aide check
+```
+
 #### `jabali aide rebuild`
 
 Re-baseline the AIDE database after a deliberate change

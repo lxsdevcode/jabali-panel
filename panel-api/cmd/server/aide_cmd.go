@@ -15,11 +15,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -72,6 +74,7 @@ func newAideCmd() *cobra.Command {
 		Short: "AIDE file integrity monitor (M42) operator commands",
 	}
 	cmd.AddCommand(newAideStatusCmd())
+	cmd.AddCommand(newAideCheckCmd())
 	cmd.AddCommand(newAideRebuildCmd())
 	return cmd
 }
@@ -81,19 +84,57 @@ func newAideStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Print AIDE DB age + last check summary",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := os.Stat("/var/lib/aide/aide.db")
-			if err != nil {
+			st, statErr := os.Stat("/var/lib/aide/aide.db")
+			reportExists := false
+			if _, rerr := os.Stat("/var/log/aide/aide.report.log"); rerr == nil {
+				reportExists = true
+			}
+			if jsonOutput {
+				out := map[string]any{
+					"db_present":     statErr == nil,
+					"db_path":        "/var/lib/aide/aide.db",
+					"report_present": reportExists,
+				}
+				if statErr == nil {
+					out["db_mtime"] = st.ModTime().UTC().Format(time.RFC3339)
+				}
+				return printJSON(out)
+			}
+			if statErr != nil {
 				fmt.Println("aide: DB missing — run 'jabali aide rebuild --full'")
 				return nil
 			}
 			fmt.Printf("aide: DB at %s (mtime %s)\n", "/var/lib/aide/aide.db", st.ModTime().Format("2006-01-02 15:04 UTC"))
-			if _, err := os.Stat("/var/log/aide/aide.report.log"); err == nil {
+			if reportExists {
 				out, err := exec.Command("tail", "-30", "/var/log/aide/aide.report.log").Output()
 				if err == nil {
 					fmt.Println("---- last report (tail 30) ----")
 					fmt.Print(string(out))
 				}
 			}
+			return nil
+		},
+	}
+}
+
+// newAideCheckCmd triggers an on-demand AIDE check via the agent (same verb as
+// the GUI). The agent reports whether the check started, was already running,
+// or failed validation; the CLI surfaces that and exits non-zero on error.
+func newAideCheckCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "check",
+		Short:   "Trigger an on-demand AIDE integrity check",
+		Args:    cobra.NoArgs,
+		PreRunE: requireDBAndAgent,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+			defer cancel()
+			raw, err := sharedAgent.Call(ctx, "security.aide.check", map[string]any{})
+			if err != nil {
+				return fmt.Errorf("aide check: %w", err)
+			}
+			os.Stdout.Write(raw)
+			os.Stdout.Write([]byte{'\n'})
 			return nil
 		},
 	}
