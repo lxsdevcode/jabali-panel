@@ -1252,6 +1252,7 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		"cache_enabled": domain.CacheEnabled,
 		// Gitea #420: scope the page cache to the WP install path ("/" = whole domain).
 		"cache_path": domain.CachePath,
+		"cache_ttl_seconds": domain.CacheTTLSeconds,
 	}
 
 	// M36 per-domain IP ACLs. Fetch + thread to agent so nginx renders

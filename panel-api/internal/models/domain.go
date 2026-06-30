@@ -352,6 +352,9 @@ type Domain struct {
 	// CachePath (migration 000191, Gitea #420) scopes the page cache to the WP
 	// install path prefix; "/" = whole domain (default).
 	CachePath string `gorm:"column:cache_path;type:varchar(255);not null;default:'/'" json:"cache_path"`
+	// CacheTTLSeconds (migration 000204, Gitea #596) is the per-domain page-cache
+	// validity in seconds. Default 600; the agent clamps to [10, 86400].
+	CacheTTLSeconds int `gorm:"column:cache_ttl_seconds;type:int;not null;default:600" json:"cache_ttl_seconds"`
 
 	// MTA-STS per-domain opt-in (migration 000141, ADR-0109). When
 	// flipped on, the reconciler ensures:

@@ -41,10 +41,13 @@ type cacheResponse struct {
 	DomainID   string `json:"domain_id"`
 	DomainName string `json:"domain_name"`
 	Enabled    bool   `json:"enabled"`
+	TTLSeconds int    `json:"ttl_seconds"`
 }
 
 type cacheUpdateRequest struct {
 	Enabled bool `json:"enabled"`
+	// TTLSeconds (Gitea #596) optional; nil = leave the per-domain TTL unchanged.
+	TTLSeconds *int `json:"ttl_seconds,omitempty"`
 }
 
 // loadAndAuth returns the domain after owner-or-admin authz; writes the
@@ -78,7 +81,7 @@ func (h *domainCacheHandler) get(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, cacheResponse{
-		DomainID: dom.ID, DomainName: dom.Name, Enabled: dom.CacheEnabled,
+		DomainID: dom.ID, DomainName: dom.Name, Enabled: dom.CacheEnabled, TTLSeconds: dom.CacheTTLSeconds,
 	})
 }
 
@@ -102,11 +105,28 @@ func (h *domainCacheHandler) update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update_failed", "details": err.Error()})
 		return
 	}
+	ttl := dom.CacheTTLSeconds
+	if req.TTLSeconds != nil {
+		// Mirror the agent clamp ([10, 86400]) so the API rejects nothing but
+		// stores a sane value; the agent re-clamps defensively at render time.
+		ttl = *req.TTLSeconds
+		if ttl <= 0 {
+			ttl = 600
+		} else if ttl < 10 {
+			ttl = 10
+		} else if ttl > 86400 {
+			ttl = 86400
+		}
+		if err := h.cfg.Domains.UpdateCacheTTL(ctx, dom.ID, ttl); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "update_failed", "details": err.Error()})
+			return
+		}
+	}
 	if h.cfg.Reconciler != nil {
 		h.cfg.Reconciler.Schedule(dom.ID)
 	}
 	c.JSON(http.StatusOK, cacheResponse{
-		DomainID: dom.ID, DomainName: dom.Name, Enabled: req.Enabled,
+		DomainID: dom.ID, DomainName: dom.Name, Enabled: req.Enabled, TTLSeconds: ttl,
 	})
 }
 

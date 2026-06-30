@@ -176,6 +176,7 @@ func (m *mockDomainRepo) UpdateCacheEnabled(ctx context.Context, id string, enab
 }
 
 func (m *mockDomainRepo) UpdateCachePath(_ context.Context, _, _ string) error { return nil }
+func (m *mockDomainRepo) UpdateCacheTTL(_ context.Context, _ string, _ int) error { return nil }
 
 func (m *mockDomainRepo) UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error {
 	return nil

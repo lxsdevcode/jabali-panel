@@ -38,6 +38,9 @@ type domainCreateParams struct {
 	// opt-in. false ⇒ vhost byte-identical to the pre-0108 shape.
 	CacheEnabled bool   `json:"cache_enabled"`
 	CachePath    string `json:"cache_path,omitempty"`
+	// CacheTTLSeconds (Gitea #596) — per-domain page-cache validity. 0 = use
+	// the default. Drives fastcgi_cache_valid; background_update keeps it fresh.
+	CacheTTLSeconds int `json:"cache_ttl_seconds,omitempty"`
 	SSLCertPath  string `json:"ssl_cert_path"`
 	SSLKeyPath   string `json:"ssl_key_path"`
 	// PHP INI overrides: omitted if not set on the domain.
@@ -257,6 +260,10 @@ server {
         fastcgi_no_cache $jabali_skip;
         fastcgi_cache_use_stale error timeout updating http_500 http_503;
         fastcgi_cache_lock on;
+        # Gitea #596: serve the stale copy instantly (~100ms) on expiry and
+        # refresh in the background, instead of blocking the visitor on the
+        # full synchronous PHP regen. Pairs with use_stale ... updating above.
+        fastcgi_cache_background_update on;
         add_header X-Jabali-Cache $upstream_cache_status always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are
@@ -296,6 +303,10 @@ server {
         fastcgi_no_cache $jabali_skip;
         fastcgi_cache_use_stale error timeout updating http_500 http_503;
         fastcgi_cache_lock on;
+        # Gitea #596: serve the stale copy instantly (~100ms) on expiry and
+        # refresh in the background, instead of blocking the visitor on the
+        # full synchronous PHP regen. Pairs with use_stale ... updating above.
+        fastcgi_cache_background_update on;
         add_header X-Jabali-Cache $upstream_cache_status always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are
@@ -475,6 +486,22 @@ var cachePathSegmentRE = regexp.MustCompile(`^/[a-z0-9][a-z0-9_-]{0,63}$`)
 // regex `^<path>(/|$)`, so anything that is not "/" or a single safe segment
 // falls back to "/" (whole domain, no scoping) and can never inject nginx
 // directives or break the regex — regardless of what the panel sent.
+// clampCacheTTL bounds the per-domain page-cache validity (Gitea #596). 0 (or
+// unset) → the 600s default; otherwise clamped to [10s, 24h] so a bad panel
+// value can never render a degenerate fastcgi_cache_valid.
+func clampCacheTTL(s int) int {
+	switch {
+	case s <= 0:
+		return 600
+	case s < 10:
+		return 10
+	case s > 86400:
+		return 86400
+	default:
+		return s
+	}
+}
+
 func sanitizeCachePath(p string) string {
 	if p != "/" && !cachePathSegmentRE.MatchString(p) {
 		return "/"
@@ -482,8 +509,9 @@ func sanitizeCachePath(p string) string {
 	return p
 }
 
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string) (string, error) {
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cacheTTLSeconds int) (string, error) {
 	cachePath = sanitizeCachePath(cachePath)
+	cacheTTLSeconds = clampCacheTTL(cacheTTLSeconds)
 	// SSL cert may be referenced by the DB (ssl_cert_path set) but MISSING
 	// on disk — most commonly after a reinstall wiped /etc/letsencrypt while
 	// the panel DB kept the cert row. Emitting the 443 block with
@@ -538,8 +566,8 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		CacheEnabled:               cacheEnabled,
 		CachePath:                  cachePath,
 		CacheKeyZone:               "jabali_fcgi",
-		CacheTTL:                   "60s",
-		CacheTTLSeconds:            60,
+		CacheTTL:                   fmt.Sprintf("%ds", cacheTTLSeconds),
+		CacheTTLSeconds:            cacheTTLSeconds,
 		CacheClientMaxAge:          300,
 		// RootOverridden tracks whether ANY user-controlled directive
 		// block declares `location /`. Both raw `customDirectives`
@@ -743,7 +771,7 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 	dirPrivacyDirectives := buildDirectoryPrivacyDirectives(p.DirectoryPrivacyRules)
-	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath)
+	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CacheTTLSeconds)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,

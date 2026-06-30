@@ -111,6 +111,7 @@ type DomainRepository interface {
 	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
 	// UpdateCachePath writes domains.cache_path (Gitea #420).
 	UpdateCachePath(ctx context.Context, id, path string) error
+	UpdateCacheTTL(ctx context.Context, id string, seconds int) error
 	// UpdateSkipAutoSAN writes domains.skip_auto_san (M50 SAN opt-out).
 	// Dedicated method per [[feedback_domain_update_allowlist_silent_drop]].
 	UpdateSkipAutoSAN(ctx context.Context, id string, enabled bool) error
@@ -656,6 +657,21 @@ func (r *domainRepo) UpdateCacheEnabled(ctx context.Context, id string, enabled 
 func (r *domainRepo) UpdateCachePath(ctx context.Context, id, path string) error {
 	return r.db.WithContext(ctx).Model(&models.Domain{}).
 		Where("id = ?", id).Update("cache_path", path).Error
+}
+
+// UpdateCacheTTL writes domains.cache_ttl_seconds (Gitea #596). Dedicated
+// method (no Select allowlist) per the domain.Update-allowlist lesson.
+func (r *domainRepo) UpdateCacheTTL(ctx context.Context, id string, seconds int) error {
+	res := r.db.WithContext(ctx).Model(&models.Domain{}).
+		Where("id = ?", id).
+		Update("cache_ttl_seconds", seconds)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // UpdateSkipAutoSAN writes domains.skip_auto_san — tenant opt-out of
