@@ -63,6 +63,7 @@ func newDockerAppCmd() *cobra.Command {
 		newDockerAppBackupCreateCmd(),
 		newDockerAppRestoreCmd(),
 		newDockerAppMaintenanceCmd(),
+		newDockerAppEditCmd(),
 		newDockerAppPatchCmd(),
 	)
 	return cmd

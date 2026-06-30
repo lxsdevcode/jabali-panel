@@ -971,178 +971,231 @@ func (h *dockerAppHandler) update(c *gin.Context) {
 		return
 	}
 
-	// Domain + ports changes require a compose re-render. Catch them
-	// here so the operator's Edit drawer also handles the wire-
-	// changing knobs, not just limits.
-	needRedispatch := req.Domain != nil || len(req.Ports) > 0
-	if needRedispatch {
-		if app.Status == models.DockerAppStatusRunning {
-			c.JSON(http.StatusConflict, gin.H{"error": "container_running", "detail": "stop the container before editing ports or domain"})
-			return
+	// Domain + ports changes require a compose re-render — the same tenant-aware
+	// redispatch the CLI uses (#546). editDomainPorts holds the SINGLE
+	// implementation so the security-critical sandbox re-render is never
+	// duplicated.
+	if req.Domain != nil || len(req.Ports) > 0 {
+		uid, isAdmin := "", false
+		if claims := ginctx.Claims(c); claims != nil {
+			uid, isAdmin = claims.UserID, claims.IsAdmin
 		}
-		if h.cfg.Catalog == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "catalog_unavailable"})
-			return
-		}
-		entry, ok := h.cfg.Catalog.Get(app.Slug)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "catalog_entry_missing", "detail": "slug " + app.Slug + " no longer in /usr/local/share/jabali/docker-apps/"})
-			return
-		}
-
-		// --- ports ---
-		var runtimePorts map[string]dockerapp.RuntimePort
-		if len(req.Ports) > 0 {
-			prior, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
-			for _, p := range prior {
-				_ = h.cfg.Repo.DeletePort(ctx, p.ID)
-			}
-			resolved, runtime, perr := h.resolvePorts(ctx, entry, req.Ports, app.ID)
-			if perr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "port_resolution_failed", "detail": perr.Error()})
-				return
-			}
-			for _, row := range resolved {
-				if err := h.cfg.Repo.CreatePort(ctx, row); err != nil {
-					c.JSON(http.StatusConflict, gin.H{"error": "port_persist_failed", "detail": err.Error()})
-					return
+		if e := h.editDomainPorts(ctx, app, req.Domain, req.Ports, uid, isAdmin); e != nil {
+			if de, ok := e.(*dockerEditError); ok {
+				resp := gin.H{"error": de.Code}
+				if de.Detail != "" {
+					resp["detail"] = de.Detail
 				}
+				c.JSON(de.Status, resp)
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "detail": e.Error()})
 			}
-			runtimePorts = runtime
-		} else {
-			// Ports untouched: hydrate the runtime map from the existing
-			// port rows so the compose re-render keeps the same mappings.
-			current, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
-			runtimePorts = make(map[string]dockerapp.RuntimePort, len(current))
-			for _, p := range current {
-				runtimePorts[p.PortName] = dockerapp.RuntimePort{
-					HostPort:      p.HostPort,
-					ContainerPort: p.ContainerPort,
-					BindInterface: bindInterfaceForRuntime(p.BindInterface),
-					Protocol:      p.Protocol,
-				}
-			}
-		}
-
-		// --- domain ---
-		newDomain := ""
-		if req.Domain != nil {
-			newDomain = strings.TrimSpace(*req.Domain)
-			if h.cfg.Domains != nil {
-				// Drop any prior docker_app-managed row for this app.
-				domList, _, _ := h.cfg.Domains.List(ctx, repository.ListOptions{})
-				for _, d := range domList {
-					if d.ManagedBy == models.DomainManagedByDockerApp && d.DockerAppID != nil && *d.DockerAppID == app.ID {
-						_ = h.cfg.Domains.Delete(ctx, d.ID)
-					}
-				}
-				if newDomain != "" {
-					claims := ginctx.Claims(c)
-					// Defense in depth -- sweep an orphan docker_app-managed
-					// row pointing at a missing docker_app, so the operator can
-					// reuse the same hostname without UNIQUE-constraint 409.
-					if existingDom, _ := h.cfg.Domains.FindByName(ctx, newDomain); existingDom != nil && existingDom.ManagedBy == models.DomainManagedByDockerApp {
-						orphan := existingDom.DockerAppID == nil
-						if !orphan {
-							if owner, _ := h.cfg.Repo.FindByID(ctx, *existingDom.DockerAppID); owner == nil {
-								orphan = true
-							}
-						}
-						if orphan {
-							_ = h.cfg.Domains.Delete(ctx, existingDom.ID)
-						}
-					}
-					var loopbackPort *models.DockerAppPublishedPort
-					latest, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
-					for _, p := range latest {
-						if p.ReverseProxy && p.Protocol == "tcp" {
-							loopbackPort = p
-							break
-						}
-					}
-					if loopbackPort != nil && claims != nil {
-						target := "http://127.0.0.1:" + intToStr(loopbackPort.HostPort)
-						truePtr := true
-						rules := models.NginxRules{{
-							Type:      "proxy_pass",
-							Path:      "/",
-							Target:    target,
-							Websocket: &truePtr,
-						}}
-						existingDom, _ := h.cfg.Domains.FindByName(ctx, newDomain)
-						if existingDom != nil && existingDom.ManagedBy != models.DomainManagedByDockerApp {
-							if existingDom.UserID != claims.UserID && !claims.IsAdmin {
-								c.JSON(http.StatusConflict, gin.H{"error": "domain_in_use", "detail": "domain " + newDomain + " belongs to another user"})
-								return
-							}
-							if aerr := h.cfg.Domains.AttachDockerApp(ctx, existingDom.ID, app.ID, rules); aerr != nil {
-								c.JSON(http.StatusConflict, gin.H{"error": "domain_attach_failed", "detail": aerr.Error()})
-								return
-							}
-						} else {
-							dom := &models.Domain{
-								ID:          ulid.Make().String(),
-								UserID:      claims.UserID,
-								Name:        newDomain,
-								DocRoot:     "",
-								IsEnabled:   true,
-								SSLEnabled:  true,
-								NginxRules:  rules,
-								ManagedBy:   models.DomainManagedByDockerApp,
-								DockerAppID: &app.ID,
-							}
-							if derr := h.cfg.Domains.Create(ctx, dom); derr != nil {
-								c.JSON(http.StatusConflict, gin.H{"error": "domain_create_failed", "detail": derr.Error()})
-								return
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// --- re-render compose + re-dispatch ---
-		// Use the shared tenant-aware helper (Gitea #505): for a tenant-owned
-		// app it re-injects TenantHardening (cap_drop ALL, no-new-privileges,
-		// cgroup parent, PIDs) and the install call carries tenant_validate /
-		// tenant_caps so the agent re-runs the forbidden-namespace/device/bind
-		// checks. The ports persisted just above are what renderInstallCompose
-		// reads back. Rendering raw here would silently strip the sandbox.
-		composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, newDomain, nil)
-		_ = runtimePorts // ports already persisted above; helper reads them from the repo
-		if rerr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "render_failed", "detail": rerr.Error()})
 			return
-		}
-		if h.cfg.Agent != nil {
-			callCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-			defer cancel()
-			volumeNames := make([]string, 0, len(entry.Volumes))
-			for _, v := range entry.Volumes {
-				volumeNames = append(volumeNames, v.Name)
-			}
-			installParams := map[string]any{
-				"slug":                        app.EffectiveSlug(),
-				"compose_yml":                 composeYML,
-				"env_file":                    envFile,
-				"volumes":                     volumeNames,
-				"volume_owner":                entry.VolumeOwner,
-				"wait_healthy":                false,
-				"healthcheck_timeout_seconds": 60,
-			}
-			if verr := h.applyTenantValidateParams(callCtx, app, installParams); verr != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "tenant_validation_unavailable", "detail": firstLineString(verr.Error())})
-				return
-			}
-			if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", installParams); agentErr != nil {
-				msg := firstLineString(agentErr.Error())
-				c.JSON(http.StatusBadGateway, gin.H{"error": "agent_redispatch_failed", "detail": msg})
-				return
-			}
 		}
 	}
 
 	c.JSON(http.StatusOK, app)
+}
+
+// dockerEditError carries the HTTP status + code/detail the docker-app
+// domain/port edit path returns, so both the gin handler and the CLI map to the
+// exact same response. (#546)
+type dockerEditError struct {
+	Status int
+	Code   string
+	Detail string
+}
+
+func (e *dockerEditError) Error() string {
+	if e.Detail == "" {
+		return e.Code
+	}
+	return e.Code + ": " + e.Detail
+}
+
+// editDomainPorts applies a docker-app domain/port edit and the tenant-aware
+// compose re-render. Gin-free so update() (GUI) and DockerAppEditDomainPorts
+// (CLI, #546) share ONE implementation — the security-critical sandbox
+// re-render (renderInstallCompose + applyTenantValidateParams / tenant_validate)
+// is never duplicated. reqDomain==nil → no domain change; empty reqPorts → keep
+// existing ports. Returns *dockerEditError on a mapped failure.
+func (h *dockerAppHandler) editDomainPorts(ctx context.Context, app *models.DockerApp, reqDomain *string, reqPorts []installPortRequest, userID string, isAdmin bool) error {
+	if app.Status == models.DockerAppStatusRunning {
+		return &dockerEditError{http.StatusConflict, "container_running", "stop the container before editing ports or domain"}
+	}
+	if h.cfg.Catalog == nil {
+		return &dockerEditError{http.StatusServiceUnavailable, "catalog_unavailable", ""}
+	}
+	entry, ok := h.cfg.Catalog.Get(app.Slug)
+	if !ok {
+		return &dockerEditError{http.StatusInternalServerError, "catalog_entry_missing", "slug " + app.Slug + " no longer in /usr/local/share/jabali/docker-apps/"}
+	}
+
+	// --- ports ---
+	var runtimePorts map[string]dockerapp.RuntimePort
+	if len(reqPorts) > 0 {
+		prior, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
+		for _, p := range prior {
+			_ = h.cfg.Repo.DeletePort(ctx, p.ID)
+		}
+		resolved, runtime, perr := h.resolvePorts(ctx, entry, reqPorts, app.ID)
+		if perr != nil {
+			return &dockerEditError{http.StatusBadRequest, "port_resolution_failed", perr.Error()}
+		}
+		for _, row := range resolved {
+			if err := h.cfg.Repo.CreatePort(ctx, row); err != nil {
+				return &dockerEditError{http.StatusConflict, "port_persist_failed", err.Error()}
+			}
+		}
+		runtimePorts = runtime
+	} else {
+		current, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
+		runtimePorts = make(map[string]dockerapp.RuntimePort, len(current))
+		for _, p := range current {
+			runtimePorts[p.PortName] = dockerapp.RuntimePort{
+				HostPort:      p.HostPort,
+				ContainerPort: p.ContainerPort,
+				BindInterface: bindInterfaceForRuntime(p.BindInterface),
+				Protocol:      p.Protocol,
+			}
+		}
+	}
+
+	// --- domain ---
+	newDomain := ""
+	if reqDomain != nil {
+		newDomain = strings.TrimSpace(*reqDomain)
+		if h.cfg.Domains != nil {
+			domList, _, _ := h.cfg.Domains.List(ctx, repository.ListOptions{})
+			for _, d := range domList {
+				if d.ManagedBy == models.DomainManagedByDockerApp && d.DockerAppID != nil && *d.DockerAppID == app.ID {
+					_ = h.cfg.Domains.Delete(ctx, d.ID)
+				}
+			}
+			if newDomain != "" {
+				if existingDom, _ := h.cfg.Domains.FindByName(ctx, newDomain); existingDom != nil && existingDom.ManagedBy == models.DomainManagedByDockerApp {
+					orphan := existingDom.DockerAppID == nil
+					if !orphan {
+						if owner, _ := h.cfg.Repo.FindByID(ctx, *existingDom.DockerAppID); owner == nil {
+							orphan = true
+						}
+					}
+					if orphan {
+						_ = h.cfg.Domains.Delete(ctx, existingDom.ID)
+					}
+				}
+				var loopbackPort *models.DockerAppPublishedPort
+				latest, _ := h.cfg.Repo.ListPortsForApp(ctx, app.ID)
+				for _, p := range latest {
+					if p.ReverseProxy && p.Protocol == "tcp" {
+						loopbackPort = p
+						break
+					}
+				}
+				if loopbackPort != nil && userID != "" {
+					target := "http://127.0.0.1:" + intToStr(loopbackPort.HostPort)
+					truePtr := true
+					rules := models.NginxRules{{
+						Type:      "proxy_pass",
+						Path:      "/",
+						Target:    target,
+						Websocket: &truePtr,
+					}}
+					existingDom, _ := h.cfg.Domains.FindByName(ctx, newDomain)
+					if existingDom != nil && existingDom.ManagedBy != models.DomainManagedByDockerApp {
+						if existingDom.UserID != userID && !isAdmin {
+							return &dockerEditError{http.StatusConflict, "domain_in_use", "domain " + newDomain + " belongs to another user"}
+						}
+						if aerr := h.cfg.Domains.AttachDockerApp(ctx, existingDom.ID, app.ID, rules); aerr != nil {
+							return &dockerEditError{http.StatusConflict, "domain_attach_failed", aerr.Error()}
+						}
+					} else {
+						dom := &models.Domain{
+							ID:          ulid.Make().String(),
+							UserID:      userID,
+							Name:        newDomain,
+							DocRoot:     "",
+							IsEnabled:   true,
+							SSLEnabled:  true,
+							NginxRules:  rules,
+							ManagedBy:   models.DomainManagedByDockerApp,
+							DockerAppID: &app.ID,
+						}
+						if derr := h.cfg.Domains.Create(ctx, dom); derr != nil {
+							return &dockerEditError{http.StatusConflict, "domain_create_failed", derr.Error()}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// --- re-render compose + re-dispatch (tenant sandbox preserved) ---
+	composeYML, envFile, rerr := h.renderInstallCompose(ctx, app, newDomain, nil)
+	_ = runtimePorts // ports already persisted above; helper reads them from the repo
+	if rerr != nil {
+		return &dockerEditError{http.StatusInternalServerError, "render_failed", rerr.Error()}
+	}
+	if h.cfg.Agent != nil {
+		callCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+		volumeNames := make([]string, 0, len(entry.Volumes))
+		for _, v := range entry.Volumes {
+			volumeNames = append(volumeNames, v.Name)
+		}
+		installParams := map[string]any{
+			"slug":                        app.EffectiveSlug(),
+			"compose_yml":                 composeYML,
+			"env_file":                    envFile,
+			"volumes":                     volumeNames,
+			"volume_owner":                entry.VolumeOwner,
+			"wait_healthy":                false,
+			"healthcheck_timeout_seconds": 60,
+		}
+		if verr := h.applyTenantValidateParams(callCtx, app, installParams); verr != nil {
+			return &dockerEditError{http.StatusInternalServerError, "tenant_validation_unavailable", firstLineString(verr.Error())}
+		}
+		if _, agentErr := h.cfg.Agent.Call(callCtx, "docker_app.install", installParams); agentErr != nil {
+			return &dockerEditError{http.StatusBadGateway, "agent_redispatch_failed", firstLineString(agentErr.Error())}
+		}
+	}
+	return nil
+}
+
+// DockerAppEditDomainPorts is the exported entry point for the `jabali
+// docker-app edit` CLI (#546). It runs the SAME editDomainPorts the GUI PATCH
+// uses, so the stopped-container requirement, port resolution, domain row
+// management, and tenant-hardening compose re-render are identical.
+// DockerAppPortEdit is the exported port-override the CLI passes to
+// DockerAppEditDomainPorts; it maps 1:1 to the GUI's port edit fields.
+type DockerAppPortEdit struct {
+	Name          string
+	Enabled       *bool
+	BindInterface string
+	HostPort      int
+	ReverseProxy  *bool
+}
+
+func DockerAppEditDomainPorts(ctx context.Context, cfg DockerAppHandlerConfig, appID string, domain *string, ports []DockerAppPortEdit, userID string, isAdmin bool) (*models.DockerApp, error) {
+	h := &dockerAppHandler{cfg: cfg}
+	app, err := cfg.Repo.FindByID(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	internal := make([]installPortRequest, 0, len(ports))
+	for _, p := range ports {
+		internal = append(internal, installPortRequest{
+			Name:          p.Name,
+			Enabled:       p.Enabled,
+			BindInterface: p.BindInterface,
+			HostPort:      p.HostPort,
+			ReverseProxy:  p.ReverseProxy,
+		})
+	}
+	if err := h.editDomainPorts(ctx, app, domain, internal, userID, isAdmin); err != nil {
+		return nil, err
+	}
+	return app, nil
 }
 
 func (h *dockerAppHandler) delete(c *gin.Context) {

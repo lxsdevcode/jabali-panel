@@ -1389,6 +1389,20 @@ jabali docker-app delete <id> [flags]
 
 - `--keep-volumes` — keep /var/lib/jabali/docker-apps/<slug> data on disk
 
+#### `jabali docker-app edit`
+
+Edit a Docker app's domain and/or ports (container must be stopped)
+
+```
+jabali docker-app edit <id> [flags]
+```
+
+**Flags:**
+
+- `--clear-domain` — detach the managed domain
+- `--domain` — attach this domain (empty string detaches)
+- `--port` — port override (repeatable): name=..,host=..,bind=..,proxy=..,enabled=.. (default `[]`)
+
 #### `jabali docker-app env`
 
 View, edit, or regenerate a Docker app's environment
