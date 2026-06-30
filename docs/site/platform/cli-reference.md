@@ -1277,6 +1277,30 @@ Rotate a database user's password (revealed once)
 jabali db user rotate-password <db-user-id>
 ```
 
+### `jabali disk-usage`
+
+Inspect / refresh a tenant's disk-usage breakdown (files / email / databases)
+
+```
+jabali disk-usage
+```
+
+#### `jabali disk-usage refresh`
+
+Recompute a tenant's disk usage live and store the snapshot
+
+```
+jabali disk-usage refresh <user-email|username|id>
+```
+
+#### `jabali disk-usage show`
+
+Show a tenant's last stored disk-usage snapshot
+
+```
+jabali disk-usage show <user-email|username|id>
+```
+
 ### `jabali docker`
 
 Manage the docker engine + app-marketplace host (M48/M49)

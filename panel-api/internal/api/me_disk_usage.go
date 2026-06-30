@@ -2,15 +2,17 @@
 // tenant panel. Aggregates the three storage areas a hosting user occupies:
 //
 //   - Files     — the home directory, via the POSIX quota report
-//                 (`user.limits.report`). Web content, logs, etc.
-//   - Email     — sum of the user's mailboxes' last sampled usage
-//                 (`mailboxes.last_usage_bytes`, kept fresh by the reconciler;
-//                 no live agent call needed). Mail lives in Stalwart's store,
-//                 NOT under /home, so it doesn't double-count files.
-//   - Databases — per-database size via `db.size` (MariaDB). PostgreSQL has no
-//                 size verb yet, so those report 0 for now.
+//     (`user.limits.report`). Web content, logs, etc.
 //
-//	GET /api/v1/me/disk-usage -> { total_bytes, quota_bytes, files, email, databases }
+//   - Email     — sum of the user's mailboxes' last sampled usage
+//     (`mailboxes.last_usage_bytes`, kept fresh by the reconciler;
+//     no live agent call needed). Mail lives in Stalwart's store,
+//     NOT under /home, so it doesn't double-count files.
+//
+//   - Databases — per-database size via `db.size` (MariaDB). PostgreSQL has no
+//     size verb yet, so those report 0 for now.
+//
+//     GET /api/v1/me/disk-usage -> { total_bytes, quota_bytes, files, email, databases }
 package api
 
 import (
@@ -36,7 +38,7 @@ type DiskUsageConfig struct {
 	QuotaMount string
 	// Snapshots persists the last computed breakdown so GET is a cheap read
 	// and recompute happens only on an explicit POST refresh (#tenant DU).
-	Snapshots  repository.DiskUsageSnapshotRepository
+	Snapshots repository.DiskUsageSnapshotRepository
 }
 
 // RegisterMeDiskUsageRoutes mounts GET /me/disk-usage on a group that already
@@ -73,6 +75,19 @@ type diskUsageResponse struct {
 	Files      diskUsageCategory `json:"files"`
 	Email      diskUsageCategory `json:"email"`
 	Databases  diskUsageCategory `json:"databases"`
+}
+
+// Exported aliases + wrapper so the `jabali disk-usage` CLI (#568) reads the
+// SAME snapshot shape and runs the SAME live aggregation as the tenant
+// /me/disk-usage endpoint — one implementation, no drift.
+type DiskUsageItem = diskUsageItem
+type DiskUsageCategory = diskUsageCategory
+type DiskUsageResult = diskUsageResponse
+
+// ComputeDiskUsage runs the live per-user breakdown (home quota + cached
+// mailbox usage + db.size), the exact path POST /me/disk-usage/refresh uses.
+func ComputeDiskUsage(ctx context.Context, cfg DiskUsageConfig, userID string) (DiskUsageResult, error) {
+	return (&meDiskUsageHandler{cfg: cfg}).compute(ctx, userID)
 }
 
 // diskUsageListLimit bounds the per-category enumeration. A single hosting
