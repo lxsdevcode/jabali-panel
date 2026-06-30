@@ -849,6 +849,14 @@ Manage M48 docker-app catalog installs (admin-only)
 jabali docker-app
 ```
 
+#### `jabali docker-app backup-create`
+
+Create a manual backup of the app
+
+```
+jabali docker-app backup-create <id>
+```
+
 #### `jabali docker-app backups`
 
 List restic backups taken for this install
@@ -876,6 +884,50 @@ jabali docker-app delete <id> [flags]
 **Flags:**
 
 - `--keep-volumes` — keep /var/lib/jabali/docker-apps/<slug> data on disk
+
+#### `jabali docker-app env`
+
+View, edit, or regenerate a Docker app's environment
+
+```
+jabali docker-app env
+```
+
+##### `jabali docker-app env get`
+
+List the app's environment (reveals secrets)
+
+```
+jabali docker-app env get <id>
+```
+
+##### `jabali docker-app env regenerate`
+
+Mint a fresh value for a generated secret, then recreate the container
+
+```
+jabali docker-app env regenerate <id> <KEY>
+```
+
+##### `jabali docker-app env set`
+
+Edit env values, re-render the compose, and recreate the container
+
+```
+jabali docker-app env set <id> <KEY=VALUE> [<KEY=VALUE>...]
+```
+
+#### `jabali docker-app exec`
+
+Run a one-off command in the app's container
+
+```
+jabali docker-app exec <id> -- <command...> [flags]
+```
+
+**Flags:**
+
+- `--service` — compose service to exec into (default: primary)
 
 #### `jabali docker-app install`
 
@@ -915,6 +967,51 @@ jabali docker-app logs <id> [flags]
 - `--lines` — lines to tail (default `200`)
 - `--service` — compose service name (default: first service)
 
+#### `jabali docker-app maintenance`
+
+Docker disk-usage report and prune
+
+```
+jabali docker-app maintenance
+```
+
+##### `jabali docker-app maintenance disk-usage`
+
+Report Docker disk usage
+
+```
+jabali docker-app maintenance disk-usage
+```
+
+##### `jabali docker-app maintenance prune`
+
+Prune unused Docker resources (reclaims disk)
+
+```
+jabali docker-app maintenance prune [flags]
+```
+
+**Flags:**
+
+- `--all` — remove all unused images, not just dangling
+- `--force` — confirm the prune
+- `--volumes` — also prune unused volumes
+
+#### `jabali docker-app patch`
+
+Patch app settings (update mode, CPU/memory/PID limits)
+
+```
+jabali docker-app patch <id> [flags]
+```
+
+**Flags:**
+
+- `--cpu` — CPU limit (e.g. 1.5; empty to clear)
+- `--memory` — memory limit (e.g. 512m; empty to clear)
+- `--pids` — PIDs limit (default `0`)
+- `--update-mode` — update mode: manual|auto
+
 #### `jabali docker-app rebuild`
 
 Force-recreate (docker compose up --force-recreate)
@@ -930,6 +1027,18 @@ Restart an install
 ```
 jabali docker-app restart <id>
 ```
+
+#### `jabali docker-app restore`
+
+Restore a selected backup snapshot (replaces the app's data)
+
+```
+jabali docker-app restore <id> <snapshot-id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm the destructive restore
 
 #### `jabali docker-app start`
 

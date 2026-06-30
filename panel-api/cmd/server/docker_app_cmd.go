@@ -58,6 +58,12 @@ func newDockerAppCmd() *cobra.Command {
 		newDockerAppLogsCmd(),
 		newDockerAppUpdateCmd(),
 		newDockerAppBackupsCmd(),
+		newDockerAppEnvCmd(),
+		newDockerAppExecCmd(),
+		newDockerAppBackupCreateCmd(),
+		newDockerAppRestoreCmd(),
+		newDockerAppMaintenanceCmd(),
+		newDockerAppPatchCmd(),
 	)
 	return cmd
 }
@@ -619,7 +625,34 @@ func firstLine(s string) string {
 // catalog template, preserving its domain/ports/limits/secrets. Mirrors
 // api.(*dockerAppHandler).renderInstallCompose for the CLI update path.
 // Returns the rendered compose + merged env file (never log either).
+// readInstallEnvCLI reads an install's on-disk .env (KEY=VALUE) back over the
+// agent so a re-render preserves generated secrets. Mirrors api.readInstallEnv.
+func readInstallEnvCLI(ctx context.Context, app *models.DockerApp) (map[string]string, error) {
+	raw, rerr := sharedAgent.Call(ctx, "docker_app.read_env", map[string]any{"slug": app.EffectiveSlug()})
+	if rerr != nil {
+		return nil, fmt.Errorf("read env: %w", rerr)
+	}
+	var resp struct {
+		Env map[string]string `json:"env"`
+	}
+	if json.Unmarshal(raw, &resp) != nil || resp.Env == nil {
+		return map[string]string{}, nil
+	}
+	return resp.Env, nil
+}
+
 func rerenderInstallForCLI(ctx context.Context, repo repository.DockerAppRepository, app *models.DockerApp) (string, string, error) {
+	existingEnv, err := readInstallEnvCLI(ctx, app)
+	if err != nil {
+		return "", "", err
+	}
+	return renderInstallComposeCLI(ctx, repo, app, existingEnv)
+}
+
+// renderInstallComposeCLI re-renders an install's compose from the current
+// catalog using baseEnv as the secret/override source (preserved through
+// MaterialiseEnv). The env edit/regenerate paths pass a modified baseEnv.
+func renderInstallComposeCLI(ctx context.Context, repo repository.DockerAppRepository, app *models.DockerApp, baseEnv map[string]string) (string, string, error) {
 	cat, err := loadDockerCatalogForCLI()
 	if err != nil {
 		return "", "", fmt.Errorf("load catalog: %w", err)
@@ -628,19 +661,7 @@ func rerenderInstallForCLI(ctx context.Context, repo repository.DockerAppReposit
 	if !ok {
 		return "", "", fmt.Errorf("catalog entry %q not found", app.Slug)
 	}
-	// Existing secrets from the install's .env (read back over the agent).
-	existingEnv := map[string]string{}
-	if raw, rerr := sharedAgent.Call(ctx, "docker_app.read_env", map[string]any{"slug": app.EffectiveSlug()}); rerr == nil {
-		var resp struct {
-			Env map[string]string `json:"env"`
-		}
-		if json.Unmarshal(raw, &resp) == nil && resp.Env != nil {
-			existingEnv = resp.Env
-		}
-	} else {
-		return "", "", fmt.Errorf("read env: %w", rerr)
-	}
-	envMap, err := dockerapp.MaterialiseEnv(entry, existingEnv)
+	envMap, err := dockerapp.MaterialiseEnv(entry, baseEnv)
 	if err != nil {
 		return "", "", fmt.Errorf("materialise env: %w", err)
 	}
