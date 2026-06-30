@@ -18,6 +18,8 @@ func newDomainCmd() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newDomainListCmd(),
+		newDomainShowCmd(),
+		newDomainIPACLCmd(),
 		newDomainCreateCmd(),
 		newDomainEnableCmd(),
 		newDomainDisableCmd(),

@@ -1554,6 +1554,45 @@ Repair docroot group/setgid (www-data) for all of a user's domains
 jabali domain fix-perms <username>
 ```
 
+#### `jabali domain ip-acl`
+
+Manage a domain's IP allow/deny ACL
+
+```
+jabali domain ip-acl
+```
+
+##### `jabali domain ip-acl add`
+
+Add an IP ACL entry to a domain
+
+```
+jabali domain ip-acl add <domain> [flags]
+```
+
+**Flags:**
+
+- `--action` — allow|deny (default `deny`)
+- `--cidr` — IP or CIDR (required)
+- `--comment` — optional comment
+- `--priority` — rule priority (lower = first) (default `0`)
+
+##### `jabali domain ip-acl delete`
+
+Delete an IP ACL entry by id
+
+```
+jabali domain ip-acl delete <acl-id>
+```
+
+##### `jabali domain ip-acl list`
+
+List a domain's IP ACL entries
+
+```
+jabali domain ip-acl list <domain>
+```
+
 #### `jabali domain list`
 
 List domains (direct DB — M20-safe)
@@ -1573,6 +1612,14 @@ jabali domain prune-orphans [flags]
 **Flags:**
 
 - `--apply` — Actually delete orphans (default: dry-run)
+
+#### `jabali domain show`
+
+Show a domain's full advanced-settings state (JSON)
+
+```
+jabali domain show <domain-name|domain-id>
+```
 
 ### `jabali ip`
 
