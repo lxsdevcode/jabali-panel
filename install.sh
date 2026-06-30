@@ -4178,25 +4178,6 @@ build_backend() {
   _ok "installed $AGENT_BIN_PATH (version=$version)"
   _ok "installed /usr/local/bin/jabali-ssh-shell (M13 Step 1 wrapper)"
   _ok "symlinked /usr/local/bin/jabali -> $BIN_PATH"
-
-  # Re-render the AppSec config NOW the freshly-built binary is installed.
-  # install_crowdsec_appsec ran earlier in the update PRELUDE with the OLD
-  # binary, so an AppSec change shipped in THIS build (e.g. a CRS exclusion —
-  # GH #594) wouldn't land until the NEXT update. Re-run render-config with the
-  # just-installed binary so appsec config tracks the code that was built, and
-  # reload crowdsec on a real diff (render-config writes only; the caller
-  # reloads). Best-effort, only when crowdsec is present.
-  if command -v cscli >/dev/null 2>&1 && [[ -d /etc/crowdsec ]]; then
-    local _rc_out
-    if _rc_out="$("$BIN_PATH" appsec render-config --reconcile 2>&1)"; then
-      if [[ "$_rc_out" != "unchanged" ]]; then
-        _log "post-build appsec re-render: ${_rc_out}"
-        systemctl reload crowdsec 2>/dev/null || systemctl restart crowdsec 2>/dev/null ||           _warn "post-build appsec re-render applied but crowdsec reload failed"
-      fi
-    else
-      _warn "post-build appsec render-config failed: ${_rc_out}"
-    fi
-  fi
 }
 
 # install_jabali_mailhook — loopback MTA-hook service that appends per-domain
