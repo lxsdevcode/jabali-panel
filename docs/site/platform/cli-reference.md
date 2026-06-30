@@ -1897,6 +1897,192 @@ WHOIS lookup for a domain
 jabali domain whois <domain-name|domain-id>
 ```
 
+### `jabali files`
+
+Scoped tenant file manager (list/read/mkdir/move/chmod/archive/…) — same policy as the GUI
+
+```
+jabali files
+```
+
+#### `jabali files archive`
+
+tar.gz one or more paths to a local file (--out)
+
+```
+jabali files archive <path...> [flags]
+```
+
+**Flags:**
+
+- `--out` — local .tar.gz destination (required)
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files chmod`
+
+Change a path's permissions (e.g. 0644)
+
+```
+jabali files chmod <path> <octal-mode> [flags]
+```
+
+**Flags:**
+
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files copy`
+
+Copy into a destination directory (--to)
+
+```
+jabali files copy <path> [flags]
+```
+
+**Flags:**
+
+- `--to` — destination directory (required)
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files delete`
+
+Delete a file or directory
+
+```
+jabali files delete <path> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm deletion
+- `--recursive` — recurse into directories
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files download`
+
+Download a file to a local path (--out)
+
+```
+jabali files download <path> [flags]
+```
+
+**Flags:**
+
+- `--out` — local destination path (required)
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files extract`
+
+Extract an archive inside the tenant tree (--dest)
+
+```
+jabali files extract <archive-path> [flags]
+```
+
+**Flags:**
+
+- `--dest` — destination directory (default: archive's directory)
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files list`
+
+List a directory
+
+```
+jabali files list <path> [flags]
+```
+
+**Flags:**
+
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files mkdir`
+
+Create a directory
+
+```
+jabali files mkdir <path> [flags]
+```
+
+**Flags:**
+
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files move`
+
+Move into a destination directory (--to)
+
+```
+jabali files move <path> [flags]
+```
+
+**Flags:**
+
+- `--to` — destination directory (required)
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files read`
+
+Print a file's contents
+
+```
+jabali files read <path> [flags]
+```
+
+**Flags:**
+
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files rename`
+
+Rename within the same directory
+
+```
+jabali files rename <path> <new-name> [flags]
+```
+
+**Flags:**
+
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files stat`
+
+Stat a path
+
+```
+jabali files stat <path> [flags]
+```
+
+**Flags:**
+
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files upload`
+
+Upload a local file into the tenant tree
+
+```
+jabali files upload <local-file> <dest-path> [flags]
+```
+
+**Flags:**
+
+- `--overwrite` — overwrite if the destination exists
+- `--user` — target tenant (email|username|id, required)
+
+#### `jabali files write`
+
+Write text to a file (--content or --from <local>)
+
+```
+jabali files write <path> [flags]
+```
+
+**Flags:**
+
+- `--content` — inline text content
+- `--from` — read content from this local file
+- `--user` — target tenant (email|username|id, required)
+
 ### `jabali impersonation`
 
 Manage admin act-as impersonation grants (list / create / end)
