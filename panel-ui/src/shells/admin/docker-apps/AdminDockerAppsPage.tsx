@@ -1,6 +1,6 @@
 // AdminDockerAppsPage — landing page for the M48 marketplace.
 // Two tabs: Catalog (browse + install) and Installed (lifecycle).
-import { App, Avatar, Button, Card, Col, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Drawer, Empty, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useTabParam } from "../../../hooks/useTabParam";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { humanBytes } from "../../../utils/bytes";
@@ -18,6 +18,7 @@ import {
   CodeOutlined,
   SaveOutlined,
   EditOutlined,
+  KeyOutlined,
 } from "@icons";
 import { RowActions, type RowAction } from "../../../components/RowActions";
 
@@ -32,6 +33,7 @@ import { LogsDrawer } from "./LogsDrawer";
 import { ExecDrawer } from "./ExecDrawer";
 import { BackupsDrawer } from "./BackupsDrawer";
 import { EditDrawer } from "./EditDrawer";
+import { EnvSection } from "./EnvSection";
 import { MaintenanceTab } from "./MaintenanceTab";
 import { StatCard } from "../../../components/StatCard";
 
@@ -53,6 +55,7 @@ export const AdminDockerAppsPage = () => {
   const [catalogTags, setCatalogTags] = useState<string[]>([]);
   const [logsAppId, setLogsAppId] = useState<string | null>(null);
   const [execAppId, setExecAppId] = useState<string | null>(null);
+  const [credsAppId, setCredsAppId] = useState<string | null>(null);
   const [editApp, setEditApp] = useState<InstalledApp | null>(null);
   const [activeTab, setActiveTab] = useTabParam<string>("installed");
   const [backupsAppId, setBackupsAppId] = useState<string | null>(null);
@@ -380,6 +383,7 @@ export const AdminDockerAppsPage = () => {
                         { key: "edit", label: "Edit", icon: <EditOutlined />, disabled: running, onClick: () => setEditApp(r) },
                         { key: "update", label: "Update", icon: <SyncOutlined />, onClick: () => updateImage.mutate(r.id) },
                         { key: "logs", label: "Logs", icon: <FileTextOutlined />, onClick: () => setLogsAppId(r.id) },
+                        { key: "creds", label: "Credentials", icon: <KeyOutlined />, onClick: () => setCredsAppId(r.id) },
                         { key: "exec", label: "Exec", icon: <CodeOutlined />, onClick: () => setExecAppId(r.id) },
                         { key: "backups", label: "Backups", icon: <SaveOutlined />, onClick: () => setBackupsAppId(r.id) },
                         { key: "delete", label: "Uninstall", icon: <DeleteOutlined />, danger: true, onClick: confirmDelete },
@@ -507,6 +511,15 @@ export const AdminDockerAppsPage = () => {
         appId={backupsAppId}
         onClose={() => setBackupsAppId(null)}
       />
+      <Drawer
+        title="Credentials"
+        open={credsAppId !== null}
+        onClose={() => setCredsAppId(null)}
+        width={760}
+        destroyOnClose
+      >
+        {credsAppId && <EnvSection appId={credsAppId} active={credsAppId !== null} />}
+      </Drawer>
     </div>
   );
 };

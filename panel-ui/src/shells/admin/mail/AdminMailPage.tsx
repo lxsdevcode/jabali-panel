@@ -2,6 +2,7 @@
 // across all domains with add / edit / reset-password / delete. Reuses the
 // per-domain create wizard + the shared EditMailboxModal (GH #197 companion).
 import { useMemo, useState } from "react";
+import { useTabParam } from "../../../hooks/useTabParam";
 import {
   App,
   Button,
@@ -108,7 +109,7 @@ export function AdminMailPage() {
     );
   };
 
-  const [tab, setTab] = useState<string>("mailboxes");
+  const [tab, setTab] = useTabParam<string>("mailboxes");
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AdminMailbox | null>(null);
   const [resetTarget, setResetTarget] = useState<AdminMailbox | null>(null);
