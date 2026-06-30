@@ -195,6 +195,9 @@ func TestCRSPluginBefore_WordPressBuilderExclusions(t *testing.T) {
 	mustNotContain(t, out, `^/wp-json/wp/v2/`, "public wp/v2 REST must keep full CRS coverage")
 	// The original narrow 933120 exclusion is still present.
 	mustContain(t, out, "ctl:ruleRemoveTargetById=933120;ARGS:_wp_http_referer", "933120 _wp_http_referer exclusion intact")
+	// GH #594: the upstream WordPress CRS-exclusion plugin is activated, which
+	// covers admin-ajax/builder false positives (incl. 942151) comprehensively.
+	mustContain(t, out, "tx.wordpress-rule-exclusions-plugin_enabled=1", "WP exclusion plugin activated")
 	// Surgical, not blanket: no path-allow, no remediation override.
 	mustNotContain(t, out, `SetRemediation`, "before-plugin must not blanket-allow")
 }

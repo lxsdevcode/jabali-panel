@@ -132,6 +132,20 @@ func CRSPluginBefore() string {
 # Loaded by crowdsecurity/crs via the crs-plugins/*/*-before.conf glob,
 # BEFORE REQUEST-933 (PHP injection) + REQUEST-949 (anomaly blocking).
 #
+# Activate the upstream crowdsecurity/crs-exclusion-plugin-wordpress (GH #594).
+# It is installed + listed in jabali-appsec.yaml inband_rules but inert by
+# default: wordpress-rule-exclusions-before.conf strips ALL its own rules
+# (9507100-9507999) when tx.wordpress-rule-exclusions-plugin_enabled == 0, and
+# nothing set it. Setting it here turns on the upstream-maintained, SURGICAL
+# (per-rule, per-endpoint — NOT a path-allow) WordPress exclusion set, which
+# correctly handles admin-ajax / builder saves across the whole CRS SQLi/XSS/
+# PHP families (942xxx/941xxx/932xxx) — e.g. 942151 "SQL function name" that
+# Elementor JSON trips, which the narrow hand-picked drops below never covered
+# (owner false-positive AppSec bans). This file sorts before wordpress/ in the
+# crs-plugins/*/*-before.conf glob, so the flag is set before that plugin's
+# self-strip check runs. Respects ADR-0147's "surgical, no blanket bypass".
+SecAction "id:9599000,phase:1,nolog,pass,setvar:tx.wordpress-rule-exclusions-plugin_enabled=1"
+#
 # 933120 vs WordPress admin search: editing a custom post type issues
 # /wp-admin/edit.php?...&_wp_http_referer=<double-URL-encoded URL>. The
 # nested URL-inside-a-URL trips CRS 933120 (PHP injection) → php_injection
