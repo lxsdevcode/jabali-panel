@@ -55,7 +55,6 @@ func newDBCmd() *cobra.Command {
 
 func newDBListCmd() *cobra.Command {
 	var userLookup string
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List databases (filtered by user, or all)",
@@ -82,7 +81,7 @@ func newDBListCmd() *cobra.Command {
 				}
 				rows = r
 			}
-			if asJSON {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(rows)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -95,7 +94,6 @@ func newDBListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&userLookup, "user", "", "Filter by user (email or username)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	return cmd
 }
 

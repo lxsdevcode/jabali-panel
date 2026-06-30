@@ -36,7 +36,6 @@ func newAuditCmd() *cobra.Command {
 func newAuditQueryCmd() *cobra.Command {
 	var limit int
 	var q string
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:     "query",
 		Short:   "List recent audit events (admin/forensics view)",
@@ -53,7 +52,7 @@ func newAuditQueryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if asJSON {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(rows)
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
@@ -71,7 +70,6 @@ func newAuditQueryCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&limit, "limit", 50, "max rows (1-1000)")
 	cmd.Flags().StringVar(&q, "q", "", "search (action/target/actor_kind/result)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	return cmd
 }
 

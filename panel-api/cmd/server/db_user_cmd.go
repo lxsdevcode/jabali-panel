@@ -50,7 +50,6 @@ func newDBUserCmd() *cobra.Command {
 
 func newDBUserListCmd() *cobra.Command {
 	var userLookup string
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List database users (filtered by panel user, or all)",
@@ -77,7 +76,7 @@ func newDBUserListCmd() *cobra.Command {
 				}
 				rows = r
 			}
-			if asJSON {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(rows)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -90,7 +89,6 @@ func newDBUserListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&userLookup, "user", "", "Filter by panel user (email or username)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	return cmd
 }
 

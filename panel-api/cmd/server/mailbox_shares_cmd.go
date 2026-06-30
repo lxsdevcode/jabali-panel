@@ -52,7 +52,6 @@ func mailboxShareRepoFromDB() repository.MailboxShareRepository {
 
 func newMailboxSharesListCmd() *cobra.Command {
 	var ownerEmail string
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List shares for a given owner email",
@@ -71,7 +70,7 @@ func newMailboxSharesListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("list shares: %w", err)
 			}
-			if asJSON {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(rows)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -90,7 +89,6 @@ func newMailboxSharesListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&ownerEmail, "owner", "", "Owner mailbox email (required)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")
 	return cmd
 }
 

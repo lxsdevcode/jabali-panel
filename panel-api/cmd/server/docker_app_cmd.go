@@ -63,7 +63,6 @@ func newDockerAppCmd() *cobra.Command {
 }
 
 func newDockerAppCatalogCmd() *cobra.Command {
-	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "catalog",
 		Short: "List entries in the installed catalog",
@@ -73,7 +72,7 @@ func newDockerAppCatalogCmd() *cobra.Command {
 				return err
 			}
 			entries := cat.All()
-			if jsonOut {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(entries)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
@@ -84,7 +83,6 @@ func newDockerAppCatalogCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit JSON instead of a table")
 	return cmd
 }
 
@@ -310,7 +308,6 @@ func nilIfEmpty(s string) *string {
 var nameRE = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
 func newDockerAppListCmd() *cobra.Command {
-	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List installed docker apps",
@@ -323,7 +320,7 @@ func newDockerAppListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOut {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(apps)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
@@ -339,7 +336,6 @@ func newDockerAppListCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit JSON instead of a table")
 	return cmd
 }
 
@@ -536,7 +532,6 @@ func newDockerAppUpdateCmd() *cobra.Command {
 }
 
 func newDockerAppBackupsCmd() *cobra.Command {
-	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:     "backups <id>",
 		Short:   "List restic backups taken for this install",
@@ -550,7 +545,7 @@ func newDockerAppBackupsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOut {
+			if jsonOutput {
 				return json.NewEncoder(os.Stdout).Encode(rows)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
@@ -562,7 +557,6 @@ func newDockerAppBackupsCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit JSON instead of a table")
 	return cmd
 }
 
