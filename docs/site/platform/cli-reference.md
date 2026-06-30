@@ -1797,6 +1797,185 @@ jabali mailbox shares remove [flags]
 
 - `--id` — Share ID (ULID, from `jabali mailbox shares list`)
 
+### `jabali malware`
+
+Malware scan / quarantine / YARA / settings (incident response)
+
+```
+jabali malware
+```
+
+#### `jabali malware events`
+
+List malware detection events
+
+```
+jabali malware events [flags]
+```
+
+**Flags:**
+
+- `--severity` — filter: info|warn|critical
+- `--source` — filter: maldet|clamav|yara
+- `--user` — filter by user id
+
+#### `jabali malware quarantine`
+
+List / restore / delete quarantined files
+
+```
+jabali malware quarantine
+```
+
+##### `jabali malware quarantine delete`
+
+Permanently delete a quarantined file
+
+```
+jabali malware quarantine delete <id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm permanent deletion
+
+##### `jabali malware quarantine list`
+
+List active quarantine entries
+
+```
+jabali malware quarantine list [flags]
+```
+
+**Flags:**
+
+- `--limit` — max rows (default `100`)
+
+##### `jabali malware quarantine restore`
+
+Restore a quarantined file to its original path
+
+```
+jabali malware quarantine restore <id> [flags]
+```
+
+**Flags:**
+
+- `--reason` — why the file is being restored (required)
+
+#### `jabali malware scan`
+
+Start a malware scan of a path or a user's home
+
+```
+jabali malware scan [flags]
+```
+
+**Flags:**
+
+- `--path` — absolute path to scan
+- `--user` — username whose home to scan
+
+#### `jabali malware scan-status`
+
+Poll a scan session's status
+
+```
+jabali malware scan-status <session-id>
+```
+
+#### `jabali malware settings`
+
+Get / set malware settings
+
+```
+jabali malware settings
+```
+
+##### `jabali malware settings get`
+
+Show malware settings
+
+```
+jabali malware settings get
+```
+
+##### `jabali malware settings set`
+
+Update malware settings (same validation as the UI)
+
+```
+jabali malware settings set [flags]
+```
+
+**Flags:**
+
+- `--max-scan-mb` — max scan file size MB (1..10240) (default `0`)
+- `--notify-threshold` — info|warn|critical
+- `--realtime` — on|off (real-time monitor)
+- `--retain-days` — quarantine retention days (1..365) (default `0`)
+
+#### `jabali malware status`
+
+Show malware engine status
+
+```
+jabali malware status
+```
+
+#### `jabali malware update-signatures`
+
+Update malware signatures (freshclam/maldet)
+
+```
+jabali malware update-signatures
+```
+
+#### `jabali malware yara`
+
+Manage custom YARA rules
+
+```
+jabali malware yara
+```
+
+##### `jabali malware yara delete`
+
+Delete a custom YARA rule
+
+```
+jabali malware yara delete <filename>
+```
+
+##### `jabali malware yara list`
+
+List custom YARA rules
+
+```
+jabali malware yara list
+```
+
+##### `jabali malware yara toggle`
+
+Enable or disable a custom YARA rule
+
+```
+jabali malware yara toggle <filename> [flags]
+```
+
+**Flags:**
+
+- `--disable` — disable the rule
+- `--enable` — enable the rule
+
+##### `jabali malware yara upload`
+
+Upload a custom YARA rule file
+
+```
+jabali malware yara upload <file.yar>
+```
+
 ### `jabali malware-purge`
 
 Hard-delete terminated malware quarantine rows past retention (M33)
@@ -2257,6 +2436,65 @@ Reload php<v>-fpm.service (zero-downtime SIGUSR2)
 
 ```
 jabali php version reload <version>
+```
+
+### `jabali php-defense`
+
+PHP-defense (Snuffleupagus) status / mode / rules / incidents
+
+```
+jabali php-defense
+```
+
+#### `jabali php-defense incidents`
+
+List Snuffleupagus incidents
+
+```
+jabali php-defense incidents [flags]
+```
+
+**Flags:**
+
+- `--limit` — max rows (default `50`)
+- `--rule` — filter by rule name
+
+#### `jabali php-defense mode`
+
+Set the Snuffleupagus mode (renders + applies active.rules)
+
+```
+jabali php-defense mode <off|simulation|enforce>
+```
+
+#### `jabali php-defense rule-toggle`
+
+Enable or disable a Snuffleupagus rule (renders + applies)
+
+```
+jabali php-defense rule-toggle <rule-name> [flags]
+```
+
+**Flags:**
+
+- `--disable` — disable the rule
+- `--enable` — enable the rule
+- `--reason` — optional reason for the override
+
+#### `jabali php-defense rules`
+
+List rule overrides + current mode (bundle catalog is GUI-only)
+
+```
+jabali php-defense rules
+```
+
+#### `jabali php-defense status`
+
+Show Snuffleupagus status
+
+```
+jabali php-defense status
 ```
 
 ### `jabali python-app`
