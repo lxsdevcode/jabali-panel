@@ -25,7 +25,7 @@ func newMailAdminCmd() *cobra.Command {
 		Use:   "mail",
 		Short: "Admin mail queue + outbound throttle management",
 	}
-	cmd.AddCommand(newMailQueueCmd(), newMailThrottleCmd(), newMailLogsCmd())
+	cmd.AddCommand(newMailQueueCmd(), newMailThrottleCmd(), newMailLogsCmd(), newMailDeliverabilityCmd())
 	return cmd
 }
 

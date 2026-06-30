@@ -2102,6 +2102,18 @@ Admin mail queue + outbound throttle management
 jabali mail
 ```
 
+#### `jabali mail deliverability`
+
+Show the mail deliverability score (server-wide or per-domain)
+
+```
+jabali mail deliverability [flags]
+```
+
+**Flags:**
+
+- `--domain` — scope to one domain (default: server-wide)
+
 #### `jabali mail logs`
 
 Search / inspect mail delivery logs
