@@ -197,3 +197,50 @@ func newLimitsOverrideCmd() *cobra.Command {
 	cmd.AddCommand(setCmd, clearCmd)
 	return cmd
 }
+
+// ---- #590 per-domain bandwidth report ----
+
+func newDomainBandwidthCmd() *cobra.Command {
+	var days int
+	cmd := &cobra.Command{
+		Use:     "bandwidth <domain-name|domain-id>",
+		Short:   "Per-domain bandwidth report (bytes + requests, daily series)",
+		Args:    cobra.ExactArgs(1),
+		PreRunE: requireDB,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if days < 1 || days > 365 {
+				return fmt.Errorf("--days must be 1..365")
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+			dom, err := resolveDomainCLI(ctx, args[0])
+			if err != nil {
+				return err
+			}
+			repo := repository.NewBWDailyRepository(sharedDB)
+			now := time.Now().UTC()
+			from := now.AddDate(0, 0, -(days - 1))
+			bytesTotal, reqsTotal, err := repo.SumForDomain(ctx, dom.ID, from, now)
+			if err != nil {
+				return err
+			}
+			daily, err := repo.SumPerDayForDomain(ctx, dom.ID, from, now)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return printJSON(map[string]any{
+					"domain": dom.Name, "days": days,
+					"bytes_total": bytesTotal, "requests_total": reqsTotal, "daily": daily,
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s — last %dd: %d bytes, %d requests\n", dom.Name, days, bytesTotal, reqsTotal)
+			for _, p := range daily {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s  %d bytes\n", p.Day.Format("2006-01-02"), p.BytesTotal)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&days, "days", 30, "lookback window in days (1..365)")
+	return cmd
+}

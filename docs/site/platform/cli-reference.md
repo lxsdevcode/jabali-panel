@@ -1546,6 +1546,18 @@ Manage hosted domains
 jabali domain
 ```
 
+#### `jabali domain bandwidth`
+
+Per-domain bandwidth report (bytes + requests, daily series)
+
+```
+jabali domain bandwidth <domain-name|domain-id> [flags]
+```
+
+**Flags:**
+
+- `--days` — lookback window in days (1..365) (default `30`)
+
 #### `jabali domain browse`
 
 List a path under the domain's docroot (as the domain owner)
