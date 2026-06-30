@@ -11,11 +11,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dbtuning"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
@@ -269,5 +272,127 @@ func registerDBOpsCmds(parent *cobra.Command) {
 	parent.AddCommand(
 		newDBBackupCmd(), newDBRestoreCmd(), newDBProcessesCmd(), newDBKillCmd(),
 		newDBMaintenanceCmd(), newDBMaintenanceStatusCmd(), newDBRootPasswordCmd(),
+		newDBConfigCmd(),
 	)
+}
+
+func newDBConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "config", Short: "View / set database tuning (mariadb/postgres)"}
+	cmd.AddCommand(newDBConfigGetCmd(), newDBConfigSetCmd())
+	return cmd
+}
+
+func newDBConfigGetCmd() *cobra.Command {
+	var engine string
+	cmd := &cobra.Command{
+		Use:     "get",
+		Short:   "Show tuning params + current values (allowlist)",
+		Args:    cobra.NoArgs,
+		PreRunE: requireDB,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !dbEngineValidCLI(engine) {
+				return fmt.Errorf("--engine must be mariadb|postgres")
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
+			defer cancel()
+			rows, err := repository.NewDBAdminRepository(sharedDB).ListTuning(ctx, engine)
+			if err != nil {
+				return err
+			}
+			persisted := make(map[string]string, len(rows))
+			for _, r := range rows {
+				persisted[r.Param] = r.Value
+			}
+			type paramOut struct {
+				Param, Value, Default, Kind, Unit string
+				RestartRequired                   bool
+				Help                              string
+			}
+			out := make([]paramOut, 0)
+			for _, p := range dbtuning.List(engine) {
+				v := p.Default
+				if pv, ok := persisted[p.Name]; ok {
+					v = pv
+				}
+				out = append(out, paramOut{p.Name, v, p.Default, string(p.Kind), p.Unit, p.RestartRequired, p.Help})
+			}
+			if jsonOutput {
+				return printJSON(out)
+			}
+			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+			fmt.Fprintln(tw, "PARAM\tVALUE\tDEFAULT\tKIND\tRESTART\tHELP")
+			for _, o := range out {
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%v\t%s\n", o.Param, o.Value, o.Default, o.Kind, o.RestartRequired, o.Help)
+			}
+			return tw.Flush()
+		},
+	}
+	cmd.Flags().StringVar(&engine, "engine", "mariadb", "mariadb|postgres")
+	return cmd
+}
+
+func newDBConfigSetCmd() *cobra.Command {
+	var engine string
+	cmd := &cobra.Command{
+		Use:     "set <param=value> [<param=value>...]",
+		Short:   "Set tuning params (allowlist-validated; applies + may restart the engine)",
+		Args:    cobra.MinimumNArgs(1),
+		PreRunE: requireDBAndAgent,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !dbEngineValidCLI(engine) {
+				return fmt.Errorf("--engine must be mariadb|postgres")
+			}
+			settings := map[string]string{}
+			for _, a := range args {
+				k, v, ok := strings.Cut(a, "=")
+				if !ok || k == "" {
+					return fmt.Errorf("argument %q is not param=value", a)
+				}
+				settings[strings.TrimSpace(k)] = v
+			}
+			if err := dbtuning.ValidateSet(engine, settings); err != nil {
+				return fmt.Errorf("invalid value: %w", err)
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
+			defer cancel()
+			repo := repository.NewDBAdminRepository(sharedDB)
+			// Persist first (DB = source of truth), then apply the FULL desired set.
+			for k, v := range settings {
+				if err := repo.UpsertTuning(ctx, engine, k, v); err != nil {
+					return fmt.Errorf("persist %s: %w", k, err)
+				}
+			}
+			rows, err := repo.ListTuning(ctx, engine)
+			if err != nil {
+				return err
+			}
+			desired := make(map[string]string, len(rows))
+			for _, r := range rows {
+				desired[r.Param] = r.Value
+			}
+			verb := "db.config.apply"
+			if engine == "postgres" {
+				verb = "db.postgres.config.apply"
+			}
+			restart := dbtuning.RestartRequired(engine, desired)
+			if restart {
+				fmt.Fprintln(cmd.OutOrStdout(), "Applying — one or more params require an engine restart…")
+			}
+			if _, aerr := sharedAgent.Call(ctx, verb, map[string]any{
+				"settings": desired, "restart_required": restart,
+			}); aerr != nil {
+				cliAuditErr(ctx, "database.config_apply", "database_engine", engine, nil)
+				if strings.Contains(aerr.Error(), "UNRECOVERABLE") {
+					return fmt.Errorf("UNRECOVERABLE: %s did not recover after apply+rollback — see /var/lib/jabali-agent/db-config-broken.json: %w", engine, aerr)
+				}
+				return fmt.Errorf("agent %s (change rejected/rolled back): %w", verb, aerr)
+			}
+			_ = repo.MarkTuningApplied(ctx, engine, "cli", time.Now().UTC())
+			cliAuditOK(ctx, "database.config_apply", "database_engine", engine, nil)
+			fmt.Fprintf(cmd.OutOrStdout(), "Applied %d %s tuning param(s)%s.\n", len(settings), engine, map[bool]string{true: " (engine restarted)", false: ""}[restart])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&engine, "engine", "mariadb", "mariadb|postgres")
+	return cmd
 }

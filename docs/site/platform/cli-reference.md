@@ -1000,6 +1000,38 @@ Create a backup of a database (returns the dump path)
 jabali db backup <db-id|db-name>
 ```
 
+#### `jabali db config`
+
+View / set database tuning (mariadb/postgres)
+
+```
+jabali db config
+```
+
+##### `jabali db config get`
+
+Show tuning params + current values (allowlist)
+
+```
+jabali db config get [flags]
+```
+
+**Flags:**
+
+- `--engine` — mariadb|postgres (default `mariadb`)
+
+##### `jabali db config set`
+
+Set tuning params (allowlist-validated; applies + may restart the engine)
+
+```
+jabali db config set <param=value> [<param=value>...] [flags]
+```
+
+**Flags:**
+
+- `--engine` — mariadb|postgres (default `mariadb`)
+
 #### `jabali db create`
 
 Create a database for a user
