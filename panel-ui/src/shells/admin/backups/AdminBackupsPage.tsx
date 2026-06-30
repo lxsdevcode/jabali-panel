@@ -17,6 +17,7 @@ import {
   SaveOutlined,
   SettingOutlined,
   CloseOutlined,
+  LifeBuoyOutlined,
 } from "@icons";
 import { useEffect, useRef, useState } from "react";
 
@@ -32,6 +33,7 @@ import { CreateBackupDrawer } from "./CreateBackupDrawer";
 import { DestinationsTab } from "./DestinationsTab";
 import { EncryptionKeyCard } from "./EncryptionKeyCard";
 import { SchedulesTab } from "./SchedulesTab";
+import { RecoveryHandoffTab } from "./RecoveryHandoffTab";
 
 interface BackupJob {
   id: string;
@@ -91,7 +93,8 @@ type TabKey =
   | "schedules"
   | "encryption"
   | "settings"
-  | "logs";
+  | "logs"
+  | "recovery";
 
 const formatBytes = (n: number): string => {
   if (!n) return "0 B";
@@ -472,6 +475,15 @@ export const AdminBackupsPage = () => {
               </Space>
             ),
           },
+          {
+            key: "recovery",
+            tab: (
+              <Space>
+                <LifeBuoyOutlined />
+                Recovery
+              </Space>
+            ),
+          },
         ]}
         activeTabKey={activeTab}
         onTabChange={(k) => setActiveTab(k as TabKey)}
@@ -585,6 +597,7 @@ export const AdminBackupsPage = () => {
         {activeTab === "encryption" && <EncryptionKeyCard />}
         {activeTab === "settings" && <BackupSettingsTab />}
         {activeTab === "logs" && <BackupLogsTab />}
+        {activeTab === "recovery" && <RecoveryHandoffTab />}
       </Card>
 
       <CreateBackupDrawer
