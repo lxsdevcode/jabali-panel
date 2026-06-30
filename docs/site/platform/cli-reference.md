@@ -2385,12 +2385,98 @@ Per-user PHP-FPM pool
 jabali php pool
 ```
 
+##### `jabali php pool create`
+
+Create a PHP-FPM pool for a user
+
+```
+jabali php pool create [flags]
+```
+
+**Flags:**
+
+- `--idle-timeout` — process idle timeout (seconds) (default `60`)
+- `--php-version` — PHP version e.g. 8.3 (required)
+- `--pm-max-children` — pm.max_children (default `20`)
+- `--pm-mode` — ondemand|dynamic|static (default `ondemand`)
+- `--user` — owner (id or username) (required)
+
+##### `jabali php pool delete`
+
+Delete a PHP-FPM pool and its ini overrides
+
+```
+jabali php pool delete <pool-id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm deletion
+
 ##### `jabali php pool get`
 
 Show a user's PHP pool
 
 ```
 jabali php pool get <user>
+```
+
+##### `jabali php pool ini`
+
+Manage a pool's php.ini overrides
+
+```
+jabali php pool ini
+```
+
+###### `jabali php pool ini add`
+
+Add an ini override to a pool
+
+```
+jabali php pool ini add <pool-id> [flags]
+```
+
+**Flags:**
+
+- `--directive` — php.ini directive (required)
+- `--kind` — value|flag (default `value`)
+- `--value` — value (for kind=value) or on/off (for kind=flag)
+
+###### `jabali php pool ini list`
+
+List a pool's ini overrides
+
+```
+jabali php pool ini list <pool-id>
+```
+
+###### `jabali php pool ini remove`
+
+Remove an ini override
+
+```
+jabali php pool ini remove <override-id>
+```
+
+###### `jabali php pool ini update`
+
+Update an ini override's value
+
+```
+jabali php pool ini update <override-id> [flags]
+```
+
+**Flags:**
+
+- `--value` — new value
+
+##### `jabali php pool list`
+
+List all PHP-FPM pools
+
+```
+jabali php pool list
 ```
 
 ##### `jabali php pool reapply-all`

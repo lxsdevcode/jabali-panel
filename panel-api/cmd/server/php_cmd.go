@@ -237,6 +237,10 @@ func newPHPPoolCmd() *cobra.Command {
 		newPHPPoolGetCmd(),
 		newPHPPoolSetCmd(),
 		newPHPPoolReapplyAllCmd(),
+		newPHPPoolListCmd(),
+		newPHPPoolCreateCmd(),
+		newPHPPoolDeleteCmd(),
+		newPHPPoolIniCmd(),
 	)
 	return cmd
 }
