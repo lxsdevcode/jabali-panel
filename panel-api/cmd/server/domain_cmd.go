@@ -25,6 +25,7 @@ func newDomainCmd() *cobra.Command {
 		newDomainSetCmd(),
 		newDomainSkipAutoSANCmd(),
 		newDomainMTAStsCmd(),
+		newDomainHtaccessPreviewCmd(),
 		newDomainCreateCmd(),
 		newDomainEnableCmd(),
 		newDomainDisableCmd(),

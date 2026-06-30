@@ -51,6 +51,8 @@ per-domain nginx rate/connection limits.`,
 		newLimitsApplyCmd(),
 		newLimitsStatusCmd(),
 		newLimitsPackageCmd(),
+		newLimitsUsageCmd(),
+		newLimitsOverrideCmd(),
 	)
 	return cmd
 }

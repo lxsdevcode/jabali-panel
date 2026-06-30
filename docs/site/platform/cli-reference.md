@@ -1701,6 +1701,18 @@ Repair docroot group/setgid (www-data) for all of a user's domains
 jabali domain fix-perms <username>
 ```
 
+#### `jabali domain htaccess-preview`
+
+Preview the nginx translation of a .htaccess file (stateless; nothing applied)
+
+```
+jabali domain htaccess-preview <domain-name|domain-id> [flags]
+```
+
+**Flags:**
+
+- `--file` — path to a .htaccess file to convert (required)
+
 #### `jabali domain ip-acl`
 
 Manage a domain's IP allow/deny ACL
@@ -1898,6 +1910,39 @@ Probe host for M18 prerequisites (cgroups v2, /home fs, nginx modules)
 jabali limits check
 ```
 
+#### `jabali limits override`
+
+Per-user limit overrides (set / clear)
+
+```
+jabali limits override
+```
+
+##### `jabali limits override clear`
+
+Remove a user's override (revert to package)
+
+```
+jabali limits override clear <username|user-id>
+```
+
+##### `jabali limits override set`
+
+Set/replace a user's limit override
+
+```
+jabali limits override set <username|user-id> [flags]
+```
+
+**Flags:**
+
+- `--cpu` — CPU quota percent (default `0`)
+- `--disk-mb` — disk quota MB (default `0`)
+- `--io-read-mbps` — IO read MB/s (default `0`)
+- `--io-write-mbps` — IO write MB/s (default `0`)
+- `--max-tasks` — max tasks (default `0`)
+- `--memory-mb` — memory limit MB (default `0`)
+
 #### `jabali limits package`
 
 Bulk limits operations across every user of a package
@@ -1926,6 +1971,14 @@ Show live resource usage for one user
 jabali limits status <username>
 ```
 
+#### `jabali limits usage`
+
+Show a user's live limit usage (disk/cpu/mem/io/tasks)
+
+```
+jabali limits usage <username|user-id>
+```
+
 ### `jabali mail`
 
 Admin mail queue + outbound throttle management
@@ -1933,6 +1986,39 @@ Admin mail queue + outbound throttle management
 ```
 jabali mail
 ```
+
+#### `jabali mail logs`
+
+Search / inspect mail delivery logs
+
+```
+jabali mail logs
+```
+
+##### `jabali mail logs detail`
+
+Show a mail log entry's detail
+
+```
+jabali mail logs detail <id>
+```
+
+##### `jabali mail logs query`
+
+Search mail logs
+
+```
+jabali mail logs query [flags]
+```
+
+**Flags:**
+
+- `--from` — from date (YYYY-MM-DD)
+- `--limit` — max entries (default `50`)
+- `--offset` — offset (default `0`)
+- `--recipient` — recipient prefix filter
+- `--sender` — sender prefix filter
+- `--to` — to date (YYYY-MM-DD)
 
 #### `jabali mail queue`
 
