@@ -25,7 +25,14 @@ func newUfwCmd() *cobra.Command {
 		Use:   "ufw",
 		Short: "UFW utilities (M43 — port baseline only; IP decisions live in CrowdSec)",
 	}
-	cmd.AddCommand(newUfwMigrateIPBansCmd())
+	cmd.AddCommand(
+		newUfwMigrateIPBansCmd(),
+		newUfwStatusCmd(),
+		newUfwRuleCmd(),
+		newUfwDefaultCmd(),
+		newUfwToggleCmd("security.ufw.enable", "Enable UFW", false),
+		newUfwToggleCmd("security.ufw.disable", "Disable UFW (lockout risk)", true),
+	)
 	return cmd
 }
 

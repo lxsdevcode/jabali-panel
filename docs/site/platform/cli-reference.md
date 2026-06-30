@@ -2426,6 +2426,42 @@ UFW utilities (M43 — port baseline only; IP decisions live in CrowdSec)
 jabali ufw
 ```
 
+#### `jabali ufw default`
+
+Set the default policy for a chain
+
+```
+jabali ufw default <incoming|outgoing> <allow|deny|reject> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm a lockout-prone default policy
+
+#### `jabali ufw disable`
+
+Disable UFW (lockout risk)
+
+```
+jabali ufw disable [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm this destructive action
+
+#### `jabali ufw enable`
+
+Enable UFW
+
+```
+jabali ufw enable [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm this destructive action
+
 #### `jabali ufw migrate-ip-bans`
 
 Migrate UFW `from <IP>` deny rules to CrowdSec decisions (M43 Step 4)
@@ -2440,6 +2476,45 @@ jabali ufw migrate-ip-bans [flags]
 - `--no-cdn` — Confirm panel is not behind a CDN; bypasses the trusted_ips hard guard
 - `--revert` — Restore UFW rules from snapshot and remove matching CrowdSec decisions
 - `--yes` — Required for any destructive operation (migrate or revert)
+
+#### `jabali ufw rule`
+
+Add or delete UFW rules
+
+```
+jabali ufw rule
+```
+
+##### `jabali ufw rule add`
+
+Add a UFW rule
+
+```
+jabali ufw rule add [flags]
+```
+
+**Flags:**
+
+- `--action` — allow|deny|reject|limit (default `allow`)
+- `--from` — source address/CIDR (optional)
+- `--port` — port or app name (e.g. 443, OpenSSH) (required)
+- `--proto` — tcp|udp (optional)
+
+##### `jabali ufw rule delete`
+
+Delete a UFW rule by its numbered position (see `ufw status`)
+
+```
+jabali ufw rule delete <num>
+```
+
+#### `jabali ufw status`
+
+Show UFW status and numbered rules
+
+```
+jabali ufw status
+```
 
 ### `jabali update`
 
