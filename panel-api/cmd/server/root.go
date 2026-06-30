@@ -141,6 +141,7 @@ func newRootCmd() *cobra.Command {
 		newMalwareCmd(),
 		newPhpDefenseCmd(),
 		newIPManagerCmd(),
+		newServiceCmd(),
 	)
 	rejectUnknownSubcommands(cmd)
 

@@ -2823,6 +2823,34 @@ Start the Jabali Panel HTTP(S) server
 jabali serve
 ```
 
+### `jabali service`
+
+Admin service control (start/stop/restart/reload/enable/disable)
+
+```
+jabali service
+```
+
+#### `jabali service action`
+
+Run a service action on an allowlisted unit
+
+```
+jabali service action <name> <restart|start|stop|reload|enable|disable> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm a disruptive action (stop/restart/disable)
+
+#### `jabali service status`
+
+Show service status details
+
+```
+jabali service status
+```
+
 ### `jabali settings`
 
 Inspect and patch server settings (headless equivalent of /admin/settings)
