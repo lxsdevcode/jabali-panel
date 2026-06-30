@@ -1,23 +1,45 @@
 // AdminUserOverview — per-user hub for admin cross-entity navigation (#483,
-// ADR-0152, Wave C). The one new admin detail route. It is the breadcrumb root
-// for drilling into a user and the target of every "→ owner" link. Resource
-// cards link to the owner-scoped admin lists (?user_id=) and show live counts
-// read from each list's `total` (page_size=1) — no dedicated counts endpoint.
+// ADR-0152, Wave C; extended for #545). The one new admin detail route. It is
+// the breadcrumb root for drilling into a user and the target of every
+// "→ owner" link.
+//
+// Two card groups:
+//   1. Admin-managed — owner-scoped admin lists (?user_id=) with live counts
+//      read from each list's `total` (page_size=1); no dedicated counts endpoint.
+//   2. User panel — features that live only in the user shell (databases, DNS,
+//      SSL, files, cron, SSH keys, API tokens, …). These have no admin page, so
+//      the card starts impersonation (#545) and opens the matching
+//      /jabali-panel/... page AS that user (same flow as the Users-table
+//      "Log in as user" action, ADR-0128).
 import {
+  ApiOutlined,
   AppstoreOutlined,
+  ClockCircleOutlined,
   CloudServerOutlined,
+  CodeOutlined,
   ContainerOutlined,
+  DatabaseOutlined,
+  FileTextOutlined,
+  FolderOutlined,
   GlobalOutlined,
+  HddOutlined,
+  KeyOutlined,
+  LockOutlined,
+  LoginOutlined,
   MailOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from "@icons";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Card, Col, Row, Skeleton, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Row, Skeleton, Space, Statistic, Tag, Typography, message } from "antd";
+import { useState } from "react";
 import { Link, useParams } from "react-router";
 
 import { apiClient } from "../../../apiClient";
 import { AdminBreadcrumb } from "../../../components/admin/AdminBreadcrumb";
 import { adminLinks, ownerCrumbs, ownerLabel } from "../../../components/admin/entityLinks";
+import { startImpersonation } from "../../../impersonation";
 
 type AdminUser = {
   id: string;
@@ -57,8 +79,26 @@ type ResourceCard = {
   count?: number;
 };
 
+// User-shell-only features (#545). No admin page exists for these, so each
+// opens the matching /jabali-panel/... page via impersonation.
+const USER_PANEL_CARDS: { key: string; label: string; icon: React.ReactNode; path: string }[] = [
+  { key: "applications", label: "Applications", icon: <CodeOutlined />, path: "/jabali-panel/applications" },
+  { key: "python-apps", label: "Python Apps", icon: <ThunderboltOutlined />, path: "/jabali-panel/python-apps" },
+  { key: "databases", label: "Databases", icon: <DatabaseOutlined />, path: "/jabali-panel/databases" },
+  { key: "dns", label: "DNS", icon: <GlobalOutlined />, path: "/jabali-panel/dns" },
+  { key: "ssl", label: "SSL", icon: <LockOutlined />, path: "/jabali-panel/ssl" },
+  { key: "php-settings", label: "PHP Settings", icon: <SettingOutlined />, path: "/jabali-panel/php-settings" },
+  { key: "files", label: "Files", icon: <FolderOutlined />, path: "/jabali-panel/files" },
+  { key: "disk-usage", label: "Disk Usage", icon: <HddOutlined />, path: "/jabali-panel/disk-usage" },
+  { key: "logs", label: "Logs", icon: <FileTextOutlined />, path: "/jabali-panel/logs" },
+  { key: "ssh-keys", label: "SSH Keys", icon: <KeyOutlined />, path: "/jabali-panel/ssh-keys" },
+  { key: "api-tokens", label: "API Tokens", icon: <ApiOutlined />, path: "/jabali-panel/api-tokens" },
+  { key: "cron", label: "Cron Jobs", icon: <ClockCircleOutlined />, path: "/jabali-panel/cron" },
+];
+
 export function AdminUserOverview() {
   const { id = "" } = useParams();
+  const [impersonating, setImpersonating] = useState(false);
 
   const userQ = useQuery({
     queryKey: ["admin-user", id],
@@ -79,6 +119,20 @@ export function AdminUserOverview() {
       return { domains, mailboxes, dockerApps, backups };
     },
   });
+
+  // Start act-as for this user, then full-reload into the target page so /me
+  // (now carrying the grant header) returns the target and every admin-scoped
+  // query cache is dropped cleanly (ADR-0128; same as the Users-table action).
+  const openAsUser = async (path: string) => {
+    setImpersonating(true);
+    try {
+      await startImpersonation(id);
+      window.location.assign(path);
+    } catch {
+      message.error("Could not open the user panel as this user");
+      setImpersonating(false);
+    }
+  };
 
   if (userQ.isLoading) {
     return <Skeleton active paragraph={{ rows: 4 }} />;
@@ -103,19 +157,35 @@ export function AdminUserOverview() {
     <div>
       <AdminBreadcrumb items={ownerCrumbs(user)} />
 
-      <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 4 }}>
-        <UserOutlined /> {ownerLabel(user)}
-        {user.is_admin && (
-          <Tag color="gold" style={{ marginInlineStart: 8 }}>
-            Admin
-          </Tag>
+      <Space align="start" style={{ width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div>
+          <Typography.Title level={3} style={{ marginTop: 0, marginBottom: 4 }}>
+            <UserOutlined /> {ownerLabel(user)}
+            {user.is_admin && (
+              <Tag color="gold" style={{ marginInlineStart: 8 }}>
+                Admin
+              </Tag>
+            )}
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 20 }}>
+            {fullName ? `${fullName} · ` : ""}
+            {user.email}
+          </Typography.Paragraph>
+        </div>
+        {!user.is_admin && (
+          <Button
+            icon={<LoginOutlined />}
+            loading={impersonating}
+            onClick={() => openAsUser("/jabali-panel")}
+          >
+            Log in as user
+          </Button>
         )}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 20 }}>
-        {fullName ? `${fullName} · ` : ""}
-        {user.email}
-      </Typography.Paragraph>
+      </Space>
 
+      <Typography.Title level={5} style={{ marginTop: 8 }}>
+        Admin-managed
+      </Typography.Title>
       <Row gutter={[16, 16]}>
         {cards.map((c) => (
           <Col key={c.key} xs={24} sm={12} md={8} lg={6}>
@@ -151,6 +221,40 @@ export function AdminUserOverview() {
           </Col>
         )}
       </Row>
+
+      {!user.is_admin && (
+        <>
+          <Typography.Title level={5} style={{ marginTop: 24 }}>
+            User panel
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+            These features live in the user shell. Opening one logs you in as this
+            user and takes you to that page.
+          </Typography.Paragraph>
+          <Row gutter={[16, 16]}>
+            {USER_PANEL_CARDS.map((c) => (
+              <Col key={c.key} xs={24} sm={12} md={8} lg={6}>
+                <Card
+                  hoverable
+                  size="small"
+                  onClick={() => void openAsUser(c.path)}
+                  style={{ cursor: "pointer", opacity: impersonating ? 0.6 : 1 }}
+                >
+                  <Statistic
+                    title={
+                      <span>
+                        {c.icon} {c.label}
+                      </span>
+                    }
+                    value="Open"
+                    valueStyle={{ fontSize: 16 }}
+                  />
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </>
+      )}
     </div>
   );
 }
