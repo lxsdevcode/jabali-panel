@@ -10487,7 +10487,7 @@ _install_spam_rules() {
 }
 
 install_bulwark() {
-  local bulwark_version="1.7.5"
+  local bulwark_version="1.7.6"
   local arch="linux-amd64"
   local tarball="bulwark-standalone-${bulwark_version}-${arch}.tar.gz"
   local url="https://github.com/bulwarkmail/webmail/releases/download/${bulwark_version}/${tarball}"
