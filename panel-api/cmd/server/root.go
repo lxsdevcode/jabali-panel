@@ -137,6 +137,7 @@ func newRootCmd() *cobra.Command {
 		newAutomationTokenCmd(),
 		newPythonAppCmd(),
 		newSettingsCmd(),
+		newCrowdsecCmd(),
 	)
 	rejectUnknownSubcommands(cmd)
 

@@ -659,6 +659,310 @@ jabali cron update <job-id> [flags]
 - `--name` — 
 - `--schedule` — 
 
+### `jabali crowdsec`
+
+CrowdSec + AppSec operations (decisions, allowlists, hub, alerts, geoblock, captcha)
+
+```
+jabali crowdsec
+```
+
+#### `jabali crowdsec alerts`
+
+List / inspect alerts
+
+```
+jabali crowdsec alerts
+```
+
+##### `jabali crowdsec alerts inspect`
+
+Inspect one alert
+
+```
+jabali crowdsec alerts inspect <id>
+```
+
+##### `jabali crowdsec alerts list`
+
+List recent alerts
+
+```
+jabali crowdsec alerts list
+```
+
+#### `jabali crowdsec allowlists`
+
+List / add / remove allowlist entries
+
+```
+jabali crowdsec allowlists
+```
+
+##### `jabali crowdsec allowlists add`
+
+Add an allowlist entry
+
+```
+jabali crowdsec allowlists add [flags]
+```
+
+**Flags:**
+
+- `--reason` — reason label (default `manual (cli)`)
+- `--value` — IP/CIDR to allowlist (required)
+
+##### `jabali crowdsec allowlists list`
+
+List allowlist entries
+
+```
+jabali crowdsec allowlists list
+```
+
+##### `jabali crowdsec allowlists remove`
+
+Remove an allowlist entry
+
+```
+jabali crowdsec allowlists remove [flags]
+```
+
+**Flags:**
+
+- `--value` — allowlist entry to remove (required)
+
+#### `jabali crowdsec blocklists`
+
+List / refresh blocklists
+
+```
+jabali crowdsec blocklists
+```
+
+##### `jabali crowdsec blocklists list`
+
+List subscribed blocklists
+
+```
+jabali crowdsec blocklists list
+```
+
+##### `jabali crowdsec blocklists refresh`
+
+Refresh blocklists now
+
+```
+jabali crowdsec blocklists refresh
+```
+
+#### `jabali crowdsec bouncers`
+
+List CrowdSec bouncers
+
+```
+jabali crowdsec bouncers
+```
+
+#### `jabali crowdsec captcha`
+
+Captcha remediation get / set
+
+```
+jabali crowdsec captcha
+```
+
+##### `jabali crowdsec captcha get`
+
+Show captcha config (secret never shown)
+
+```
+jabali crowdsec captcha get
+```
+
+##### `jabali crowdsec captcha set`
+
+Configure captcha remediation (merge: empty --secret-key keeps existing)
+
+```
+jabali crowdsec captcha set [flags]
+```
+
+**Flags:**
+
+- `--enabled` — enable captcha remediation
+- `--provider` — recaptcha|hcaptcha|turnstile
+- `--secret-key` — captcha secret key (write-only; empty keeps existing)
+- `--site-key` — captcha site key
+
+#### `jabali crowdsec decisions`
+
+List / add / delete CrowdSec decisions
+
+```
+jabali crowdsec decisions
+```
+
+##### `jabali crowdsec decisions add`
+
+Add a decision (ban)
+
+```
+jabali crowdsec decisions add [flags]
+```
+
+**Flags:**
+
+- `--duration` — ban duration (e.g. 4h, 24h) (default `4h`)
+- `--reason` — reason label (default `manual (cli)`)
+- `--scope` — ip|range|country|as (default `ip`)
+- `--value` — target value (required)
+
+##### `jabali crowdsec decisions delete`
+
+Delete a decision by id, or every decision for --ip
+
+```
+jabali crowdsec decisions delete [<id>] [flags]
+```
+
+**Flags:**
+
+- `--ip` — delete all decisions targeting this IP/CIDR
+
+##### `jabali crowdsec decisions list`
+
+List active decisions
+
+```
+jabali crowdsec decisions list [flags]
+```
+
+**Flags:**
+
+- `--limit` — max rows (1..1000) (default `0`)
+- `--scope` — filter: ip|range|country|as
+
+#### `jabali crowdsec geoblock`
+
+AppSec geoblock get / set
+
+```
+jabali crowdsec geoblock
+```
+
+##### `jabali crowdsec geoblock get`
+
+Show geoblock mode + countries
+
+```
+jabali crowdsec geoblock get
+```
+
+##### `jabali crowdsec geoblock set`
+
+Set geoblock mode (off|allow|deny) and countries
+
+```
+jabali crowdsec geoblock set [flags]
+```
+
+**Flags:**
+
+- `--country` — 2-letter ISO code (repeatable) (default `[]`)
+- `--mode` — off|allow|deny (required)
+
+#### `jabali crowdsec hub`
+
+List / install / remove hub items
+
+```
+jabali crowdsec hub
+```
+
+##### `jabali crowdsec hub install`
+
+Install a hub item
+
+```
+jabali crowdsec hub install [flags]
+```
+
+**Flags:**
+
+- `--force` — force reinstall
+- `--name` — hub item name (required)
+- `--type` — collections|parsers|scenarios|appsec-rules (required)
+
+##### `jabali crowdsec hub list`
+
+List hub items (collections/parsers/scenarios/appsec-rules)
+
+```
+jabali crowdsec hub list [flags]
+```
+
+**Flags:**
+
+- `--type` — filter by type
+
+##### `jabali crowdsec hub remove`
+
+Remove a hub item
+
+```
+jabali crowdsec hub remove [flags]
+```
+
+**Flags:**
+
+- `--name` — item name (required)
+- `--type` — item type (required)
+
+#### `jabali crowdsec metrics`
+
+Show CrowdSec metrics
+
+```
+jabali crowdsec metrics
+```
+
+#### `jabali crowdsec profiles`
+
+Per-scenario remediation overrides get / set
+
+```
+jabali crowdsec profiles
+```
+
+##### `jabali crowdsec profiles get`
+
+Show current profile overrides
+
+```
+jabali crowdsec profiles get
+```
+
+##### `jabali crowdsec profiles set`
+
+Set per-scenario overrides as scenario:action (action=captcha|off)
+
+```
+jabali crowdsec profiles set [flags]
+```
+
+**Flags:**
+
+- `--override` — scenario:action (repeatable; action=captcha|off) (default `[]`)
+
+#### `jabali crowdsec status`
+
+Show CrowdSec engine status
+
+```
+jabali crowdsec status
+```
+
 ### `jabali db`
 
 Manage user databases (mariadb / postgres)
