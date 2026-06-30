@@ -88,6 +88,30 @@ const ReleaseChannelCard = () => {
           main commit. Keep production on Stable.
         </Typography.Text>
       </Space>
+      {channel === "development" && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 12 }}
+          message="Development channel: less-reviewed builds"
+          description="Development follows the latest main commit and may include unreviewed changes. Use it only on test hosts; switch back to Stable for production."
+        />
+      )}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginTop: 12 }}
+        message="Promoting a build to Stable is an operator/CI task"
+        description={
+          <span>
+            This switch only chooses which tag this host tracks. Moving the{" "}
+            <code>stable</code> tag to a reviewed build is done with{" "}
+            <code>jabali release promote</code> on a machine with push access to
+            the source remote (a maintainer box or CI) — the panel host is a
+            read-only deployment target, so promotion is intentionally CLI-only.
+          </span>
+        }
+      />
     </Card>
   );
 };

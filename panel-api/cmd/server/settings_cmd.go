@@ -330,6 +330,17 @@ var settableKeys = map[string]settingDef{
 	"docker_apps_for_users_enabled": boolKey("enable/disable tenant Docker apps (runs host tenant setup)", func(s *models.ServerSettings, b bool) { s.DockerAppsForUsersEnabled = b }),
 	"python_apps_enabled":           boolKey("enable/disable Python apps (installs the runtime on enable)", func(s *models.ServerSettings, b bool) { s.PythonAppsEnabled = b }),
 	"tenant_domain_options_enabled": boolKey("expose per-domain options to tenants (DB flag)", func(s *models.ServerSettings, b bool) { s.TenantDomainOptionsEnabled = b }),
+	"release_channel": settingDef{
+		help: "release channel: stable|development (GUI Updates page shares this contract)",
+		apply: func(s *models.ServerSettings, raw string) error {
+			v := strings.TrimSpace(raw)
+			if v != "stable" && v != "development" {
+				return fmt.Errorf("must be stable|development")
+			}
+			s.ReleaseChannel = v
+			return nil
+		},
+	},
 	"dns_user_record_policy_preset": settingDef{
 		help: "set the DNS user-record policy from a named preset (e.g. hosting-safe, locked-down)",
 		apply: func(s *models.ServerSettings, raw string) error {
