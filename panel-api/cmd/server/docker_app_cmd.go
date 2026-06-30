@@ -113,6 +113,8 @@ func newDockerAppInstallCmd() *cobra.Command {
 		memoryLimit string
 		pidsLimit   int
 		envPairs    []string
+		tenantUser  string
+		tenantDom   string
 	)
 	cmd := &cobra.Command{
 		Use:     "install <slug>",
@@ -121,6 +123,11 @@ func newDockerAppInstallCmd() *cobra.Command {
 		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			slug := args[0]
+			if tenantUser != "" {
+				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
+				defer cancel()
+				return runTenantDockerInstall(ctx, slug, name, tenantUser, tenantDom, updateMode, cpuLimit, memoryLimit, pidsLimit, envPairs)
+			}
 			if !nameRE.MatchString(name) {
 				return fmt.Errorf("invalid --name %q (must match ^[a-z0-9-]{1,32}$)", name)
 			}
@@ -287,6 +294,8 @@ func newDockerAppInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&memoryLimit, "memory", "", "memory limit (e.g. 512m). Catalog default when omitted.")
 	cmd.Flags().IntVar(&pidsLimit, "pids", 0, "pids cgroup limit. Catalog default when omitted.")
 	cmd.Flags().StringArrayVar(&envPairs, "env", nil, "KEY=VALUE override (repeatable)")
+	cmd.Flags().StringVar(&tenantUser, "user", "", "install for this tenant (user id or username); enables the tenant-scoped install path")
+	cmd.Flags().StringVar(&tenantDom, "domain", "", "domain the tenant app attaches to (required with --user; must be owned by that user or free)")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }

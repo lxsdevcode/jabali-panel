@@ -940,11 +940,13 @@ jabali docker-app install <slug> [flags]
 **Flags:**
 
 - `--cpu` — cgroup CPU limit (e.g. 1.0). Catalog default when omitted.
+- `--domain` — domain the tenant app attaches to (required with --user; must be owned by that user or free)
 - `--env` — KEY=VALUE override (repeatable) (default `[]`)
 - `--memory` — memory limit (e.g. 512m). Catalog default when omitted.
 - `--name` — install name (lowercase, ^[a-z0-9-]{1,32}$)
 - `--pids` — pids cgroup limit. Catalog default when omitted. (default `0`)
 - `--update-mode` — manual|auto (default `manual`)
+- `--user` — install for this tenant (user id or username); enables the tenant-scoped install path
 
 #### `jabali docker-app list`
 
