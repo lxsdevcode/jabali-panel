@@ -3074,6 +3074,62 @@ List configured notification channels
 jabali notification channels list
 ```
 
+#### `jabali notification dlq`
+
+Inspect and operate the notification dead-letter queue
+
+```
+jabali notification dlq
+```
+
+##### `jabali notification dlq clear`
+
+Delete ALL DLQ entries (does not replay)
+
+```
+jabali notification dlq clear [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm clearing the entire DLQ
+
+##### `jabali notification dlq drop`
+
+Delete one DLQ entry without replaying
+
+```
+jabali notification dlq drop <id>
+```
+
+##### `jabali notification dlq list`
+
+List dead-lettered notifications (newest first)
+
+```
+jabali notification dlq list [flags]
+```
+
+**Flags:**
+
+- `--limit` — max entries to show (1-500) (default `100`)
+
+##### `jabali notification dlq replay`
+
+Re-publish one DLQ entry to the main queue
+
+```
+jabali notification dlq replay <id>
+```
+
+##### `jabali notification dlq replay-all`
+
+Re-publish every replayable DLQ entry to the main queue
+
+```
+jabali notification dlq replay-all
+```
+
 #### `jabali notification events`
 
 Per-event notification toggles
