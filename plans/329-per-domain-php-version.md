@@ -104,6 +104,24 @@ user's SHELL php. Per-domain WEB version = the pool binding. Do not conflate.
   one-pool MVP clause), note ADR-0025 (slice hosts N masters/user). Fix backup
   restore apply path. Runbook. EICAR-style live check on a VM.
 
+## Security: EOL PHP warning (operator decision, 2026-07-01)
+
+The one real trade-off is that per-domain pinning makes it easy to leave a
+public site on an EOL PHP. No hard block (operators legitimately need 7.4 for
+legacy apps) — instead a visible **EOL warning**:
+
+- **Primary:** admin PHP-versions/install page
+  `panel-ui/src/shells/admin/php/VersionsTab.tsx` — a tooltip / `Tag`/`Alert`
+  on any EOL version row ("EOL — no upstream security patches; running it on a
+  public site is a security risk").
+- **Secondary (Wave D):** the per-domain version selector shows the same EOL
+  marker inline on EOL options.
+- **Source of truth:** a small static EOL-date table (php.net supported
+  versions) in one place, shared by both surfaces. `version <= lastEOL` (by
+  date) => EOL. Keep it a plain constant; no network lookup.
+
+No functional block — warning only. Default stays the latest stable.
+
 ## ADR amendments
 
 - **ADR-0023 §Decision:** strike "each panel user gets exactly one pool (MVP

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, notification, Spin, Table, Tag } from "antd";
+import { Alert, notification, Spin, Table, Tag, Tooltip } from "antd";
 import {
   CheckCircleOutlined,
   DeleteOutlined,
@@ -18,6 +18,29 @@ interface PHPVersionStatus {
   workers_running?: number;
   workers_total?: number;
 }
+
+// php.net end-of-life dates (security support ends). A version is EOL when its
+// date has passed — running it, especially on a public site, means no upstream
+// security patches (GH #329). Versions absent from this map are treated as
+// still-supported (they are newer than every EOL entry).
+const PHP_EOL_DATES: Record<string, string> = {
+  "5.6": "2018-12-31",
+  "7.0": "2019-01-10",
+  "7.1": "2019-12-01",
+  "7.2": "2020-11-30",
+  "7.3": "2021-12-06",
+  "7.4": "2022-11-28",
+  "8.0": "2023-11-26",
+  "8.1": "2025-12-31",
+  "8.2": "2026-12-31",
+  "8.3": "2027-12-31",
+  "8.4": "2028-12-31",
+};
+
+const isPHPEOL = (version: string): boolean => {
+  const eol = PHP_EOL_DATES[version];
+  return eol !== undefined && new Date(eol) < new Date();
+};
 
 interface PHPVersionStatusResponse {
   default_version: string;
@@ -221,7 +244,18 @@ export const VersionsTab = () => {
         <Table.Column<PHPVersionStatus>
           dataIndex="version"
           title="PHP Version"
-          render={(version: string) => `PHP ${version}`}
+          render={(version: string) => (
+            <span>
+              PHP {version}
+              {isPHPEOL(version) && (
+                <Tooltip title="End of life — no upstream security patches. Running an EOL PHP version on a public site is a security risk.">
+                  <Tag color="red" style={{ marginLeft: 8 }}>
+                    EOL
+                  </Tag>
+                </Tooltip>
+              )}
+            </span>
+          )}
         />
         <Table.Column<PHPVersionStatus>
           dataIndex="installed"
