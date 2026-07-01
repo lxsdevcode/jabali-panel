@@ -9,6 +9,7 @@ import (
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	ginctx "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -122,41 +123,61 @@ func (h *domainPHPPoolHandler) bind(c *gin.Context) {
 			return
 		}
 	} else {
-		pool, err = h.cfg.PHPPools.FindByUserID(ctx, dom.UserID)
-		if err != nil {
-			if errors.Is(err, repository.ErrNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "pool_not_found_for_user"})
-				return
-			}
-			slog.ErrorContext(ctx, "bind php-pool: load user pool", "error", err)
+		// GH #329: per-domain PHP version. Bind this domain to the (user,
+		// version) pool — creating it if needed — instead of mutating the
+		// shared pool (which would change every sibling domain's version).
+		// The strict version-format guard doubles as the injection defense:
+		// the value flows into an FPM pool slug + systemd instance name
+		// downstream, so it must never carry path/traversal characters.
+		if !cliPhpVersionRe.MatchString(req.PHPVersion) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_php_version"})
+			return
+		}
+		pools, lerr := h.cfg.PHPPools.ListByUserID(ctx, dom.UserID)
+		if lerr != nil {
+			slog.ErrorContext(ctx, "bind php-pool: list user pools", "error", lerr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 			return
 		}
-		// ADR-0023 constrains each user to exactly one pool, so the only way
-		// for a user to run a different PHP version for their domain is to
-		// change the version of that single pool. This endpoint owns that
-		// switch: update the pool in-place AND fire php.pool.apply so the
-		// per-user FPM master swaps to the new php-fpm<version> binary
-		// before the user reloads info.php. Status flips to "pending" so
-		// the reconciler also re-tries on the next tick if the agent call
-		// here fails or times out.
-		if pool.PHPVersion != req.PHPVersion {
-			pool.PHPVersion = req.PHPVersion
-			pool.Status = "pending"
-			pool.LastError = nil
-			if err := h.cfg.PHPPools.Update(ctx, pool); err != nil {
-				slog.ErrorContext(ctx, "bind php-pool: update pool version", "error", err, "pool_id", pool.ID, "new_version", req.PHPVersion)
+		if len(pools) == 0 {
+			// The reconciler provisions every user's default pool; until it
+			// exists there is nothing to base a versioned pool on.
+			c.JSON(http.StatusNotFound, gin.H{"error": "pool_not_found_for_user"})
+			return
+		}
+		defaultPool := &pools[0] // earliest created = default (slug == username)
+		switch {
+		case req.PHPVersion == defaultPool.PHPVersion:
+			// The user's default version — bind to the default pool itself
+			// (keeps the legacy per-user socket; nothing to create).
+			pool = defaultPool
+		default:
+			existing, ferr := h.cfg.PHPPools.FindByUserAndVersion(ctx, dom.UserID, req.PHPVersion)
+			if ferr == nil {
+				pool = existing
+			} else if errors.Is(ferr, repository.ErrNotFound) {
+				// Create the versioned pool (pending). The reconciler applies
+				// it with the versioned slug/socket and regenerates this
+				// domain's vhost within a tick. pm_* copied from the default.
+				pool = &models.PHPPool{
+					ID:                        ids.NewULID(),
+					UserID:                    dom.UserID,
+					PHPVersion:                req.PHPVersion,
+					PmMode:                    defaultPool.PmMode,
+					PmMaxChildren:             defaultPool.PmMaxChildren,
+					ProcessIdleTimeoutSeconds: defaultPool.ProcessIdleTimeoutSeconds,
+					Status:                    "pending",
+				}
+				if err := h.cfg.PHPPools.Create(ctx, pool); err != nil {
+					slog.ErrorContext(ctx, "bind php-pool: create versioned pool", "error", err, "php_version", req.PHPVersion)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+					return
+				}
+				slog.InfoContext(ctx, "php_pool.versioned_created", "user_id", dom.UserID, "pool_id", pool.ID, "php_version", req.PHPVersion)
+			} else {
+				slog.ErrorContext(ctx, "bind php-pool: lookup versioned pool", "error", ferr)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
 				return
-			}
-			slog.InfoContext(ctx, "php_pool.version_changed", "user_id", claims.UserID, "pool_id", pool.ID, "php_version", req.PHPVersion)
-
-			// Fire the agent apply asynchronously so the request returns
-			// quickly. Skipped when the helper deps are not wired (older
-			// app boot path or tests that intentionally leave Agent nil)
-			// — in that case the reconciler tick converges instead.
-			if h.cfg.Agent != nil && h.cfg.Users != nil && h.cfg.PHPPoolIniOverrides != nil {
-				go reconcilePHPPoolViaAgent(h.cfg.Agent, h.cfg.Users, h.cfg.PHPPoolIniOverrides, h.cfg.PHPPools, pool)
 			}
 		}
 	}

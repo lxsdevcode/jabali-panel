@@ -55,8 +55,23 @@ func reconcilePHPPoolViaAgent(
 		}
 	}
 
+	// GH #329: resolve the pool's slug so a versioned pool applies to its own
+	// socket/instance rather than the default per-user one. isDefault = the
+	// pool is the user's earliest (created_at ASC).
+	username := ""
+	if user.Username != nil {
+		username = *user.Username
+	}
+	isDefault := true
+	if list, lerr := pools.ListByUserID(agentCtx, pool.UserID); lerr == nil && len(list) > 0 {
+		isDefault = list[0].ID == pool.ID
+	}
+	slug := models.PoolSlug(username, pool.PHPVersion, isDefault)
+
 	_, err = ag.Call(agentCtx, "php.pool.apply", map[string]any{
-		"username":                     user.Username,
+		"username":                     username,
+		"slug":                         slug,
+		"additive":                     !isDefault,
 		"php_version":                  pool.PHPVersion,
 		"pm_mode":                      pool.PmMode,
 		"pm_max_children":              pool.PmMaxChildren,

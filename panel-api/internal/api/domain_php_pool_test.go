@@ -144,14 +144,13 @@ func TestBindDomainPHPPool_ByPHPVersion_Match(t *testing.T) {
 	}
 }
 
-func TestBindDomainPHPPool_ByPHPVersion_Mismatch_UpdatesPool(t *testing.T) {
-	// ADR-0023 constrains each user to exactly one pool, so a user-driven
-	// version switch mutates that single pool in place rather than
-	// rejecting the request. Bind succeeds, the pool's version flips, and
-	// status is reset to "pending" so the reconciler will (re)apply if the
-	// async agent call here fails or this test build leaves Agent nil.
+func TestBindDomainPHPPool_ByPHPVersion_NonDefault_CreatesVersionedPool(t *testing.T) {
+	// GH #329: a user-driven version switch to a NON-default version creates a
+	// separate (user, version) pool and binds THIS domain to it — leaving the
+	// default pool (and every sibling domain) untouched.
 	r, domains, pools := setupBindRouter(t, auth.AccessClaims{UserID: "u1"})
 	domains.Create(context.Background(), &models.Domain{ID: "d1", UserID: "u1", Name: "example.com"})
+	// Default pool (earliest) at 8.3.
 	pools.Create(context.Background(), &models.PHPPool{ID: "p1", UserID: "u1", PHPVersion: "8.3", Status: "active"})
 
 	body, _ := json.Marshal(map[string]string{"php_version": "8.1"})
@@ -163,14 +162,66 @@ func TestBindDomainPHPPool_ByPHPVersion_Mismatch_UpdatesPool(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
 	}
+	// The default pool must be untouched.
+	if got := pools.pools["p1"].PHPVersion; got != "8.3" {
+		t.Fatalf("default pool version must not change, got %q", got)
+	}
+	// A new 8.1 pool must exist (pending) and the domain bound to it.
+	newPool, err := pools.FindByUserAndVersion(context.Background(), "u1", "8.1")
+	if err != nil {
+		t.Fatalf("versioned 8.1 pool not created: %v", err)
+	}
+	if newPool.Status != "pending" {
+		t.Fatalf("new versioned pool should be pending, got %q", newPool.Status)
+	}
+	bound := domains.domains["d1"].PHPPoolID
+	if bound == nil || *bound != newPool.ID {
+		t.Fatalf("domain should be bound to the new versioned pool %q, got %+v", newPool.ID, bound)
+	}
+	if *bound == "p1" {
+		t.Fatalf("domain must not stay on the default pool")
+	}
+}
+
+func TestBindDomainPHPPool_ByPHPVersion_Default_BindsDefaultPool(t *testing.T) {
+	// GH #329: requesting the user's DEFAULT version binds to the existing
+	// default pool — no new pool is created.
+	r, domains, pools := setupBindRouter(t, auth.AccessClaims{UserID: "u1"})
+	domains.Create(context.Background(), &models.Domain{ID: "d1", UserID: "u1", Name: "example.com"})
+	pools.Create(context.Background(), &models.PHPPool{ID: "p1", UserID: "u1", PHPVersion: "8.3", Status: "active"})
+
+	body, _ := json.Marshal(map[string]string{"php_version": "8.3"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/domains/d1/php-pool", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
 	if got := domains.domains["d1"].PHPPoolID; got == nil || *got != "p1" {
-		t.Fatalf("domain not bound to existing pool: %+v", got)
+		t.Fatalf("domain should bind to the default pool p1, got %+v", got)
 	}
-	if got := pools.pools["p1"].PHPVersion; got != "8.1" {
-		t.Fatalf("pool php_version should be updated to 8.1, got %q", got)
+	if len(pools.pools) != 1 {
+		t.Fatalf("no new pool should be created for the default version, have %d", len(pools.pools))
 	}
-	if got := pools.pools["p1"].Status; got != "pending" {
-		t.Fatalf("pool status should be reset to pending so reconciler re-applies, got %q", got)
+}
+
+func TestBindDomainPHPPool_ByPHPVersion_InvalidFormat(t *testing.T) {
+	// GH #329: the version format guard is the injection defense (the value
+	// becomes an FPM slug + systemd instance downstream).
+	r, domains, pools := setupBindRouter(t, auth.AccessClaims{UserID: "u1"})
+	domains.Create(context.Background(), &models.Domain{ID: "d1", UserID: "u1", Name: "example.com"})
+	pools.Create(context.Background(), &models.PHPPool{ID: "p1", UserID: "u1", PHPVersion: "8.3", Status: "active"})
+
+	body, _ := json.Marshal(map[string]string{"php_version": "8.1/../etc"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/domains/d1/php-pool", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for malformed version, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
