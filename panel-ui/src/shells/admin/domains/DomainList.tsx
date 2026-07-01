@@ -70,7 +70,14 @@ const renderDomainCell = (
       {isPanelPrimary && <Tag color="purple">System</Tag>}
       {isQuotaSuspended && <Tag color="orange">Suspended (quota)</Tag>}
     </div>
-    <Typography.Text type="secondary">{stripHomePrefix(docRoot)}</Typography.Text>
+    <Typography.Text
+      type="secondary"
+      ellipsis
+      title={stripHomePrefix(docRoot)}
+      style={{ display: "block", maxWidth: 280 }}
+    >
+      {stripHomePrefix(docRoot)}
+    </Typography.Text>
   </div>
 );
 
