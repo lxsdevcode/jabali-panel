@@ -159,103 +159,161 @@ class Jabali_Cache_Admin {
 		$mgr    = new Jabali_Cache_Dropin_Manager( $this->plugin_dir );
 		$dstat  = $mgr->status();
 		$flush  = wp_nonce_url( admin_url( 'admin-post.php?action=jabali_cache_flush' ), self::NONCE );
+		$page   = $this->probe_page_cache();
 
-		echo '<div class="wrap"><h1>Jabali Cache</h1>';
-		$this->render_flash();
-
-		// Status card.
-		echo '<h2>Status</h2><table class="widefat striped" style="max-width:760px"><tbody>';
-		$this->row( 'Caching enabled', $s['enabled'] ? 'Yes' : 'No' );
-		$this->row( 'Redis connection', $health['connected'] ? '<span style="color:#1a7f37">Connected</span>' : '<span style="color:#b32d2e">Not reachable</span>' );
-		$this->row( 'Driver', $health['connected'] ? esc_html( $health['driver'] ) : '—' );
-		$this->row( 'Serializer', esc_html( $health['serializer'] ) );
-		$this->row( 'Target', esc_html( $health['target'] ) . ' (db ' . (int) $s['database'] . ')' );
-		$this->row( 'Key prefix', '<code>' . esc_html( $health['prefix'] ) . '</code>' );
-		$this->row( 'Keys for this site', $health['connected'] ? (int) $health['keys'] : '—' );
-		$oc = isset( $GLOBALS['wp_object_cache'] ) ? $GLOBALS['wp_object_cache'] : null;
+		// Derived request-cache hit/miss ratio.
+		$oc   = isset( $GLOBALS['wp_object_cache'] ) ? $GLOBALS['wp_object_cache'] : null;
+		$hits = null;
 		if ( $oc && isset( $oc->cache_hits ) ) {
 			$h    = (int) $oc->cache_hits;
 			$m    = (int) $oc->cache_misses;
 			$tot  = $h + $m;
-			$rate = $tot ? (int) round( 100 * $h / $tot ) : 0;
-			$this->row( 'Cache hits (this request)', esc_html( $h . ' hits / ' . $m . ' misses (' . $rate . '%)' ) );
+			$hits = array( 'h' => $h, 'm' => $m, 'rate' => $tot ? (int) round( 100 * $h / $tot ) : 0 );
+		}
+		$page_active = ! empty( $page['status'] );
+		$page_probe  = $page_active ? strtoupper( $page['status'] ) : '';
+		$dropins_ok  = ! empty( $dstat['object_ours'] );
+
+		$this->styles();
+		echo '<div class="wrap jc-wrap">';
+		echo '<h1 class="jc-title">Jabali Cache</h1>';
+		$this->render_flash();
+
+		// Hero drop-in status banner.
+		if ( $dropins_ok ) {
+			echo '<div class="jc-alert jc-alert-ok">' . $this->icon( 'check' ) . '<span>Drop-ins installed.</span></div>';
+		} else {
+			echo '<div class="jc-alert jc-alert-warn">' . $this->icon( 'warn' ) . '<span>Object-cache drop-in is not installed. Use “Install / repair drop-ins” below to enable persistent caching.</span></div>';
+		}
+
+		// ---- Top metric cards ---------------------------------------------
+		echo '<div class="jc-metrics">';
+		$this->metric(
+			'toggle',
+			'Caching enabled',
+			$s['enabled'] ? '<span class="jc-ok">Yes</span>' : '<span class="jc-muted">No</span>'
+		);
+		$this->metric(
+			'db',
+			'Redis connection',
+			$health['connected'] ? '<span class="jc-ok">Connected</span>' : '<span class="jc-bad">Not reachable</span>'
+		);
+		$this->metric(
+			'doc',
+			'Server page cache',
+			$page_active ? '<span class="jc-ok">Active</span>' : '<span class="jc-muted">Off</span>',
+			$page_active ? '(last probe: ' . esc_html( $page_probe ) . ')' : 'no server cache detected'
+		);
+		if ( null !== $hits ) {
+			$this->metric(
+				'trend',
+				'Cache hits (this request)',
+				esc_html( number_format_i18n( $hits['h'] ) ) . ' <span class="jc-metric-unit">hits</span>',
+				'/ ' . esc_html( number_format_i18n( $hits['m'] ) ) . ' misses (' . (int) $hits['rate'] . '%)'
+			);
+		} else {
+			$this->metric( 'trend', 'Cache hits (this request)', '<span class="jc-muted">—</span>', 'not measured this request' );
+		}
+		echo '</div>'; // .jc-metrics
+
+		// ---- Lower two-column layout --------------------------------------
+		echo '<div class="jc-cols">';
+
+		// Left: Cache Status.
+		echo '<div class="jc-card jc-card-status">';
+		echo '<div class="jc-card-head">' . $this->icon( 'clipboard' ) . '<h2>Cache Status</h2></div>';
+		echo '<div class="jc-kv-list">';
+		$this->kv( 'Caching enabled', $s['enabled'] ? '<span class="jc-ok">Yes</span>' : '<span class="jc-muted">No</span>' );
+		$this->kv( 'Redis connection', $health['connected'] ? '<span class="jc-ok">Connected</span>' : '<span class="jc-bad">Not reachable</span>' );
+		$this->kv( 'Driver', $health['connected'] ? esc_html( $health['driver'] ) : '—' );
+		$this->kv( 'Serializer', esc_html( $health['serializer'] ) );
+		$this->kv( 'Target', '<code>' . esc_html( $health['target'] ) . '</code> (db ' . (int) $s['database'] . ')' );
+		$this->kv( 'Key prefix', '<code class="jc-ellipsis">' . esc_html( $health['prefix'] ) . '</code>' );
+		$this->kv( 'Keys for this site', $health['connected'] ? (int) $health['keys'] : '—' );
+		if ( null !== $hits ) {
+			$this->kv( 'Cache hits (this request)', esc_html( $hits['h'] . ' hits / ' . $hits['m'] . ' misses (' . $hits['rate'] . '%)' ) );
 		}
 		$ttl = (int) $s['maxttl'];
-		$this->row( 'Object TTL', $ttl > 0 ? esc_html( $ttl . 's' ) : 'none (Redis LRU eviction)' );
-		$this->row( 'Object-cache drop-in', $this->dropin_label( $dstat['object_installed'], $dstat['object_ours'], $dstat['object_foreign'] ) );
-		if ( empty( $s['page_cache'] ) ) {
-			// Page caching is intentionally off (Jabali serves pages from the nginx
-			// fastcgi microcache). Show it as a deliberate state, not a red error.
-			$this->row( 'Advanced-cache drop-in', '<span style="color:#646970">Off — page caching handled by the server</span>' );
-		} else {
-			$this->row( 'Advanced-cache drop-in', $this->dropin_label( $dstat['advanced_installed'], $dstat['advanced_ours'], false ) . ( $dstat['wp_cache_const'] ? '' : ' <em>(WP_CACHE not defined in wp-config.php)</em>' ) );
-		}
+		$this->kv( 'Object TTL', $ttl > 0 ? esc_html( $ttl . 's' ) : 'none (Redis LRU eviction)' );
+		$this->kv( 'Object-cache drop-in', $this->dropin_label( $dstat['object_installed'], $dstat['object_ours'], $dstat['object_foreign'] ) );
 		if ( $health['connected'] && ! empty( $health['server'] ) ) {
 			$sv    = $health['server'];
 			$parts = array();
-			if ( ! empty( $sv['redis_version'] ) ) {
-				$parts[] = 'v' . $sv['redis_version'];
-			}
-			if ( ! empty( $sv['used_memory_human'] ) ) {
-				$parts[] = $sv['used_memory_human'] . ' used';
-			}
-			if ( ! empty( $sv['maxmemory_policy'] ) ) {
-				$parts[] = $sv['maxmemory_policy'];
-			}
-			if ( isset( $sv['evicted_keys'] ) ) {
-				$parts[] = (int) $sv['evicted_keys'] . ' evicted';
-			}
-			$this->row( 'Redis server', esc_html( implode( ' · ', $parts ) ) );
+			if ( ! empty( $sv['redis_version'] ) ) { $parts[] = 'v' . $sv['redis_version']; }
+			if ( ! empty( $sv['used_memory_human'] ) ) { $parts[] = $sv['used_memory_human'] . ' used'; }
+			if ( ! empty( $sv['maxmemory_policy'] ) ) { $parts[] = $sv['maxmemory_policy']; }
+			if ( isset( $sv['evicted_keys'] ) ) { $parts[] = (int) $sv['evicted_keys'] . ' evicted'; }
+			if ( $parts ) { $this->kv( 'Redis server', esc_html( implode( ' · ', $parts ) ) ); }
 		}
-		$page = $this->probe_page_cache();
-		if ( ! empty( $page['status'] ) ) {
-			$st  = strtoupper( $page['status'] );
-			$col = ( 'HIT' === $st ) ? '#1a7f37' : '#646970';
-			$this->row( 'Server page cache', '<span style="color:' . $col . '">Active</span> <span style="color:#646970">(last probe: ' . esc_html( $st ) . ')</span>' );
+		if ( ! $health['connected'] && '' !== $health['last_error'] ) {
+			$this->kv( 'Last error', '<code>' . esc_html( $health['last_error'] ) . '</code>' );
+		}
+		echo '</div>'; // .jc-kv-list
+		if ( ! $health['connected'] && $s['enabled'] ) {
+			echo '<div class="jc-hint">' . esc_html( $health['hint'] ) . '</div>';
+		}
+		echo '</div>'; // .jc-card-status
+
+		// Right column: Technical Details + Actions.
+		echo '<div class="jc-col-right">';
+
+		echo '<div class="jc-card">';
+		echo '<div class="jc-card-head">' . $this->icon( 'gear' ) . '<h2>Technical Details</h2></div>';
+		echo '<div class="jc-kv-list">';
+		if ( empty( $s['page_cache'] ) ) {
+			$this->kv( 'Advanced-cache drop-in', '<span class="jc-muted">Off — page caching handled by the server</span>' );
+		} else {
+			$this->kv( 'Advanced-cache drop-in', $this->dropin_label( $dstat['advanced_installed'], $dstat['advanced_ours'], false ) . ( $dstat['wp_cache_const'] ? '' : ' <em>(WP_CACHE not defined in wp-config.php)</em>' ) );
+		}
+		if ( $page_active ) {
+			$this->kv( 'Server page cache', '<span class="jc-ok">Active</span> <span class="jc-muted">(last probe: ' . esc_html( $page_probe ) . ')</span>' );
 			if ( '' !== $page['cache_control'] ) {
-				$this->row( 'Edge Cache-Control', '<code>' . esc_html( $page['cache_control'] ) . '</code>' );
+				$this->kv( 'Edge Cache-Control', '<code>' . esc_html( $page['cache_control'] ) . '</code>' );
 			}
 			$val = array();
 			if ( 'yes' === $page['etag'] ) { $val[] = 'ETag'; }
 			if ( 'yes' === $page['last_modified'] ) { $val[] = 'Last-Modified'; }
 			if ( $val ) {
-				$this->row( 'Revalidation', esc_html( implode( ' + ', $val ) ) . ' <span style="color:#646970">(304 on returning visits)</span>' );
+				$this->kv( 'Revalidation', esc_html( implode( ' + ', $val ) ) . ' <span class="jc-muted">(304 on returning visits)</span>' );
 			}
+		} else {
+			$this->kv( 'Server page cache', '<span class="jc-muted">Not detected</span>' );
 		}
-		if ( ! $health['connected'] && '' !== $health['last_error'] ) {
-			$this->row( 'Last error', '<code>' . esc_html( $health['last_error'] ) . '</code>' );
-		}
-		echo '</tbody></table>';
+		echo '</div></div>'; // .jc-kv-list .jc-card
 
-		if ( ! $health['connected'] && $s['enabled'] ) {
-			echo '<div class="notice notice-info inline" style="max-width:760px"><p>' . esc_html( $health['hint'] ) . '</p></div>';
-		}
+		// Actions card.
+		echo '<div class="jc-card">';
+		echo '<div class="jc-card-head">' . $this->icon( 'bolt' ) . '<h2>Actions</h2></div>';
+		echo '<div class="jc-actions">';
+		echo '<a href="' . esc_url( $flush ) . '" class="button button-primary jc-btn">' . $this->icon( 'trash' ) . 'Flush cache now</a>';
+		echo '<a href="' . esc_url( admin_url( 'options-general.php?page=' . self::SLUG ) ) . '" class="button jc-btn">' . $this->icon( 'refresh' ) . 'Refresh status</a>';
+		echo '<a href="https://jabali-panel.com/" target="_blank" rel="noopener" class="button jc-btn">' . $this->icon( 'book' ) . 'View documentation</a>';
+		echo '</div></div>'; // .jc-actions .jc-card
 
-		// Quick actions.
-		echo '<p style="margin-top:1em">';
-		echo '<a href="' . esc_url( $flush ) . '" class="button button-secondary">Flush cache now</a> ';
-		echo '</p>';
+		echo '</div>'; // .jc-col-right
+		echo '</div>'; // .jc-cols
 
-		// Drop-in management.
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin:1em 0">';
+		echo '<p class="jc-footnote">' . $this->icon( 'info' ) . 'Jabali Cache drop-ins are active. Changes to caching settings may take effect immediately.</p>';
+
+		// ---- Drop-in management + Settings (operational, preserved) --------
+		echo '<div class="jc-card jc-card-wide">';
+		echo '<div class="jc-card-head">' . $this->icon( 'gear' ) . '<h2>Drop-ins &amp; Settings</h2></div>';
+
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="jc-dropin-form">';
 		wp_nonce_field( self::NONCE );
 		echo '<input type="hidden" name="action" value="jabali_cache_dropins">';
 		echo '<button class="button" name="dropin_action" value="install">Install / repair drop-ins</button> ';
 		echo '<button class="button" name="dropin_action" value="remove" onclick="return confirm(\'Remove the Jabali Cache drop-ins?\')">Remove drop-ins</button>';
 		echo '</form>';
 
-		// Settings form.
-		echo '<h2>Settings</h2>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::NONCE );
 		echo '<input type="hidden" name="action" value="jabali_cache_save">';
 		echo '<table class="form-table" role="presentation"><tbody>';
-
 		$this->checkbox_row( 'enabled', 'Enable caching', $s['enabled'], 'Master switch for object + page caching.' );
 		$this->checkbox_row( 'page_cache', 'Full-page cache', $s['page_cache'], 'Optional. Off by default — the jabali nginx microcache already caches anonymous pages at the edge. Enable only if you disabled that.' );
 		$this->number_row( 'page_ttl', 'Page cache TTL (seconds)', $s['page_ttl'] );
 		$this->number_row( 'maxttl', 'Object max TTL (seconds, 0 = none)', $s['maxttl'] );
-
 		echo '<tr><th scope="row">Connection</th><td>';
 		echo '<label><input type="radio" name="scheme" value="unix" ' . checked( $s['scheme'], 'unix', false ) . '> Unix socket</label> &nbsp; ';
 		echo '<label><input type="radio" name="scheme" value="tcp" ' . checked( $s['scheme'], 'tcp', false ) . '> TCP</label>';
@@ -265,13 +323,123 @@ class Jabali_Cache_Admin {
 		$this->number_row( 'port', 'TCP port', $s['port'] );
 		$this->number_row( 'database', 'Redis database', $s['database'] );
 		$this->password_row( 'password', 'Password (optional)', $s['password'] );
-
 		echo '</tbody></table>';
 		submit_button( 'Save settings' );
 		echo '</form>';
 
-		echo '<hr><p style="color:#646970;max-width:760px">Jabali Cache uses the shared panel Redis (ADR-0059): unix socket <code>/run/redis/redis.sock</code>, database 1. Cache entries are isolated per site by key prefix and survive Redis LRU eviction by design.</p>';
-		echo '</div>';
+		echo '<p class="jc-note">Jabali Cache uses the shared panel Redis (ADR-0059): unix socket <code>/run/redis/redis.sock</code>, database 1. Cache entries are isolated per site by key prefix and survive Redis LRU eviction by design.</p>';
+		echo '</div>'; // .jc-card-wide
+
+		echo '</div>'; // .wrap
+	}
+
+	/**
+	 * kv emits one label/value row inside a Cache Status / Technical Details
+	 * card. $value is pre-escaped HTML (callers escape).
+	 *
+	 * @param string $label
+	 * @param string $value
+	 */
+	private function kv( $label, $value ) {
+		echo '<div class="jc-kv"><span class="jc-k">' . esc_html( $label ) . '</span><span class="jc-v">' . $value . '</span></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * metric emits one top-row metric card.
+	 *
+	 * @param string $icon  Icon key for $this->icon().
+	 * @param string $label Card label.
+	 * @param string $value Pre-escaped primary value HTML.
+	 * @param string $sub   Optional pre-escaped sub-line.
+	 */
+	private function metric( $icon, $label, $value, $sub = '' ) {
+		echo '<div class="jc-metric">';
+		echo '<div class="jc-metric-icon">' . $this->icon( $icon ) . '</div>';
+		echo '<div class="jc-metric-body"><div class="jc-metric-label">' . esc_html( $label ) . '</div>';
+		echo '<div class="jc-metric-value">' . $value . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		if ( '' !== $sub ) {
+			echo '<div class="jc-metric-sub">' . $sub . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		}
+		echo '</div></div>';
+	}
+
+	/**
+	 * icon returns a static inline SVG (16–20px, currentColor stroke). No user
+	 * data — safe to echo.
+	 *
+	 * @param string $name
+	 * @return string
+	 */
+	private function icon( $name ) {
+		$p = '<svg class="jc-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+		$paths = array(
+			'check'     => '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+			'warn'      => '<path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+			'toggle'    => '<rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="9" cy="12" r="2.4" fill="currentColor" stroke="none"/>',
+			'db'        => '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+			'doc'       => '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/>',
+			'trend'     => '<path d="M4 17l5-5 3 3 7-7"/><path d="M15 8h5v5"/>',
+			'clipboard' => '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h6"/>',
+			'gear'      => '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+			'bolt'      => '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+			'trash'     => '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/>',
+			'refresh'   => '<path d="M20 11a8 8 0 10-2 6"/><path d="M20 5v6h-6"/>',
+			'book'      => '<path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/>',
+			'info'      => '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+		);
+		$body = isset( $paths[ $name ] ) ? $paths[ $name ] : $paths['info'];
+		return $p . $body . '</svg>';
+	}
+
+	/**
+	 * styles emits the scoped stylesheet for the redesigned dashboard (GH #609).
+	 */
+	private function styles() {
+		echo '<style>
+.jc-wrap{max-width:1180px}
+.jc-title{font-size:28px;font-weight:600;margin:.2em 0 .6em}
+.jc-svg{width:18px;height:18px;flex:0 0 auto}
+.jc-ok{color:#1a7f37;font-weight:600}
+.jc-bad{color:#b32d2e;font-weight:600}
+.jc-muted{color:#646970}
+.jc-alert{display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:10px;border:1px solid transparent;margin:0 0 18px;font-size:14px}
+.jc-alert span{font-weight:500}
+.jc-alert-ok{background:#eef7f0;border-color:#c6e6cf;color:#1a7f37}
+.jc-alert-warn{background:#fcf6e6;border-color:#f0dfa8;color:#8a6d1a}
+.jc-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+@media (max-width:1100px){.jc-metrics{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:640px){.jc-metrics{grid-template-columns:1fr}}
+.jc-metric{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #e4e6eb;border-radius:12px;padding:18px 20px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.jc-metric-icon{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#eef7f0;color:#1a7f37}
+.jc-metric-icon .jc-svg{width:20px;height:20px}
+.jc-metric-label{color:#646970;font-size:13px;margin-bottom:3px}
+.jc-metric-value{font-size:20px;font-weight:600;line-height:1.1}
+.jc-metric-unit{font-size:14px;font-weight:500;color:#646970}
+.jc-metric-sub{color:#8a8f98;font-size:12px;margin-top:2px}
+.jc-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media (max-width:960px){.jc-cols{grid-template-columns:1fr}}
+.jc-col-right{display:flex;flex-direction:column;gap:16px}
+.jc-card{background:#fff;border:1px solid #e4e6eb;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);padding:6px 22px 20px}
+.jc-card-head{display:flex;align-items:center;gap:10px;padding:16px 0 8px;border-bottom:1px solid #eceef1;margin-bottom:8px;color:#3c434a}
+.jc-card-head .jc-svg{width:22px;height:22px;color:#646970}
+.jc-card-head h2{font-size:16px;font-weight:600;margin:0;padding:0}
+.jc-kv-list{display:flex;flex-direction:column}
+.jc-kv{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #f2f3f5;font-size:14px}
+.jc-kv:last-child{border-bottom:0}
+.jc-k{color:#3c434a;font-weight:500;flex:0 0 auto}
+.jc-v{color:#1d2327;text-align:right;min-width:0;word-break:break-word}
+.jc-v code{background:#f4f5f7;border-radius:4px;padding:1px 6px;font-size:12px}
+.jc-ellipsis{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.jc-actions{display:flex;flex-wrap:wrap;gap:10px;padding-top:6px}
+.jc-btn{display:inline-flex!important;align-items:center;gap:8px;height:auto!important;padding:8px 16px!important;border-radius:8px!important}
+.jc-btn .jc-svg{width:16px;height:16px}
+.jc-hint{margin-top:12px;padding:10px 14px;background:#eef4fb;border:1px solid #cfe0f2;border-radius:8px;color:#2c3e50;font-size:13px}
+.jc-footnote{display:flex;align-items:center;gap:8px;color:#646970;font-size:13px;margin:18px 0}
+.jc-footnote .jc-svg{width:16px;height:16px}
+.jc-card-wide{margin-top:16px}
+.jc-dropin-form{margin:8px 0 4px}
+.jc-note{color:#646970;font-size:13px;max-width:820px}
+</style>';
 	}
 
 	// ------------------------------------------------------------------

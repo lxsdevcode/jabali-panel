@@ -4,7 +4,7 @@ Tags: redis, object cache, cache, performance, page cache
 Requires at least: 5.6
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -128,6 +128,16 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 
 == Changelog ==
 
+= 1.0.1 =
+* Redesigned the admin dashboard (Settings → Jabali Cache): large page title, a
+  drop-in status banner, four at-a-glance metric cards (caching enabled, Redis
+  connection, server page cache, request hit ratio), and a two-column layout
+  with a Cache Status card, a Technical Details card, and an Actions card
+  (Flush cache now / Refresh status / View documentation). Modern card styling
+  with icons and clear success/neutral colors. All existing operational data and
+  actions are preserved; the connection settings and drop-in management moved
+  below the dashboard. No behavior change to caching itself. (GH #609)
+
 = 1.0.0 =
 * Initial release.
 * Persistent Redis object cache with strict per-site key isolation.
@@ -139,6 +149,9 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 * Fail-safe: WordPress keeps running normally whenever Redis is unavailable.
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+Refreshed admin dashboard only — same caching engine. Safe drop-in update.
 
 = 1.0.0 =
 Initial release.
