@@ -2213,12 +2213,12 @@ OPC_EOF
 # RSS (mariadbd) and kills it. Caught 2026-06-05 on puzzle:
 # NRestarts=2 in one morning.
 #
-# Brackets (conservative; idle pool memory is wasted on small VMs):
-#   <=2 GB  -> 96 MB pool
-#   <=4 GB  -> 192 MB pool   (puzzle class)
-#   <=8 GB  -> 384 MB pool
-#   <=16 GB -> 1024 MB pool
-#   >16 GB  -> 2048 MB pool  (hard cap; operators can hand-edit)
+# Sizing (#597): small VMs stay conservative (OOM history above); real hosts
+# get ~35 % of RAM with a 1 GB floor + buffer_pool_instances, leaving headroom
+# for the per-user PHP-FPM pools + Stalwart/Kratos/etc on a shared DB+web box.
+#   <=2 GB  -> 128 MB pool  (tiny; OOM-critical)
+#   <=4 GB  -> 256 MB pool  (puzzle class; keep conservative)
+#   >4 GB   -> 35 % of RAM, floor 1024 MB   (e.g. 12 GB -> ~4.2 GB)
 #
 # OOMScoreAdjust=-500 demotes mariadbd in the OOM order without
 # making it un-killable (-1000 would).
@@ -2232,14 +2232,18 @@ tune_mariadb_for_ram() {
   mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
   mem_mb=$((mem_kb / 1024))
 
-  if   [[ $mem_mb -le 2048  ]]; then pool_mb=96
-  elif [[ $mem_mb -le 4096  ]]; then pool_mb=192
-  elif [[ $mem_mb -le 8192  ]]; then pool_mb=384
-  elif [[ $mem_mb -le 16384 ]]; then pool_mb=1024
-  else                                pool_mb=2048
+  if   [[ $mem_mb -le 2048 ]]; then pool_mb=128
+  elif [[ $mem_mb -le 4096 ]]; then pool_mb=256
+  else
+    pool_mb=$((mem_mb * 35 / 100))
+    [[ $pool_mb -lt 1024 ]] && pool_mb=1024   # #597 floor
   fi
+  # buffer_pool_instances: ~1 per GB of pool, clamped [1,8] (MariaDB guidance).
+  local pool_instances=$((pool_mb / 1024))
+  [[ $pool_instances -lt 1 ]] && pool_instances=1
+  [[ $pool_instances -gt 8 ]] && pool_instances=8
 
-  _log "mariadb-tune: host=${mem_mb}MB RAM -> innodb_buffer_pool_size=${pool_mb}M"
+  _log "mariadb-tune: host=${mem_mb}MB RAM -> innodb_buffer_pool_size=${pool_mb}M (instances=${pool_instances})"
 
   local tuning_desired
   tuning_desired=$(cat <<TUNING_EOF
@@ -2249,6 +2253,7 @@ tune_mariadb_for_ram() {
 [mysqld]
 innodb_buffer_pool_size = ${pool_mb}M
 innodb_buffer_pool_size_auto_min = ${pool_mb}M
+innodb_buffer_pool_instances = ${pool_instances}
 TUNING_EOF
 )
 
@@ -12188,6 +12193,13 @@ EOF
   # stock 10000-file/128MB opcache defaults get raised on existing hosts.
   if declare -f install_php_opcache_tuning >/dev/null 2>&1; then
     install_php_opcache_tuning
+  fi
+
+  # MariaDB buffer-pool sizing (#597) — reconcile the RAM-scaled drop-in on every
+  # update so existing hosts pick up the raised brackets. Idempotent + restart-
+  # on-change; guarded on mariadb being installed.
+  if declare -f tune_mariadb_for_ram >/dev/null 2>&1 && command -v mariadb >/dev/null 2>&1; then
+    tune_mariadb_for_ram
   fi
 
 }
