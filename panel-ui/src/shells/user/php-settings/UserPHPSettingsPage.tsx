@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { CodeOutlined } from "@icons";
 import { apiClient } from "../../../apiClient";
 import { getIdentity, type Identity } from "../../../identity";
+import { isPHPEOL } from "../../../utils/phpEol";
 
 type Domain = {
   id: string;
@@ -336,18 +337,27 @@ export function UserPHPSettingsPage() {
                 <>
                   <Form.Item
                     label="PHP Version"
-                    extra="Applies to your whole account — all your domains share one PHP version (one FPM pool per account). The resource limits below are per-domain."
+                    extra="Applies to this domain only — each domain can run its own PHP version. EOL versions have no security patches; avoid them on public sites."
                   >
                     <Select
                       value={phpSettings.php_version ?? null}
                       loading={versionSaving}
                       disabled={versionSaving}
                       onChange={(v) => onChangePHPVersion(v)}
-                      style={{ width: 200 }}
+                      style={{ width: 220 }}
                       options={[
                         { label: "Server default", value: null },
                         ...availableVersions.map((v) => ({
-                          label: `PHP ${v}`,
+                          label: isPHPEOL(v) ? (
+                            <span>
+                              PHP {v}{" "}
+                              <Typography.Text type="danger">
+                                (EOL)
+                              </Typography.Text>
+                            </span>
+                          ) : (
+                            `PHP ${v}`
+                          ),
                           value: v,
                         })),
                       ]}
