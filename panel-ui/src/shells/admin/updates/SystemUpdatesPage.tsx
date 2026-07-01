@@ -116,6 +116,7 @@ const ReleaseChannelCard = () => {
   );
 };
 import { RepairCard } from "./RepairCard";
+import { DomainRepairCard } from "./DomainRepairCard";
 import {
   useAptCheck,
   useAptRun,
@@ -217,6 +218,7 @@ systemctl restart jabali-panel jabali-agent nginx   # only after reading the log
           </Col>
         </Row>
         <RepairCard />
+        <DomainRepairCard />
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={12}>
             <AutomaticUpdatesCard />

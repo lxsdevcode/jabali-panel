@@ -65,6 +65,12 @@ func RegisterAdminUpdatesRoutes(g *gin.RouterGroup, cfg AdminUpdatesHandlerConfi
 	grp.POST("/repair/run", h.repairRun)
 	grp.GET("/repair/status", h.repairStatus)
 	grp.DELETE("/repair", h.repairStop)
+	// GH #576 — domain repair helpers, surfaced from the Repair Center. Both
+	// proxy the operator `jabali domain …` CLI via the agent (synchronous;
+	// neither restarts the panel). Orphan prune is dry-run unless apply=true.
+	grp.POST("/repair/domain/fix-perms", h.repairDomainFixPerms)
+	grp.GET("/repair/domain/orphans", h.repairDomainOrphans)
+	grp.POST("/repair/domain/orphans/prune", h.repairDomainOrphansPrune)
 }
 
 type adminUpdatesHandler struct{ cfg AdminUpdatesHandlerConfig }
@@ -169,6 +175,32 @@ func (h *adminUpdatesHandler) repairStatus(c *gin.Context) {
 
 func (h *adminUpdatesHandler) repairStop(c *gin.Context) {
 	h.callAgent(c, "system.unit_stop", map[string]any{"unit": repairUnit}, 10*time.Second)
+}
+
+// --- GH #576 domain repair -------------------------------------------------
+
+// repairDomainFixPerms runs `jabali domain fix-perms <username>` on the host
+// (idempotent docroot group/setgid retrofit). Body: {"username": "..."}.
+func (h *adminUpdatesHandler) repairDomainFixPerms(c *gin.Context) {
+	var req struct {
+		Username string `json:"username" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "details": err.Error()})
+		return
+	}
+	h.callAgent(c, "domain.repair_fix_perms", map[string]any{"username": req.Username}, 120*time.Second)
+}
+
+// repairDomainOrphans lists orphan nginx sites (dry-run; nothing deleted).
+func (h *adminUpdatesHandler) repairDomainOrphans(c *gin.Context) {
+	h.callAgent(c, "domain.repair_orphans", map[string]any{"apply": false}, 30*time.Second)
+}
+
+// repairDomainOrphansPrune deletes the orphan sites (irreversible). Guarded by
+// the UI confirm; apply is forced true here so this route is never a dry-run.
+func (h *adminUpdatesHandler) repairDomainOrphansPrune(c *gin.Context) {
+	h.callAgent(c, "domain.repair_orphans", map[string]any{"apply": true}, 120*time.Second)
 }
 
 // --- apt -------------------------------------------------------------------
