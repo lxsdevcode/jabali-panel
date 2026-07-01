@@ -2238,12 +2238,9 @@ tune_mariadb_for_ram() {
     pool_mb=$((mem_mb * 35 / 100))
     [[ $pool_mb -lt 1024 ]] && pool_mb=1024   # #597 floor
   fi
-  # buffer_pool_instances: ~1 per GB of pool, clamped [1,8] (MariaDB guidance).
-  local pool_instances=$((pool_mb / 1024))
-  [[ $pool_instances -lt 1 ]] && pool_instances=1
-  [[ $pool_instances -gt 8 ]] && pool_instances=8
-
-  _log "mariadb-tune: host=${mem_mb}MB RAM -> innodb_buffer_pool_size=${pool_mb}M (instances=${pool_instances})"
+  # NOTE: innodb_buffer_pool_instances was REMOVED in MariaDB 11.x (single
+  # resizable buffer pool) — do NOT set it, MariaDB rejects the unknown var.
+  _log "mariadb-tune: host=${mem_mb}MB RAM -> innodb_buffer_pool_size=${pool_mb}M"
 
   local tuning_desired
   tuning_desired=$(cat <<TUNING_EOF
@@ -2253,7 +2250,6 @@ tune_mariadb_for_ram() {
 [mysqld]
 innodb_buffer_pool_size = ${pool_mb}M
 innodb_buffer_pool_size_auto_min = ${pool_mb}M
-innodb_buffer_pool_instances = ${pool_instances}
 TUNING_EOF
 )
 
