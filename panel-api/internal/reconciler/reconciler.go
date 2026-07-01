@@ -485,6 +485,9 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 
 	// PHP pool reconciliation first, so domain regens see latest pool state.
 	r.ReconcilePHPPools(ctx)
+	// GH #329: converge the per-domain versioned pools (apply pending, reap
+	// orphans). No-op when no user has a non-default pool.
+	r.reconcileVersionedPHPPools(ctx)
 
 	// M24: managed IPs BEFORE the domain loop. If a domain is bound to a
 	// secondary IP that fell off the kernel (host reboot, netplan drop),
@@ -970,8 +973,100 @@ func (r *Reconciler) ReconcilePHPPools(ctx context.Context) {
 		}
 
 		// Call agent to provision the pool
-		r.applyPHPPool(ctx, user, pool)
+		r.applyPHPPool(ctx, user, pool, true)
 	}
+}
+
+// reconcileVersionedPHPPools converges the per-domain PHP-version pools (GH
+// #329) — the ADDITIONAL, non-default pools a user accrues when a domain is
+// pinned to a non-default PHP version. It runs after ReconcilePHPPools (which
+// owns the default pool) and is a no-op on hosts with no versioned pools.
+//
+// For each user's pools ordered created_at ASC, pools[0] is the default
+// (owned by ReconcilePHPPools) and pools[1:] are versioned. Each versioned
+// pool is either applied (pending/error) or reaped (no domains bound).
+//
+// This also fixes the latent cpanel mixed-version restore bug: restore inserts
+// multiple pool rows, but before #329 only the default was ever applied.
+func (r *Reconciler) reconcileVersionedPHPPools(ctx context.Context) {
+	if r.phpPools == nil {
+		return
+	}
+	allUsers, _, err := r.users.List(ctx, repository.ListOptions{Limit: 10000})
+	if err != nil {
+		r.log.Error("failed to list users for versioned PHP pool reconciliation", "err", err)
+		return
+	}
+
+	processed := 0
+	for i := range allUsers {
+		user := &allUsers[i]
+		if user.Username == nil || *user.Username == "" || user.IsAdmin {
+			continue
+		}
+		pools, err := r.phpPools.ListByUserID(ctx, user.ID)
+		if err != nil {
+			r.log.Error("failed to list pools for user", "user_id", user.ID, "err", err)
+			continue
+		}
+		if len(pools) <= 1 {
+			continue // only the default pool (or none) — nothing versioned
+		}
+
+		// pools[0] is the default (created_at ASC); the rest are versioned.
+		for j := 1; j < len(pools); j++ {
+			pool := &pools[j]
+
+			// Reap an orphan versioned pool: no domains bound => tear the
+			// master down and drop the row. The default pool is never reaped.
+			cnt, cErr := r.domains.CountByPHPPoolID(ctx, pool.ID)
+			if cErr != nil {
+				r.log.Error("failed to count domains for pool", "pool_id", pool.ID, "err", cErr)
+				continue
+			}
+			if cnt == 0 {
+				r.reapVersionedPool(ctx, user, pool)
+				continue
+			}
+
+			// Apply pending/error versioned pools (active ones are converged).
+			if pool.Status == "pending" || pool.Status == "error" {
+				r.applyPHPPool(ctx, user, pool, false)
+				processed++
+			}
+		}
+
+		if processed >= 50 {
+			break // bound agent work per tick, same policy as ReconcilePHPPools
+		}
+	}
+}
+
+// reapVersionedPool tears down an orphaned versioned PHP pool: stop+disable the
+// master and remove its files on the agent, then delete the DB row. Best-effort
+// — if the agent call fails the row is left for the next tick to retry. The
+// default pool must never be passed here.
+func (r *Reconciler) reapVersionedPool(ctx context.Context, user *models.User, pool *models.PHPPool) {
+	username := *user.Username
+	slug := models.PoolSlug(username, pool.PHPVersion, false)
+
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	_, err := r.agent.Call(callCtx, "php.pool.remove", map[string]any{
+		"username": username,
+		"slug":     slug,
+	})
+	cancel()
+	if err != nil {
+		r.log.Warn("reap versioned pool: agent remove failed; will retry",
+			"pool_id", pool.ID, "slug", slug, "err", err)
+		return
+	}
+	if err := r.phpPools.Delete(ctx, pool.ID); err != nil {
+		r.log.Error("reap versioned pool: delete row failed",
+			"pool_id", pool.ID, "err", err)
+		return
+	}
+	r.log.Info("reaped orphan versioned PHP pool", "pool_id", pool.ID, "slug", slug)
 }
 
 // reconcileMysqlAdminShadow ensures all active users have mysqladmin shadow accounts.
@@ -1052,13 +1147,13 @@ func (r *Reconciler) ReapplyPHPPoolForUser(ctx context.Context, userID string) e
 	if pool == nil {
 		return nil
 	}
-	r.applyPHPPool(ctx, user, pool)
+	r.applyPHPPool(ctx, user, pool, true)
 	return nil
 }
 
 // applyPHPPool calls the agent to provision a PHP pool, waits for socket ready,
 // and triggers nginx regeneration for bound domains.
-func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *models.PHPPool) {
+func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *models.PHPPool, isDefault bool) {
 	if user.Username == nil || *user.Username == "" || user.IsAdmin {
 		errMsg := "user has no username"
 		r.phpPools.SetStatus(ctx, pool.ID, "error", &errMsg)
@@ -1066,15 +1161,23 @@ func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *
 	}
 	username := *user.Username
 
-	// Build pool socket path for later socket-ready check
-	socketPath := fmt.Sprintf("/run/php/jabali-%s/fpm.sock", username)
+	// Slug + socket for this pool (GH #329). The default pool keeps the legacy
+	// slug==username / /run/php/jabali-<user> socket; a versioned pool gets its
+	// own slug + socket. Panel and agent derive these identically.
+	slug := models.PoolSlug(username, pool.PHPVersion, isDefault)
+	socketPath := models.PoolSocketPath(username, pool.PHPVersion, isDefault)
 
 	// Call agent to apply the pool configuration
 	params := map[string]any{
-		"user_id":                      user.ID,
-		"pool_id":                      pool.ID,
-		"username":                     username,
-		"php_version":                  pool.PHPVersion,
+		"user_id":     user.ID,
+		"pool_id":     pool.ID,
+		"username":    username,
+		"php_version": pool.PHPVersion,
+		"slug":        slug,
+		// Versioned pools MUST NOT wipe sibling-version pool files; the default
+		// pool keeps the legacy wipe-stale-versions behaviour (harmless — its
+		// glob only matches jabali-<user>.conf, never a versioned slug).
+		"additive":                     !isDefault,
 		"pm_mode":                      pool.PmMode,
 		"pm_max_children":              pool.PmMaxChildren,
 		"process_idle_timeout_seconds": pool.ProcessIdleTimeoutSeconds,
@@ -1251,7 +1354,7 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		// false ⇒ vhost byte-identical to the pre-0108 shape.
 		"cache_enabled": domain.CacheEnabled,
 		// Gitea #420: scope the page cache to the WP install path ("/" = whole domain).
-		"cache_path": domain.CachePath,
+		"cache_path":        domain.CachePath,
 		"cache_ttl_seconds": domain.CacheTTLSeconds,
 	}
 

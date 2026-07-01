@@ -2145,3 +2145,81 @@ func TestApplyPHPPool_DisableFunctionsByPackage(t *testing.T) {
 	_, ok2 := p2["disable_functions"]
 	require.False(t, ok2, "default package must NOT send disable_functions (agent uses safe default)")
 }
+
+// TestReconcileVersionedPHPPools verifies GH #329: a versioned pool with a
+// bound domain is applied (slug + additive), and an orphan versioned pool with
+// no bound domains is reaped. The default pool is never applied here or reaped.
+func TestReconcileVersionedPHPPools(t *testing.T) {
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	agent := &fakeAgent{}
+	domainRepo := &fakeDomainRepo{domains: make(map[string]*models.Domain)}
+	userRepo := &fakeUserRepo{users: make(map[string]*models.User)}
+	phpPoolRepo := &fakePHPPoolRepo{pools: make(map[string]*models.PHPPool)}
+
+	username := "phpuser"
+	user := &models.User{ID: "user-1", Email: "u@e.com", Username: &username}
+	userRepo.users[user.ID] = user
+
+	base := time.Now().UTC()
+	// Default pool (earliest) — must NOT be touched by the versioned pass.
+	phpPoolRepo.pools["pool-default"] = &models.PHPPool{
+		ID: "pool-default", UserID: user.ID, PHPVersion: "8.4",
+		PmMode: "ondemand", PmMaxChildren: 20, ProcessIdleTimeoutSeconds: 60,
+		Status: "active", CreatedAt: base,
+	}
+	// Versioned pool WITH a bound domain, pending -> should be applied.
+	phpPoolRepo.pools["pool-82"] = &models.PHPPool{
+		ID: "pool-82", UserID: user.ID, PHPVersion: "8.2",
+		PmMode: "ondemand", PmMaxChildren: 20, ProcessIdleTimeoutSeconds: 60,
+		Status: "pending", CreatedAt: base.Add(time.Minute),
+	}
+	pool82 := "pool-82"
+	domainRepo.domains["d1"] = &models.Domain{
+		ID: "d1", UserID: user.ID, Name: "a.com", IsEnabled: true, PHPPoolID: &pool82,
+	}
+	// Orphan versioned pool (no domains), active -> should be reaped.
+	phpPoolRepo.pools["pool-80"] = &models.PHPPool{
+		ID: "pool-80", UserID: user.ID, PHPVersion: "8.0",
+		PmMode: "ondemand", PmMaxChildren: 20, ProcessIdleTimeoutSeconds: 60,
+		Status: "active", CreatedAt: base.Add(2 * time.Minute),
+	}
+
+	r := New(domainRepo, userRepo, agent, log, Config{Interval: time.Second}).
+		WithPHPPools(phpPoolRepo)
+	// Make the socket-ready check pass instantly for the applied pool.
+	r.socketReady = func(context.Context, string, time.Duration, time.Duration) bool { return true }
+
+	r.reconcileVersionedPHPPools(ctx)
+
+	var applied, removed *fakeCall
+	for i := range agent.calls {
+		switch agent.calls[i].method {
+		case "php.pool.apply":
+			applied = &agent.calls[i]
+		case "php.pool.remove":
+			removed = &agent.calls[i]
+		}
+	}
+
+	// Applied the 8.2 versioned pool with the right slug + additive.
+	require.NotNil(t, applied, "expected php.pool.apply for the versioned pool")
+	ap := applied.params.(map[string]any)
+	require.Equal(t, "phpuser-php8.2", ap["slug"])
+	require.Equal(t, true, ap["additive"])
+	require.Equal(t, "8.2", ap["php_version"])
+
+	// Reaped the orphan 8.0 pool + deleted its row.
+	require.NotNil(t, removed, "expected php.pool.remove for the orphan pool")
+	rp := removed.params.(map[string]any)
+	require.Equal(t, "phpuser-php8.0", rp["slug"])
+	if _, err := phpPoolRepo.FindByID(ctx, "pool-80"); err != repository.ErrNotFound {
+		t.Errorf("orphan pool row should be deleted, got err=%v", err)
+	}
+	// Default pool untouched (still present, never applied/removed with its slug).
+	require.Equal(t, "phpuser", models.PoolSlug("phpuser", "8.4", true))
+	if _, err := phpPoolRepo.FindByID(ctx, "pool-default"); err != nil {
+		t.Errorf("default pool must remain: %v", err)
+	}
+}
