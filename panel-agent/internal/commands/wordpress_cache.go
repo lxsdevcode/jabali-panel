@@ -354,9 +354,15 @@ func wordpressCachePluginRefreshHandler(ctx context.Context, raw json.RawMessage
 		return wordpressCachePluginRefreshResult{Refreshed: false, Detail: "plugin not installed: " + truncateReason(out, 200)}, nil
 	}
 
-	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "update", "jabali-cache"); err != nil {
+	// Use `plugin install --force`, NOT `plugin update`: `update` honors
+	// WordPress's ~12h "update available?" transient, so right after a WP.org
+	// release it can report "nothing to do" and silently no-op. `install --force`
+	// always fetches the *current* WordPress.org version and overwrites, so the
+	// sweep reliably converges every site to the published release (WP.org is
+	// canonical per #613). Reinstalling keeps the plugin's activation state.
+	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "install", "jabali-cache", "--force"); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
-			Message: fmt.Sprintf("wp plugin update jabali-cache: %v: %s", err, out)}
+			Message: fmt.Sprintf("wp plugin install --force jabali-cache: %v: %s", err, out)}
 	}
 	// Report the resulting version (best-effort).
 	ver, _ := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "get", "jabali-cache", "--field=version")
