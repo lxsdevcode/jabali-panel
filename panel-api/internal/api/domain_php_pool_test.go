@@ -57,6 +57,16 @@ func (m *mockPHPPoolRepo) FindByUserAndVersion(ctx context.Context, userID, phpV
 	return nil, repository.ErrNotFound
 }
 
+func (m *mockPHPPoolRepo) ListByUserID(ctx context.Context, userID string) ([]models.PHPPool, error) {
+	var result []models.PHPPool
+	for _, p := range m.pools {
+		if p.UserID == userID {
+			result = append(result, *p)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockPHPPoolRepo) ListAll(ctx context.Context, opts repository.ListOptions) ([]models.PHPPool, int64, error) {
 	return nil, 0, nil
 }

@@ -22,6 +22,11 @@ type PHPPoolRepository interface {
 	// composite unique key as of migration 000129. Returns
 	// ErrNotFound when the pair doesn't exist yet.
 	FindByUserAndVersion(ctx context.Context, userID, phpVersion string) (*models.PHPPool, error)
+	// ListByUserID returns ALL pools owned by the user, ordered by created_at
+	// ASC (GH #329 multi-pool). The first element is the user's default pool
+	// (slug == username, the legacy /run/php/jabali-<user> socket); the rest
+	// are per-version pools. Returns an empty slice when the user has none.
+	ListByUserID(ctx context.Context, userID string) ([]models.PHPPool, error)
 	ListAll(ctx context.Context, opts ListOptions) ([]models.PHPPool, int64, error)
 	Update(ctx context.Context, p *models.PHPPool) error
 	Delete(ctx context.Context, id string) error
@@ -69,6 +74,17 @@ func (r *phpPoolRepo) FindByUserAndVersion(ctx context.Context, userID, phpVersi
 		return nil, err
 	}
 	return &pool, nil
+}
+
+func (r *phpPoolRepo) ListByUserID(ctx context.Context, userID string) ([]models.PHPPool, error) {
+	var pools []models.PHPPool
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at ASC").
+		Find(&pools).Error; err != nil {
+		return nil, err
+	}
+	return pools, nil
 }
 
 func (r *phpPoolRepo) ListAll(ctx context.Context, opts ListOptions) ([]models.PHPPool, int64, error) {

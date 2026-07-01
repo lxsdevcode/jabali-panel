@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,10 @@ func (f *fakeDomainRepo) ListByUserID(ctx context.Context, userID string, opts r
 
 func (f *fakeDomainRepo) Update(ctx context.Context, d *models.Domain) error {
 	f.domains[d.ID] = d
+	return nil
+}
+
+func (f *fakeDomainRepo) UpdateCacheTTL(_ context.Context, _ string, _ int) error {
 	return nil
 }
 
@@ -594,6 +599,17 @@ func (f *fakePHPPoolRepo) FindByUserAndVersion(ctx context.Context, userID, phpV
 		}
 	}
 	return nil, repository.ErrNotFound
+}
+
+func (f *fakePHPPoolRepo) ListByUserID(ctx context.Context, userID string) ([]models.PHPPool, error) {
+	var result []models.PHPPool
+	for _, p := range f.pools {
+		if p.UserID == userID {
+			result = append(result, *p)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, nil
 }
 
 func (f *fakePHPPoolRepo) ListAll(ctx context.Context, opts repository.ListOptions) ([]models.PHPPool, int64, error) {
