@@ -32,12 +32,13 @@ func newNotificationCmd() *cobra.Command {
 		Aliases: []string{"notifications"},
 		Short:   "Inspect notification channels and toggle event notifications",
 	}
-	cmd.AddCommand(newNotificationChannelsCmd(), newNotificationEventsCmd(), newNotificationDLQCmd())
+	cmd.AddCommand(newNotificationChannelsCmd(), newNotificationEventsCmd(), newNotificationDLQCmd(), newNotificationBroadcastCmd())
 	return cmd
 }
 
 func newNotificationChannelsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "channels", Short: "Notification channels"}
+	cmd.AddCommand(newNotificationChannelCreateCmd(), newNotificationChannelDeleteCmd(), newNotificationChannelTestCmd())
 	cmd.AddCommand(&cobra.Command{
 		Use:     "list",
 		Short:   "List configured notification channels",

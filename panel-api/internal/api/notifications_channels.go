@@ -330,6 +330,14 @@ func isKnownSeverity(s string) bool {
 	return ok
 }
 
+// ValidateChannelName / ValidateChannelKindConfig are exported so the
+// `jabali notification channels create` CLI (#563) validates against the SAME
+// rules as the REST create/update handlers — no drift.
+func ValidateChannelName(name string) error { return validateChannelName(name) }
+func ValidateChannelKindConfig(kind string, cfg models.NotificationChannelConfig) error {
+	return validateChannelKindAndConfig(kind, cfg)
+}
+
 func validateChannelName(name string) error {
 	if name == "" {
 		return errors.New("name required")

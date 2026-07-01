@@ -3058,6 +3058,21 @@ Inspect notification channels and toggle event notifications
 jabali notification
 ```
 
+#### `jabali notification broadcast`
+
+Broadcast a notification to every enabled channel
+
+```
+jabali notification broadcast --title <t> [--body <b>] [--severity info|warning|error|critical] [flags]
+```
+
+**Flags:**
+
+- `--body` — notification body (<=2000)
+- `--deeplink` — optional in-panel deeplink
+- `--severity` — info|warning|error|critical (default info)
+- `--title` — notification title (required, <=200)
+
 #### `jabali notification channels`
 
 Notification channels
@@ -3066,12 +3081,47 @@ Notification channels
 jabali notification channels
 ```
 
+##### `jabali notification channels create`
+
+Create a notification channel
+
+```
+jabali notification channels create --name <n> --kind <email|slack|discord|ntfy|webhook|webpush|sms> --config <json> [flags]
+```
+
+**Flags:**
+
+- `--config` — per-kind config JSON (e.g. '{"url":"https://…"}')
+- `--disabled` — create in the disabled state
+- `--kind` — email|slack|discord|ntfy|webhook|webpush|sms (required)
+- `--name` — channel name (required)
+
+##### `jabali notification channels delete`
+
+Delete a notification channel
+
+```
+jabali notification channels delete <id> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm deletion
+
 ##### `jabali notification channels list`
 
 List configured notification channels
 
 ```
 jabali notification channels list
+```
+
+##### `jabali notification channels test`
+
+Send a synthetic test notification to one channel
+
+```
+jabali notification channels test <id>
 ```
 
 #### `jabali notification dlq`
