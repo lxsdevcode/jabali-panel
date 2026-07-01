@@ -1330,6 +1330,7 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 	// Determine PHP configuration from domain's pool binding
 	hasPHP := false
 	var phpVersion string
+	var fpmSocket string
 	if domain.PHPPoolID != nil && r.phpPools != nil {
 		phpCtx, phpCancel := context.WithTimeout(ctx, 5*time.Second)
 		pool, err := r.phpPools.FindByID(phpCtx, *domain.PHPPoolID)
@@ -1339,6 +1340,17 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		} else if pool != nil {
 			hasPHP = true
 			phpVersion = pool.PHPVersion
+			// Resolve this domain's FPM socket from its bound pool (GH #329).
+			// The default pool (the user's earliest, created_at ASC) keeps the
+			// legacy /run/php/jabali-<user> socket — byte-identical vhost; a
+			// versioned pool gets its own /run/php/jabali-<user>-php<ver> socket.
+			isDefault := true
+			listCtx, listCancel := context.WithTimeout(ctx, 5*time.Second)
+			if pools, lErr := r.phpPools.ListByUserID(listCtx, domain.UserID); lErr == nil && len(pools) > 0 {
+				isDefault = pools[0].ID == pool.ID
+			}
+			listCancel()
+			fpmSocket = models.PoolSocketPath(username, pool.PHPVersion, isDefault)
 		}
 	}
 
@@ -1348,7 +1360,11 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		"doc_root":    domain.DocRoot,
 		"has_php":     hasPHP,
 		"php_version": phpVersion,
-		"is_enabled":  domain.IsEnabled,
+		// GH #329: explicit FPM socket for the domain's bound pool. Empty for
+		// static domains; the agent falls back to the legacy per-user socket
+		// when unset, so older callers stay byte-identical.
+		"fpm_socket": fpmSocket,
+		"is_enabled": domain.IsEnabled,
 		// ADR-0108 per-domain nginx FastCGI micro-cache opt-in. The
 		// agent renders the cache + bypass directives only when true;
 		// false ⇒ vhost byte-identical to the pre-0108 shape.

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -21,11 +21,15 @@ import (
 
 // domainCreateParams is the input shape for domain.create.
 type domainCreateParams struct {
-	Username           string `json:"username"`
-	Domain             string `json:"domain"`
-	DocRoot            string `json:"doc_root"`
-	HasPHP             bool   `json:"has_php"`
-	PHPVersion         string `json:"php_version"`
+	Username   string `json:"username"`
+	Domain     string `json:"domain"`
+	DocRoot    string `json:"doc_root"`
+	HasPHP     bool   `json:"has_php"`
+	PHPVersion string `json:"php_version"`
+	// FPMSocket is the FPM Unix socket the vhost's fastcgi_pass targets
+	// (GH #329 per-domain PHP version). Empty ⇒ the legacy per-user socket
+	// /run/php/jabali-<user>/fpm.sock, so older callers stay byte-identical.
+	FPMSocket          string `json:"fpm_socket,omitempty"`
 	CustomDirectives   string `json:"custom_directives"`
 	RedirectDirectives string `json:"redirect_directives"`
 	RuleDirectives     string `json:"rule_directives"`
@@ -40,9 +44,9 @@ type domainCreateParams struct {
 	CachePath    string `json:"cache_path,omitempty"`
 	// CacheTTLSeconds (Gitea #596) — per-domain page-cache validity. 0 = use
 	// the default. Drives fastcgi_cache_valid; background_update keeps it fresh.
-	CacheTTLSeconds int `json:"cache_ttl_seconds,omitempty"`
-	SSLCertPath  string `json:"ssl_cert_path"`
-	SSLKeyPath   string `json:"ssl_key_path"`
+	CacheTTLSeconds int    `json:"cache_ttl_seconds,omitempty"`
+	SSLCertPath     string `json:"ssl_cert_path"`
+	SSLKeyPath      string `json:"ssl_key_path"`
 	// PHP INI overrides: omitted if not set on the domain.
 	PHPMemoryLimit       string `json:"php_memory_limit,omitempty"`
 	PHPUploadMaxFilesize string `json:"php_upload_max_filesize,omitempty"`
@@ -231,7 +235,7 @@ server {
     # When it exists the app runs and owns its own error pages.
     location = /index.php {
         try_files $uri =404;
-        fastcgi_pass unix:/run/php/jabali-{{.Username}}/fpm.sock;
+        fastcgi_pass unix:{{.FPMSocket}};
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
 {{ if .PHPValueParam }}
@@ -274,7 +278,7 @@ server {
 {{ end }}
     }
     location ~ \.php$ {
-        fastcgi_pass unix:/run/php/jabali-{{.Username}}/fpm.sock;
+        fastcgi_pass unix:{{.FPMSocket}};
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
 {{ if .PHPValueParam }}
@@ -348,6 +352,7 @@ type vhostData struct {
 	HasPHP               bool
 	PHPVersion           string
 	Username             string
+	FPMSocket            string
 	IndexDirective       string
 	RedirectDirectives   string
 	RuleDirectives       string
@@ -509,9 +514,14 @@ func sanitizeCachePath(p string) string {
 	return p
 }
 
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cacheTTLSeconds int) (string, error) {
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cacheTTLSeconds int, fpmSocket string) (string, error) {
 	cachePath = sanitizeCachePath(cachePath)
 	cacheTTLSeconds = clampCacheTTL(cacheTTLSeconds)
+	// GH #329: default to the legacy per-user socket when the caller didn't
+	// specify one, so the vhost is byte-identical for default-pool domains.
+	if fpmSocket == "" {
+		fpmSocket = fmt.Sprintf("/run/php/jabali-%s/fpm.sock", username)
+	}
 	// SSL cert may be referenced by the DB (ssl_cert_path set) but MISSING
 	// on disk — most commonly after a reinstall wiped /etc/letsencrypt while
 	// the panel DB kept the cert row. Emitting the 443 block with
@@ -544,6 +554,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		HasPHP:                     hasPHP,
 		PHPVersion:                 phpVersion,
 		Username:                   username,
+		FPMSocket:                  fpmSocket,
 		IndexDirective:             indexDirectiveFor(indexPriority),
 		RedirectDirectives:         redirectDirectives,
 		RuleDirectives:             ruleDirectives,
@@ -771,7 +782,7 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 	dirPrivacyDirectives := buildDirectoryPrivacyDirectives(p.DirectoryPrivacyRules)
-	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CacheTTLSeconds)
+	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CacheTTLSeconds, p.FPMSocket)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,

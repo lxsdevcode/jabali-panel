@@ -21,6 +21,7 @@ func renderVhostForCacheTest(t *testing.T, cacheEnabled bool) string {
 		HasPHP:     true,
 		PHPVersion: "8.3",
 		Username:   "u",
+		FPMSocket:  "/run/php/jabali-u/fpm.sock",
 		IsEnabled:  true,
 		// matches writeVhost's hardcoded values
 		CacheEnabled: cacheEnabled,

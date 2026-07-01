@@ -81,6 +81,7 @@ func TestVhost_RootOverriddenOmitsDefaultLocations(t *testing.T) {
 		DocRoot:          "/home/u/demo",
 		HasPHP:           true,
 		Username:         "u",
+		FPMSocket:        "/run/php/jabali-u/fpm.sock",
 		IndexDirective:   "index index.html;",
 		IsEnabled:        true,
 		SSLCertPath:      "/etc/ssl/x.crt",
@@ -107,6 +108,7 @@ func TestVhost_DefaultUnchangedWhenNoOverride(t *testing.T) {
 		DocRoot:        "/home/u/demo",
 		HasPHP:         true,
 		Username:       "u",
+		FPMSocket:      "/run/php/jabali-u/fpm.sock",
 		IndexDirective: "index index.php;",
 		IsEnabled:      true,
 		SSLCertPath:    "/etc/ssl/x.crt",
@@ -185,6 +187,7 @@ func TestVhost_RuleBuilderRootProxyDoesNotDuplicateLocation(t *testing.T) {
 		DocRoot:        "/home/u/yacht",
 		HasPHP:         false,
 		Username:       "u",
+		FPMSocket:      "/run/php/jabali-u/fpm.sock",
 		IndexDirective: "index index.html;",
 		IsEnabled:      true,
 		SSLCertPath:    "/etc/ssl/x.crt",
@@ -206,5 +209,24 @@ func TestVhost_RuleBuilderRootProxyDoesNotDuplicateLocation(t *testing.T) {
 	}
 	if !strings.Contains(tmpl, "proxy_pass http://127.0.0.1:4569") {
 		t.Errorf("rule's proxy_pass missing:\n%s", tmpl)
+	}
+}
+
+// TestVhost_VersionedFPMSocket verifies GH #329: a domain bound to a versioned
+// pool renders fastcgi_pass at that pool's socket, not the default per-user one.
+func TestVhost_VersionedFPMSocket(t *testing.T) {
+	tmpl := mustRenderVhost(t, vhostData{
+		Domain:    "example.com",
+		DocRoot:   "/home/alice/public_html/example.com",
+		HasPHP:    true,
+		Username:  "alice",
+		FPMSocket: "/run/php/jabali-alice-php8.2/fpm.sock",
+		IsEnabled: true,
+	})
+	if !strings.Contains(tmpl, "fastcgi_pass unix:/run/php/jabali-alice-php8.2/fpm.sock;") {
+		t.Errorf("expected versioned fastcgi_pass socket, got:\n%s", tmpl)
+	}
+	if strings.Contains(tmpl, "unix:/run/php/jabali-alice/fpm.sock") {
+		t.Errorf("must not fall back to the default per-user socket")
 	}
 }
