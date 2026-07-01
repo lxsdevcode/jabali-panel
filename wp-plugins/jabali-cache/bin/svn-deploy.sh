@@ -121,5 +121,5 @@ fi
 [[ -n "$WPORG_USER" ]] || die "--publish requires -u <wordpress.org-username>"
 echo
 echo "==> Committing to WordPress.org as '${WPORG_USER}' (you will be prompted for your password)"
-svn commit "$WORK" -m "$MSG" --username "$WPORG_USER" --non-interactive=false
+svn commit "$WORK" -m "$MSG" --username "$WPORG_USER"
 echo "==> Done. https://wordpress.org/plugins/${SLUG}/ will show ${VERSION} shortly."
