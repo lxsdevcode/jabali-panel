@@ -155,6 +155,18 @@ jabali app cache <install-id> [flags]
 - `--disable` — disable object + page cache
 - `--enable` — enable object + page cache
 
+#### `jabali app clone`
+
+Clone a WordPress app install onto another domain (files + DB)
+
+```
+jabali app clone <src-install-id> [flags]
+```
+
+**Flags:**
+
+- `--to-domain` — destination domain (ID or name)
+
 #### `jabali app delete`
 
 Delete an installed app (direct DB + agent teardown — M20-safe)

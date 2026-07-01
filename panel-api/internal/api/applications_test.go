@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -835,6 +836,115 @@ func TestApplicationsCache_Characterization(t *testing.T) {
 		inst, _ := wpRepo.FindByID(ctx, "i3")
 		if inst.CacheEnabled {
 			t.Fatalf("install cache flag should be off after disable")
+		}
+	})
+}
+
+// postClone drives POST /applications/:id/clone with the given dest domain.
+func postClone(r *gin.Engine, id, destDomainID string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]string{"dest_domain_id": destDomainID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+id+"/clone", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// TestApplicationsClone_Characterization locks the web POST
+// /applications/:id/clone behavior BEFORE the cloneCore extraction (GH #556
+// part 3). It asserts only the synchronous provisioning path — never the async
+// createCloneAndKickAgent goroutine's terminal status (racy).
+func TestApplicationsClone_Characterization(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("source not found -> 404", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		if w := postClone(r, "missing", "domain1"); w.Code != http.StatusNotFound {
+			t.Fatalf("want 404, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("dest domain not found -> 404", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "src", UserID: "user1", DomainID: "domain1", AppType: "wordpress", Subdirectory: "blog"})
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		if w := postClone(r, "src", "missing"); w.Code != http.StatusNotFound {
+			t.Fatalf("want 404, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("dest domain cross-user -> 403", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "src", UserID: "user1", DomainID: "domain1", AppType: "wordpress", Subdirectory: "blog"})
+		// domain2 is owned by a different user -> ownership check must 403.
+		domainRepo.domains["domain2"] = &models.Domain{ID: "domain2", UserID: "user2", Name: "other.com", DocRoot: "/home/bob/domains/other.com/public_html"}
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		if w := postClone(r, "src", "domain2"); w.Code != http.StatusForbidden {
+			t.Fatalf("want 403, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("collision at dest subdir -> 409", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		// dest domain owned by user1, already hosting an install at subdir "blog".
+		domainRepo.domains["domain2"] = &models.Domain{ID: "domain2", UserID: "user1", Name: "dest.com", DocRoot: "/home/alice/domains/dest.com/public_html"}
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "src", UserID: "user1", DomainID: "domain1", AppType: "wordpress", Subdirectory: "blog"})
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "occupant", UserID: "user1", DomainID: "domain2", AppType: "wordpress", Subdirectory: "blog"})
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		if w := postClone(r, "src", "domain2"); w.Code != http.StatusConflict {
+			t.Fatalf("want 409, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("agent failure -> 502 + detail", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		domainRepo.domains["domain2"] = &models.Domain{ID: "domain2", UserID: "user1", Name: "dest.com", DocRoot: "/home/alice/domains/dest.com/public_html"}
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "src", UserID: "user1", DomainID: "domain1", AppType: "wordpress", Subdirectory: "blog", DBID: models.DBIDPtr("srcdb")})
+		r, ag, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		ag.callErr = errors.New("boom") // agent db.create fails -> 502
+		w := postClone(r, "src", "domain2")
+		if w.Code != http.StatusBadGateway {
+			t.Fatalf("want 502, got %d: %s", w.Code, w.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["error"] != "agent_failed" {
+			t.Fatalf("want error=agent_failed, got %v", body["error"])
+		}
+		if d, _ := body["detail"].(string); d == "" {
+			t.Fatalf("want non-empty detail, got %v", body["detail"])
+		}
+	})
+
+	t.Run("success -> 202 + cloning install + dest DB row", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		domainRepo.domains["domain2"] = &models.Domain{ID: "domain2", UserID: "user1", Name: "dest.com", DocRoot: "/home/alice/domains/dest.com/public_html"}
+		src := &models.WordPressInstall{ID: "src", UserID: "user1", DomainID: "domain1", AppType: "wordpress", Subdirectory: "blog", DBID: models.DBIDPtr("srcdb")}
+		wpRepo.Create(ctx, src)
+		r, _, dbRepo := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		w := postClone(r, "src", "domain2")
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("want 202, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp createWordPressResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.Status != "cloning" {
+			t.Fatalf("want status cloning, got %q", resp.Status)
+		}
+		if resp.ID == "" || resp.ID == "src" {
+			t.Fatalf("clone should mint a fresh install ID, got %q", resp.ID)
+		}
+		if resp.DomainID != "domain2" {
+			t.Fatalf("clone should target domain2, got %q", resp.DomainID)
+		}
+		// Synchronous path provisioned exactly one dest database row.
+		if len(dbRepo.databases) != 1 {
+			t.Fatalf("want 1 dest database provisioned, got %d", len(dbRepo.databases))
 		}
 	})
 }

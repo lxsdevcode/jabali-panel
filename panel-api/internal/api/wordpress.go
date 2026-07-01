@@ -3,8 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -45,7 +45,7 @@ type ApplicationHandlerConfig struct {
 	// (HMAC(secret, osuser)); read from JABALI_REDIS_PANEL_TOKEN.
 	CacheTokenSecret string
 	// CacheTokenSalts persists the per-tenant token salt (Gitea #415).
-	CacheTokenSalts  repository.CacheTokenSaltRepository
+	CacheTokenSalts repository.CacheTokenSaltRepository
 	// Reconciler re-renders the domain vhost after the nginx page-cache flag
 	// flips (mirrors DomainCacheHandlerConfig.Reconciler). Optional.
 	Reconciler DNSScheduler
@@ -687,6 +687,25 @@ func (h *wordPressHandler) delete(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"status": "deleting"})
 }
 
+// clone sentinel errors map cloneCore's failure modes to the exact HTTP
+// statuses/codes the UI depends on (GH #556 extraction — keep in sync with the
+// switch in clone() and TestApplicationsClone_Characterization).
+var (
+	errCloneSourceNotFound     = errors.New("source_install_not_found")
+	errCloneDomainNotFound     = errors.New("domain_not_found")
+	errCloneForbidden          = errors.New("forbidden")
+	errCloneInstallExists      = errors.New("install_exists")
+	errCloneUserNotProvisioned = errors.New("user_not_provisioned")
+)
+
+// cloneAgentError wraps an agent-side failure detail so the HTTP wrapper can
+// render 502 agent_failed + the underlying detail (the web contract).
+type cloneAgentError struct{ detail string }
+
+func (e *cloneAgentError) Error() string { return "agent_failed: " + e.detail }
+
+// clone provisions a copy of a WordPress install onto another domain the caller
+// owns. HTTP wrapper: parse request, delegate to cloneCore, map errors → status.
 func (h *wordPressHandler) clone(c *gin.Context) {
 	claims := ginctx.Claims(c)
 	if claims == nil {
@@ -694,63 +713,88 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 		return
 	}
 
-	sourceInstallID := c.Param("id")
-
 	var req cloneWordPressRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
 
-	ctx := c.Request.Context()
-	targetUserID := claims.UserID
+	resp, err := h.cloneCore(c.Request.Context(), c.Param("id"), req.DestDomainID, claims.IsAdmin, claims.UserID, true)
+	var agentErr *cloneAgentError
+	switch {
+	case err == nil:
+		c.JSON(http.StatusAccepted, resp)
+	case errors.Is(err, errCloneSourceNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "source_install_not_found"})
+	case errors.Is(err, errCloneDomainNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "domain_not_found"})
+	case errors.Is(err, errCloneForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+	case errors.Is(err, errCloneInstallExists):
+		c.JSON(http.StatusConflict, gin.H{"error": "install_exists"})
+	case errors.Is(err, errCloneUserNotProvisioned):
+		c.JSON(http.StatusConflict, gin.H{"error": "user_not_provisioned"})
+	case errors.As(err, &agentErr):
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_failed", "detail": agentErr.detail})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+	}
+}
+
+// CloneApplication clones an install from a non-HTTP caller (CLI, GH #556). It
+// runs the SAME core as the web POST /applications/:id/clone path. actorUserID
+// scopes ownership exactly as the HTTP handler; async=false blocks until the
+// agent clone finishes (the CLI process must stay alive), async=true detaches
+// the kick like the web path. Returns the errClone* sentinels / *cloneAgentError
+// so callers can message precisely.
+func CloneApplication(ctx context.Context, cfg ApplicationHandlerConfig, sourceInstallID, destDomainID string, isAdmin bool, actorUserID string, async bool) (*createWordPressResponse, error) {
+	return (&wordPressHandler{cfg: cfg}).cloneCore(ctx, sourceInstallID, destDomainID, isAdmin, actorUserID, async)
+}
+
+// cloneCore is the transport-agnostic core of the clone flow. It returns a
+// sentinel error (errClone*) or *cloneAgentError for the caller to map to a
+// status/message; any other (wrapped) error is an internal failure (→ 500).
+// Behavior is locked by TestApplicationsClone_Characterization.
+func (h *wordPressHandler) cloneCore(ctx context.Context, sourceInstallID, destDomainID string, isAdmin bool, actorUserID string, async bool) (*createWordPressResponse, error) {
+	targetUserID := actorUserID
 
 	// Get source install
 	var sourceInstall *models.WordPressInstall
 	var err error
-
-	if claims.IsAdmin {
+	if isAdmin {
 		sourceInstall, err = h.cfg.ApplicationInstalls.FindByID(ctx, sourceInstallID)
 	} else {
 		sourceInstall, err = h.cfg.ApplicationInstalls.FindByIDAndUserID(ctx, sourceInstallID, targetUserID)
 	}
-
 	if err != nil {
 		if isNotFound(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "source_install_not_found"})
-			return
+			return nil, errCloneSourceNotFound
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("source install lookup: %w", err)
 	}
 
 	// Verify destination domain ownership (403 if cross-user)
-	destDomain, err := h.cfg.Domains.FindByID(ctx, req.DestDomainID)
+	destDomain, err := h.cfg.Domains.FindByID(ctx, destDomainID)
 	if err != nil {
 		if isNotFound(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "domain_not_found"})
-			return
+			return nil, errCloneDomainNotFound
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("dest domain lookup: %w", err)
 	}
 	if destDomain.UserID != targetUserID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-		return
+		return nil, errCloneForbidden
 	}
 
 	// Check for existing install at the same (dest_domain, source_subdir).
 	// Clone preserves the source install's subdirectory, so collision only
 	// happens if the destination already hosts an install at that same
 	// subdir — sibling installs at other subdirs are fine.
-	existing, err := h.cfg.ApplicationInstalls.FindByDomainAndSubdirectory(ctx, req.DestDomainID, sourceInstall.Subdirectory)
+	existing, err := h.cfg.ApplicationInstalls.FindByDomainAndSubdirectory(ctx, destDomainID, sourceInstall.Subdirectory)
 	if err == nil && existing != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "install_exists"})
-		return
+		return nil, errCloneInstallExists
 	}
 	if err != nil && !isNotFound(err) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("dest collision check: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -764,8 +808,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 	}
 	if osUser == "" {
 		slog.ErrorContext(ctx, "wordpress clone: user has no linux username", "user_id", targetUserID)
-		c.JSON(http.StatusConflict, gin.H{"error": "user_not_provisioned"})
-		return
+		return nil, errCloneUserNotProvisioned
 	}
 
 	// Provision destination database
@@ -783,8 +826,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 		UpdatedAt: now,
 	}
 	if err := h.cfg.Databases.Create(ctx, destDatabase); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("create dest database: %w", err)
 	}
 
 	// Provision destination database user
@@ -795,8 +837,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		h.cfg.Databases.Delete(ctx, destDBID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("hash dest db password: %w", err)
 	}
 	destDatabaseUser := &models.DatabaseUser{
 		ID:           destDBUserID,
@@ -808,8 +849,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 	}
 	if err := h.cfg.DatabaseUsers.Create(ctx, destDatabaseUser); err != nil {
 		h.cfg.Databases.Delete(ctx, destDBID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("create dest db user: %w", err)
 	}
 
 	// Provision grant
@@ -826,8 +866,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 	if err := h.cfg.DatabaseGrants.Create(ctx, destGrant); err != nil {
 		h.cfg.DatabaseUsers.Delete(ctx, destDBUserID)
 		h.cfg.Databases.Delete(ctx, destDBID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("create dest grant: %w", err)
 	}
 
 	// Provision the MariaDB side via the agent: CREATE DATABASE, CREATE
@@ -852,8 +891,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 		}); acErr != nil {
 			rollbackPanelRows()
 			slog.ErrorContext(ctx, "wordpress clone: agent db.create", "err", acErr, "db_name", destDBName)
-			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_failed", "detail": acErr.Error()})
-			return
+			return nil, &cloneAgentError{detail: acErr.Error()}
 		}
 
 		if _, acErr := h.cfg.Agent.Call(agentCtx, "db_user.create", map[string]any{
@@ -863,8 +901,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 			h.cfg.Agent.Call(ctx, "db.drop", map[string]any{"db_name": destDBName})
 			rollbackPanelRows()
 			slog.ErrorContext(ctx, "wordpress clone: agent db_user.create", "err", acErr, "db_user", destDBUsername)
-			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_failed", "detail": acErr.Error()})
-			return
+			return nil, &cloneAgentError{detail: acErr.Error()}
 		}
 
 		if _, acErr := h.cfg.Agent.Call(agentCtx, "db_user.grant", map[string]any{
@@ -877,8 +914,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 			h.cfg.Agent.Call(ctx, "db.drop", map[string]any{"db_name": destDBName})
 			rollbackPanelRows()
 			slog.ErrorContext(ctx, "wordpress clone: agent db_user.grant", "err", acErr)
-			c.JSON(http.StatusBadGateway, gin.H{"error": "agent_failed", "detail": acErr.Error()})
-			return
+			return nil, &cloneAgentError{detail: acErr.Error()}
 		}
 	}
 
@@ -887,7 +923,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 	cloneInstall := &models.WordPressInstall{
 		ID:            cloneInstallID,
 		UserID:        targetUserID,
-		DomainID:      req.DestDomainID,
+		DomainID:      destDomainID,
 		DBID:          models.DBIDPtr(destDBID),
 		AdminUsername: sourceInstall.AdminUsername,
 		AdminEmail:    sourceInstall.AdminEmail,
@@ -902,16 +938,22 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 		h.cfg.DatabaseGrants.Delete(ctx, destGrantID)
 		h.cfg.DatabaseUsers.Delete(ctx, destDBUserID)
 		h.cfg.Databases.Delete(ctx, destDBID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return nil, fmt.Errorf("create clone install: %w", err)
 	}
 
-	// Spawn async goroutine to clone
-	go createCloneAndKickAgent(ctx, cloneInstallID, sourceInstall.DomainID, req.DestDomainID, destDBID, sourceInstall.Subdirectory, sourceInstall.UseWWW, h.cfg)
+	// Kick the file/DB copy. The web path detaches (async); the CLI blocks
+	// (async=false) so the process stays alive until the agent finishes.
+	// createCloneAndKickAgent already reparents to context.Background()+5min,
+	// so blocking here is safe and the web goroutine still survives.
+	if async {
+		go createCloneAndKickAgent(ctx, cloneInstallID, sourceInstall.DomainID, destDomainID, destDBID, sourceInstall.Subdirectory, sourceInstall.UseWWW, h.cfg)
+	} else {
+		createCloneAndKickAgent(ctx, cloneInstallID, sourceInstall.DomainID, destDomainID, destDBID, sourceInstall.Subdirectory, sourceInstall.UseWWW, h.cfg)
+	}
 
-	resp := createWordPressResponse{
+	return &createWordPressResponse{
 		ID:            cloneInstallID,
-		DomainID:      req.DestDomainID,
+		DomainID:      destDomainID,
 		DBID:          destDBID,
 		AdminUsername: sourceInstall.AdminUsername,
 		AdminEmail:    sourceInstall.AdminEmail,
@@ -920,8 +962,7 @@ func (h *wordPressHandler) clone(c *gin.Context) {
 		Status:        "cloning",
 		CreatedAt:     now,
 		UpdatedAt:     now,
-	}
-	c.JSON(http.StatusAccepted, resp)
+	}, nil
 }
 
 func (h *wordPressHandler) health(c *gin.Context) {
