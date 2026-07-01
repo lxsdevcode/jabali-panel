@@ -1355,10 +1355,13 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 		return
 	}
 
-	// Update the MariaDB password via agent
-	if _, err := cfg.Agent.Call(ctx, "db_user.set_password", map[string]any{
+	// Update the MariaDB password via agent. The agent exposes this as
+	// db_user.rotate_password (ALTER USER … IDENTIFIED BY …); there is no
+	// db_user.set_password handler — the old name silently failed every clone
+	// (web path only flips the row to "failed"; the CLI surfaces it).
+	if _, err := cfg.Agent.Call(ctx, "db_user.rotate_password", map[string]any{
 		"db_user_name": destDatabaseUser.Username,
-		"password":     plainPassword,
+		"new_password": plainPassword,
 	}); err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to update MariaDB password: %v", err), 1024)
 		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
