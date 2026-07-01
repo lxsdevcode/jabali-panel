@@ -20,12 +20,12 @@ import (
 // actual shape for a follow-up parser tightening.
 //
 // Hestia commands (all admin-only, JSON-mode):
-//   v-list-user-domains <user> json   → web domains map
+//   v-list-web-domains  <user> json   → web domains map
 //   v-list-databases    <user> json   → mariadb DBs map
 //   v-list-mail-domains <user> json   → mail domains map
 //   v-list-mail-accounts <user> <domain> json → per-domain mailboxes
 
-// hestiaDomain mirrors the v-list-user-domains JSON shape:
+// hestiaDomain mirrors the v-list-web-domains JSON shape:
 //   { "<domain>": { "DOCUMENT_ROOT": "...", "ALIAS": "...",
 //                   "TPL": "default", "IP": "...", "U_DISK": "...",
 //                   "PHP_VER": "8.2", "SUSPENDED": "no", ... } }
@@ -40,15 +40,18 @@ type hestiaDomainAttrs struct {
 }
 
 func (d *Discoverer) describeDomains(ctx context.Context, s *session, account string) ([]migrate.DomainSpec, error) {
+	// HestiaCP renamed VestaCP's combined v-list-user-domains to the
+	// web-specific v-list-web-domains (GH #327); the old name errors with
+	// "is not a valid hestia command". Same {domain: {DOCUMENT_ROOT,…}} JSON.
 	out, err := s.run(ctx, d.CommandTimeout,
-		fmt.Sprintf("v-list-user-domains '%s' json",
+		fmt.Sprintf("v-list-web-domains '%s' json",
 			strings.ReplaceAll(account, "'", `'\''`)))
 	if err != nil {
-		return nil, fmt.Errorf("v-list-user-domains: %w", err)
+		return nil, fmt.Errorf("v-list-web-domains: %w", err)
 	}
 	var doms map[string]hestiaDomainAttrs
 	if err := json.Unmarshal(out, &doms); err != nil {
-		return nil, fmt.Errorf("v-list-user-domains decode: %w", err)
+		return nil, fmt.Errorf("v-list-web-domains decode: %w", err)
 	}
 	rows := []migrate.DomainSpec{}
 	first := true
@@ -65,7 +68,7 @@ func (d *Discoverer) describeDomains(ctx context.Context, s *session, account st
 		}
 		// Hestia domain map iteration order isn't stable. We mark
 		// the FIRST iterated domain as primary; per-account a
-		// real 'main' domain isn't surfaced via v-list-user-
+		// real 'main' domain isn't surfaced via v-list-web-
 		// domains so this is best-effort. Operator can edit
 		// is_panel_primary post-restore via panel UI.
 		if first {
