@@ -58,9 +58,13 @@ func newAppCloneCmd() *cobra.Command {
 			}
 
 			// The blocking kick (createCloneAndKickAgent) is void — it flips the
-			// row to "failed" on error rather than returning one, so
+			// row to a terminal status rather than returning an error, so
 			// CloneApplication returns nil even when the copy failed. Re-read the
-			// row and surface a non-zero exit on failure (GH silent-exit-0 scar).
+			// row: after a blocking (async=false) clone the status MUST be
+			// terminal ("ready"). Anything else — "failed", or a "cloning" left
+			// behind when the kicker's own ctx expired before it could persist a
+			// terminal state — is a failure, and the CLI must exit non-zero
+			// (GH silent-exit-0 scar; the "cloning" case is exactly what bit us).
 			instRepo := repository.NewApplicationInstallRepository(sharedDB)
 			status := resp.Status
 			var lastErr string
@@ -68,12 +72,12 @@ func newAppCloneCmd() *cobra.Command {
 				status = inst.Status
 				lastErr = inst.LastError
 			}
-			if status == "failed" {
+			if status != "ready" {
 				cliAuditErr(ctx, "app.clone", "app_install", resp.ID, &destDomain.UserID)
 				if lastErr != "" {
 					return fmt.Errorf("clone %s failed: %s", resp.ID, lastErr)
 				}
-				return fmt.Errorf("clone %s failed", resp.ID)
+				return fmt.Errorf("clone %s did not complete (status=%s); see agent logs", resp.ID, status)
 			}
 			cliAuditOK(ctx, "app.clone", "app_install", resp.ID, &destDomain.UserID)
 			fmt.Printf("cloned install %s onto %s (domain %s); status=%s\n", resp.ID, destDomain.Name, destDomain.ID, status)
