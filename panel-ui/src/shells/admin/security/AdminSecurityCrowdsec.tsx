@@ -1574,8 +1574,8 @@ const EngineIdentityCard = () => {
       <Space direction="vertical" size="small" style={{ width: "100%" }}>
         <Space size="middle" wrap>
           <SafetyOutlined style={{ fontSize: 28, color: healthy ? "#52c41a" : "#cf1322" }} />
-          <Space direction="vertical" size={0}>
-            <Typography.Title level={4} style={{ margin: 0 }}>
+          <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
+            <Typography.Title level={4} style={{ margin: 0, wordBreak: "break-word" }}>
               Security engine «{hostname}»
             </Typography.Title>
             <Space size="small">
