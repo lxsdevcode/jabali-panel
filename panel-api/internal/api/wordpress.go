@@ -1091,18 +1091,21 @@ func createInstallAndKickAgent(parentCtx context.Context, args installKickArgs, 
 
 	// Update status to 'ready' with version
 	createAppCrons(ctx, cfg, args.UserID, "wordpress", appInstallPath(args.DocRoot, args.Subdirectory))
-	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 
 	// #597: default the Redis object cache ON for new WordPress installs — the
 	// direct cut to the DB-bound render (heavy plugins hit the DB on every
-	// uncached request). Best-effort: no Redis/secret (errObjectCacheUnavailable)
-	// or any provisioning error must NOT fail the install; the per-app Caching
-	// toggle stays the override. Reuses the same ACL/token/cache_set path.
+	// uncached request). Done BEFORE the "ready" flip so a --wait CLI caller
+	// (short-lived process) doesn't exit and kill this goroutine mid-provision.
+	// Best-effort: no Redis/secret (errObjectCacheUnavailable) or any error must
+	// NOT fail the install; the per-app Caching toggle stays the override.
+	// Reuses the same ACL/token/cache_set path as the toggle.
 	if inst, ferr := cfg.ApplicationInstalls.FindByID(ctx, args.InstallID); ferr == nil && inst != nil {
 		if cErr := (&wordPressHandler{cfg: cfg}).enableObjectCache(ctx, inst); cErr != nil && !errors.Is(cErr, errObjectCacheUnavailable) {
 			slog.WarnContext(ctx, "wordpress: default object-cache enable failed (install still ready)", "err", cErr, "install_id", args.InstallID)
 		}
 	}
+
+	cfg.ApplicationInstalls.UpdateStatus(ctx, args.InstallID, "ready", nil, &version)
 }
 
 // createDeleteAndKickAgent removes the on-disk WordPress files via the
