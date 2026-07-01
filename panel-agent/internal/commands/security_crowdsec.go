@@ -1007,31 +1007,44 @@ func csAllowlistsAddHandler(ctx context.Context, params json.RawMessage) (any, e
 	if l := len(p.Reason); l < 3 || l > 200 {
 		return nil, csInvalidArg("reason length must be 3..200")
 	}
-	if err := ensureJabaliAllowlist(ctx); err != nil {
-		return nil, csInternal("ensure allowlist", err)
-	}
-	args := []string{"allowlists", "add", jabaliAllowlistName, value, "-d", p.Reason}
 	if exp := strings.TrimSpace(p.Expiration); exp != "" {
 		if _, err := time.ParseDuration(exp); err != nil {
 			return nil, csInvalidArg("expiration must be a Go duration (e.g. \"168h\")")
 		}
+	}
+	if err := addToJabaliAllowlist(ctx, value, p.Reason, strings.TrimSpace(p.Expiration)); err != nil {
+		return nil, csInternal("allowlist add", err)
+	}
+	return map[string]any{"value": value}, nil
+}
+
+// addToJabaliAllowlist adds (or TTL-refreshes) value in the single jabali
+// allowlist. Shared by the security.crowdsec.allowlists.add verb and the
+// GH #598 login watcher. Caller pre-validates value (IP/CIDR), reason length,
+// and expiration format; this focuses on the idempotent cscli mechanics.
+// A re-add of an existing value is treated as success.
+func addToJabaliAllowlist(ctx context.Context, value, reason, expiration string) error {
+	if err := ensureJabaliAllowlist(ctx); err != nil {
+		return fmt.Errorf("ensure allowlist: %w", err)
+	}
+	args := []string{"allowlists", "add", jabaliAllowlistName, value, "-d", reason}
+	if expiration != "" {
 		// cscli `add` of an existing value is a no-op and does NOT refresh the
 		// expiration. For the time-boxed login path we want each re-login to
 		// slide the TTL forward, so best-effort remove first, then re-add.
 		_ = exec.CommandContext(ctx, "cscli", "allowlists", "remove", jabaliAllowlistName, value).Run()
-		args = append(args, "-e", exp)
+		args = append(args, "-e", expiration)
 	}
-	cmd := exec.CommandContext(ctx, "cscli", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "cscli", args...).CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		// Re-adding an already-allowlisted value is a no-op success for the
 		// idempotent login refresh path.
 		if strings.Contains(strings.ToLower(msg), "already") {
-			return map[string]any{"value": value}, nil
+			return nil
 		}
-		return nil, csInternal(fmt.Sprintf("cscli allowlists add: %s", msg), err)
+		return fmt.Errorf("cscli allowlists add: %s: %w", msg, err)
 	}
-	return map[string]any{"value": value}, nil
+	return nil
 }
 
 type csAllowlistRemoveParams struct {

@@ -108,6 +108,11 @@ func main() {
 	// Security UI reads pre-computed data without per-click cscli.
 	commands.StartBlocklistsRefresher(ctx)
 
+	// GH #598: tail sshd success logs and time-box each successful SSH login's
+	// source IP into the jabali CrowdSec allowlist (panel-owned toggle/TTL via
+	// /etc/jabali-panel/login-allowlist.conf). Best-effort, read-only observer.
+	commands.StartLoginAllowlistWatcher(ctx, log)
+
 	// M45 root web terminal PTY broker — separate UDS sibling of the
 	// agentwire socket, root:<jabali-sockets> 0660. Gated off by
 	// default panel-api-side; unreachable except by the jabali-group

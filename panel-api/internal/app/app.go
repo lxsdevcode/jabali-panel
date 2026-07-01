@@ -435,7 +435,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// Auto-whitelist a logged-in user's IP in CrowdSec (time-boxed, all
 		// users) so active sessions are never bounced from their own IP.
 		if deps.Agent != nil {
-			v1.Use(middleware.WhitelistLoginIP(deps.Redis, deps.Agent, deps.Log))
+			v1.Use(middleware.WhitelistLoginIP(deps.Redis, deps.Agent, deps.ServerSettings, deps.Log))
 		}
 		// M49 — record one audit event per mutating request (never
 		// the body). No-op when AuditRecorder is nil (no Redis).

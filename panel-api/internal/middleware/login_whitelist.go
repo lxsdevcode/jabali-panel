@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,15 +14,17 @@ import (
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
-// loginWhitelistTTL is how long the CrowdSec allowlist entry lives, and
-// loginWhitelistDedup is how often we refresh it. The dedup window is shorter
-// than the TTL so an active session keeps the entry alive (re-adding refreshes
-// the expiration); an idle session lets it lapse.
+// loginWhitelistDefaultTTLHours is the fallback allowlist lifetime (when the
+// server setting is unreadable), and loginWhitelistDedup is how often we
+// refresh it. The dedup window is shorter than the TTL so an active session
+// keeps the entry alive (re-adding refreshes the expiration); an idle session
+// lets it lapse.
 const (
-	loginWhitelistTTL   = "168h" // 7 days, refreshed on activity
-	loginWhitelistDedup = 24 * time.Hour
+	loginWhitelistDefaultTTLHours = 168 // 7 days, refreshed on activity (GH #598)
+	loginWhitelistDedup           = 24 * time.Hour
 )
 
 // WhitelistLoginIP adds an authenticated user's client IP to the jabali
@@ -33,7 +36,7 @@ const (
 //
 // Mounted after RequireKratosSession (needs claims). Sibling to
 // TrackAdminLogin; fires for ALL authenticated users, not just admins.
-func WhitelistLoginIP(rdb *redis.Client, agentCli agent.AgentInterface, log *slog.Logger) gin.HandlerFunc {
+func WhitelistLoginIP(rdb *redis.Client, agentCli agent.AgentInterface, settings repository.ServerSettingsRepository, log *slog.Logger) gin.HandlerFunc {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -70,6 +73,33 @@ func WhitelistLoginIP(rdb *redis.Client, agentCli agent.AgentInterface, log *slo
 			return
 		}
 
+		// Read the toggle/TTL only once per dedup window (we're past the SetNX
+		// gate), so the uncached server_settings Get stays off the hot path —
+		// at most once per 24h per session, not per request. Default-safe: if
+		// settings are unavailable, fall back to enabled + the 7d default so a
+		// transient DB blip doesn't silently drop protection.
+		ttlHours := loginWhitelistDefaultTTLHours
+		if settings != nil {
+			sCtx, sCancel := context.WithTimeout(c.Request.Context(), 500*time.Millisecond)
+			s, sErr := settings.Get(sCtx)
+			sCancel()
+			if sErr == nil && s != nil {
+				if !s.CrowdsecLoginAllowlistEnabled {
+					// Disabled: just return. We intentionally KEEP the dedup key
+					// so we don't re-read server_settings on every subsequent
+					// request (the whole reason the read sits past the SetNX
+					// gate). Trade-off: re-enabling reaches an already-active
+					// session within the dedup window (<=24h); new sessions get
+					// it immediately.
+					return
+				}
+				if s.CrowdsecLoginAllowlistTTLHours > 0 {
+					ttlHours = s.CrowdsecLoginAllowlistTTLHours
+				}
+			}
+		}
+		ttl := strconv.Itoa(ttlHours) + "h"
+
 		email := claims.Email
 		logger := log
 		go func() {
@@ -78,7 +108,7 @@ func WhitelistLoginIP(rdb *redis.Client, agentCli agent.AgentInterface, log *slo
 			_, err := agentCli.Call(addCtx, "security.crowdsec.allowlists.add", map[string]any{
 				"value":      ip,
 				"reason":     "auto-whitelist: login " + truncate(email, 120),
-				"expiration": loginWhitelistTTL,
+				"expiration": ttl,
 			})
 			if err != nil {
 				// Roll back the dedup guard so the next request retries.

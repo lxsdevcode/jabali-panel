@@ -7742,6 +7742,23 @@ EOF
 # default and the UI no longer surfaces it.
 #
 
+install_login_allowlist_default_conf() {
+  # GH #598 — seed the default login-allowlist policy so the agent's SSH
+  # watcher works on a fresh host before the admin ever opens the Security
+  # settings (which would PATCH-push a new value). Enabled + 7d TTL matches the
+  # server_settings column defaults. Idempotent: only write if absent, so we
+  # never clobber an admin's pushed override on re-install/update.
+  local conf=/etc/jabali-panel/login-allowlist.conf
+  install -d -m 0755 -o root -g root /etc/jabali-panel
+  if [[ -f "$conf" ]]; then
+    _ok "login-allowlist policy already present ($conf)"
+    return 0
+  fi
+  printf '{"enabled":true,"ttl":"168h"}\n' >"$conf"
+  chmod 0644 "$conf"
+  _ok "seeded default login-allowlist policy ($conf)"
+}
+
 install_crowdsec_jabali_stalwart_scenarios() {
   # Drop the vendored bu5hm4nn parser + 5 scenarios + acquis into
   # the CrowdSec config tree so mail-bf / scan / rate-limit /
@@ -12378,6 +12395,7 @@ main() {
   install_crowdsec_appsec
   install_crowdsec_nginx_bouncer
   install_crowdsec_profiles
+  install_login_allowlist_default_conf
   install_crowdsec_jabali_scenarios
   install_crowdsec_jabali_stalwart_scenarios
   install_crowdsec_blocklists

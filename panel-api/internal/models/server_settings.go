@@ -136,6 +136,18 @@ type ServerSettings struct {
 	// Default 'stream' matches the install.sh shipped default.
 	CrowdsecBouncerMode string `gorm:"column:crowdsec_bouncer_mode;type:varchar(16);not null;default:'stream'" json:"crowdsec_bouncer_mode"`
 
+	// GH #598 — auto-allowlist successful panel + SSH login source IPs in
+	// CrowdSec, time-boxed and refreshed on activity, so a logged-in admin/user
+	// is never bounced from the IP they're actively working from. The panel
+	// middleware (WhitelistLoginIP) reads these directly; the agent's SSH
+	// journald watcher reads them via the pushed login-allowlist.conf. Enabled
+	// by default (matches the pre-#598 shipped panel behaviour). TTL in hours,
+	// default 168h (7d). SECURITY: this is a broad CrowdSec exemption — a login
+	// from a stolen key shields that IP from all decisions for the TTL; admins
+	// who want a tighter window lower the TTL or disable it (ADR-0153).
+	CrowdsecLoginAllowlistEnabled  bool `gorm:"column:crowdsec_login_allowlist_enabled;type:boolean;not null;default:true" json:"crowdsec_login_allowlist_enabled"`
+	CrowdsecLoginAllowlistTTLHours int  `gorm:"column:crowdsec_login_allowlist_ttl_hours;type:int;not null;default:168" json:"crowdsec_login_allowlist_ttl_hours"`
+
 	// M27 Step 5 — captcha remediation for crowdsec-nginx-bouncer.
 	// Secret is plaintext-at-rest (convention matches kratos_admin_secret,
 	// vapid_private_key, smtp_relay_password) but WRITE-ONLY at the API

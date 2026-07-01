@@ -19,6 +19,7 @@ import {
   Form,
   Grid,
   Input,
+  InputNumber,
   message,
   Popconfirm,
   Radio,
@@ -26,6 +27,7 @@ import {
   Row,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -1879,6 +1881,7 @@ const SettingsPanel = () => (
   <Space direction="vertical" size="large" style={{ width: "100%" }}>
     <SensitivityCard />
     <BouncerModeCard />
+    <LoginAllowlistCard />
   </Space>
 );
 
@@ -2044,6 +2047,97 @@ const BouncerModeCard = () => {
           loading={save.isPending}
           disabled={mode === settings.data?.crowdsec_bouncer_mode}
           onClick={() => save.mutate(mode)}
+        >
+          Apply
+        </Button>
+      </Space>
+    </Card>
+  );
+};
+
+// LoginAllowlistCard — GH #598. Auto-allowlist successful panel + SSH login
+// source IPs in CrowdSec, time-boxed, so a logged-in admin/user is never
+// bounced from the IP they're working from. Writes crowdsec_login_allowlist_*
+// on /admin/settings; the panel middleware reads it directly and the agent SSH
+// watcher gets it pushed via security.crowdsec.login_allowlist.apply.
+const LoginAllowlistCard = () => {
+  const qc = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["admin-settings"],
+    queryFn: async () => {
+      const r = await apiClient.get<{
+        crowdsec_login_allowlist_enabled: boolean;
+        crowdsec_login_allowlist_ttl_hours: number;
+      }>("/admin/settings");
+      return r.data;
+    },
+  });
+  const [enabled, setEnabled] = useState<boolean>(true);
+  const [ttlHours, setTtlHours] = useState<number>(168);
+  useEffect(() => {
+    if (settings.data) {
+      setEnabled(settings.data.crowdsec_login_allowlist_enabled);
+      if (settings.data.crowdsec_login_allowlist_ttl_hours > 0) {
+        setTtlHours(settings.data.crowdsec_login_allowlist_ttl_hours);
+      }
+    }
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: async (vals: { enabled: boolean; ttlHours: number }) => {
+      await apiClient.patch("/admin/settings", {
+        crowdsec_login_allowlist_enabled: vals.enabled,
+        crowdsec_login_allowlist_ttl_hours: vals.ttlHours,
+      });
+    },
+    onSuccess: () => {
+      message.success("Login allowlist policy applied");
+      qc.invalidateQueries({ queryKey: ["admin-settings"] });
+    },
+    onError: (e: unknown) => {
+      message.error(e instanceof Error ? e.message : "Failed to apply");
+    },
+  });
+
+  const dirty =
+    enabled !== settings.data?.crowdsec_login_allowlist_enabled ||
+    ttlHours !== settings.data?.crowdsec_login_allowlist_ttl_hours;
+
+  return (
+    <Card size="small" title="Auto-allowlist login IPs (server-wide)" loading={settings.isLoading}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          After a successful panel or SSH login, add the source IP to the CrowdSec
+          allowlist for the configured window (refreshed on activity), so a
+          legitimate operator is never locked out by a later false positive.
+          Private/loopback addresses are always skipped.
+        </Typography.Paragraph>
+        <Alert
+          type="warning"
+          showIcon
+          message="Security trade-off"
+          description="This is a broad CrowdSec exemption. A successful login from a stolen key or compromised account shields that source IP from all CrowdSec decisions for the TTL. Lower the TTL or disable this if that window is unacceptable for your threat model."
+        />
+        <Space align="center">
+          <Switch checked={enabled} onChange={setEnabled} />
+          <Typography.Text>{enabled ? "Enabled" : "Disabled"}</Typography.Text>
+        </Space>
+        <Space align="center">
+          <Typography.Text>Allowlist TTL (hours):</Typography.Text>
+          <InputNumber
+            min={1}
+            max={8760}
+            value={ttlHours}
+            disabled={!enabled}
+            onChange={(v) => setTtlHours(typeof v === "number" ? v : 168)}
+          />
+          <Typography.Text type="secondary">1–8760 (default 168 = 7 days)</Typography.Text>
+        </Space>
+        <Button
+          type="primary"
+          loading={save.isPending}
+          disabled={!dirty}
+          onClick={() => save.mutate({ enabled, ttlHours })}
         >
           Apply
         </Button>
