@@ -2141,6 +2141,64 @@ install_mariadb_skip_networking() {
   ensure_mariadb_socket_acl_for_jabali
 }
 
+# install_php_opcache_tuning — multi-tenant WordPress opcache defaults (#597).
+# The stock 10-opcache.ini (10000 files / 128 MB) can't hold WP + a big plugin
+# set (Elementor/JetEngine/Essential-Addons/…), so files get evicted and
+# recompiled per request → slow render on every PHP page and every page-cache
+# miss/background-refresh. We drop a jabali-owned override into each installed
+# PHP minor's FPM conf.d, sized to host RAM, reconciled on every `jabali update`.
+#
+# Idempotent: write-on-diff; reloads the per-user FPM masters only on change.
+# validate_timestamps stays ON (tenant edits must be seen) with revalidate_freq
+# raised to 60s. JIT is intentionally left OFF (plugin-breakage risk per #597).
+install_php_opcache_tuning() {
+  local mem_kb mem_mb opc_mem
+  mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  mem_mb=$((mem_kb / 1024))
+  # memory_consumption = RAM/32, clamped [256, 512] MB (per #597).
+  opc_mem=$((mem_mb / 32))
+  if   [[ $opc_mem -lt 256 ]]; then opc_mem=256
+  elif [[ $opc_mem -gt 512 ]]; then opc_mem=512
+  fi
+
+  local desired changed=0 minor
+  desired=$(cat <<OPC_EOF
+; Managed by jabali (#597) — multi-tenant WordPress opcache tuning.
+; Do NOT hand-edit; install.sh reconciles this on every \`jabali update\`.
+; Sized to ${mem_mb} MB host RAM.
+opcache.enable=1
+opcache.max_accelerated_files=50000
+opcache.memory_consumption=${opc_mem}
+opcache.interned_strings_buffer=16
+opcache.validate_timestamps=1
+opcache.revalidate_freq=60
+OPC_EOF
+)
+
+  for dir in /etc/php/*/; do
+    [[ -d "${dir}fpm" ]] || continue
+    minor="$(basename "$dir")"
+    local ini="/etc/php/${minor}/mods-available/jabali-opcache.ini"
+    local link="/etc/php/${minor}/fpm/conf.d/15-jabali-opcache.ini"
+    if [[ ! -f "$ini" ]] || ! cmp -s <(printf '%s\n' "$desired") "$ini"; then
+      printf '%s\n' "$desired" > "$ini"
+      chmod 0644 "$ini"   # 0644: unprivileged per-user FPM master parses conf.d
+      changed=1
+      _log "opcache-tune: wrote $ini (files=50000 mem=${opc_mem}M)"
+    fi
+    ln -sf "../../mods-available/jabali-opcache.ini" "$link"
+  done
+
+  if [[ $changed -eq 1 ]]; then
+    # Reload every running per-user FPM master so the new opcache config takes
+    # effect (the global phpX-fpm.service is masked; ADR-0025).
+    systemctl reload 'jabali-fpm@*.service' 2>/dev/null || true
+    _ok "opcache-tune: applied (max_accelerated_files=50000, memory=${opc_mem}M, interned=16M)"
+  else
+    _log "opcache-tune: ini already current, no reload"
+  fi
+}
+
 # tune_mariadb_for_ram writes an innodb_buffer_pool_size drop-in
 # sized to host total RAM, plus an OOMScoreAdjust drop-in so mariadbd
 # stops being the kernel OOM-killer's default victim on small VMs.
@@ -12123,6 +12181,12 @@ EOF
     install_redis_acl
   fi
 
+  # Multi-tenant WP opcache tuning (#597) — self-heal on every update so the
+  # stock 10000-file/128MB opcache defaults get raised on existing hosts.
+  if declare -f install_php_opcache_tuning >/dev/null 2>&1; then
+    install_php_opcache_tuning
+  fi
+
 }
 
 # apply_dns_forwarder_override switches the host off systemd-resolved
@@ -12265,6 +12329,7 @@ main() {
   provision_mariadb
   install_mariadb_skip_networking
   tune_mariadb_for_ram
+  install_php_opcache_tuning   # #597: opcache defaults for multi-tenant WP
   # M48 Phase 8 (opt-in): install_docker_engine no longer runs on
   # fresh install. Operator flips server_settings.docker_marketplace_enabled
   # in Server Settings; panel-api dispatches docker.install which
