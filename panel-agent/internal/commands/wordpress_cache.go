@@ -3,8 +3,10 @@
 // by the per-tenant ACL user (ADR-0148): panel-api creates wp_<osuser> scoped to
 // ~jc:<prefix>:* and passes the token here; the plugin connects with it.
 //
-// The plugin source is bundled read-only at bundledWPCachePluginDir (install.sh
-// syncs it) so tenants never supply plugin code. Idempotent.
+// The plugin is installed from WordPress.org (the canonical source, GH #613)
+// via wp-cli; a read-only bundled copy at bundledWPCachePluginDir (install.sh
+// syncs it) is the fallback when WordPress.org is unreachable. Either way
+// tenants never supply plugin code. Idempotent.
 package commands
 
 import (
@@ -12,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,18 +70,40 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		return wordpressCacheSetResult{Ok: true, Enabled: false}, nil
 	}
 
-	// 1. Stage the plugin into the install (root copy, then chown to the tenant).
+	// 1. Stage the plugin. WordPress.org is the canonical source (GH #613): the
+	//    panel installs `jabali-cache` from the public plugin repository via
+	//    wp-cli — the same channel `wp core download` already uses — so the
+	//    published plugin, not a panel-bundled copy, is the source of truth.
+	//    The bundled copy at bundledWPCachePluginDir is a FALLBACK only, used
+	//    when the tenant can't reach wordpress.org (per-user egress policy /
+	//    offline host / WP.org outage) or when explicitly forced via
+	//    JABALI_WP_CACHE_SOURCE=bundled (debug/override path).
 	dest := filepath.Join(p.InstallPath, "wp-content", "plugins", "jabali-cache")
-	if _, err := os.Stat(bundledWPCachePluginDir); err != nil {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition,
-			Message: fmt.Sprintf("bundled plugin missing at %s — re-run install.sh", bundledWPCachePluginDir)}
+	staged := false
+	if strings.EqualFold(os.Getenv("JABALI_WP_CACHE_SOURCE"), "bundled") {
+		// Explicit override: skip WordPress.org entirely.
+	} else if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "install", "jabali-cache", "--force"); err == nil {
+		staged = true
+	} else {
+		// WordPress.org unreachable (egress-restricted tenant, offline host, or
+		// WP.org outage) — fall through to the bundled fallback below.
+		slog.WarnContext(ctx, "jabali-cache: wordpress.org install failed, using bundled fallback",
+			"os_user", p.OSUser, "install_path", p.InstallPath, "detail", truncateReason(out, 300))
 	}
-	if err := exec.CommandContext(ctx, "rm", "-rf", dest).Run(); err != nil {
-		return nil, bkInternal("clear old plugin", err)
+	if !staged {
+		if _, err := os.Stat(bundledWPCachePluginDir); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition,
+				Message: fmt.Sprintf("could not install jabali-cache from wordpress.org and the bundled fallback is missing at %s — re-run install.sh", bundledWPCachePluginDir)}
+		}
+		if err := exec.CommandContext(ctx, "rm", "-rf", dest).Run(); err != nil {
+			return nil, bkInternal("clear old plugin", err)
+		}
+		if err := exec.CommandContext(ctx, "cp", "-a", bundledWPCachePluginDir, dest).Run(); err != nil {
+			return nil, bkInternal("stage plugin (bundled fallback)", err)
+		}
 	}
-	if err := exec.CommandContext(ctx, "cp", "-a", bundledWPCachePluginDir, dest).Run(); err != nil {
-		return nil, bkInternal("stage plugin", err)
-	}
+	// Normalize ownership regardless of source: nginx (www-data) must be able to
+	// read the plugin files the per-user PHP-FPM pool serves.
 	if err := exec.CommandContext(ctx, "chown", "-R", p.OSUser+":www-data", dest).Run(); err != nil {
 		return nil, bkInternal("chown plugin", err)
 	}
@@ -144,7 +169,6 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	}
 	return wordpressCacheSetResult{Ok: true, Enabled: true}, nil
 }
-
 
 // wpConfigBeginMarker / wpConfigEndMarker fence the jabali-managed define block
 // in wp-config.php so it can be replaced/removed idempotently.
