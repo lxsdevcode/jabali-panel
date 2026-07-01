@@ -2180,6 +2180,9 @@ OPC_EOF
     minor="$(basename "$dir")"
     local ini="/etc/php/${minor}/mods-available/jabali-opcache.ini"
     local link="/etc/php/${minor}/fpm/conf.d/15-jabali-opcache.ini"
+    # Some minors have fpm/ but not yet mods-available/ (partial Sury layout);
+    # create both targets so the write + symlink never trip the ERR trap.
+    install -d -m 0755 "/etc/php/${minor}/mods-available" "/etc/php/${minor}/fpm/conf.d"
     if [[ ! -f "$ini" ]] || ! cmp -s <(printf '%s\n' "$desired") "$ini"; then
       printf '%s\n' "$desired" > "$ini"
       chmod 0644 "$ini"   # 0644: unprivileged per-user FPM master parses conf.d
