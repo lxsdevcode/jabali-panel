@@ -19,9 +19,9 @@ import (
 
 // phpPoolApplyParams is the input shape for php.pool.apply.
 type phpPoolApplyParams struct {
-	Username                  string `json:"username"`
-	PHPVersion                string `json:"php_version"`
-	Additive                  bool   `json:"additive,omitempty"` // M35.8: keep other-version pools for this user
+	Username   string `json:"username"`
+	PHPVersion string `json:"php_version"`
+	Additive   bool   `json:"additive,omitempty"` // M35.8: keep other-version pools for this user
 	// Slug is the pool/instance identity used for all on-disk paths and the
 	// systemd instance name (GH #329). Empty => the legacy per-user default
 	// pool: slug == username, byte-identical to pre-#329 behaviour. A
@@ -29,7 +29,7 @@ type phpPoolApplyParams struct {
 	// master alongside the default one; user=/group= in the pool conf stay the
 	// real OS user (the jabali-pma opaque-instance pattern), so privilege is
 	// unchanged — only the PHP version differs.
-	Slug string `json:"slug,omitempty"`
+	Slug                      string `json:"slug,omitempty"`
 	PmMode                    string `json:"pm_mode"`
 	PmMaxChildren             uint32 `json:"pm_max_children"`
 	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
@@ -448,6 +448,19 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 				Code:    agentwire.CodeInvalidArgument,
 				Message: fmt.Sprintf("admin_flag value must be 'on' or 'off', got: %s", af.Value),
 			}
+		}
+	}
+
+	// The config dir can exist without the FPM binary (a partial install, or a
+	// version whose CLI-only packages landed). fpm-exec would then crash-loop
+	// the master with a bare exit 127. Fail fast with a clear message so the
+	// pool lands in "error" with an actionable reason instead (GH #329). Checked
+	// after argument validation so a bad request still returns InvalidArgument.
+	fpmBinary := fmt.Sprintf("/usr/sbin/php-fpm%s", p.PHPVersion)
+	if _, err := os.Stat(fpmBinary); err != nil {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeFailedPrecondition,
+			Message: fmt.Sprintf("php-fpm binary for %s not installed (%s missing) — install php%s-fpm", p.PHPVersion, fpmBinary, p.PHPVersion),
 		}
 	}
 
