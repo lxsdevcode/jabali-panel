@@ -1,0 +1,50 @@
+slug: mediacms
+name: MediaCMS
+tags: ["Media", "Video", "CMS"]
+version: "2026.06.24"
+description: >-
+  Modern, full-featured open-source video and media CMS (Python/Django +
+  React) with a REST API — upload, transcode, organize, and stream video,
+  audio, and image content. Single all-in-one app container (nginx + gunicorn
+  + Celery via supervisord) alongside a bundled PostgreSQL and Redis. First
+  login is the admin user + the generated ADMIN_PASSWORD from the install
+  .env — change it after signing in. Served at the domain root behind the
+  panel's TLS vhost.
+icon: icon.svg
+upstream: https://github.com/mediacms-io/mediacms
+documentation: https://github.com/mediacms-io/mediacms/blob/main/docs/admins_docs.md
+
+image_channel: mediacms/mediacms:latest@sha256:24a9d601c04bd2f9dd91c29d8f32e830aa45fcb4ec3b475efdedc615f090dfeb
+update_mode: manual
+
+resources:
+  cpu: "2.0"
+  memory: "2g"
+  pids: 400
+
+volumes:
+  - name: media
+    container_path: /home/mediacms.io/mediacms/media_files
+  - name: postgres
+    container_path: /var/lib/postgresql/data
+
+ports:
+  - name: http
+    container_port: 80
+    protocol: tcp
+    default_enabled: true
+    default_bind: loopback
+    default_reverse_proxy: true
+    health_path: /
+
+env:
+  - name: DB_PASSWORD
+    secret: true
+    generate: password32
+  - name: ADMIN_PASSWORD
+    secret: true
+    generate: password32
+  - name: ADMIN_USER
+    value: "admin"
+  - name: ADMIN_EMAIL
+    value: "admin@localhost"
