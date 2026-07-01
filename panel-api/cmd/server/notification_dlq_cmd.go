@@ -32,8 +32,11 @@ func requireRedis(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	// Load /etc/jabali/panel.env (DATABASE_URL, JABALI_REDIS_PANEL_TOKEN, …) into
-	// the process env, same as the DB-backed commands do via initConfig.
+	// the process env, and open the DB so DLQ mutations are CLI-audited (#537).
 	if err := initConfig(); err != nil {
+		return err
+	}
+	if err := initDB(); err != nil {
 		return err
 	}
 	url := sharedCfg.Redis.URL
