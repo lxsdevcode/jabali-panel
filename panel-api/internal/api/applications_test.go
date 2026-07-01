@@ -777,3 +777,64 @@ func TestApplications_Registry_ExposesRootOnly(t *testing.T) {
 		t.Error("itflow registry entry must advertise root_only=true so the UI hides www/Directory")
 	}
 }
+
+// --- GH #556: characterization test locking the app cache-toggle behavior
+// before it is extracted into a shared core for CLI parity. Asserts the
+// distinct status codes the UI depends on. ---
+
+func putCache(r *gin.Engine, id string, enabled bool) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+id+"/cache", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestApplicationsCache_Characterization(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("install not found -> 404", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		if w := putCache(r, "missing", true); w.Code != http.StatusNotFound {
+			t.Fatalf("want 404, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("non-wordpress -> 400", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "i1", UserID: "user1", DomainID: "domain1", AppType: "dokuwiki"})
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		if w := putCache(r, "i1", true); w.Code != http.StatusBadRequest {
+			t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("enable without redis -> 503", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "i2", UserID: "user1", DomainID: "domain1", AppType: "wordpress"})
+		r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		// cfg has no Redis/secret -> enable must 503, not 500.
+		if w := putCache(r, "i2", true); w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("want 503, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("disable -> 200 + agent cache_set + install flag off", func(t *testing.T) {
+		wpRepo, domainRepo, userRepo := wpUserAndDomain()
+		wpRepo.Create(ctx, &models.WordPressInstall{ID: "i3", UserID: "user1", DomainID: "domain1", AppType: "wordpress", CacheEnabled: true})
+		r, ag, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, nil)
+		w := putCache(r, "i3", false)
+		if w.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+		}
+		if ag.lastCommand != "wordpress.cache_set" {
+			t.Fatalf("expected wordpress.cache_set agent call, got %q", ag.lastCommand)
+		}
+		inst, _ := wpRepo.FindByID(ctx, "i3")
+		if inst.CacheEnabled {
+			t.Fatalf("install cache flag should be off after disable")
+		}
+	})
+}

@@ -73,6 +73,20 @@ func revokeTenantRedisACL(ctx context.Context, rdb *redis.Client, osUser string)
 }
 
 // cache toggles the WP object cache + nginx page cache for a WordPress install.
+// setCache sentinel errors map the cache core's failure modes to the exact
+// HTTP statuses/codes the UI depends on (GH #556 extraction — keep in sync
+// with the switch in cache() and TestApplicationsCache_Characterization).
+var (
+	errCacheInstallNotFound  = errors.New("install_not_found")
+	errCacheNotWordPress     = errors.New("cache_only_for_wordpress")
+	errCacheRedisUnavailable = errors.New("redis_unavailable")
+	errCacheSaltFailed       = errors.New("salt_failed")
+	errCacheACLProvision     = errors.New("acl_provision_failed")
+	errCacheAgentFailed      = errors.New("agent_failed")
+)
+
+// cache toggles the WP object cache + nginx page cache for a WordPress install.
+// HTTP wrapper: parse request, delegate to setCacheCore, map errors → status.
 func (h *wordPressHandler) cache(c *gin.Context) {
 	claims := ginctx.Claims(c)
 	if claims == nil {
@@ -84,36 +98,65 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
-	ctx := c.Request.Context()
-	installID := c.Param("id")
+	err := h.setCacheCore(c.Request.Context(), c.Param("id"), req.Enabled, claims.IsAdmin, claims.UserID)
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, gin.H{"cache_enabled": req.Enabled})
+	case errors.Is(err, errCacheInstallNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "install_not_found"})
+	case errors.Is(err, errCacheNotWordPress):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cache_only_for_wordpress"})
+	case errors.Is(err, errCacheRedisUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "redis_unavailable"})
+	case errors.Is(err, errCacheSaltFailed):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "salt_failed"})
+	case errors.Is(err, errCacheACLProvision):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "acl_provision_failed"})
+	case errors.Is(err, errCacheAgentFailed):
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "agent_failed"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+	}
+}
 
+// SetApplicationCache toggles an install's cache from a non-HTTP caller (CLI,
+// GH #556). It runs the SAME core as the web PUT /applications/:id/cache path.
+// actorUserID/isAdmin scope ownership exactly as the HTTP handler (an operator
+// CLI passes isAdmin=true). Returns the errCache* sentinels so callers can
+// message precisely; the periodic reconciler converges the nginx page-cache
+// vhost when cfg.Reconciler is nil (the CLI path).
+func SetApplicationCache(ctx context.Context, cfg ApplicationHandlerConfig, installID string, enabled, isAdmin bool, actorUserID string) error {
+	return (&wordPressHandler{cfg: cfg}).setCacheCore(ctx, installID, enabled, isAdmin, actorUserID)
+}
+
+// setCacheCore is the transport-agnostic core of the cache toggle. It returns a
+// sentinel error (errCache*) for the caller to map to a status/message; any
+// other (wrapped) error is an internal failure (→ 500). Behavior is locked by
+// TestApplicationsCache_Characterization.
+func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, enabled, isAdmin bool, actorUserID string) error {
 	// Ownership check (admins may toggle any install).
 	var install *models.WordPressInstall
 	var err error
-	if claims.IsAdmin {
+	if isAdmin {
 		install, err = h.cfg.ApplicationInstalls.FindByID(ctx, installID)
 	} else {
-		install, err = h.cfg.ApplicationInstalls.FindByIDAndUserID(ctx, installID, claims.UserID)
+		install, err = h.cfg.ApplicationInstalls.FindByIDAndUserID(ctx, installID, actorUserID)
 	}
 	if err != nil {
 		if isNotFound(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "install_not_found"})
-			return
+			return errCacheInstallNotFound
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return fmt.Errorf("install lookup: %w", err)
 	}
 	if install.AppType != "wordpress" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "cache_only_for_wordpress"})
-		return
+		return errCacheNotWordPress
 	}
 
 	// Resolve the domain (docroot + name for nginx) and the tenant os user.
 	domain, err := h.cfg.Domains.FindByID(ctx, install.DomainID)
 	if err != nil {
 		slog.ErrorContext(ctx, "cache: domain lookup", "err", err, "domain_id", install.DomainID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return fmt.Errorf("domain lookup: %w", err)
 	}
 	var osUser string
 	if u, uErr := h.cfg.Users.FindByID(ctx, install.UserID); uErr == nil && u != nil && u.Username != nil {
@@ -121,8 +164,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	}
 	if osUser == "" {
 		slog.ErrorContext(ctx, "cache: user has no linux username", "user_id", install.UserID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return fmt.Errorf("user %s has no linux username", install.UserID)
 	}
 
 	// The WP install lives at <docroot>/<subdirectory> (subdir empty => docroot).
@@ -137,28 +179,24 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	// per install so a tenant's two sites never collide.
 	prefix := osUser + ":" + installID
 
-	if req.Enabled {
+	if enabled {
 		// 1. Provision the per-tenant ACL user BEFORE the plugin tries to auth.
 		if h.cfg.Redis == nil || h.cfg.CacheTokenSecret == "" {
-			// No Redis, or no secret to derive a non-guessable per-tenant token.
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "redis_unavailable"})
-			return
+			return errCacheRedisUnavailable
 		}
 		salt := ""
 		if h.cfg.CacheTokenSalts != nil {
 			s2, sErr := h.cfg.CacheTokenSalts.GetOrCreate(ctx, install.UserID)
 			if sErr != nil {
 				slog.ErrorContext(ctx, "cache: salt get/create", "err", sErr, "user_id", install.UserID)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "salt_failed"})
-				return
+				return errCacheSaltFailed
 			}
 			salt = s2
 		}
 		token := cacheTenantToken(h.cfg.CacheTokenSecret, osUser, salt)
 		if err := h.provisionTenantACL(ctx, osUser, token); err != nil {
 			slog.ErrorContext(ctx, "cache: ACL provision", "err", err, "os_user", osUser)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "acl_provision_failed"})
-			return
+			return errCacheACLProvision
 		}
 		// 2. Agent: stage plugin + write config + activate + enable, as the tenant.
 		params := map[string]any{
@@ -171,8 +209,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		}
 		if _, err := h.cfg.Agent.Call(ctx, "wordpress.cache_set", params); err != nil {
 			slog.ErrorContext(ctx, "cache: agent enable", "err", err, "install_id", installID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "agent_failed"})
-			return
+			return errCacheAgentFailed
 		}
 	} else {
 		// Disable the plugin. Leave the ACL user in place — other installs of
@@ -184,8 +221,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		}
 		if _, err := h.cfg.Agent.Call(ctx, "wordpress.cache_set", params); err != nil {
 			slog.ErrorContext(ctx, "cache: agent disable", "err", err, "install_id", installID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "agent_failed"})
-			return
+			return errCacheAgentFailed
 		}
 	}
 
@@ -194,8 +230,8 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	// /blog), so only flip the per-domain flag OFF when no sibling install on
 	// the same domain still wants it — otherwise we'd kill page cache for a
 	// site whose own switch is still ON (GH #409).
-	desiredDomainCache := req.Enabled
-	if !req.Enabled {
+	desiredDomainCache := enabled
+	if !enabled {
 		siblings, sErr := h.cfg.ApplicationInstalls.CountCacheEnabledByDomainID(ctx, domain.ID, installID)
 		if sErr != nil {
 			// Conservative on error: leave the page cache as-is rather than risk
@@ -209,7 +245,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	// Gitea #420: scope the page cache to this install's path, so enabling cache
 	// on a /blog WP install doesn't apply WP-tuned caching to unrelated content
 	// elsewhere on the domain. "/" = whole domain (root install).
-	if req.Enabled {
+	if enabled {
 		if perr := h.cfg.Domains.UpdateCachePath(ctx, domain.ID, cachePathFromSubdir(install.Subdirectory)); perr != nil {
 			slog.ErrorContext(ctx, "cache: domain cache_path", "err", perr, "domain_id", domain.ID)
 		}
@@ -217,8 +253,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	if desiredDomainCache != domain.CacheEnabled {
 		if err := h.cfg.Domains.UpdateCacheEnabled(ctx, domain.ID, desiredDomainCache); err != nil {
 			slog.ErrorContext(ctx, "cache: domain flag", "err", err, "domain_id", domain.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-			return
+			return fmt.Errorf("domain flag: %w", err)
 		}
 		if h.cfg.Reconciler != nil {
 			h.cfg.Reconciler.Schedule(domain.ID) // re-render vhost + nginx reload
@@ -226,10 +261,9 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	}
 
 	// 4. Persist the install-level switch state.
-	if err := h.cfg.ApplicationInstalls.UpdateCacheEnabled(ctx, installID, req.Enabled); err != nil {
+	if err := h.cfg.ApplicationInstalls.UpdateCacheEnabled(ctx, installID, enabled); err != nil {
 		slog.ErrorContext(ctx, "cache: install flag", "err", err, "install_id", installID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
-		return
+		return fmt.Errorf("install flag: %w", err)
 	}
 
 	// 5. On disable, reap the per-tenant Redis ACL user once the tenant has no
@@ -237,7 +271,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 	// tenant's installs, so it may only be DELUSER'd when this was the last —
 	// otherwise siblings lose their cache. Best-effort: a revoke failure is
 	// logged, never fails the disable (the toggle already succeeded).
-	if !req.Enabled {
+	if !enabled {
 		remaining, cErr := h.cfg.ApplicationInstalls.CountCacheEnabledByUserID(ctx, install.UserID, installID)
 		if cErr != nil {
 			slog.WarnContext(ctx, "cache: count remaining cache-enabled installs", "err", cErr, "user_id", install.UserID)
@@ -248,7 +282,7 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"cache_enabled": req.Enabled})
+	return nil
 }
 
 // provisionTenantACL idempotently creates/updates the per-tenant Redis ACL user

@@ -142,6 +142,19 @@ Manage one-click app installs (direct DB — M20-safe)
 jabali app
 ```
 
+#### `jabali app cache`
+
+Enable/disable object + page cache for a WordPress app install
+
+```
+jabali app cache <install-id> [flags]
+```
+
+**Flags:**
+
+- `--disable` — disable object + page cache
+- `--enable` — enable object + page cache
+
 #### `jabali app delete`
 
 Delete an installed app (direct DB + agent teardown — M20-safe)
