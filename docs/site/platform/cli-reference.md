@@ -3208,6 +3208,61 @@ jabali notification events set <event-kind> --enabled <true|false> [flags]
 
 - `--enabled` — true|false (required)
 
+#### `jabali notification inbox`
+
+Manage a user's notification bell inbox
+
+```
+jabali notification inbox
+```
+
+##### `jabali notification inbox clear`
+
+Delete all of a user's notifications
+
+```
+jabali notification inbox clear --user <user> [flags]
+```
+
+**Flags:**
+
+- `--force` — confirm clearing
+- `--include-broadcast` — also remove broadcast rows (admin)
+- `--user` — target user (required)
+
+##### `jabali notification inbox list`
+
+List a user's recent notifications
+
+```
+jabali notification inbox list --user <user> [flags]
+```
+
+**Flags:**
+
+- `--limit` — max rows (1-200) (default `50`)
+- `--user` — target user (email|username|id, required)
+
+##### `jabali notification inbox read`
+
+Mark one notification read
+
+```
+jabali notification inbox read <notification-id>
+```
+
+##### `jabali notification inbox read-all`
+
+Mark all of a user's notifications read
+
+```
+jabali notification inbox read-all --user <user> [flags]
+```
+
+**Flags:**
+
+- `--user` — target user (required)
+
 ### `jabali nspawn`
 
 Manage SSH sandbox nspawn images (M13)
