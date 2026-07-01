@@ -1249,9 +1249,19 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	// Status writes must survive the operation deadline. If the agent clone
+	// hangs to ctx's timeout (GH #599), a terminal UpdateStatus on that same
+	// expired ctx is a silent no-op and the row stays "cloning" forever. Give
+	// every status write its own fresh, short-lived context.
+	setStatus := func(status string, errMsg, version *string) {
+		sctx, scancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer scancel()
+		cfg.ApplicationInstalls.UpdateStatus(sctx, cloneInstallID, status, errMsg, version)
+	}
+
 	if cfg.Agent == nil {
 		errMsg := "agent not configured"
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1259,7 +1269,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	sourceDomain, err := cfg.Domains.FindByID(ctx, sourceDomainID)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to find source domain: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1267,7 +1277,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	destDomain, err := cfg.Domains.FindByID(ctx, destDomainID)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to find destination domain: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1275,7 +1285,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	destDatabase, err := cfg.Databases.FindByID(ctx, destDatabaseID)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to find destination database: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1283,7 +1293,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	destGrants, err := cfg.DatabaseGrants.ListByDatabaseID(ctx, destDatabaseID)
 	if err != nil || len(destGrants) == 0 {
 		errMsg := truncateError(fmt.Sprintf("failed to find database grants for dest database: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1291,7 +1301,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	destDatabaseUser, err := cfg.DatabaseUsers.FindByID(ctx, destGrants[0].DatabaseUserID)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to find database user: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1299,7 +1309,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	user, err := cfg.Users.FindByID(ctx, destDomain.UserID)
 	if err != nil || user.Username == nil {
 		errMsg := truncateError(fmt.Sprintf("failed to find user or missing username: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 	osUser := *user.Username
@@ -1308,7 +1318,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	sourceInstall, err := cfg.ApplicationInstalls.FindByDomainAndSubdirectory(ctx, sourceDomainID, dstSubdirectory)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to find source install: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1318,13 +1328,13 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 		sourceDatabase, err := cfg.Databases.FindByID(ctx, *sourceInstall.DBID)
 		if err != nil {
 			errMsg := truncateError(fmt.Sprintf("failed to find source database: %v", err), 1024)
-			cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+			setStatus("failed", &errMsg, nil)
 			return
 		}
 		srcDBName = sourceDatabase.Name
 	} else {
 		errMsg := "source install has no database"
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1344,14 +1354,14 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to hash new password: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
 	// Update the database user with the new password
 	if err := cfg.DatabaseUsers.UpdatePasswordHash(ctx, destDatabaseUser.ID, string(hash)); err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to update database user password: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1364,7 +1374,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 		"new_password": plainPassword,
 	}); err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to update MariaDB password: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1378,7 +1388,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 		"dst_db_name":      destDatabase.Name,
 		"dst_db_user":      destDatabaseUser.Username,
 		"dst_db_password":  plainPassword,
-		"dst_db_host":      "/var/run/mysqld/mysqld.sock", // Unix socket per M25
+		"dst_db_host":      "localhost", // socket via localhost, mirrors install (GH #599)
 		"src_site_url":     srcSiteURL,
 		"dst_site_url":     dstSiteURL,
 		"use_www":          useWWW,
@@ -1386,7 +1396,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	})
 	if err != nil {
 		errMsg := truncateError(fmt.Sprintf("agent clone failed: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		// Best-effort cleanup; same dispatcher path.
 		cfg.Agent.Call(ctx, "app.delete", map[string]any{
 			"app_type":    "wordpress",
@@ -1399,7 +1409,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	var respMap map[string]any
 	if err := json.Unmarshal(agentResp, &respMap); err != nil {
 		errMsg := truncateError(fmt.Sprintf("failed to parse agent response: %v", err), 1024)
-		cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "failed", &errMsg, nil)
+		setStatus("failed", &errMsg, nil)
 		return
 	}
 
@@ -1409,7 +1419,7 @@ func createCloneAndKickAgent(parentCtx context.Context, cloneInstallID, sourceDo
 	}
 
 	// Update status to 'ready' with version
-	cfg.ApplicationInstalls.UpdateStatus(ctx, cloneInstallID, "ready", nil, &version)
+	setStatus("ready", nil, &version)
 }
 
 // ---- Helpers ----
