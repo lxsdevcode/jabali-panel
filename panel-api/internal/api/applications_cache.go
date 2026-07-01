@@ -17,6 +17,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path"
@@ -252,6 +254,66 @@ func (h *wordPressHandler) cache(c *gin.Context) {
 // provisionTenantACL idempotently creates/updates the per-tenant Redis ACL user
 // wp_<osuser> scoped to its own jc:<osuser>:* keyspace, read/write only, no
 // dangerous/admin commands. Runs as the jabali_panel client (which holds +acl).
+// errObjectCacheUnavailable signals that Redis or the cache-token secret isn't
+// provisioned (ADR-0148 / #595) — the caller decides whether that's a 503 (the
+// toggle) or a silent skip (default-on-install, #597).
+var errObjectCacheUnavailable = errors.New("object cache unavailable: redis/secret not provisioned")
+
+// enableObjectCache provisions the per-tenant Redis ACL user, activates the WP
+// object-cache plugin for one install (as the tenant, via the agent), and flips
+// application_installs.cache_enabled on. Self-contained so both the /cache
+// toggle and the auto-enable-on-new-WP-install path (#597) share the SAME
+// security-critical steps: the per-tenant ACL fence, the cacheTenantToken
+// derivation, and the wordpress.cache_set agent call. It does NOT touch the
+// per-domain nginx page cache — that stays an explicit opt-in (ADR-0108).
+func (h *wordPressHandler) enableObjectCache(ctx context.Context, install *models.ApplicationInstall) error {
+	if h.cfg.Redis == nil || h.cfg.CacheTokenSecret == "" {
+		return errObjectCacheUnavailable
+	}
+	domain, err := h.cfg.Domains.FindByID(ctx, install.DomainID)
+	if err != nil {
+		return fmt.Errorf("domain lookup: %w", err)
+	}
+	var osUser string
+	if u, uErr := h.cfg.Users.FindByID(ctx, install.UserID); uErr == nil && u != nil && u.Username != nil {
+		osUser = *u.Username
+	}
+	if osUser == "" {
+		return fmt.Errorf("user %s has no linux username", install.UserID)
+	}
+	installPath := domain.DocRoot
+	if install.Subdirectory != "" {
+		installPath = path.Join(domain.DocRoot, install.Subdirectory)
+	}
+	prefix := osUser + ":" + install.ID
+	salt := ""
+	if h.cfg.CacheTokenSalts != nil {
+		s2, sErr := h.cfg.CacheTokenSalts.GetOrCreate(ctx, install.UserID)
+		if sErr != nil {
+			return fmt.Errorf("salt get/create: %w", sErr)
+		}
+		salt = s2
+	}
+	token := cacheTenantToken(h.cfg.CacheTokenSecret, osUser, salt)
+	if err := h.provisionTenantACL(ctx, osUser, token); err != nil {
+		return fmt.Errorf("acl provision: %w", err)
+	}
+	if _, err := h.cfg.Agent.Call(ctx, "wordpress.cache_set", map[string]any{
+		"install_path":   installPath,
+		"os_user":        osUser,
+		"enable":         true,
+		"redis_db":       1,
+		"prefix":         prefix,
+		"redis_password": token,
+	}); err != nil {
+		return fmt.Errorf("agent cache_set: %w", err)
+	}
+	if err := h.cfg.ApplicationInstalls.UpdateCacheEnabled(ctx, install.ID, true); err != nil {
+		return fmt.Errorf("mark cache_enabled: %w", err)
+	}
+	return nil
+}
+
 func (h *wordPressHandler) provisionTenantACL(ctx context.Context, osUser, token string) error {
 	user := "wp_" + osUser
 	// resetkeys/resetchannels make the rule absolute (idempotent re-apply); the
