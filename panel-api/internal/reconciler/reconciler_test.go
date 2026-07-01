@@ -2162,7 +2162,9 @@ func TestReconcileVersionedPHPPools(t *testing.T) {
 	user := &models.User{ID: "user-1", Email: "u@e.com", Username: &username}
 	userRepo.users[user.ID] = user
 
-	base := time.Now().UTC()
+	// Base timestamps well in the past so the orphan is older than the reap
+	// grace; ordering (default earliest) is preserved.
+	base := time.Now().UTC().Add(-1 * time.Hour)
 	// Default pool (earliest) — must NOT be touched by the versioned pass.
 	phpPoolRepo.pools["pool-default"] = &models.PHPPool{
 		ID: "pool-default", UserID: user.ID, PHPVersion: "8.4",
@@ -2179,11 +2181,18 @@ func TestReconcileVersionedPHPPools(t *testing.T) {
 	domainRepo.domains["d1"] = &models.Domain{
 		ID: "d1", UserID: user.ID, Name: "a.com", IsEnabled: true, PHPPoolID: &pool82,
 	}
-	// Orphan versioned pool (no domains), active -> should be reaped.
+	// Orphan versioned pool (no domains), OLD -> should be reaped.
 	phpPoolRepo.pools["pool-80"] = &models.PHPPool{
 		ID: "pool-80", UserID: user.ID, PHPVersion: "8.0",
 		PmMode: "ondemand", PmMaxChildren: 20, ProcessIdleTimeoutSeconds: 60,
 		Status: "active", CreatedAt: base.Add(2 * time.Minute),
+	}
+	// FRESH orphan versioned pool (no domains, just created) -> must be SPARED
+	// by the reap grace: this models the bind handler's create→bind window.
+	phpPoolRepo.pools["pool-83-fresh"] = &models.PHPPool{
+		ID: "pool-83-fresh", UserID: user.ID, PHPVersion: "8.3",
+		PmMode: "ondemand", PmMaxChildren: 20, ProcessIdleTimeoutSeconds: 60,
+		Status: "pending", CreatedAt: time.Now().UTC(),
 	}
 
 	r := New(domainRepo, userRepo, agent, log, Config{Interval: time.Second}).
@@ -2222,4 +2231,10 @@ func TestReconcileVersionedPHPPools(t *testing.T) {
 	if _, err := phpPoolRepo.FindByID(ctx, "pool-default"); err != nil {
 		t.Errorf("default pool must remain: %v", err)
 	}
+	// The fresh orphan must NOT be reaped (reap grace protects the bind
+	// create→bind window). It also must not have been the one removed.
+	if _, err := phpPoolRepo.FindByID(ctx, "pool-83-fresh"); err != nil {
+		t.Errorf("fresh versioned pool must be spared by the reap grace: %v", err)
+	}
+	require.Equal(t, "phpuser-php8.0", rp["slug"], "only the OLD orphan should be reaped, not the fresh one")
 }

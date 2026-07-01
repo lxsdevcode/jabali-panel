@@ -988,6 +988,12 @@ func (r *Reconciler) ReconcilePHPPools(ctx context.Context) {
 //
 // This also fixes the latent cpanel mixed-version restore bug: restore inserts
 // multiple pool rows, but before #329 only the default was ever applied.
+// versionedPoolReapGrace is how long a domain-less versioned pool is spared
+// from reaping — long enough that the bind handler's pool-create → domain-bind
+// (and the cpanel-restore insert → bind) has certainly finished. Slow restores
+// stay comfortably inside it.
+const versionedPoolReapGrace = 5 * time.Minute
+
 func (r *Reconciler) reconcileVersionedPHPPools(ctx context.Context) {
 	if r.phpPools == nil {
 		return
@@ -1025,6 +1031,17 @@ func (r *Reconciler) reconcileVersionedPHPPools(ctx context.Context) {
 				continue
 			}
 			if cnt == 0 {
+				// Grace period: a pool the bind handler (or cpanel restore)
+				// just created is momentarily domain-less between the pool
+				// INSERT and the domain bind. Reaping in that window would
+				// delete a pool a domain is about to reference (FK
+				// fk_domain_php_pool → 500 on the version change / an unbound
+				// restored domain). Only reap pools old enough that the bind
+				// must have completed. A genuine orphan (domain later removed)
+				// ages past the grace and is reaped on a subsequent tick.
+				if time.Since(pool.CreatedAt) < versionedPoolReapGrace {
+					continue
+				}
 				r.reapVersionedPool(ctx, user, pool)
 				continue
 			}
