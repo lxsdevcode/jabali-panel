@@ -22,6 +22,14 @@ type phpPoolApplyParams struct {
 	Username                  string `json:"username"`
 	PHPVersion                string `json:"php_version"`
 	Additive                  bool   `json:"additive,omitempty"` // M35.8: keep other-version pools for this user
+	// Slug is the pool/instance identity used for all on-disk paths and the
+	// systemd instance name (GH #329). Empty => the legacy per-user default
+	// pool: slug == username, byte-identical to pre-#329 behaviour. A
+	// non-empty slug (e.g. "alice-php8.2") provisions an ADDITIONAL versioned
+	// master alongside the default one; user=/group= in the pool conf stay the
+	// real OS user (the jabali-pma opaque-instance pattern), so privilege is
+	// unchanged — only the PHP version differs.
+	Slug string `json:"slug,omitempty"`
 	PmMode                    string `json:"pm_mode"`
 	PmMaxChildren             uint32 `json:"pm_max_children"`
 	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
@@ -68,6 +76,12 @@ var phpVersionRegex = regexp.MustCompile(`^\d+\.\d+$`)
 // phpPoolUsernameRegex validates PHP pool username format: must start with lowercase
 // letter, contain only lowercase letters, digits, underscores, max 32 chars.
 var phpPoolUsernameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+
+// phpPoolSlugRegex validates a pool slug (GH #329). Superset of the username
+// regex that also permits the "-php<X.Y>" versioned suffix (dot + hyphen).
+// Panel constructs slugs as "<user>-php<version>"; the regex is defense in
+// depth against a malformed slug ever reaching a filesystem path.
+var phpPoolSlugRegex = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 
 // adminValueAllowlist is the set of allowed php_admin_value directives.
 var adminValueAllowlist = map[string]bool{
@@ -266,6 +280,33 @@ include=%s
 	return nil
 }
 
+// ensureVersionedFPMDropin writes the systemd drop-in for an additional
+// versioned FPM master (GH #329) at
+// /etc/systemd/system/jabali-fpm@<slug>.service.d/slice.conf. The content
+// points the instance at the user's EXISTING slice and real OS user/group —
+// identical to the default pool's drop-in (written by user.slice.ensure) but
+// for the slug instance. Idempotent: only writes + daemon-reloads on change.
+func ensureVersionedFPMDropin(ctx context.Context, slug, username string) error {
+	dropinDir := filepath.Join(systemdRoot(), fmt.Sprintf("jabali-fpm@%s.service.d", slug))
+	if err := os.MkdirAll(dropinDir, 0755); err != nil {
+		return fmt.Errorf("mkdir drop-in dir: %w", err)
+	}
+	dropinPath := filepath.Join(dropinDir, "slice.conf")
+	content := []byte(buildFPMDropinContent(username))
+	if filesMatch(dropinPath, content) {
+		return nil
+	}
+	if err := writeFileAtomically(dropinPath, content, 0644); err != nil {
+		return fmt.Errorf("write drop-in: %w", err)
+	}
+	// A new instance drop-in requires a daemon-reload before the instance is
+	// started so systemd picks up Slice=/User=/Group=.
+	if os.Getenv("JABALI_PHP_POOL_SKIP_RELOAD") == "" {
+		_ = exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+	}
+	return nil
+}
+
 // acquireLock acquires an exclusive flock on a per-user lock file with a 30-second timeout.
 func acquireLock(username string) (*os.File, error) {
 	lockDir := "/run/jabali"
@@ -322,6 +363,22 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 			Message: "invalid php_version format (expected X.Y)",
 		}
 	}
+
+	// Resolve the pool slug (GH #329). Empty => legacy per-user default pool
+	// (slug == username), byte-identical to pre-#329. A non-empty slug
+	// provisions an additional versioned master. Validate as a safe path
+	// component before any filesystem work.
+	slug := p.Username
+	if p.Slug != "" {
+		slug = p.Slug
+	}
+	if !phpPoolSlugRegex.MatchString(slug) || strings.Contains(slug, "..") {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: "invalid slug format",
+		}
+	}
+	isVersioned := slug != p.Username
 
 	poolDir := fmt.Sprintf("/etc/php/%s/fpm/pool.d/", p.PHPVersion)
 	if info, err := os.Stat(poolDir); err != nil || !info.IsDir() {
@@ -394,8 +451,10 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
-	// Acquire per-user flock to serialize pool-apply operations for this user.
-	lockFile, err := acquireLock(p.Username)
+	// Acquire per-slug flock to serialize pool-apply operations. Keying on the
+	// slug (not the user) lets the default pool and a versioned pool for the
+	// same user apply independently without blocking each other.
+	lockFile, err := acquireLock(slug)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -405,7 +464,7 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 	defer lockFile.Close()
 
 	// Read old version before making changes.
-	oldVersion, err := readVersionPinFile(p.Username)
+	oldVersion, err := readVersionPinFile(slug)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -421,10 +480,13 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 	// flag toggles between the two: additive=true leaves other-version
 	// pools intact; additive=false (legacy default) wipes everything.
 	var keep []string
-	if p.Additive {
+	if p.Additive || isVersioned {
 		keep = append(keep, p.PHPVersion)
 	}
-	_, err = globDeletePoolFiles(p.Username, keep...)
+	// A versioned slug's glob (jabali-<user>-php<ver>.conf) only ever matches
+	// its own single version dir, so this never touches the default pool or
+	// any sibling version — it just rewrites this slug's own file.
+	_, err = globDeletePoolFiles(slug, keep...)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
@@ -438,12 +500,14 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 	if poolConfigDir == "" {
 		poolConfigDir = fmt.Sprintf("/etc/php/%s/fpm/pool.d", p.PHPVersion)
 	}
-	poolConfigPath := fmt.Sprintf("%s/jabali-%s.conf", poolConfigDir, p.Username)
-	// Socket lives in a user-owned subdir of /run/php (see fpm-pre-start).
-	// Path is version-independent so nginx configs survive PHP version
-	// switches without regeneration. One socket per user, not per pool.
-	socketPath := fmt.Sprintf("/run/php/jabali-%s/fpm.sock", p.Username)
-	poolName := fmt.Sprintf("jabali-%s", p.Username)
+	poolConfigPath := fmt.Sprintf("%s/jabali-%s.conf", poolConfigDir, slug)
+	// Socket lives in a slug-owned subdir of /run/php (see fpm-pre-start).
+	// For the default pool (slug == user) the path is the legacy
+	// /run/php/jabali-<user>/fpm.sock, version-independent so its vhosts
+	// survive a version switch without regen. A versioned slug gets its own
+	// /run/php/jabali-<user>-php<ver>/fpm.sock (GH #329).
+	socketPath := fmt.Sprintf("/run/php/jabali-%s/fpm.sock", slug)
+	poolName := fmt.Sprintf("jabali-%s", slug)
 
 	// Render the template.
 	// Support JABALI_PHP_POOL_TEMPLATE_PATH env var for testing.
@@ -512,30 +576,47 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 	}
 
 	// Write the per-user FPM config (includes only this user's pool).
-	if err := writePerUserFPMConfig(p.Username, p.PHPVersion); err != nil {
+	if err := writePerUserFPMConfig(slug, p.PHPVersion); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to write per-user fpm config: %v", err),
 		}
 	}
 
-	// Write the version pin file.
-	if err := writeVersionPinFile(p.Username, p.PHPVersion); err != nil {
+	// Write the version pin file (keyed by slug).
+	if err := writeVersionPinFile(slug, p.PHPVersion); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("failed to write version pin: %v", err),
 		}
 	}
 
-	// Per-user CLI php wrapper so the user's shell, Composer, wp-cli, and cron
-	// resolve `php` to their pinned version (GH #184). Best-effort: a failure
-	// here must not fail the FPM apply (the web path is already converged).
-	if err := ensureUserCLIPHP(p.Username, p.PHPVersion); err != nil {
-		slog.Warn("per-user CLI php wrapper", "user", p.Username, "version", p.PHPVersion, "err", err)
+	// A versioned slug is an ADDITIONAL master; it needs its own systemd
+	// slice drop-in (jabali-fpm@<slug>.service.d/slice.conf) pointing at the
+	// SAME per-user slice + real OS user/group. The default pool's drop-in is
+	// owned by user.slice.ensure, so only do this for versioned slugs (#329).
+	if isVersioned {
+		if err := ensureVersionedFPMDropin(ctx, slug, p.Username); err != nil {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInternal,
+				Message: fmt.Sprintf("failed to write versioned fpm drop-in: %v", err),
+			}
+		}
 	}
 
-	// Restart or reload the per-user FPM service.
-	if err := restartOrReloadUserFPM(ctx, p.Username, oldVersion, p.PHPVersion); err != nil {
+	// Per-user CLI php wrapper so the user's shell, Composer, wp-cli, and cron
+	// resolve `php` to their pinned version (GH #184). This is the user's SHELL
+	// php and belongs to the DEFAULT pool only — a per-domain versioned pool
+	// must not repoint the shell. Best-effort: a failure here must not fail the
+	// FPM apply (the web path is already converged).
+	if !isVersioned {
+		if err := ensureUserCLIPHP(p.Username, p.PHPVersion); err != nil {
+			slog.Warn("per-user CLI php wrapper", "user", p.Username, "version", p.PHPVersion, "err", err)
+		}
+	}
+
+	// Restart or reload the slug's FPM service.
+	if err := restartOrReloadUserFPM(ctx, slug, oldVersion, p.PHPVersion); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: err.Error(),

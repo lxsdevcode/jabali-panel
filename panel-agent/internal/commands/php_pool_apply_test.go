@@ -323,3 +323,100 @@ func TestPerUserFPMConfig(t *testing.T) {
 		t.Errorf("config missing include directive")
 	}
 }
+
+// --- GH #329: per-domain PHP version (versioned pool slug) ---
+
+// TestPoolApplySlugRejectsBadSlug verifies the handler rejects a malformed
+// slug before any filesystem work (pure validation).
+func TestPoolApplySlugRejectsBadSlug(t *testing.T) {
+	for _, bad := range []string{"Alice-php8.2", "alice/php8.2", "alice-php8.2/../x", ".."} {
+		p := phpPoolApplyParams{
+			Username:                  "alice",
+			PHPVersion:                "8.4",
+			Slug:                      bad,
+			PmMode:                    "ondemand",
+			PmMaxChildren:             20,
+			ProcessIdleTimeoutSeconds: 60,
+		}
+		raw, _ := json.Marshal(p)
+		_, err := phpPoolApplyHandler(context.Background(), raw)
+		if err == nil {
+			t.Errorf("slug %q: expected error, got nil", bad)
+			continue
+		}
+		ae, ok := err.(*agentwire.AgentError)
+		if !ok || ae.Code != agentwire.CodeInvalidArgument {
+			t.Errorf("slug %q: expected InvalidArgument, got %v", bad, err)
+		}
+	}
+}
+
+// TestPoolHelpersSlugKeyed verifies the per-master FPM config, version pin,
+// and systemd drop-in are all keyed by the SLUG, not the username — so a
+// versioned pool writes its own parallel set of files and never clobbers the
+// default per-user pool.
+func TestPoolHelpersSlugKeyed(t *testing.T) {
+	tmp := t.TempDir()
+	os.Setenv("JABALI_FPM_CONFIG_ROOT", filepath.Join(tmp, "fpm"))
+	os.Setenv("JABALI_PHP_VER_PIN_ROOT", filepath.Join(tmp, "user-phpver"))
+	os.Setenv("JABALI_SYSTEMD_ROOT", filepath.Join(tmp, "systemd"))
+	os.Setenv("JABALI_PHP_POOL_SKIP_RELOAD", "1")
+	defer func() {
+		os.Unsetenv("JABALI_FPM_CONFIG_ROOT")
+		os.Unsetenv("JABALI_PHP_VER_PIN_ROOT")
+		os.Unsetenv("JABALI_SYSTEMD_ROOT")
+		os.Unsetenv("JABALI_PHP_POOL_SKIP_RELOAD")
+	}()
+	if err := os.MkdirAll(filepath.Join(tmp, "systemd"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	const slug = "alice-php8.2"
+
+	// Per-master FPM config keyed by slug.
+	if err := writePerUserFPMConfig(slug, "8.2"); err != nil {
+		t.Fatalf("writePerUserFPMConfig: %v", err)
+	}
+	conf, err := os.ReadFile(filepath.Join(tmp, "fpm", slug+".conf"))
+	if err != nil {
+		t.Fatalf("slug fpm conf not created: %v", err)
+	}
+	cs := string(conf)
+	if !strings.Contains(cs, "pid = /run/php/jabali-alice-php8.2/fpm.pid") {
+		t.Errorf("pid not slug-keyed: %s", cs)
+	}
+	if !strings.Contains(cs, "include=/etc/php/8.2/fpm/pool.d/jabali-alice-php8.2.conf") {
+		t.Errorf("include not slug-keyed: %s", cs)
+	}
+	// The default per-user config must NOT have been written.
+	if _, err := os.Stat(filepath.Join(tmp, "fpm", "alice.conf")); !os.IsNotExist(err) {
+		t.Errorf("versioned apply must not write the default alice.conf")
+	}
+
+	// Version pin keyed by slug.
+	if err := writeVersionPinFile(slug, "8.2"); err != nil {
+		t.Fatalf("writeVersionPinFile: %v", err)
+	}
+	if ver, _ := readVersionPinFile(slug); ver != "8.2" {
+		t.Errorf("slug pin = %q, want 8.2", ver)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "user-phpver", "alice")); !os.IsNotExist(err) {
+		t.Errorf("versioned apply must not write the default user pin")
+	}
+
+	// systemd drop-in for the versioned instance points at the real user +
+	// existing slice.
+	if err := ensureVersionedFPMDropin(context.Background(), slug, "alice"); err != nil {
+		t.Fatalf("ensureVersionedFPMDropin: %v", err)
+	}
+	dropin, err := os.ReadFile(filepath.Join(tmp, "systemd", "jabali-fpm@"+slug+".service.d", "slice.conf"))
+	if err != nil {
+		t.Fatalf("drop-in not created: %v", err)
+	}
+	ds := string(dropin)
+	for _, want := range []string{"Slice=jabali-user-alice.slice", "User=alice", "Group=alice"} {
+		if !strings.Contains(ds, want) {
+			t.Errorf("drop-in missing %q: %s", want, ds)
+		}
+	}
+}
