@@ -31,7 +31,12 @@ func requireRedis(cmd *cobra.Command, _ []string) error {
 	if sharedRedis != nil {
 		return nil
 	}
-	url := os.Getenv("JABALI_REDIS_URL")
+	// Load /etc/jabali/panel.env (DATABASE_URL, JABALI_REDIS_PANEL_TOKEN, …) into
+	// the process env, same as the DB-backed commands do via initConfig.
+	if err := initConfig(); err != nil {
+		return err
+	}
+	url := sharedCfg.Redis.URL
 	if url == "" {
 		url = "unix:///run/redis/redis.sock?db=0"
 	}
