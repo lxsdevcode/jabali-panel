@@ -38,6 +38,8 @@ func newDomainCmd() *cobra.Command {
 	cmd.AddCommand(domainEmailSubcommands()...)
 	// M6.5 catchall + disclaimer (domain_extras_cmd.go).
 	cmd.AddCommand(domainExtraSubcommands()...)
+	// GH #329 per-domain PHP version (domain_php_version_cmd.go).
+	cmd.AddCommand(domainPHPVersionSubcommands()...)
 	return cmd
 }
 
@@ -150,9 +152,9 @@ no IP literals). Bare hostnames like 'invalid' are rejected.`,
 
 func newDomainEnableCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "enable <domain-name|domain-id>",
-		Short: "Enable a domain (direct DB — M20-safe)",
-		Args:  cobra.ExactArgs(1),
+		Use:     "enable <domain-name|domain-id>",
+		Short:   "Enable a domain (direct DB — M20-safe)",
+		Args:    cobra.ExactArgs(1),
 		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
@@ -176,9 +178,9 @@ func newDomainEnableCmd() *cobra.Command {
 
 func newDomainDisableCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "disable <domain-name|domain-id>",
-		Short: "Disable a domain (direct DB — M20-safe)",
-		Args:  cobra.ExactArgs(1),
+		Use:     "disable <domain-name|domain-id>",
+		Short:   "Disable a domain (direct DB — M20-safe)",
+		Args:    cobra.ExactArgs(1),
 		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)

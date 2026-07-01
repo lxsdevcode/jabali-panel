@@ -1839,6 +1839,34 @@ jabali domain mta-sts <domain-name|domain-id> [flags]
 - `--disable` — disable MTA-STS
 - `--enable` — enable MTA-STS
 
+#### `jabali domain php-version`
+
+Manage a domain's PHP version (per-domain FPM pool, GH #329)
+
+```
+jabali domain php-version
+```
+
+##### `jabali domain php-version set`
+
+Bind a domain to a PHP version (find-or-create the pool; reconciler converges)
+
+```
+jabali domain php-version set <domain-name-or-id> --version X.Y [flags]
+```
+
+**Flags:**
+
+- `--version` — PHP version X.Y (e.g. 8.2); required
+
+##### `jabali domain php-version show`
+
+Show a domain's bound PHP version
+
+```
+jabali domain php-version show <domain-name-or-id>
+```
+
 #### `jabali domain prune-orphans`
 
 List sites in nginx sites-enabled that have no panel DB row (and optionally delete them)
