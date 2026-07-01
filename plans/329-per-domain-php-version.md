@@ -1,8 +1,47 @@
 # Per-domain PHP version (GH #329) — implementation blueprint
 
 **Branch:** `feat-329-per-domain-php-version`
-**Status:** in progress
+**Status:** Waves A–E code complete (all tests green); live VM E2E pending pre-merge
 **Requester:** @lxsdevcode (GH #329)
+
+## Wave status
+
+- A — agent runtime (slug-keyed pools, versioned masters, reap): ✅ `283a630c`
+- B1 — repo ListByUserID + PoolSlug/PoolSocketPath: ✅ `d5988be5`
+- EOL warning (admin PHP versions page): ✅ `f8d7292a`
+- B2 — reconciler apply-all + reap + cpanel-restore fix: ✅ `db2c93a2`
+- C — vhost per-domain FPM socket: ✅ `b454532c`
+- D-api — find-or-create binding + slug-aware admin apply: ✅ `b61707b4`
+- D-ui — per-domain selector EOL markers + copy fix: ✅ `a2e273a7`
+- E — ADR-0023 amendment + this runbook: ✅ (VM E2E still pending)
+
+## Operations / runbook
+
+**Set a domain's PHP version:** user PHP settings page → pick domain → PHP
+Version, or `POST /domains/:id/php-pool {"php_version":"8.2"}`. Default version
+binds the default pool; a non-default creates a `(user,8.2)` pool and the
+reconciler converges within ~60s.
+
+**On disk (versioned pool, slug `alice-php8.2`):**
+- pool conf `/etc/php/8.2/fpm/pool.d/jabali-alice-php8.2.conf` (`user=alice`)
+- socket `/run/php/jabali-alice-php8.2/fpm.sock`
+- per-master fpm conf `/etc/jabali-panel/fpm/alice-php8.2.conf`
+- version pin `/etc/jabali-panel/user-phpver/alice-php8.2`
+- systemd `jabali-fpm@alice-php8.2.service` (+ `.d/slice.conf`, Slice=jabali-user-alice.slice)
+- vhost `fastcgi_pass unix:/run/php/jabali-alice-php8.2/fpm.sock;`
+
+**Debug:** `systemctl status 'jabali-fpm@alice-php8.2'`; `journalctl -u
+jabali-fpm@alice-php8.2`; pool status in DB `php_pools` (pending→active). If a
+pool is stuck `error`, check `last_error` (usually "php version not installed").
+
+**Reaping:** drop a domain's non-default version (bind another version / server
+default) → the orphaned versioned master is torn down next reconcile. The
+default pool is never reaped.
+
+**Pre-merge VM E2E (pending):** on 192.168.100.150 — create a domain, set a
+non-default installed version, confirm the versioned master + socket + vhost +
+`phpinfo()` reports the right version; then revert and confirm the master is
+reaped.
 
 ## Goal
 

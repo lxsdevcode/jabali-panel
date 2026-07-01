@@ -2,7 +2,9 @@
 **Status:** Accepted
 **Deciders:** Shuki
 
-**Cross-reference (2026-04-18):** Runtime placement of per-user pools refined by ADR-0025 (per-user systemd slices). The pool-per-user decision in §3 stands; ADR-0025 specifies the systemd unit + slice placement that hosts those pools.
+**Cross-reference (2026-04-18):** Runtime placement of per-user pools refined by ADR-0025 (per-user systemd slices). ADR-0025 specifies the systemd unit + slice placement that hosts those pools.
+
+**Amended 2026-07-01 (GH #329):** §3's one-pool-per-user MVP constraint is **superseded** — a user may now have one pool per PHP version so a domain can run its own version. The per-user slice (ADR-0025) now hosts one `jabali-fpm@<user>[-php<ver>]` master per active version. See §3 and `plans/329-per-domain-php-version.md`.
 
 ## Context
 ## Context
@@ -26,10 +28,11 @@ per-user PHP application.
 ## Decision
 
 We are building a **per-user PHP-FPM pool manager** with the following 13
-design decisions. Each panel user gets exactly one pool (MVP constraint);
-that pool can be bound to multiple domains, each domain can select the PHP
-version independently, and admins can customize pool settings via an
-allowlisted ini-override mechanism. The Sury package repository provides
+design decisions. Each panel user gets one pool per PHP version (originally
+exactly one pool — MVP constraint lifted 2026-07-01, GH #329, see §3); a pool
+can be bound to multiple domains, each domain can select the PHP version
+independently, and admins can customize pool settings via an allowlisted
+ini-override mechanism. The Sury package repository provides
 multiple installed PHP versions; default version is 8.5 (supported range 7.4–8.5).
 
 ---
@@ -102,9 +105,39 @@ haven't migrated yet.
 
 ---
 
-### 3. One pool per panel user (MVP constraint)
+### 3. One pool per panel user (MVP constraint) — SUPERSEDED 2026-07-01 (GH #329)
 
-**Decision:** Each panel user gets **exactly one** PHP-FPM pool, shared across
+**Amended 2026-07-01 (GH #329):** the one-pool-per-user MVP constraint is
+**lifted**. A user may now have **one pool per distinct PHP version**, so a
+domain can run its own PHP version independent of its siblings — the "future
+feature" this decision deferred. The design is deliberately **additive**:
+
+- The user's **default** pool is unchanged — slug `jabali-<user>`, socket
+  `/run/php/jabali-<user>/fpm.sock`, master `jabali-fpm@<user>.service`.
+  Existing hosts are byte-identical until an admin/user selects a non-default
+  version for a domain.
+- A **non-default** version provisions an ADDITIONAL master under slug
+  `jabali-<user>-php<ver>` (own socket, own `jabali-fpm@<user>-php<ver>`
+  instance in the SAME `jabali-user-<user>.slice`), running as the **same OS
+  user** (the `jabali-pma` opaque-instance pattern). Pool identity is the
+  composite `(user_id, php_version)` (migration 000129).
+- The FPM-worker-explosion concern (see alternatives) is bounded two ways:
+  pools default `pm_mode=ondemand` (idle version-pools spawn zero children,
+  cost = the master process only), and all of a user's masters share one
+  `jabali-user-<user>.slice` cgroup, so M18 CPU/mem caps apply to the sum.
+- **Isolation caveat:** this buys per-domain **version + config** isolation,
+  NOT uid isolation — a user's pools share one uid/home. True per-site uid
+  isolation remains the one-user-per-site model.
+- Orphan reaping: the reconciler tears down a versioned master once no domain
+  is bound to it; the default pool is never reaped.
+
+Model, agent, reconciler, vhost, and the per-domain version selector implement
+this. See `plans/329-per-domain-php-version.md`. The original MVP decision below
+is retained for history.
+
+---
+
+**Original decision (MVP):** Each panel user gets **exactly one** PHP-FPM pool, shared across
 all domains owned by that user. The pool's name encodes the username; socket
 path encodes both version and username. Multiple domains can bind to the same
 pool, but different PHP versions require an administrative request to create
