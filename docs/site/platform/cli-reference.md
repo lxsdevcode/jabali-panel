@@ -240,6 +240,14 @@ Mint a one-time magic-link login for an installed app (sensitive, ~60s)
 jabali app magic-link <install-id>
 ```
 
+#### `jabali app refresh-cache-plugin`
+
+Update the jabali-cache plugin to the latest WordPress.org release on every cache-enabled site
+
+```
+jabali app refresh-cache-plugin
+```
+
 #### `jabali app registry`
 
 List available app types and their parameter schemas (direct read — no DB)

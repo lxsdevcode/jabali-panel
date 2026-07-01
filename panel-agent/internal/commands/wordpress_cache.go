@@ -318,6 +318,52 @@ func runWPAsTenantOut(ctx context.Context, osUser, installPath string, args ...s
 	return strings.TrimSpace(string(out)), err
 }
 
+// wordpressCachePluginRefreshParams drives wordpress.cache_plugin_refresh.
+type wordpressCachePluginRefreshParams struct {
+	InstallPath string `json:"install_path"`
+	OSUser      string `json:"os_user"`
+}
+
+type wordpressCachePluginRefreshResult struct {
+	Refreshed bool   `json:"refreshed"` // false when the plugin wasn't installed (skipped)
+	Version   string `json:"version,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// wordpressCachePluginRefreshHandler updates the jabali-cache plugin on one WP
+// install to the latest WordPress.org release (GH #613 made WP.org canonical).
+// Idempotent: a no-op when already current; a skip (not an error) when the
+// plugin isn't installed on that site. Used by the `jabali app
+// refresh-cache-plugin` sweep so a `jabali update` brings every cache-enabled
+// site to the published version without a manual cache re-toggle.
+func wordpressCachePluginRefreshHandler(ctx context.Context, raw json.RawMessage) (any, error) {
+	var p wordpressCachePluginRefreshParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if !strings.HasPrefix(p.InstallPath, "/home/") || strings.Contains(p.InstallPath, "..") {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "install_path must be under /home/ with no .."}
+	}
+	if p.OSUser == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "os_user required"}
+	}
+
+	// Skip sites where the plugin isn't present — refresh only touches installs
+	// that actually have jabali-cache (cache-enabled ones).
+	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "is-installed", "jabali-cache"); err != nil {
+		return wordpressCachePluginRefreshResult{Refreshed: false, Detail: "plugin not installed: " + truncateReason(out, 200)}, nil
+	}
+
+	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "update", "jabali-cache"); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
+			Message: fmt.Sprintf("wp plugin update jabali-cache: %v: %s", err, out)}
+	}
+	// Report the resulting version (best-effort).
+	ver, _ := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "get", "jabali-cache", "--field=version")
+	return wordpressCachePluginRefreshResult{Refreshed: true, Version: strings.TrimSpace(ver)}, nil
+}
+
 func init() {
 	Default.Register("wordpress.cache_set", wordpressCacheSetHandler)
+	Default.Register("wordpress.cache_plugin_refresh", wordpressCachePluginRefreshHandler)
 }

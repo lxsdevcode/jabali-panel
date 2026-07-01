@@ -1542,6 +1542,18 @@ test -x node_modules/.bin/tsc || {
 			}
 			return nil
 		}},
+		{"refresh jabali-cache plugin on cache-enabled sites (GH #613)", func() error {
+			// WordPress.org is the canonical plugin source (#613); existing
+			// cache-enabled sites only pick up a newly-published version on a
+			// cache re-toggle. Sweep them here so `jabali update` bumps every
+			// site to the latest WordPress.org release. Runs the just-installed
+			// binary + restarted agent (so the wordpress.cache_plugin_refresh
+			// verb exists); best-effort + idempotent (a current site is a no-op).
+			if err := run("", defaultPanelBinPath, "app", "refresh-cache-plugin"); err != nil {
+				fmt.Printf("  (cache plugin refresh failed: %v -- sites keep their current plugin version)\n", err)
+			}
+			return nil
+		}},
 	}
 
 	for _, s := range prelude {
