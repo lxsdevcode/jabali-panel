@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
@@ -25,6 +28,17 @@ func buildAppDeps() (api.ApplicationHandlerConfig, error) {
 	if err := apps.RegisterDefaults(registry); err != nil {
 		return api.ApplicationHandlerConfig{}, fmt.Errorf("register app defaults: %w", err)
 	}
+	// #597: wire the object-cache deps so CLI-installed WordPress also gets the
+	// Redis object cache defaulted on. Redis is best-effort — nil (unprovisioned
+	// host) makes enableObjectCache skip gracefully, never failing the install.
+	var cacheRedis *redis.Client
+	if r, rerr := cliBuildRedis(context.Background()); rerr == nil {
+		cacheRedis = r
+	}
+	cacheSecret := os.Getenv("JABALI_WP_CACHE_HMAC_SECRET")
+	if cacheSecret == "" {
+		cacheSecret = os.Getenv("JABALI_REDIS_PANEL_TOKEN") // GH #407 fallback
+	}
 	return api.ApplicationHandlerConfig{
 		ApplicationInstalls: repository.NewApplicationInstallRepository(sharedDB),
 		Databases:           repository.NewDatabaseRepository(sharedDB),
@@ -35,6 +49,9 @@ func buildAppDeps() (api.ApplicationHandlerConfig, error) {
 		Packages:            repository.NewPackageRepository(sharedDB),
 		Agent:               sharedAgent,
 		Apps:                registry,
+		Redis:               cacheRedis,
+		CacheTokenSecret:    cacheSecret,
+		CacheTokenSalts:     repository.NewCacheTokenSaltRepository(sharedDB),
 	}, nil
 }
 

@@ -39,26 +39,38 @@ func requireRedis(cmd *cobra.Command, _ []string) error {
 	if err := initDB(); err != nil {
 		return err
 	}
-	url := sharedCfg.Redis.URL
-	if url == "" {
-		url = "unix:///run/redis/redis.sock?db=0"
+	client, err := cliBuildRedis(cmd.Context())
+	if err != nil {
+		return err
+	}
+	sharedRedis = client
+	return nil
+}
+
+// cliBuildRedis constructs a jabali_panel-authenticated Redis client from
+// panel.env (the ADR-0148 ACL user), pinging to fail-fast. Shared by requireRedis
+// (DLQ) and the app-install cfg (#597 default object cache). initConfig must have
+// run first so the env + sharedCfg are loaded.
+func cliBuildRedis(ctx context.Context) (*redis.Client, error) {
+	url := "unix:///run/redis/redis.sock?db=0"
+	if sharedCfg != nil && sharedCfg.Redis.URL != "" {
+		url = sharedCfg.Redis.URL
 	}
 	opts, err := redis.ParseURL(url)
 	if err != nil {
-		return fmt.Errorf("parse redis url %q: %w", url, err)
+		return nil, fmt.Errorf("parse redis url %q: %w", url, err)
 	}
 	if tok := os.Getenv("JABALI_REDIS_PANEL_TOKEN"); tok != "" {
 		opts.Username = "jabali_panel"
 		opts.Password = tok
 	}
 	client := redis.NewClient(opts)
-	ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
+	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if perr := client.Ping(ctx).Err(); perr != nil {
-		return fmt.Errorf("redis ping: %w (is redis-server up?)", perr)
+	if perr := client.Ping(pctx).Err(); perr != nil {
+		return nil, fmt.Errorf("redis ping: %w (is redis-server up?)", perr)
 	}
-	sharedRedis = client
-	return nil
+	return client, nil
 }
 
 func newNotificationDLQCmd() *cobra.Command {
