@@ -63,6 +63,7 @@ import {
 } from "@ant-design/icons";
 import { apiClient } from "../../../apiClient";
 import { APIDocsPage } from "../../shared/APIDocsPage";
+import { DDNSSetupGuide } from "./DDNSSetupGuide";
 
 type UserAPIToken = {
   id: string;
@@ -345,6 +346,7 @@ export function UserAPITokensPage(): JSX.Element {
         defaultActiveKey="tokens"
         items={[
           { key: "tokens", label: "Tokens", children: tokensCard },
+          { key: "ddns", label: "Dynamic DNS", children: <DDNSSetupGuide /> },
           { key: "docs", label: "Automation API", children: <APIDocsPage /> },
         ]}
       />
