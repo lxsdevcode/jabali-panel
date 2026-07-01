@@ -191,6 +191,12 @@ func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, 
 		// minimal module set while root sees the full one (GH #277). Read-only;
 		// php config holds no tenant secrets.
 		"--ro-bind-try", "/etc/php", "/etc/php",
+		// /opt/wp-cli holds the wp-cli phar; /usr/local/bin/wp (on PATH, under
+		// the already-bound /usr) is a symlink into it. Without this bind the
+		// symlink dangles inside the jail and `wp` is "command not found" even
+		// though the host link is healthy — the tenant-visible half of GH #298.
+		// Read-only; the phar is not a tenant secret.
+		"--ro-bind-try", "/opt/wp-cli", "/opt/wp-cli",
 		// Snuffleupagus (loaded by the php conf.d above) hard-fails if it can't
 		// read its ruleset, so bind ONLY that subdir of the otherwise-hidden
 		// /etc/jabali (bwrap auto-creates the /etc/jabali parent empty — panel.env
