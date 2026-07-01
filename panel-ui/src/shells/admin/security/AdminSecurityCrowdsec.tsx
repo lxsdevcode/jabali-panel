@@ -31,6 +31,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Flex,
 } from "antd";
 
 import { useEffect, useMemo, useState } from "react";
@@ -1572,13 +1573,13 @@ const EngineIdentityCard = () => {
   return (
     <Card size="small" loading={status.isLoading}>
       <Space direction="vertical" size="small" style={{ width: "100%" }}>
-        <Space size="middle" wrap>
+        <Flex gap="middle" align="flex-start" wrap>
           <SafetyOutlined style={{ fontSize: 28, color: healthy ? "#52c41a" : "#cf1322" }} />
-          <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <Typography.Title level={4} style={{ margin: 0, wordBreak: "break-word" }}>
               Security engine «{hostname}»
             </Typography.Title>
-            <Space size="small">
+            <Space size="small" wrap>
               {version !== "—" && <Tag color="blue">{version}</Tag>}
               <Tag color={status.data?.running ? "green" : "red"}>
                 {status.data?.running ? "running" : "down"}
@@ -1590,8 +1591,8 @@ const EngineIdentityCard = () => {
                 CAPI {status.data?.capi_reachable ? "ok" : "offline"}
               </Tag>
             </Space>
-          </Space>
-        </Space>
+          </div>
+        </Flex>
 
         <Row gutter={[16, 8]}>
           <Col xs={24} md={12} lg={8}>
