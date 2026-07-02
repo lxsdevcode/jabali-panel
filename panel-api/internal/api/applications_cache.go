@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -289,6 +290,22 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 				slog.WarnContext(ctx, "cache: revoke tenant ACL", "err", rErr, "os_user", osUser)
 			}
 		}
+	}
+
+	// 6. GH #615: pre-warm the freshly-enabled page cache. Fire-and-forget
+	// with a background context (the HTTP request returns immediately) and a
+	// short delay so the vhost reconcile applies the FastCGI cache directive
+	// before we crawl. Best-effort: a warmup failure never affects the toggle.
+	if enabled && desiredDomainCache && h.cfg.Agent != nil {
+		host := domain.Name
+		go func() {
+			time.Sleep(20 * time.Second) // let the vhost reconcile land
+			wctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if _, werr := h.cfg.Agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host}); werr != nil {
+				slog.WarnContext(wctx, "cache: warmup", "err", werr, "host", host)
+			}
+		}()
 	}
 
 	return nil
