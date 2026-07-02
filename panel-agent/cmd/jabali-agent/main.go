@@ -112,6 +112,7 @@ func main() {
 	// source IP into the jabali CrowdSec allowlist (panel-owned toggle/TTL via
 	// /etc/jabali-panel/login-allowlist.conf). Best-effort, read-only observer.
 	commands.StartLoginAllowlistWatcher(ctx, log)
+	commands.StartWpCachePurgeWatcher(ctx, log)
 
 	// M45 root web terminal PTY broker — separate UDS sibling of the
 	// agentwire socket, root:<jabali-sockets> 0660. Gated off by

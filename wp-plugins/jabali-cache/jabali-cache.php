@@ -3,7 +3,7 @@
  * Plugin Name:       Jabali Cache
  * Plugin URI:        https://jabali-panel.com/
  * Description:        Redis-backed object cache (and optional full-page cache) tuned for the Jabali hosting panel. Uses the shared panel Redis over a unix socket with per-site key isolation. Works with or without the phpredis extension.
- * Version:           1.0.3
+ * Version:           1.0.4
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Jabali Panel
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'JABALI_CACHE_VERSION' ) ) {
-	define( 'JABALI_CACHE_VERSION', '1.0.3' );
+	define( 'JABALI_CACHE_VERSION', '1.0.4' );
 }
 if ( ! defined( 'JABALI_CACHE_PLUGIN_FILE' ) ) {
 	define( 'JABALI_CACHE_PLUGIN_FILE', __FILE__ );
@@ -127,19 +127,21 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
  * core's normal wp_cache_delete calls, so it needs no extra hooks here.
  */
 function jabali_cache_register_purge_hooks() {
-	// GH #603: gate on the SAME source Page_Cache::run() serves/stores from —
-	// Jabali_Cache_Config (constants + defaults) — not the options table. When
-	// page cache was enabled by constants but the option didn't match, pages
-	// were cached and served while these purge hooks were never registered, so
-	// a content change left stale pages until TTL expiry.
+	// Register whenever caching is enabled — NOT gated on page_cache. #611: the
+	// panel-managed nginx FastCGI microcache is active independently of the
+	// optional WP Redis full-page cache, and content changes must purge it. The
+	// Redis full-page purge inside these hooks self-gates on page_cache (#603),
+	// and the nginx purge (jabali_cache_purge_nginx) is a cheap no-op off Jabali.
 	$cfg = Jabali_Cache_Config::load();
-	if ( empty( $cfg['enabled'] ) || empty( $cfg['page_cache'] ) ) {
+	if ( empty( $cfg['enabled'] ) ) {
 		return;
 	}
 	$purge = 'jabali_cache_purge_pages';
-	add_action( 'save_post', $purge );
-	add_action( 'deleted_post', $purge );
-	add_action( 'trashed_post', $purge );
+	// Post edits: targeted purge of the post URL + home (GH #611/#619).
+	add_action( 'save_post', 'jabali_cache_purge_post' );
+	add_action( 'deleted_post', 'jabali_cache_purge_post' );
+	add_action( 'trashed_post', 'jabali_cache_purge_post' );
+	// Site-wide changes: whole-domain purge.
 	add_action( 'comment_post', $purge );
 	add_action( 'edit_comment', $purge );
 	add_action( 'wp_set_comment_status', $purge );
@@ -150,14 +152,77 @@ function jabali_cache_register_purge_hooks() {
 add_action( 'init', 'jabali_cache_register_purge_hooks' );
 
 /**
- * Purge every full-page cache entry for this site.
+ * Purge this site's Redis full-page cache entries.
  */
-function jabali_cache_purge_pages() {
-	if ( ! class_exists( 'Jabali_Cache_Page_Cache' ) ) {
+function jabali_cache_purge_redis() {
+	// Only the optional WP Redis full-page cache lives here; skip when it's off.
+	$cfg = Jabali_Cache_Config::load();
+	if ( empty( $cfg['page_cache'] ) || ! class_exists( 'Jabali_Cache_Page_Cache' ) ) {
 		return;
 	}
 	$pc = new Jabali_Cache_Page_Cache();
 	$pc->purge_all();
+}
+
+/**
+ * Ask the Jabali agent to purge the nginx FastCGI page cache (GH #611). Tenant
+ * PHP can't touch the root-owned nginx cache, so we drop a purge request into
+ * the agent's sticky spool dir; a root watcher validates host ownership and
+ * runs the targeted purge (GH #619). No-op off Jabali (spool dir absent).
+ *
+ * @param array<int,string> $paths URL paths to purge; empty = whole domain.
+ */
+function jabali_cache_purge_nginx( $paths = array() ) {
+	$dir = '/run/jabali-wp-purge';
+	if ( ! is_dir( $dir ) || ! is_writable( $dir ) ) {
+		return; // not on a Jabali host, or spool not provisioned.
+	}
+	$host = wp_parse_url( home_url(), PHP_URL_HOST );
+	if ( empty( $host ) ) {
+		return;
+	}
+	$req = wp_json_encode(
+		array(
+			'host'  => $host,
+			'paths' => array_values( array_unique( array_filter( array_map( 'strval', (array) $paths ) ) ) ),
+		)
+	);
+	// Write to a temp name then atomically rename, so the watcher never reads a
+	// half-written request.
+	$base = $dir . '/' . uniqid( 'jc', true );
+	if ( false === @file_put_contents( $base . '.tmp', $req, LOCK_EX ) ) {
+		return;
+	}
+	@rename( $base . '.tmp', $base . '.json' );
+}
+
+/**
+ * Purge every full-page cache entry for this site (Redis + whole-domain nginx).
+ * Used for site-wide content changes (theme, options, comments).
+ */
+function jabali_cache_purge_pages() {
+	jabali_cache_purge_redis();
+	jabali_cache_purge_nginx();
+}
+
+/**
+ * Purge caches for a single post: Redis (site-scoped) + a targeted nginx purge
+ * of the post's own URL plus the home page, so a routine edit doesn't discard
+ * the whole domain's hot cache.
+ *
+ * @param int $post_id
+ */
+function jabali_cache_purge_post( $post_id ) {
+	jabali_cache_purge_redis();
+	$paths = array( '/' );
+	$link  = get_permalink( (int) $post_id );
+	if ( $link ) {
+		$p = wp_parse_url( $link, PHP_URL_PATH );
+		if ( ! empty( $p ) ) {
+			$paths[] = $p;
+		}
+	}
+	jabali_cache_purge_nginx( $paths );
 }
 
 /**

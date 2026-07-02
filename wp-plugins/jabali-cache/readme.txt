@@ -4,7 +4,7 @@ Tags: redis, object cache, cache, performance, page cache
 Requires at least: 5.6
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -128,6 +128,9 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 
 == Changelog ==
 
+= 1.0.4 =
+* Auto-purge the Jabali nginx page cache when content changes (GH #611): post edits purge that post's URL + the home page (targeted, GH #619); theme/option/comment changes purge the whole domain. On Jabali only; a no-op elsewhere.
+
 = 1.0.3 =
 * Object-cache incr()/decr() now preserve an existing key TTL (SET ... KEEPTTL) instead of dropping it, so counters/throttles with an expiry are no longer immortalised (GH #604).
 * Page-cache content-change purge hooks now gate on the same runtime config the cache serves from, so pages no longer go stale when page cache is enabled by constants (GH #603).
@@ -162,6 +165,9 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 * Fail-safe: WordPress keeps running normally whenever Redis is unavailable.
 
 == Upgrade Notice ==
+
+= 1.0.4 =
+Auto-purges the server page cache on content changes. Safe drop-in update.
 
 = 1.0.3 =
 Non-blocking cache flushes (UNLINK). Safe drop-in update.

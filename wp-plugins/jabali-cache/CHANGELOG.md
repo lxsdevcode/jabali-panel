@@ -8,6 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [1.0.4] — 2026-07-02
+
+### Added
+- Auto-purge the Jabali nginx FastCGI page cache on content changes (GH #611).
+  Post edits do a **targeted** purge of the post's own URL + the home page
+  (GH #619); site-wide changes (theme/options/comments) purge the whole domain.
+  Tenant PHP can't touch the root-owned nginx cache, so the plugin drops a purge
+  request into `/run/jabali-wp-purge`; the agent's watcher validates the tenant
+  owns the host and runs the purge. No-op off Jabali.
+
 ## [1.0.3] — 2026-07-02
 
 ### Fixed

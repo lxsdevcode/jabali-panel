@@ -4730,6 +4730,23 @@ WantedBy=multi-user.target
 EOF
 }
 
+# GH #611: sticky spool dir for WordPress -> nginx cache purge requests. Tenant
+# PHP (jabali-cache plugin) drops a purge-request JSON here; the agent's
+# StartWpCachePurgeWatcher validates host ownership and purges. Mode 1777 (like
+# /tmp) lets any tenant create a request but only its owner (or root) remove it.
+# tmpfiles.d recreates it on boot (/run is tmpfs); --create makes it now.
+install_wp_purge_spool() {
+  local tf=/etc/tmpfiles.d/jabali-wp-purge.conf
+  local want='# Managed by jabali install.sh — GH #611 WP->nginx cache purge spool.
+d /run/jabali-wp-purge 1777 root root -'
+  if [[ ! -f "$tf" ]] || ! cmp -s <(printf '%s\n' "$want") "$tf"; then
+    printf '%s\n' "$want" >"$tf"
+    chmod 0644 "$tf"
+  fi
+  systemd-tmpfiles --create "$tf" 2>/dev/null || install -d -m 1777 /run/jabali-wp-purge
+  _ok "WP->nginx cache purge spool ready (/run/jabali-wp-purge)"
+}
+
 write_systemd_unit() {
   _log "writing systemd unit: /etc/systemd/system/${SERVICE_NAME}.service"
   cat >"/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
@@ -12584,6 +12601,7 @@ main() {
   # nginx -t doesn't have to wait on panel-api startup.
   install_nginx_panel_vhost
   write_agent_systemd_unit
+  install_wp_purge_spool
   write_systemd_unit
   start_and_verify_agent
   start_and_verify
