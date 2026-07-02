@@ -222,6 +222,12 @@ func writeUserChain(b *strings.Builder, u EgressUser, d EgressDefaults) {
 
 	switch u.State {
 	case "enforced":
+		// GH #638: log the blocked flow (rate-limited, same shape as learn mode)
+		// BEFORE dropping, so an operator sees WHICH daddr:dport a tenant app is
+		// blocked from — `journalctl -k | grep jabali-egress-drop-<user>` — instead
+		// of a silent SYN-drop that surfaces only as a generic 10s connect timeout
+		// in the app's DB driver. Counter still bumps every drop (M14 burst rate).
+		fmt.Fprintf(b, "    limit rate 5/minute log prefix \"jabali-egress-drop-%s \" group 0\n", u.Username)
 		fmt.Fprintf(b, "    counter name user_%s_drops drop\n", u.Username)
 	case "learning":
 		// Rate-limit the dmesg log so a runaway loop doesn't drown the

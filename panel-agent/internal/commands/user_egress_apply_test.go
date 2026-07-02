@@ -38,6 +38,9 @@ func TestRenderEgressNFT_OffStateSkipped(t *testing.T) {
 	require.Contains(t, out, "counter user_bob_drops")
 	require.Contains(t, out, "chain user_bob_enforced")
 	require.Contains(t, out, "counter name user_bob_drops drop")
+	// GH #638: enforced drops are logged (rate-limited) so the blocked
+	// daddr:dport is visible instead of a silent SYN-drop.
+	require.Contains(t, out, `log prefix "jabali-egress-drop-bob `)
 }
 
 func TestRenderEgressNFT_LearningEmitsLogAndAccept(t *testing.T) {
