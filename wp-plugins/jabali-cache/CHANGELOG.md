@@ -8,6 +8,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [1.0.2] — 2026-07-02
+
+### Changed
+- **Redesigned the configuration section** (Settings → Jabali Cache) into a
+  modern, card-based layout matching the reference (GH #614): a top
+  **Drop-ins & Settings** card (Install/repair + Remove), then numbered cards —
+  **(1) General Cache Settings**, **(2) Redis Connection**, **(3) Full-page
+  Cache**, **(4) Advanced / Notes** — in a responsive two-column layout, with
+  clear labels + helper text and a show/hide toggle on the Redis password.
+
+### Preserved
+- Save / install-repair / remove behavior and every setting (enable, full-page
+  toggle, page TTL, object max TTL, Redis connection method + values, password).
+
+### Notes
+- Settings-UI change only — caching engine + drop-ins unchanged; drop-in
+  versions not bumped.
+
 ## [1.0.1] — 2026-07-02
 
 ### Changed

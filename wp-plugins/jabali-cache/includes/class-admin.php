@@ -295,40 +295,73 @@ class Jabali_Cache_Admin {
 
 		echo '<p class="jc-footnote">' . $this->icon( 'info' ) . 'Jabali Cache drop-ins are active. Changes to caching settings may take effect immediately.</p>';
 
-		// ---- Drop-in management + Settings (operational, preserved) --------
+		// ---- GH #614: Drop-ins & numbered configuration cards -------------
+		// Drop-ins card (its own form): install/repair + remove.
 		echo '<div class="jc-card jc-card-wide">';
 		echo '<div class="jc-card-head">' . $this->icon( 'gear' ) . '<h2>Drop-ins &amp; Settings</h2></div>';
-
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="jc-dropin-form">';
 		wp_nonce_field( self::NONCE );
 		echo '<input type="hidden" name="action" value="jabali_cache_dropins">';
-		echo '<button class="button" name="dropin_action" value="install">Install / repair drop-ins</button> ';
-		echo '<button class="button" name="dropin_action" value="remove" onclick="return confirm(\'Remove the Jabali Cache drop-ins?\')">Remove drop-ins</button>';
+		echo '<button class="button button-primary jc-btn" name="dropin_action" value="install">Install / repair drop-ins</button> ';
+		echo '<button class="button jc-btn" name="dropin_action" value="remove" onclick="return confirm(\'Remove the Jabali Cache drop-ins?\')">Remove drop-ins</button>';
 		echo '</form>';
+		echo '</div>';
 
+		// Settings form wraps the numbered configuration cards + Save.
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::NONCE );
 		echo '<input type="hidden" name="action" value="jabali_cache_save">';
-		echo '<table class="form-table" role="presentation"><tbody>';
-		$this->checkbox_row( 'enabled', 'Enable caching', $s['enabled'], 'Master switch for object + page caching.' );
-		$this->checkbox_row( 'page_cache', 'Full-page cache', $s['page_cache'], 'Optional. Off by default — the jabali nginx microcache already caches anonymous pages at the edge. Enable only if you disabled that.' );
-		$this->number_row( 'page_ttl', 'Page cache TTL (seconds)', $s['page_ttl'] );
-		$this->number_row( 'maxttl', 'Object max TTL (seconds, 0 = none)', $s['maxttl'] );
-		echo '<tr><th scope="row">Connection</th><td>';
-		echo '<label><input type="radio" name="scheme" value="unix" ' . checked( $s['scheme'], 'unix', false ) . '> Unix socket</label> &nbsp; ';
-		echo '<label><input type="radio" name="scheme" value="tcp" ' . checked( $s['scheme'], 'tcp', false ) . '> TCP</label>';
-		echo '</td></tr>';
-		$this->text_row( 'socket', 'Socket path', $s['socket'], '/run/redis/redis.sock' );
-		$this->text_row( 'host', 'TCP host', $s['host'], '127.0.0.1' );
-		$this->number_row( 'port', 'TCP port', $s['port'] );
-		$this->number_row( 'database', 'Redis database', $s['database'] );
-		$this->password_row( 'password', 'Password (optional)', $s['password'] );
-		echo '</tbody></table>';
+
+		echo '<div class="jc-cols">';
+
+		// Left column: ① General + ③ Full-page.
+		echo '<div class="jc-col-left">';
+		echo '<div class="jc-card">' . $this->cfgHead( 1, 'General Cache Settings' ) . '<div class="jc-sets">';
+		$this->setRow( 'Enable caching',
+			'<input type="checkbox" name="enabled" ' . checked( $s['enabled'], true, false ) . '>',
+			'Master switch for object + page caching.' );
+		$this->setRow( 'Full-page cache',
+			'<input type="checkbox" name="page_cache" ' . checked( $s['page_cache'], true, false ) . '>',
+			'Optional. Off by default — the jabali nginx microcache already caches anonymous pages at the edge. Enable only if you disabled that.' );
+		$this->setRow( 'Page cache TTL (seconds)',
+			'<input type="number" name="page_ttl" value="' . esc_attr( (int) $s['page_ttl'] ) . '" class="small-text">' );
+		$this->setRow( 'Object max TTL (seconds, 0 = none)',
+			'<input type="number" name="maxttl" value="' . esc_attr( (int) $s['maxttl'] ) . '" class="small-text">' );
+		echo '</div></div>';
+
+		echo '<div class="jc-card">' . $this->cfgHead( 3, 'Full-page Cache' ) . '<div class="jc-sets">';
+		echo '<p class="jc-muted" style="margin:2px 0 0;font-size:13px">On Jabali, anonymous pages are cached at the edge by the nginx FastCGI microcache — WordPress full-page caching stays off by default to avoid double-caching. Enable it above (General) only if you disabled the edge cache; the Page cache TTL then applies.</p>';
+		echo '</div></div>';
+		echo '</div>'; // .jc-col-left
+
+		// Right column: ② Redis Connection.
+		echo '<div class="jc-col-right">';
+		echo '<div class="jc-card">' . $this->cfgHead( 2, 'Redis Connection' ) . '<div class="jc-sets">';
+		$this->setRow( 'Connection',
+			'<label class="jc-radio"><input type="radio" name="scheme" value="unix" ' . checked( $s['scheme'], 'unix', false ) . '> Unix socket</label>' .
+			'<label class="jc-radio"><input type="radio" name="scheme" value="tcp" ' . checked( $s['scheme'], 'tcp', false ) . '> TCP</label>' );
+		$this->setRow( 'Socket path',
+			'<input type="text" name="socket" value="' . esc_attr( $s['socket'] ) . '" placeholder="/run/redis/redis.sock" class="regular-text">' );
+		$this->setRow( 'TCP host',
+			'<input type="text" name="host" value="' . esc_attr( $s['host'] ) . '" placeholder="127.0.0.1" class="regular-text">' );
+		$this->setRow( 'TCP port',
+			'<input type="number" name="port" value="' . esc_attr( (int) $s['port'] ) . '" class="regular-text">' );
+		$this->setRow( 'Redis database',
+			'<input type="number" name="database" value="' . esc_attr( (int) $s['database'] ) . '" class="regular-text">' );
+		$this->setRow( 'Password (optional)',
+			'<span class="jc-pw"><input type="password" id="jc-pw" name="password" value="' . esc_attr( $s['password'] ) . '" autocomplete="new-password" class="regular-text">' .
+			'<button type="button" class="jc-pw-toggle" onclick="var f=document.getElementById(\'jc-pw\');f.type=f.type===\'password\'?\'text\':\'password\';" aria-label="Show/hide password">' . $this->icon( 'eye' ) . '</button></span>' );
+		echo '</div></div>';
+		echo '</div>'; // .jc-col-right
+		echo '</div>'; // .jc-cols
+
+		// ④ Advanced / Notes (full-width).
+		echo '<div class="jc-card jc-card-wide">' . $this->cfgHead( 4, 'Advanced / Notes' );
+		echo '<div class="jc-hint">' . $this->icon( 'info' ) . '<span>Jabali Cache uses the shared panel Redis (ADR-0059): unix socket <code>/run/redis/redis.sock</code>, database 1. Cache entries are isolated per site by key prefix and survive Redis LRU eviction by design.</span></div>';
+		echo '</div>';
+
 		submit_button( 'Save settings' );
 		echo '</form>';
-
-		echo '<p class="jc-note">Jabali Cache uses the shared panel Redis (ADR-0059): unix socket <code>/run/redis/redis.sock</code>, database 1. Cache entries are isolated per site by key prefix and survive Redis LRU eviction by design.</p>';
-		echo '</div>'; // .jc-card-wide
 
 		echo '</div>'; // .wrap
 	}
@@ -352,6 +385,23 @@ class Jabali_Cache_Admin {
 	 * @param string $value Pre-escaped primary value HTML.
 	 * @param string $sub   Optional pre-escaped sub-line.
 	 */
+	// cfgHead renders a numbered configuration-card header (GH #614): a small
+	// circled number + the section title.
+	private function cfgHead( $n, $title ) {
+		return '<div class="jc-card-head jc-numbered"><span class="jc-num">' . (int) $n . '</span><h2>' . esc_html( $title ) . '</h2></div>';
+	}
+
+	// setRow renders one configuration row: label left, control (+ optional
+	// helper text) right. $control/$help are pre-built HTML (caller escapes).
+	private function setRow( $label, $control, $help = '' ) {
+		echo '<div class="jc-set"><div class="jc-set-label">' . esc_html( $label ) . '</div>';
+		echo '<div class="jc-set-ctl">' . $control; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		if ( '' !== $help ) {
+			echo '<span class="jc-set-help">' . esc_html( $help ) . '</span>';
+		}
+		echo '</div></div>';
+	}
+
 	private function metric( $icon, $label, $value, $sub = '' ) {
 		echo '<div class="jc-metric">';
 		echo '<div class="jc-metric-icon">' . $this->icon( $icon ) . '</div>';
@@ -386,6 +436,7 @@ class Jabali_Cache_Admin {
 			'refresh'   => '<path d="M20 11a8 8 0 10-2 6"/><path d="M20 5v6h-6"/>',
 			'book'      => '<path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/>',
 			'info'      => '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+			'eye'       => '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
 		);
 		$body = isset( $paths[ $name ] ) ? $paths[ $name ] : $paths['info'];
 		return $p . $body . '</svg>';
@@ -437,6 +488,20 @@ class Jabali_Cache_Admin {
 .jc-footnote{display:flex;align-items:center;gap:8px;color:#646970;font-size:13px;margin:18px 0}
 .jc-footnote .jc-svg{width:16px;height:16px}
 .jc-card-wide{margin-top:16px}
+.jc-col-left{display:flex;flex-direction:column;gap:16px}
+.jc-numbered .jc-num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:1.5px solid #2271b1;color:#2271b1;font-size:13px;font-weight:600;flex:0 0 auto}
+.jc-sets{display:flex;flex-direction:column;padding-top:4px}
+.jc-set{display:flex;gap:16px;align-items:flex-start;padding:12px 0;border-bottom:1px solid #f2f3f5}
+.jc-set:last-child{border-bottom:0}
+.jc-set-label{flex:0 0 42%;color:#3c434a;font-weight:500;font-size:14px;padding-top:4px}
+.jc-set-ctl{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px}
+.jc-set-ctl input[type=text],.jc-set-ctl input[type=number],.jc-set-ctl input[type=password]{width:100%;max-width:320px}
+.jc-set-help{color:#646970;font-size:12px;line-height:1.5}
+.jc-radio{margin-right:16px}
+.jc-pw{display:inline-flex;align-items:center;gap:6px;max-width:320px}
+.jc-pw input{flex:1 1 auto}
+.jc-pw-toggle{background:none;border:1px solid #c3c4c7;border-radius:6px;padding:5px 8px;cursor:pointer;color:#646970;display:inline-flex;align-items:center}
+.jc-dropin-form{padding-top:6px}
 .jc-dropin-form{margin:8px 0 4px}
 .jc-note{color:#646970;font-size:13px;max-width:820px}
 </style>';
