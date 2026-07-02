@@ -142,24 +142,42 @@ func DiscoverWordPress(ctx context.Context, s *Session, hint string) (*WordPress
 	}
 	f := &WordPressFacts{Root: root}
 
-	// Table prefix from wp-config.php (grep is enough; keep it robust).
+	// Table prefix from wp-config.php. Matches BOTH quote styles
+	// ($table_prefix = 'wp_'; and "wp_") with flexible spacing; prefix chars
+	// are [A-Za-z0-9_]. An empty result is a HARD error — the import's table
+	// rewrite keys off the prefix, so a wrong/empty prefix silently corrupts.
 	if out, err := s.run(ctx, defaultCmdTimeout,
-		"grep -oE \"table_prefix[[:space:]]*=[[:space:]]*'[^']+'\" "+shellQuote(root+"/wp-config.php")+" | head -1 | grep -oE \"'[^']+'\" | tr -d \"'\""); err == nil {
+		"grep -oE \"table_prefix[[:space:]]*=[[:space:]]*['\\\"][A-Za-z0-9_]+['\\\"]\" "+shellQuote(root+"/wp-config.php")+
+			" | head -1 | grep -oE \"['\\\"][A-Za-z0-9_]+['\\\"]\" | tr -d \"'\\\"\""); err == nil {
 		f.TablePrefix = strings.TrimSpace(string(out))
 	}
+	if f.TablePrefix == "" {
+		return nil, fmt.Errorf("wordpressssh: could not read table_prefix from %s/wp-config.php (unexpected format)", root)
+	}
 
-	// WP-CLI present? Then read the authoritative facts.
+	// WP-CLI present AND sees a real install? Only then trust its option output.
+	// A bare `command -v wp` is not enough — a broken install would leak stdout
+	// warnings into Home/SiteURL. Gate on error-checked `core is-installed`, and
+	// the wp() helper returns "" on any error (never trusts garbage stdout).
 	if _, err := s.run(ctx, defaultCmdTimeout, "command -v wp >/dev/null 2>&1 && echo yes"); err == nil {
-		f.WPCLI = true
-		wp := func(args string) string {
-			out, _ := s.run(ctx, defaultCmdTimeout, "wp --path="+shellQuote(root)+" --skip-plugins --skip-themes "+args+" 2>/dev/null")
-			return strings.TrimSpace(string(out))
+		wpRun := func(args string) (string, error) {
+			out, err := s.run(ctx, defaultCmdTimeout, "wp --path="+shellQuote(root)+" --skip-plugins --skip-themes "+args+" 2>/dev/null")
+			return strings.TrimSpace(string(out)), err
 		}
-		f.Home = wp("option get home")
-		f.SiteURL = wp("option get siteurl")
-		f.WPVersion = wp("core version")
-		if wp("core is-installed --network && echo multi") == "multi" {
-			f.Multisite = true
+		if _, err := wpRun("core is-installed"); err == nil {
+			f.WPCLI = true
+			if v, e := wpRun("option get home"); e == nil {
+				f.Home = v
+			}
+			if v, e := wpRun("option get siteurl"); e == nil {
+				f.SiteURL = v
+			}
+			if v, e := wpRun("core version"); e == nil {
+				f.WPVersion = v
+			}
+			if _, e := wpRun("core is-installed --network"); e == nil {
+				f.Multisite = true
+			}
 		}
 	}
 
