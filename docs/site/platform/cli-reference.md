@@ -155,6 +155,19 @@ jabali app cache <install-id> [flags]
 - `--disable` — disable object + page cache
 - `--enable` — enable object + page cache
 
+#### `jabali app cache-doctor`
+
+Detect (and optionally --repair) drift on cache-enabled WordPress installs
+
+```
+jabali app cache-doctor [flags]
+```
+
+**Flags:**
+
+- `--json` — emit a JSON report
+- `--repair` — re-provision drifted installs (re-stamp constants, re-provision ACL, re-verify)
+
 #### `jabali app clone`
 
 Clone a WordPress app install onto another domain (files + DB)
