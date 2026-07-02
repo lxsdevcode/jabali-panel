@@ -27,6 +27,7 @@ type CreateInput = {
   source_kind: string;
   source_host: string;
   source_user: string;
+  source_path?: string;
 };
 
 type MigrationJob = {
@@ -58,6 +59,7 @@ const SOURCE_OPTIONS = [
   { value: "whm_pkgacct", label: "WHM pkgacct (uploaded tarball)" },
   { value: "directadmin", label: "DirectAdmin (live SSH source)" },
   { value: "hestiacp", label: "HestiaCP (live SSH source)" },
+  { value: "wordpress_ssh", label: "WordPress site (SSH — Cloudways / VPS / generic)" },
 ];
 
 // ─── sub-step components ───────────────────────────────────────────────────────
@@ -367,7 +369,7 @@ export const CreateMigrationDrawer = ({
 
   const isScaffoldOnly =
     created &&
-    ["directadmin", "hestiacp"].includes(created.source_kind);
+    ["directadmin", "hestiacp", "wordpress_ssh"].includes(created.source_kind);
 
   return (
     <Drawer
@@ -407,6 +409,19 @@ export const CreateMigrationDrawer = ({
           >
             <Input placeholder="bob" />
           </Form.Item>
+          <Form.Item noStyle shouldUpdate>
+            {({ getFieldValue }) =>
+              getFieldValue("source_kind") === "wordpress_ssh" ? (
+                <Form.Item
+                  label="WordPress path (optional)"
+                  name="source_path"
+                  tooltip="Absolute path to the WordPress root on the source (must contain wp-config.php). Leave blank to auto-detect ~/public_html, /home/*/public_html, or Cloudways /home/master/applications/*/public_html."
+                >
+                  <Input placeholder="/home/master/applications/xxxx/public_html" />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
 
           <Space>
             <Button
@@ -430,8 +445,20 @@ export const CreateMigrationDrawer = ({
           <Alert
             type="warning"
             showIcon
-            message="UI-driven import not yet available for this source type"
-            description="DirectAdmin, HestiaCP, and IMAP-only migrations are not yet fully supported in the UI. The job record has been created. Please contact support to complete the import."
+            message={
+              created.source_kind === "wordpress_ssh"
+                ? "WordPress SSH migration job created"
+                : "UI-driven import not yet available for this source type"
+            }
+            description={
+              created.source_kind === "wordpress_ssh"
+                ? "The job is created. Complete it on the server: `jabali migrate pull-source --job-id " +
+                  created.id +
+                  "` (SSH-discovers the WordPress site, exports its DB, stages the files), then `jabali migrate import-wp --job-id " +
+                  created.id +
+                  " --dest-user <user> --dest-domain <domain>` (provisions the DB, imports, moves files, rewrites wp-config). Upload SSH credentials first via the job's secrets endpoint."
+                : "DirectAdmin, HestiaCP, and IMAP-only migrations are not yet fully supported in the UI. The job record has been created. Please contact support to complete the import."
+            }
           />
           <Button type="primary" onClick={handleDone}>
             Done
