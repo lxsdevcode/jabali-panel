@@ -1,0 +1,189 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+)
+
+// newMigrateImportWPCmd (GH #647 S4) imports a STAGED wordpress_ssh job into a
+// destination: provisions a Jabali DB+user, restores the dump, extracts the file
+// tarball, moves it into the docroot (agent, containment), and rewrites
+// wp-config.php to the new credentials. Operator-gated (A3) — run after
+// `jabali migrate pull-source` has staged dump.sql + files.tar.gz.
+func newMigrateImportWPCmd() *cobra.Command {
+	var jobID, destUser, destDomain string
+	cmd := &cobra.Command{
+		Use:     "import-wp",
+		Short:   "Import a staged wordpress_ssh migration into a destination (GH #647)",
+		PreRunE: requireDBAndAgent,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if jobID == "" || destUser == "" || destDomain == "" {
+				return errors.New("--job-id, --dest-user, --dest-domain are required")
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Minute)
+			defer cancel()
+			jobs := repository.NewMigrationJobRepository(sharedDB)
+			job, err := jobs.FindByID(ctx, jobID)
+			if err != nil {
+				return fmt.Errorf("load job: %w", err)
+			}
+			if job.TargetUserID == nil || *job.TargetUserID == "" {
+				return errors.New("job has no target_user_id")
+			}
+			out := cmd.OutOrStdout()
+			return importWordPressSSH(ctx, out, jobs, job, destUser, *job.TargetUserID, destDomain)
+		},
+	}
+	cmd.Flags().StringVar(&jobID, "job-id", "", "wordpress_ssh migration_jobs.id (staged)")
+	cmd.Flags().StringVar(&destUser, "dest-user", "", "destination OS username (owns the docroot)")
+	cmd.Flags().StringVar(&destDomain, "dest-domain", "", "destination domain (docroot = /home/<user>/domains/<domain>/public_html)")
+	return cmd
+}
+
+func importWordPressSSH(ctx context.Context, out io.Writer,
+	jobs repository.MigrationJobRepository, job *models.MigrationJob,
+	destUser, targetUserID, destDomain string) error {
+
+	pf := func(format string, a ...any) { fmt.Fprintf(out, format, a...) }
+	stageDir := filepath.Join("/var/lib/jabali-migrations", job.ID)
+	dumpSQL := filepath.Join(stageDir, "dump.sql")
+	filesTar := filepath.Join(stageDir, "files.tar.gz")
+	filesDir := filepath.Join(stageDir, "files")
+	docSubpath := filepath.Join("domains", destDomain, "public_html")
+	docroot := filepath.Join("/home", destUser, docSubpath)
+
+	fail := func(reason error) error {
+		msg := "import-wp: " + reason.Error()
+		_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateFailed, &msg)
+		return reason
+	}
+
+	// --- 1. provision DB + user + grant, restore the dump (agent, root) ---
+	dbName := wpMigDBName(destUser)
+	pwd, err := randHex(16)
+	if err != nil {
+		return fail(err)
+	}
+	pf("  → creating DB %s ...\n", dbName)
+	if _, err := sharedAgent.Call(ctx, "db.create", map[string]any{
+		"db_name": dbName, "charset": "utf8mb4", "collation": "utf8mb4_unicode_ci",
+	}); err != nil {
+		return fail(fmt.Errorf("db.create: %w", err))
+	}
+	if _, err := sharedAgent.Call(ctx, "db_user.create", map[string]any{
+		"db_user_name": dbName, "password": pwd,
+	}); err != nil {
+		return fail(fmt.Errorf("db_user.create: %w", err))
+	}
+	if _, err := sharedAgent.Call(ctx, "db_user.grant", map[string]any{
+		"db_name": dbName, "db_user_name": dbName, "privileges": []string{"ALL"},
+	}); err != nil {
+		return fail(fmt.Errorf("db_user.grant: %w", err))
+	}
+	pf("  → restoring dump into %s ...\n", dbName)
+	if _, err := sharedAgent.Call(ctx, "db.restore", map[string]any{
+		"db_name": dbName, "path": dumpSQL, "reset_before_restore": true,
+	}); err != nil {
+		return fail(fmt.Errorf("db.restore: %w", err))
+	}
+	// Panel rows so the DB shows in the UI (best-effort — the site works regardless).
+	dbRow := &models.Database{
+		ID: ids.NewULID(), UserID: targetUserID, Name: dbName,
+		Engine: "mariadb", Charset: "utf8mb4", Collation: "utf8mb4_unicode_ci",
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	_ = repository.NewDatabaseRepository(sharedDB).Create(ctx, dbRow)
+
+	// --- 2. extract the file tarball to staging (containment-safe) ---
+	pf("  → extracting files ...\n")
+	if err := migrate.ExtractTarGz(filesTar, filesDir); err != nil {
+		return fail(fmt.Errorf("extract: %w", err))
+	}
+
+	// --- 3. move files -> docroot (agent, as the dest user, containment) ---
+	pf("  → moving files into %s ...\n", docroot)
+	if _, err := sharedAgent.Call(ctx, "migration.import_home", map[string]any{
+		"job_id": job.ID, "src_dir": filesDir, "dest_user": destUser, "dest_subpath": docSubpath,
+	}); err != nil {
+		return fail(fmt.Errorf("import_home: %w", err))
+	}
+
+	// --- 4. rewrite wp-config.php to the new Jabali DB creds ---
+	pf("  → rewriting wp-config.php ...\n")
+	wpConfig := filepath.Join(docroot, "wp-config.php")
+	raw, err := sharedAgent.Call(ctx, "files.read", map[string]any{
+		"user_id": targetUserID, "username": destUser, "path": wpConfig,
+	})
+	if err != nil {
+		return fail(fmt.Errorf("files.read wp-config: %w", err))
+	}
+	content, _ := agentFileContent(raw)
+	// DB_HOST localhost (MariaDB via the default socket); user = db name (Jabali convention).
+	updated, changed := migrate.RewriteWPConfigDB(content, dbName, dbName, pwd, "localhost")
+	if !changed {
+		pf("  (warning: wp-config.php DB constants unchanged — check format)\n")
+	}
+	if _, err := sharedAgent.Call(ctx, "files.write", map[string]any{
+		"user_id": targetUserID, "username": destUser, "path": wpConfig,
+		"content": updated, "mode": "overwrite",
+	}); err != nil {
+		return fail(fmt.Errorf("files.write wp-config: %w", err))
+	}
+
+	_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateDone, nil)
+	pf("  ✓ imported into %s (DB %s). Domain-change search-replace not run (same-domain).\n", docroot, dbName)
+	return nil
+}
+
+// wpMigDBName builds a valid Jabali DB name (^[a-z][a-z0-9_]{1,29}$) from the OS
+// user + a short random suffix.
+func wpMigDBName(osUser string) string {
+	base := ""
+	for _, r := range osUser {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			base += string(r)
+		}
+		if len(base) >= 12 {
+			break
+		}
+	}
+	if base == "" || (base[0] >= '0' && base[0] <= '9') {
+		base = "wp" + base
+	}
+	suf, _ := randHex(3)
+	return base + "_wpm" + suf
+}
+
+func randHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// agentFileContent unmarshals a files.read agent response {content, is_binary}.
+func agentFileContent(raw json.RawMessage) (string, bool) {
+	var r struct {
+		Content  string `json:"content"`
+		IsBinary bool   `json:"is_binary"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil || r.IsBinary {
+		return "", false
+	}
+	return r.Content, true
+}

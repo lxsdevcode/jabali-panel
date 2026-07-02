@@ -21,6 +21,7 @@ func newMigrateCmd() *cobra.Command {
 	cmd.AddCommand(newMigrateImportCmd())
 	cmd.AddCommand(newMigrateReapSecretsCmd())
 	cmd.AddCommand(newMigratePullSourceCmd())
+	cmd.AddCommand(newMigrateImportWPCmd())
 	// One-shot offline restore: create job + stage cpmove + run import.
 	cmd.AddCommand(newMigrateRestoreCmd())
 	return cmd

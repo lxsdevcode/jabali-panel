@@ -3069,6 +3069,20 @@ jabali migrate import [flags]
 - `--target-password` — destination user password (only used when auto-creating; ≥10 chars)
 - `--target-user` — destination jabali username — auto-created if --target-email + --target-password supplied
 
+#### `jabali migrate import-wp`
+
+Import a staged wordpress_ssh migration into a destination (GH #647)
+
+```
+jabali migrate import-wp [flags]
+```
+
+**Flags:**
+
+- `--dest-domain` — destination domain (docroot = /home/<user>/domains/<domain>/public_html)
+- `--dest-user` — destination OS username (owns the docroot)
+- `--job-id` — wordpress_ssh migration_jobs.id (staged)
+
 #### `jabali migrate pull-source`
 
 Connect to source via SSH, run kind-appropriate backup, pull + extract tarball
