@@ -1401,19 +1401,7 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		insts, iErr := r.wordPressInstalls.ListCacheEnabledByDomainID(liCtx, domain.ID)
 		liCancel()
 		if iErr == nil && len(insts) > 0 {
-			seen := map[string]bool{}
-			paths := make([]string, 0, len(insts))
-			for _, in := range insts {
-				p := "/"
-				if s := strings.Trim(in.Subdirectory, "/"); s != "" {
-					p = "/" + s
-				}
-				if !seen[p] {
-					seen[p] = true
-					paths = append(paths, p)
-				}
-			}
-			params["cache_paths"] = paths
+			params["cache_paths"] = cachePathsFromInstalls(insts)
 		}
 	}
 
@@ -2819,4 +2807,26 @@ func (r *Reconciler) migrateBootstrapShape(ctx context.Context, zone *models.DNS
 			}
 		}
 	}
+}
+
+// cachePathsFromInstalls maps a domain's cache-enabled installs to the set of
+// page-cache path prefixes the agent's buildCacheGate consumes (GH #601). This
+// is the reconciler↔agent contract: subdirectory "" → "/" (root, whole domain),
+// "blog" or "/blog/" → "/blog", "shop/eu" → "/shop/eu"; deduped, order-stable.
+// Kept as a pure function so the exact emitted shape is unit-tested (the agent
+// side is tested separately — this closes the seam).
+func cachePathsFromInstalls(insts []models.ApplicationInstall) []string {
+	seen := map[string]bool{}
+	paths := make([]string, 0, len(insts))
+	for _, in := range insts {
+		p := "/"
+		if s := strings.Trim(in.Subdirectory, "/"); s != "" {
+			p = "/" + s
+		}
+		if !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
