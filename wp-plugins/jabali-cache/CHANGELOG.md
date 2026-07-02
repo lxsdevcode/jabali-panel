@@ -11,6 +11,7 @@ Nothing yet.
 ## [1.0.3] — 2026-07-02
 
 ### Fixed
+- Object-cache `incr()`/`decr()` preserve an existing key TTL via `SET ... KEEPTTL` (Redis 6.2+) instead of dropping it — counters with an expiry are no longer immortalised (GH #604). (Atomicity unchanged: the read-modify-write matches WP core's own non-atomic incr/decr.)
 - Page-cache content-change purge hooks (`jabali_cache_register_purge_hooks`) now gate on `Jabali_Cache_Config` (the same source `Page_Cache::run()` serves from), not the options table — pages no longer stay stale when page cache is enabled via constants (GH #603).
 
 ### Changed

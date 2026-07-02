@@ -129,6 +129,7 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 == Changelog ==
 
 = 1.0.3 =
+* Object-cache incr()/decr() now preserve an existing key TTL (SET ... KEEPTTL) instead of dropping it, so counters/throttles with an expiry are no longer immortalised (GH #604).
 * Page-cache content-change purge hooks now gate on the same runtime config the cache serves from, so pages no longer go stale when page cache is enabled by constants (GH #603).
 * Redis cache flushes/purges now use non-blocking UNLINK instead of DEL, so a large flush no longer stalls the shared Redis event loop or spikes latency for other tenants (GH #608).
 

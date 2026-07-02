@@ -360,7 +360,9 @@ class Jabali_Cache_Object_Cache {
 
 		$new = max( 0, $cur + $delta );
 		$this->redis_calls++;
-		if ( ! $this->client->set( $id, $this->serialize( $new ) ) ) {
+		// KEEPTTL: preserve any existing expiry on the counter (GH #604) —
+		// a plain SET would drop the TTL and immortalise the key.
+		if ( ! $this->client->set( $id, $this->serialize( $new ), 0, true ) ) {
 			return false;
 		}
 		$this->cache[ $group ][ $id ] = $new;

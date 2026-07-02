@@ -458,7 +458,7 @@ class Jabali_Cache_Client {
 	 * @param int    $ttl
 	 * @return bool
 	 */
-	public function set( $key, $value, $ttl = 0 ) {
+	public function set( $key, $value, $ttl = 0, $keepttl = false ) {
 		if ( ! $this->is_connected() ) {
 			return false;
 		}
@@ -466,6 +466,11 @@ class Jabali_Cache_Client {
 			try {
 				if ( $ttl > 0 ) {
 					return (bool) $this->redis->setex( $key, $ttl, $value );
+				}
+				// KEEPTTL (Redis 6.2+): rewrite the value without clearing an
+				// existing expiry (GH #604 incr/decr must not immortalise a key).
+				if ( $keepttl ) {
+					return (bool) $this->redis->set( $key, $value, array( 'KEEPTTL' => true ) );
 				}
 				return (bool) $this->redis->set( $key, $value );
 			} catch ( \Throwable $e ) {
@@ -475,6 +480,8 @@ class Jabali_Cache_Client {
 		}
 		if ( $ttl > 0 ) {
 			$res = $this->cmd( array( 'SETEX', $key, (string) $ttl, $value ) );
+		} elseif ( $keepttl ) {
+			$res = $this->cmd( array( 'SET', $key, $value, 'KEEPTTL' ) );
 		} else {
 			$res = $this->cmd( array( 'SET', $key, $value ) );
 		}
