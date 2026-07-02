@@ -14,6 +14,11 @@
 
 **Workflow:** git + gh; branch per step; ADR target: **ADR-00NN (wordpress_ssh + shared WordPress import)**.
 
+## Progress (branch `m647/wordpress-ssh`, off main)
+- **S1 DONE** (`43aeffe4`): `wordpress_ssh` kind + `isKnownSourceKind` + migration 000207 (`source_path` nullable col) + model field + `UpdateSourcePath` repo setter + test. (Migration-number coordination: #648 also holds 000207 unmerged — renumber whichever lands second.)
+- **S2 DONE** (`fc996662` + fix `2eef288c`): `internal/migrate/wordpressssh` — SSRF-safe `Connect` (reuses `migrate.DialTCP` rebind-safe dial + `PinningHostKeyCallback` + `loadSecret`), `DiscoverWordPress` (Cloudways-aware root locate, wp-config-gated, WP-CLI facts). Caught+fixed a command-injection (user hint → unquoted `ls -d`) + two silent-wrong-data bugs (WP-CLI error-swallow; single-quote-only prefix grep). **SCOPE HONESTY:** green = *compiles + `shellQuote` proven through a real /bin/sh*. `Connect`/`DiscoverWordPress` (SSH exec, glob, WP-CLI branch, rebind dial in practice) have **ZERO coverage** — they need a live SSH fixture, which is S9's runtime gate. Do NOT treat discovery as proven-working when building S3/S4.
+- **NEXT: S3** (rsync + `wp db export` pull arm) → **S4 the shared `import_wp` spine** (the destructive-import half — silent-wrong-data is worst here; fresh session).
+
 ---
 
 ## Architecture decisions
