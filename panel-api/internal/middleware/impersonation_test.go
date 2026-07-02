@@ -31,6 +31,9 @@ func (f *fakeGrants) ListActiveByAdmin(context.Context, string, time.Time) ([]mo
 	return nil, nil
 }
 func (f *fakeGrants) ReapExpired(context.Context, time.Time) (int64, error) { return 0, nil }
+func (f *fakeGrants) ListAllActive(context.Context, time.Time) ([]models.ImpersonationGrant, error) {
+	return nil, nil
+}
 
 type fakeUsers struct{ users map[string]*models.User }
 
