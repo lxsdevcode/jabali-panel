@@ -23,16 +23,12 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -189,7 +185,7 @@ live source SSH. Use scp directly for that kind.`,
 				return markPullFailed(fmt.Errorf("mkdir extract dir: %w", err))
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "extracting to %s...\n", extractDir)
-			if err := extractTar(localTar, extractDir); err != nil {
+			if err := migrate.ExtractTarGz(localTar, extractDir); err != nil {
 				return markPullFailed(fmt.Errorf("extract: %w", err))
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "tarball extracted at %s\n", extractDir)
@@ -336,64 +332,3 @@ func pullHestia(ctx context.Context, sshUser string, job *models.MigrationJob, s
 // extractTar streams a .tar or .tar.gz into dest. Uses the same
 // path-escape + size-cap hardening as cpanel.ParseTarball; doesn't
 // classify entries since the per-importer parser does that.
-func extractTar(tarPath, dest string) error {
-	f, err := os.Open(tarPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	buf := make([]byte, 2)
-	if _, err := io.ReadFull(f, buf); err != nil {
-		return fmt.Errorf("magic: %w", err)
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	var src io.Reader = f
-	if buf[0] == 0x1f && buf[1] == 0x8b {
-		gz, gerr := gzip.NewReader(f)
-		if gerr != nil {
-			return fmt.Errorf("gunzip: %w", gerr)
-		}
-		defer gz.Close()
-		src = gz
-	}
-	tr := tar.NewReader(src)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("tar read: %w", err)
-		}
-		clean := filepath.Clean(hdr.Name)
-		if strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") || filepath.IsAbs(clean) {
-			continue
-		}
-		out := filepath.Join(dest, clean)
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(out, 0o750); err != nil {
-				return err
-			}
-		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(out), 0o750); err != nil {
-				return err
-			}
-			w, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(w, io.LimitReader(tr, 100<<30)); err != nil {
-				_ = w.Close()
-				return err
-			}
-			if err := w.Close(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
