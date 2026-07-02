@@ -4,7 +4,7 @@ Tags: redis, object cache, cache, performance, page cache
 Requires at least: 5.6
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -128,6 +128,9 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 
 == Changelog ==
 
+= 1.0.3 =
+* Redis cache flushes/purges now use non-blocking UNLINK instead of DEL, so a large flush no longer stalls the shared Redis event loop or spikes latency for other tenants (GH #608).
+
 = 1.0.2 =
 * Redesigned the configuration section into a modern, card-based layout (GH #614):
   a top "Drop-ins & Settings" card, then numbered cards — (1) General Cache
@@ -157,6 +160,9 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 * Fail-safe: WordPress keeps running normally whenever Redis is unavailable.
 
 == Upgrade Notice ==
+
+= 1.0.3 =
+Non-blocking cache flushes (UNLINK). Safe drop-in update.
 
 = 1.0.2 =
 Redesigned configuration screen only — same caching engine. Safe drop-in update.

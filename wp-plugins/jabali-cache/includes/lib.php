@@ -540,6 +540,36 @@ class Jabali_Cache_Client {
 	}
 
 	/**
+	 * UNLINK is DEL that reclaims memory on a background thread (Redis 4+),
+	 * so a large flush/purge doesn't block the Redis event loop and spike
+	 * latency for every other tenant on the shared instance (GH #608).
+	 * Semantically identical to del() for the caller.
+	 *
+	 * @param string|array<int,string> $keys
+	 * @return int number of keys unlinked.
+	 */
+	public function unlink( $keys ) {
+		if ( ! $this->is_connected() ) {
+			return 0;
+		}
+		$keys = is_array( $keys ) ? array_values( $keys ) : array( $keys );
+		if ( empty( $keys ) ) {
+			return 0;
+		}
+		if ( 'phpredis' === $this->driver ) {
+			try {
+				return (int) $this->redis->unlink( $keys );
+			} catch ( \Throwable $e ) {
+				$this->fail( $e->getMessage() );
+				return 0;
+			}
+		}
+		$args = array_merge( array( 'UNLINK' ), $keys );
+		$res  = $this->cmd( $args );
+		return is_int( $res ) ? $res : 0;
+	}
+
+	/**
 	 * @param string $key
 	 * @param int    $by
 	 * @return int|false new value or false.
@@ -599,7 +629,7 @@ class Jabali_Cache_Client {
 				$this->redis->setOption( \Redis::OPT_SCAN, \Redis::SCAN_RETRY );
 				while ( false !== ( $keys = $this->redis->scan( $it, $pattern, 500 ) ) ) {
 					if ( ! empty( $keys ) ) {
-						$deleted += (int) $this->redis->del( $keys );
+						$deleted += (int) $this->redis->unlink( $keys );
 					}
 					if ( 0 === (int) $it ) {
 						break;
@@ -619,7 +649,7 @@ class Jabali_Cache_Client {
 			$cursor = (string) $res[0];
 			$batch  = is_array( $res[1] ) ? $res[1] : array();
 			if ( ! empty( $batch ) ) {
-				$deleted += $this->del( $batch );
+				$deleted += $this->unlink( $batch );
 			}
 		} while ( '0' !== $cursor && ! $this->dead );
 		return $deleted;

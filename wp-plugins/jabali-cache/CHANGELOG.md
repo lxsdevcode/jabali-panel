@@ -8,6 +8,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [1.0.3] — 2026-07-02
+
+### Changed
+- Cache flushes/purges (`delete_by_pattern`) now use non-blocking **UNLINK**
+  instead of `DEL`, so a large flush reclaims memory on a background thread and
+  doesn't stall the shared Redis event loop / spike latency for other tenants
+  (GH #608). Both the phpredis and pure-PHP RESP paths.
+
 ## [1.0.2] — 2026-07-02
 
 ### Changed
