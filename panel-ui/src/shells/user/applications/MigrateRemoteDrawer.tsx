@@ -1,0 +1,367 @@
+import { useEffect, useState } from "react";
+import {
+  Alert,
+  Button,
+  Card,
+  Drawer,
+  Form,
+  Input,
+  Select,
+  Space,
+  Spin,
+  Steps,
+  Tabs,
+  Typography,
+  message,
+} from "antd";
+import { CloudServerOutlined, ApiOutlined } from "@icons";
+import { apiClient } from "../../../apiClient";
+
+type Kind = "wordpress_ssh" | "wordpress_plugin";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+};
+
+type DomainOpt = { label: string; value: string };
+
+// Tenant WordPress migration wizard. Drives the owner-scoped /migrations/* API:
+// create -> secrets -> pull-source -> (poll) -> import-wp. A tenant may only
+// migrate into a domain they own (the API enforces it; the UI lists their own).
+export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
+  const [step, setStep] = useState(0);
+  const [kind, setKind] = useState<Kind | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [destDomain, setDestDomain] = useState<string>("");
+  const [domains, setDomains] = useState<DomainOpt[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [pullState, setPullState] = useState<string>("");
+
+  const [createForm] = Form.useForm();
+  const [secretForm] = Form.useForm();
+
+  const reset = () => {
+    setStep(0);
+    setKind(null);
+    setJobId(null);
+    setDestDomain("");
+    setPullState("");
+    createForm.resetFields();
+    secretForm.resetFields();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    reset();
+    apiClient
+      .get<{ data?: Array<{ name: string }> }>("/domains?page_size=200")
+      .then((r) => {
+        const list = r.data?.data ?? [];
+        setDomains(list.map((d) => ({ label: d.name, value: d.name })));
+      })
+      .catch(() => setDomains([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Step 1 — create the job.
+  const handleCreate = async (v: Record<string, string>) => {
+    setBusy(true);
+    try {
+      const { data } = await apiClient.post<{ id: string }>(
+        "/migrations/wordpress",
+        {
+          source_kind: kind,
+          source_host: v.source_host,
+          source_user: v.source_user,
+          source_path: v.source_path,
+          dest_domain: v.dest_domain,
+        },
+      );
+      setJobId(data.id);
+      setDestDomain(v.dest_domain);
+      setStep(2);
+    } catch (e) {
+      message.error(errText(e) ?? "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Step 2 — save credentials (SSH creds or plugin token).
+  const handleSecrets = async (v: Record<string, string>) => {
+    if (!jobId) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/migrations/${jobId}/secrets`, v);
+      setStep(3);
+    } catch (e) {
+      message.error(errText(e) ?? "Failed to save credentials");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Step 3 — kick the pull, then poll until staged (validating) or failed.
+  const handlePull = async () => {
+    if (!jobId) return;
+    setBusy(true);
+    setPullState("running");
+    try {
+      await apiClient.post(`/migrations/${jobId}/pull-source`, { ssh_user: "root" });
+    } catch (e) {
+      setPullState("failed");
+      message.error(errText(e) ?? "Pull failed to start");
+      setBusy(false);
+      return;
+    }
+    const poll = setInterval(async () => {
+      try {
+        const { data } = await apiClient.get<{ state: string }>(`/migrations/${jobId}`);
+        if (data.state === "validating") {
+          clearInterval(poll);
+          setPullState("done");
+          setBusy(false);
+          setStep(4);
+        } else if (data.state === "failed" || data.state === "cancelled") {
+          clearInterval(poll);
+          setPullState("failed");
+          setBusy(false);
+          message.error("Pull failed — check the source credentials + URL");
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 5000);
+  };
+
+  // Step 4 — import into the destination.
+  const handleImport = async () => {
+    if (!jobId) return;
+    setBusy(true);
+    try {
+      await apiClient.post(`/migrations/${jobId}/import-wp`, { dest_domain: destDomain });
+      message.success("Import started — the site will appear once it finishes.");
+      onSuccess();
+      onClose();
+    } catch (e) {
+      message.error(errText(e) ?? "Import failed to start");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Drawer
+      title="Migrate WordPress from a remote site"
+      open={open}
+      onClose={onClose}
+      width={560}
+      destroyOnClose
+    >
+      <Steps
+        size="small"
+        current={step}
+        style={{ marginBottom: 24 }}
+        items={[
+          { title: "Source" },
+          { title: "Details" },
+          { title: "Credentials" },
+          { title: "Transfer" },
+          { title: "Import" },
+        ]}
+      />
+
+      {step === 0 && (
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Typography.Paragraph type="secondary">
+            Bring an existing WordPress site into this account. Choose how to reach the source.
+          </Typography.Paragraph>
+          <Card
+            hoverable
+            onClick={() => {
+              setKind("wordpress_ssh");
+              setStep(1);
+            }}
+          >
+            <Space>
+              <CloudServerOutlined style={{ fontSize: 22 }} />
+              <div>
+                <Typography.Text strong>SSH</Typography.Text>
+                <div>
+                  <Typography.Text type="secondary">
+                    Cloudways / VPS / generic host — Jabali connects by SSH.
+                  </Typography.Text>
+                </div>
+              </div>
+            </Space>
+          </Card>
+          <Card
+            hoverable
+            onClick={() => {
+              setKind("wordpress_plugin");
+              setStep(1);
+            }}
+          >
+            <Space>
+              <ApiOutlined style={{ fontSize: 22 }} />
+              <div>
+                <Typography.Text strong>WordPress plugin</Typography.Text>
+                <div>
+                  <Typography.Text type="secondary">
+                    No SSH — install the jabali-migrator plugin on the source, paste a token.
+                  </Typography.Text>
+                </div>
+              </div>
+            </Space>
+          </Card>
+        </Space>
+      )}
+
+      {step === 1 && (
+        <Form form={createForm} layout="vertical" onFinish={handleCreate}>
+          {kind === "wordpress_plugin" ? (
+            <Form.Item
+              name="source_host"
+              label="Source site URL"
+              rules={[{ required: true, message: "Source URL required" }]}
+            >
+              <Input placeholder="https://old-site.com" />
+            </Form.Item>
+          ) : (
+            <>
+              <Form.Item
+                name="source_host"
+                label="Source SSH host"
+                rules={[{ required: true, message: "Host required" }]}
+              >
+                <Input placeholder="old-host.com or 203.0.113.5" />
+              </Form.Item>
+              <Form.Item
+                name="source_user"
+                label="SSH user"
+                rules={[{ required: true, message: "SSH user required" }]}
+              >
+                <Input placeholder="root" />
+              </Form.Item>
+              <Form.Item
+                name="source_path"
+                label="WordPress path (optional)"
+                tooltip="Absolute path to the WP root (must contain wp-config.php). Blank = auto-detect ~/public_html, /home/*/public_html, Cloudways."
+              >
+                <Input placeholder="/home/master/applications/xxxx/public_html" />
+              </Form.Item>
+            </>
+          )}
+          <Form.Item
+            name="dest_domain"
+            label="Destination domain"
+            rules={[{ required: true, message: "Pick a domain you own" }]}
+            tooltip="The site imports into /home/<you>/domains/<domain>/public_html"
+          >
+            <Select options={domains} showSearch placeholder="one of your domains" />
+          </Form.Item>
+          <Space>
+            <Button onClick={() => setStep(0)}>Back</Button>
+            <Button type="primary" htmlType="submit" loading={busy}>
+              Continue
+            </Button>
+          </Space>
+        </Form>
+      )}
+
+      {step === 2 && (
+        <Form form={secretForm} layout="vertical" onFinish={handleSecrets}>
+          {kind === "wordpress_plugin" ? (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Migration token"
+                description="On the source site install the jabali-migrator plugin (Tools → Jabali Migrator), generate a token, and paste it here."
+              />
+              <Form.Item
+                name="plugin_token"
+                label="Token"
+                rules={[{ required: true, message: "Token required" }]}
+              >
+                <Input.Password placeholder="64-char token" autoComplete="off" />
+              </Form.Item>
+            </>
+          ) : (
+            <Tabs
+              defaultActiveKey="password"
+              items={[
+                {
+                  key: "password",
+                  label: "Password",
+                  children: (
+                    <Form.Item name="ssh_password" label="SSH password">
+                      <Input.Password autoComplete="off" />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  key: "key",
+                  label: "Private key",
+                  children: (
+                    <Form.Item name="ssh_private_key" label="PEM private key">
+                      <Input.TextArea rows={6} style={{ fontFamily: "monospace", fontSize: 12 }} />
+                    </Form.Item>
+                  ),
+                },
+              ]}
+            />
+          )}
+          <Button type="primary" htmlType="submit" loading={busy}>
+            Save + continue
+          </Button>
+        </Form>
+      )}
+
+      {step === 3 && (
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Transfer"
+            description="Jabali pulls the database + files from the source into a staging area. This can take a few minutes for large sites."
+          />
+          {pullState === "running" ? (
+            <Space>
+              <Spin /> <Typography.Text>Transferring… (safe to keep this open)</Typography.Text>
+            </Space>
+          ) : (
+            <Button type="primary" loading={busy} onClick={handlePull}>
+              Start transfer
+            </Button>
+          )}
+          {pullState === "failed" && (
+            <Alert type="error" showIcon message="Transfer failed. Check the source URL/credentials and retry." />
+          )}
+        </Space>
+      )}
+
+      {step === 4 && (
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Alert
+            type="success"
+            showIcon
+            message="Ready to import"
+            description={`The site is staged. Import into ${destDomain}: this provisions a database, imports the dump, moves the files, rewrites wp-config, and (on a domain change) runs a serialized-safe search-replace.`}
+          />
+          <Button type="primary" loading={busy} onClick={handleImport}>
+            Import into {destDomain}
+          </Button>
+        </Space>
+      )}
+    </Drawer>
+  );
+}
+
+function errText(e: unknown): string | undefined {
+  return (e as { response?: { data?: { detail?: string; error?: string } } })?.response?.data
+    ?.detail ?? (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+}

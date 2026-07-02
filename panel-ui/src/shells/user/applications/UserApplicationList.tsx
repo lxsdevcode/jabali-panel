@@ -23,6 +23,7 @@ import {
 import {
   AppstoreOutlined,
   PlusSquareOutlined,
+  ImportOutlined,
   LoadingOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
@@ -45,6 +46,7 @@ import { useAuth } from "../../../auth/AuthContext";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { useMagicLink } from "../../../hooks/useMagicLink";
 import { InstallApplicationModal } from "./InstallApplicationModal";
+import { MigrateRemoteDrawer } from "./MigrateRemoteDrawer";
 import { CloneApplicationModal } from "./CloneApplicationModal";
 import { CacheSettingsDrawer } from "./CacheSettingsDrawer";
 import { CatalogTab } from "./CatalogTab";
@@ -204,6 +206,7 @@ export const UserApplicationList = () => {
   const registry = useAppRegistry();
 
   const [installOpen, setInstallOpen] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   const [presetAppType, setPresetAppType] = useState<string | undefined>(undefined);
   const [activeTab, setActiveTab] = useTabParam<string>("installed");
   const [cloneOpen, setCloneOpen] = useState(false);
@@ -361,6 +364,12 @@ export const UserApplicationList = () => {
             </Button>
           </Tooltip>
           <Button
+            icon={<ImportOutlined />}
+            onClick={() => setMigrateOpen(true)}
+          >
+            Migrate from remote
+          </Button>
+          <Button
             type="primary"
             icon={<PlusSquareOutlined />}
             onClick={() => {
@@ -372,6 +381,15 @@ export const UserApplicationList = () => {
           </Button>
         </Space>
       </Space>
+
+      <MigrateRemoteDrawer
+        open={migrateOpen}
+        onClose={() => setMigrateOpen(false)}
+        onSuccess={() => {
+          tableQuery.refetch();
+          setActiveTab("installed");
+        }}
+      />
 
       <InstallApplicationModal
         open={installOpen}
