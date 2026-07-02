@@ -252,13 +252,21 @@ server {
         if ($http_cookie = "") { set $jabali_skip 0; }
         if ($http_cookie ~* "^(?:\s*(?:_ga[\w-]*|_gid|_gat[\w-]*|_gcl[\w-]*|__utm[\w-]*|__gads|__gpi|_fbp|_fbc|_pk_[\w-]*|_hj[\w-]*|_clck|_clsk|_dc_gtm[\w-]*|cookie_consent[\w-]*|cookie_?notice[\w-]*|cookielawinfo[\w-]*|euconsent[\w-]*|wordpress_test_cookie)=[^;]*;?\s*)+$") { set $jabali_skip 0; }
         if ($request_method = POST) { set $jabali_skip 1; }
-        if ($query_string != "") { set $jabali_skip 1; }
+        # Gitea #610: bypass only when the query has a non-tracking (content-
+        # affecting) param. Tracking-only (utm_*/gclid/fbclid/…) and empty query
+        # strings are cacheable; $jabali_qs_kind is set by the strict map in
+        # jabali-fastcgi-cache.conf. The path-only cache_key below collapses all
+        # tracking variants onto the clean-URL entry.
+        if ($jabali_qs_kind = other) { set $jabali_skip 1; }
         if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
 {{ if and (ne .CachePath "/") (ne .CachePath "") }}        # Gitea #420: only cache within the WP install's path prefix; other
         # (non-WP, differently-authed) apps on this domain are never cached.
         if ($request_uri !~ "^{{.CachePath}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
-        fastcgi_cache_key "$scheme$request_method$host$request_uri";
+        # Gitea #610: path-only key (no query) so tracking-param variants
+        # collapse onto one entry. Safe because only empty/tracking-only queries
+        # reach caching (others bypass via $jabali_qs_kind above).
+        fastcgi_cache_key "$scheme$request_method$host$uri";
         fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
         fastcgi_cache_bypass $jabali_skip;
         fastcgi_no_cache $jabali_skip;
@@ -295,13 +303,21 @@ server {
         if ($http_cookie = "") { set $jabali_skip 0; }
         if ($http_cookie ~* "^(?:\s*(?:_ga[\w-]*|_gid|_gat[\w-]*|_gcl[\w-]*|__utm[\w-]*|__gads|__gpi|_fbp|_fbc|_pk_[\w-]*|_hj[\w-]*|_clck|_clsk|_dc_gtm[\w-]*|cookie_consent[\w-]*|cookie_?notice[\w-]*|cookielawinfo[\w-]*|euconsent[\w-]*|wordpress_test_cookie)=[^;]*;?\s*)+$") { set $jabali_skip 0; }
         if ($request_method = POST) { set $jabali_skip 1; }
-        if ($query_string != "") { set $jabali_skip 1; }
+        # Gitea #610: bypass only when the query has a non-tracking (content-
+        # affecting) param. Tracking-only (utm_*/gclid/fbclid/…) and empty query
+        # strings are cacheable; $jabali_qs_kind is set by the strict map in
+        # jabali-fastcgi-cache.conf. The path-only cache_key below collapses all
+        # tracking variants onto the clean-URL entry.
+        if ($jabali_qs_kind = other) { set $jabali_skip 1; }
         if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
 {{ if and (ne .CachePath "/") (ne .CachePath "") }}        # Gitea #420: only cache within the WP install's path prefix; other
         # (non-WP, differently-authed) apps on this domain are never cached.
         if ($request_uri !~ "^{{.CachePath}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
-        fastcgi_cache_key "$scheme$request_method$host$request_uri";
+        # Gitea #610: path-only key (no query) so tracking-param variants
+        # collapse onto one entry. Safe because only empty/tracking-only queries
+        # reach caching (others bypass via $jabali_qs_kind above).
+        fastcgi_cache_key "$scheme$request_method$host$uri";
         fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
         fastcgi_cache_bypass $jabali_skip;
         fastcgi_no_cache $jabali_skip;
