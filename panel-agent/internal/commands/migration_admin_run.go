@@ -49,6 +49,7 @@ type migrationSecretsWriteParams struct {
 	JobID         string `json:"job_id"`
 	SSHPassword   string `json:"ssh_password,omitempty"`
 	SSHPrivateKey string `json:"ssh_private_key,omitempty"`
+	PluginToken   string `json:"plugin_token,omitempty"` // GH #648 wordpress_plugin
 }
 
 func init() {
@@ -107,8 +108,8 @@ func migrationSecretsWriteHandler(_ context.Context, raw json.RawMessage) (any, 
 	if !migrationJobIDRe.MatchString(p.JobID) {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "job_id must be 26-char alnum (ULID)"}
 	}
-	if p.SSHPassword == "" && p.SSHPrivateKey == "" {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "ssh_password or ssh_private_key required"}
+	if p.SSHPassword == "" && p.SSHPrivateKey == "" && p.PluginToken == "" {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "ssh_password, ssh_private_key, or plugin_token required"}
 	}
 	if err := os.MkdirAll(migrationSecretsBaseDir, 0o750); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "mkdir secrets dir: " + err.Error()}
@@ -133,6 +134,11 @@ func migrationSecretsWriteHandler(_ context.Context, raw json.RawMessage) (any, 
 		b.WriteString(base64.StdEncoding.EncodeToString(
 			[]byte(strings.TrimRight(p.SSHPrivateKey, "\n") + "\n"),
 		))
+		b.WriteByte('\n')
+	}
+	if p.PluginToken != "" {
+		b.WriteString("PLUGIN_TOKEN=")
+		b.WriteString(strings.TrimSpace(p.PluginToken))
 		b.WriteByte('\n')
 	}
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o640); err != nil {

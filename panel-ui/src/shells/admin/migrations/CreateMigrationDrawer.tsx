@@ -38,7 +38,7 @@ type MigrationJob = {
   state: string;
 };
 
-type SecretsInput = { ssh_password: string; ssh_private_key: string };
+type SecretsInput = { ssh_password?: string; ssh_private_key?: string; plugin_token?: string };
 type PullInput = { ssh_user: string };
 type ImportInput = {
   target_user: string;
@@ -65,7 +65,7 @@ const SOURCE_OPTIONS = [
 
 // ─── sub-step components ───────────────────────────────────────────────────────
 
-function SecretsStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
+function SecretsStep({ jobId, kind, onDone }: { jobId: string; kind?: string; onDone: () => void }) {
   const [form] = Form.useForm<SecretsInput>();
   const [credKind, setCredKind] = useState<"password" | "key">("password");
 
@@ -74,7 +74,7 @@ function SecretsStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       await apiClient.post(`/admin/migrations/${jobId}/secrets`, vals);
     },
     onSuccess: () => {
-      message.success("SSH credentials saved");
+      message.success("Credentials saved");
       onDone();
     },
     onError: (err: unknown) => {
@@ -84,6 +84,25 @@ function SecretsStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
     },
   });
 
+  if (kind === "wordpress_plugin") {
+    return (
+      <Form layout="vertical" onFinish={(v) => void mut.mutateAsync(v)}>
+        <Alert
+          type="info"
+          showIcon
+          message="Migration token from the jabali-migrator plugin"
+          description="On the source site, install the jabali-migrator plugin (Tools → Jabali Migrator), generate a token, and paste it here. Jabali pulls the DB + files over the plugin's token-authed REST API. The token is stored encrypted and deleted at terminal state."
+          style={{ marginBottom: 16 }}
+        />
+        <Form.Item name="plugin_token" label="Migration token" rules={[{ required: true, message: "Token required" }]}>
+          <Input.Password placeholder="64-char token from the plugin" autoComplete="off" />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={mut.isPending}>
+          Save token
+        </Button>
+      </Form>
+    );
+  }
   return (
     <Form form={form} layout="vertical" onFinish={(v) => void mut.mutateAsync(v)}>
       <Alert
@@ -301,6 +320,48 @@ const WHM_STEPS: { title: string; step: WHMStep | "create" }[] = [
   { title: "Run import", step: "import" },
 ];
 
+function WordPressImportStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
+  const [form] = Form.useForm<{ dest_user: string; dest_domain: string }>();
+  const mut = useMutation({
+    mutationFn: async (vals: { dest_user: string; dest_domain: string }) => {
+      await apiClient.post(`/admin/migrations/${jobId}/import-wp`, vals);
+    },
+    onSuccess: () => {
+      message.success("Import started");
+      onDone();
+    },
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      message.error(detail ?? "Import failed to start");
+    },
+  });
+  return (
+    <Form form={form} layout="vertical" onFinish={(v) => void mut.mutateAsync(v)}>
+      <Alert
+        type="info"
+        showIcon
+        message="Import the staged WordPress site into a destination"
+        description="Provisions a Jabali DB, restores the dump, moves files into the docroot, rewrites wp-config.php, and (on a domain change) runs a serialized-safe search-replace."
+        style={{ marginBottom: 16 }}
+      />
+      <Form.Item name="dest_user" label="Destination OS user" rules={[{ required: true, message: "Dest user required" }]}>
+        <Input placeholder="shukivaknin" />
+      </Form.Item>
+      <Form.Item
+        name="dest_domain"
+        label="Destination domain"
+        tooltip="Docroot = /home/<user>/domains/<domain>/public_html"
+        rules={[{ required: true, message: "Dest domain required" }]}
+      >
+        <Input placeholder="example.com" />
+      </Form.Item>
+      <Button type="primary" htmlType="submit" loading={mut.isPending}>
+        Start import
+      </Button>
+    </Form>
+  );
+}
+
 function stepIndex(kind: string, current: DriveStep | "create"): number {
   const steps = kind === "whm_pkgacct" ? WHM_STEPS : CPANEL_STEPS;
   const idx = steps.findIndex((s) => s.step === current);
@@ -370,7 +431,7 @@ export const CreateMigrationDrawer = ({
 
   const isScaffoldOnly =
     created &&
-    ["directadmin", "hestiacp", "wordpress_ssh", "wordpress_plugin"].includes(created.source_kind);
+    ["directadmin", "hestiacp"].includes(created.source_kind);
 
   return (
     <Drawer
@@ -493,7 +554,7 @@ export const CreateMigrationDrawer = ({
           )}
 
           {driveStep === "secrets" && (
-            <SecretsStep jobId={created.id} onDone={() => setDriveStep("pull")} />
+            <SecretsStep jobId={created.id} kind={created.source_kind} onDone={() => setDriveStep("pull")} />
           )}
 
           {driveStep === "pull" && (
@@ -504,9 +565,12 @@ export const CreateMigrationDrawer = ({
             <TarballStep jobId={created.id} onDone={() => setDriveStep("import")} />
           )}
 
-          {driveStep === "import" && (
-            <ImportStep jobId={created.id} onDone={() => setDriveStep("done")} />
-          )}
+          {driveStep === "import" &&
+            (created.source_kind === "wordpress_ssh" || created.source_kind === "wordpress_plugin" ? (
+              <WordPressImportStep jobId={created.id} onDone={() => setDriveStep("done")} />
+            ) : (
+              <ImportStep jobId={created.id} onDone={() => setDriveStep("done")} />
+            ))}
 
           {driveStep === "done" && (
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>

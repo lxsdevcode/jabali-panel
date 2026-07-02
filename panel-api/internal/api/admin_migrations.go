@@ -398,6 +398,7 @@ func ulidNew() string {
 type uploadSecretsRequest struct {
 	SSHPassword   string `json:"ssh_password"`
 	SSHPrivateKey string `json:"ssh_private_key"`
+	PluginToken   string `json:"plugin_token"` // GH #648 wordpress_plugin
 }
 
 // uploadSecrets — POST /admin/migrations/:id/secrets writes the per-job
@@ -426,10 +427,10 @@ func (h *adminMigrationsHandler) uploadSecrets(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
-	if req.SSHPassword == "" && req.SSHPrivateKey == "" {
+	if req.SSHPassword == "" && req.SSHPrivateKey == "" && req.PluginToken == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":  "missing_credential",
-			"detail": "ssh_password or ssh_private_key required",
+			"detail": "ssh_password, ssh_private_key, or plugin_token required",
 		})
 		return
 	}
@@ -441,6 +442,7 @@ func (h *adminMigrationsHandler) uploadSecrets(c *gin.Context) {
 		"job_id":          id,
 		"ssh_password":    req.SSHPassword,
 		"ssh_private_key": req.SSHPrivateKey,
+		"plugin_token":    req.PluginToken,
 	}, 10*time.Second)
 }
 
