@@ -147,12 +147,16 @@ function jabali_migrator_manifest() {
  * shell_exec + mysqldump. A pure-PHP $wpdb fallback is a follow-up.
  */
 function jabali_migrator_db_export() {
-	if ( ! function_exists( 'proc_open' ) ) {
-		return new WP_Error( 'jabali_no_procopen', 'proc_open is disabled; the pure-PHP export fallback is not yet available.', array( 'status' => 501 ) );
-	}
-	$mysqldump = jabali_migrator_find_bin( 'mysqldump' );
+	// Prefer mysqldump (fast), but MANY hosts (including Jabali) disable proc_open
+	// in php-fpm for security — fall back to a pure-PHP $wpdb dump so export ALWAYS
+	// works, not just where shelling out is allowed.
+	$mysqldump = function_exists( 'proc_open' ) ? jabali_migrator_find_bin( 'mysqldump' ) : '';
 	if ( '' === $mysqldump ) {
-		return new WP_Error( 'jabali_no_mysqldump', 'mysqldump not found; the pure-PHP export fallback is not yet available.', array( 'status' => 501 ) );
+		nocache_headers();
+		header( 'Content-Type: application/sql; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="jabali-migrator-db.sql"' );
+		jabali_migrator_php_export();
+		exit;
 	}
 
 	$cnf = tempnam( sys_get_temp_dir(), 'jabmig' );
@@ -271,6 +275,45 @@ function jabali_migrator_find_bin( $name ) {
 /** Build a shell command line from an argv array, each arg single-quoted. */
 function jabali_migrator_argv_to_cmd( array $argv ) {
 	return implode( ' ', array_map( 'escapeshellarg', $argv ) );
+}
+
+
+/**
+ * jabali_migrator_php_export — pure-PHP DB dump via $wpdb (no shell). Streams
+ * CREATE + chunked INSERTs per table; used when proc_open/mysqldump is
+ * unavailable (Jabali + hardened hosts). Values escaped with $wpdb->_real_escape.
+ */
+function jabali_migrator_php_export() {
+	global $wpdb;
+	echo "-- jabali-migrator pure-PHP export\n";
+	echo "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n";
+	$tables = $wpdb->get_col( 'SHOW TABLES' );
+	foreach ( $tables as $table ) {
+		$create = $wpdb->get_row( "SHOW CREATE TABLE `" . str_replace( '`', '', $table ) . "`", ARRAY_N );
+		if ( empty( $create[1] ) ) {
+			continue;
+		}
+		echo "\nDROP TABLE IF EXISTS `" . $table . "`;\n";
+		echo $create[1] . ";\n";
+		$offset = 0;
+		$chunk  = 500;
+		do {
+			$rows = $wpdb->get_results( "SELECT * FROM `" . str_replace( '`', '', $table ) . "` LIMIT $chunk OFFSET $offset", ARRAY_A );
+			foreach ( $rows as $row ) {
+				$vals = array();
+				foreach ( $row as $v ) {
+					$vals[] = is_null( $v ) ? 'NULL' : "'" . $wpdb->_real_escape( $v ) . "'";
+				}
+				echo "INSERT INTO `" . $table . "` VALUES (" . implode( ',', $vals ) . ");\n";
+			}
+			$offset += $chunk;
+			if ( function_exists( 'ob_get_level' ) && ob_get_level() > 0 ) {
+				@ob_flush();
+			}
+			flush();
+		} while ( count( $rows ) === $chunk );
+	}
+	echo "\nSET FOREIGN_KEY_CHECKS=1;\n";
 }
 
 /* --------------------------- admin token UI ----------------------------- */
