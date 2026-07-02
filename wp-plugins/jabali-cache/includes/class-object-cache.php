@@ -251,8 +251,37 @@ class Jabali_Cache_Object_Cache {
 	 */
 	public function set_multiple( array $data, $group = 'default', $expire = 0 ) {
 		$out = array();
+		if ( empty( $data ) ) {
+			return $out;
+		}
+		// Runtime cache is always updated. Non-persistent groups stop there.
+		if ( $this->is_non_persistent( $group ) ) {
+			foreach ( $data as $key => $value ) {
+				$id                           = $this->key( $key, $group );
+				$this->cache[ $group ][ $id ] = is_object( $value ) ? clone $value : $value;
+				$out[ $key ]                  = true;
+			}
+			return $out;
+		}
+		// GH #607: one pipelined batch instead of a Redis round-trip per key.
+		$ttl   = $this->ttl( $expire );
+		$items = array();
+		$keys  = array();
 		foreach ( $data as $key => $value ) {
-			$out[ $key ] = $this->set( $key, $value, $group, $expire );
+			$id                           = $this->key( $key, $group );
+			$this->cache[ $group ][ $id ] = is_object( $value ) ? clone $value : $value;
+			$items[]                      = array( $id, $this->serialize( $value ), $ttl );
+			$keys[]                       = $key;
+			$out[ $key ]                  = true; // runtime-only default when Redis is unavailable.
+		}
+		if ( $this->ensure() ) {
+			$this->redis_calls++;
+			$res = $this->client->set_many( $items );
+			foreach ( $keys as $i => $key ) {
+				if ( array_key_exists( $i, $res ) ) {
+					$out[ $key ] = (bool) $res[ $i ];
+				}
+			}
 		}
 		return $out;
 	}
@@ -265,8 +294,57 @@ class Jabali_Cache_Object_Cache {
 	 */
 	public function add_multiple( array $data, $group = 'default', $expire = 0 ) {
 		$out = array();
+		if ( function_exists( 'wp_suspend_cache_addition' ) && wp_suspend_cache_addition() ) {
+			foreach ( $data as $key => $value ) {
+				$out[ $key ] = false;
+			}
+			return $out;
+		}
+		if ( empty( $data ) ) {
+			return $out;
+		}
+		if ( $this->is_non_persistent( $group ) ) {
+			foreach ( $data as $key => $value ) {
+				$id = $this->key( $key, $group );
+				if ( isset( $this->cache[ $group ][ $id ] ) ) {
+					$out[ $key ] = false;
+					continue;
+				}
+				$this->cache[ $group ][ $id ] = is_object( $value ) ? clone $value : $value;
+				$out[ $key ]                  = true;
+			}
+			return $out;
+		}
+		// GH #607: pipeline the NX writes for candidates not already in runtime.
+		$ttl   = $this->ttl( $expire );
+		$items = array();
+		$meta  = array(); // parallel to $items: [origKey, id, value].
 		foreach ( $data as $key => $value ) {
-			$out[ $key ] = $this->add( $key, $value, $group, $expire );
+			$id = $this->key( $key, $group );
+			if ( isset( $this->cache[ $group ][ $id ] ) ) {
+				$out[ $key ] = false;
+				continue;
+			}
+			$meta[]  = array( $key, $id, $value );
+			$items[] = array( $id, $this->serialize( $value ), $ttl );
+		}
+		if ( empty( $items ) ) {
+			return $out;
+		}
+		$res = null;
+		if ( $this->ensure() ) {
+			$this->redis_calls++;
+			$res = $this->client->add_many( $items );
+		}
+		foreach ( $meta as $i => $m ) {
+			// Redis down (null) => runtime-only add succeeds; else honour NX result.
+			$stored = ( null === $res ) ? true : ( array_key_exists( $i, $res ) ? (bool) $res[ $i ] : true );
+			if ( $stored ) {
+				$this->cache[ $group ][ $m[1] ] = is_object( $m[2] ) ? clone $m[2] : $m[2];
+				$out[ $m[0] ]                   = true;
+			} else {
+				$out[ $m[0] ] = false;
+			}
 		}
 		return $out;
 	}
@@ -278,8 +356,20 @@ class Jabali_Cache_Object_Cache {
 	 */
 	public function delete_multiple( array $keys, $group = 'default' ) {
 		$out = array();
+		if ( empty( $keys ) ) {
+			return $out;
+		}
+		$ids = array();
 		foreach ( $keys as $key ) {
-			$out[ $key ] = $this->delete( $key, $group );
+			$id = $this->key( $key, $group );
+			unset( $this->cache[ $group ][ $id ] );
+			$ids[]       = $id;
+			$out[ $key ] = true; // delete is idempotent — absent key still "deleted".
+		}
+		// GH #607: one native multi-key UNLINK instead of a DEL per key.
+		if ( ! $this->is_non_persistent( $group ) && $this->ensure() ) {
+			$this->redis_calls++;
+			$this->client->unlink( $ids );
 		}
 		return $out;
 	}

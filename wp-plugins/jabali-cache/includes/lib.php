@@ -529,6 +529,134 @@ class Jabali_Cache_Client {
 	}
 
 	/**
+	 * Pipeline a batch of raw RESP commands: write them all, then read one
+	 * reply per command in order (GH #607). read_reply() frames exactly one
+	 * reply, so N sequential reads consume N replies. Pure-PHP path only.
+	 *
+	 * @param array<int,array<int,string>> $commands
+	 * @return array<int,mixed>|null replies in order, or null on write failure.
+	 */
+	private function pipeline_resp( array $commands ) {
+		if ( ! is_resource( $this->stream ) || empty( $commands ) ) {
+			return array();
+		}
+		$payload = '';
+		foreach ( $commands as $args ) {
+			$payload .= '*' . count( $args ) . "\r\n";
+			foreach ( $args as $a ) {
+				$a        = (string) $a;
+				$payload .= '$' . strlen( $a ) . "\r\n" . $a . "\r\n";
+			}
+		}
+		if ( false === $this->write( $payload ) ) {
+			$this->fail( 'pipeline write failed' );
+			return null;
+		}
+		$out = array();
+		foreach ( $commands as $_ ) {
+			$out[] = $this->read_reply();
+			if ( $this->dead ) {
+				return $out;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Batch SET with per-item TTL (GH #607). $items is a list of
+	 * [key, value, ttl] ; ttl<=0 means no expiry. Returns a list of bool
+	 * (stored?) in the same order.
+	 *
+	 * @param array<int,array{0:string,1:string,2:int}> $items
+	 * @return array<int,bool>
+	 */
+	public function set_many( array $items ) {
+		if ( ! $this->is_connected() || empty( $items ) ) {
+			return array();
+		}
+		if ( 'phpredis' === $this->driver ) {
+			try {
+				$pipe = $this->redis->multi( \Redis::PIPELINE );
+				foreach ( $items as $it ) {
+					if ( $it[2] > 0 ) {
+						$pipe->setEx( $it[0], (int) $it[2], $it[1] );
+					} else {
+						$pipe->set( $it[0], $it[1] );
+					}
+				}
+				$res = $pipe->exec();
+				$out = array();
+				foreach ( (array) $res as $r ) {
+					$out[] = (bool) $r;
+				}
+				return $out;
+			} catch ( \Throwable $e ) {
+				$this->fail( $e->getMessage() );
+				return array();
+			}
+		}
+		$cmds = array();
+		foreach ( $items as $it ) {
+			$cmds[] = ( $it[2] > 0 )
+				? array( 'SETEX', $it[0], (string) (int) $it[2], $it[1] )
+				: array( 'SET', $it[0], $it[1] );
+		}
+		$replies = $this->pipeline_resp( $cmds );
+		$out     = array();
+		foreach ( (array) $replies as $r ) {
+			$out[] = ( true === $r || 'OK' === $r );
+		}
+		return $out;
+	}
+
+	/**
+	 * Batch conditional SET (NX) with per-item TTL (GH #607). Same shape as
+	 * set_many; each returns true only if the key did not exist.
+	 *
+	 * @param array<int,array{0:string,1:string,2:int}> $items
+	 * @return array<int,bool>
+	 */
+	public function add_many( array $items ) {
+		if ( ! $this->is_connected() || empty( $items ) ) {
+			return array();
+		}
+		if ( 'phpredis' === $this->driver ) {
+			try {
+				$pipe = $this->redis->multi( \Redis::PIPELINE );
+				foreach ( $items as $it ) {
+					$opts = ( $it[2] > 0 ) ? array( 'nx', 'ex' => (int) $it[2] ) : array( 'nx' );
+					$pipe->set( $it[0], $it[1], $opts );
+				}
+				$res = $pipe->exec();
+				$out = array();
+				foreach ( (array) $res as $r ) {
+					$out[] = (bool) $r;
+				}
+				return $out;
+			} catch ( \Throwable $e ) {
+				$this->fail( $e->getMessage() );
+				return array();
+			}
+		}
+		$cmds = array();
+		foreach ( $items as $it ) {
+			$c = array( 'SET', $it[0], $it[1], 'NX' );
+			if ( $it[2] > 0 ) {
+				$c[] = 'EX';
+				$c[] = (string) (int) $it[2];
+			}
+			$cmds[] = $c;
+		}
+		$replies = $this->pipeline_resp( $cmds );
+		$out     = array();
+		foreach ( (array) $replies as $r ) {
+			// SET NX returns OK/true when stored, null when the key existed.
+			$out[] = ( true === $r || 'OK' === $r );
+		}
+		return $out;
+	}
+
+	/**
 	 * @param string|string[] $keys
 	 * @return int number of keys deleted.
 	 */

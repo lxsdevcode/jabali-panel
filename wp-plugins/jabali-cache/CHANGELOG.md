@@ -11,6 +11,7 @@ Nothing yet.
 ## [1.0.4] — 2026-07-02
 
 ### Added
+- Batched multi-key object-cache ops (GH #607): `set_multiple`/`add_multiple` pipeline their writes (pure-PHP RESP pipeline / phpredis `MULTI(PIPELINE)`), and `delete_multiple` issues one native multi-key `UNLINK` — instead of one Redis round-trip per key.
 - phpredis persistent connections (`pconnect`) with a per-(ACL-user, DB) `persistent_id`, so steady-state requests skip the connect handshake when the extension is present (GH #606).
 - Auto-purge the Jabali nginx FastCGI page cache on content changes (GH #611).
   Post edits do a **targeted** purge of the post's own URL + the home page
