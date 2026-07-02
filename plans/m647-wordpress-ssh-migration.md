@@ -10,7 +10,7 @@
 - `internal/migrate/discover.go` `Discoverer` (Connect/ListAccounts/DescribeAccount/Close) + `cpanel/directadmin/hestiacp` implementations to mirror. Add `internal/migrate/wordpressssh/`.
 - `migration_jobs` model + stages (`MigrationStage.BytesProcessed` for progress) + `RegisterAdminMigrationRoutes` + `isKnownSourceKind` (add the kind).
 - WP config rewrite / serialized search-replace precedent: `wordpress_clone.go` (openat2 no-symlink `wp-config.php` write) + `wp search-replace`.
-- SSRF: `MigrationAllowPrivateHosts` + the SSRF floor — same gate #648 needs (A4); **pin the resolved public IP** for the SSH connect too, not just a name check.
+- SSRF: `internal/migrate/ssrf.go` **`DialTCP(ctx, host, port, allowPrivate, timeout)` is already rebind-safe** — `ValidateHost` resolves + `checkIP`-validates every IP, and `HostValidator.Dialer()` installs a `Control` hook that re-checks the *peer* IP against the validated set at connect ("DNS rebinding suspected" reject). Tested, used by all 3 importers. **REUSE it for the SSH dial (like cpanel `Connect` does) + `migrate.PinningHostKeyCallback` for host-key pinning — do NOT hand-roll SSRF.** (#648's agent HTTP pull should route through the same primitive via a custom `http.Transport.DialContext`.)
 
 **Workflow:** git + gh; branch per step; ADR target: **ADR-00NN (wordpress_ssh + shared WordPress import)**.
 
@@ -44,10 +44,12 @@ S6 (mint/create API, owner-scoped) ──> S2 ;  S7 (progress) cross-cuts S2–S
 
 **Verify:** build; kind allowlisted. **Exit:** a `wordpress_ssh` job can be created + carry SSH creds via the secret store. **Rollback:** revert the kind.
 
-## S2 — WordPress-SSH Discoverer  ·  ⚠ SSRF (A4/S9)
+## S2 — WordPress-SSH discovery  ·  ⚠ SSRF (reused) + shell-injection
+
+**Design note (verified):** the `internal/migrate.Discoverer`/`AccountManifest` interface is **cPanel-account-shaped** (Mailboxes/DNSZones/Cron/SSHKeys/Apps) — a bad fit for one WP site. Do NOT force it. `internal/migrate/wordpressssh/` exposes a **bespoke `WordPressFacts{Root, Home, SiteURL, TablePrefix, WPVersion, PHPVersion, BytesTotal, Multisite}`** and the `pullWordPressSSH` runner arm calls it directly (no account-picker). **SSRF is already solved — reuse `migrate.DialTCP` (rebind-safe Control hook) + `migrate.PinningHostKeyCallback` + the `loadSecret` read-once-then-zero pattern; do NOT hand-roll.**
 
 **Tasks**
-- `internal/migrate/wordpressssh/` Discoverer. `Connect(host, user, secret, expectedHostKey)` over SSH (reuse the pinned-host-key session), **SSRF-gate the host** (resolve → public-IP only unless `MigrationAllowPrivateHosts`; pin the IP).
+- `internal/migrate/wordpressssh/`: `Connect(ctx, host, port, user, secret, allowPrivate) (*ssh.Client, error)` mirroring cpanel `Connect` (DialTCP + pinning + loadSecret), minus the principal probe. A `session.run(ctx, timeout, cmd)` (mirror cpanel).
 - Discover WP root: try the user path first, else auto-detect `~/public_html`, `/home/*/public_html`, **Cloudways `/home/master/applications/*/public_html`**. **Require the chosen root to contain `wp-config.php`** and verify with `wp core is-installed --path=<root>` when WP-CLI exists (fallback: parse `wp-config.php` for `DB_*`).
 - Read `home` + `siteurl` (`wp option get` or parse), table prefix, estimate size (`du -sb <root>`). Return the manifest.
 
