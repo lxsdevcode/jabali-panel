@@ -29,6 +29,8 @@ type MigrationJobRepository interface {
 	UpdateTargetUser(ctx context.Context, id, targetUserID string) error
 	ClearTargetUser(ctx context.Context, id string) error
 	UpdateSourceUser(ctx context.Context, id, sourceUser string) error
+	// UpdateSourcePath sets the WordPress root path (GH #647 wordpress_ssh).
+	UpdateSourcePath(ctx context.Context, id, sourcePath string) error
 	// PatchDraft updates source-host/user + target-user-id on a row
 	// still in state='draft'. ADR-0095 decision 5. Returns ErrNotFound
 	// if the row is missing OR in any non-draft state — callers map
@@ -183,6 +185,24 @@ func (r *migrationJobRepo) UpdateSourceUser(ctx context.Context, id, sourceUser 
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"source_user": sourceUser,
+			"updated_at":  time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateSourcePath sets migration_jobs.source_path (GH #647). Dedicated method
+// (not an allowlist patch) so the field can never be silently dropped.
+func (r *migrationJobRepo) UpdateSourcePath(ctx context.Context, id, sourcePath string) error {
+	res := r.db.WithContext(ctx).Model(&models.MigrationJob{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"source_path": sourcePath,
 			"updated_at":  time.Now().UTC(),
 		})
 	if res.Error != nil {

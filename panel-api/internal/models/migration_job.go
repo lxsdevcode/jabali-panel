@@ -6,10 +6,15 @@ import "time"
 // constants live as string literals so a new importer (e.g. `plesk`)
 // only needs a switch arm in internal/migrate, no schema migration.
 const (
-	MigrationSourceCpanel       = "cpanel"
-	MigrationSourceDirectAdmin  = "directadmin"
-	MigrationSourceHestia       = "hestiacp"
-	MigrationSourceWHMpkgacct   = "whm_pkgacct"
+	MigrationSourceCpanel      = "cpanel"
+	MigrationSourceDirectAdmin = "directadmin"
+	MigrationSourceHestia      = "hestiacp"
+	MigrationSourceWHMpkgacct  = "whm_pkgacct"
+	// MigrationSourceWordPressSSH (GH #647) — pull a single WordPress site from
+	// any SSH-capable host (Cloudways/VPS/generic). Reuses the SSH pull runner
+	// (dispatched by source_kind) with a WP-specific arm: rsync files + wp db
+	// export, then the shared migration.import_wp step. No panel-account backup.
+	MigrationSourceWordPressSSH = "wordpress_ssh"
 )
 
 // MigrationState is the per-job lifecycle. Stage transitions are
@@ -20,15 +25,15 @@ const (
 	// allowed in this state only; transition draft → pending flips
 	// the runner on at Step 4 submit. Drafts older than 24h are
 	// reaped by jabali-migration-secrets-reap.timer.
-	MigrationStateDraft       = "draft"
-	MigrationStatePending     = "pending"
-	MigrationStateAnalyzing   = "analyzing"
-	MigrationStateFixPerms    = "fix_perms"
-	MigrationStateValidating  = "validating"
-	MigrationStateRestoring   = "restoring"
-	MigrationStateDone        = "done"
-	MigrationStateFailed      = "failed"
-	MigrationStateCancelled   = "cancelled"
+	MigrationStateDraft      = "draft"
+	MigrationStatePending    = "pending"
+	MigrationStateAnalyzing  = "analyzing"
+	MigrationStateFixPerms   = "fix_perms"
+	MigrationStateValidating = "validating"
+	MigrationStateRestoring  = "restoring"
+	MigrationStateDone       = "done"
+	MigrationStateFailed     = "failed"
+	MigrationStateCancelled  = "cancelled"
 )
 
 // MigrationJob is the header row for one migration attempt against
@@ -36,22 +41,27 @@ const (
 // after a failed mid-run reuses the row — the UNIQUE on the natural
 // key prevents two parallel attempts from racing on the same files.
 type MigrationJob struct {
-	ID            string     `gorm:"column:id;type:char(26);primaryKey" json:"id"`
+	ID string `gorm:"column:id;type:char(26);primaryKey" json:"id"`
 	// BatchID — ADR-0095 decision 3. NULL for single-account jobs.
 	// Non-NULL ULID groups every job created from one bulk-WHM submit.
-	BatchID       *string    `gorm:"column:batch_id;type:varchar(26);index" json:"batch_id,omitempty"`
-	SourceKind    string     `gorm:"column:source_kind;type:varchar(32);not null;uniqueIndex:uq_migration_source,priority:3" json:"source_kind"`
-	SourceHost    string     `gorm:"column:source_host;type:varchar(255);not null;uniqueIndex:uq_migration_source,priority:1" json:"source_host"`
-	SourceUser    string     `gorm:"column:source_user;type:varchar(64);not null;uniqueIndex:uq_migration_source,priority:2" json:"source_user"`
-	ExpectedHostKey string   `gorm:"column:expected_host_key;type:varchar(128);not null;default:''" json:"expected_host_key"`
-	TargetUserID  *string    `gorm:"column:target_user_id;type:char(26);index:idx_migration_target_user" json:"target_user_id,omitempty"`
-	State         string     `gorm:"column:state;type:varchar(32);not null;default:'pending';index:idx_migration_state" json:"state"`
-	StartedAt     time.Time  `gorm:"column:started_at;type:datetime(6);not null" json:"started_at"`
-	EndedAt       *time.Time `gorm:"column:ended_at;type:datetime(6)" json:"ended_at,omitempty"`
-	ManifestJSON  *string    `gorm:"column:manifest_json;type:longtext" json:"manifest_json,omitempty"`
-	LastError     *string    `gorm:"column:last_error;type:text" json:"last_error,omitempty"`
-	CreatedAt     time.Time  `gorm:"column:created_at;type:datetime(6);not null" json:"created_at"`
-	UpdatedAt     time.Time  `gorm:"column:updated_at;type:datetime(6);not null" json:"updated_at"`
+	BatchID         *string `gorm:"column:batch_id;type:varchar(26);index" json:"batch_id,omitempty"`
+	SourceKind      string  `gorm:"column:source_kind;type:varchar(32);not null;uniqueIndex:uq_migration_source,priority:3" json:"source_kind"`
+	SourceHost      string  `gorm:"column:source_host;type:varchar(255);not null;uniqueIndex:uq_migration_source,priority:1" json:"source_host"`
+	SourceUser      string  `gorm:"column:source_user;type:varchar(64);not null;uniqueIndex:uq_migration_source,priority:2" json:"source_user"`
+	ExpectedHostKey string  `gorm:"column:expected_host_key;type:varchar(128);not null;default:''" json:"expected_host_key"`
+	// SourcePath (GH #647) — the WordPress root on the source (control-INPUT,
+	// like source_host/source_user). NULL until the operator supplies it or the
+	// discoverer auto-detects it. Distinct from ManifestJSON, which holds the
+	// discoverer's OUTPUT (home/siteurl/prefix/size). Only wordpress_ssh uses it.
+	SourcePath   *string    `gorm:"column:source_path;type:varchar(1024)" json:"source_path,omitempty"`
+	TargetUserID *string    `gorm:"column:target_user_id;type:char(26);index:idx_migration_target_user" json:"target_user_id,omitempty"`
+	State        string     `gorm:"column:state;type:varchar(32);not null;default:'pending';index:idx_migration_state" json:"state"`
+	StartedAt    time.Time  `gorm:"column:started_at;type:datetime(6);not null" json:"started_at"`
+	EndedAt      *time.Time `gorm:"column:ended_at;type:datetime(6)" json:"ended_at,omitempty"`
+	ManifestJSON *string    `gorm:"column:manifest_json;type:longtext" json:"manifest_json,omitempty"`
+	LastError    *string    `gorm:"column:last_error;type:text" json:"last_error,omitempty"`
+	CreatedAt    time.Time  `gorm:"column:created_at;type:datetime(6);not null" json:"created_at"`
+	UpdatedAt    time.Time  `gorm:"column:updated_at;type:datetime(6);not null" json:"updated_at"`
 }
 
 func (MigrationJob) TableName() string { return "migration_jobs" }
