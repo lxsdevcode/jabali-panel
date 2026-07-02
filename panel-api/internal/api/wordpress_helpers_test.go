@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 )
 
 func strPtr(s string) *string { return &s }
-
 
 // WordPress-specific mock repositories
 
@@ -138,6 +138,16 @@ func (m *mockWordPressInstallRepo) UpdateCacheEnabled(ctx context.Context, id st
 	return nil
 }
 
+func (m *mockWordPressInstallRepo) UpdateCacheSettings(ctx context.Context, id string, raw json.RawMessage) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if inst, ok := m.installs[id]; ok {
+		inst.CacheSettings = raw
+		inst.UpdatedAt = time.Now()
+	}
+	return nil
+}
+
 func (m *mockWordPressInstallRepo) CountCacheEnabledByUserID(_ context.Context, userID, excludeID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -255,4 +265,3 @@ func (m *mockDatabaseGrantRepo) FindByDBAndDBUser(ctx context.Context, databaseI
 }
 
 // Tests
-

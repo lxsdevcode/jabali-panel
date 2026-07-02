@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"gorm.io/gorm"
@@ -37,6 +38,9 @@ type ApplicationInstallRepository interface {
 	UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error
 	// UpdateCacheEnabled writes application_installs.cache_enabled (GH #406).
 	UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error
+	// UpdateCacheSettings writes the per-install cache_settings JSON column
+	// (GH #612/#616/#618). A nil raw clears it back to defaults.
+	UpdateCacheSettings(ctx context.Context, id string, raw json.RawMessage) error
 	// CountCacheEnabledByUserID counts a user's WordPress installs with the
 	// object cache ON, excluding excludeID. The per-tenant Redis ACL user
 	// wp_<osuser> is shared across a tenant's installs, so it may only be
@@ -218,6 +222,15 @@ func (r *applicationInstallRepo) UpdateStatus(ctx context.Context, id, status st
 func (r *applicationInstallRepo) UpdateCacheEnabled(ctx context.Context, id string, enabled bool) error {
 	return r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
 		Where("id = ?", id).Update("cache_enabled", enabled).Error
+}
+
+func (r *applicationInstallRepo) UpdateCacheSettings(ctx context.Context, id string, raw json.RawMessage) error {
+	var val interface{}
+	if len(raw) > 0 {
+		val = []byte(raw)
+	} // nil => SQL NULL (reset to defaults)
+	return r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
+		Where("id = ?", id).Update("cache_settings", val).Error
 }
 
 func (r *applicationInstallRepo) CountCacheEnabledByUserID(ctx context.Context, userID, excludeID string) (int64, error) {

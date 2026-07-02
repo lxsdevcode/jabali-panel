@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ApplicationInstall is one installed app on a domain (or subdirectory of
 // one). The (DomainID, Subdirectory, AppType) triplet is the install's
@@ -46,6 +49,45 @@ type ApplicationInstall struct {
 	AppType string `gorm:"type:varchar(32);not null;default:'wordpress';uniqueIndex:uniq_app_installs_domain_subdir_apptype,priority:3" json:"app_type"`
 	// CacheEnabled (GH #406): jabali-cache plugin + nginx page cache toggle.
 	CacheEnabled bool `gorm:"column:cache_enabled;type:tinyint(1);not null;default:0" json:"cache_enabled"`
+	// CacheSettings (GH #612/#616/#618): per-install cache tuning as JSON —
+	// object/page split, TTL, profile, URL exclusions, cookie bypass. NULL =
+	// jabali defaults (existing rows need no backfill). Declared LAST so the
+	// column appends to existing INSERT/SELECT orderings. Parse with
+	// ParseCacheSettings; the zero CacheSettingsData is the default profile.
+	CacheSettings json.RawMessage `gorm:"column:cache_settings;type:json" json:"cache_settings,omitempty"`
+}
+
+// CacheSettingsData is the decoded shape of ApplicationInstall.CacheSettings.
+// Pointer bools distinguish "unset (inherit default)" from an explicit false.
+type CacheSettingsData struct {
+	// Profile drives sensible defaults for the fields below (GH #618):
+	// "" / "brochure" (aggressive), "woocommerce", "membership".
+	Profile string `json:"profile,omitempty"`
+	// ObjectCache / PageCache split the single toggle (GH #612). nil = follow
+	// the install's CacheEnabled flag for both (back-compat).
+	ObjectCache *bool `json:"object_cache,omitempty"`
+	PageCache   *bool `json:"page_cache,omitempty"`
+	// TTLSeconds overrides the page-cache TTL for this install; 0/nil = domain default.
+	TTLSeconds *int `json:"ttl_seconds,omitempty"`
+	// URLExclusions are extra path prefixes that must always bypass the page
+	// cache (GH #616), on top of the built-in wp-admin/cart/etc set.
+	URLExclusions []string `json:"url_exclusions,omitempty"`
+	// CookieBypass are extra cookie-name prefixes that force a bypass (GH #616).
+	CookieBypass []string `json:"cookie_bypass,omitempty"`
+}
+
+// ParseCacheSettings decodes the JSON column; a nil/empty/invalid value yields
+// the zero CacheSettingsData (jabali defaults) with ok=false so callers can tell
+// "never configured" from "configured to defaults".
+func (a ApplicationInstall) ParseCacheSettings() (CacheSettingsData, bool) {
+	var d CacheSettingsData
+	if len(a.CacheSettings) == 0 {
+		return d, false
+	}
+	if err := json.Unmarshal(a.CacheSettings, &d); err != nil {
+		return CacheSettingsData{}, false
+	}
+	return d, true
 }
 
 // TableName pins the GORM mapping to the renamed table. Keep it explicit
