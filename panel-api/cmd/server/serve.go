@@ -306,6 +306,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		rec.WithDNSRepos(dnsZoneRepo, dnsRecordRepo, serverSettingsRepo)
 		rec.WithSSLCerts(sslCertRepo)
 		rec.WithPHPPools(phpPoolRepo)
+		// GH #601/#616: the reconciler needs the installs repo to gather a
+		// domain's cache-enabled install paths + URL exclusions for the nginx
+		// gate. Was never wired — this also revives the WordPress install-health
+		// reconcile pass (reconcileWordPressInstalls), which no-oped on nil.
+		rec.WithWordPressInstalls(wordpressInstallRepo)
 		rec.WithConfig(cfg)
 		rec.WithSSO(ssoService)
 		rec.WithSSHKeys(sshKeyRepo)
