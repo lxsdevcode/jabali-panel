@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	cacheTTLMin      = 10
-	cacheTTLMax      = 86400
 	cacheMaxRules    = 50  // cap URL exclusions / cookie bypass entries
 	cacheMaxRuleLen  = 128 // per-entry length cap
 	cacheSettingsMax = 8192
@@ -60,10 +58,6 @@ func (h *wordPressHandler) setCacheSettings(c *gin.Context) {
 	var body models.CacheSettingsData
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
-		return
-	}
-	if body.TTLSeconds != nil && (*body.TTLSeconds < cacheTTLMin || *body.TTLSeconds > cacheTTLMax) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ttl_out_of_range"})
 		return
 	}
 	if !validRuleList(body.URLExclusions) {

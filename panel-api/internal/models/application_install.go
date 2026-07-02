@@ -65,12 +65,6 @@ type ApplicationInstall struct {
 // built-in bypass set + fail-closed cookie gate already cover the site types,
 // and a tenant cookie allowlist would re-open the #416/#419 fail-open class.
 type CacheSettingsData struct {
-	// ObjectCache / PageCache split the single toggle (GH #612). nil = follow
-	// the install's CacheEnabled flag for both (back-compat).
-	ObjectCache *bool `json:"object_cache,omitempty"`
-	PageCache   *bool `json:"page_cache,omitempty"`
-	// TTLSeconds overrides the page-cache TTL for this install; 0/nil = domain default.
-	TTLSeconds *int `json:"ttl_seconds,omitempty"`
 	// URLExclusions are extra path prefixes that must always bypass the page
 	// cache (GH #616), on top of the built-in wp-admin/cart/etc set.
 	URLExclusions []string `json:"url_exclusions,omitempty"`

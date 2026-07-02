@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
@@ -55,12 +56,10 @@ func TestCacheSettings_RoundTrip(t *testing.T) {
 		t.Errorf("configured = %v, want false (never configured)", b["configured"])
 	}
 
-	// PUT a woocommerce profile with page cache on, a TTL, and an exclusion.
-	pageOn := true
-	ttl := 600
+	// PUT only url_exclusions (the drawer's sole field). Full-replace PUT is why
+	// the model carries nothing inert — object/page/TTL land with #612 + a
+	// merge-safe PUT, not before.
 	put := models.CacheSettingsData{
-		PageCache:     &pageOn,
-		TTLSeconds:    &ttl,
 		URLExclusions: []string{"/private"},
 	}
 	buf, _ := json.Marshal(put)
@@ -78,12 +77,6 @@ func TestCacheSettings_RoundTrip(t *testing.T) {
 		t.Fatalf("configured = %v after PUT, want true", b["configured"])
 	}
 	settings, _ := b["settings"].(map[string]any)
-	if settings["page_cache"] != true {
-		t.Errorf("page_cache = %v, want true", settings["page_cache"])
-	}
-	if settings["ttl_seconds"].(float64) != 600 {
-		t.Errorf("ttl_seconds = %v, want 600", settings["ttl_seconds"])
-	}
 	ex, _ := settings["url_exclusions"].([]any)
 	if len(ex) != 1 || ex[0] != "/private" {
 		t.Errorf("url_exclusions = %v, want [/private]", settings["url_exclusions"])
@@ -102,11 +95,10 @@ func TestCacheSettings_Validation(t *testing.T) {
 		return w.Code
 	}
 
-	if code := put(`{"ttl_seconds":5}`); code != http.StatusBadRequest {
-		t.Errorf("ttl below min → %d, want 400", code)
-	}
-	if code := put(`{"ttl_seconds":999999}`); code != http.StatusBadRequest {
-		t.Errorf("ttl above max → %d, want 400", code)
+	// A rule entry over the length cap is rejected.
+	long := "/" + strings.Repeat("a", 200)
+	if code := put(`{"url_exclusions":["` + long + `"]}`); code != http.StatusBadRequest {
+		t.Errorf("over-long rule → %d, want 400", code)
 	}
 	if code := put(`{"url_exclusions":["/private"]}`); code != http.StatusOK {
 		t.Errorf("valid url_exclusions → %d, want 200", code)
