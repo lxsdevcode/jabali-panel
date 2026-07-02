@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -95,9 +96,16 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 		return fail(fmt.Errorf("db_user.grant: %w", err))
 	}
 	pf("  → restoring dump into %s ...\n", dbName)
+	// db.restore unlinks its path — restore from a COPY so the staged dump
+	// survives for a retry (no re-pull needed).
+	restoreCopy := dumpSQL + ".restoring"
+	if err := copyFile(dumpSQL, restoreCopy); err != nil {
+		return fail(fmt.Errorf("stage dump copy: %w", err))
+	}
 	if _, err := sharedAgent.Call(ctx, "db.restore", map[string]any{
-		"db_name": dbName, "path": dumpSQL, "reset_before_restore": true,
+		"db_name": dbName, "path": restoreCopy, "reset_before_restore": true,
 	}); err != nil {
+		_ = os.Remove(restoreCopy)
 		return fail(fmt.Errorf("db.restore: %w", err))
 	}
 	// Panel rows so the DB shows in the UI (best-effort — the site works regardless).
@@ -207,4 +215,23 @@ func agentFileContent(raw json.RawMessage) (string, bool) {
 		return "", false
 	}
 	return r.Content, true
+}
+
+// copyFile copies src to dst (0640). Used to preserve the staged dump across a
+// db.restore that unlinks its input.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
