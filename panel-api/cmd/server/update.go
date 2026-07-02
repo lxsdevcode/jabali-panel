@@ -1542,6 +1542,23 @@ test -x node_modules/.bin/tsc || {
 			}
 			return nil
 		}},
+		{"migrate CrowdSec LAPI DB SQLite → MariaDB (CPU fix)", func() error {
+			// SQLite pegged crowdsec at high CPU under the CAPI community
+			// blocklist (~15k decisions serialized on SQLite's global lock,
+			// profiled to cgo sqlite3_step). configure_crowdsec_mariadb moves
+			// the LAPI DB to the panel MariaDB (InnoDB row-locking, off-process
+			// queries). Idempotent — no-op once already on mysql. Sources the
+			// just-pulled install.sh; best-effort (crowdsec keeps SQLite on
+			// failure).
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			if err := run("", "bash", "-c", "source "+installSh+" && configure_crowdsec_mariadb"); err != nil {
+				fmt.Printf("  (crowdsec MariaDB migration failed: %v -- staying on SQLite)\n", err)
+			}
+			return nil
+		}},
 		{"refresh jabali-cache plugin on cache-enabled sites (GH #613)", func() error {
 			// WordPress.org is the canonical plugin source (#613); existing
 			// cache-enabled sites only pick up a newly-published version on a

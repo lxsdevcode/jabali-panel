@@ -7698,6 +7698,107 @@ EOF
   done
 }
 
+configure_crowdsec_mariadb() {
+  # Move CrowdSec's LAPI database from SQLite to the panel MariaDB (unix
+  # socket, M25). SQLite pegged crowdsec at high CPU under the CAPI community
+  # blocklist (~15k decisions): every bouncer /v1/decisions/stream poll ran
+  # sqlite3_step in-process and serialized on SQLite's single global lock
+  # (profiled: cgo sqlite3_step 87% + futex contention). MariaDB/InnoDB does
+  # row-level locking and runs the queries in mariadbd, off the crowdsec
+  # process. Decisions are ephemeral (re-pulled from CAPI in minutes) so no
+  # data migration — crowdsec's ent auto-migrate builds the schema fresh on
+  # first start against MariaDB. Idempotent: no-op once db_config.type=mysql.
+  local cs_cfg="/etc/crowdsec/config.yaml"
+  [[ -f "$cs_cfg" ]] || { _warn "crowdsec config.yaml missing — skip MariaDB db_config"; return 0; }
+  command -v mariadb >/dev/null 2>&1 || { _warn "mariadb client missing — skip crowdsec MariaDB migration"; return 0; }
+  command -v yq >/dev/null 2>&1 || { _warn "yq missing — skip crowdsec MariaDB migration"; return 0; }
+
+  # Password store (hex, no YAML-special chars). Kept in db.env for stable
+  # idempotent re-runs; the actual value is written INTO config.yaml (below)
+  # rather than referenced as ${ENV}, because jabali runs cscli heavily from
+  # panel-agent (allowlists/decisions/hub/blocklist-refresh) and those calls
+  # read config.yaml directly — an EnvironmentFile only reaches crowdsec.service,
+  # so an env-ref would break every non-service cscli call on MariaDB. config.yaml
+  # is locked to 0640 root:root so the inlined secret isn't world-readable.
+  local cs_db_env="/etc/crowdsec/db.env" cs_db_pass
+  if [[ -f "$cs_db_env" ]] && grep -q '^CROWDSEC_DB_PASSWORD=' "$cs_db_env"; then
+    cs_db_pass="$(. "$cs_db_env"; printf '%s' "$CROWDSEC_DB_PASSWORD")"
+  else
+    cs_db_pass="$(openssl rand -hex 24)"
+    install -m 0640 -o root -g root /dev/null "$cs_db_env"
+    printf 'CROWDSEC_DB_PASSWORD=%s\n' "$cs_db_pass" > "$cs_db_env"
+    chmod 0640 "$cs_db_env"
+    _ok "generated CrowdSec DB password → $cs_db_env"
+  fi
+
+  # Provision the crowdsec DB + user (idempotent). Socket connections are
+  # 'localhost'; password auth (the OS user is 'crowdsec', not a DB match).
+  mariadb -uroot <<SQL || { _warn "crowdsec MariaDB provisioning failed (non-fatal; retries next update)"; return 0; }
+CREATE DATABASE IF NOT EXISTS crowdsec CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'crowdsec'@'localhost' IDENTIFIED BY '${cs_db_pass}';
+ALTER USER 'crowdsec'@'localhost' IDENTIFIED BY '${cs_db_pass}';
+GRANT ALL PRIVILEGES ON crowdsec.* TO 'crowdsec'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+  # Retire any prior env-ref drop-in from an earlier revision of this fix.
+  if [[ -f /etc/systemd/system/crowdsec.service.d/20-jabali-db.conf ]]; then
+    rm -f /etc/systemd/system/crowdsec.service.d/20-jabali-db.conf
+    systemctl daemon-reload
+  fi
+
+  # Patch db_config → mysql over the MariaDB socket, password inlined. Protect
+  # config.yaml (0640 root:root) so the secret isn't world-readable. Idempotent.
+  local changed=0 cur_type cur_pass
+  cur_type="$(yq -r '.db_config.type // ""' "$cs_cfg" 2>/dev/null || echo "")"
+  cur_pass="$(yq -r '.db_config.password // ""' "$cs_cfg" 2>/dev/null || echo "")"
+  if [[ "$cur_type" != "mysql" || "$cur_pass" != "$cs_db_pass" ]]; then
+    _log "migrating crowdsec db_config: ${cur_type:-sqlite} → mysql (MariaDB socket)"
+    JC_CS_DBPASS="$cs_db_pass" yq -y -i '.db_config = {"type":"mysql","db_path":"/run/mysqld/mysqld.sock","user":"crowdsec","password":env.JC_CS_DBPASS,"db_name":"crowdsec","max_open_conns":15}' "$cs_cfg"
+    changed=1
+  fi
+  chown root:root "$cs_cfg" 2>/dev/null || true
+  chmod 0640 "$cs_cfg" 2>/dev/null || true
+
+  if [[ "$changed" == 1 ]]; then
+    # cscli reads the inlined password from config.yaml (0640 root) — no env
+    # needed, and the same is true for every panel-agent cscli call on MariaDB.
+    # First start builds the (empty) schema via ent auto-migrate, then FATALs
+    # on "machine not found" — the local agent + bouncer credentials only
+    # existed in the old SQLite DB. Expected; the tables now exist so we can
+    # re-seed the SAME credentials (no other config file changes).
+    systemctl start crowdsec >/dev/null 2>&1 || true
+    sleep 3
+    local creds="/etc/crowdsec/local_api_credentials.yaml" m_login m_pass
+    m_login="$(yq -r '.login // ""' "$creds" 2>/dev/null)"
+    m_pass="$(yq -r '.password // ""' "$creds" 2>/dev/null)"
+    if [[ -n "$m_login" && "$m_login" != "null" && -n "$m_pass" && "$m_pass" != "null" ]]; then
+      cscli machines add "$m_login" --password "$m_pass" --force >/dev/null 2>&1 \
+        || _warn "cscli machines add failed — crowdsec agent may not authenticate"
+    fi
+    # Re-register bouncers with their existing API keys so their configs are
+    # untouched (bouncers authenticate by key, name is just a label).
+    local fb_key nb_key
+    fb_key="$(yq -r '.api_key // ""' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml 2>/dev/null)"
+    if [[ -n "$fb_key" && "$fb_key" != "null" ]]; then
+      cscli bouncers add jabali-firewall-bouncer -k "$fb_key" >/dev/null 2>&1 || true
+    fi
+    nb_key="$(grep -oP '^API_KEY=\K.*' /etc/crowdsec/bouncers/crowdsec-nginx-bouncer.conf 2>/dev/null || true)"
+    if [[ -n "$nb_key" ]]; then
+      cscli bouncers add jabali-nginx-bouncer -k "$nb_key" >/dev/null 2>&1 || true
+    fi
+    if systemctl restart crowdsec; then
+      _ok "CrowdSec LAPI DB → MariaDB (schema migrated; agent+bouncers re-registered)"
+    else
+      _err "CrowdSec failed to restart on MariaDB — last 30 journal lines:"
+      journalctl -u crowdsec -n 30 --no-pager >&2 || true
+      return 1
+    fi
+  else
+    _log "crowdsec already on MariaDB db_config — no change"
+  fi
+}
+
 install_crowdsec_profiles() {
   # M27 — defensive stub. The crowdsec Debian package ships
   # /etc/crowdsec/profiles.yaml with five upstream default profiles
@@ -12392,6 +12493,7 @@ main() {
   #   - cleanup_modsecurity removes the M26 ModSecurity stack on existing
   #     hosts that ran an earlier install (ADR-0055 superseded 2026-04-26).
   install_crowdsec
+  configure_crowdsec_mariadb
   install_crowdsec_appsec
   install_crowdsec_nginx_bouncer
   install_crowdsec_profiles
