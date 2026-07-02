@@ -11,11 +11,11 @@
 // all three.
 //
 // Operator workflow:
-//   1. INSERT migration_jobs row (or via admin SPA drawer)
-//   2. echo SSH_PASSWORD=… > /etc/jabali-panel/migration-secrets/<id>.env
-//      (or SSH_PRIVATE_KEY=…)
-//   3. jabali migrate pull-source --job-id <id>
-//   4. jabali migrate import --job-id <id> --target-user … …
+//  1. INSERT migration_jobs row (or via admin SPA drawer)
+//  2. echo SSH_PASSWORD=… > /etc/jabali-panel/migration-secrets/<id>.env
+//     (or SSH_PRIVATE_KEY=…)
+//  3. jabali migrate pull-source --job-id <id>
+//  4. jabali migrate import --job-id <id> --target-user … …
 //
 // WHM-pkgacct skipped — that source-kind is offline by design
 // (operator-uploaded tarball, no live source). Returns an error
@@ -26,6 +26,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -40,6 +41,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/directadmin"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/hestiacp"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/wordpressssh"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -130,6 +132,16 @@ live source SSH. Use scp directly for that kind.`,
 			matches3, _ := filepath.Glob(filepath.Join(localDir, "*.tar"))
 			for _, m := range append(append(matches, matches2...), matches3...) {
 				_ = os.Remove(m)
+			}
+
+			// GH #647 wordpress_ssh: the pull is rsync/db-export shaped (not a
+			// panel-account tarball). It stages dump.sql + files.tar.gz and STOPS
+			// (operator-gated import, A3) — handle before the tarball switch.
+			if job.SourceKind == models.MigrationSourceWordPressSSH {
+				if err := pullWordPressSSH(ctx, sshUser, job, secret, localDir, allowPrivate, repo); err != nil {
+					return markPullFailed(err)
+				}
+				return nil
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(),
@@ -234,6 +246,48 @@ func pullCpanel(ctx context.Context, sshUser string, job *models.MigrationJob, s
 		fmt.Printf("  (warning: source-side rm %s failed: %v)\n", remoteTar, rmErr)
 	}
 	return localTar, nil
+}
+
+// pullWordPressSSH (GH #647) connects to an SSH source, discovers the WordPress
+// install, exports its DB (wp db export — no password in argv) into
+// <staging>/dump.sql, and streams the file tree into <staging>/files.tar.gz.
+// It does NOT import: per A3 the destructive import (migration.import_wp) is
+// operator-gated, so this leaves the job staged + in validating state.
+func pullWordPressSSH(ctx context.Context, sshUser string, job *models.MigrationJob, secret migrate.SecretRef, localDir string, allowPrivate bool, repo repository.MigrationJobRepository) error {
+	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, secret, allowPrivate)
+	if err != nil {
+		return fmt.Errorf("wordpressssh.Connect: %w", err)
+	}
+	defer sess.Close()
+
+	hint := ""
+	if job.SourcePath != nil {
+		hint = *job.SourcePath
+	}
+	facts, err := wordpressssh.DiscoverWordPress(ctx, sess, hint)
+	if err != nil {
+		return fmt.Errorf("discover WordPress: %w", err)
+	}
+	// Persist the discovered root + facts (source_path + manifest_json).
+	_ = repo.UpdateSourcePath(ctx, job.ID, facts.Root)
+	if mj, e := json.Marshal(facts); e == nil {
+		_ = repo.UpdateManifest(ctx, job.ID, string(mj))
+	}
+
+	stageSQL := filepath.Join(localDir, "dump.sql")
+	stageTar := filepath.Join(localDir, "files.tar.gz")
+	fmt.Printf("  \u2192 exporting DB from %s ...\n", facts.Root)
+	if err := sess.ExportDatabase(ctx, facts.Root, job.ID, stageSQL); err != nil {
+		return err
+	}
+	fmt.Printf("  \u2192 streaming files from %s ...\n", facts.Root)
+	if err := sess.PullFilesTarball(ctx, facts.Root, stageTar); err != nil {
+		return err
+	}
+	// Operator-gated import (A3): staged, awaiting `import_wp`. Not auto-kicked.
+	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
+	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s \u2014 awaiting import\n", localDir)
+	return nil
 }
 
 func pullDirectAdmin(ctx context.Context, sshUser string, job *models.MigrationJob, secret migrate.SecretRef, localDir string, allowPrivate bool) (string, error) {
