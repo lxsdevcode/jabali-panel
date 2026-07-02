@@ -160,7 +160,7 @@ Parallel after S1: S2 ∥ S3-start. S10 (plugin) ∥ once the S3–S5 wire contr
 
 **Verify:** progress advances through claim→manifest→upload→import→done in the status API. **Exit:** operator sees live progress. **Rollback:** progress is read-only.
 
-## S10 — The WordPress source plugin (new `wp-plugins/jabali-migrate/`)  ∥ after S4/S5 contract frozen
+## S10 — The WordPress source plugin (new `wp-plugins/jabali-migrator/`)  ∥ after S4/S5 contract frozen
 
 **Context.** A NEW WP plugin (like `jabali-cache`), installed on the SOURCE site. wp-admin only — no SSH.
 
