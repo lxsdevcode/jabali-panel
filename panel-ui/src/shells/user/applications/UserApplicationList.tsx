@@ -32,6 +32,7 @@ import {
   LoginOutlined,
   SearchOutlined,
   ThunderboltOutlined,
+  SettingOutlined,
 } from "@icons";
 import { useQueryClient } from "@tanstack/react-query";
 import type { SorterResult } from "antd/es/table/interface";
@@ -45,6 +46,7 @@ import { useTableURL } from "../../../hooks/useTableURL";
 import { useMagicLink } from "../../../hooks/useMagicLink";
 import { InstallApplicationModal } from "./InstallApplicationModal";
 import { CloneApplicationModal } from "./CloneApplicationModal";
+import { CacheSettingsDrawer } from "./CacheSettingsDrawer";
 import { CatalogTab } from "./CatalogTab";
 import { CmsIcon, appDisplayName } from "./CmsIcon";
 import { useAppRegistry } from "./appRegistry";
@@ -208,6 +210,8 @@ export const UserApplicationList = () => {
   const [cloningId, setCloningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cachingId, setCachingId] = useState<string | null>(null);
+  const [cacheSettingsFor, setCacheSettingsFor] =
+    useState<ApplicationInstall | null>(null);
   const [scanning, setScanning] = useState(false);
 
   const handleScan = async () => {
@@ -393,6 +397,11 @@ export const UserApplicationList = () => {
         installId={cloningId ?? ""}
       />
 
+      <CacheSettingsDrawer
+        install={cacheSettingsFor}
+        onClose={() => setCacheSettingsFor(null)}
+      />
+
       {/* Card.tabList = tabs inside the card, matching the admin Users
           reference layout (Gitea #524). */}
       <Card
@@ -574,12 +583,22 @@ export const UserApplicationList = () => {
                   onChange={(checked) => handleToggleCache(r, checked)}
                 />
               );
-              return supported ? (
-                <Tooltip title="Redis object cache + nginx page cache">
-                  {sw}
-                </Tooltip>
-              ) : (
-                sw
+              if (!supported) return sw;
+              return (
+                <Space size={4}>
+                  <Tooltip title="Redis object cache + nginx page cache">
+                    {sw}
+                  </Tooltip>
+                  <Tooltip title="Cache settings">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<SettingOutlined />}
+                      aria-label="Cache settings"
+                      onClick={() => setCacheSettingsFor(r)}
+                    />
+                  </Tooltip>
+                </Space>
               );
             }}
           />
