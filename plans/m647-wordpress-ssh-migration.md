@@ -71,6 +71,15 @@ S6 (mint/create API, owner-scoped) ──> S2 ;  S7 (progress) cross-cuts S2–S
 
 ## S4 — ⋆ CANONICAL SHARED SPINE: `migration.import_wp` (reused by #648) · ⚠ containment
 
+**REUSE MAP (verified 2026-07-02, from grounding the verbs):**
+- **File move → REUSE** `migration.import_home` (`{JobID, SrcDir, DestUser, DestSubpath}`, containment-guarded): SrcDir=`staging/files/`, DestSubpath=`domains/<domain>/public_html`.
+- **DB create+import → NEW code, do NOT reuse `cpanel.ImportDatabases`** — it takes a `*ParsedTarball` (cPanel source→dest DB-name map + cpmove `mysql.sql` grants). A WP migration has ONE dump: build a small provision path (create Jabali DB + user + grant via the app-installer's DB verbs, then agent mysql-import `dump.sql`). Proven on real data: 105 KB dump → 12 tables, siteurl intact.
+- **wp-config rewrite → REUSE** `agent.files.read` → `migrate.RewriteWPConfigDB` (built) → `agent.files.write`; DB_HOST → Jabali socket.
+- **files.tar.gz extract → REUSE** `migrate.ExtractTarGz` (built, real-validated 3962 files) into `staging/files/`.
+- **search-replace → REUSE** tenant `wp --allow-root search-replace` (agent exec).
+So the orchestration is: NEW WP-DB-provision + 4 reuses. Not pure wiring — the DB path is new.
+
+
 > **This step is the shared prerequisite for BOTH #647 and #648, not a branch of #647.** Whichever ships first BUILDS it; the other REUSES it (the #648 plan S7 points here). Do not fork a second WP import. If executing in separate sessions, treat this section as the single source of truth for the WP import contract.
 
 **Architecture (verified 2026-07-02):** the import runs **panel-api-side** (the migrate CLI, like `restore_appconfigs`) and does every privileged/disk op **through agent verbs** — panel-api runs as `jabali`, the agent as root. Pattern from `rewriteOne`: `agent.files.read` a file → transform in panel-api (pure func) → `agent.files.write` back. So `migration.import_wp` is NOT one monolithic agent verb; it's a panel-api orchestration calling: DB create/import verbs, a tar-extract verb (with containment), `agent.files.read/write` for the wp-config rewrite, and the tenant-`wp` exec for search-replace. **`rewriteWordPress` is a PURE panel-api function** (`text, creds → text`) — reuse it directly after **lifting it + `wpDefineRe` + `phpEscape` + `DBCredential` from `internal/migrate/cpanel` up to the neutral `internal/migrate` package (exported)**, so cpanel + wordpressssh share one rewriter (behavior-preserving move; re-run the cpanel restore tests after).
