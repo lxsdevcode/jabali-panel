@@ -127,8 +127,13 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
  * core's normal wp_cache_delete calls, so it needs no extra hooks here.
  */
 function jabali_cache_register_purge_hooks() {
-	$settings = Jabali_Cache_Settings::get();
-	if ( empty( $settings['enabled'] ) || empty( $settings['page_cache'] ) ) {
+	// GH #603: gate on the SAME source Page_Cache::run() serves/stores from —
+	// Jabali_Cache_Config (constants + defaults) — not the options table. When
+	// page cache was enabled by constants but the option didn't match, pages
+	// were cached and served while these purge hooks were never registered, so
+	// a content change left stale pages until TTL expiry.
+	$cfg = Jabali_Cache_Config::load();
+	if ( empty( $cfg['enabled'] ) || empty( $cfg['page_cache'] ) ) {
 		return;
 	}
 	$purge = 'jabali_cache_purge_pages';
