@@ -223,4 +223,70 @@ func RegisterSystemRoutes(rg *gin.RouterGroup, cli agent.AgentInterface) {
 		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	})
+
+	// GH #574 — nspawn image lifecycle from the GUI. build is a long-running
+	// debootstrap run as a transient unit (poll build/status); prune is quick +
+	// dry-run-first. All proxy the operator `jabali nspawn …` CLI via the agent.
+	sys.POST("/nspawn-images/build", func(c *gin.Context) {
+		var req struct {
+			Codename string `json:"codename"`
+			Version  string `json:"version"`
+			Snapshot string `json:"snapshot"`
+			Suite    string `json:"suite"`
+			Includes string `json:"includes"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), systemCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "system.nspawn_build", map[string]any{
+			"codename": req.Codename, "version": req.Version, "snapshot": req.Snapshot,
+			"suite": req.Suite, "includes": req.Includes,
+		})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
+	sys.GET("/nspawn-images/build/status", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), systemCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "system.nspawn_build_status", map[string]any{"since": c.Query("since")})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
+	sys.DELETE("/nspawn-images/build", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), systemCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "system.unit_stop", map[string]any{"unit": "jabali-nspawn-build.service"})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
+	sys.POST("/nspawn-images/prune", func(c *gin.Context) {
+		var req struct {
+			Apply bool `json:"apply"`
+		}
+		_ = c.ShouldBindJSON(&req)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), systemCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "system.nspawn_prune", map[string]any{"apply": req.Apply})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
 }

@@ -21,20 +21,21 @@ type systemUnitStatusParams struct {
 }
 
 type systemUnitStatusResponse struct {
-	Unit       string `json:"unit"`
-	Status     string `json:"status"`            // "active" | "inactive" | "failed" | "activating"
-	ExitCode   *int   `json:"exit_code,omitempty"`
-	LogTail    string `json:"log_tail"`
-	FetchedAt  string `json:"fetched_at"`
+	Unit      string `json:"unit"`
+	Status    string `json:"status"` // "active" | "inactive" | "failed" | "activating"
+	ExitCode  *int   `json:"exit_code,omitempty"`
+	LogTail   string `json:"log_tail"`
+	FetchedAt string `json:"fetched_at"`
 }
 
 // allowedStatusUnits is the explicit allowlist of transient units a caller
 // can ask about. Hard-code so a malformed param can't tail an unrelated
 // service like jabali-panel.
 var allowedStatusUnits = map[string]string{
-	"system.update_status": "jabali-update-oneshot.service",
-	"system.apt_status":    "jabali-apt-oneshot.service",
-	"system.repair_status": "jabali-repair-oneshot.service",
+	"system.update_status":       "jabali-update-oneshot.service",
+	"system.apt_status":          "jabali-apt-oneshot.service",
+	"system.repair_status":       "jabali-repair-oneshot.service",
+	"system.nspawn_build_status": "jabali-nspawn-build.service",
 }
 
 func systemUnitStatusFor(unit string) func(context.Context, json.RawMessage) (any, error) {
