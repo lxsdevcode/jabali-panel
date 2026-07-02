@@ -8,8 +8,22 @@
 // Timestamps render in the server timezone (Server Settings →
 // Timezone). Actor shows the resolved username (API batch-resolves the
 // ULID). The Action cell opens a modal with the full recorded detail.
-import { Card, Table, Tag } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Card,
+  InputNumber,
+  Popconfirm,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 
+import { apiClient } from "../../../apiClient";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import {
   AuditActionLabel,
@@ -22,6 +36,101 @@ import {
 } from "../../../components/AuditEventDetail";
 import { useTableURL } from "../../../hooks/useTableURL";
 
+// AuditMaintenanceCard — GH #571. Hash-chain integrity verification (read-only)
+// and retention pruning (destructive), surfaced from the Audit Log. Same core
+// as `jabali audit verify` / `jabali audit prune`, run in-process by panel-api.
+interface VerifyResult {
+  ok: boolean;
+  checked: number;
+  total: number;
+  broken_id: string;
+}
+const AuditMaintenanceCard = () => {
+  const { message } = App.useApp();
+  const [days, setDays] = useState<number>(365);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+
+  const verify = useMutation({
+    mutationFn: async () =>
+      (await apiClient.post<VerifyResult>("/admin/audit/verify")).data,
+    onSuccess: (d) => setVerifyResult(d),
+    onError: (e: unknown) =>
+      message.error(e instanceof Error ? e.message : "verify failed"),
+  });
+
+  const prune = useMutation({
+    mutationFn: async () =>
+      (await apiClient.post<{ pruned: number; days: number }>("/admin/audit/prune", { days })).data,
+    onSuccess: (d) => message.success(`Pruned ${d.pruned} audit row(s) older than ${d.days} days`),
+    onError: (e: unknown) =>
+      message.error(e instanceof Error ? e.message : "prune failed"),
+  });
+
+  return (
+    <Card title="Integrity & retention" size="small" style={{ marginBottom: 16 }}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <div>
+          <Space wrap>
+            <Button loading={verify.isPending} onClick={() => verify.mutate()}>
+              Verify hash chain
+            </Button>
+            <Typography.Text type="secondary">
+              Recomputes the tamper-evidence chain over every audit row (read-only).
+            </Typography.Text>
+          </Space>
+          {verifyResult && (
+            <div style={{ marginTop: 8 }}>
+              {verifyResult.ok ? (
+                <Alert
+                  type="success"
+                  showIcon
+                  message={`Chain OK — ${verifyResult.checked} sealed row(s) verified (${verifyResult.total} total).`}
+                />
+              ) : (
+                <Alert
+                  type="error"
+                  showIcon
+                  message="Chain BROKEN — tamper detected"
+                  description={
+                    <span>
+                      First broken row after {verifyResult.checked} verified:{" "}
+                      <code>{verifyResult.broken_id}</code>
+                    </span>
+                  }
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <Space wrap align="center">
+            <Typography.Text>Delete audit rows older than</Typography.Text>
+            <InputNumber
+              min={1}
+              max={3650}
+              value={days}
+              onChange={(v) => setDays(typeof v === "number" ? v : 365)}
+            />
+            <Typography.Text>days</Typography.Text>
+            <Popconfirm
+              title={`Prune audit rows older than ${days} days?`}
+              description="This permanently deletes old audit records. The prune itself is recorded as an audit event (ADR-0106)."
+              okText="Prune"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => prune.mutate()}
+            >
+              <Button danger loading={prune.isPending}>
+                Prune
+              </Button>
+            </Popconfirm>
+          </Space>
+        </div>
+      </Space>
+    </Card>
+  );
+};
+
 export const AdminAuditList = () => {
   const tz = useServerTz();
   const query = useTableURL<AuditRow>({
@@ -32,6 +141,7 @@ export const AdminAuditList = () => {
 
   return (
     <div>
+      <AuditMaintenanceCard />
       <Card>
         <SearchableTableStringQ<AuditRow>
           rowKey="id"

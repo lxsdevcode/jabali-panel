@@ -2,12 +2,16 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/audit"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
 	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
@@ -56,7 +60,69 @@ func RegisterAuditRoutes(g *gin.RouterGroup, cfg AuditHandlerConfig) {
 	}
 	h := &auditHandler{cfg: cfg}
 	g.GET("/admin/audit", middleware.RequireAdmin(), h.adminList)
+	// GH #571 — hash-chain integrity verification + retention pruning,
+	// surfaced from the admin Audit Log. Same core as `jabali audit
+	// verify` / `jabali audit prune`; runs in-process (panel-api owns the
+	// audit DB — no agent hop).
+	g.POST("/admin/audit/verify", middleware.RequireAdmin(), h.verify)
+	g.POST("/admin/audit/prune", middleware.RequireAdmin(), h.prune)
 	g.GET("/me/activity", h.meActivity)
+}
+
+// verify recomputes the tamper-evidence hash chain over every audit row
+// (read-only) and reports the checked/total counts + the first broken row.
+func (h *auditHandler) verify(c *gin.Context) {
+	rows, err := h.cfg.Repo.AllForVerify(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	brokenID, checked, ok := audit.VerifyChain(rows)
+	c.JSON(http.StatusOK, gin.H{
+		"ok":        ok,
+		"checked":   checked,
+		"total":     len(rows),
+		"broken_id": brokenID,
+	})
+}
+
+// prune deletes audit rows older than the given retention window (days,
+// default 365) and — per ADR-0106 — records the prune itself as an audit
+// event so retention is never a silent selective delete.
+func (h *auditHandler) prune(c *gin.Context) {
+	var req struct {
+		Days int `json:"days"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	if req.Days < 1 {
+		req.Days = 365
+	}
+	ctx := c.Request.Context()
+	cutoff := time.Now().UTC().AddDate(0, 0, -req.Days)
+	n, err := h.cfg.Repo.PruneOlderThan(ctx, cutoff)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	var actorID *string
+	if claims := ginctx.Claims(c); claims != nil && claims.UserID != "" {
+		uid := claims.UserID
+		actorID = &uid
+	}
+	meta, _ := json.Marshal(map[string]any{
+		"cutoff": cutoff.Format(time.RFC3339), "pruned": n, "days": req.Days,
+	})
+	_ = h.cfg.Repo.Create(ctx, &models.AuditEvent{
+		ID:          ids.NewULID(),
+		TS:          time.Now().UTC(),
+		ActorKind:   models.AuditActorAdmin,
+		ActorUserID: actorID,
+		Action:      "audit.retention.prune",
+		TargetType:  "audit",
+		Result:      models.AuditResultOK,
+		Meta:        meta,
+	})
+	c.JSON(http.StatusOK, gin.H{"pruned": n, "cutoff": cutoff.Format(time.RFC3339), "days": req.Days})
 }
 
 // adminList — full forensics view (admin only).
