@@ -245,19 +245,28 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// Gitea #420: scope the page cache to this install's path, so enabling cache
 	// on a /blog WP install doesn't apply WP-tuned caching to unrelated content
 	// elsewhere on the domain. "/" = whole domain (root install).
+	pathChanged := false
 	if enabled {
-		if perr := h.cfg.Domains.UpdateCachePath(ctx, domain.ID, cachePathFromSubdir(install.Subdirectory)); perr != nil {
+		newPath := cachePathFromSubdir(install.Subdirectory)
+		pathChanged = newPath != domain.CachePath
+		if perr := h.cfg.Domains.UpdateCachePath(ctx, domain.ID, newPath); perr != nil {
 			slog.ErrorContext(ctx, "cache: domain cache_path", "err", perr, "domain_id", domain.ID)
 		}
 	}
-	if desiredDomainCache != domain.CacheEnabled {
+	flagChanged := desiredDomainCache != domain.CacheEnabled
+	if flagChanged {
 		if err := h.cfg.Domains.UpdateCacheEnabled(ctx, domain.ID, desiredDomainCache); err != nil {
 			slog.ErrorContext(ctx, "cache: domain flag", "err", err, "domain_id", domain.ID)
 			return fmt.Errorf("domain flag: %w", err)
 		}
-		if h.cfg.Reconciler != nil {
-			h.cfg.Reconciler.Schedule(domain.ID) // re-render vhost + nginx reload
-		}
+	}
+	// GH #600: re-render the vhost when the page-cache PATH changed too, not only
+	// when the enabled flag flipped. Enabling a second install (e.g. /blog) on a
+	// domain whose cache is already on updates domains.cache_path in the DB but
+	// left desiredDomainCache == domain.CacheEnabled, so no reconcile fired and
+	// nginx kept serving the old path gate until an unrelated reconcile.
+	if h.cfg.Reconciler != nil && (flagChanged || pathChanged) {
+		h.cfg.Reconciler.Schedule(domain.ID) // re-render vhost + nginx reload
 	}
 
 	// 4. Persist the install-level switch state.
