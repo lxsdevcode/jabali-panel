@@ -142,11 +142,17 @@ func (h *domainCacheHandler) purge(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
 		return
 	}
+	// GH #619: optional targeted purge. Body {"paths":["/blog","/x"]} purges
+	// only those URLs/prefixes; absent/empty body = whole-domain purge (v1).
+	var req struct {
+		Paths []string `json:"paths"`
+	}
+	_ = c.ShouldBindJSON(&req)
 	agentCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if _, err := h.cfg.Agent.Call(agentCtx, "nginx.cache.purge", map[string]any{"domain": dom.Name}); err != nil {
+	if _, err := h.cfg.Agent.Call(agentCtx, "nginx.cache.purge", map[string]any{"domain": dom.Name, "paths": req.Paths}); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "details": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "domain": dom.Name})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "domain": dom.Name, "paths": req.Paths})
 }

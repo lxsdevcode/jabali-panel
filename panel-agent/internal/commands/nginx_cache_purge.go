@@ -19,6 +19,11 @@ const fastcgiCacheRoot = "/var/cache/nginx/jabali"
 
 type nginxCachePurgeParams struct {
 	Domain string `json:"domain"`
+	// Paths (GH #619): optional targeted purge. When empty, the whole domain
+	// is purged (v1 behaviour). When set, only cached entries whose request_uri
+	// equals a path or begins with "<path>/" (prefix purge) are removed — so a
+	// small content change doesn't blow away the whole domain's hot cache.
+	Paths []string `json:"paths,omitempty"`
 }
 
 // nginxCachePurgeHandler clears one domain's entries from the shared
@@ -40,6 +45,20 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 	// makes the byte match safe and rejects traversal/glob input.
 	if !domainRegex.MatchString(p.Domain) {
 		return nil, csInvalidArg(fmt.Sprintf("invalid domain %q", p.Domain))
+	}
+	// Validate/normalize targeted paths: must be absolute, no traversal. A bad
+	// path can't evict another host (host is matched exactly below), but reject
+	// junk early so a caller mistake is obvious.
+	var paths []string
+	for _, raw := range p.Paths {
+		pp := strings.TrimSpace(raw)
+		if pp == "" {
+			continue
+		}
+		if !strings.HasPrefix(pp, "/") || strings.Contains(pp, "..") {
+			return nil, csInvalidArg(fmt.Sprintf("invalid path %q (must be absolute, no ..)", raw))
+		}
+		paths = append(paths, pp)
 	}
 
 	root := fastcgiCacheRoot
@@ -82,7 +101,7 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 			if j := bytes.IndexByte(line, '\n'); j >= 0 {
 				line = line[:j]
 			}
-			if keyLineHost(line) == host {
+			if keyLineHost(line) == host && uriMatchesAny(keyLineURI(line), paths) {
 				if rmErr := os.Remove(path); rmErr == nil {
 					purged++
 				}
@@ -119,6 +138,50 @@ func keyLineHost(line []byte) string {
 		return v[:i]
 	}
 	return v
+}
+
+// keyLineURI extracts the request_uri (from the first "/" onward) from an nginx
+// cache KEY line "KEY: <scheme><method><host><uri>". Mirror of keyLineHost.
+func keyLineURI(line []byte) string {
+	v := strings.TrimSpace(strings.TrimPrefix(string(line), "KEY:"))
+	for _, sch := range []string{"https", "http"} {
+		if strings.HasPrefix(v, sch) {
+			v = v[len(sch):]
+			break
+		}
+	}
+	for _, m := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "PURGE", "TRACE", "CONNECT"} {
+		if strings.HasPrefix(v, m) {
+			v = v[len(m):]
+			break
+		}
+	}
+	if i := strings.IndexByte(v, '/'); i >= 0 {
+		return v[i:]
+	}
+	return "/"
+}
+
+// uriMatchesAny reports whether a cached entry's request_uri should be purged
+// for the given targeted paths (GH #619). Empty paths = whole-domain purge.
+// A path matches its exact URL, or as a prefix ("/blog" purges "/blog/x"),
+// and "/" matches everything.
+func uriMatchesAny(uri string, paths []string) bool {
+	if len(paths) == 0 {
+		return true
+	}
+	if i := strings.IndexByte(uri, '?'); i >= 0 {
+		uri = uri[:i]
+	}
+	for _, p := range paths {
+		if p == "/" || uri == p {
+			return true
+		}
+		if strings.HasPrefix(uri, strings.TrimRight(p, "/")+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {
