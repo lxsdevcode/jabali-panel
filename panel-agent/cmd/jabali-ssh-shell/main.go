@@ -210,6 +210,13 @@ func buildBwrapArgv(name, home string, passwdFD, groupFD uintptr, shell string, 
 		"--tmpfs", "/tmp",
 		"--tmpfs", "/run",
 		"--tmpfs", "/var",
+		// Mirror the host's /var/run -> /run symlink (GH #333). PHP's
+		// mysqli/pdo_mysql default_socket is /var/run/mysqld/mysqld.sock on
+		// Debian; without this symlink the bound /run/mysqld/mysqld.sock is
+		// unreachable via that path inside the fresh /var tmpfs, so CLI PHP
+		// (cron scripts, `php app.php`) fails mysqli_connect with "No such file
+		// or directory" even though the same app works under FPM on the web.
+		"--symlink", "/run", "/var/run",
 		// Expose ONLY the MariaDB socket on the fresh /run tmpfs so a tenant can
 		// run `mysql -u <dbuser> -p <db>` / import a .sql from the shell (GH #285).
 		// The socket is world-connectable but MariaDB auth gates access, so a
