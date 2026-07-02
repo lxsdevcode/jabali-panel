@@ -42,6 +42,10 @@ type domainCreateParams struct {
 	// opt-in. false ⇒ vhost byte-identical to the pre-0108 shape.
 	CacheEnabled bool   `json:"cache_enabled"`
 	CachePath    string `json:"cache_path,omitempty"`
+	// CachePaths (GH #601): union of every cache-enabled install's path prefix
+	// on this domain. When set, drives a multi-path gate; empty falls back to
+	// the single CachePath so older callers stay byte-identical.
+	CachePaths []string `json:"cache_paths,omitempty"`
 	// CacheTTLSeconds (Gitea #596) — per-domain page-cache validity. 0 = use
 	// the default. Drives fastcgi_cache_valid; background_update keeps it fresh.
 	CacheTTLSeconds int    `json:"cache_ttl_seconds,omitempty"`
@@ -259,9 +263,10 @@ server {
         # tracking variants onto the clean-URL entry.
         if ($jabali_qs_kind = other) { set $jabali_skip 1; }
         if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
-{{ if and (ne .CachePath "/") (ne .CachePath "") }}        # Gitea #420: only cache within the WP install's path prefix; other
-        # (non-WP, differently-authed) apps on this domain are never cached.
-        if ($request_uri !~ "^{{.CachePath}}(/|$)") { set $jabali_skip 1; }
+{{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
+        # this domain (union of every cached install's prefix); other (non-WP,
+        # differently-authed) apps on the same domain are never cached.
+        if ($request_uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
         # Gitea #610: path-only key (no query) so tracking-param variants
         # collapse onto one entry. Safe because only empty/tracking-only queries
@@ -313,9 +318,10 @@ server {
         # tracking variants onto the clean-URL entry.
         if ($jabali_qs_kind = other) { set $jabali_skip 1; }
         if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
-{{ if and (ne .CachePath "/") (ne .CachePath "") }}        # Gitea #420: only cache within the WP install's path prefix; other
-        # (non-WP, differently-authed) apps on this domain are never cached.
-        if ($request_uri !~ "^{{.CachePath}}(/|$)") { set $jabali_skip 1; }
+{{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
+        # this domain (union of every cached install's prefix); other (non-WP,
+        # differently-authed) apps on the same domain are never cached.
+        if ($request_uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
         # Gitea #610: path-only key (no query) so tracking-param variants
         # collapse onto one entry. Safe because only empty/tracking-only queries
@@ -417,6 +423,7 @@ type vhostData struct {
 	// none of the cache/static directives → byte-identical to pre-0108.
 	CacheEnabled      bool
 	CachePath         string // Gitea #420: page-cache path prefix ("/" = whole domain)
+	CacheGate         string // Gitea #601: regex body for the multi-path gate ("" = whole domain, no gate)
 	CacheKeyZone      string
 	CacheTTL          string
 	CacheTTLSeconds   int // numeric form of CacheTTL for Cache-Control max-age
@@ -536,7 +543,54 @@ func sanitizeCachePath(p string) string {
 	return p
 }
 
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cacheTTLSeconds int, fpmSocket string) (string, error) {
+// cachePathMultiSegRE bounds a page-cache path to one or more safe segments
+// (GH #601 allows nested installs like /shop/eu, which the single-segment
+// cachePathSegmentRE rejects). Same char class per segment.
+var cachePathMultiSegRE = regexp.MustCompile(`^/[a-z0-9][a-z0-9_-]{0,63}(?:/[a-z0-9][a-z0-9_-]{0,63})*$`)
+
+// buildCacheGate returns the regex BODY for the page-cache path gate
+// `^<body>(/|$)`, or "" meaning "no gate → cache the whole domain".
+//
+// GH #601: a domain can host several cache-enabled installs; paths is the union
+// of their path prefixes. Rules, in order:
+//   - any path is "/" (a root install) ⇒ whole domain cached ⇒ "" (no gate).
+//   - otherwise build an alternation of the VALID paths: each is sanitized
+//     INDIVIDUALLY (advisor); a path that doesn't match is SKIPPED (fail-safe
+//     under-cache), never collapsed to "/" (which would over-cache the domain).
+//   - if paths is empty or yields nothing usable, fall back to the single
+//     cache_path's legacy behaviour so callers stay byte-identical.
+func buildCacheGate(paths []string, fallback string) string {
+	singleGate := func() string {
+		fb := sanitizeCachePath(fallback)
+		if fb == "/" || fb == "" {
+			return ""
+		}
+		return "(" + regexp.QuoteMeta(fb) + ")"
+	}
+	if len(paths) == 0 {
+		return singleGate()
+	}
+	seen := map[string]bool{}
+	valid := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "/" {
+			return "" // a root install caches everything
+		}
+		if !cachePathMultiSegRE.MatchString(p) || seen[p] {
+			continue // skip invalid/dupe — fail safe (under-cache), never "/"
+		}
+		seen[p] = true
+		valid = append(valid, regexp.QuoteMeta(p))
+	}
+	if len(valid) == 0 {
+		return singleGate()
+	}
+	return "(" + strings.Join(valid, "|") + ")"
+}
+
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cachePaths []string, cacheTTLSeconds int, fpmSocket string) (string, error) {
+	cacheGate := buildCacheGate(cachePaths, cachePath) // GH #601: multi-path gate body ("" = whole domain)
 	cachePath = sanitizeCachePath(cachePath)
 	cacheTTLSeconds = clampCacheTTL(cacheTTLSeconds)
 	// GH #329: default to the legacy per-user socket when the caller didn't
@@ -598,6 +652,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		ListenIPv6:                 listenIPv6,
 		CacheEnabled:               cacheEnabled,
 		CachePath:                  cachePath,
+		CacheGate:                  cacheGate,
 		CacheKeyZone:               "jabali_fcgi",
 		CacheTTL:                   fmt.Sprintf("%ds", cacheTTLSeconds),
 		CacheTTLSeconds:            cacheTTLSeconds,
@@ -804,7 +859,7 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 	dirPrivacyDirectives := buildDirectoryPrivacyDirectives(p.DirectoryPrivacyRules)
-	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CacheTTLSeconds, p.FPMSocket)
+	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CachePaths, p.CacheTTLSeconds, p.FPMSocket)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,

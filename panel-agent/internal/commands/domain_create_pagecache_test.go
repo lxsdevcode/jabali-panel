@@ -45,25 +45,34 @@ func TestVhostTemplate_PageCacheIsFailClosed(t *testing.T) {
 func TestVhostTemplate_PathScopedCache(t *testing.T) {
 	t.Parallel()
 	tmpl := template.Must(template.New("v").Parse(vhostTemplate))
-	render := func(cachePath string) string {
+	// The gate is now driven by CacheGate (buildCacheGate output), computed in
+	// writeVhost from cache_path/cache_paths. Render with the same computation.
+	render := func(paths []string, cachePath string) string {
 		var b bytes.Buffer
 		_ = tmpl.Execute(&b, vhostData{
 			Domain: "ex.com", DocRoot: "/home/u/public_html/ex.com", HasPHP: true,
 			PHPVersion: "8.3", Username: "u", IsEnabled: true,
-			CacheEnabled: true, CacheKeyZone: "jabali", CacheTTL: "60s", CachePath: cachePath,
+			CacheEnabled: true, CacheKeyZone: "jabali", CacheTTL: "60s",
+			CachePath: cachePath, CacheGate: buildCacheGate(paths, cachePath),
 		})
 		return b.String()
 	}
-	// whole-domain ("/" or empty): no path gate.
+	// whole-domain ("/" or empty, or any union containing a root install): no gate.
 	for _, root := range []string{"/", ""} {
-		if strings.Contains(render(root), `!~ "^`) {
+		if strings.Contains(render(nil, root), `!~ "^`) {
 			t.Errorf("CachePath=%q must not emit a path gate", root)
 		}
 	}
-	// subdir: gate scopes to that prefix.
-	out := render("/blog")
-	if !strings.Contains(out, `if ($request_uri !~ "^/blog(/|$)") { set $jabali_skip 1; }`) {
-		t.Errorf("CachePath=/blog must scope cache to ^/blog\n%s", out)
+	if strings.Contains(render([]string{"/blog", "/"}, "/"), `!~ "^`) {
+		t.Error("a root install in the union must drop the gate (whole domain)")
+	}
+	// single subdir: gate scopes to that prefix.
+	if !strings.Contains(render(nil, "/blog"), `if ($request_uri !~ "^(/blog)(/|$)") { set $jabali_skip 1; }`) {
+		t.Errorf("CachePath=/blog must scope cache to ^(/blog)\n%s", render(nil, "/blog"))
+	}
+	// GH #601 multi-path: union of two subdir installs → alternation gate.
+	if !strings.Contains(render([]string{"/blog", "/shop"}, "/"), `if ($request_uri !~ "^(/blog|/shop)(/|$)") { set $jabali_skip 1; }`) {
+		t.Errorf("cache_paths [/blog /shop] must gate ^(/blog|/shop)\n%s", render([]string{"/blog", "/shop"}, "/"))
 	}
 }
 
