@@ -161,7 +161,7 @@ func DiscoverWordPress(ctx context.Context, s *Session, hint string) (*WordPress
 	// the wp() helper returns "" on any error (never trusts garbage stdout).
 	if _, err := s.run(ctx, defaultCmdTimeout, "command -v wp >/dev/null 2>&1 && echo yes"); err == nil {
 		wpRun := func(args string) (string, error) {
-			out, err := s.run(ctx, defaultCmdTimeout, "wp --path="+shellQuote(root)+" --skip-plugins --skip-themes "+args+" 2>/dev/null")
+			out, err := s.run(ctx, defaultCmdTimeout, "wp --allow-root --path="+shellQuote(root)+" --skip-plugins --skip-themes "+args+" 2>/dev/null")
 			return strings.TrimSpace(string(out)), err
 		}
 		if _, err := wpRun("core is-installed"); err == nil {

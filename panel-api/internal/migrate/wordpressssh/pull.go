@@ -41,7 +41,7 @@ func (s *Session) ExportDatabase(ctx context.Context, root, jobID, dstSQL string
 		return fmt.Errorf("wordpressssh.ExportDatabase: WP-CLI not found on the source — the mysqldump fallback is not yet available; install wp-cli on the source or use a WP-CLI-capable host")
 	}
 	// wp reads creds from wp-config → no password on the command line.
-	dumpCmd := "wp --path=" + shellQuote(root) + " --skip-plugins --skip-themes db export " + shellQuote(remoteSQL) +
+	dumpCmd := "wp --allow-root --path=" + shellQuote(root) + " --skip-plugins --skip-themes db export " + shellQuote(remoteSQL) +
 		" --single-transaction --quick --skip-lock-tables 2>&1"
 	if out, err := s.run(ctx, 30*time.Minute, dumpCmd); err != nil {
 		return fmt.Errorf("wordpressssh.ExportDatabase: wp db export failed: %w (%s)", err, strings.TrimSpace(string(out)))
