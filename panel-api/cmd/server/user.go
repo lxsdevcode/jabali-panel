@@ -342,6 +342,17 @@ func newUserPasswordCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("bcrypt hash: %w", err)
 			}
+			// Heal M54-schema drift before setting the password. The v2 schema
+			// requires traits.username; Kratos re-validates the FULL identity on
+			// ANY update, so a password-only JSON-patch 400s ("missing username")
+			// on an identity whose username trait was never backfilled. Re-assert
+			// it first (idempotent `add`) so the identity is valid, then the
+			// password patch passes. Skips admins (no linux username).
+			if target.Username != nil && *target.Username != "" {
+				if err := kc.UpdateUsernameTrait(ctx, *target.KratosIdentityID, *target.Username); err != nil {
+					fmt.Fprintln(os.Stderr, "warning: could not assert Kratos username trait (password set may fail if the trait was missing):", err)
+				}
+			}
 			if err := kc.SetPassword(ctx, *target.KratosIdentityID, string(hash)); err != nil {
 				return fmt.Errorf("kratos set password: %w", err)
 			}
