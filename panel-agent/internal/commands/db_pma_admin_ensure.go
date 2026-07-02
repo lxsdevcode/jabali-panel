@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 const (

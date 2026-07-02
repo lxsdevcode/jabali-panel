@@ -15,13 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"log/slog"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/auth"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/config"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 // generateTestKeySSOPhpMyAdmin creates a random 32-byte AES-256 key for testing.

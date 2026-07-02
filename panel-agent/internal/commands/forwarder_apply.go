@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // forwarderApplyParams is the panel → agent request for forwarder.apply.

@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 )
 
 // requestIDHeader is the conventional header name. Also exposed on responses

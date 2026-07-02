@@ -9,8 +9,8 @@ import (
 	"os/user"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/cronvalidate"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/cronvalidate"
 )
 
 // cronRunNowParams is the input for cron.run_now command.

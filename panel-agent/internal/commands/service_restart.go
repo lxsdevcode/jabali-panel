@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // serviceRestartParams names the service to restart. `name` is the bare

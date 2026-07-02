@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // mail_admin_cred.go — GH #243 (ADR-0142). Reveal / rotate the Stalwart admin

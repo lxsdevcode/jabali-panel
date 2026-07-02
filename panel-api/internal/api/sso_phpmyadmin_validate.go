@@ -12,9 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssoadmin"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssoadmin"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 // SSOPhpMyAdminValidateHandlerConfig plugs the UDS validate handler into the router.

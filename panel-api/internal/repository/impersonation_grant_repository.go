@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // ImpersonationGrantRepository persists admin act-as grants (ADR-0128). A

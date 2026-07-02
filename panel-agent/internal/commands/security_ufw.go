@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // M26 Step 2 (ADR-0054). UFW rule + status surface for the admin

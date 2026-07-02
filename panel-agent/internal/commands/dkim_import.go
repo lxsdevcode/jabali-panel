@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 const dkimLegacyDir = "/etc/jabali-panel/dkim/legacy"

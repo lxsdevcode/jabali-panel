@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // nginx.tunables.apply — renders the server-wide nginx tunables managed by

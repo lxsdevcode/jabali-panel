@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dkim"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/dkim"
 )
 
 // domainEmailEnableParams is the request shape for domain.email_enable.

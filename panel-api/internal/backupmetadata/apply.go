@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"time"
 
-	internalbackup "git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	internalbackup "git.jabali-panel.com/shukivaknin/jabali2/internal/backup"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // ApplyResult counts what landed during a single Apply call.

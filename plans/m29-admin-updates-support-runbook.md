@@ -107,7 +107,7 @@ transit by their MTA → ours.
 
 **`Check for updates` (jabali) returns 502.** Agent can't reach origin.
 Check `journalctl -u jabali-agent` for `git fetch` errors. Often a
-firewall rule on the host blocks `git.linux-hosting.co.il`.
+firewall rule on the host blocks `git.jabali-panel.com`.
 
 **Apt check returns "package list" empty when `apt list --upgradable`
 shows entries.** Locale issue — agent should set `LC_ALL=C` for every

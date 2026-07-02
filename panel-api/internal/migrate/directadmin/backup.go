@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 )
 
 // BackupUserTimeout is the upper bound for the source-side backup

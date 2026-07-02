@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api"
 )
 
 func newSpeedtestRouter(isAdmin bool) *gin.Engine {

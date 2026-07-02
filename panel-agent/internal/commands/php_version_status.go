@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // SupportedPHPVersions is the list of PHP versions that can be managed.

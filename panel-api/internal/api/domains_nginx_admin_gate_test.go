@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/auth"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // Regression for the 2026-06-04 decision: nginx_custom_directives +

@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 )
 
 // M37 PostgreSQL parity event source (ADR-0091).

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // fakeUpdRunRepo is a minimal UpdateHistoryRepository for the run reconciler.

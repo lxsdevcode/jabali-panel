@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/appseccfg"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/appseccfg"
 )
 
 // ApplyAppSecBeforePlugin writes appseccfg.CRSPluginBefore() to its CRS data

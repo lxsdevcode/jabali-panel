@@ -14,10 +14,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 // StartSSOUDSListener starts a Unix domain socket HTTP server for phpMyAdmin

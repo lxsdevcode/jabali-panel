@@ -68,7 +68,7 @@ package commands
 import (
     "context"
     "encoding/json"
-    "git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+    "git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 type yourappInstallReq struct {

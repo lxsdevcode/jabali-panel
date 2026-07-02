@@ -16,8 +16,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // SSOAdminHandlerConfig holds the phpMyAdmin SSO token repo for the prune

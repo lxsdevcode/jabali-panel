@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // WithPythonApps wires the python-app repository into the reconciler (ADR-0131).

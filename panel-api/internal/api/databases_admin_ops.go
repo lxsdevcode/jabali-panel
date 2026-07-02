@@ -20,14 +20,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dbtuning"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/audit"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/dbtuning"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/audit"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // ssoAdminAllSentinel is stored as the token's DatabaseID for an

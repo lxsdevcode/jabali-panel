@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // systemNetworkParams toggles loopback inclusion for debug. Default is

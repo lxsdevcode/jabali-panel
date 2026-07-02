@@ -16,7 +16,7 @@
 //     recognized and SKIPPED with a note, not translated.
 package htaccess
 
-import "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+import "git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 
 // Warning records a line the converter could not represent as a typed rule.
 // Security-relevant gaps (an unconvertible deny/forbid/auth) set Security so

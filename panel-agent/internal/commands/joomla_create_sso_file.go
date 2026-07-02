@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 //go:embed sso_template_joomla.php

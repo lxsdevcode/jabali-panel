@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // BootstrapRecords returns the default records created on new-domain

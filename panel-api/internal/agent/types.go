@@ -9,7 +9,7 @@
 package agent
 
 import (
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // Request, Response, AgentError re-export the wire types.

@@ -10,12 +10,12 @@ import (
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/db"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/logger"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/config"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/db"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/logger"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 const defaultEnvFile = "/etc/jabali/panel.env"

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // phpVersionListResponse is the output shape for php.version.list.

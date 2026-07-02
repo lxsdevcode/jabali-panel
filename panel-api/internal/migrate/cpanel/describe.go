@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 )
 
 // uapiCmd renders a UAPI command line. When the connected principal

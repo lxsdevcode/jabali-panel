@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 )
 
 // M39 Step 7 — exec.audit.burst event source.

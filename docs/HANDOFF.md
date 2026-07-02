@@ -292,6 +292,6 @@ All on `main`, both remotes (Gitea `origin` + `github`):
   Docker. Panel `admin@jabali-panel.local`. Primary functional test box.
 - **mx / `ssh testserver`** — mx.jabali-panel.com (182.54.236.60),
   Docker host (29.x). Use for docker-app validation.
-- **Repo:** Gitea `git.linux-hosting.co.il/shukivaknin/jabali2` (origin)
+- **Repo:** Gitea `git.jabali-panel.com/shukivaknin/jabali2` (origin)
   + GitHub `shukiv/jabali-panel` (github). Both kept in sync. CI:
   `.gitea/workflows/ci.yml` (Go + vitest + E2E), act_runner host-mode.

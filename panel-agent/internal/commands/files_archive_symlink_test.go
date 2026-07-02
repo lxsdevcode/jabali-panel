@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // TestAddToTarSymlinkBodyNotLeaked covers the files.archive Lstat-to-open race

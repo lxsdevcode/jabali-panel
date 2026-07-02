@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // files.du — disk-usage view of one directory's immediate children, scoped to

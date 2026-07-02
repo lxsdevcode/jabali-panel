@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // ssh.user.join_sandbox_group / ssh.user.leave_sandbox_group — manage

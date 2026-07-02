@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/auth"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // GH #307: a non-admin owner may set a SAFE SUBSET of the nginx Rule Builder

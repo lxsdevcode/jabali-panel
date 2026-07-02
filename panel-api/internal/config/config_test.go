@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/config"
 )
 
 // withEnv sets the given env vars for the duration of a test and restores

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // Phase defines the reconciliation contract for an M6.5 email feature.

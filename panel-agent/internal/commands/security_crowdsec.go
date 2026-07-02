@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/appseccfg"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/appseccfg"
 )
 
 // M26 Step 2 (ADR-0053). CrowdSec LAPI surface for the admin Security

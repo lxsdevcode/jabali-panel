@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // sftpGroupName lives in ssh_user_join_sftp_group.go.

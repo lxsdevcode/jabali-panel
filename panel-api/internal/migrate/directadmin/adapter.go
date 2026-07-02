@@ -3,7 +3,7 @@ package directadmin
 import (
 	"path/filepath"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
 )
 
 // ToCpanelParsed produces a *cpanel.ParsedTarball view over a

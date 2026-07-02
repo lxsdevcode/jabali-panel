@@ -36,8 +36,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dkim"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/dkim"
 )
 
 type domainEmailDKIMRotateParams struct {

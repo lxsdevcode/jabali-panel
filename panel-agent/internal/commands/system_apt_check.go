@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // systemAptCheckResponse is the wire shape for system.apt_check.

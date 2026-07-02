@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // user.limits.report — reports the current resource usage and configured

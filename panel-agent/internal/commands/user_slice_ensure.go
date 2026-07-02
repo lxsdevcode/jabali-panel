@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // userSliceUsernameRegex validates the strict username format: ^[a-z][a-z0-9_-]{0,31}$

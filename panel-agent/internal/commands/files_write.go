@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"syscall"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // classifyFSWriteErr turns a low-level write/chown/rename error into an

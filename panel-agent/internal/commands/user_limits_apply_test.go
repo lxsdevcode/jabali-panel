@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/limits"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/limits"
 )
 
 // setupTempSystemdRoot isolates a test's writes to a tempdir so we never

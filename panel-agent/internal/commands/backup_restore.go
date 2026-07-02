@@ -23,8 +23,8 @@ import (
 	"syscall"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/fsperm"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/backup"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/fsperm"
 )
 
 const restoreLockPath = "/var/lib/jabali-backups/.restore.lock"

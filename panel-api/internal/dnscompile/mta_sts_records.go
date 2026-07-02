@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // MTAStsRecordsManagedBy is the marker stamped into dns_records.managed_by

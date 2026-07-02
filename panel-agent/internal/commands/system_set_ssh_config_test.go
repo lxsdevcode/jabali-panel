@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // setupSSHTestPaths points the agent at temp files for both drop-ins and

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // Validation paths only — the success path execs `mysql`/`psql` which

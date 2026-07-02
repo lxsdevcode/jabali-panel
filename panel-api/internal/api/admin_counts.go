@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 )
 
 // AdminCountsHandlerConfig holds the dependencies for the counts handler.

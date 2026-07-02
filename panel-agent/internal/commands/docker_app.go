@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // dockerAppDataRoot is the parent of every per-app data directory.

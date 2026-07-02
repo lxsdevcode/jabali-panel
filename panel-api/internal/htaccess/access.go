@@ -4,7 +4,7 @@ import (
 	"net"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // flushAccess resolves the buffered Apache access-control directives (Order /

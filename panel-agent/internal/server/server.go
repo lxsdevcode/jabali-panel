@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/commands"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/commands"
 )
 
 // Config is the tunable surface. Zero values are valid — SocketMode defaults

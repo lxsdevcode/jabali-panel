@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/backup"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
 )
 
 // jobSlot tracks the single-active-job-per-(kind, user, destination)

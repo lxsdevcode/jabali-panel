@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // files.ingest — take a file in the upload staging dir (written by panel-api

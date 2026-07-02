@@ -19,9 +19,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/middleware"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 // AutomationConfig wires read repos for the public automation API.

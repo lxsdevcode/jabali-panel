@@ -21,7 +21,7 @@ Without it, `make test-short` still runs (integration suites are skipped).
 ## First-time setup
 
 ```bash
-git clone https://git.linux-hosting.co.il/shukivaknin/jabali2
+git clone https://git.jabali-panel.com/shukivaknin/jabali2
 cd jabali2
 
 # Build both Go binaries to bin/

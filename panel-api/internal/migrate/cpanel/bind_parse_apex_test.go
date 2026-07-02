@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 )
 
 // okAgent is a no-op AgentInterface that accepts every dns.zone.upsert

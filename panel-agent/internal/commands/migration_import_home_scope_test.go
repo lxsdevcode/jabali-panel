@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // TestMigrationImportHomeContainment pins the src + dest binding contracts used

@@ -90,6 +90,6 @@ Nothing yet.
 - Multisite-aware namespacing.
 - Fail-safe: WordPress keeps running normally whenever Redis is unavailable.
 
-[Unreleased]: https://git.linux-hosting.co.il/shukivaknin/jabali2/src/branch/main/wp-plugins/jabali-cache
-[1.0.1]: https://git.linux-hosting.co.il/shukivaknin/jabali2/issues/609
-[1.0.0]: https://git.linux-hosting.co.il/shukivaknin/jabali2/src/branch/main/wp-plugins/jabali-cache
+[Unreleased]: https://git.jabali-panel.com/shukivaknin/jabali2/src/branch/main/wp-plugins/jabali-cache
+[1.0.1]: https://git.jabali-panel.com/shukivaknin/jabali2/issues/609
+[1.0.0]: https://git.jabali-panel.com/shukivaknin/jabali2/src/branch/main/wp-plugins/jabali-cache

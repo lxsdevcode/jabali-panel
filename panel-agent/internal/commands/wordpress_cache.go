@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 const bundledWPCachePluginDir = "/usr/local/share/jabali/wp-plugins/jabali-cache"

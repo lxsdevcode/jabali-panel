@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // jabali python-app — admin CLI for the Python Application Manager

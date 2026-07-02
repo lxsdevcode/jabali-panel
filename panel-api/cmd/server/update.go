@@ -1122,9 +1122,9 @@ test -x node_modules/.bin/tsc || {
 			fullSHA, _ := gitRevParseAsUser(repoDir, serviceUser, "HEAD")
 			buildTime := time.Now().UTC().Format(time.RFC3339)
 			ldflagsAPI := "-s -w" +
-				" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Version=" + shortSHA +
-				" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Commit=" + fullSHA +
-				" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.BuildTime=" + buildTime
+				" -X git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api.Version=" + shortSHA +
+				" -X git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api.Commit=" + fullSHA +
+				" -X git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api.BuildTime=" + buildTime
 			ldflagsAgent := "-s -w -X main.version=" + shortSHA
 
 			var wg sync.WaitGroup

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
 )
 
 // waitForKratosReady polls Kratos's /admin/health/ready endpoint until it

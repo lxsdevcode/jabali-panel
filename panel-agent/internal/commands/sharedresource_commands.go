@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // sharedresource_commands.go — M52 (ADR-0133). Provision / tear down the

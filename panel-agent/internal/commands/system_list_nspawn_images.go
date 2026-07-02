@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // system.list_nspawn_images — return the names of every immutable image

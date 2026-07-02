@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // docker_app.read_env returns the KEY=VALUE pairs from an install's on-disk

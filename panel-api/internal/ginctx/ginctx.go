@@ -9,7 +9,7 @@ package ginctx
 import (
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/auth"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/auth"
 )
 
 // Keys. Exported so middleware + handlers can share them.

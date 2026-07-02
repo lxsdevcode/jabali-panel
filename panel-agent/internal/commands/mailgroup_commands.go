@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // mailgroup_commands.go — M51 (issue #201, ADR-0132). Project a panel

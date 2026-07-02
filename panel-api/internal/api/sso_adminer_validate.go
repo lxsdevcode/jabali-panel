@@ -19,9 +19,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/sso"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssoadmin"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssoadmin"
 )
 
 // pgLoopbackHost is what the Adminer pgsql driver dials. We connect

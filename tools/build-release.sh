@@ -59,9 +59,9 @@ HEAP_MB=$(( TOTAL_MB * 75 / 100 ))
 #    only carries main.version today; the agent doesn't expose
 #    build-info over JMAP/HTTP yet.
 LDFLAGS_API="-s -w"
-LDFLAGS_API+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Version=${SHORT_SHA}"
-LDFLAGS_API+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.Commit=${FULL_SHA}"
-LDFLAGS_API+=" -X git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api.BuildTime=${BUILD_TIME}"
+LDFLAGS_API+=" -X git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api.Version=${SHORT_SHA}"
+LDFLAGS_API+=" -X git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api.Commit=${FULL_SHA}"
+LDFLAGS_API+=" -X git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api.BuildTime=${BUILD_TIME}"
 LDFLAGS_AGENT="-s -w -X main.version=${SHORT_SHA}"
 
 echo "==> go build jabali-panel"

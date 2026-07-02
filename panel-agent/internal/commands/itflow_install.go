@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // itflow_install.go — ITFlow (MSP ERP) one-click installer (GH #206).

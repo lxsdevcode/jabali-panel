@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // dbMysqladminEnsureParams is the input shape for db.mysqladmin.ensure.

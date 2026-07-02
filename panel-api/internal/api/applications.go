@@ -15,11 +15,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/cronops"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/apps"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/cronops"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // adminUsernameAlphabet is the lowercase Latin alphabet — same set

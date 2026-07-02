@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
 )
 
 // resetPassword handles POST /admin/users/:id/password/reset (M54).

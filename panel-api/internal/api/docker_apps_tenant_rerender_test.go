@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // TestTenantValidateParams covers GH #480: a re-render of a tenant-owned app

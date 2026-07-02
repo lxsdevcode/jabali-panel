@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 type dockerAppLogsParams struct {

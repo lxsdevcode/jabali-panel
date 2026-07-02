@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // app.python.control — start | stop | restart | status a Python app unit.

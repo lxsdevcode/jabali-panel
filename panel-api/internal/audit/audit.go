@@ -25,7 +25,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // Stream + consumer-group names. Public so tests + the producer path

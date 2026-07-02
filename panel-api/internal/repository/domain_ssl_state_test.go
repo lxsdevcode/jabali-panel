@@ -3,7 +3,7 @@ package repository
 import (
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // computeSSLState is pure (no r.db) — GH #246 regression: a Self-mode

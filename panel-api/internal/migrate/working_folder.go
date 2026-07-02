@@ -14,7 +14,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // DefaultWorkingFolder mirrors the SQL DEFAULT on server_settings

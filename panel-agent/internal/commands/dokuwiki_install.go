@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // dokuwiki_install.go — installs DokuWiki, a flat-file wiki (no database,

@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/kratosclient"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
 )
 
 // RegisterKratosProxy wires a same-origin reverse proxy at /.ory/* that

@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/certbot"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/certbot"
 )
 
 // sslIssueParams is the input shape for ssl.issue.

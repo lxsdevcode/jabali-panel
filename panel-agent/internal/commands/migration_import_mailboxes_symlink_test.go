@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // TestMaildirOpenRefusesSymlinkEscape covers the contract openMaildirFileInStaging

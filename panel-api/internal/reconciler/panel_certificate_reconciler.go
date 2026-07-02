@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/services"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/services"
 )
 
 // reconcilePanelCertificate is M32's reconciler hook. Post ADR-0105 it

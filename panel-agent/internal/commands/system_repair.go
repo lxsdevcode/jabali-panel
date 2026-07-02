@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // system_repair.go — agent side of the GUI Repair Center (Updates page).

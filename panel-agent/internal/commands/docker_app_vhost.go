@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"text/template"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // docker_app_vhost.go renders the standalone nginx vhost for a docker

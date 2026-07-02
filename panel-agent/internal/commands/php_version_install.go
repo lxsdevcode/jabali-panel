@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // phpVersionInstallParams is the input shape for php.version.install.

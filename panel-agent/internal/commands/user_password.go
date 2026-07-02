@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // userPasswordParams is the input shape for user.password. Pass

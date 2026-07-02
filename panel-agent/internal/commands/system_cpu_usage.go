@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // SystemCPUUsageResponse holds aggregate + per-core busy% over the

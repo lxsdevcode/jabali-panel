@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // webmail_vhost.go provides the two agent commands the reconciler uses

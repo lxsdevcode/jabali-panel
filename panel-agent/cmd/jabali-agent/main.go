@@ -23,9 +23,9 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/commands"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/pdns"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/server"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/commands"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/pdns"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/server"
 )
 
 // Build-time metadata. Production builds pass:

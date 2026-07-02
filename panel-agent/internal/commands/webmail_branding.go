@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // webmail_branding.go — apply server-wide branding to Bulwark webmail

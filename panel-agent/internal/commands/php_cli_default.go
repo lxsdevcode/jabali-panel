@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // php.cli_default_set — set or clear a user's explicit CLI default PHP version

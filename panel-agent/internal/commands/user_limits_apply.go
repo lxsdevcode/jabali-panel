@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/limits"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/limits"
 )
 
 // killProcess wraps os.FindProcess + Signal so the limits handlers

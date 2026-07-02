@@ -48,7 +48,7 @@ local). Destination: a clean Debian 13 / Ubuntu 24.04 VPS.
 
 ```bash
 # On the recovery host (root shell)
-bash <(curl -fsSL https://git.linux-hosting.co.il/shukivaknin/jabali2/raw/branch/main/install.sh) \
+bash <(curl -fsSL https://git.jabali-panel.com/shukivaknin/jabali2/raw/branch/main/install.sh) \
     --restore-from=sftp:user@backup-host:/path/to/repo \
     --restore-credentials=/root/dest.env \
     --restore-password=/root/restic-repo.password \

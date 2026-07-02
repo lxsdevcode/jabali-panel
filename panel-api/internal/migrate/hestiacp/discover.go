@@ -29,8 +29,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // Discoverer is the Hestia-side implementation of migrate.Discoverer.

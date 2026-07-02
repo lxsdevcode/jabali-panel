@@ -23,7 +23,7 @@ integration via Jabali's panel API. It follows step 6 of the phpMyAdmin SSO plan
 ### Step 1: Run install.sh with phpMyAdmin Support
 
 ```bash
-curl -fsSL https://git.linux-hosting.co.il/shukivaknin/jabali2/raw/branch/main/install.sh \
+curl -fsSL https://git.jabali-panel.com/shukivaknin/jabali2/raw/branch/main/install.sh \
   | bash -s -- --hostname=panel.example.com
 ```
 

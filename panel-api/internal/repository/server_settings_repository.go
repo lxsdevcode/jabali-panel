@@ -9,7 +9,7 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"gorm.io/gorm"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // ServerSettingsRepository is the interface for accessing the single-row

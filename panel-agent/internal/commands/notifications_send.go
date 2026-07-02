@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // PanelAPISocketPath is the unix socket agent posts notifications.send

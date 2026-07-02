@@ -3,7 +3,7 @@ package reconciler
 import (
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // TestMtaStsMXForDomain pins the policy mx: host to the domain's real MX

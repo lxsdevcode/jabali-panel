@@ -9,10 +9,10 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/apps"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // buildAppDeps assembles ApplicationHandlerConfig for the CLI. The

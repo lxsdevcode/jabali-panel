@@ -3,7 +3,7 @@ package migrate
 import (
 	"errors"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // Stage names recorded in migration_stages.stage_name. Lower-case

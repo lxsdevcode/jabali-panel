@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/pdnsrecursor"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/pdnsrecursor"
 )
 
 // --- fakes reused across handler tests ---

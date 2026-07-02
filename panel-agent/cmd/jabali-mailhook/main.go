@@ -23,7 +23,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/mailhook"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/mailhook"
 )
 
 func main() {

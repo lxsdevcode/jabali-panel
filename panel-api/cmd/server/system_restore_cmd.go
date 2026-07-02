@@ -29,8 +29,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 )
 
 func newSystemRestoreCmd() *cobra.Command {

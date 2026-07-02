@@ -12,7 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 )
 
 func newTestRouter(t *testing.T, queue *notifications.Queue) *gin.Engine {

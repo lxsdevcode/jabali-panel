@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 func newReconcilerForApexTest(zone *models.DNSZone, ips *fakeManagedIPs) (*Reconciler, *fakeDNSRecordRepo) {

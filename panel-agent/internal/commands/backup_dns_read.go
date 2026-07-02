@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/backup"
 )
 
 type backupDNSReadParams struct {

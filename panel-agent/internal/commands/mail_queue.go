@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // M47 Wave 1 (ADR-0103). Stalwart 0.16's queue is the `QueuedMessage`

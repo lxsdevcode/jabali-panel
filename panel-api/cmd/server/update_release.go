@@ -48,7 +48,7 @@ const (
 	// hosted on. Override via JABALI_RELEASE_API_BASE for staging
 	// mirrors, internal forks, or air-gapped operators who run their
 	// own Gitea.
-	defaultReleaseAPIBase = "https://git.linux-hosting.co.il/api/v1/repos/shukivaknin/jabali2"
+	defaultReleaseAPIBase = "https://git.jabali-panel.com/api/v1/repos/shukivaknin/jabali2"
 
 	// releaseShortSHALen matches the build-release.sh convention.
 	// Gitea API returns full SHAs; we truncate to derive the tag name

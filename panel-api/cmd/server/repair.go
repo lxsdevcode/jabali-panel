@@ -16,7 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/fsperm"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/fsperm"
 )
 
 // jabali repair — self-heal subcommand for known recurring scars on a

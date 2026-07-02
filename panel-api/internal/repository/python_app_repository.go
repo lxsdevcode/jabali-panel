@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // PythonAppRepository is the data-access surface for python_apps +

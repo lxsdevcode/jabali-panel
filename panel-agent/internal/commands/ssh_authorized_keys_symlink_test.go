@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // TestSSHAuthorizedKeysSymlinkSafe covers the .ssh symlink-escape hardening

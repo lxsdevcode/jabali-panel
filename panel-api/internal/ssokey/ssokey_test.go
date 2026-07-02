@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 // TestSeal_RoundTrip verifies that plaintext encrypted and then decrypted

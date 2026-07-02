@@ -12,7 +12,7 @@ import (
 	"os/user"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // createSSOFileResp is the wire response shape every per-CMS handler

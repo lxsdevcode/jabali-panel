@@ -13,7 +13,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/config"
 )
 
 // New returns a *slog.Logger configured per cfg, writing to w. Unknown formats

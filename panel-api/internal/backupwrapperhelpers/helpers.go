@@ -5,8 +5,8 @@
 package backupwrapperhelpers
 
 import (
-	internalbackup "git.linux-hosting.co.il/shukivaknin/jabali2/internal/backup"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	internalbackup "git.jabali-panel.com/shukivaknin/jabali2/internal/backup"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // ResticOptionsFor returns the `-o key=value` flag bodies (without the

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/appseccfg"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/appseccfg"
 )
 
 // newAppSecCmd is the operator-facing parent for AppSec config ops

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/cronvalidate"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/cronvalidate"
 )
 
 // libexecRefRe finds every /usr/local/libexec/jabali/<name> path a

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // system.set_ssh_sandbox_mode — atomically write the sandbox mode +

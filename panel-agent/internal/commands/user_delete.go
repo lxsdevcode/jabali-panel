@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // userDeleteParams is the input shape for user.delete.

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // currentUIDGID returns the invoking process's uid:gid as a string

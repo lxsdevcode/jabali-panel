@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // app.python.install_runtime — installs the Python app runtime prerequisites

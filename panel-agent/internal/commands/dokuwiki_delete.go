@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // dokuwiki_delete.go — removes a DokuWiki install (GH #227: delete failed

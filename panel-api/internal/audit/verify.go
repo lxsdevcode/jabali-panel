@@ -1,6 +1,6 @@
 package audit
 
-import "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+import "git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 
 // VerifyChain recomputes the hash chain to detect tampering (ADR-0106;
 // powers `jabali audit verify`).

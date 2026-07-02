@@ -17,9 +17,9 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/dockerapp"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/dockerapp"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // cliTenantInstallable mirrors api.tenantInstallable: flag set AND no

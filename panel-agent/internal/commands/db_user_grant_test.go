@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 func TestDBUserGrantHandler(t *testing.T) {

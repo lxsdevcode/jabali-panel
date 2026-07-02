@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // ssh.user.leave_sftp_group — opposite of ssh.user.join_sftp_group.

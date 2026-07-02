@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 )
 
 // DefaultSocketPath is where install.sh places the socket. Callers override

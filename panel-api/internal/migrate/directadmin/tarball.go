@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
 	"os"
 	"path/filepath"
 	"strings"

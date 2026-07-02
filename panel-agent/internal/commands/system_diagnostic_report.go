@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/diagnostic"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/enclosed"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/diagnostic"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/enclosed"
 )
 
 // defaultEnclosedBaseURL points at the operator-controlled enclosed.cc-

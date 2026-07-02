@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/commands"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/server"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/commands"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/server"
 )
 
 // startServer spins up a server on a temp socket with a private registry so

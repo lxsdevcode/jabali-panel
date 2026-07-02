@@ -13,7 +13,7 @@ import pkg from "../../package.json";
 
 // Canonical source-code URL. Pointing at the Gitea mirror for now; swap
 // to a GitHub URL here if the project gets mirrored publicly.
-const SOURCE_URL = "https://git.linux-hosting.co.il/shukivaknin/jabali2";
+const SOURCE_URL = "https://git.jabali-panel.com/shukivaknin/jabali2";
 const WEBSITE_URL = "https://jabali-panel.com/";
 
 export function JabaliFooter() {

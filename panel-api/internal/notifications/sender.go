@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // ChannelSender is the plug-point every concrete delivery transport

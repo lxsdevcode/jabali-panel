@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/filesafe"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
 )
 
 // sensitiveBasenames hold tenant secrets (DB credentials, app keys, cache

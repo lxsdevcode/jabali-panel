@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	ginctx "git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/ginctx"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/repository"
+	ginctx "git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // DomainPHPSettingsHandlerConfig wires the domain PHP settings routes.

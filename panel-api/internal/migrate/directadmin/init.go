@@ -1,8 +1,8 @@
 package directadmin
 
 import (
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/migrate"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 func init() {

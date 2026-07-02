@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // ssh.user.home_chown — flip ownership/mode of /home/<user> based on the

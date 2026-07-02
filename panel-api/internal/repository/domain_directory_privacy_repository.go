@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // DomainDirectoryPrivacyRepository persists per-domain HTTP Basic Auth

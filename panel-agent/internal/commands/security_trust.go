@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // security.trust.test — agent-side IP test bench (M43 / ADR-0089).

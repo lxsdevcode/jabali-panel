@@ -1,4 +1,4 @@
-module git.linux-hosting.co.il/shukivaknin/jabali2
+module git.jabali-panel.com/shukivaknin/jabali2
 
 go 1.25.0
 

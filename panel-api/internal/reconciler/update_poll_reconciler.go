@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/notifications"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 )
 
 // M53.1 Updates Center — periodic background check (ADR-0118).

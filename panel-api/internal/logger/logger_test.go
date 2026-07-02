@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/config"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/logger"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/config"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/logger"
 )
 
 func TestNew_JSONFormatEmitsParseableJSON(t *testing.T) {

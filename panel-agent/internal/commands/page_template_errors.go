@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // errorPagesDir is the shared docroot the per-domain vhosts point their

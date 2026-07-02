@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // mail_webadmin.go — GH #243 (ADR-0142). Opt-in nginx reverse-proxy exposing

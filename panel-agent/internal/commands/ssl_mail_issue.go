@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/internal/dnsverify"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-agent/internal/certbot"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/dnsverify"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-agent/internal/certbot"
 )
 
 // M6.6 ssl.mail.issue — per-domain mail TLS.

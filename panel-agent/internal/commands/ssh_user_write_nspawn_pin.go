@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // ssh.user.write_nspawn_pin — materialize the per-user nspawn image pin

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // fastcgiCacheRoot is the shared keyzone storage written by

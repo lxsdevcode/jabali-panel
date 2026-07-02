@@ -24,7 +24,7 @@ import (
 	"context"
 	"time"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
 // mtaStsCallTimeout caps the per-attempt agent call. The agent's

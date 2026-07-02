@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // db.postgres.shadowadmin.ensure — M37 Phase 4 Adminer SSO bridge.

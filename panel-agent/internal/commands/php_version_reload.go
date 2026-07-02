@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // phpVersionReloadParams is the input shape for php.version.reload.

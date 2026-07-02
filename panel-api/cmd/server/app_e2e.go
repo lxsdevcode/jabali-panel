@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/api"
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/apps"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/api"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/apps"
 )
 
 // `jabali app e2e` — install every registered app on one domain as

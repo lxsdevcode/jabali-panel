@@ -68,7 +68,7 @@ this plan (step deliverables), ADRs 0041 + 0042 (amendment notes), ADR-0045 (new
 
 ### Conventions inherited from this repo
 
-- **Commit rhythm:** one commit per step. **Branch first, PR via Gitea** (primary remote is `origin` = Gitea at `git.linux-hosting.co.il`, not GitHub — `gh` is linked to the mirror only). Per `.claude/hooks/block-agent-commit-main.sh`, no direct commit to `main` from any agent. Dispatcher merges. Conventional commits (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`).
+- **Commit rhythm:** one commit per step. **Branch first, PR via Gitea** (primary remote is `origin` = Gitea at `git.jabali-panel.com`, not GitHub — `gh` is linked to the mirror only). Per `.claude/hooks/block-agent-commit-main.sh`, no direct commit to `main` from any agent. Dispatcher merges. Conventional commits (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`).
 - **CI:** Gitea Actions runs `.gitea/workflows/ci.yml` on every push + PR (3 parallel jobs: Go tests + vet, vitest, Playwright E2E). Do not push to a branch without ensuring the three checks go green before asking for review — `act_runner` is host-mode and sometimes restarts.
 - **Go style:** `gofmt` + `go vet`; table-driven tests; `go test -race -count=1 ./...` must stay green. Handlers follow the `api.*HandlerConfig` injection pattern (see `panel-api/internal/api/databases.go`).
 - **Migrations:** golang-migrate, both `.up.sql` and `.down.sql`. Schema defaults live in SQL, not Go. Down migration must not silently drop data; drop the new table only.

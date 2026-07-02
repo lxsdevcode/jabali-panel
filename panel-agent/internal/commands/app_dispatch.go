@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/agentwire"
+	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
 // app_dispatch.go provides the M19 generic agent commands —

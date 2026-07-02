@@ -36,7 +36,7 @@ import (
 	"sort"
 	"strings"
 
-	"git.linux-hosting.co.il/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 )
 
 // HomeSplitResult tallies the per-domain + the homedir-rest rsync

@@ -353,7 +353,7 @@ After Step 1, no caller in the apps framework references `hydraclient` or the `R
    - Delete the `if deps.HydraClient != nil { api.RegisterOAuth2FlowRoutes(...) }` registration block (the `OAuth2FlowHandlerConfig{...}` literal goes with it, including the `BrowserAuth: middleware.RequireKratosSessionOrRedirect(...)` field)
    - Delete `HydraClient *hydraclient.Client` from `app.Deps`
    - Delete the `panelBaseURLFromConfig` helper if it's only used by the construction block (grep confirms; if a non-OIDC caller exists, leave it)
-   - Drop the `git.linux-hosting.co.il/.../hydraclient` import line
+   - Drop the `git.jabali-panel.com/.../hydraclient` import line
    - **Do NOT touch** `RegisterHydraProxy`, `hydra_proxy.go`, `HydraConfig`, env vars — those are Step 5
    - Confirm via `cd panel-api && go build ./...` after the deletion — the compiler is the safety net for missed call sites
 
