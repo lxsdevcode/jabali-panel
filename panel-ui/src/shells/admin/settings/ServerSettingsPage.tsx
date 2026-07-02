@@ -65,6 +65,7 @@ import { StalwartWebadminCard } from "./StalwartWebadminCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
 import { PanelSSLCard } from "./PanelSSLCard";
 import { NspawnImagesCard } from "./NspawnImagesCard";
+import { SSOMaintenanceCard } from "./SSOMaintenanceCard";
 import { TenantDomainOptionsCard } from "./TenantDomainOptionsCard";
 import { NginxSettingsCard } from "./NginxSettingsCard";
 
@@ -425,6 +426,7 @@ const GeneralSettingsTab = () => {
       </Card>
 
       <NspawnImagesCard />
+      <SSOMaintenanceCard />
       <PanelSSLCard />
       <Card title="Root Terminal (M45)" style={{ marginBottom: 16 }}>
         <Row gutter={16}>

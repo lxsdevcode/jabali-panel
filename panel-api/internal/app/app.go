@@ -480,6 +480,10 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Users: deps.Users, // optional: resolves actor/subject IDs → name
 				Log:   deps.Log,
 			})
+			// GH #575 — admin SSO maintenance (prune expired tokens).
+			api.RegisterSSOAdminRoutes(v1, api.SSOAdminHandlerConfig{
+				Tokens: repository.NewPhpMyAdminSSOTokenRepository(deps.DB),
+			})
 		}
 
 		if deps.Users != nil {
