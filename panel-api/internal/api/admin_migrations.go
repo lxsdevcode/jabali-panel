@@ -74,6 +74,7 @@ func RegisterAdminMigrationRoutes(g *gin.RouterGroup, cfg AdminMigrationsHandler
 	rg.POST("/:id/secrets", h.uploadSecrets)
 	rg.POST("/:id/pull-source", h.runPullSource)
 	rg.POST("/:id/import", h.runImport)
+	rg.POST("/:id/import-wp", h.runImportWP) // GH #647 wordpress_ssh
 	// WHM pkgacct (offline) flow: operator uploads a pre-built tarball
 	// rather than pulling over SSH. Streams directly into the staging
 	// directory so multi-GB pkgacct dumps don't double-buffer through
@@ -170,6 +171,8 @@ type createMigrationRequest struct {
 	// ExpectedHostKey — optional SHA256 fingerprint of the source SSH host key
 	// (GH #461). When set, the connector verifies the host key against it.
 	ExpectedHostKey string `json:"expected_host_key,omitempty"`
+	// SourcePath (GH #647 wordpress_ssh) — the WP root on the source.
+	SourcePath string `json:"source_path,omitempty"`
 }
 
 // create inserts a fresh migration_jobs row with state='pending'.
@@ -233,6 +236,9 @@ func (h *adminMigrationsHandler) create(c *gin.Context) {
 		SourceUser: req.SourceUser,
 		State:      state,
 		ExpectedHostKey: strings.TrimSpace(req.ExpectedHostKey),
+	}
+	if sp := strings.TrimSpace(req.SourcePath); sp != "" { // GH #647 wordpress_ssh
+		row.SourcePath = &sp
 	}
 	if err := h.cfg.Jobs.Create(c.Request.Context(), row); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "detail": err.Error()})
@@ -474,6 +480,33 @@ func (h *adminMigrationsHandler) runPullSource(c *gin.Context) {
 	h.callAgent(c, "migration.pull_source_run", map[string]any{
 		"job_id":   id,
 		"ssh_user": req.SSHUser,
+	}, 10*time.Second)
+}
+
+// runImportWPRequest — GH #647. dest_user + dest_domain the site imports into.
+type runImportWPRequest struct {
+	DestUser   string `json:"dest_user" binding:"required"`
+	DestDomain string `json:"dest_domain" binding:"required"`
+}
+
+// runImportWP triggers `jabali migrate import-wp` under a transient unit for a
+// staged wordpress_ssh job (GH #647). Owner-scoping of the dest is enforced by
+// the create path; this only launches the already-bound job.
+func (h *adminMigrationsHandler) runImportWP(c *gin.Context) {
+	id := c.Param("id")
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unconfigured"})
+		return
+	}
+	var req runImportWPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dest_user and dest_domain are required"})
+		return
+	}
+	h.callAgent(c, "migration.import_wp_run", map[string]any{
+		"job_id":      id,
+		"dest_user":   req.DestUser,
+		"dest_domain": req.DestDomain,
 	}, 10*time.Second)
 }
 

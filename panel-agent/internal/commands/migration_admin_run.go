@@ -1,17 +1,17 @@
 // Agent commands for SPA-driven M35 migrations:
 //
-//   migration.secrets_write    — writes /etc/jabali-panel/migration-
-//                                secrets/<job-id>.env with given content
-//                                (root:jabali 0640 per ADR-0094 §
-//                                "tracked risks").
-//   migration.pull_source_run  — systemd-run-launches
-//                                'jabali migrate pull-source --job-id'
-//                                so the SSH pull + extract survive
-//                                a panel-api restart.
-//   migration.import_run       — systemd-run-launches
-//                                'jabali migrate import --job-id ...'
-//                                so the multi-stage restore likewise
-//                                survives.
+//	migration.secrets_write    — writes /etc/jabali-panel/migration-
+//	                             secrets/<job-id>.env with given content
+//	                             (root:jabali 0640 per ADR-0094 §
+//	                             "tracked risks").
+//	migration.pull_source_run  — systemd-run-launches
+//	                             'jabali migrate pull-source --job-id'
+//	                             so the SSH pull + extract survive
+//	                             a panel-api restart.
+//	migration.import_run       — systemd-run-launches
+//	                             'jabali migrate import --job-id ...'
+//	                             so the multi-stage restore likewise
+//	                             survives.
 //
 // All three run as root (agent runs as root). Validation:
 //   - job_id: ULID-shape (26 alphanumeric)
@@ -56,6 +56,7 @@ func init() {
 	Default.Register("migration.secrets_clone", migrationSecretsCloneHandler)
 	Default.Register("migration.pull_source_run", migrationPullSourceRunHandler)
 	Default.Register("migration.import_run", migrationImportRunHandler)
+	Default.Register("migration.import_wp_run", migrationImportWPRunHandler)
 }
 
 // migrationSecretsCloneParams duplicates the env-file from src_job_id
@@ -187,6 +188,48 @@ func migrationPullSourceRunHandler(ctx context.Context, raw json.RawMessage) (an
 		"/usr/local/bin/jabali", "migrate", "pull-source",
 		"--job-id="+p.JobID,
 		"--ssh-user="+sshUser,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("systemd-run: %v: %s", err, string(out))}
+	}
+	return migrationRunResponse{Unit: unit, StartedAt: startedAt.Format(time.RFC3339Nano)}, nil
+}
+
+// migrationImportWPRunParams / handler — GH #647. systemd-run-launches
+// `jabali migrate import-wp` for a staged wordpress_ssh job.
+type migrationImportWPRunParams struct {
+	JobID      string `json:"job_id"`
+	DestUser   string `json:"dest_user"`
+	DestDomain string `json:"dest_domain"`
+}
+
+// wpMigDestDomainRe bounds the dest domain so it can never inject a path
+// segment (it becomes /home/<user>/domains/<domain>/public_html).
+var wpMigDestDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
+
+func migrationImportWPRunHandler(ctx context.Context, raw json.RawMessage) (any, error) {
+	var p migrationImportWPRunParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "malformed JSON: " + err.Error()}
+	}
+	if !migrationJobIDRe.MatchString(p.JobID) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "job_id must be 26-char alnum (ULID)"}
+	}
+	if !looksLikeUnixUsername(p.DestUser) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "dest_user looks unsafe"}
+	}
+	if !wpMigDestDomainRe.MatchString(p.DestDomain) || strings.Contains(p.DestDomain, "..") {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "dest_domain invalid"}
+	}
+	unit := fmt.Sprintf("jabali-migrate-importwp-%s.service", p.JobID)
+	_ = exec.CommandContext(ctx, "systemctl", "stop", "--quiet", unit).Run()
+	_ = exec.CommandContext(ctx, "systemctl", "reset-failed", unit).Run()
+	startedAt := time.Now().UTC()
+	cmd := exec.CommandContext(ctx, "systemd-run",
+		"--unit="+unit, "--no-block", "--collect",
+		"/usr/local/bin/jabali", "migrate", "import-wp",
+		"--job-id="+p.JobID, "--dest-user="+p.DestUser, "--dest-domain="+p.DestDomain,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
