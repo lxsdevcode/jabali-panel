@@ -302,10 +302,17 @@ class Jabali_Cache_Client {
 		try {
 			$redis   = new \Redis();
 			$timeout = (float) $this->cfg['timeout'];
+			// GH #606: persistent connection — PHP-FPM keeps the Redis socket
+			// open across requests, so steady-state traffic skips the connect
+			// handshake. The persistent_id is keyed on the ACL user + DB so a
+			// pooled connection is never reused across tenants or logical DBs
+			// (jabali runs per-user FPM pools, so this is same-tenant already —
+			// the id is belt-and-braces).
+			$pid = 'jc:' . ( ! empty( $this->cfg['username'] ) ? $this->cfg['username'] : 'default' ) . ':' . (int) $this->cfg['database'];
 			if ( 'unix' === $this->cfg['scheme'] ) {
-				$ok = $redis->connect( $this->cfg['socket'], 0, $timeout );
+				$ok = $redis->pconnect( $this->cfg['socket'], 0, $timeout, $pid );
 			} else {
-				$ok = $redis->connect( $this->cfg['host'], (int) $this->cfg['port'], $timeout );
+				$ok = $redis->pconnect( $this->cfg['host'], (int) $this->cfg['port'], $timeout, $pid );
 			}
 			if ( ! $ok ) {
 				return false;

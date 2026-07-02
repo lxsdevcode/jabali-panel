@@ -11,6 +11,7 @@ Nothing yet.
 ## [1.0.4] — 2026-07-02
 
 ### Added
+- phpredis persistent connections (`pconnect`) with a per-(ACL-user, DB) `persistent_id`, so steady-state requests skip the connect handshake when the extension is present (GH #606).
 - Auto-purge the Jabali nginx FastCGI page cache on content changes (GH #611).
   Post edits do a **targeted** purge of the post's own URL + the home page
   (GH #619); site-wide changes (theme/options/comments) purge the whole domain.

@@ -129,6 +129,7 @@ Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress revert
 == Changelog ==
 
 = 1.0.4 =
+* Use a persistent Redis connection (pconnect) when the phpredis extension is present, so steady-state requests skip the connect handshake (GH #606).
 * Auto-purge the Jabali nginx page cache when content changes (GH #611): post edits purge that post's URL + the home page (targeted, GH #619); theme/option/comment changes purge the whole domain. On Jabali only; a no-op elsewhere.
 
 = 1.0.3 =
