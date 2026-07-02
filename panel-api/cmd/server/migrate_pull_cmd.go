@@ -23,12 +23,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -37,6 +39,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/directadmin"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/hestiacp"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/wordpressplugin"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/wordpressssh"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
@@ -135,6 +138,15 @@ live source SSH. Use scp directly for that kind.`,
 			// (operator-gated import, A3) — handle before the tarball switch.
 			if job.SourceKind == models.MigrationSourceWordPressSSH {
 				if err := pullWordPressSSH(ctx, sshUser, job, secret, localDir, allowPrivate, repo); err != nil {
+					return markPullFailed(err)
+				}
+				return nil
+			}
+
+			// GH #648 wordpress_plugin: PULL from the jabali-migrator plugin's REST
+			// API (no SSH). Stages dump.sql + files.tar.gz, then operator-gated.
+			if job.SourceKind == models.MigrationSourceWordPressPlugin {
+				if err := pullWordPressPlugin(ctx, job, secret, localDir, allowPrivate, repo); err != nil {
 					return markPullFailed(err)
 				}
 				return nil
@@ -284,6 +296,65 @@ func pullWordPressSSH(ctx context.Context, sshUser string, job *models.Migration
 	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
 	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s \u2014 awaiting import\n", localDir)
 	return nil
+}
+
+// pullWordPressPlugin (GH #648) pulls a WordPress site from the jabali-migrator
+// plugin's token-authed REST API over an SSRF/rebind-safe client, stages
+// dump.sql + files.tar.gz, and stops in validating state (operator-gated import
+// via migrate import-wp — the SHARED spine). No SSH, no public Jabali ingress.
+func pullWordPressPlugin(ctx context.Context, job *models.MigrationJob, secret migrate.SecretRef, localDir string, allowPrivate bool, repo repository.MigrationJobRepository) error {
+	token, err := readPluginToken(secret.Path)
+	if err != nil {
+		return fmt.Errorf("read plugin token: %w", err)
+	}
+	siteURL := job.SourceHost
+	if !strings.HasPrefix(siteURL, "http://") && !strings.HasPrefix(siteURL, "https://") {
+		siteURL = "https://" + siteURL
+	}
+	cli := wordpressplugin.New(siteURL, token, allowPrivate)
+	if err := cli.Ping(ctx); err != nil {
+		return fmt.Errorf("plugin ping (check URL + token): %w", err)
+	}
+	facts, err := cli.Manifest(ctx)
+	if err != nil {
+		return fmt.Errorf("manifest: %w", err)
+	}
+	if facts.WPRoot != "" {
+		_ = repo.UpdateSourcePath(ctx, job.ID, facts.WPRoot)
+	}
+	if mj, e := json.Marshal(facts); e == nil {
+		_ = repo.UpdateManifest(ctx, job.ID, string(mj))
+	}
+	fmt.Printf("  \u2192 exporting DB from %s ...\n", siteURL)
+	if err := cli.ExportDatabase(ctx, filepath.Join(localDir, "dump.sql")); err != nil {
+		return err
+	}
+	// Budget: 2x the manifest's file_bytes (loose headroom) as a runaway guard.
+	budget := facts.FileBytes * 2
+	fmt.Printf("  \u2192 fetching files from %s ...\n", siteURL)
+	if err := cli.PullFilesTarball(ctx, filepath.Join(localDir, "files.tar.gz"), budget); err != nil {
+		return err
+	}
+	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
+	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s \u2014 awaiting import\n", localDir)
+	return nil
+}
+
+// readPluginToken pulls PLUGIN_TOKEN=... from the per-job secret file.
+func readPluginToken(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "PLUGIN_TOKEN=") {
+			return strings.TrimPrefix(line, "PLUGIN_TOKEN="), nil
+		}
+	}
+	return "", fmt.Errorf("PLUGIN_TOKEN not found in secret file")
 }
 
 func pullDirectAdmin(ctx context.Context, sshUser string, job *models.MigrationJob, secret migrate.SecretRef, localDir string, allowPrivate bool) (string, error) {

@@ -15,6 +15,10 @@ const (
 	// (dispatched by source_kind) with a WP-specific arm: rsync files + wp db
 	// export, then the shared migration.import_wp step. No panel-account backup.
 	MigrationSourceWordPressSSH = "wordpress_ssh"
+	// MigrationSourceWordPressPlugin (GH #648) — PULL a WordPress site from the
+	// jabali-migrator plugin's token-authed REST API (no source SSH). Jabali
+	// fetches manifest+DB+files, stages, then runs the shared import-wp.
+	MigrationSourceWordPressPlugin = "wordpress_plugin"
 )
 
 // MigrationState is the per-job lifecycle. Stage transitions are

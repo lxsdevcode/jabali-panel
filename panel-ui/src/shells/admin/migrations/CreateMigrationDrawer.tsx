@@ -60,6 +60,7 @@ const SOURCE_OPTIONS = [
   { value: "directadmin", label: "DirectAdmin (live SSH source)" },
   { value: "hestiacp", label: "HestiaCP (live SSH source)" },
   { value: "wordpress_ssh", label: "WordPress site (SSH — Cloudways / VPS / generic)" },
+  { value: "wordpress_plugin", label: "WordPress site (jabali-migrator plugin — no SSH)" },
 ];
 
 // ─── sub-step components ───────────────────────────────────────────────────────
@@ -369,7 +370,7 @@ export const CreateMigrationDrawer = ({
 
   const isScaffoldOnly =
     created &&
-    ["directadmin", "hestiacp", "wordpress_ssh"].includes(created.source_kind);
+    ["directadmin", "hestiacp", "wordpress_ssh", "wordpress_plugin"].includes(created.source_kind);
 
   return (
     <Drawer
@@ -448,10 +449,18 @@ export const CreateMigrationDrawer = ({
             message={
               created.source_kind === "wordpress_ssh"
                 ? "WordPress SSH migration job created"
-                : "UI-driven import not yet available for this source type"
+                : created.source_kind === "wordpress_plugin"
+                  ? "WordPress plugin migration job created"
+                  : "UI-driven import not yet available for this source type"
             }
             description={
-              created.source_kind === "wordpress_ssh"
+              created.source_kind === "wordpress_plugin"
+                ? "The job is created. On the source site, install the jabali-migrator plugin and generate a token. Upload it to this job's secrets (PLUGIN_TOKEN), then run `jabali migrate pull-source --job-id " +
+                  created.id +
+                  "` (Jabali PULLS the DB + files over the plugin's token-authed REST API), then `jabali migrate import-wp --job-id " +
+                  created.id +
+                  " --dest-user <user> --dest-domain <domain>`."
+                : created.source_kind === "wordpress_ssh"
                 ? "The job is created. Complete it on the server: `jabali migrate pull-source --job-id " +
                   created.id +
                   "` (SSH-discovers the WordPress site, exports its DB, stages the files), then `jabali migrate import-wp --job-id " +
