@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -20,10 +21,10 @@ func newTestLogger(t *testing.T) *slog.Logger {
 type mockWordPressInstallRepo struct {
 	installs    []models.WordPressInstall
 	updateCalls []struct {
-		id       string
-		status   string
-		lastErr  *string
-		version  *string
+		id      string
+		status  string
+		lastErr *string
+		version *string
 	}
 }
 
@@ -73,7 +74,6 @@ func (m *mockWordPressInstallRepo) ListReadyByUpdatedAtAsc(_ context.Context, _ 
 	return nil, nil
 }
 
-
 func (m *mockWordPressInstallRepo) CountCacheEnabledByUserID(_ context.Context, _, _ string) (int64, error) {
 	return 0, nil
 }
@@ -84,6 +84,14 @@ func (m *mockWordPressInstallRepo) CountCacheEnabledByDomainID(_ context.Context
 
 func (m *mockWordPressInstallRepo) UpdateCacheEnabled(_ context.Context, _ string, _ bool) error {
 	return nil
+}
+
+func (m *mockWordPressInstallRepo) UpdateCacheSettings(_ context.Context, _ string, _ json.RawMessage) error {
+	return nil
+}
+
+func (m *mockWordPressInstallRepo) ListCacheEnabledByDomainID(_ context.Context, _ string) ([]models.ApplicationInstall, error) {
+	return nil, nil
 }
 
 func (m *mockWordPressInstallRepo) UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error {

@@ -41,6 +41,10 @@ type ApplicationInstallRepository interface {
 	// UpdateCacheSettings writes the per-install cache_settings JSON column
 	// (GH #612/#616/#618). A nil raw clears it back to defaults.
 	UpdateCacheSettings(ctx context.Context, id string, raw json.RawMessage) error
+	// ListCacheEnabledByDomainID returns all cache-enabled WordPress installs on
+	// a domain (GH #601) — a domain can host several (/, /blog), and the nginx
+	// page-cache gate must allow every one of their path prefixes.
+	ListCacheEnabledByDomainID(ctx context.Context, domainID string) ([]models.ApplicationInstall, error)
 	// CountCacheEnabledByUserID counts a user's WordPress installs with the
 	// object cache ON, excluding excludeID. The per-tenant Redis ACL user
 	// wp_<osuser> is shared across a tenant's installs, so it may only be
@@ -231,6 +235,14 @@ func (r *applicationInstallRepo) UpdateCacheSettings(ctx context.Context, id str
 	} // nil => SQL NULL (reset to defaults)
 	return r.db.WithContext(ctx).Model(&models.ApplicationInstall{}).
 		Where("id = ?", id).Update("cache_settings", val).Error
+}
+
+func (r *applicationInstallRepo) ListCacheEnabledByDomainID(ctx context.Context, domainID string) ([]models.ApplicationInstall, error) {
+	var out []models.ApplicationInstall
+	err := r.db.WithContext(ctx).
+		Where("domain_id = ? AND app_type = ? AND cache_enabled = ?", domainID, "wordpress", true).
+		Find(&out).Error
+	return out, err
 }
 
 func (r *applicationInstallRepo) CountCacheEnabledByUserID(ctx context.Context, userID, excludeID string) (int64, error) {

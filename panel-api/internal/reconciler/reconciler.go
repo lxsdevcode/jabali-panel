@@ -1391,6 +1391,32 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		"cache_ttl_seconds": domain.CacheTTLSeconds,
 	}
 
+	// GH #601: a domain can host several cache-enabled installs (e.g. / and
+	// /blog); the page-cache gate must allow EVERY one's path prefix, not just
+	// the single denormalized cache_path. Gather them and pass cache_paths;
+	// the agent builds a multi-path gate (or drops the gate if any is "/").
+	// Best-effort — on error / none, the agent falls back to cache_path.
+	if domain.CacheEnabled && r.wordPressInstalls != nil {
+		liCtx, liCancel := context.WithTimeout(ctx, 5*time.Second)
+		insts, iErr := r.wordPressInstalls.ListCacheEnabledByDomainID(liCtx, domain.ID)
+		liCancel()
+		if iErr == nil && len(insts) > 0 {
+			seen := map[string]bool{}
+			paths := make([]string, 0, len(insts))
+			for _, in := range insts {
+				p := "/"
+				if s := strings.Trim(in.Subdirectory, "/"); s != "" {
+					p = "/" + s
+				}
+				if !seen[p] {
+					seen[p] = true
+					paths = append(paths, p)
+				}
+			}
+			params["cache_paths"] = paths
+		}
+	}
+
 	// M36 per-domain IP ACLs. Fetch + thread to agent so nginx renders
 	// allow/deny directives inside the server block. Empty / unwired
 	// repo → no rules → agent renders no directives (zero overhead).
