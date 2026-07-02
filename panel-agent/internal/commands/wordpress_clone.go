@@ -281,6 +281,17 @@ func wordpressCloneHandler(ctx context.Context, params json.RawMessage) (any, er
 		}
 	}
 
+	// GH #621: strip the source's JABALI_CACHE_* block. It pins the SOURCE
+	// install's cache identity (prefix = <osuser>:<sourceInstallID>, ACL user,
+	// token), so a verbatim copy would make the clone's object-cache drop-in
+	// read/write the SOURCE's Redis namespace — cross-install cache bleed, and a
+	// flush on one clearing the other. Removing it leaves the clone with a cold,
+	// fresh cache (the drop-in re-derives a distinct prefix and, lacking the ACL
+	// creds, fails safe to no-persistent-cache) until the panel re-enables it,
+	// which re-stamps fresh constants + provisions the clone's own ACL scope.
+	// The clone's install row is created with cache_enabled=false to match.
+	configContent = stripWPCacheBlock(configContent)
+
 	// Replace or set DB_PASSWORD: look for define( 'DB_PASSWORD', ... );
 	// If not found, we add it. If found, we update it.
 	if strings.Contains(configContent, "define( 'DB_PASSWORD'") {
