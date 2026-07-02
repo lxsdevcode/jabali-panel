@@ -1,0 +1,17 @@
+[Unit]
+Description=Jabali WordPress cache health drift auto-repair (GH #605)
+Documentation=https://git.jabali-panel.com/shukivaknin/jabali2
+After=jabali-panel.service jabali-agent.service
+# No Requires= — same rationale as jabali-sso-reaper.service: this timer is
+# enabled before the panel/agent units are written on first install. After=
+# keeps boot ordering; a transient failure while they're down is tolerated.
+
+[Service]
+Type=oneshot
+# Sweeps every cache-enabled WordPress install, runs `wp jabali-cache verify`
+# via the agent, and re-provisions (re-stamps constants, re-provisions the ACL,
+# re-verifies) any that have drifted. Idempotent: a healthy site is a no-op.
+ExecStart=/usr/local/bin/jabali app cache-doctor --repair
+StandardOutput=journal
+StandardError=journal
+Restart=no

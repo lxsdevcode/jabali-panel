@@ -1,0 +1,17 @@
+[Unit]
+Description=Run jabali-cache-doctor.service hourly (GH #605 cache drift auto-repair)
+Documentation=https://git.jabali-panel.com/shukivaknin/jabali2
+
+[Timer]
+# Give the panel + agent a head start after boot before the first sweep.
+OnBootSec=15min
+# Cache drift is slow-moving (a deactivated plugin, a stripped drop-in) — an
+# hourly sweep converges without loading the box (verify is a quick per-site
+# wp-cli call, skipped for healthy sites).
+OnUnitActiveSec=1h
+# Catch missed runs after sleep/suspend.
+Persistent=true
+Unit=jabali-cache-doctor.service
+
+[Install]
+WantedBy=timers.target

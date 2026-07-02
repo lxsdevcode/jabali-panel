@@ -6589,6 +6589,32 @@ install_sso_key() {
   _ok "SSO key created at $sso_key_path"
 }
 
+install_cache_doctor_timer() {
+  # GH #605: hourly WordPress cache health-drift auto-repair. Sweeps
+  # cache-enabled installs, re-provisions any whose `wp jabali-cache verify`
+  # fails. Same install shape as install_sso_reaper_timer.
+  _log "installing cache-doctor systemd timer"
+  local svc_src="${REPO_DIR}/install/systemd/jabali-cache-doctor.service"
+  local timer_src="${REPO_DIR}/install/systemd/jabali-cache-doctor.timer"
+  local svc_dst="/etc/systemd/system/jabali-cache-doctor.service"
+  local timer_dst="/etc/systemd/system/jabali-cache-doctor.timer"
+
+  if [[ ! -f "$svc_src" || ! -f "$timer_src" ]]; then
+    _err "cache-doctor systemd units missing at $svc_src / $timer_src"
+    exit 1
+  fi
+
+  install -m 0644 -o root -g root "$svc_src" "$svc_dst"
+  install -m 0644 -o root -g root "$timer_src" "$timer_dst"
+
+  _log "cache-doctor: systemctl daemon-reload"
+  systemctl daemon-reload
+  _log "cache-doctor: enable --now jabali-cache-doctor.timer"
+  systemctl enable --now jabali-cache-doctor.timer
+
+  _ok "cache-doctor timer enabled (hourly)"
+}
+
 install_sso_reaper_timer() {
   # M22 rework (ADR-0040): the self-deleting sso-file design uses a
   # systemd timer to sweep stranded jabali-sso-<nonce>.php files older
@@ -12571,6 +12597,7 @@ main() {
   bootstrap_tenant_env
   install_sso_key
   install_sso_reaper_timer
+  install_cache_doctor_timer
   install_migration_secrets_reaper
   install_ssh_sandbox_prereqs
   install_backup_foundation
