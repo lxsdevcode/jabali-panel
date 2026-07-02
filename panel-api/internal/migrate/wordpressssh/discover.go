@@ -276,3 +276,43 @@ func zero(b []byte) {
 		b[i] = 0
 	}
 }
+
+// WordPressInstall is one WP install found by a source scan.
+type WordPressInstall struct {
+	Root    string `json:"root"`
+	SiteURL string `json:"siteurl,omitempty"`
+}
+
+// ScanWordPress finds WordPress installs on the source under the usual roots
+// (/var/www, /home — incl. Cloudways /home/master/applications) by locating
+// wp-config.php, then best-effort reads each site's URL. Bounded depth + count
+// so a huge filesystem can't stall the scan. GH #647.
+func ScanWordPress(ctx context.Context, s *Session) ([]WordPressInstall, error) {
+	// -not -path '*/wp-content/*' skips nested wp-config copies inside plugins.
+	out, err := s.run(ctx, 90*time.Second,
+		"find /var/www /home -maxdepth 7 -name wp-config.php -not -path '*/wp-content/*' 2>/dev/null | head -100")
+	if err != nil {
+		return nil, fmt.Errorf("scan find: %w", err)
+	}
+	var installs []WordPressInstall
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasSuffix(line, "/wp-config.php") {
+			continue
+		}
+		root := strings.TrimSuffix(line, "/wp-config.php")
+		if seen[root] {
+			continue
+		}
+		seen[root] = true
+		inst := WordPressInstall{Root: root}
+		// Best-effort siteurl (WP-CLI as root; short timeout each).
+		if out, err := s.run(ctx, 15*time.Second,
+			"wp --allow-root --path="+shellQuote(root)+" --skip-plugins --skip-themes option get siteurl 2>/dev/null"); err == nil {
+			inst.SiteURL = strings.TrimSpace(string(out))
+		}
+		installs = append(installs, inst)
+	}
+	return installs, nil
+}

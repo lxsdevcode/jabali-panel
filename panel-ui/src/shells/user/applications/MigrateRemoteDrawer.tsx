@@ -9,6 +9,7 @@ import {
   Select,
   Space,
   Steps,
+  Radio,
   Tabs,
   Typography,
   message,
@@ -103,6 +104,34 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
   // Step 3 — kick the migration; it runs server-side (pull + auto-import) as a
   // background job, so the user can close the drawer immediately.
   const [started, setStarted] = useState(false);
+  const [installs, setInstalls] = useState<{ root: string; siteurl?: string }[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const handleScan = async () => {
+    if (!jobId) return;
+    setScanning(true);
+    try {
+      const { data } = await apiClient.post<{ installs: { root: string; siteurl?: string }[] }>(
+        `/migrations/${jobId}/scan-wp`,
+        {},
+      );
+      setInstalls(data.installs ?? []);
+      if (!data.installs?.length) message.info("No WordPress installs found on the source.");
+    } catch (e) {
+      message.error(errText(e) ?? "Scan failed");
+    } finally {
+      setScanning(false);
+    }
+  };
+  const pickInstall = async (root: string) => {
+    if (!jobId) return;
+    try {
+      await apiClient.post(`/migrations/${jobId}/source-path`, { source_path: root });
+      message.success("Selected " + root);
+    } catch (e) {
+      message.error(errText(e) ?? "Could not select");
+    }
+  };
+
   const handleStart = async () => {
     if (!jobId) return;
     setBusy(true);
@@ -220,11 +249,15 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
           )}
           <Form.Item
             name="dest_domain"
-            label="Destination domain"
-            rules={[{ required: true, message: "Pick a domain you own" }]}
-            tooltip="The site imports into /home/<you>/domains/<domain>/public_html"
+            label="Destination domain (optional)"
+            tooltip="Leave blank to auto-detect the source site's own domain and create it here. Or pick one of your existing domains — the site imports into /home/<you>/domains/<domain>/public_html."
           >
-            <Select options={domains} showSearch placeholder="one of your domains" />
+            <Select
+              options={domains}
+              showSearch
+              allowClear
+              placeholder="auto-detect from the source (or pick your domain)"
+            />
           </Form.Item>
           <Space>
             <Button onClick={() => setStep(0)}>Back</Button>
@@ -287,6 +320,33 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
 
       {step === 3 && (
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          {!started && kind === "wordpress_ssh" && (
+            <Card size="small" title="Scan for WordPress installations (optional)">
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Typography.Text type="secondary">
+                  Search /var/www and /home on the source and pick which install to migrate.
+                </Typography.Text>
+                <Button loading={scanning} onClick={handleScan}>
+                  Scan the source
+                </Button>
+                {installs.length > 0 && (
+                  <Radio.Group
+                    style={{ width: "100%" }}
+                    onChange={(e) => void pickInstall(e.target.value)}
+                  >
+                    <Space direction="vertical" style={{ width: "100%" }}>
+                      {installs.map((i) => (
+                        <Radio key={i.root} value={i.root}>
+                          <Typography.Text code>{i.root}</Typography.Text>
+                          {i.siteurl ? <Typography.Text type="secondary"> — {i.siteurl}</Typography.Text> : null}
+                        </Radio>
+                      ))}
+                    </Space>
+                  </Radio.Group>
+                )}
+              </Space>
+            </Card>
+          )}
           {!started ? (
             <>
               <Alert

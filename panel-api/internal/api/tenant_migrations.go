@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/wordpressssh"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -21,10 +24,11 @@ import (
 // from the request), and only the WordPress source kinds are allowed (panel-
 // account migrations stay admin-only).
 type TenantMigrationsConfig struct {
-	Jobs    repository.MigrationJobRepository
-	Domains repository.DomainRepository
-	Users   repository.UserRepository
-	Agent   agent.AgentInterface
+	Jobs     repository.MigrationJobRepository
+	Domains  repository.DomainRepository
+	Users    repository.UserRepository
+	Agent    agent.AgentInterface
+	Settings repository.ServerSettingsRepository
 }
 
 type tenantMigrationsHandler struct{ cfg TenantMigrationsConfig }
@@ -39,6 +43,8 @@ func RegisterTenantMigrationRoutes(rg *gin.RouterGroup, cfg TenantMigrationsConf
 	g.POST("/wordpress", h.create)
 	g.POST("/:id/secrets", h.uploadSecrets)
 	g.POST("/:id/pull-source", h.pull)
+	g.POST("/:id/scan-wp", h.scanWP)
+	g.POST("/:id/source-path", h.setSourcePath)
 	g.POST("/:id/import-wp", h.importWP)
 	g.GET("/:id", h.get)
 }
@@ -112,12 +118,14 @@ func (h *tenantMigrationsHandler) create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_kind", "detail": "tenant migrations support wordpress_ssh or wordpress_plugin"})
 		return
 	}
-	if strings.TrimSpace(req.SourceHost) == "" || strings.TrimSpace(req.DestDomain) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "detail": "source_host and dest_domain required"})
+	if strings.TrimSpace(req.SourceHost) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "detail": "source_host required"})
 		return
 	}
-	// Dest must be a domain the caller owns.
-	if h.ownedDomain(c, uid, req.DestDomain) == nil {
+	// Dest domain is OPTIONAL: if given, the caller must own it; if blank, the
+	// pull auto-detects the source site's domain and creates it (GH #647).
+	destDomain := strings.TrimSpace(req.DestDomain)
+	if destDomain != "" && h.ownedDomain(c, uid, destDomain) == nil {
 		return
 	}
 	// Caller's OS username = the forced import destination user.
@@ -132,17 +140,18 @@ func (h *tenantMigrationsHandler) create(c *gin.Context) {
 	}
 	forcedUID := uid // target is ALWAYS the caller — never from the request
 	destUser := *user.Username
-	destDomain := strings.TrimSpace(req.DestDomain)
 	row := &models.MigrationJob{
 		ID:           genULID(),
 		SourceKind:   req.SourceKind,
 		SourceHost:   strings.TrimSpace(req.SourceHost),
 		SourceUser:   sourceUser,
 		TargetUserID: &forcedUID,
-		DestUser:     &destUser,   // set -> pull auto-imports (background job)
-		DestDomain:   &destDomain,
+		DestUser:     &destUser, // set -> pull auto-imports (background job)
 		State:        models.MigrationStatePending,
 		StartedAt:    time.Now().UTC(),
+	}
+	if destDomain != "" {
+		row.DestDomain = &destDomain // else the pull auto-derives + creates it
 	}
 	if err := h.cfg.Jobs.Create(c.Request.Context(), row); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal", "detail": err.Error()})
@@ -249,6 +258,72 @@ func (h *tenantMigrationsHandler) get(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, job)
+}
+
+// scanWP SSH-connects to the source and lists WordPress installs (GH #647) so
+// the tenant can pick which one to migrate. Requires the job's SSH secret to be
+// uploaded first. Owner-scoped; wordpress_ssh only.
+func (h *tenantMigrationsHandler) scanWP(c *gin.Context) {
+	uid := h.caller(c)
+	if uid == "" {
+		return
+	}
+	job := h.ownedJob(c, uid)
+	if job == nil {
+		return
+	}
+	if job.SourceKind != models.MigrationSourceWordPressSSH {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "scan is SSH-only"})
+		return
+	}
+	allowPrivate := false
+	if h.cfg.Settings != nil {
+		if st, err := h.cfg.Settings.Get(c.Request.Context()); err == nil && st != nil {
+			allowPrivate = st.MigrationAllowPrivateHosts
+		}
+	}
+	sshUser := job.SourceUser
+	if sshUser == "" || sshUser == "wp" {
+		sshUser = "root"
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
+	defer cancel()
+	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env")}
+	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, secret, allowPrivate)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "connect_failed", "detail": err.Error()})
+		return
+	}
+	defer sess.Close()
+	installs, err := wordpressssh.ScanWordPress(ctx, sess)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "scan_failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"installs": installs})
+}
+
+// setSourcePath records which scanned WP install the tenant picked.
+func (h *tenantMigrationsHandler) setSourcePath(c *gin.Context) {
+	uid := h.caller(c)
+	if uid == "" {
+		return
+	}
+	if h.ownedJob(c, uid) == nil {
+		return
+	}
+	var req struct {
+		SourcePath string `json:"source_path"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.SourcePath) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source_path required"})
+		return
+	}
+	if err := h.cfg.Jobs.UpdateSourcePath(c.Request.Context(), c.Param("id"), strings.TrimSpace(req.SourcePath)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // callAgent invokes an agent verb and maps the result to a JSON response.

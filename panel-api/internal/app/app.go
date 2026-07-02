@@ -1180,10 +1180,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			// GH #647/#648: tenant owner-scoped WordPress self-migration.
 			if deps.Domains != nil && deps.Users != nil && deps.Agent != nil {
 				api.RegisterTenantMigrationRoutes(v1, api.TenantMigrationsConfig{
-					Jobs:    deps.MigrationJobs,
-					Domains: deps.Domains,
-					Users:   deps.Users,
-					Agent:   deps.Agent,
+					Jobs:     deps.MigrationJobs,
+					Domains:  deps.Domains,
+					Users:    deps.Users,
+					Agent:    deps.Agent,
+					Settings: deps.ServerSettings,
 				})
 			}
 		}

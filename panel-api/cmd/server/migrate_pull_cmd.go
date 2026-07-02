@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/directadmin"
@@ -299,12 +301,12 @@ func pullWordPressSSH(ctx context.Context, sshUser string, job *models.Migration
 	return nil
 }
 
-
 // maybeAutoImportWP fire-and-forgets migration.import_wp_run when the job carries
 // a destination (set at create for the tenant/background flow), so a migration
 // completes without the operator keeping a UI open. Best-effort: a dispatch
 // failure just leaves the job staged for a manual import.
 func maybeAutoImportWP(ctx context.Context, job *models.MigrationJob) {
+	resolveOrCreateDestDomain(ctx, job) // SSH auto-detect: derive + create the dest domain if none
 	if sharedAgent == nil || job.DestUser == nil || job.DestDomain == nil || *job.DestUser == "" || *job.DestDomain == "" {
 		return
 	}
@@ -319,6 +321,65 @@ func maybeAutoImportWP(ctx context.Context, job *models.MigrationJob) {
 	} else {
 		fmt.Printf("  \u2192 import auto-dispatched (background)\n")
 	}
+}
+
+// resolveOrCreateDestDomain: SSH auto-detect flow. When a migration has no
+// destination domain, derive it from the source siteurl and create a Jabali
+// domain for the target user (owned + provisioned by the reconciler), so the
+// migrated site lands on its own domain without the operator pre-creating it.
+func resolveOrCreateDestDomain(ctx context.Context, job *models.MigrationJob) {
+	if job.DestDomain != nil && *job.DestDomain != "" {
+		return
+	}
+	if job.TargetUserID == nil || *job.TargetUserID == "" || job.ManifestJSON == nil {
+		return
+	}
+	var facts struct {
+		SiteURL string `json:"siteurl"`
+	}
+	_ = json.Unmarshal([]byte(*job.ManifestJSON), &facts)
+	dom := deriveDomainFromURL(facts.SiteURL)
+	if dom == "" {
+		return
+	}
+	uid := *job.TargetUserID
+	domains := repository.NewDomainRepository(sharedDB)
+	if existing, err := domains.FindByName(ctx, dom); err == nil && existing != nil {
+		if existing.UserID != uid {
+			fmt.Printf("  (warning: domain %s exists under another user — not auto-using)\n", dom)
+			return
+		}
+	} else {
+		u, uerr := repository.NewUserRepository(sharedDB).FindByID(ctx, uid)
+		if uerr != nil || u.Username == nil || *u.Username == "" {
+			return
+		}
+		docRoot := filepath.Join("/home", *u.Username, "domains", dom, "public_html")
+		now := time.Now().UTC()
+		me, sk := models.DeriveMailFlags(models.MailProviderNone)
+		row := &models.Domain{
+			ID: ids.NewULID(), UserID: uid, Name: dom, DocRoot: docRoot,
+			IsEnabled: true, SSLMode: models.SSLModeLE, SSLEnabled: models.SSLEnabledForMode(models.SSLModeLE),
+			MailProvider: models.MailProviderNone, EmailEnabled: me, SkipAutoSAN: sk,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		if err := domains.Create(ctx, row); err != nil {
+			fmt.Printf("  (warning: auto-create domain %s failed: %v)\n", dom, err)
+			return
+		}
+		fmt.Printf("  \u2192 auto-created domain %s (provisioning in background)\n", dom)
+	}
+	_ = repository.NewMigrationJobRepository(sharedDB).UpdateDestDomain(ctx, job.ID, dom)
+	job.DestDomain = &dom
+}
+
+// deriveDomainFromURL extracts the bare domain (no scheme, no www) from a URL.
+func deriveDomainFromURL(siteurl string) string {
+	u, err := url.Parse(strings.TrimSpace(siteurl))
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	return strings.TrimPrefix(u.Hostname(), "www.")
 }
 
 // pullWordPressPlugin (GH #648) pulls a WordPress site from the jabali-migrator

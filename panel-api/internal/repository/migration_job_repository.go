@@ -31,6 +31,8 @@ type MigrationJobRepository interface {
 	UpdateSourceUser(ctx context.Context, id, sourceUser string) error
 	// UpdateSourcePath sets the WordPress root path (GH #647 wordpress_ssh).
 	UpdateSourcePath(ctx context.Context, id, sourcePath string) error
+	// UpdateDestDomain sets the auto-resolved destination domain (GH #647/#648).
+	UpdateDestDomain(ctx context.Context, id, destDomain string) error
 	// PatchDraft updates source-host/user + target-user-id on a row
 	// still in state='draft'. ADR-0095 decision 5. Returns ErrNotFound
 	// if the row is missing OR in any non-draft state — callers map
@@ -203,6 +205,23 @@ func (r *migrationJobRepo) UpdateSourcePath(ctx context.Context, id, sourcePath 
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"source_path": sourcePath,
+			"updated_at":  time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateDestDomain sets migration_jobs.dest_domain (GH #647/#648 auto-domain).
+func (r *migrationJobRepo) UpdateDestDomain(ctx context.Context, id, destDomain string) error {
+	res := r.db.WithContext(ctx).Model(&models.MigrationJob{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"dest_domain": destDomain,
 			"updated_at":  time.Now().UTC(),
 		})
 	if res.Error != nil {
