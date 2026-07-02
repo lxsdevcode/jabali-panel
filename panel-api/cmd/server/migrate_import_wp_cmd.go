@@ -144,8 +144,29 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 		return fail(fmt.Errorf("files.write wp-config: %w", err))
 	}
 
+	// --- 5. domain-change: serialized-safe search-replace (old siteurl -> new) ---
+	oldURL := ""
+	if job.ManifestJSON != nil {
+		var facts struct {
+			SiteURL string `json:"siteurl"`
+		}
+		_ = json.Unmarshal([]byte(*job.ManifestJSON), &facts)
+		oldURL = facts.SiteURL
+	}
+	newURL := "https://" + destDomain
+	if oldURL != "" && oldURL != newURL {
+		pf("  → search-replace %s -> %s (serialized-safe) ...\n", oldURL, newURL)
+		if _, err := sharedAgent.Call(ctx, "wordpress.search_replace", map[string]any{
+			"os_user": destUser, "path": docroot, "old_url": oldURL, "new_url": newURL,
+		}); err != nil {
+			return fail(fmt.Errorf("search-replace: %w", err))
+		}
+	} else {
+		pf("  (same domain — no search-replace)\n")
+	}
+
 	_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateDone, nil)
-	pf("  ✓ imported into %s (DB %s). Domain-change search-replace not run (same-domain).\n", docroot, dbName)
+	pf("  \u2713 imported into %s (DB %s).\n", docroot, dbName)
 	return nil
 }
 
