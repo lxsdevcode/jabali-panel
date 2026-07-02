@@ -3,7 +3,7 @@
  * Plugin Name:       Jabali Migrator
  * Plugin URI:        https://jabali-panel.com/
  * Description:       Migrate this WordPress site into a Jabali panel — no SSH. Generates a one-time token; the Jabali panel PULLS the database + files over an authenticated REST API. Pairs with the Jabali panel's WordPress-plugin migration flow (GH #648).
- * Version:           0.1.0
+ * Version:           0.1.1
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Jabali
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JABALI_MIGRATOR_VERSION', '0.1.0' );
+define( 'JABALI_MIGRATOR_VERSION', '0.1.1' );
 define( 'JABALI_MIGRATOR_NS', 'jabali-migrator/v1' );
 define( 'JABALI_MIGRATOR_TOKEN_OPTION', 'jabali_migrator_token_hash' );
 

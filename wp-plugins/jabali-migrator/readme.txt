@@ -3,7 +3,7 @@ Contributors: jabali
 Tags: migration, migrate, transfer
 Requires at least: 5.6
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPLv2 or later
 
 Migrate this WordPress site into a Jabali panel with no SSH access. Generate a
@@ -18,6 +18,9 @@ transport and a pure-PHP export fallback are planned. Pairs with the Jabali
 panel's WordPress-plugin migration flow.
 
 == Changelog ==
+
+= 0.1.1 =
+* db-export: pure-PHP \$wpdb fallback when php-fpm disables proc_open (mysqldump path 501'd on Jabali + hardened hosts).
 = 0.1.0 =
 * First cut: token auth, ping, manifest, db-export (mysqldump), file endpoints
   with realpath containment.
