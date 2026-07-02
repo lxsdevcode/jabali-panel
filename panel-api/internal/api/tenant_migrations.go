@@ -120,17 +120,27 @@ func (h *tenantMigrationsHandler) create(c *gin.Context) {
 	if h.ownedDomain(c, uid, req.DestDomain) == nil {
 		return
 	}
+	// Caller's OS username = the forced import destination user.
+	user, err := h.cfg.Users.FindByID(c.Request.Context(), uid)
+	if err != nil || user.Username == nil || *user.Username == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user_lookup"})
+		return
+	}
 	sourceUser := strings.TrimSpace(req.SourceUser)
 	if sourceUser == "" {
 		sourceUser = "wp" // unused for wordpress_plugin
 	}
 	forcedUID := uid // target is ALWAYS the caller — never from the request
+	destUser := *user.Username
+	destDomain := strings.TrimSpace(req.DestDomain)
 	row := &models.MigrationJob{
 		ID:           genULID(),
 		SourceKind:   req.SourceKind,
 		SourceHost:   strings.TrimSpace(req.SourceHost),
 		SourceUser:   sourceUser,
 		TargetUserID: &forcedUID,
+		DestUser:     &destUser,   // set -> pull auto-imports (background job)
+		DestDomain:   &destDomain,
 		State:        models.MigrationStatePending,
 		StartedAt:    time.Now().UTC(),
 	}

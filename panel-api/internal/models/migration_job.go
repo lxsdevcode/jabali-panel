@@ -58,6 +58,10 @@ type MigrationJob struct {
 	// discoverer auto-detects it. Distinct from ManifestJSON, which holds the
 	// discoverer's OUTPUT (home/siteurl/prefix/size). Only wordpress_ssh uses it.
 	SourcePath   *string    `gorm:"column:source_path;type:varchar(1024)" json:"source_path,omitempty"`
+	// DestUser/DestDomain (GH #647/#648) — when set, the pull auto-chains to
+	// import-wp on success (fire-and-forget background migration).
+	DestUser     *string    `gorm:"column:dest_user;type:varchar(64)" json:"dest_user,omitempty"`
+	DestDomain   *string    `gorm:"column:dest_domain;type:varchar(255)" json:"dest_domain,omitempty"`
 	TargetUserID *string    `gorm:"column:target_user_id;type:char(26);index:idx_migration_target_user" json:"target_user_id,omitempty"`
 	State        string     `gorm:"column:state;type:varchar(32);not null;default:'pending';index:idx_migration_state" json:"state"`
 	StartedAt    time.Time  `gorm:"column:started_at;type:datetime(6);not null" json:"started_at"`

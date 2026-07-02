@@ -8,7 +8,6 @@ import {
   Input,
   Select,
   Space,
-  Spin,
   Steps,
   Tabs,
   Typography,
@@ -37,7 +36,6 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
   const [destDomain, setDestDomain] = useState<string>("");
   const [domains, setDomains] = useState<DomainOpt[]>([]);
   const [busy, setBusy] = useState(false);
-  const [pullState, setPullState] = useState<string>("");
 
   const [createForm] = Form.useForm();
   const [secretForm] = Form.useForm();
@@ -47,7 +45,6 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
     setKind(null);
     setJobId(null);
     setDestDomain("");
-    setPullState("");
     createForm.resetFields();
     secretForm.resetFields();
   };
@@ -103,50 +100,18 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
     }
   };
 
-  // Step 3 — kick the pull, then poll until staged (validating) or failed.
-  const handlePull = async () => {
+  // Step 3 — kick the migration; it runs server-side (pull + auto-import) as a
+  // background job, so the user can close the drawer immediately.
+  const [started, setStarted] = useState(false);
+  const handleStart = async () => {
     if (!jobId) return;
     setBusy(true);
-    setPullState("running");
     try {
       await apiClient.post(`/migrations/${jobId}/pull-source`, { ssh_user: "root" });
+      setStarted(true);
+      message.success("Migration started in the background.");
     } catch (e) {
-      setPullState("failed");
-      message.error(errText(e) ?? "Pull failed to start");
-      setBusy(false);
-      return;
-    }
-    const poll = setInterval(async () => {
-      try {
-        const { data } = await apiClient.get<{ state: string }>(`/migrations/${jobId}`);
-        if (data.state === "validating") {
-          clearInterval(poll);
-          setPullState("done");
-          setBusy(false);
-          setStep(4);
-        } else if (data.state === "failed" || data.state === "cancelled") {
-          clearInterval(poll);
-          setPullState("failed");
-          setBusy(false);
-          message.error("Pull failed — check the source credentials + URL");
-        }
-      } catch {
-        /* keep polling */
-      }
-    }, 5000);
-  };
-
-  // Step 4 — import into the destination.
-  const handleImport = async () => {
-    if (!jobId) return;
-    setBusy(true);
-    try {
-      await apiClient.post(`/migrations/${jobId}/import-wp`, { dest_domain: destDomain });
-      message.success("Import started — the site will appear once it finishes.");
-      onSuccess();
-      onClose();
-    } catch (e) {
-      message.error(errText(e) ?? "Import failed to start");
+      message.error(errText(e) ?? "Failed to start the migration");
     } finally {
       setBusy(false);
     }
@@ -168,8 +133,7 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
           { title: "Source" },
           { title: "Details" },
           { title: "Credentials" },
-          { title: "Transfer" },
-          { title: "Import" },
+          { title: "Start" },
         ]}
       />
 
@@ -323,40 +287,40 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
 
       {step === 3 && (
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <Alert
-            type="info"
-            showIcon
-            message="Transfer"
-            description="Jabali pulls the database + files from the source into a staging area. This can take a few minutes for large sites."
-          />
-          {pullState === "running" ? (
-            <Space>
-              <Spin /> <Typography.Text>Transferring… (safe to keep this open)</Typography.Text>
-            </Space>
+          {!started ? (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                message="Start the migration"
+                description="Jabali pulls the database + files from the source and imports them into your domain. This runs as a background job — you can close this window and the site will appear in Applications when it finishes."
+              />
+              <Button type="primary" loading={busy} onClick={handleStart}>
+                Start migration
+              </Button>
+            </>
           ) : (
-            <Button type="primary" loading={busy} onClick={handlePull}>
-              Start transfer
-            </Button>
-          )}
-          {pullState === "failed" && (
-            <Alert type="error" showIcon message="Transfer failed. Check the source URL/credentials and retry." />
+            <>
+              <Alert
+                type="success"
+                showIcon
+                message="Migration running in the background"
+                description={`It will import into ${destDomain} when the transfer completes. You can close this window and keep working — the site appears in Applications when done.`}
+              />
+              <Button
+                type="primary"
+                onClick={() => {
+                  onSuccess();
+                  onClose();
+                }}
+              >
+                Close
+              </Button>
+            </>
           )}
         </Space>
       )}
 
-      {step === 4 && (
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <Alert
-            type="success"
-            showIcon
-            message="Ready to import"
-            description={`The site is staged. Import into ${destDomain}: this provisions a database, imports the dump, moves the files, rewrites wp-config, and (on a domain change) runs a serialized-safe search-replace.`}
-          />
-          <Button type="primary" loading={busy} onClick={handleImport}>
-            Import into {destDomain}
-          </Button>
-        </Space>
-      )}
     </Drawer>
   );
 }

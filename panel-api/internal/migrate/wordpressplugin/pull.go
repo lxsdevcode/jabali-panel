@@ -135,11 +135,45 @@ type filesManifest struct {
 	} `json:"files"`
 }
 
-// PullFilesTarball fetches /files-manifest, then each /file, assembling a gzip
-// tarball at dstTarball for the shared import to extract (with containment).
-// Source-supplied paths are validated here too (skip absolute / .. / leading /)
-// as defense-in-depth; ExtractTarGz re-checks at extract time.
+// PullFilesTarball downloads the source files into dstTarball. It PREFERS the
+// single-request /files-archive stream (one HTTP round-trip — orders of
+// magnitude faster than file-by-file over the internet) and falls back to the
+// per-file assembly for older plugins that lack that endpoint.
 func (c *Client) PullFilesTarball(ctx context.Context, dstTarball string, maxTotalBytes int64) error {
+	if err := c.pullFilesArchive(ctx, dstTarball); err == nil {
+		return nil
+	}
+	return c.pullFilesByFile(ctx, dstTarball, maxTotalBytes)
+}
+
+// pullFilesArchive streams /files-archive (a single gzip tarball) to dstTarball.
+func (c *Client) pullFilesArchive(ctx context.Context, dstTarball string) error {
+	resp, err := c.get(ctx, "/files-archive", nil)
+	if err != nil {
+		return err // 404/501 on old plugins -> caller falls back
+	}
+	defer resp.Body.Close()
+	if err := os.MkdirAll(filepath.Dir(dstTarball), 0o750); err != nil {
+		return err
+	}
+	tf, err := os.OpenFile(dstTarball, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return err
+	}
+	defer tf.Close()
+	n, err := io.Copy(tf, resp.Body)
+	if err != nil {
+		return fmt.Errorf("files-archive copy: %w", err)
+	}
+	if n < 1024 { // suspiciously small -> treat as failure, fall back
+		return fmt.Errorf("files-archive returned only %d bytes", n)
+	}
+	return nil
+}
+
+// pullFilesByFile fetches /files-manifest, then each /file, assembling a gzip
+// tarball. Fallback for plugins without /files-archive.
+func (c *Client) pullFilesByFile(ctx context.Context, dstTarball string, maxTotalBytes int64) error {
 	resp, err := c.get(ctx, "/files-manifest", nil)
 	if err != nil {
 		return err

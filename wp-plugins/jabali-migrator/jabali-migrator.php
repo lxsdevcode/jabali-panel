@@ -3,7 +3,7 @@
  * Plugin Name:       Jabali Migrator
  * Plugin URI:        https://jabali-panel.com/
  * Description:       Migrate this WordPress site into a Jabali panel — no SSH. Generates a one-time token; the Jabali panel PULLS the database + files over an authenticated REST API. Pairs with the Jabali panel's WordPress-plugin migration flow (GH #648).
- * Version:           0.1.1
+ * Version:           0.1.2
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Jabali
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'JABALI_MIGRATOR_VERSION', '0.1.1' );
+define( 'JABALI_MIGRATOR_VERSION', '0.1.2' );
 define( 'JABALI_MIGRATOR_NS', 'jabali-migrator/v1' );
 define( 'JABALI_MIGRATOR_TOKEN_OPTION', 'jabali_migrator_token_hash' );
 
@@ -80,6 +80,12 @@ function jabali_migrator_register_routes() {
 		'methods'             => 'GET',
 		'permission_callback' => $auth,
 		'callback'            => 'jabali_migrator_files_manifest',
+	) );
+
+	register_rest_route( JABALI_MIGRATOR_NS, '/files-archive', array(
+		'methods'             => 'GET',
+		'permission_callback' => $auth,
+		'callback'            => 'jabali_migrator_files_archive',
 	) );
 
 	register_rest_route( JABALI_MIGRATOR_NS, '/file', array(
@@ -315,6 +321,106 @@ function jabali_migrator_php_export() {
 	}
 	echo "\nSET FOREIGN_KEY_CHECKS=1;\n";
 }
+
+
+/**
+ * files-archive — stream the ENTIRE WordPress tree as ONE gzip tarball in a
+ * single request. Replaces the file-by-file /file path (thousands of HTTP
+ * round-trips = very slow over the internet). Pure-PHP: a streaming ustar
+ * writer (GNU @LongLink for >100-char paths so Go's tar reader recovers them)
+ * wrapped in a streaming gzip (deflate_add). No shell, no Phar (phar.readonly
+ * blocks Phar writes on many hosts).
+ */
+function jabali_migrator_files_archive() {
+	$root = untrailingslashit( ABSPATH );
+	nocache_headers();
+	header( 'Content-Type: application/gzip' );
+	header( 'Content-Disposition: attachment; filename="files.tar.gz"' );
+	while ( ob_get_level() > 0 ) { ob_end_clean(); }
+
+	$def = function_exists( 'deflate_init' ) ? deflate_init( ZLIB_ENCODING_GZIP ) : null;
+	$emit = function ( $data ) use ( $def ) {
+		if ( '' === $data ) { return; }
+		echo $def ? deflate_add( $def, $data, ZLIB_NO_FLUSH ) : $data;
+	};
+
+	$skip = array( '/wp-content/cache/', '/wp-content/object-cache.php', '/wp-content/advanced-cache.php' );
+	$it   = new RecursiveIteratorIterator(
+		new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ),
+		RecursiveIteratorIterator::LEAVES_ONLY
+	);
+	foreach ( $it as $file ) {
+		if ( ! $file->isFile() ) { continue; }
+		$abs = $file->getPathname();
+		$rel = ltrim( substr( $abs, strlen( $root ) ), '/' );
+		$hit = false;
+		foreach ( $skip as $sk ) { if ( false !== strpos( '/' . $rel, $sk ) ) { $hit = true; break; } }
+		if ( $hit ) { continue; }
+		$size = $file->getSize();
+		// GNU @LongLink for names > 100 bytes.
+		if ( strlen( $rel ) > 100 ) {
+			$emit( jabali_migrator_tar_header( '././@LongLink', strlen( $rel ) + 1, 'L' ) );
+			$emit( jabali_migrator_tar_pad( $rel . "\0", strlen( $rel ) + 1 ) );
+		}
+		$emit( jabali_migrator_tar_header( $rel, $size, '0' ) );
+		$fh = @fopen( $abs, 'rb' );
+		if ( false === $fh ) { $emit( str_repeat( "\0", jabali_migrator_tar_blocks( $size ) ) ); continue; }
+		$written = 0;
+		while ( ! feof( $fh ) ) {
+			$chunk = fread( $fh, 262144 );
+			if ( '' === $chunk || false === $chunk ) { break; }
+			$emit( $chunk );
+			$written += strlen( $chunk );
+			flush();
+		}
+		fclose( $fh );
+		// pad to a 512 boundary (and cover any short read).
+		$emit( str_repeat( "\0", jabali_migrator_tar_blocks( $size ) - $written ) );
+	}
+	$emit( str_repeat( "\0", 1024 ) ); // two zero blocks = end of archive
+	if ( $def ) { echo deflate_add( $def, '', ZLIB_FINISH ); }
+	exit;
+}
+
+// jabali_migrator_tar_blocks — bytes rounded up to the next 512 multiple.
+function jabali_migrator_tar_blocks( $size ) {
+	return $size > 0 ? ( (int) ( ( $size + 511 ) / 512 ) ) * 512 : 0;
+}
+
+// jabali_migrator_tar_pad — string padded with NULs to a 512 boundary.
+function jabali_migrator_tar_pad( $data, $size ) {
+	return $data . str_repeat( "\0", jabali_migrator_tar_blocks( $size ) - strlen( $data ) );
+}
+
+// jabali_migrator_tar_header — a 512-byte ustar header for one entry.
+function jabali_migrator_tar_header( $name, $size, $type ) {
+	$prefix = '';
+	$nm     = $name;
+	if ( strlen( $nm ) > 100 ) {
+		$nm = substr( $nm, 0, 100 ); // real name in the @LongLink; this is a stub
+	}
+	$h  = str_pad( $nm, 100, "\0" );
+	$h .= sprintf( "%07o\0", 0644 );          // mode
+	$h .= sprintf( "%07o\0", 0 );             // uid
+	$h .= sprintf( "%07o\0", 0 );             // gid
+	$h .= sprintf( "%011o\0", $size );        // size
+	$h .= sprintf( "%011o\0", 0 );            // mtime
+	$h .= str_repeat( ' ', 8 );               // chksum placeholder
+	$h .= $type;                              // typeflag
+	$h .= str_pad( '', 100, "\0" );           // linkname
+	$h .= "ustar\0" . '00';                   // magic + version
+	$h .= str_pad( '', 32, "\0" );            // uname
+	$h .= str_pad( '', 32, "\0" );            // gname
+	$h .= str_pad( '', 8, "\0" );             // devmajor
+	$h .= str_pad( '', 8, "\0" );             // devminor
+	$h .= str_pad( $prefix, 155, "\0" );      // prefix
+	$h .= str_repeat( "\0", 12 );             // pad to 512
+	$chk = 0;
+	for ( $i = 0; $i < 512; $i++ ) { $chk += ord( $h[ $i ] ); }
+	$h = substr_replace( $h, sprintf( "%06o\0 ", $chk ), 148, 8 );
+	return $h;
+}
+
 
 /* --------------------------- admin token UI ----------------------------- */
 

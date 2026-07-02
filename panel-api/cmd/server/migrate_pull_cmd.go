@@ -294,8 +294,31 @@ func pullWordPressSSH(ctx context.Context, sshUser string, job *models.Migration
 	}
 	// Operator-gated import (A3): staged, awaiting `import_wp`. Not auto-kicked.
 	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
-	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s \u2014 awaiting import\n", localDir)
+	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s\n", localDir)
+	maybeAutoImportWP(ctx, job)
 	return nil
+}
+
+
+// maybeAutoImportWP fire-and-forgets migration.import_wp_run when the job carries
+// a destination (set at create for the tenant/background flow), so a migration
+// completes without the operator keeping a UI open. Best-effort: a dispatch
+// failure just leaves the job staged for a manual import.
+func maybeAutoImportWP(ctx context.Context, job *models.MigrationJob) {
+	if sharedAgent == nil || job.DestUser == nil || job.DestDomain == nil || *job.DestUser == "" || *job.DestDomain == "" {
+		return
+	}
+	kickCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := sharedAgent.Call(kickCtx, "migration.import_wp_run", map[string]any{
+		"job_id":      job.ID,
+		"dest_user":   *job.DestUser,
+		"dest_domain": *job.DestDomain,
+	}); err != nil {
+		fmt.Printf("  (warning: auto-import dispatch failed: %v — import manually)\n", err)
+	} else {
+		fmt.Printf("  \u2192 import auto-dispatched (background)\n")
+	}
 }
 
 // pullWordPressPlugin (GH #648) pulls a WordPress site from the jabali-migrator
@@ -336,7 +359,8 @@ func pullWordPressPlugin(ctx context.Context, job *models.MigrationJob, secret m
 		return err
 	}
 	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
-	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s \u2014 awaiting import\n", localDir)
+	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s\n", localDir)
+	maybeAutoImportWP(ctx, job)
 	return nil
 }
 
