@@ -49,3 +49,29 @@ func TestCacheGateRegexBoundary(t *testing.T) {
 		}
 	}
 }
+
+// SECURITY: user-provided cache bypass rules must never break out of the nginx
+// regex string. Injection payloads must be dropped; safe entries QuoteMeta'd.
+func TestSanitizeBypassRules(t *testing.T) {
+	// paths → "|<quoted>" suffix
+	pathCases := map[string]string{
+		"":                              "",
+		"/private":                      "|/private",
+		"/shop/eu":                      "|/shop/eu",
+		"/my.account":                   `|/my\.account`, // "." escaped, still safe
+		`/a" { return 444; } location `: "",              // quote+space+brace → dropped
+		"/a|b":                          "",              // pipe → dropped
+		"/a$(x)":                        "",              // $ ( ) → dropped
+		"/a\nb":                         "",              // newline → dropped
+		"noslash":                       "",              // must start with /
+	}
+	for in, want := range pathCases {
+		if got := sanitizeBypassPaths([]string{in}); got != want {
+			t.Errorf("sanitizeBypassPaths(%q)=%q want %q", in, got, want)
+		}
+	}
+	// multiple + dedupe
+	if got := sanitizeBypassPaths([]string{"/a", "/a", `/bad"`, "/b"}); got != "|/a|/b" {
+		t.Errorf("multi paths = %q want |/a|/b", got)
+	}
+}

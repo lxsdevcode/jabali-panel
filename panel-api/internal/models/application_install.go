@@ -59,10 +59,12 @@ type ApplicationInstall struct {
 
 // CacheSettingsData is the decoded shape of ApplicationInstall.CacheSettings.
 // Pointer bools distinguish "unset (inherit default)" from an explicit false.
+// URLExclusions is the only field applied today (GH #616, nginx bypass); the
+// object/page split + TTL are forward capacity for #612 (not yet consumed). A
+// profile preset and a cookie bypass/allowlist were intentionally dropped — the
+// built-in bypass set + fail-closed cookie gate already cover the site types,
+// and a tenant cookie allowlist would re-open the #416/#419 fail-open class.
 type CacheSettingsData struct {
-	// Profile drives sensible defaults for the fields below (GH #618):
-	// "" / "brochure" (aggressive), "woocommerce", "membership".
-	Profile string `json:"profile,omitempty"`
 	// ObjectCache / PageCache split the single toggle (GH #612). nil = follow
 	// the install's CacheEnabled flag for both (back-compat).
 	ObjectCache *bool `json:"object_cache,omitempty"`
@@ -72,8 +74,6 @@ type CacheSettingsData struct {
 	// URLExclusions are extra path prefixes that must always bypass the page
 	// cache (GH #616), on top of the built-in wp-admin/cart/etc set.
 	URLExclusions []string `json:"url_exclusions,omitempty"`
-	// CookieBypass are extra cookie-name prefixes that force a bypass (GH #616).
-	CookieBypass []string `json:"cookie_bypass,omitempty"`
 }
 
 // ParseCacheSettings decodes the JSON column; a nil/empty/invalid value yields

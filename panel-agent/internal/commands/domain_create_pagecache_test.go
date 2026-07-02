@@ -93,3 +93,22 @@ func TestSanitizeCachePath(t *testing.T) {
 		}
 	}
 }
+
+// GH #616: a sanitized URL-exclusion suffix must appear inside the built-in
+// bypass regex (both PHP location blocks), so those paths always bypass.
+func TestVhostTemplate_ExtraBypass(t *testing.T) {
+	t.Parallel()
+	tmpl := template.Must(template.New("v").Parse(vhostTemplate))
+	var b bytes.Buffer
+	_ = tmpl.Execute(&b, vhostData{
+		Domain: "ex.com", DocRoot: "/home/u/public_html/ex.com", HasPHP: true,
+		PHPVersion: "8.3", Username: "u", IsEnabled: true,
+		CacheEnabled: true, CacheKeyZone: "jabali", CacheTTL: "60s",
+		CacheExtraBypass: sanitizeBypassPaths([]string{"/private", "/members"}),
+	})
+	out := b.String()
+	// both location blocks carry the merged bypass regex
+	if n := strings.Count(out, `/edd-api/|/private|/members") { set $jabali_skip 1; }`); n != 2 {
+		t.Errorf("extra bypass folded into %d blocks, want 2\n%s", n, out)
+	}
+}

@@ -1403,6 +1403,11 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 		if iErr == nil && len(insts) > 0 {
 			params["cache_paths"] = cachePathsFromInstalls(insts)
 		}
+		if iErr == nil && len(insts) > 0 {
+			if bp := cacheBypassPathsFromInstalls(insts); len(bp) > 0 {
+				params["cache_bypass_paths"] = bp // GH #616 per-install URL exclusions
+			}
+		}
 	}
 
 	// M36 per-domain IP ACLs. Fetch + thread to agent so nginx renders
@@ -2829,4 +2834,27 @@ func cachePathsFromInstalls(insts []models.ApplicationInstall) []string {
 		}
 	}
 	return paths
+}
+
+// cacheBypassPathsFromInstalls collects the union of every cache-enabled
+// install's per-install URL exclusions (GH #616) on a domain — extra path
+// prefixes that must always bypass the page cache, on top of the built-in
+// wp-admin/cart/checkout set. The agent re-sanitizes each before rendering it
+// into the nginx bypass regex (config-injection trust boundary). Pure +
+// seam-tested; deduped, order-stable.
+func cacheBypassPathsFromInstalls(insts []models.ApplicationInstall) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for i := range insts {
+		data, _ := insts[i].ParseCacheSettings()
+		for _, p := range data.URLExclusions {
+			p = strings.TrimSpace(p)
+			if p == "" || seen[p] {
+				continue
+			}
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
 }

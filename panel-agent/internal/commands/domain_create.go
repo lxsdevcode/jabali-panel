@@ -46,6 +46,12 @@ type domainCreateParams struct {
 	// on this domain. When set, drives a multi-path gate; empty falls back to
 	// the single CachePath so older callers stay byte-identical.
 	CachePaths []string `json:"cache_paths,omitempty"`
+	// CacheBypassPaths (GH #616): per-install URL-exclusion prefixes merged across
+	// the domain (profile defaults + user list), resolved by the panel. The agent
+	// RE-SANITIZES before rendering (config-injection trust boundary). A cookie
+	// allowlist was intentionally NOT added — it would re-open the #416/#419
+	// fail-open class on the shared microcache.
+	CacheBypassPaths []string `json:"cache_bypass_paths,omitempty"`
 	// CacheTTLSeconds (Gitea #596) — per-domain page-cache validity. 0 = use
 	// the default. Drives fastcgi_cache_valid; background_update keeps it fresh.
 	CacheTTLSeconds int    `json:"cache_ttl_seconds,omitempty"`
@@ -262,7 +268,7 @@ server {
         # jabali-fastcgi-cache.conf. The path-only cache_key below collapses all
         # tracking variants onto the clean-URL entry.
         if ($jabali_qs_kind = other) { set $jabali_skip 1; }
-        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
+        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/{{.CacheExtraBypass}}") { set $jabali_skip 1; }
 {{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
         # this domain (union of every cached install's prefix); other (non-WP,
         # differently-authed) apps on the same domain are never cached.
@@ -317,7 +323,7 @@ server {
         # jabali-fastcgi-cache.conf. The path-only cache_key below collapses all
         # tracking variants onto the clean-URL entry.
         if ($jabali_qs_kind = other) { set $jabali_skip 1; }
-        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/") { set $jabali_skip 1; }
+        if ($request_uri ~* "/wp-admin/|/wp-login|/xmlrpc\.php|/wp-cron\.php|/wp-json/|/cart|/checkout|/my-account|/wc-api/|/edd-api/{{.CacheExtraBypass}}") { set $jabali_skip 1; }
 {{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
         # this domain (union of every cached install's prefix); other (non-WP,
         # differently-authed) apps on the same domain are never cached.
@@ -424,6 +430,7 @@ type vhostData struct {
 	CacheEnabled      bool
 	CachePath         string // Gitea #420: page-cache path prefix ("/" = whole domain)
 	CacheGate         string // Gitea #601: regex body for the multi-path gate ("" = whole domain, no gate)
+	CacheExtraBypass  string // Gitea #616: "|/path|..." suffix appended to the built-in bypass regex ("" = none)
 	CacheKeyZone      string
 	CacheTTL          string
 	CacheTTLSeconds   int // numeric form of CacheTTL for Cache-Control max-age
@@ -548,6 +555,38 @@ func sanitizeCachePath(p string) string {
 // cachePathSegmentRE rejects). Same char class per segment.
 var cachePathMultiSegRE = regexp.MustCompile(`^/[a-z0-9][a-z0-9_-]{0,63}(?:/[a-z0-9][a-z0-9_-]{0,63})*$`)
 
+// bypassPathRE / bypassCookieRE bound user-provided page-cache rules (GH #616)
+// to characters that can never break out of the nginx `~* "..."` string or
+// inject a regex operator. The agent RE-VALIDATES even though the panel already
+// checked (defense in depth — the config-generation trust boundary). Anything
+// with a quote, backslash, space, brace, paren, pipe, dollar, or control char
+// is rejected outright; the survivors are additionally QuoteMeta'd so a literal
+// "." matches "." rather than any char.
+var (
+	bypassPathRE = regexp.MustCompile(`^/[A-Za-z0-9._/-]{0,127}$`)
+)
+
+// sanitizeBypassPaths turns user URL-exclusion prefixes into a safe regex
+// alternation SUFFIX ("|/private|/account") appended to the built-in bypass set,
+// or "" if none survive. Invalid entries are dropped (fail-safe), never escaped
+// into the config raw.
+func sanitizeBypassPaths(paths []string) string {
+	seen := map[string]bool{}
+	parts := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if !bypassPathRE.MatchString(p) || seen[p] {
+			continue
+		}
+		seen[p] = true
+		parts = append(parts, regexp.QuoteMeta(p))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "|" + strings.Join(parts, "|")
+}
+
 // buildCacheGate returns the regex BODY for the page-cache path gate
 // `^<body>(/|$)`, or "" meaning "no gate → cache the whole domain".
 //
@@ -589,8 +628,9 @@ func buildCacheGate(paths []string, fallback string) string {
 	return "(" + strings.Join(valid, "|") + ")"
 }
 
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cachePaths []string, cacheTTLSeconds int, fpmSocket string) (string, error) {
-	cacheGate := buildCacheGate(cachePaths, cachePath) // GH #601: multi-path gate body ("" = whole domain)
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cachePaths []string, cacheBypassPaths []string, cacheTTLSeconds int, fpmSocket string) (string, error) {
+	cacheGate := buildCacheGate(cachePaths, cachePath)        // GH #601: multi-path gate body ("" = whole domain)
+	cacheExtraBypass := sanitizeBypassPaths(cacheBypassPaths) // GH #616: safe "|/path" suffix
 	cachePath = sanitizeCachePath(cachePath)
 	cacheTTLSeconds = clampCacheTTL(cacheTTLSeconds)
 	// GH #329: default to the legacy per-user socket when the caller didn't
@@ -653,6 +693,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		CacheEnabled:               cacheEnabled,
 		CachePath:                  cachePath,
 		CacheGate:                  cacheGate,
+		CacheExtraBypass:           cacheExtraBypass,
 		CacheKeyZone:               "jabali_fcgi",
 		CacheTTL:                   fmt.Sprintf("%ds", cacheTTLSeconds),
 		CacheTTLSeconds:            cacheTTLSeconds,
@@ -859,7 +900,7 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 	dirPrivacyDirectives := buildDirectoryPrivacyDirectives(p.DirectoryPrivacyRules)
-	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CachePaths, p.CacheTTLSeconds, p.FPMSocket)
+	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CachePaths, p.CacheBypassPaths, p.CacheTTLSeconds, p.FPMSocket)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,

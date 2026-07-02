@@ -17,15 +17,6 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 )
 
-// cacheProfiles are the #618 presets. Each seeds sensible page-cache behaviour;
-// the drawer still lets the user layer explicit exclusions/cookies on top.
-var cacheProfiles = map[string]bool{
-	"":            true, // unset == brochure defaults
-	"brochure":    true,
-	"woocommerce": true,
-	"membership":  true,
-}
-
 const (
 	cacheTTLMin      = 10
 	cacheTTLMax      = 86400
@@ -71,15 +62,11 @@ func (h *wordPressHandler) setCacheSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
 		return
 	}
-	if !cacheProfiles[body.Profile] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_profile"})
-		return
-	}
 	if body.TTLSeconds != nil && (*body.TTLSeconds < cacheTTLMin || *body.TTLSeconds > cacheTTLMax) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ttl_out_of_range"})
 		return
 	}
-	if !validRuleList(body.URLExclusions) || !validRuleList(body.CookieBypass) {
+	if !validRuleList(body.URLExclusions) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_rules"})
 		return
 	}

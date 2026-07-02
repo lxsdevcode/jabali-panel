@@ -59,7 +59,6 @@ func TestCacheSettings_RoundTrip(t *testing.T) {
 	pageOn := true
 	ttl := 600
 	put := models.CacheSettingsData{
-		Profile:       "woocommerce",
 		PageCache:     &pageOn,
 		TTLSeconds:    &ttl,
 		URLExclusions: []string{"/private"},
@@ -79,9 +78,6 @@ func TestCacheSettings_RoundTrip(t *testing.T) {
 		t.Fatalf("configured = %v after PUT, want true", b["configured"])
 	}
 	settings, _ := b["settings"].(map[string]any)
-	if settings["profile"] != "woocommerce" {
-		t.Errorf("profile = %v, want woocommerce", settings["profile"])
-	}
 	if settings["page_cache"] != true {
 		t.Errorf("page_cache = %v, want true", settings["page_cache"])
 	}
@@ -106,17 +102,14 @@ func TestCacheSettings_Validation(t *testing.T) {
 		return w.Code
 	}
 
-	if code := put(`{"profile":"not-a-real-profile"}`); code != http.StatusBadRequest {
-		t.Errorf("bad profile → %d, want 400", code)
-	}
 	if code := put(`{"ttl_seconds":5}`); code != http.StatusBadRequest {
 		t.Errorf("ttl below min → %d, want 400", code)
 	}
 	if code := put(`{"ttl_seconds":999999}`); code != http.StatusBadRequest {
 		t.Errorf("ttl above max → %d, want 400", code)
 	}
-	if code := put(`{"profile":"membership"}`); code != http.StatusOK {
-		t.Errorf("valid membership profile → %d, want 200", code)
+	if code := put(`{"url_exclusions":["/private"]}`); code != http.StatusOK {
+		t.Errorf("valid url_exclusions → %d, want 200", code)
 	}
 }
 
