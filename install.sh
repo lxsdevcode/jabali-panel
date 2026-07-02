@@ -7754,7 +7754,10 @@ SQL
   cur_pass="$(yq -r '.db_config.password // ""' "$cs_cfg" 2>/dev/null || echo "")"
   if [[ "$cur_type" != "mysql" || "$cur_pass" != "$cs_db_pass" ]]; then
     _log "migrating crowdsec db_config: ${cur_type:-sqlite} → mysql (MariaDB socket)"
-    JC_CS_DBPASS="$cs_db_pass" yq -y -i '.db_config = {"type":"mysql","db_path":"/run/mysqld/mysqld.sock","user":"crowdsec","password":env.JC_CS_DBPASS,"db_name":"crowdsec","max_open_conns":15}' "$cs_cfg"
+    # MERGE the mysql keys (don't replace the whole object) so an operator's
+    # existing db_config.flush retention + log_level survive. Drop use_wal
+    # (sqlite-only); db_path is repurposed as the mysql socket path.
+    JC_CS_DBPASS="$cs_db_pass" yq -y -i '.db_config.type="mysql" | .db_config.db_path="/run/mysqld/mysqld.sock" | .db_config.user="crowdsec" | .db_config.password=env.JC_CS_DBPASS | .db_config.db_name="crowdsec" | .db_config.max_open_conns=15 | del(.db_config.use_wal)' "$cs_cfg"
     changed=1
   fi
   chown root:root "$cs_cfg" 2>/dev/null || true
