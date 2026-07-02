@@ -81,12 +81,31 @@ type Facts struct {
 
 // Ping verifies reachability + token before any heavy transfer.
 func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.PingInfo(ctx)
+	return err
+}
+
+// PingResult is the /ping payload (used by the pre-flight handshake).
+type PingResult struct {
+	OK      bool   `json:"ok"`
+	Plugin  string `json:"plugin"`
+	Version string `json:"version"`
+	SiteURL string `json:"site_url"`
+}
+
+// PingInfo returns the /ping payload — reachability + token check + the plugin
+// version (so the wizard can warn when the source plugin is too old to export).
+func (c *Client) PingInfo(ctx context.Context) (*PingResult, error) {
 	resp, err := c.get(ctx, "/ping", nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	resp.Body.Close()
-	return nil
+	defer resp.Body.Close()
+	var pr PingResult
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pr); err != nil {
+		return nil, fmt.Errorf("ping decode: %w", err)
+	}
+	return &pr, nil
 }
 
 // Manifest fetches the site facts.

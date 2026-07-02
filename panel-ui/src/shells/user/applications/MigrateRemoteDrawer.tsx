@@ -9,6 +9,7 @@ import {
   Select,
   Space,
   Steps,
+  Spin,
   Radio,
   Tabs,
   Typography,
@@ -63,6 +64,13 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  useEffect(() => {
+    if (step === 3 && jobId && !verify && !verifying) {
+      void handleVerify();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   // Step 1 — create the job.
   const handleCreate = async (v: Record<string, string>) => {
     setBusy(true);
@@ -106,6 +114,32 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
   const [started, setStarted] = useState(false);
   const [installs, setInstalls] = useState<{ root: string; siteurl?: string }[]>([]);
   const [scanning, setScanning] = useState(false);
+  type Verify = {
+    ok?: boolean;
+    error?: string;
+    siteurl?: string;
+    wp_version?: string;
+    file_count?: number;
+    db_bytes?: number;
+    needs_update?: boolean;
+    plugin_version?: string;
+  };
+  const [verify, setVerify] = useState<Verify | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const handleVerify = async () => {
+    if (!jobId) return;
+    setVerifying(true);
+    setVerify(null);
+    try {
+      const { data } = await apiClient.post<Verify>(`/migrations/${jobId}/verify`, {});
+      setVerify(data);
+    } catch (e) {
+      setVerify({ ok: false, error: errText(e) ?? "Verification failed" });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleScan = async () => {
     if (!jobId) return;
     setScanning(true);
@@ -320,6 +354,46 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
 
       {step === 3 && (
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          {!started && (
+            <Card size="small" title="Pre-flight check">
+              {verifying ? (
+                <Space>
+                  <Spin size="small" /> <Typography.Text>Handshaking with the source…</Typography.Text>
+                </Space>
+              ) : verify?.ok ? (
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  <Alert
+                    type="success"
+                    showIcon
+                    message="Source reachable"
+                    description={
+                      <span>
+                        {verify.siteurl}
+                        {verify.wp_version ? ` · WP ${verify.wp_version}` : ""}
+                        {verify.file_count ? ` · ${verify.file_count} files` : ""}
+                        {verify.db_bytes ? ` · DB ${(verify.db_bytes / 1048576).toFixed(1)} MB` : ""}
+                      </span>
+                    }
+                  />
+                  {verify.needs_update && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="Source plugin is outdated"
+                      description={`The jabali-migrator plugin on the source is ${verify.plugin_version}. Update it to 0.1.2+ or the database export will fail. Then re-check.`}
+                    />
+                  )}
+                </Space>
+              ) : (
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  <Alert type="error" showIcon message="Cannot start yet" description={verify?.error ?? "Source check failed"} />
+                  <Button onClick={handleVerify} loading={verifying}>
+                    Re-check
+                  </Button>
+                </Space>
+              )}
+            </Card>
+          )}
           {!started && kind === "wordpress_ssh" && (
             <Card size="small" title="Scan for WordPress installations (optional)">
               <Space direction="vertical" style={{ width: "100%" }}>
@@ -355,7 +429,12 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
                 message="Start the migration"
                 description="Jabali pulls the database + files from the source and imports them into your domain. This runs as a background job — you can close this window and the site will appear in Applications when it finishes."
               />
-              <Button type="primary" loading={busy} onClick={handleStart}>
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={!verify?.ok || verify?.needs_update}
+                onClick={handleStart}
+              >
                 Start migration
               </Button>
             </>

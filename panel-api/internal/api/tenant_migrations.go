@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ginctx"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/wordpressplugin"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/wordpressssh"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
@@ -43,6 +46,7 @@ func RegisterTenantMigrationRoutes(rg *gin.RouterGroup, cfg TenantMigrationsConf
 	g.POST("/wordpress", h.create)
 	g.POST("/:id/secrets", h.uploadSecrets)
 	g.POST("/:id/pull-source", h.pull)
+	g.POST("/:id/verify", h.verify)
 	g.POST("/:id/scan-wp", h.scanWP)
 	g.POST("/:id/source-path", h.setSourcePath)
 	g.POST("/:id/import-wp", h.importWP)
@@ -324,6 +328,104 @@ func (h *tenantMigrationsHandler) setSourcePath(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// verify does a pre-flight HANDSHAKE against the source before the migration
+// starts: plugin -> ping (reachable + token + version) + manifest; ssh -> connect
+// + discover. Returns the discovered facts, or an error the wizard shows so the
+// operator fixes it (wrong token, unreachable, an outdated plugin) before Start.
+func (h *tenantMigrationsHandler) verify(c *gin.Context) {
+	uid := h.caller(c)
+	if uid == "" {
+		return
+	}
+	job := h.ownedJob(c, uid)
+	if job == nil {
+		return
+	}
+	allowPrivate := false
+	if h.cfg.Settings != nil {
+		if st, err := h.cfg.Settings.Get(c.Request.Context()); err == nil && st != nil {
+			allowPrivate = st.MigrationAllowPrivateHosts
+		}
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
+	defer cancel()
+	secretPath := filepath.Join(migrate.SecretsDir, job.ID+".env")
+
+	if job.SourceKind == models.MigrationSourceWordPressPlugin {
+		token := readSecretValue(secretPath, "PLUGIN_TOKEN")
+		if token == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no_token", "detail": "upload the migration token first"})
+			return
+		}
+		siteURL := job.SourceHost
+		if !strings.HasPrefix(siteURL, "http://") && !strings.HasPrefix(siteURL, "https://") {
+			siteURL = "https://" + siteURL
+		}
+		cli := wordpressplugin.New(siteURL, token, allowPrivate)
+		ping, err := cli.PingInfo(ctx)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "handshake_failed", "detail": "cannot reach the plugin — check the site URL and token: " + err.Error()})
+			return
+		}
+		facts, err := cli.Manifest(ctx)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "manifest_failed", "detail": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"ok": true, "kind": "plugin",
+			"plugin_version": ping.Version,
+			"needs_update":   ping.Version < "0.1.2", // db-export pure-PHP fallback landed in 0.1.2
+			"siteurl":        facts.SiteURL, "wp_version": facts.WPVersion,
+			"file_count": facts.FileCount, "db_bytes": facts.DBBytes,
+		})
+		return
+	}
+
+	// wordpress_ssh
+	sshUser := job.SourceUser
+	if sshUser == "" || sshUser == "wp" {
+		sshUser = "root"
+	}
+	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, migrate.SecretRef{Path: secretPath}, allowPrivate)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "connect_failed", "detail": "SSH connect failed — check host + credentials: " + err.Error()})
+		return
+	}
+	defer sess.Close()
+	hint := ""
+	if job.SourcePath != nil {
+		hint = *job.SourcePath
+	}
+	facts, err := wordpressssh.DiscoverWordPress(ctx, sess, hint)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "discover_failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ok": true, "kind": "ssh",
+		"siteurl": facts.SiteURL, "wp_version": facts.WPVersion,
+		"table_prefix": facts.TablePrefix, "db_bytes": facts.BytesTotal, "wp_cli": facts.WPCLI,
+	})
+}
+
+// readSecretValue pulls one KEY=value from a migration secret file.
+func readSecretValue(path, key string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, key+"=") {
+			return strings.TrimPrefix(line, key+"=")
+		}
+	}
+	return ""
 }
 
 // callAgent invokes an agent verb and maps the result to a JSON response.

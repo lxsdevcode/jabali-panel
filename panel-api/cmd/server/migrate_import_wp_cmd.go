@@ -60,6 +60,7 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	destUser, targetUserID, destDomain string) error {
 
 	pf := func(format string, a ...any) { fmt.Fprintf(out, format, a...) }
+	_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateRestoring, nil) // import phase
 	stageDir := filepath.Join("/var/lib/jabali-migrations", job.ID)
 	dumpSQL := filepath.Join(stageDir, "dump.sql")
 	filesTar := filepath.Join(stageDir, "files.tar.gz")
@@ -67,9 +68,35 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	docSubpath := filepath.Join("domains", destDomain, "public_html")
 	docroot := filepath.Join("/home", destUser, docSubpath)
 
+	// Application-install row so the migration shows in the Applications table
+	// with live status (installing -> ready/failed), like a fresh install.
+	appRepo := repository.NewApplicationInstallRepository(sharedDB)
+	installID := ""
+	if dom, derr := repository.NewDomainRepository(sharedDB).FindByName(ctx, destDomain); derr == nil && dom != nil {
+		email := "migrated@" + destDomain
+		if u, uerr := repository.NewUserRepository(sharedDB).FindByID(ctx, targetUserID); uerr == nil && u.Email != "" {
+			email = u.Email
+		}
+		row := &models.ApplicationInstall{
+			ID: ids.NewULID(), UserID: targetUserID, DomainID: dom.ID,
+			AppType: "wordpress", Subdirectory: "", Status: "installing",
+			AdminUsername: "admin", AdminEmail: email, Locale: "en_US",
+			CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		}
+		if err := appRepo.Create(ctx, row); err == nil {
+			installID = row.ID
+		}
+	}
+	markInstall := func(status string, lastErr *string, version *string) {
+		if installID != "" {
+			_ = appRepo.UpdateStatus(ctx, installID, status, lastErr, version)
+		}
+	}
+
 	fail := func(reason error) error {
 		msg := "import-wp: " + reason.Error()
 		_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateFailed, &msg)
+		markInstall("failed", &msg, nil)
 		return reason
 	}
 
@@ -174,6 +201,16 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	}
 
 	_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateDone, nil)
+	var wpVer *string
+	if job.ManifestJSON != nil {
+		var f struct {
+			WPVersion string `json:"wp_version"`
+		}
+		if json.Unmarshal([]byte(*job.ManifestJSON), &f) == nil && f.WPVersion != "" {
+			wpVer = &f.WPVersion
+		}
+	}
+	markInstall("ready", nil, wpVer)
 	pf("  \u2713 imported into %s (DB %s).\n", docroot, dbName)
 	return nil
 }
