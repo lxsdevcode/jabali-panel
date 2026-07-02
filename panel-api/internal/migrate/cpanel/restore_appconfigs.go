@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 )
 
 // AppConfigsResult tallies per-app rewrites.
@@ -216,8 +217,8 @@ func rewriteOne(
 		return 0, fmt.Sprintf("appconfig_read_skip:%s:%v", path, err)
 	}
 	var r struct {
-		Content    string `json:"content"`
-		IsBinary   bool   `json:"is_binary"`
+		Content  string `json:"content"`
+		IsBinary bool   `json:"is_binary"`
 	}
 	if jErr := json.Unmarshal(raw, &r); jErr != nil || r.IsBinary {
 		return 0, fmt.Sprintf("appconfig_decode_skip:%s", path)
@@ -292,7 +293,7 @@ func rewriteWordPress(text string, creds map[string]DBCredential) (string, bool)
 		return text, false
 	}
 	// Find the source DB_NAME first so we can match it against a credential.
-	var sourceDB, dst string
+	var sourceDB string
 	for _, m := range wpDefineRe.FindAllStringSubmatch(text, -1) {
 		if m[1] == "DB_NAME" {
 			sourceDB = m[2]
@@ -313,23 +314,11 @@ func rewriteWordPress(text string, creds map[string]DBCredential) (string, bool)
 	if !ok {
 		return text, false
 	}
-	dst = text
-	dst = wpDefineRe.ReplaceAllStringFunc(dst, func(line string) string {
-		m := wpDefineRe.FindStringSubmatch(line)
-		key := m[1]
-		switch key {
-		case "DB_NAME":
-			return fmt.Sprintf("define('DB_NAME', '%s');", phpEscape(cred.DBName))
-		case "DB_USER":
-			return fmt.Sprintf("define('DB_USER', '%s');", phpEscape(cred.DBUser))
-		case "DB_PASSWORD":
-			return fmt.Sprintf("define('DB_PASSWORD', '%s');", phpEscape(cred.Password))
-		case "DB_HOST":
-			return "define('DB_HOST', 'localhost');"
-		}
-		return line
-	})
-	return dst, dst != text
+	// GH #647: delegate the actual rewrite to the shared migrate.RewriteWPConfigDB
+	// so the cPanel restore and the wordpress_ssh import apply one identical,
+	// proven rewriter (no drift). Behavior-preserving (same regex + php-escape,
+	// DB_HOST -> localhost).
+	return migrate.RewriteWPConfigDB(text, cred.DBName, cred.DBUser, cred.Password, "localhost")
 }
 
 var (
