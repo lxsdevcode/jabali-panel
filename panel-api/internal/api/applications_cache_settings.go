@@ -174,3 +174,8 @@ func (h *wordPressHandler) cacheWarmup(c *gin.Context) {
 	}()
 	c.JSON(http.StatusAccepted, gin.H{"ok": true, "warming": host})
 }
+
+// cacheProfiles returns the static cache-profile registry for the UI (GH #618).
+func (h *wordPressHandler) cacheProfiles(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"profiles": models.CacheProfiles})
+}

@@ -21,7 +21,9 @@ type CacheSettings = {
   page_ttl?: number;
   object_maxttl?: number;
   redis_maxmemory_mb?: number;
+  profile?: string;
 };
+type CacheProfile = { key: string; label: string; warning: string };
 type GetResp = {
   cache_enabled: boolean;
   configured: boolean;
@@ -42,6 +44,8 @@ export function CacheSettingsDrawer({
   const [pageTtl, setPageTtl] = useState<number | null>(null);
   const [objectMaxTtl, setObjectMaxTtl] = useState<number | null>(null);
   const [redisMaxMemory, setRedisMaxMemory] = useState<number | null>(null);
+  const [profile, setProfile] = useState<string>("");
+  const [profiles, setProfiles] = useState<CacheProfile[]>([]);
 
   useEffect(() => {
     if (!install) return;
@@ -54,11 +58,16 @@ export function CacheSettingsDrawer({
         setPageTtl(s.page_ttl ?? null);
         setObjectMaxTtl(s.object_maxttl ?? null);
         setRedisMaxMemory(s.redis_maxmemory_mb ?? null);
+        setProfile(s.profile ?? "");
       })
       .catch((e) =>
         message.error(extractApiError(e) ?? "Failed to load cache settings"),
       )
       .finally(() => setLoading(false));
+    apiClient
+      .get<{ profiles: CacheProfile[] }>(`/applications/cache-profiles`)
+      .then((res) => setProfiles(res.data.profiles ?? []))
+      .catch(() => setProfiles([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [install]);
 
@@ -71,6 +80,7 @@ export function CacheSettingsDrawer({
         page_ttl: pageTtl ?? 0,
         object_maxttl: objectMaxTtl ?? 0,
         redis_maxmemory_mb: redisMaxMemory ?? 0,
+        profile,
       });
       message.success("Cache settings saved — applied on the next reconcile (~60s).");
       onClose();
@@ -82,6 +92,7 @@ export function CacheSettingsDrawer({
   };
 
   const enabled = install?.cache_enabled ?? false;
+  const activeProfile = profiles.find((p) => p.key === profile);
 
   return (
     <Drawer
@@ -115,6 +126,25 @@ export function CacheSettingsDrawer({
         description="TTLs are stamped as wp-config constants / the domain page-cache TTL by the panel — the WordPress plugin never writes them. URL exclusions bypass the page cache on top of the built-in set (wp-admin, login, cart, checkout, my-account, the REST API)."
       />
       <Form layout="vertical" disabled={loading}>
+        <Form.Item
+          label="Cache profile"
+          help="Presets extra bypass paths for your site type, on top of the built-in wp-admin/cart/checkout set."
+        >
+          <Select
+            value={profile}
+            onChange={setProfile}
+            options={profiles.map((p) => ({ value: p.key, label: p.label }))}
+          />
+        </Form.Item>
+        {activeProfile?.warning ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={activeProfile.label}
+            description={activeProfile.warning}
+          />
+        ) : null}
         <Form.Item
           label="Page-cache TTL (seconds)"
           help="How long nginx serves a cached page before revalidating. Blank = domain default. Range 10-86400."

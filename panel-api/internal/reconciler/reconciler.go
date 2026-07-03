@@ -2847,7 +2847,10 @@ func cacheBypassPathsFromInstalls(insts []models.ApplicationInstall) []string {
 	out := []string{}
 	for i := range insts {
 		data, _ := insts[i].ParseCacheSettings()
-		for _, p := range data.URLExclusions {
+		// GH #618: the selected profile contributes its preset bypass paths on
+		// top of the user url_exclusions.
+		paths := append(append([]string{}, models.CacheProfilePaths(data.Profile)...), data.URLExclusions...)
+		for _, p := range paths {
 			p = strings.TrimSpace(p)
 			if p == "" || seen[p] {
 				continue
