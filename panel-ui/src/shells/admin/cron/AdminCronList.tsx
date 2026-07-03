@@ -35,6 +35,7 @@ import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 dayjs.extend(relativeTime);
 
 const SCHEDULE_PRESETS: Record<string, string> = {
+  "* * * * *": "Every minute",
   "0 * * * *": "Hourly",
   "0 3 * * *": "Daily at 3 AM",
   "0 3 * * 0": "Weekly (Sun 3 AM)",

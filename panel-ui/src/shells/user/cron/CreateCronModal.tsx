@@ -18,6 +18,7 @@ import {
 } from "../../../apiClient";
 
 const SCHEDULE_PRESETS = [
+  { label: "Every minute", value: "* * * * *" },
   { label: "Hourly", value: "0 * * * *" },
   { label: "Daily at 3 AM", value: "0 3 * * *" },
   { label: "Weekly (Sun 3 AM)", value: "0 3 * * 0" },

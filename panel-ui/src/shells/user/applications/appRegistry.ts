@@ -29,6 +29,7 @@ export type AppDescriptor = {
   requires_db: boolean;
   email_login?: boolean;
   root_only?: boolean;
+  install_notice?: string;
   install_param_schema?: Record<string, ParamSpec>;
 };
 

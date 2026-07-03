@@ -25,6 +25,7 @@ var ITFlow = App{
 	Tags:                 []string{"CRM", "Project management"},
 	DefaultSubdirectory:  "",
 	RequiresDB:           true,
+	InstallNotice:        "ITFlow uses PHP exec functions (proc_open / shell_exec) for its in-app updater and domain-expiry lookups. If 'Allow PHP exec functions' is disabled for this site, those features will not work — enable it under the domain PHP settings before or after install.",
 	EmailLogin:           true,
 	RootOnly:             true,
 	SupportedPHPVersions: nil,

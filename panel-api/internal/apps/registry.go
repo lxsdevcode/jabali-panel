@@ -80,6 +80,9 @@ type App struct {
 	// subdirectory + "create www" controls for these apps and the API
 	// rejects a non-empty subdirectory / use_www.
 	RootOnly bool `json:"root_only,omitempty"`
+	// InstallNotice (GH #341) is an optional pre-install warning shown in the
+	// install form — e.g. an app that needs PHP exec functions enabled.
+	InstallNotice string `json:"install_notice,omitempty"`
 	// SupportedPHPVersions, if non-empty, is the closed set of PHP
 	// versions this app's installer can target. Empty = "any active
 	// pool". The UI uses this to filter the PHP-version picker.
