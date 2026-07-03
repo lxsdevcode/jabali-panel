@@ -45,6 +45,7 @@ type wordpressCacheSetParams struct {
 	MaxTTL    int  `json:"max_ttl"`    // JABALI_CACHE_MAXTTL (object-cache key TTL, 0 = LRU)
 	PageCache bool `json:"page_cache"` // JABALI_CACHE_PAGE_CACHE (WP full-page cache)
 	PageTTL   int  `json:"page_ttl"`   // JABALI_CACHE_PAGE_TTL (seconds)
+	MaxMemMB  int  `json:"max_mem_mb"` // JABALI_CACHE_MAXMEMORY_MB (object-cache budget; 0 = unlimited)
 }
 
 type wordpressCacheSetResult struct {
@@ -70,7 +71,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 		// plugin shouldn't fail the disable).
 		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "jabali-cache", "disable")
 		_ = runWPAsTenant(ctx, p.OSUser, p.InstallPath, "plugin", "deactivate", "jabali-cache")
-		_ = setWPConfigCacheConstants(p.InstallPath, "", 0, "", "", "", false, 0, false, 0) // strip the managed block
+		_ = setWPConfigCacheConstants(p.InstallPath, "", 0, "", "", "", false, 0, false, 0, 0) // strip the managed block
 		return wordpressCacheSetResult{Ok: true, Enabled: false}, nil
 	}
 
@@ -128,7 +129,7 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	//    key prefix (~jc:<osuser>:*) are always correct regardless of any value
 	//    saved via the admin screen. We no longer write a jabali-cache-config.php
 	//    file (the plugin stopped reading one; it deletes any legacy copy).
-	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, "wp_"+p.OSUser, true, p.MaxTTL, p.PageCache, p.PageTTL); err != nil {
+	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, "wp_"+p.OSUser, true, p.MaxTTL, p.PageCache, p.PageTTL, p.MaxMemMB); err != nil {
 		return nil, bkInternal("write wp-config constants", err)
 	}
 
@@ -192,7 +193,7 @@ func phpBool(b bool) string {
 	return "false"
 }
 
-func setWPConfigCacheConstants(installPath, socket string, db int, prefix, password, username string, enable bool, maxTTL int, pageCache bool, pageTTL int) error {
+func setWPConfigCacheConstants(installPath, socket string, db int, prefix, password, username string, enable bool, maxTTL int, pageCache bool, pageTTL int, maxMemMB int) error {
 	cfgPath := filepath.Join(installPath, "wp-config.php")
 	// GH #411: the root agent must NEVER read or write THROUGH a tenant-planted
 	// symlink — a tenant owns their docroot and could point wp-config.php (or a

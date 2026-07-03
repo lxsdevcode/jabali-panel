@@ -222,6 +222,31 @@ class Jabali_Cache_CLI {
 		\WP_CLI::log( wp_json_encode( $out ) );
 	}
 
+	/**
+	 * Enforce the per-site object-cache budget (GH #612). Deletes keys over the
+	 * JABALI_CACHE_MAXMEMORY_MB budget (~2KB/key estimate). Shared Redis has no
+	 * per-user maxmemory, so this bounds the site's key footprint; the instance
+	 * allkeys-lru still handles global eviction. Safe to run on a timer.
+	 *
+	 * @when after_wp_load
+	 */
+	public function trim() {
+		$cfg = Jabali_Cache_Config::load();
+		$mb  = defined( 'JABALI_CACHE_MAXMEMORY_MB' ) ? (int) JABALI_CACHE_MAXMEMORY_MB : 0;
+		if ( $mb <= 0 ) {
+			\WP_CLI::log( wp_json_encode( array( 'trimmed' => 0, 'budget_mb' => 0, 'note' => 'no budget set' ) ) );
+			return;
+		}
+		$max_keys = $mb * 512; // ~2 KiB per object-cache key.
+		$c        = new Jabali_Cache_Client( $cfg );
+		$deleted  = 0;
+		if ( $c->connect() ) {
+			$deleted = (int) $c->trim_to_budget( $cfg['prefix'], $max_keys );
+			$c->close();
+		}
+		\WP_CLI::log( wp_json_encode( array( 'trimmed' => $deleted, 'budget_mb' => $mb, 'max_keys' => $max_keys ) ) );
+	}
+
 	private function info_int( $info, $key ) {
 		if ( preg_match( '/^' . preg_quote( $key, '/' ) . ':(\\d+)/m', (string) $info, $mm ) ) {
 			return (int) $mm[1];

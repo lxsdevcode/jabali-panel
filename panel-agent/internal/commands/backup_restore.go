@@ -534,7 +534,7 @@ func stripRestoredCacheBlocks(username string) int {
 			// fchown on the fd. It errors + skips for a non-WP dir (no wp-config),
 			// so no pre-stat of the tenant path is needed. enable=false strips the
 			// JABALI_CACHE_* block.
-			if err := setWPConfigCacheConstants(dir, "", 0, "", "", "", false, 0, false, 0); err == nil {
+			if err := setWPConfigCacheConstants(dir, "", 0, "", "", "", false, 0, false, 0, 0); err == nil {
 				n++
 			}
 		}

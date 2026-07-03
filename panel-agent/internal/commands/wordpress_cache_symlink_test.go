@@ -40,7 +40,7 @@ func TestSetWPConfigCacheConstants_RealFileInsertsBlock(t *testing.T) {
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := setWPConfigCacheConstants(dir, "/run/redis/redis.sock", 1, "shukivaknin:01ABC", "tok123", "wp_shukivaknin", true, 3600, true, 120); err != nil {
+	if err := setWPConfigCacheConstants(dir, "/run/redis/redis.sock", 1, "shukivaknin:01ABC", "tok123", "wp_shukivaknin", true, 3600, true, 120, 256); err != nil {
 		t.Fatalf("real wp-config.php should succeed: %v", err)
 	}
 	b, _ := os.ReadFile(cfg)

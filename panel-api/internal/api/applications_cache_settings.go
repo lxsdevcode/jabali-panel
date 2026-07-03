@@ -179,11 +179,23 @@ func (h *wordPressHandler) cacheWarmup(c *gin.Context) {
 		return
 	}
 	agent, host, installID := h.cfg.Agent, dom.Name, inst.ID
+	osUser := ""
+	if u, uErr := h.cfg.Users.FindByID(c.Request.Context(), inst.UserID); uErr == nil && u != nil && u.Username != nil {
+		osUser = *u.Username
+	}
+	trimPath := dom.DocRoot
+	if inst.Subdirectory != "" {
+		trimPath = path.Join(dom.DocRoot, inst.Subdirectory)
+	}
 	repo := h.cfg.ApplicationInstalls
 	go func() {
 		wctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		res, err := agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 100})
+		// GH #612: enforce the object-cache budget after warmup (which adds keys).
+		if osUser != "" {
+			_, _ = agent.Call(wctx, "wordpress.cache_trim", map[string]any{"os_user": osUser, "install_path": trimPath})
+		}
 		// GH #615: record a lightweight last-warmup status on the install.
 		rec := models.WarmupRecord{At: time.Now().UTC().Format(time.RFC3339)}
 		if err != nil {

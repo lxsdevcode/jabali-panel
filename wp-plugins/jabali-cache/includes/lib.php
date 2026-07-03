@@ -870,6 +870,62 @@ class Jabali_Cache_Client {
 		return $count;
 	}
 
+	/**
+	 * Trim this site's prefix to at most $maxKeys keys, deleting the excess
+	 * (GH #612). Redis has no per-USER maxmemory on a shared instance, so this
+	 * is the applied per-tenant footprint control: bound the key count (a proxy
+	 * for memory). The shared instance's allkeys-lru still handles fine-grained
+	 * eviction; this stops one site's object cache from dominating the DB.
+	 * Bounded collect (100k) so the SCAN itself can't run away. Returns deleted.
+	 *
+	 * @param string $prefix
+	 * @param int    $maxKeys
+	 * @return int
+	 */
+	public function trim_to_budget( $prefix, $maxKeys ) {
+		if ( ! $this->is_connected() || $maxKeys <= 0 ) {
+			return 0;
+		}
+		$pattern = $prefix . '*';
+		$keys    = array();
+		if ( 'phpredis' === $this->driver ) {
+			try {
+				$it = null;
+				while ( false !== ( $batch = $this->redis->scan( $it, $pattern, 1000 ) ) ) {
+					foreach ( $batch as $k ) {
+						$keys[] = $k;
+					}
+					if ( count( $keys ) > 100000 || 0 === (int) $it ) {
+						break;
+					}
+				}
+			} catch ( \Throwable $e ) {
+				$this->fail( $e->getMessage() );
+				return 0;
+			}
+		} else {
+			$cursor = '0';
+			do {
+				$res = $this->cmd( array( 'SCAN', $cursor, 'MATCH', $pattern, 'COUNT', '1000' ) );
+				if ( ! is_array( $res ) || count( $res ) < 2 ) {
+					break;
+				}
+				$cursor = (string) $res[0];
+				if ( is_array( $res[1] ) ) {
+					foreach ( $res[1] as $k ) {
+						$keys[] = $k;
+					}
+				}
+			} while ( '0' !== $cursor && ! $this->dead && count( $keys ) <= 100000 );
+		}
+		$n = count( $keys );
+		if ( $n <= $maxKeys ) {
+			return 0;
+		}
+		$excess = array_slice( $keys, 0, $n - $maxKeys );
+		return (int) $this->del( $excess );
+	}
+
 	public function close() {
 		if ( 'phpredis' === $this->driver && $this->redis ) {
 			try {

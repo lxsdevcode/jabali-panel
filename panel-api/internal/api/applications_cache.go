@@ -222,6 +222,7 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 			// stamped for completeness but inert while page_cache is false.
 			"page_cache": false,
 			"page_ttl":   cacheSettings.PageTTL,
+			"max_mem_mb": cacheSettings.RedisMaxMemoryMB,
 		}
 		if _, err := h.cfg.Agent.Call(ctx, "wordpress.cache_set", params); err != nil {
 			slog.ErrorContext(ctx, "cache: agent enable", "err", err, "install_id", installID)
