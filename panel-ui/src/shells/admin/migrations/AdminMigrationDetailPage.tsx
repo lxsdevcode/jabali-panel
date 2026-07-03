@@ -20,6 +20,7 @@ import {
   Radio,
   Space,
   Spin,
+  Progress,
   Steps,
   Tag,
   Typography,
@@ -212,6 +213,17 @@ export const AdminMigrationDetailPage = () => {
       </Card>
 
       <Card size="small" title="Pipeline">
+        {(() => {
+          const done = STAGE_ORDER.filter((n) => stagesByName.get(n)?.state === "done").length;
+          const pct = job.state === "done" ? 100 : Math.round((done / STAGE_ORDER.length) * 100);
+          return (
+            <Progress
+              percent={pct}
+              status={job.state === "failed" ? "exception" : job.state === "done" ? "success" : "active"}
+              style={{ marginBottom: 16 }}
+            />
+          );
+        })()}
         <Steps
           direction="horizontal"
           responsive={false}

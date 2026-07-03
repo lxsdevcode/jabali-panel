@@ -261,9 +261,25 @@ export const AdminMigrationsPage = () => {
         }
       />
 
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              Start a guided migration
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              One wizard collects connection details, scans the source, lets you review the plan, and runs the migration.
+            </Typography.Text>
+          </div>
+          <Button type="primary" size="large" onClick={() => setWizardOpen(true)}>
+            New migration
+          </Button>
+        </div>
+      </Card>
+
       <Card
         size="small"
-        title="Migration jobs"
+        title="Recent migration jobs"
         extra={screens.md ? migrationsToolbar : undefined}
       >
         {!screens.md ? (
