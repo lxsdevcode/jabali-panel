@@ -8,7 +8,7 @@ import {
   Drawer,
   Form,
   Input,
-  Select,
+  Card,
   Space,
   Steps,
   Tabs,
@@ -53,6 +53,39 @@ type WHMStep = "tarball" | "import" | "done";
 type DriveStep = CPanelStep | WHMStep;
 
 // ─── source options ────────────────────────────────────────────────────────────
+
+const SOURCE_DESC: Record<string, string> = {
+  cpanel: "Live SSH or uploaded pkgacct backup — full account, websites, DBs, mail, DNS, SSL",
+  whm_pkgacct: "Uploaded WHM Full Backup / pkgacct tarball",
+  directadmin: "Live SSH or backup_user tarball — domains, users, DBs, mail, DNS, SSL",
+  hestiacp: "Live SSH or v-backup-user tarball — web, mail, DNS, databases, cron",
+  wordpress_ssh: "Cloudways / VPS / generic SSH — single WP site (files + DB + wp-config rewrite)",
+  wordpress_plugin: "No SSH — jabali-migrator plugin on the source pushes over a token-authed API",
+};
+
+// SourceCards — a form-bound card grid (GH #665 mockup 02) replacing the select.
+function SourceCards({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      {SOURCE_OPTIONS.map((o) => (
+        <Card
+          key={o.value}
+          hoverable
+          size="small"
+          onClick={() => onChange?.(o.value)}
+          style={{ borderColor: value === o.value ? "#1677ff" : undefined, borderWidth: value === o.value ? 2 : 1 }}
+        >
+          <Typography.Text strong>{o.label}</Typography.Text>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {SOURCE_DESC[o.value] ?? ""}
+            </Typography.Text>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 const SOURCE_OPTIONS = [
   { value: "cpanel", label: "cPanel (live SSH source)" },
@@ -154,7 +187,55 @@ function SecretsStep({ jobId, kind, onDone }: { jobId: string; kind?: string; on
       <Button type="primary" htmlType="submit" loading={mut.isPending}>
         Save credentials
       </Button>
+      <TestConnection jobId={jobId} />
     </Form>
+  );
+}
+
+// TestConnection (GH #665 mockup 03) — handshake the source, show detected
+// counts/version or the error, before pulling.
+function TestConnection({ jobId }: { jobId: string }) {
+  const [res, setRes] = useState<Record<string, unknown> | null>(null);
+  const mut = useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<Record<string, unknown>>(
+        `/admin/migrations/${jobId}/test-connection`,
+        {},
+      );
+      return data;
+    },
+    onSuccess: (d) => setRes(d),
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string; error?: string } } })?.response?.data;
+      setRes({ ok: false, error: detail?.detail ?? detail?.error ?? "Connection failed" });
+    },
+  });
+  return (
+    <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
+      <Button onClick={() => void mut.mutateAsync()} loading={mut.isPending}>
+        Test connection
+      </Button>
+      {res?.ok ? (
+        <Alert
+          type="success"
+          showIcon
+          message="Connection OK"
+          description={
+            <span>
+              {String(res.panel ?? "")}
+              {res.version ? ` ${res.version}` : ""}
+              {res.accounts != null ? ` · ${res.accounts} accounts` : ""}
+              {res.domains != null ? ` · ${res.domains} domains` : ""}
+              {res.databases != null ? ` · ${res.databases} DBs` : ""}
+              {res.bytes != null ? ` · ${(Number(res.bytes) / 1073741824).toFixed(2)} GB` : ""}
+              {res.needs_update ? " · ⚠ source plugin outdated (update to 0.1.2+)" : ""}
+            </span>
+          }
+        />
+      ) : res ? (
+        <Alert type="error" showIcon message="Connection failed" description={String(res.error ?? "")} />
+      ) : null}
+    </Space>
   );
 }
 
@@ -454,7 +535,7 @@ export const CreateMigrationDrawer = ({
             name="source_kind"
             rules={[{ required: true, message: "Pick a source panel kind" }]}
           >
-            <Select options={SOURCE_OPTIONS} />
+            <SourceCards />
           </Form.Item>
           <Form.Item
             label="Source host"
