@@ -506,7 +506,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c %q
+ExecStart=/bin/sh -c %s
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
@@ -517,7 +517,7 @@ StandardError=append:/var/log/jabali/cron/root/%s.log
 
 [Install]
 WantedBy=multi-user.target
-`, name, command, jobID, jobID)
+`, name, singleQuote(command), jobID, jobID)
 }
 
 func init() {

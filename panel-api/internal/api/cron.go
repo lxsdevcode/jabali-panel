@@ -1,6 +1,7 @@
 package api
 
 import (
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,7 +77,10 @@ func RegisterCronRoutes(g *gin.RouterGroup, cfg CronHandlerConfig) {
 	// DELETE /cron/:id, run-now, log) already accept any admin caller via
 	// fetchAndAuthorize's `claims.IsAdmin` bypass — no separate /admin
 	// variant needed for those.
-	admin := g.Group("/admin/cron")
+	// GH #699: group-level RequireAdmin so any future /admin/cron route is
+	// admin-gated by default (not just per-handler). adminListAll already checks
+	// IsAdmin; this is the belt-and-suspenders guard.
+	admin := g.Group("/admin/cron", middleware.RequireAdmin())
 	admin.GET("", h.adminListAll)
 }
 
