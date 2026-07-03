@@ -32,6 +32,11 @@ import (
 const filesAgentTimeout = 2 * time.Minute
 const cliUploadStagingDir = "/var/lib/jabali-uploads"
 
+// maxCLIUploadBytes bounds a single CLI upload (GH #661) — mirrors the agent's
+// 100 MiB read/write cap. Checked BEFORE os.ReadFile so a multi-GB file can't
+// OOM the CLI or fill the staging dir.
+const maxCLIUploadBytes = int64(100 << 20)
+
 // resolveFilesUser resolves the target tenant and asserts a linux account.
 func resolveFilesUser(ctx context.Context, ref string) (*models.User, error) {
 	u, err := resolveUser(ctx, ref)
@@ -471,6 +476,11 @@ func newFilesUploadCmd() *cobra.Command {
 			u, err := resolveFilesUser(c.Context(), user)
 			if err != nil {
 				return err
+			}
+			if fi, statErr := os.Stat(args[0]); statErr != nil {
+				return statErr
+			} else if fi.Size() > maxCLIUploadBytes {
+				return fmt.Errorf("file is %d bytes; the CLI upload limit is %d — use SFTP/SSH for larger files", fi.Size(), maxCLIUploadBytes)
 			}
 			data, rerr := os.ReadFile(args[0])
 			if rerr != nil {
