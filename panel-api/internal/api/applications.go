@@ -1166,20 +1166,25 @@ func createAppCrons(ctx context.Context, cfg ApplicationHandlerConfig, userID, a
 // by EXACT command (rebuilt from installPath) so a docroot install can't sweep
 // a subdir install's jobs. Best-effort.
 func removeAppCrons(ctx context.Context, cfg ApplicationHandlerConfig, userID, osUser, appType, installPath string) {
-	specs := appCronSpecs(appType, installPath)
-	if len(specs) == 0 || userID == "" || cfg.CronJobs == nil {
+	if userID == "" || cfg.CronJobs == nil {
 		return
 	}
-	want := make(map[string]bool, len(specs))
-	for _, c := range specs {
+	// The auto-created app crons (exact-command match)...
+	want := make(map[string]bool)
+	for _, c := range appCronSpecs(appType, installPath) {
 		want[c.command] = true
 	}
 	jobs, err := cfg.CronJobs.ListByUserID(ctx, userID)
 	if err != nil {
 		return
 	}
+	// GH #343: also remove any OTHER cron whose command references a path INSIDE
+	// the install directory (installPath + "/"). Once the app is deleted its
+	// directory is gone, so such a cron would only fail on every run — cleaning
+	// it up is cleanup, not data loss.
+	pathRef := installPath + "/"
 	for _, j := range jobs {
-		if !want[j.Command] {
+		if !want[j.Command] && (installPath == "" || !strings.Contains(j.Command, pathRef)) {
 			continue
 		}
 		if cfg.Agent != nil && osUser != "" {
