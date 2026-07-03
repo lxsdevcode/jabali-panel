@@ -138,14 +138,19 @@ export function CacheSettingsDrawer({
           style={{ marginBottom: 16 }}
           title="Object cache (Redis)"
         >
-          <Descriptions.Item label="Hit ratio (server-wide)">
-            {(stats.hit_ratio ?? 0).toFixed(1)}%
-          </Descriptions.Item>
-          <Descriptions.Item label="Keys (this site)">{stats.keys ?? 0}</Descriptions.Item>
-          <Descriptions.Item label="Redis memory">
-            {Math.round((stats.used_memory ?? 0) / (1024 * 1024))} MB
-          </Descriptions.Item>
+          <Descriptions.Item label="Status">Connected</Descriptions.Item>
           <Descriptions.Item label="Client">{stats.driver ?? "-"}</Descriptions.Item>
+          <Descriptions.Item label="Keys (this site)">{stats.keys ?? 0}</Descriptions.Item>
+          {(stats.used_memory ?? 0) > 0 ? (
+            <Descriptions.Item label="Hit ratio (server-wide)">
+              {(stats.hit_ratio ?? 0).toFixed(1)}%
+            </Descriptions.Item>
+          ) : null}
+          {(stats.used_memory ?? 0) > 0 ? (
+            <Descriptions.Item label="Redis memory (server-wide)">
+              {Math.round((stats.used_memory ?? 0) / (1024 * 1024))} MB
+            </Descriptions.Item>
+          ) : null}
         </Descriptions>
       ) : null}
       <Alert

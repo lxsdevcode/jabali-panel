@@ -812,7 +812,17 @@ class Jabali_Cache_Client {
 			try {
 				$info = $this->redis->info();
 				$out  = '';
+				// phpredis 6.x can return nested section arrays; flatten one level
+				// so keyspace_hits / used_memory etc. are always top-level lines.
 				foreach ( (array) $info as $k => $v ) {
+					if ( is_array( $v ) ) {
+						foreach ( $v as $k2 => $v2 ) {
+							if ( ! is_array( $v2 ) ) {
+								$out .= $k2 . ':' . $v2 . "\n";
+							}
+						}
+						continue;
+					}
 					$out .= $k . ':' . $v . "\n";
 				}
 				return $out;
