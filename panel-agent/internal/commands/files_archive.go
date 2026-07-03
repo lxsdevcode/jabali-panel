@@ -57,6 +57,24 @@ type filesArchiveResponse struct {
 // tenant from exhausting /tmp/agent fds.
 const maxArchivesPerUser = 2
 
+// maxArchiveStagingBytes (GH #652) bounds the TOTAL size of all in-flight
+// archive scratch tarballs across ALL users, so concurrent archives from many
+// tenants can't fill /tmp. Per-user is already bounded by maxArchivesPerUser ×
+// maxArchiveBytes; this is the shared-staging ceiling on top of that.
+const maxArchiveStagingBytes = int64(6 * 1024 * 1024 * 1024)
+
+// archiveStagingBytesInUse sums the current jabali-archive-* scratch files.
+func archiveStagingBytesInUse() int64 {
+	matches, _ := filepath.Glob("/tmp/jabali-archive-*.tar.gz")
+	var total int64
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil {
+			total += fi.Size()
+		}
+	}
+	return total
+}
+
 var (
 	archiveInFlightMu sync.Mutex
 	archiveInFlight   = map[string]int{}
@@ -138,6 +156,14 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("rand: %v", err),
+		}
+	}
+	// GH #652: reject if the shared archive staging area is already at budget —
+	// prevents many tenants' concurrent archives from filling /tmp.
+	if archiveStagingBytesInUse() >= maxArchiveStagingBytes {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeUnavailable,
+			Message: "archive staging area is at capacity; retry shortly",
 		}
 	}
 	out := filepath.Join("/tmp", fmt.Sprintf("jabali-archive-%s.tar.gz", hex.EncodeToString(rnd[:])))

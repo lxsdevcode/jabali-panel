@@ -653,6 +653,9 @@ func (h *filesHandler) upload(c *gin.Context) {
 		return
 	}
 	fileHeader, err := c.FormFile("file")
+	if err == nil && fileHeader != nil {
+		c.Set("audit_target", dirPath+"/"+filepath.Base(fileHeader.Filename)+" (upload)") // GH #658
+	}
 	if err != nil {
 		if errors.Is(err, http.ErrMissingFile) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "file_required"})
@@ -902,6 +905,7 @@ func (h *filesHandler) archive(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths_required"})
 		return
 	}
+	c.Set("audit_target", strings.Join(req.Paths, ", ")+" (archive)") // GH #658
 	raw, err := h.cfg.Agent.Call(c.Request.Context(), "files.archive", filesArchiveAgentParams{
 		UserID: userID, Username: username, Paths: req.Paths,
 	})
