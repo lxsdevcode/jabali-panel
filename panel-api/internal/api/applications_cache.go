@@ -156,6 +156,12 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// GH #612: behavioral cache settings (object max-TTL, page TTL) travel as
 	// panel-stamped constants + the nginx page-cache TTL.
 	cacheSettings, _ := install.ParseCacheSettings()
+	// GH #612: object + page caches are independently controllable. The master
+	// toggle (`enabled`, from the app-row Cache switch) gates both; the per-
+	// install pointers then refine WHICH layer is active. An unset pointer means
+	// "follow the master" (both on), preserving pre-split behavior.
+	objectOn := enabled && (cacheSettings.ObjectCacheEnabled == nil || *cacheSettings.ObjectCacheEnabled)
+	pageOn := enabled && (cacheSettings.PageCacheEnabled == nil || *cacheSettings.PageCacheEnabled)
 	// Resolve the domain (docroot + name for nginx) and the tenant os user.
 	domain, err := h.cfg.Domains.FindByID(ctx, install.DomainID)
 	if err != nil {
@@ -183,7 +189,7 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// per install so a tenant's two sites never collide.
 	prefix := osUser + ":" + installID
 
-	if enabled {
+	if objectOn {
 		// 1. Provision the per-tenant ACL user BEFORE the plugin tries to auth.
 		if h.cfg.Redis == nil || h.cfg.CacheTokenSecret == "" {
 			return errCacheRedisUnavailable
@@ -240,8 +246,8 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// /blog), so only flip the per-domain flag OFF when no sibling install on
 	// the same domain still wants it — otherwise we'd kill page cache for a
 	// site whose own switch is still ON (GH #409).
-	desiredDomainCache := enabled
-	if !enabled {
+	desiredDomainCache := pageOn
+	if !pageOn {
 		siblings, sErr := h.cfg.ApplicationInstalls.CountCacheEnabledByDomainID(ctx, domain.ID, installID)
 		if sErr != nil {
 			// Conservative on error: leave the page cache as-is rather than risk
@@ -256,7 +262,7 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// on a /blog WP install doesn't apply WP-tuned caching to unrelated content
 	// elsewhere on the domain. "/" = whole domain (root install).
 	pathChanged := false
-	if enabled {
+	if pageOn {
 		newPath := cachePathFromSubdir(install.Subdirectory)
 		pathChanged = newPath != domain.CachePath
 		if perr := h.cfg.Domains.UpdateCachePath(ctx, domain.ID, newPath); perr != nil {
@@ -296,7 +302,7 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// GH #615: warm the page cache after enabling, once the reconcile has
 	// re-rendered the vhost with the cache directives. Delayed + detached
 	// (best-effort) so we don't crawl before the cache is live.
-	if enabled && h.cfg.Agent != nil {
+	if pageOn && h.cfg.Agent != nil {
 		agent, host := h.cfg.Agent, domain.Name
 		go func() {
 			time.Sleep(75 * time.Second)

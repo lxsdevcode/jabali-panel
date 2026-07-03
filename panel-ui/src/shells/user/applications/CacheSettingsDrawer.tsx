@@ -9,7 +9,7 @@
 //
 // A cookie bypass/allowlist was rejected: it would re-open the #416/#419
 // fail-open class (cross-visitor content bleed on the shared microcache).
-import { Alert, App, Button, Descriptions, Drawer, Form, InputNumber, Select } from "antd";
+import { Alert, App, Button, Descriptions, Drawer, Form, InputNumber, Select, Switch } from "antd";
 import { useEffect, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
@@ -18,6 +18,8 @@ import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
 
 type CacheSettings = {
   url_exclusions?: string[];
+  object_cache_enabled?: boolean;
+  page_cache_enabled?: boolean;
   page_ttl?: number;
   object_maxttl?: number;
   redis_maxmemory_mb?: number;
@@ -56,6 +58,8 @@ export function CacheSettingsDrawer({
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [advising, setAdvising] = useState(false);
   const [advice, setAdvice] = useState<string | null>(null);
+  const [objectOn, setObjectOn] = useState(true);
+  const [pageOn, setPageOn] = useState(true);
 
   useEffect(() => {
     if (!install) return;
@@ -69,6 +73,8 @@ export function CacheSettingsDrawer({
         setObjectMaxTtl(s.object_maxttl ?? null);
         setRedisMaxMemory(s.redis_maxmemory_mb ?? null);
         setProfile(s.profile ?? "");
+        setObjectOn(s.object_cache_enabled ?? true);
+        setPageOn(s.page_cache_enabled ?? true);
       })
       .catch((e) =>
         message.error(extractApiError(e) ?? "Failed to load cache settings"),
@@ -94,6 +100,8 @@ export function CacheSettingsDrawer({
       );
       const r = res.data.recommended;
       setProfile(r.profile ?? "");
+      setObjectOn(true);
+      setPageOn(true);
       setAdvice(r.note ?? null);
       message.success("Recommendation applied to the form — review and Save.");
     } catch (e) {
@@ -113,6 +121,8 @@ export function CacheSettingsDrawer({
         object_maxttl: objectMaxTtl ?? 0,
         redis_maxmemory_mb: redisMaxMemory ?? 0,
         profile,
+        object_cache_enabled: objectOn,
+        page_cache_enabled: pageOn,
       });
       message.success("Cache settings saved — applied on the next reconcile (~60s).");
       onClose();
@@ -181,6 +191,12 @@ export function CacheSettingsDrawer({
         description="TTLs are stamped as wp-config constants / the domain page-cache TTL by the panel — the WordPress plugin never writes them. URL exclusions bypass the page cache on top of the built-in set (wp-admin, login, cart, checkout, my-account, the REST API)."
       />
       <Form layout="vertical" disabled={loading}>
+        <Form.Item label="Object cache (Redis)" help="Persistent WordPress object cache. Only applies while the master Cache toggle is on.">
+          <Switch checked={objectOn} onChange={setObjectOn} />
+        </Form.Item>
+        <Form.Item label="Page cache (nginx)" help="Full-page micro-cache for anonymous visitors. Independent of the object cache.">
+          <Switch checked={pageOn} onChange={setPageOn} />
+        </Form.Item>
         <Form.Item label="Advisor">
           <Button onClick={() => void advise()} loading={advising}>
             Suggest settings from the site
