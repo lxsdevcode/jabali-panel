@@ -784,6 +784,8 @@ func (h *filesHandler) extract(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
+	c.Set("audit_target", req.Path) // GH #658: audit the concrete file path
+	c.Set("audit_target_type", "file")
 	raw, err := h.cfg.Agent.Call(c.Request.Context(), "files.extract", filesExtractAgentParams{
 		UserID: userID, Username: username, Path: req.Path, Dest: req.Dest,
 	})
@@ -834,6 +836,8 @@ func (h *filesHandler) move(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
+	c.Set("audit_target", req.Path) // GH #658: audit the concrete file path
+	c.Set("audit_target_type", "file")
 	// Dest must look like an absolute path (validated inside the agent
 	// against the user's scope), never bare "..". Client should not be
 	// able to coerce us into moving into the docroot's parent by sending
@@ -868,6 +872,8 @@ func (h *filesHandler) chmod(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
+	c.Set("audit_target", req.Path) // GH #658: audit the concrete file path
+	c.Set("audit_target_type", "file")
 	_, err := h.cfg.Agent.Call(c.Request.Context(), "files.chmod", filesChmodAgentParams{
 		UserID: userID, Username: username, Path: req.Path, Mode: req.Mode,
 	})
@@ -945,6 +951,8 @@ func (h *filesHandler) copy(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
+	c.Set("audit_target", req.Path) // GH #658: audit the concrete file path
+	c.Set("audit_target_type", "file")
 	if strings.Contains(req.DestDir, "..") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_dest_dir"})
 		return
@@ -972,6 +980,8 @@ func (h *filesHandler) write(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "detail": err.Error()})
 		return
 	}
+	c.Set("audit_target", req.Path) // GH #658: audit the concrete file path
+	c.Set("audit_target_type", "file")
 	_, err := h.cfg.Agent.Call(c.Request.Context(), "files.write", filesWriteAgentParams{
 		UserID: userID, Username: username, Path: req.Path, Content: req.Content,
 	})
@@ -1171,6 +1181,8 @@ func (h *filesHandler) delete(c *gin.Context) {
 		return
 	}
 	recursive := c.Query("recursive") == "true"
+	c.Set("audit_target", p) // GH #658: audit which path was deleted
+	c.Set("audit_target_type", "file")
 	_, err := h.cfg.Agent.Call(c.Request.Context(), "files.delete", filesDeleteAgentParams{
 		UserID: userID, Username: username, Path: p, Recursive: recursive,
 	})

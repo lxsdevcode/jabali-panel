@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"sync"
 	"archive/tar"
 	"compress/gzip"
 	"context"
@@ -46,6 +47,37 @@ type filesArchiveResponse struct {
 	Size        int64  `json:"size"`
 }
 
+// Per-user archive concurrency cap (GH #652). Archive generation writes a
+// server-side scratch file, so cap in-flight requests per user to prevent a
+// tenant from exhausting /tmp/agent fds.
+const maxArchivesPerUser = 2
+
+var (
+	archiveInFlightMu sync.Mutex
+	archiveInFlight   = map[string]int{}
+)
+
+func acquireArchiveSlot(username string) bool {
+	archiveInFlightMu.Lock()
+	defer archiveInFlightMu.Unlock()
+	if archiveInFlight[username] >= maxArchivesPerUser {
+		return false
+	}
+	archiveInFlight[username]++
+	return true
+}
+
+func releaseArchiveSlot(username string) {
+	archiveInFlightMu.Lock()
+	defer archiveInFlightMu.Unlock()
+	if archiveInFlight[username] > 0 {
+		archiveInFlight[username]--
+		if archiveInFlight[username] == 0 {
+			delete(archiveInFlight, username)
+		}
+	}
+}
+
 func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p filesArchiveParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -57,6 +89,13 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 	if p.Username == "" {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "username required"}
 	}
+	// GH #652: bound concurrent archive generation per user — each request
+	// writes a server-side scratch tarball, so unbounded concurrency lets one
+	// tenant spawn many /tmp/jabali-archive-* files and exhaust the agent/disk.
+	if !acquireArchiveSlot(p.Username) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: "too many concurrent archive requests for this user; retry shortly"}
+	}
+	defer releaseArchiveSlot(p.Username)
 	if len(p.Paths) == 0 {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "at least one path required"}
 	}

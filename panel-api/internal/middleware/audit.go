@@ -95,6 +95,16 @@ func AuditRecord(rec audit.Recorder) gin.HandlerFunc {
 		}
 
 		targetType, targetID := deriveTarget(route, c)
+		// GH #658: a handler may set the concrete operation target (e.g. the
+		// file path for a file-manager mutation) in the gin context — prefer it
+		// over the generic route-derived target so incident response can see
+		// WHICH file was written/deleted/chmodded/extracted.
+		if t := c.GetString("audit_target"); t != "" {
+			targetID = t
+			if tt := c.GetString("audit_target_type"); tt != "" {
+				targetType = tt
+			}
+		}
 
 		rec.Record(audit.APIMutation(
 			actorUserID, actorKind, subject,
