@@ -639,14 +639,17 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
                   setAreas(next);
                 }}
                 options={[
-                  { label: "Website files", value: "websites" },
-                  { label: "Databases", value: "databases" },
+                  { label: "Website files (always)", value: "websites", disabled: true },
+                  { label: "Databases (always)", value: "databases", disabled: true },
                   { label: "Mailboxes", value: "mailboxes" },
                   { label: "DNS zones", value: "dns" },
                   { label: "SSL certificates", value: "ssl" },
                   { label: "Cron jobs", value: "cron" },
                 ]}
               />
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                Website files + databases are always imported (the site needs them). Uncheck any of the rest to skip it.
+              </Typography.Text>
             </Card>
           )}
           <Space>

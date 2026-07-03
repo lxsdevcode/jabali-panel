@@ -791,29 +791,41 @@ func cpanelRestoreCallback(
 		// docroots + ImportDomains created the domains — so the curl→php
 		// self-target rewrite can resolve URL paths to real .php files
 		// that exist on the dest disk (rewrite rule 5 "must exist").
-		cronRes, err := cpanel.ImportCron(ctx, cronRepo, p.parsed, p.targetUserID, p.targetUsername)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("cron: %w", err)
+		if plan.Cron {
+			cronRes, err := cpanel.ImportCron(ctx, cronRepo, p.parsed, p.targetUserID, p.targetUsername)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("cron: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf("cron: created=%d", cronRes.Created))
+			warnings = append(warnings, cronRes.Skipped...)
+		} else {
+			warnings = append(warnings, "cron: skipped per migration plan")
 		}
-		warnings = append(warnings, fmt.Sprintf("cron: created=%d", cronRes.Created))
-		warnings = append(warnings, cronRes.Skipped...)
 
-		mailRes, err := cpanel.ImportMailboxes(ctx, p.parsed, restoreAgent, job.ID, mbRepo, domainsRepo)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("mailboxes: %w", err)
+		if plan.Mailboxes {
+			mailRes, err := cpanel.ImportMailboxes(ctx, p.parsed, restoreAgent, job.ID, mbRepo, domainsRepo)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("mailboxes: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf(
+				"mailboxes: maildirs=%d messages_found=%d messages_pushed=%d bytes_pushed=%d",
+				mailRes.MaildirsFound, mailRes.MessagesFound, mailRes.MessagesPushed, mailRes.BytesPushed))
+			warnings = append(warnings, mailRes.Skipped...)
+		} else {
+			warnings = append(warnings, "mailboxes: skipped per migration plan")
 		}
-		warnings = append(warnings, fmt.Sprintf(
-			"mailboxes: maildirs=%d messages_found=%d messages_pushed=%d bytes_pushed=%d",
-			mailRes.MaildirsFound, mailRes.MessagesFound, mailRes.MessagesPushed, mailRes.BytesPushed))
-		warnings = append(warnings, mailRes.Skipped...)
 
 		// M35.8 P3: per-domain custom SSL certs from apache_tls/.
-		sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("ssl: %w", err)
+		if plan.SSL {
+			sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("ssl: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf("ssl: installed=%d", sslRes.Installed))
+			warnings = append(warnings, sslRes.Skipped...)
+		} else {
+			warnings = append(warnings, "ssl: skipped per migration plan")
 		}
-		warnings = append(warnings, fmt.Sprintf("ssl: installed=%d", sslRes.Installed))
-		warnings = append(warnings, sslRes.Skipped...)
 
 		// M35.8 P2+P5: catch-all + subdomains + forwarders restore.
 		// M35.8 P8: rewrite WP/Drupal/Joomla/Magento config files
