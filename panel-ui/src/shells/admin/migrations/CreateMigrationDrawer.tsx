@@ -92,8 +92,6 @@ const SOURCE_OPTIONS = [
   { value: "whm_pkgacct", label: "WHM pkgacct (uploaded tarball)" },
   { value: "directadmin", label: "DirectAdmin (live SSH source)" },
   { value: "hestiacp", label: "HestiaCP (live SSH source)" },
-  { value: "wordpress_ssh", label: "WordPress site (SSH — Cloudways / VPS / generic)" },
-  { value: "wordpress_plugin", label: "WordPress site (jabali-migrator plugin — no SSH)" },
 ];
 
 // ─── sub-step components ───────────────────────────────────────────────────────

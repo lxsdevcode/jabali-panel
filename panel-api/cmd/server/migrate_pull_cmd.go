@@ -310,6 +310,9 @@ func maybeAutoImportWP(ctx context.Context, job *models.MigrationJob) {
 	if sharedAgent == nil || job.DestUser == nil || job.DestDomain == nil || *job.DestUser == "" || *job.DestDomain == "" {
 		return
 	}
+	// Show the migration in the Applications table as "installing" up front, so
+	// the operator sees it processing during the whole import (GH #647/#648).
+	ensureMigrationAppRow(ctx, job)
 	kickCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if _, err := sharedAgent.Call(kickCtx, "migration.import_wp_run", map[string]any{
@@ -321,6 +324,31 @@ func maybeAutoImportWP(ctx context.Context, job *models.MigrationJob) {
 	} else {
 		fmt.Printf("  \u2192 import auto-dispatched (background)\n")
 	}
+}
+
+// ensureMigrationAppRow creates a placeholder application_install row
+// (status=installing) for the dest domain if one doesn't exist yet, so the
+// migration shows in the Applications table while the import runs. Find-first
+// avoids duplicating the row the import also touches.
+func ensureMigrationAppRow(ctx context.Context, job *models.MigrationJob) {
+	dom, err := repository.NewDomainRepository(sharedDB).FindByName(ctx, *job.DestDomain)
+	if err != nil || dom == nil {
+		return
+	}
+	appRepo := repository.NewApplicationInstallRepository(sharedDB)
+	if existing, _ := appRepo.FindByDomainAndSubdirectoryAndAppType(ctx, dom.ID, "", "wordpress"); existing != nil {
+		return
+	}
+	email := "migrated@" + *job.DestDomain
+	if u, e := repository.NewUserRepository(sharedDB).FindByID(ctx, *job.TargetUserID); e == nil && u.Email != "" {
+		email = u.Email
+	}
+	_ = appRepo.Create(ctx, &models.ApplicationInstall{
+		ID: ids.NewULID(), UserID: *job.TargetUserID, DomainID: dom.ID,
+		AppType: "wordpress", Subdirectory: "", Status: "installing",
+		AdminUsername: "admin", AdminEmail: email, Locale: "en_US",
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	})
 }
 
 // resolveOrCreateDestDomain: SSH auto-detect flow. When a migration has no

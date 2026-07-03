@@ -77,14 +77,20 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 		if u, uerr := repository.NewUserRepository(sharedDB).FindByID(ctx, targetUserID); uerr == nil && u.Email != "" {
 			email = u.Email
 		}
-		row := &models.ApplicationInstall{
-			ID: ids.NewULID(), UserID: targetUserID, DomainID: dom.ID,
-			AppType: "wordpress", Subdirectory: "", Status: "installing",
-			AdminUsername: "admin", AdminEmail: email, Locale: "en_US",
-			CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
-		}
-		if err := appRepo.Create(ctx, row); err == nil {
-			installID = row.ID
+		// Reuse the row the pull created (status=installing); else create it.
+		if existing, _ := appRepo.FindByDomainAndSubdirectoryAndAppType(ctx, dom.ID, "", "wordpress"); existing != nil {
+			installID = existing.ID
+			_ = appRepo.UpdateStatus(ctx, installID, "installing", nil, nil)
+		} else {
+			row := &models.ApplicationInstall{
+				ID: ids.NewULID(), UserID: targetUserID, DomainID: dom.ID,
+				AppType: "wordpress", Subdirectory: "", Status: "installing",
+				AdminUsername: "admin", AdminEmail: email, Locale: "en_US",
+				CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+			}
+			if err := appRepo.Create(ctx, row); err == nil {
+				installID = row.ID
+			}
 		}
 	}
 	markInstall := func(status string, lastErr *string, version *string) {

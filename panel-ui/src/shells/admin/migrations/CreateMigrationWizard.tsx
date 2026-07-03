@@ -68,7 +68,6 @@ const SOURCE_OPTIONS = [
   // migrate_run_cmd.go.
   { value: "directadmin", label: "DirectAdmin (single account)" },
   { value: "hestiacp", label: "HestiaCP (single account)" },
-  { value: "wordpress_ssh", label: "WordPress site (SSH)" },
 ];
 
 const SOURCE_DESC: Record<string, string> = {

@@ -105,6 +105,17 @@ type tenantCreateWPRequest struct {
 	DestDomain string `json:"dest_domain"`
 }
 
+// normalizePluginURL canonicalizes a jabali-migrator source URL so trailing
+// slashes and an accidentally-pasted REST path don't spawn duplicate jobs
+// (the migration natural key is source_host). GH #648.
+func normalizePluginURL(u string) string {
+	u = strings.TrimSpace(u)
+	if i := strings.Index(u, "/wp-json/"); i >= 0 {
+		u = u[:i]
+	}
+	return strings.TrimRight(u, "/")
+}
+
 // create — a tenant creates a WordPress migration INTO a domain they own.
 func (h *tenantMigrationsHandler) create(c *gin.Context) {
 	uid := h.caller(c)
@@ -144,10 +155,14 @@ func (h *tenantMigrationsHandler) create(c *gin.Context) {
 	}
 	forcedUID := uid // target is ALWAYS the caller — never from the request
 	destUser := *user.Username
+	srcHost := strings.TrimSpace(req.SourceHost)
+	if req.SourceKind == models.MigrationSourceWordPressPlugin {
+		srcHost = normalizePluginURL(srcHost) // strip trailing slash + REST path (dedup)
+	}
 	row := &models.MigrationJob{
 		ID:           genULID(),
 		SourceKind:   req.SourceKind,
-		SourceHost:   strings.TrimSpace(req.SourceHost),
+		SourceHost:   srcHost,
 		SourceUser:   sourceUser,
 		TargetUserID: &forcedUID,
 		DestUser:     &destUser, // set -> pull auto-imports (background job)
