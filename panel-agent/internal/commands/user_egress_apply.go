@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"net"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -82,6 +83,22 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 			return nil, &agentwire.AgentError{
 				Code:    agentwire.CodeInvalidArgument,
 				Message: fmt.Sprintf("invalid state %q for %s", u.State, u.Username),
+			}
+		}
+	}
+
+	// GH #681: validate operator-supplied defaults BEFORE rendering them into
+	// nftables sets — a malformed CIDR or out-of-range port would break the
+	// ruleset (fail-open egress) or inject unexpected set elements.
+	if p.Defaults != nil {
+		for _, c := range append(append([]string{}, p.Defaults.Loopback4...), p.Defaults.Loopback6...) {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(c)); err != nil {
+				return nil, csInvalidArg(fmt.Sprintf("invalid default CIDR %q", c))
+			}
+		}
+		for _, port := range append(append([]int{}, p.Defaults.PortsTCP...), p.Defaults.PortsUDP...) {
+			if port < 1 || port > 65535 {
+				return nil, csInvalidArg(fmt.Sprintf("invalid default port %d", port))
 			}
 		}
 	}

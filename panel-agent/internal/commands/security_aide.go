@@ -76,12 +76,25 @@ func mwAideStatusHandler(_ context.Context, _ json.RawMessage) (any, error) {
 	// entries" / "removed entries" counters.
 	if f, err := os.Open(aideReportPath); err == nil {
 		defer f.Close()
-		// Read whole file (capped at 4MB to avoid runaway).
-		var data []byte
-		buf := make([]byte, 4*1024*1024)
+		// GH #678: aide --check APPENDS each run to the report log, so the LATEST
+		// report is at the END. Seek to the last 4 MiB (not the first) so we parse
+		// the newest block, not a stale report frozen at the front of the log.
+		const window = int64(4 * 1024 * 1024)
+		if fi, sErr := f.Stat(); sErr == nil && fi.Size() > window {
+			_, _ = f.Seek(fi.Size()-window, io.SeekStart)
+		}
+		buf := make([]byte, window)
 		n, _ := f.Read(buf)
-		data = buf[:n]
-		parseAideReport(string(data), &resp)
+		data := string(buf[:n])
+		// parseAideReport captures the FIRST report block it sees, so isolate the
+		// LAST one — each AIDE report starts with a "Start timestamp:" line.
+		if idx := strings.LastIndex(data, "Start timestamp:"); idx >= 0 {
+			if nl := strings.LastIndexByte(data[:idx], '\n'); nl >= 0 {
+				idx = nl + 1
+			}
+			data = data[idx:]
+		}
+		parseAideReport(data, &resp)
 	}
 
 	return resp, nil

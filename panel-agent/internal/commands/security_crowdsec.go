@@ -1601,6 +1601,14 @@ func csCaptchaApplyHandler(ctx context.Context, params json.RawMessage) (any, er
 		if len(p.SecretKey) == 0 || len(p.SecretKey) > 512 {
 			return nil, csInvalidArg("secret_key required when enabling")
 		}
+		// GH #684: the keys are written as KEY=value lines into the bouncer conf;
+		// a newline or other control char would inject additional config lines.
+		hasCtrl := func(str string) bool {
+			return strings.ContainsFunc(str, func(r rune) bool { return r < 0x20 || r == 0x7f })
+		}
+		if hasCtrl(p.Provider) || hasCtrl(p.SiteKey) || hasCtrl(p.SecretKey) {
+			return nil, csInvalidArg("provider/site_key/secret_key must not contain newlines or control characters")
+		}
 		updates["CAPTCHA_PROVIDER"] = p.Provider
 		updates["SITE_KEY"] = p.SiteKey
 		updates["SECRET_KEY"] = p.SecretKey
