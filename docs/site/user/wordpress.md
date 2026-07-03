@@ -55,7 +55,7 @@ Per-row **Delete**. Asks twice. Removes the install directory, drops the DB and 
 
 ## What is *not* shipped
 
-- **Redis object cache auto-install** (roadmap). Install a Redis object-cache plugin manually via `wp plugin install` if desired.
+- **Third-party Redis object-cache plugin** — not needed: Jabali Cache already provides the Redis object cache (phpredis-backed). Do not add a separate redis-cache plugin.
 - **WP-CLI in your `$PATH`** — `wp` is available via `~/bin/wp` for your account; not globally.
 
 ## Multisite

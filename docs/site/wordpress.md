@@ -52,7 +52,7 @@ Per-install toggle. When on, the panel runs `wp core update && wp plugin update 
 
 ## What is *not* shipped
 
-- **Redis object cache auto-install** — a managed Redis object cache is on the roadmap (GH #606). Install a Redis object-cache plugin manually via `wp plugin install` if desired.
+- **Third-party Redis object-cache plugin** — not needed: the Jabali Cache plugin IS the object cache (phpredis + persistent `pconnect`, installed by default fresh + on `jabali update`). Do not add a separate redis-cache plugin.
 - **WP-CLI globally** — `wp` is available to the install's user via `~/bin/wp`; not in `$PATH` for other users.
 
 ## Other apps
