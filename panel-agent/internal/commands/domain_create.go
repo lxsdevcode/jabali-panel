@@ -294,6 +294,7 @@ server {
         # full synchronous PHP regen. Pairs with use_stale ... updating above.
         fastcgi_cache_background_update on;
         fastcgi_cache_revalidate on;
+        access_log /var/log/nginx/jcache-{{.Domain}}.log jcache buffer=8k flush=5s;
         add_header X-Jabali-Cache $upstream_cache_status always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are
@@ -353,6 +354,7 @@ server {
         # full synchronous PHP regen. Pairs with use_stale ... updating above.
         fastcgi_cache_background_update on;
         fastcgi_cache_revalidate on;
+        access_log /var/log/nginx/jcache-{{.Domain}}.log jcache buffer=8k flush=5s;
         add_header X-Jabali-Cache $upstream_cache_status always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are

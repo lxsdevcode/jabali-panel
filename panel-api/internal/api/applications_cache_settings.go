@@ -238,6 +238,16 @@ func (h *wordPressHandler) cacheStats(c *gin.Context) {
 			stats["used_memory"] = infoInt(info, "used_memory")
 		}
 	}
+	// GH #617: nginx page-cache HIT/MISS for THIS domain (the owner's own domain,
+	// not cross-tenant), so it's visible to the tenant.
+	if h.cfg.Agent != nil {
+		if pres, perr := h.cfg.Agent.Call(c.Request.Context(), "nginx.cache.stats", map[string]any{"domain": dom.Name}); perr == nil {
+			var pageStats map[string]any
+			if json.Unmarshal(pres, &pageStats) == nil && pageStats != nil {
+				stats["page_cache"] = pageStats
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"stats": stats})
 }
 

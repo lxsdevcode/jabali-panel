@@ -32,6 +32,7 @@ type CacheStats = {
   keys?: number;
   used_memory?: number;
   driver?: string;
+  page_cache?: { available?: boolean; hit_ratio?: number; total?: number; bypass?: number };
 };
 type GetResp = {
   cache_enabled: boolean;
@@ -171,6 +172,11 @@ export function CacheSettingsDrawer({
         >
           <Descriptions.Item label="Status">Connected</Descriptions.Item>
           <Descriptions.Item label="Client">{stats.driver ?? "-"}</Descriptions.Item>
+          {stats.page_cache?.available && (stats.page_cache.total ?? 0) > 0 ? (
+            <Descriptions.Item label="Page cache hit ratio (nginx)">
+              {(stats.page_cache.hit_ratio ?? 0).toFixed(1)}% of {stats.page_cache.total} req
+            </Descriptions.Item>
+          ) : null}
           <Descriptions.Item label="Keys (this site)">{stats.keys ?? 0}</Descriptions.Item>
           {(stats.used_memory ?? 0) > 0 ? (
             <Descriptions.Item label="Hit ratio (server-wide)">
