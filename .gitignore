@@ -88,3 +88,6 @@ panel-ui/ruvector.db
 
 # Local agent harness telemetry — local-only state
 .claude-flow/
+
+# build-release.sh output
+dist/

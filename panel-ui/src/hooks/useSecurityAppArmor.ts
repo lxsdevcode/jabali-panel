@@ -24,6 +24,7 @@ export interface AppArmorStatus {
   reason?: string;
   profiles: AppArmorProfile[];
   denials: AppArmorDenial[];
+  violations: AppArmorDenial[];
 }
 
 // apiClient baseURL is already "/api/v1" — paths must be relative
