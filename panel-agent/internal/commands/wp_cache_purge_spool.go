@@ -14,11 +14,14 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -84,6 +87,23 @@ func runWpPurgeTick(ctx context.Context, log *slog.Logger) {
 	}
 }
 
+// nginxVhostDocroot returns the server docroot from the host's nginx vhost
+// (the first uncommented `root` directive). The vhost lives under root-owned
+// /etc/nginx and is the panel's authoritative host->docroot mapping (GH #630).
+func nginxVhostDocroot(vhostPath string) (string, error) {
+	b, err := os.ReadFile(vhostPath)
+	if err != nil {
+		return "", err
+	}
+	m := nginxRootRE.FindSubmatch(b)
+	if m == nil {
+		return "", fmt.Errorf("no root directive in %s", vhostPath)
+	}
+	return strings.TrimSpace(string(m[1])), nil
+}
+
+var nginxRootRE = regexp.MustCompile(`(?m)^\s*root\s+([^;]+);`)
+
 // handleWpPurgeFile validates and processes one spool request, then removes it.
 // Every exit path removes the file so a bad/forged request can't accumulate.
 func handleWpPurgeFile(ctx context.Context, path string, log *slog.Logger) {
@@ -115,20 +135,25 @@ func handleWpPurgeFile(ctx context.Context, path string, log *slog.Logger) {
 	if !domainRegex.MatchString(req.Host) {
 		return
 	}
-	// OWNERSHIP: the requester may only purge a host whose docroot lives under
-	// their own home and is owned by them. This blocks a tenant from evicting
-	// another tenant's cache by forging a request for someone else's host.
-	// (Residual: a tenant could mkdir /home/<them>/domains/<victim>/public_html
-	// to spoof it — impact is cache eviction only, self-heals on next request;
-	// a DB-backed host→owner check would close it fully. Noted on GH #611.)
-	docroot := filepath.Join("/home", usr.Username, "domains", req.Host, "public_html")
-	dst, derr := os.Stat(docroot)
+	// OWNERSHIP (GH #630): validate against PANEL STATE — the root-owned nginx
+	// vhost for this host — not a tenant-controllable /home path. The old check
+	// stat'd /home/<requester>/domains/<host>/public_html, which a tenant could
+	// mkdir to spoof ownership of ANOTHER tenant's host and evict its cache. A
+	// tenant cannot forge /etc/nginx/sites-available/<host>.conf, so the vhost's
+	// own `root` directive is the authoritative docroot; the requester must own
+	// THAT. (req.Host already passed domainRegex above — no path traversal.)
+	realDocroot, drerr := nginxVhostDocroot(filepath.Join("/etc/nginx/sites-available", req.Host+".conf"))
+	if drerr != nil || realDocroot == "" {
+		log.Warn("wp-purge: no nginx vhost for host, ignored", "user", usr.Username, "host", req.Host)
+		return
+	}
+	dst, derr := os.Stat(realDocroot)
 	if derr != nil || !dst.IsDir() {
-		log.Warn("wp-purge: request for unowned host ignored", "user", usr.Username, "host", req.Host)
+		log.Warn("wp-purge: vhost docroot missing, ignored", "host", req.Host)
 		return
 	}
 	if dstat, ok2 := dst.Sys().(*syscall.Stat_t); !ok2 || dstat.Uid != st.Uid {
-		log.Warn("wp-purge: docroot not owned by requester, ignored", "user", usr.Username, "host", req.Host)
+		log.Warn("wp-purge: requester does not own the vhost docroot, ignored", "user", usr.Username, "host", req.Host)
 		return
 	}
 
