@@ -68,6 +68,19 @@ type CacheSettingsData struct {
 	// URLExclusions are extra path prefixes that must always bypass the page
 	// cache (GH #616), on top of the built-in wp-admin/cart/etc set.
 	URLExclusions []string `json:"url_exclusions,omitempty"`
+
+	// GH #612: split object/page controls. Pointers distinguish "unset" (fall
+	// back to the coupled master toggle) from an explicit false. All values are
+	// panel-stamped as JABALI_CACHE_* wp-config constants (never plugin-written).
+	ObjectCacheEnabled *bool `json:"object_cache_enabled,omitempty"`
+	PageCacheEnabled   *bool `json:"page_cache_enabled,omitempty"`
+	PageTTL            int   `json:"page_ttl,omitempty"`       // nginx page-cache TTL (s)
+	ObjectMaxTTL       int   `json:"object_maxttl,omitempty"`  // JABALI_CACHE_MAXTTL (s; 0 = LRU)
+	RedisMaxMemoryMB   int   `json:"redis_maxmemory_mb,omitempty"`
+
+	// Profile is the Wave C (#618) cache profile: "", brochure, woocommerce,
+	// edd, membership_lms, custom. Empty = jabali defaults.
+	Profile string `json:"profile,omitempty"`
 }
 
 // ParseCacheSettings decodes the JSON column; a nil/empty/invalid value yields
