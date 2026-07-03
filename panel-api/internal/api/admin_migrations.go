@@ -72,6 +72,7 @@ func RegisterAdminMigrationRoutes(g *gin.RouterGroup, cfg AdminMigrationsHandler
 	// agent (transient systemd unit pattern, M29 §updates) so the
 	// long-running pull + import survive panel-api restarts.
 	rg.POST("/:id/secrets", h.uploadSecrets)
+	rg.POST("/:id/test-connection", h.testConnection) // GH #665
 	rg.POST("/:id/pull-source", h.runPullSource)
 	rg.POST("/:id/import", h.runImport)
 	rg.POST("/:id/import-wp", h.runImportWP) // GH #647 wordpress_ssh
