@@ -347,6 +347,13 @@ func applyAccountRestore(
 			if err := restoreDocrootGroup(username); err != nil {
 				warnings = append(warnings, fmt.Sprintf("home: docroot group www-data: %v", err))
 			}
+			// GH #621: strip any source-tenant JABALI_CACHE_* block from restored
+			// WordPress sites so a CROSS-tenant restore never reads the source
+			// tenant's Redis namespace (prefix/ACL bleed). Re-enabling cache
+			// re-stamps the correct per-tenant constants.
+			if n := stripRestoredCacheBlocks(username); n > 0 {
+				applied = append(applied, fmt.Sprintf("stripped source cache constants from %d wp-config(s)", n))
+			}
 			applied = append(applied, fmt.Sprintf("home → /home/%s", username))
 
 		case backup.StageDB:
@@ -507,6 +514,44 @@ func applyAccountRestore(
 // Lchown-based walk (filepath.Walk uses Lstat and does not descend into
 // symlinks; Lchown changes the link's own group, never its target) —
 // the same symlink-safe pattern chownTreeRecursive uses below.
+// stripRestoredCacheBlocks removes the panel-managed JABALI_CACHE_* block from
+// every restored wp-config.php under the user's docroots (GH #621), preserving
+// ownership + mode. Best-effort + symlink-safe; a cross-tenant restore would
+// otherwise leave the source tenant's Redis prefix/ACL active.
+func stripRestoredCacheBlocks(username string) int {
+	patterns := []string{
+		"/home/" + username + "/domains/*/public_html/wp-config.php",
+		"/home/" + username + "/domains/*/public_html/*/wp-config.php",
+	}
+	n := 0
+	for _, pat := range patterns {
+		matches, _ := filepath.Glob(pat)
+		for _, cfg := range matches {
+			fi, err := os.Lstat(cfg)
+			if err != nil || fi.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
+			b, err := os.ReadFile(cfg)
+			if err != nil {
+				continue
+			}
+			stripped := stripWPCacheBlock(string(b))
+			if stripped == string(b) {
+				continue
+			}
+			uid, gid := 0, 0
+			if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+				uid, gid = int(st.Uid), int(st.Gid)
+			}
+			if err := os.WriteFile(cfg, []byte(stripped), fi.Mode().Perm()); err == nil {
+				_ = os.Chown(cfg, uid, gid)
+				n++
+			}
+		}
+	}
+	return n
+}
+
 func restoreDocrootGroup(username string) error {
 	grp, err := user.LookupGroup("www-data")
 	if err != nil {
