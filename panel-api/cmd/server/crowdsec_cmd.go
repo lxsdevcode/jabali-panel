@@ -6,6 +6,7 @@
 package main
 
 import (
+	"net"
 	"context"
 	"fmt"
 	"os"
@@ -184,23 +185,47 @@ func newCsAllowlistsCmd() *cobra.Command {
 		csPassthroughCmd("list", "List allowlist entries", "security.crowdsec.allowlists.list"),
 		func() *cobra.Command {
 			var value, reason string
+			var me bool
 			c := &cobra.Command{
-				Use: "add", Short: "Add an allowlist entry", Args: cobra.NoArgs, PreRunE: requireDBAndAgent,
+				Use: "add", Short: "Add an allowlist entry (use --me to allowlist your current SSH IP)", Args: cobra.NoArgs, PreRunE: requireDBAndAgent,
 				RunE: func(cmd *cobra.Command, _ []string) error {
+					// GH #330: --me allowlists the IP you're SSH'd in from — the
+					// recovery path for a roaming admin locked out by CrowdSec
+					// before they can reach the panel login (so the M43 login
+					// auto-allowlist never fires). No need to know/type your IP.
+					if me {
+						ip := sshClientIP()
+						if ip == "" {
+							return fmt.Errorf("--me: could not determine your SSH client IP ($SSH_CLIENT/$SSH_CONNECTION unset — pass --value instead)")
+						}
+						value = ip
+						if reason == "manual (cli)" {
+							reason = "roaming admin (cli --me)"
+						}
+					}
 					if value == "" {
-						return fmt.Errorf("--value is required")
+						return fmt.Errorf("--value (or --me) is required")
 					}
 					ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 					defer cancel()
-					err := csCall(ctx, "security.crowdsec.allowlists.add", map[string]any{"value": value, "reason": reason})
-					if err == nil {
-						cliAuditOK(ctx, "crowdsec.allowlist_add", "crowdsec_allowlist", value, nil)
+					if err := csCall(ctx, "security.crowdsec.allowlists.add", map[string]any{"value": value, "reason": reason}); err != nil {
+						return err
 					}
-					return err
+					cliAuditOK(ctx, "crowdsec.allowlist_add", "crowdsec_allowlist", value, nil)
+					// Immediately clear any active ban on this IP so the admin is
+					// unblocked NOW, not just protected on the next eval.
+					if err := csCall(ctx, "security.crowdsec.decisions.delete", map[string]any{"ip": value}); err == nil {
+						cliAuditOK(ctx, "crowdsec.decision_delete", "crowdsec_decision", value, nil)
+						fmt.Printf("allowlisted %s and cleared any active ban on it\n", value)
+					} else {
+						fmt.Printf("allowlisted %s (no active ban to clear, or clear failed)\n", value)
+					}
+					return nil
 				},
 			}
-			c.Flags().StringVar(&value, "value", "", "IP/CIDR to allowlist (required)")
+			c.Flags().StringVar(&value, "value", "", "IP/CIDR to allowlist (required unless --me)")
 			c.Flags().StringVar(&reason, "reason", "manual (cli)", "reason label")
+			c.Flags().BoolVar(&me, "me", false, "allowlist the IP you are SSH'd in from (roaming-admin recovery)")
 			return c
 		}(),
 		func() *cobra.Command {
@@ -536,4 +561,17 @@ func newCsProfilesSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringArrayVar(&overrides, "override", nil, "scenario:action (repeatable; action=captcha|off)")
 	return cmd
+}
+
+// sshClientIP returns the source IP of the current SSH session from
+// $SSH_CLIENT (first field) or $SSH_CONNECTION (first field), or "" if unset.
+func sshClientIP() string {
+	for _, env := range []string{"SSH_CLIENT", "SSH_CONNECTION"} {
+		if v := os.Getenv(env); v != "" {
+			if f := strings.Fields(v); len(f) > 0 && net.ParseIP(f[0]) != nil {
+				return f[0]
+			}
+		}
+	}
+	return ""
 }
