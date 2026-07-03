@@ -13,15 +13,16 @@ import {
   useSetAppArmorMode,
 } from "../../../hooks/useSecurityAppArmor";
 
-const MODE_TINT: Record<AppArmorProfile["mode"], "success" | "warning"> = {
+const MODE_TINT: Record<AppArmorProfile["mode"], "success" | "warning" | "error"> = {
   enforce: "success",
   complain: "warning",
+  missing: "error",
 };
 
 export const AdminSecurityAppArmor = () => {
   const { data, isLoading, refetch } = useAppArmorStatus();
   const setMode = useSetAppArmorMode();
-  const [pendingFlip, setPendingFlip] = useState<{ profile: string; nextMode: AppArmorProfile["mode"] } | null>(null);
+  const [pendingFlip, setPendingFlip] = useState<{ profile: string; nextMode: "enforce" | "complain" } | null>(null);
 
   if (isLoading) {
     return (

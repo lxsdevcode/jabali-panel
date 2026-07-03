@@ -29,10 +29,10 @@ profile jabali-panel {
   capability net_bind_service,
   capability setuid,
   capability setgid,
-  # mac_admin lets the operator-only `jabali apparmor flip-mature` CLI
-  # call apparmor_parser to flip jabali profiles complain↔enforce. The
-  # daemon HTTP path doesn't exercise this; it's gated by allowedProfiles.
-  capability mac_admin,
+  # GH #682: mac_admin REMOVED — the daemon HTTP path delegates AppArmor mode
+  # changes to panel-agent (which holds mac_admin), and `jabali apparmor
+  # flip-mature` now calls the agent's security.apparmor.set_mode too. The panel
+  # daemon no longer needs AppArmor policy-management powers.
   # `jabali update` + `jabali repair` recurse jabali-owned trees as root,
   # invoke chown, write under /etc/{nginx,systemd,...}, etc. The daemon
   # HTTP path doesn't need any of these; only the operator-only CLI does.

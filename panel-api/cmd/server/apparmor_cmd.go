@@ -8,6 +8,8 @@
 package main
 
 import (
+	"time"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -83,8 +85,9 @@ func newAppArmorFlipMatureCmd() *cobra.Command {
 		dryRun        bool
 	)
 	cmd := &cobra.Command{
-		Use:   "flip-mature",
-		Short: "Flip mature complain-mode profiles to enforce",
+		Use:     "flip-mature",
+		Short:   "Flip mature complain-mode profiles to enforce",
+		PreRunE: requireAgent,
 		Long: `Find AppArmor profiles in complain mode and flip them to enforce.
 Limits the flip to the jabali-shipped allowlist; never touches
 arbitrary system profiles. Use --profile <name> to target one.`,
@@ -123,14 +126,14 @@ arbitrary system profiles. Use --profile <name> to target one.`,
 				if dryRun {
 					continue
 				}
-				profilePath := apparmorProfileFile(name)
-				if profilePath == "" {
-					fmt.Fprintf(os.Stderr, "  flip %s failed: no file path mapping\n", name)
-					continue
-				}
-				out, err := exec.Command("aa-enforce", profilePath).CombinedOutput()
+				// GH #682: delegate the flip to panel-agent (which holds
+				// capability mac_admin) instead of running aa-enforce here, so the
+				// panel daemon profile no longer needs mac_admin.
+				sctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+				_, err := sharedAgent.Call(sctx, "security.apparmor.set_mode", map[string]any{"profile": name, "mode": "enforce"})
+				cancel()
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "  flip %s failed: %v\n%s\n", name, err, string(out))
+					fmt.Fprintf(os.Stderr, "  flip %s failed: %v\n", name, err)
 					continue
 				}
 			}

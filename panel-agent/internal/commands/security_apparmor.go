@@ -132,6 +132,15 @@ func mwApparmorStatusHandler(ctx context.Context, _ json.RawMessage) (any, error
 		})
 	}
 
+	// GH #679: report EXPECTED jabali profiles that are missing/unloaded (failed
+	// to load, purged, or never installed) as Mode="missing" instead of silently
+	// omitting them — an absent profile is an unconfined daemon, i.e. a problem.
+	for name := range allowedProfiles {
+		if _, ok := raw.Profiles[name]; !ok {
+			resp.Profiles = append(resp.Profiles, apparmorProfile{Name: name, Mode: "missing"})
+		}
+	}
+
 	// Best-effort denial scrape. Failures (journalctl missing, no
 	// matches) leave Denials as the empty slice — never error here.
 	resp.Denials = readApparmorDenials(ctx)

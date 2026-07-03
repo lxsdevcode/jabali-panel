@@ -794,7 +794,11 @@ fi
 			}
 			// first_install=0 → preserve existing per-profile mode.
 			if err := run("", "bash", "-c",
-				"source "+installSh+" && cleanup_apparmor_legacy && apply_apparmor_profiles 0 && apply_apparmor_system_profiles 0"); err != nil {
+				// GH #687: route through install_apparmor so the update honors the
+				// kernel-feature gate (skips loading daemon profiles on kernels
+				// missing /sys/.../apparmor/features/unix) instead of applying them
+				// unconditionally.
+				"source "+installSh+" && install_apparmor"); err != nil {
 				fmt.Printf("  (apparmor profile sync failed: %v — continuing)\n", err)
 			}
 			return nil

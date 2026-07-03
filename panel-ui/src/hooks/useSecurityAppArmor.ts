@@ -6,7 +6,7 @@ import { apiClient } from "../apiClient";
 
 export interface AppArmorProfile {
   name: string;
-  mode: "enforce" | "complain";
+  mode: "enforce" | "complain" | "missing";
 }
 
 export interface AppArmorDenial {
