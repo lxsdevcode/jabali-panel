@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"time"
 	"archive/tar"
 	"compress/gzip"
 	"context"
@@ -35,6 +36,9 @@ const (
 	archiveOwnerUser  = "jabali"
 	archiveOwnerGroup = "jabali"
 	maxArchiveBytes   = int64(500 * 1024 * 1024)
+	// GH #675: cap UNCOMPRESSED bytes read from the tenant tree too — a highly
+	// compressible tree can blow far past the 500 MiB compressed cap on input.
+	maxArchiveInputBytes = int64(4 * 1024 * 1024 * 1024)
 )
 
 type filesArchiveParams struct {
@@ -97,6 +101,9 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 		return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition, Message: "too many concurrent archive requests for this user; retry shortly"}
 	}
 	defer releaseArchiveSlot(p.Username)
+	// GH #675: bound total runtime so a pathological tree cannot pin the agent.
+	ctx, cancelArchive := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancelArchive()
 	if len(p.Paths) == 0 {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "at least one path required"}
 	}
@@ -150,7 +157,10 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 	// be the reason the host goes read-only.
 	cw := &capWriter{w: f, limit: maxArchiveBytes}
 	gz := gzip.NewWriter(cw)
-	tw := tar.NewWriter(gz)
+	// GH #675: the input cap sits ABOVE gzip so it measures the uncompressed
+	// bytes tar writes (file bodies + headers), independent of compression.
+	inputCap := &capWriter{w: gz, limit: maxArchiveInputBytes}
+	tw := tar.NewWriter(inputCap)
 
 	for _, path := range resolved {
 		if err := addToTar(ctx, tw, scope, path, filepath.Dir(path)); err != nil {
