@@ -217,6 +217,9 @@ func (ex *extractor) writeFile(rel string, mode os.FileMode, r io.Reader) error 
 	if mode == 0 {
 		mode = 0o644
 	}
+	// GH #654: a tenant secret (wp-config.php/.env) inside an archive must land
+	// owner-only, same as when written/uploaded — not the archive's stored mode.
+	mode = sensitiveFileMode(rel, mode)
 	out, err := ex.ed.Create(rel, mode)
 	if err != nil {
 		if isUnsafeExtractTarget(err) {

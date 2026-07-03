@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
@@ -97,7 +96,7 @@ func filesListHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		// can hide the expand chevron on leaves. Cosmetic hint only.
 		hasSubdirs := false
 		if entry.IsDir && !entry.IsSymlink {
-			hasSubdirs = dirHasSubdir(filepath.Join(cleanPath, entry.Name))
+			hasSubdirs = dirHasSubdir(scope, filepath.Join(cleanPath, entry.Name))
 		}
 		result = append(result, filesListEntry{
 			Name:       entry.Name,
@@ -119,17 +118,17 @@ func filesListHandler(ctx context.Context, params json.RawMessage) (any, error) 
 // dirHasSubdir returns true if dir contains at least one subdirectory
 // (excluding symlinks). Scans via ReadDir and short-circuits on the
 // first hit — we don't care about the count, just existence.
-func dirHasSubdir(dir string) bool {
-	entries, err := os.ReadDir(dir)
+// dirHasSubdir reports whether dir contains at least one real subdirectory,
+// using the fd-safe scope traversal (GH #651) — os.ReadDir/os.Lstat on a
+// tenant-controlled string path could be raced with a symlink swap into an
+// out-of-scope directory.
+func dirHasSubdir(scope *filesafe.Scope, dir string) bool {
+	entries, err := scope.ReadDirInScope(dir)
 	if err != nil {
 		return false
 	}
 	for _, e := range entries {
-		info, err := os.Lstat(filepath.Join(dir, e.Name()))
-		if err != nil {
-			continue
-		}
-		if info.IsDir() && (info.Mode()&os.ModeSymlink) == 0 {
+		if e.IsDir && !e.IsSymlink {
 			return true
 		}
 	}

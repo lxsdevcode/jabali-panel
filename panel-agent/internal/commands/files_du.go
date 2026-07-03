@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -68,7 +69,19 @@ func filesDuHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	// One `du` call gives every immediate subdir's recursive size (+ the dir
 	// itself). -b = apparent size in bytes; --max-depth=1 = this level only.
 	dirSizes := map[string]int64{}
-	out, _ := exec.CommandContext(ctx, "du", "-b", "--max-depth=1", resolved).Output()
+	// GH #653: run du against an ESCAPE-PROOF dir fd instead of the resolvable
+	// string path. The fd is passed to the child via ExtraFiles (fd 3) so du
+	// traverses the pinned inode (/proc/self/fd/3) — a parent-directory swap
+	// between resolve and du can no longer redirect root's du outside scope.
+	df, derr := scope.OpenInScope(resolved, os.O_RDONLY, 0)
+	if derr != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("open dir: %v", derr)}
+	}
+	duCmd := exec.CommandContext(ctx, "du", "-b", "--max-depth=1", "/proc/self/fd/3")
+	duCmd.ExtraFiles = []*os.File{df}
+	out, _ := duCmd.Output()
+	df.Close()
+	const procPfx = "/proc/self/fd/3"
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		tab := strings.IndexByte(line, '\t')
 		if tab <= 0 {
@@ -78,7 +91,14 @@ func filesDuHandler(ctx context.Context, params json.RawMessage) (any, error) {
 		if perr != nil {
 			continue
 		}
-		dirSizes[strings.TrimSpace(line[tab+1:])] = sz
+		path := strings.TrimSpace(line[tab+1:])
+		// remap the fd path back to the canonical path for the size lookups.
+		if path == procPfx {
+			path = resolved
+		} else if strings.HasPrefix(path, procPfx+"/") {
+			path = resolved + path[len(procPfx):]
+		}
+		dirSizes[path] = sz
 	}
 
 	entries, err := scope.ReadDirInScope(resolved)
@@ -95,7 +115,7 @@ func filesDuHandler(ctx context.Context, params json.RawMessage) (any, error) {
 			if v, ok := dirSizes[full]; ok {
 				size = v
 			}
-			hasSub = dirHasSubdir(full)
+			hasSub = dirHasSubdir(scope, full)
 		} else {
 			size = e.Size
 		}
