@@ -78,6 +78,15 @@ func (h *wordPressHandler) setCacheSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "settings_too_large"})
 		return
 	}
+	// GH #618: audit trail for cache-profile / safety changes — records WHO set
+	// WHICH profile on which install (the #658 path-level audit mechanism), so a
+	// risky override (e.g. a brochure profile on a shop) is traceable.
+	prof := body.Profile
+	if prof == "" {
+		prof = "default"
+	}
+	c.Set("audit_target", inst.ID+" cache-profile="+prof)
+	c.Set("audit_target_type", "cache_settings")
 	if err := h.cfg.ApplicationInstalls.UpdateCacheSettings(c.Request.Context(), inst.ID, raw); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist_failed"})
 		return
@@ -169,11 +178,32 @@ func (h *wordPressHandler) cacheWarmup(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
 		return
 	}
-	agent, host := h.cfg.Agent, dom.Name
+	agent, host, installID := h.cfg.Agent, dom.Name, inst.ID
+	repo := h.cfg.ApplicationInstalls
 	go func() {
 		wctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		_, _ = agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 100})
+		res, err := agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 100})
+		// GH #615: record a lightweight last-warmup status on the install.
+		rec := models.WarmupRecord{At: time.Now().UTC().Format(time.RFC3339)}
+		if err != nil {
+			rec.Note = "failed"
+		} else {
+			var out struct {
+				Warmed int `json:"warmed"`
+				URLs   int `json:"urls"`
+			}
+			_ = json.Unmarshal(res, &out)
+			rec.URLs = out.Warmed + out.URLs
+			rec.Note = "ok"
+		}
+		if cur, gErr := repo.FindByID(context.Background(), installID); gErr == nil && cur != nil {
+			settings, _ := cur.ParseCacheSettings()
+			settings.LastWarm = &rec
+			if raw, mErr := json.Marshal(settings); mErr == nil {
+				_ = repo.UpdateCacheSettings(context.Background(), installID, raw)
+			}
+		}
 	}()
 	c.JSON(http.StatusAccepted, gin.H{"ok": true, "warming": host})
 }

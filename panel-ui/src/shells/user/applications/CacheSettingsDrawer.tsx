@@ -24,6 +24,8 @@ type CacheSettings = {
   object_maxttl?: number;
   redis_maxmemory_mb?: number;
   profile?: string;
+  auto_warm?: boolean;
+  last_warm?: { at?: string; urls?: number; note?: string };
 };
 type CacheProfile = { key: string; label: string; warning: string };
 type CacheStats = {
@@ -61,6 +63,8 @@ export function CacheSettingsDrawer({
   const [advice, setAdvice] = useState<string | null>(null);
   const [objectOn, setObjectOn] = useState(true);
   const [pageOn, setPageOn] = useState(true);
+  const [autoWarm, setAutoWarm] = useState(true);
+  const [lastWarm, setLastWarm] = useState<{ at?: string; urls?: number; note?: string } | null>(null);
 
   useEffect(() => {
     if (!install) return;
@@ -76,6 +80,8 @@ export function CacheSettingsDrawer({
         setProfile(s.profile ?? "");
         setObjectOn(s.object_cache_enabled ?? true);
         setPageOn(s.page_cache_enabled ?? true);
+        setAutoWarm(s.auto_warm ?? true);
+        setLastWarm(s.last_warm ?? null);
       })
       .catch((e) =>
         message.error(extractApiError(e) ?? "Failed to load cache settings"),
@@ -125,6 +131,7 @@ export function CacheSettingsDrawer({
         profile,
         object_cache_enabled: objectOn,
         page_cache_enabled: pageOn,
+        auto_warm: autoWarm,
       });
       message.success("Cache settings saved — applied on the next reconcile (~60s).");
       onClose();
@@ -203,6 +210,15 @@ export function CacheSettingsDrawer({
         </Form.Item>
         <Form.Item label="Page cache (nginx)" help="Full-page micro-cache for anonymous visitors. Independent of the object cache.">
           <Switch checked={pageOn} onChange={setPageOn} />
+        </Form.Item>
+        <Form.Item label="Auto-warm" help="Crawl the site to pre-populate the cache after enabling or purging.">
+          <Switch checked={autoWarm} onChange={setAutoWarm} />
+          {lastWarm?.at ? (
+            <span style={{ marginLeft: 12, color: "#888" }}>
+              Last warmed {new Date(lastWarm.at).toLocaleString()}
+              {lastWarm.urls ? ` (${lastWarm.urls} URLs)` : ""}
+            </span>
+          ) : null}
         </Form.Item>
         <Form.Item label="Advisor">
           <Button onClick={() => void advise()} loading={advising}>

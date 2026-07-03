@@ -82,9 +82,22 @@ type CacheSettingsData struct {
 	// edd, membership_lms, custom. Empty = jabali defaults.
 	Profile string `json:"profile,omitempty"`
 
+	// AutoWarm (GH #615) gates automatic cache warmup after enable/purge. nil =
+	// on by default; explicit false opts out (e.g. huge sites where crawling is
+	// undesirable). LastWarm records the last warmup for a lightweight status.
+	AutoWarm *bool          `json:"auto_warm,omitempty"`
+	LastWarm *WarmupRecord  `json:"last_warm,omitempty"`
+
 	// Diagnostic is the last advisor result (GH #620), stored so operators can
 	// see the recommendation + findings without re-probing.
 	Diagnostic *CacheDiagnostic `json:"diagnostic,omitempty"`
+}
+
+// WarmupRecord is a lightweight last-warmup status (GH #615).
+type WarmupRecord struct {
+	At    string `json:"at"`     // RFC3339 stamp
+	URLs  int    `json:"urls"`   // URLs warmed
+	Note  string `json:"note,omitempty"`
 }
 
 // CacheDiagnostic is a stored advisor result (GH #620).
