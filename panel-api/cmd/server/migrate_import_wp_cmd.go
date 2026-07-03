@@ -201,6 +201,10 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	content, _ := agentFileContent(raw)
 	// DB_HOST localhost (MariaDB via the default socket); user = db name (Jabali convention).
 	updated, changed := migrate.RewriteWPConfigDB(content, dbName, dbName, pwd, "localhost")
+	// GH #621: drop the SOURCE's Jabali cache constants so the migrated site
+	// doesn't read/write the source tenant's Redis namespace (cross-tenant
+	// bleed). The panel re-stamps fresh per-tenant constants when cache is enabled.
+	updated = migrate.StripJabaliCacheBlock(updated)
 	if !changed {
 		pf("  (warning: wp-config.php DB constants unchanged — check format)\n")
 	}

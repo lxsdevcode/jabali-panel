@@ -46,3 +46,31 @@ func RewriteWPConfigDB(text, dbName, dbUser, dbPass, dbHost string) (string, boo
 	})
 	return out, out != text
 }
+
+// StripJabaliCacheBlock removes the panel-managed "// BEGIN/END Jabali WP Cache"
+// fenced block (the JABALI_CACHE_* constants) from a wp-config.php body. On a
+// migration/clone/restore the SOURCE's block pins the source tenant's Redis
+// prefix + ACL token; carrying it verbatim would make the migrated site's
+// object-cache drop-in read/write the SOURCE's Redis namespace (cross-tenant
+// bleed). Stripping leaves the dest with a cold, fresh cache until the panel
+// re-enables it and re-stamps the correct per-tenant constants (GH #621).
+func StripJabaliCacheBlock(content string) string {
+	const begin = "// BEGIN Jabali WP Cache"
+	const end = "// END Jabali WP Cache"
+	for {
+		bi := strings.Index(content, begin)
+		if bi < 0 {
+			return content
+		}
+		ei := strings.Index(content[bi:], end)
+		if ei < 0 {
+			return content
+		}
+		ei = bi + ei + len(end)
+		// also swallow a trailing newline left by the block
+		if ei < len(content) && content[ei] == '\n' {
+			ei++
+		}
+		content = content[:bi] + content[ei:]
+	}
+}
