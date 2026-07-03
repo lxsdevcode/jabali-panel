@@ -979,7 +979,10 @@ POLICYEOF
   for version in $php_versions; do
     php_extensions+=("php${version}-fpm" "php${version}-cli")
     local ext
-    for ext in mysql mbstring zip gd curl xml intl bcmath opcache; do
+    # GH #606: redis (phpredis) + igbinary so WordPress object caching uses the
+    # fast native client with persistent pconnect() instead of the pure-PHP RESP
+    # fallback. igbinary gives compact/fast object-cache serialization.
+    for ext in mysql mbstring zip gd curl xml intl bcmath opcache redis igbinary; do
       if apt-cache show "php${version}-${ext}" >/dev/null 2>&1; then
         php_extensions+=("php${version}-${ext}")
       else
