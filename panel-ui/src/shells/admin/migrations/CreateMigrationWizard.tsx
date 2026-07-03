@@ -22,6 +22,7 @@ import {
   Alert,
   Button,
   Checkbox,
+  Tag,
   Collapse,
   Select,
   Drawer,
@@ -121,6 +122,19 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
   const [expectedHostKey, setExpectedHostKey] = useState<string>("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accountTargets, setAccountTargets] = useState<Record<string, string>>({});
+  type AcctDetail = { loading?: boolean; databases?: number; mailboxes?: number; domains?: number; warnings?: { code: string; detail: string }[]; error?: string };
+  const [acctDetails, setAcctDetails] = useState<Record<string, AcctDetail>>({});
+  const checkAccount = async (login: string) => {
+    if (!draftId) return;
+    setAcctDetails((m) => ({ ...m, [login]: { loading: true } }));
+    try {
+      const { data } = await apiClient.post<AcctDetail>(`/admin/migrations/${draftId}/describe-account`, { source_user: login });
+      setAcctDetails((m) => ({ ...m, [login]: data }));
+    } catch (e) {
+      const err = (e as { response?: { data?: { detail?: string; error?: string } } })?.response?.data;
+      setAcctDetails((m) => ({ ...m, [login]: { error: err?.detail ?? err?.error ?? "check failed" } }));
+    }
+  };
   const usersQuery = useQuery<{ data: { id: string; username: string }[] }>({
     queryKey: ["wizard", "users"],
     queryFn: async () => (await apiClient.get<{ data: { id: string; username: string }[] }>("/users?page_size=500")).data,
@@ -613,6 +627,34 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
                           })),
                         ]}
                       />
+                    )}
+                    {selected.has(a.login) && (
+                      <span style={{ marginLeft: 12 }}>
+                        <Button
+                          size="small"
+                          type="link"
+                          loading={acctDetails[a.login]?.loading}
+                          onClick={() => void checkAccount(a.login)}
+                        >
+                          Check details
+                        </Button>
+                        {acctDetails[a.login] && !acctDetails[a.login].loading && (
+                          <span>
+                            {acctDetails[a.login].error ? (
+                              <Typography.Text type="danger">{acctDetails[a.login].error}</Typography.Text>
+                            ) : (
+                              <>
+                                <Typography.Text type="secondary">
+                                  {acctDetails[a.login].domains ?? 0}d · {acctDetails[a.login].databases ?? 0}db · {acctDetails[a.login].mailboxes ?? 0}mb
+                                </Typography.Text>
+                                {(acctDetails[a.login].warnings ?? []).map((w, i) => (
+                                  <Tag key={i} color="warning" style={{ marginLeft: 4 }}>{w.detail || w.code}</Tag>
+                                ))}
+                              </>
+                            )}
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
                 ))}

@@ -157,3 +157,61 @@ func panelLabel(kind string) string {
 	}
 	return kind
 }
+
+// describeAccount (GH #665) — the wizard's lazy per-account detail probe. Runs
+// the Discoverer's DescribeAccount for ONE source account (on demand, so a 42-
+// account box isn't fully probed up front) → returns per-account counts +
+// warnings (PHP version, missing DNS zone, custom Apache includes, …).
+func (h *adminMigrationsHandler) describeAccount(c *gin.Context) {
+	job, err := h.cfg.Jobs.FindByID(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	var req struct {
+		SourceUser string `json:"source_user"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.SourceUser) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source_user required"})
+		return
+	}
+	d := panelDiscoverer(job.SourceKind, migrationAllowPrivate(h, c))
+	if d == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_kind"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
+	defer cancel()
+	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env")}
+	sess, err := d.Connect(ctx, job.SourceHost, sshUserOrRoot(job.SourceUser), secret)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "connect_failed", "detail": err.Error()})
+		return
+	}
+	defer func() { _ = d.Close(ctx, sess) }()
+	m, err := d.DescribeAccount(ctx, sess, strings.TrimSpace(req.SourceUser))
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "describe_failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ok":        true,
+		"databases": len(m.Databases),
+		"mailboxes": len(m.Mailboxes),
+		"domains":   len(m.Domains),
+		"warnings":  m.Warnings,
+	})
+}
+
+// migrationAllowPrivate reads the private-host toggle (shared by test-connection
+// + describe-account).
+func migrationAllowPrivate(h *adminMigrationsHandler, c *gin.Context) bool {
+	if h.cfg.Settings == nil {
+		return false
+	}
+	st, err := h.cfg.Settings.Get(c.Request.Context())
+	if err != nil || st == nil {
+		return false
+	}
+	return st.MigrationAllowPrivateHosts
+}

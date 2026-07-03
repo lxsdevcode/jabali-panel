@@ -74,6 +74,7 @@ func RegisterAdminMigrationRoutes(g *gin.RouterGroup, cfg AdminMigrationsHandler
 	rg.POST("/:id/secrets", h.uploadSecrets)
 	rg.POST("/:id/test-connection", h.testConnection) // GH #665
 	rg.PUT("/:id/plan", h.updatePlan)                 // GH #665
+	rg.POST("/:id/describe-account", h.describeAccount) // GH #665
 	rg.POST("/:id/pull-source", h.runPullSource)
 	rg.POST("/:id/import", h.runImport)
 	rg.POST("/:id/import-wp", h.runImportWP) // GH #647 wordpress_ssh
