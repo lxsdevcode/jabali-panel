@@ -10,6 +10,7 @@ import (
 	"strings"
 	"regexp"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -77,6 +78,15 @@ func (h *wordPressHandler) setCacheSettings(c *gin.Context) {
 		return
 	}
 
+	// GH #612: re-apply so the new object max-TTL / page-TTL take effect now, not
+	// only on the next cache toggle. Only when the install is cache-enabled;
+	// non-fatal (settings are already persisted, and the reconcile below still
+	// re-renders the page gate).
+	if inst.CacheEnabled {
+		if err := h.setCacheCore(c.Request.Context(), inst.ID, true, claims.IsAdmin, claims.UserID); err != nil {
+			slog.WarnContext(c.Request.Context(), "cache: re-apply after settings save", "err", err, "install_id", inst.ID)
+		}
+	}
 	// Re-render the vhost so the new gate/TTL take effect (page cache only).
 	if h.cfg.Reconciler != nil {
 		if dom, dErr := h.cfg.Domains.FindByID(c.Request.Context(), inst.DomainID); dErr == nil && dom != nil {

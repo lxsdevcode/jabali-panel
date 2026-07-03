@@ -153,6 +153,9 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 		return errCacheNotWordPress
 	}
 
+	// GH #612: behavioral cache settings (object max-TTL, page TTL) travel as
+	// panel-stamped constants + the nginx page-cache TTL.
+	cacheSettings, _ := install.ParseCacheSettings()
 	// Resolve the domain (docroot + name for nginx) and the tenant os user.
 	domain, err := h.cfg.Domains.FindByID(ctx, install.DomainID)
 	if err != nil {
@@ -207,6 +210,12 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 			"redis_db":       1,
 			"prefix":         prefix,
 			"redis_password": token,
+			"max_ttl":        cacheSettings.ObjectMaxTTL, // GH #612 JABALI_CACHE_MAXTTL
+			// nginx is the primary page cache; the WP advanced-cache page layer
+			// stays off (page_cache=false) to avoid double-caching. page_ttl is
+			// stamped for completeness but inert while page_cache is false.
+			"page_cache": false,
+			"page_ttl":   cacheSettings.PageTTL,
 		}
 		if _, err := h.cfg.Agent.Call(ctx, "wordpress.cache_set", params); err != nil {
 			slog.ErrorContext(ctx, "cache: agent enable", "err", err, "install_id", installID)
@@ -252,6 +261,20 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 		pathChanged = newPath != domain.CachePath
 		if perr := h.cfg.Domains.UpdateCachePath(ctx, domain.ID, newPath); perr != nil {
 			slog.ErrorContext(ctx, "cache: domain cache_path", "err", perr, "domain_id", domain.ID)
+		}
+	}
+	// GH #612: apply the per-install nginx page-cache TTL (clamped [10,86400]).
+	if enabled && cacheSettings.PageTTL > 0 {
+		ttl := cacheSettings.PageTTL
+		if ttl < 10 {
+			ttl = 10
+		} else if ttl > 86400 {
+			ttl = 86400
+		}
+		if ttl != domain.CacheTTLSeconds {
+			if err := h.cfg.Domains.UpdateCacheTTL(ctx, domain.ID, ttl); err != nil {
+				slog.WarnContext(ctx, "cache: domain ttl", "err", err, "domain_id", domain.ID)
+			}
 		}
 	}
 	flagChanged := desiredDomainCache != domain.CacheEnabled
