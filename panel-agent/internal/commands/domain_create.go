@@ -290,6 +290,7 @@ server {
         # refresh in the background, instead of blocking the visitor on the
         # full synchronous PHP regen. Pairs with use_stale ... updating above.
         fastcgi_cache_background_update on;
+        fastcgi_cache_revalidate on;
         add_header X-Jabali-Cache $upstream_cache_status always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are
@@ -345,6 +346,7 @@ server {
         # refresh in the background, instead of blocking the visitor on the
         # full synchronous PHP regen. Pairs with use_stale ... updating above.
         fastcgi_cache_background_update on;
+        fastcgi_cache_revalidate on;
         add_header X-Jabali-Cache $upstream_cache_status always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are

@@ -162,5 +162,16 @@ func (h *domainCacheHandler) purge(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "details": err.Error()})
 		return
 	}
+	// GH #632: re-warm the cache after a manual purge so the next visitor
+	// doesn't eat a cold MISS. Fire-and-forget with a detached context (the
+	// request ctx cancels once we respond).
+	if dom.CacheEnabled {
+		agent, host := h.cfg.Agent, dom.Name
+		go func() {
+			wctx, wcancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer wcancel()
+			_, _ = agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 50})
+		}()
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "domain": dom.Name, "paths": req.Paths})
 }
