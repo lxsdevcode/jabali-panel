@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"sync"
 	"archive/tar"
 	"compress/gzip"
 	"context"
@@ -14,6 +13,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
@@ -208,69 +209,98 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 // bodies are opened through the filesafe scope (openat2 RESOLVE_BENEATH),
 // so a tenant cannot race a checked file into a symlink between the walk's
 // Lstat and the body read to disclose host files (Gitea #471).
+// addToTar walks `src` recursively and writes every entry into `tw` using ONLY
+// fd-safe scope primitives (GH #650): StatInScope/ReadDirInScope/ReadlinkInScope
+// (each opens the parent escape-proof and *at(2)s the leaf with no symlink
+// follow) and OpenInScope for regular-file bodies. This replaces filepath.Walk,
+// whose os.ReadDir follows a directory that a tenant swapped to a symlink after
+// validation — leaking out-of-scope names/modes/sizes into the tar headers.
 func addToTar(ctx context.Context, tw *tar.Writer, scope *filesafe.Scope, src, baseDir string) error {
-	return filepath.Walk(src, func(p string, info os.FileInfo, walkErr error) error {
-		// GH #664: abort promptly if the request was cancelled — don't keep the
-		// root agent walking a huge tree after the caller gave up.
-		if err := ctx.Err(); err != nil {
+	li, err := scope.StatInScope(src)
+	if err != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("stat %q: %v", src, err)}
+	}
+	rel, err := filepath.Rel(baseDir, src)
+	if err != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("rel %q: %v", src, err)}
+	}
+	return archiveEntry(ctx, tw, scope, src, rel, *li)
+}
+
+// archiveEntry writes one entry (and, for a directory, its descendants) fd-safely.
+func archiveEntry(ctx context.Context, tw *tar.Writer, scope *filesafe.Scope, path, rel string, li filesafe.LeafInfo) error {
+	// GH #664: stop promptly on cancellation.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	hdr := &tar.Header{Name: rel, Mode: int64(li.Mode.Perm()), ModTime: li.ModTime}
+
+	switch {
+	case li.IsSymlink:
+		// Record the symlink as a header only — NEVER stream its target's
+		// bytes (a swapped/escaping symlink cannot disclose host files).
+		target, terr := scope.ReadlinkInScope(path)
+		if terr != nil {
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("readlink %q: %v", path, terr)}
+		}
+		hdr.Typeflag = tar.TypeSymlink
+		hdr.Linkname = target
+		return tw.WriteHeader(hdr)
+
+	case li.IsDir:
+		hdr.Typeflag = tar.TypeDir
+		if !strings.HasSuffix(hdr.Name, "/") {
+			hdr.Name += "/"
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		if walkErr != nil {
-			return &agentwire.AgentError{
-				Code:    agentwire.CodeInternal,
-				Message: fmt.Sprintf("walk %q: %v", p, walkErr),
+		// ReadDirInScope opens the dir escape-proof (openat2 RESOLVE_BENEATH),
+		// so a dir swapped to a symlink is refused, not followed.
+		entries, rerr := scope.ReadDirInScope(path)
+		if rerr != nil {
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("readdir %q: %v", path, rerr)}
+		}
+		for _, e := range entries {
+			if err := archiveEntry(ctx, tw, scope, filepath.Join(path, e.Name), filepath.Join(rel, e.Name), e); err != nil {
+				return err
 			}
 		}
-		// Prefer Lstat so we see the symlink, not its target.
-		li, err := os.Lstat(p)
-		if err != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("lstat %q: %v", p, err)}
-		}
+		return nil
 
-		var link string
-		if li.Mode()&os.ModeSymlink != 0 {
-			link, _ = os.Readlink(p)
-		}
-		hdr, err := tar.FileInfoHeader(li, link)
-		if err != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("tar header %q: %v", p, err)}
-		}
-		rel, err := filepath.Rel(baseDir, p)
-		if err != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("rel %q: %v", p, err)}
-		}
-		hdr.Name = rel
+	case li.Mode.IsRegular():
+		hdr.Typeflag = tar.TypeReg
+		hdr.Size = li.Size
 		if err := tw.WriteHeader(hdr); err != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("write header %q: %v", p, err)}
+			return err
 		}
-		// Only regular files carry content; dirs, symlinks, devices are
-		// metadata-only in the header and must skip the body.
-		if !li.Mode().IsRegular() {
-			return nil
+		rf, oerr := scope.OpenInScope(path, os.O_RDONLY, 0)
+		if oerr != nil {
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("open %q: %v", path, oerr)}
 		}
-		// Open escape-proof: openat2 RESOLVE_BENEATH refuses any symlink in
-		// the path, closing the Lstat-to-open race (a swapped final component
-		// would otherwise be followed by os.Open and stream a host file back
-		// to the tenant).
-		rf, err := scope.OpenInScope(p, os.O_RDONLY, 0)
-		if err != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("open %q: %v", p, err)}
-		}
-		// Re-confirm regular via the fd: a swap to a fifo/device after the
-		// Lstat would otherwise have us copy from a special file.
+		// Re-confirm regular via the fd (a swap to a fifo/device after stat).
 		if fi, fstatErr := rf.Stat(); fstatErr != nil || !fi.Mode().IsRegular() {
 			_ = rf.Close()
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("not a regular file after open: %q", p)}
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("not a regular file after open: %q", path)}
 		}
-		// GH #655: close per entry explicitly (not deferred) so a very wide tree
-		// never accumulates open fds within a single archive request.
-		_, cErr := io.Copy(tw, rf)
+		// Write EXACTLY hdr.Size bytes so the tar entry stays valid even if the
+		// file grew/shrank after stat (GH #655: explicit per-entry close).
+		n, cErr := io.Copy(tw, io.LimitReader(rf, li.Size))
 		_ = rf.Close()
 		if cErr != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("copy %q: %v", p, cErr)}
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("copy %q: %v", path, cErr)}
+		}
+		if n < li.Size {
+			if _, err := tw.Write(make([]byte, li.Size-n)); err != nil {
+				return err
+			}
 		}
 		return nil
-	})
+
+	default:
+		// device / fifo / socket: metadata-only; skip (never archive special files).
+		return nil
+	}
 }
 
 // capWriter caps a writer at `limit` total bytes. Used defensively to

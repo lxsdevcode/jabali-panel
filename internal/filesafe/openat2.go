@@ -603,6 +603,18 @@ func copyRegularAt(srcFd, dstFd int, name string, perm os.FileMode, uid, gid int
 	return n, cerr
 }
 
+// ReadlinkInScope reads the symlink target at pathStr fd-safely: the parent is
+// opened escape-proof and readlinkat reads the leaf without following it, so no
+// traversal can escape the scope (GH #650, used by the fd-safe archive walk).
+func (s *Scope) ReadlinkInScope(pathStr string) (string, error) {
+	parent, leaf, err := s.OpenParentInScope(pathStr)
+	if err != nil {
+		return "", err
+	}
+	defer parent.Close()
+	return readlinkat(int(parent.Fd()), leaf)
+}
+
 // readlinkat reads a symlink target relative to dirFd without following it.
 func readlinkat(dirFd int, name string) (string, error) {
 	buf := make([]byte, 4096)
