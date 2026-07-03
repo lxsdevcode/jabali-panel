@@ -95,14 +95,15 @@ export function CacheSettingsDrawer({
     if (!install) return;
     setAdvising(true);
     try {
-      const res = await apiClient.post<{ recommended: { profile: string; note: string } }>(
+      const res = await apiClient.post<{ recommended: { profile: string; note: string }; probe?: { ttfb_ms?: number } }>(
         `/applications/${install.id}/cache-advise`,
       );
       const r = res.data.recommended;
       setProfile(r.profile ?? "");
       setObjectOn(true);
       setPageOn(true);
-      setAdvice(r.note ?? null);
+      const ttfb = res.data.probe?.ttfb_ms ?? 0;
+      setAdvice((r.note ?? "") + (ttfb > 0 ? `  Homepage TTFB: ${ttfb} ms.` : ""));
       message.success("Recommendation applied to the form — review and Save.");
     } catch (e) {
       message.error(extractApiError(e) ?? "Advisor failed");

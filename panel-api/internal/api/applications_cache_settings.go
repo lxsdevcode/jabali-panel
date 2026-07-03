@@ -268,7 +268,7 @@ func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
 		installPath = path.Join(dom.DocRoot, inst.Subdirectory)
 	}
 	res, err := h.cfg.Agent.Call(c.Request.Context(), "wordpress.cache_probe", map[string]any{
-		"os_user": osUser, "install_path": installPath,
+		"os_user": osUser, "install_path": installPath, "host": dom.Name,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "detail": err.Error()})
@@ -277,6 +277,7 @@ func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
 	var probe struct {
 		ActivePlugins []string `json:"active_plugins"`
 		WPVersion     string   `json:"wp_version"`
+		TTFBMs        int      `json:"ttfb_ms"`
 	}
 	_ = json.Unmarshal(res, &probe)
 	profile, note := recommendCacheProfile(probe.ActivePlugins)
@@ -287,6 +288,6 @@ func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
 			"page_cache_enabled":   true,
 			"note":                 note,
 		},
-		"probe": gin.H{"active_plugins": probe.ActivePlugins, "wp_version": probe.WPVersion},
+		"probe": gin.H{"active_plugins": probe.ActivePlugins, "wp_version": probe.WPVersion, "ttfb_ms": probe.TTFBMs},
 	})
 }
