@@ -532,9 +532,12 @@ func validateStageCallback(users repository.UserRepository, domains repository.D
 		if job.TargetUserID != nil {
 			acceptUserID = *job.TargetUserID
 		}
+		// GH #646: a refresh job legitimately targets its own already-present
+		// domain; accept-existing-domain is same-user-only inside Validate.
+		acceptDomain := job.Mode == "refresh"
 		rpt, err := migrate.Validate(ctx, migrate.ValidateDeps{
 			Users: users, Domains: domains,
-		}, mf, targetUsername, acceptUserID)
+		}, mf, targetUsername, acceptUserID, acceptDomain)
 		if err != nil {
 			return 0, nil, fmt.Errorf("validate: %w", err)
 		}

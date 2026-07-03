@@ -71,7 +71,7 @@ type ValidateDeps struct {
 // just created, not a pre-existing one). Empty string preserves the
 // strict 'must not exist' check for live-source flows where
 // validate runs before user creation.
-func Validate(ctx context.Context, deps ValidateDeps, m *AccountManifest, targetUsername string, acceptExistingUserID string) (*ValidationReport, error) {
+func Validate(ctx context.Context, deps ValidateDeps, m *AccountManifest, targetUsername string, acceptExistingUserID string, acceptExistingDomain bool) (*ValidationReport, error) {
 	if m == nil {
 		return nil, errors.New("validate: manifest nil")
 	}
@@ -128,6 +128,12 @@ func Validate(ctx context.Context, deps ValidateDeps, m *AccountManifest, target
 			return nil, fmt.Errorf("validate: lookup domain %q: %w", d.Name, err)
 		}
 		if existing != nil {
+			// GH #646: a refresh (acceptExistingDomain) may legitimately target
+			// the account's OWN domain. Accept it ONLY when it belongs to the
+			// SAME target user — never let a refresh touch another tenant's domain.
+			if acceptExistingDomain && acceptExistingUserID != "" && existing.UserID == acceptExistingUserID {
+				continue
+			}
 			rpt.Blockers = append(rpt.Blockers, Conflict{
 				Kind:   ConflictDomainTaken,
 				Detail: fmt.Sprintf("domain %q already registered in jabali (owned by user %s); free it first or skip this domain in the manifest", d.Name, existing.UserID),
