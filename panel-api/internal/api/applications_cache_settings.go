@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"math"
 	"path"
 	"time"
 
@@ -217,7 +219,33 @@ func (h *wordPressHandler) cacheStats(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "detail": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"stats": res})
+	var stats map[string]any
+	if uErr := json.Unmarshal(res, &stats); uErr != nil || stats == nil {
+		stats = map[string]any{}
+	}
+	// GH #617: the tenant ACL can't run INFO, so fill the server-wide hit ratio +
+	// memory from the panel's privileged Redis client.
+	if h.cfg.Redis != nil {
+		if info, iErr := h.cfg.Redis.Info(c.Request.Context(), "stats", "memory").Result(); iErr == nil {
+			hits := infoInt(info, "keyspace_hits")
+			miss := infoInt(info, "keyspace_misses")
+			if hits+miss > 0 {
+				stats["hit_ratio"] = math.Round(float64(hits)/float64(hits+miss)*1000) / 10
+			}
+			stats["used_memory"] = infoInt(info, "used_memory")
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"stats": stats})
+}
+
+// infoInt extracts an integer field from a Redis INFO text block.
+func infoInt(info, key string) int {
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `:(\d+)`)
+	if m := re.FindStringSubmatch(info); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return 0
 }
 
 // recommendCacheProfile maps a site's active plugins to a cache profile + a
