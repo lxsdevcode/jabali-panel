@@ -37,6 +37,26 @@ const cliUploadStagingDir = "/var/lib/jabali-uploads"
 // OOM the CLI or fill the staging dir.
 const maxCLIUploadBytes = int64(100 << 20)
 
+// maxCLIStagingMultiple bounds the AGGREGATE staging dir at this multiple of a
+// single upload, so abandoned CLI temps can't fill the service partition
+// (mirrors the GUI per-user staging budget, GH #425/#674).
+const maxCLIStagingMultiple = int64(2)
+
+// cliStagingDirBytes sums the regular files currently in the CLI staging dir.
+func cliStagingDirBytes() int64 {
+	var total int64
+	entries, err := os.ReadDir(cliUploadStagingDir)
+	if err != nil {
+		return 0
+	}
+	for _, e := range entries {
+		if fi, iErr := e.Info(); iErr == nil && fi.Mode().IsRegular() {
+			total += fi.Size()
+		}
+	}
+	return total
+}
+
 // resolveFilesUser resolves the target tenant and asserts a linux account.
 func resolveFilesUser(ctx context.Context, ref string) (*models.User, error) {
 	u, err := resolveUser(ctx, ref)
@@ -481,6 +501,8 @@ func newFilesUploadCmd() *cobra.Command {
 				return statErr
 			} else if fi.Size() > maxCLIUploadBytes {
 				return fmt.Errorf("file is %d bytes; the CLI upload limit is %d — use SFTP/SSH for larger files", fi.Size(), maxCLIUploadBytes)
+			} else if budget := maxCLIUploadBytes * maxCLIStagingMultiple; cliStagingDirBytes()+fi.Size() > budget {
+				return fmt.Errorf("CLI upload staging budget exceeded (%d in-flight + %d > %d bytes) — clear %s or retry after in-flight uploads finish", cliStagingDirBytes(), fi.Size(), budget, cliUploadStagingDir)
 			}
 			data, rerr := os.ReadFile(args[0])
 			if rerr != nil {

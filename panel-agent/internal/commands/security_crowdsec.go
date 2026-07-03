@@ -1376,6 +1376,28 @@ type csProfileOverride struct {
 	Action   string `json:"action"` // captcha | off
 }
 
+// installedScenarioNames returns the set of installed CrowdSec scenario names
+// (GH #680) so profile overrides can be rejected for scenarios that don't
+// exist — an unknown scenario in profiles.yaml is a silent no-op that hides a
+// misconfiguration.
+func installedScenarioNames(ctx context.Context) (map[string]bool, error) {
+	out, err := runCscliJSON(ctx, "scenarios", "list")
+	if err != nil {
+		return nil, err
+	}
+	var wrap struct {
+		Scenarios []rawScenarioEntry `json:"scenarios"`
+	}
+	if err := json.Unmarshal(out, &wrap); err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(wrap.Scenarios))
+	for _, sc := range wrap.Scenarios {
+		set[sc.Name] = true
+	}
+	return set, nil
+}
+
 // scanOverridesFromProfiles parses the jabali marker-bounded block and
 // returns the overrides previously persisted. Everything outside the
 // markers is ignored.
@@ -1466,12 +1488,19 @@ func csProfilesSetHandler(ctx context.Context, params json.RawMessage) (any, err
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, csInvalidArg(fmt.Sprintf("parse params: %v", err))
 	}
+	installedScenarios, sErr := installedScenarioNames(ctx)
+	if sErr != nil {
+		return nil, csInternal("list installed scenarios", sErr)
+	}
 	for _, o := range p.Overrides {
 		if o.Action != "captcha" && o.Action != "off" {
 			return nil, csInvalidArg(`action must be "captcha" or "off"`)
 		}
 		if o.Scenario == "" {
 			return nil, csInvalidArg("scenario name required")
+		}
+		if !installedScenarios[o.Scenario] {
+			return nil, csInvalidArg("unknown scenario (not installed): " + o.Scenario)
 		}
 	}
 	raw, err := os.ReadFile(profilesPath)

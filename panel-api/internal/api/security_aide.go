@@ -49,9 +49,25 @@ func RegisterSecurityAideRoutes(rg *gin.RouterGroup, cli agent.AgentInterface) {
 	// the plan only. Destructive — replaces the integrity baseline.
 	g.POST("/rebuild", func(c *gin.Context) {
 		var body struct {
-			DryRun bool `json:"dry_run"`
+			DryRun  bool   `json:"dry_run"`
+			Confirm string `json:"confirm"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		// GH #683: a real rebuild replaces the integrity baseline with the CURRENT
+		// filesystem state (aideinit -y -f) — if the host is already compromised
+		// this blesses the tampered files. Require an explicit typed confirmation
+		// and record an audit entry; dry_run (plan only) stays unguarded.
+		if !body.DryRun {
+			if body.Confirm != "REBUILD" {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"status": "error", "error": "confirmation_required",
+					"detail": `set "confirm":"REBUILD" to replace the AIDE baseline`,
+				})
+				return
+			}
+			c.Set("audit_target", "aide integrity baseline")
+			c.Set("audit_target_type", "security_aide_rebuild")
+		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 16*time.Minute)
 		defer cancel()
 		raw, err := cli.Call(ctx, "security.aide.rebuild", map[string]any{"dry_run": body.DryRun})

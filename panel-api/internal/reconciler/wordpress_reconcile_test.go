@@ -94,6 +94,10 @@ func (m *mockWordPressInstallRepo) ListCacheEnabledByDomainID(_ context.Context,
 	return nil, nil
 }
 
+func (m *mockWordPressInstallRepo) ListAllCacheEnabled(_ context.Context) ([]models.ApplicationInstall, error) {
+	return nil, nil
+}
+
 func (m *mockWordPressInstallRepo) UpdateStatus(ctx context.Context, id, status string, lastError *string, version *string) error {
 	m.updateCalls = append(m.updateCalls, struct {
 		id      string

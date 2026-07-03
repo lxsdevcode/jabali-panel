@@ -57,7 +57,9 @@ export function useRunAideRebuild() {
     mutationFn: async (dryRun: boolean) => {
       const { data } = await apiClient.post<{ rebuilt?: boolean; dry_run?: boolean; plan?: string }>(
         `${BASE}/rebuild`,
-        { dry_run: dryRun },
+        // GH #683: real rebuild requires the confirmation token; the Rebuild
+        // button is already behind a confirm dialog.
+        dryRun ? { dry_run: true } : { dry_run: false, confirm: "REBUILD" },
       );
       return data;
     },

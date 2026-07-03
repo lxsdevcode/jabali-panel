@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -130,19 +131,37 @@ func renderActiveRules(mode models.SnuffleupagusMode, overrides []models.Snuffle
 		return nil, err
 	}
 	sort.Strings(files)
+	// GH #676: set of operator-disabled directive lines. RuleName is
+	// "<base>#<line> <sp...>" (see listBundleRules); the "<base>#<line>" prefix
+	// pins the exact directive to drop. The renderer used to emit every line and
+	// only APPEND a note, so a "disabled" rule stayed fully active.
+	disabledLines := map[string]bool{}
+	for _, ov := range overrides {
+		if !ov.Enabled {
+			key := ov.RuleName
+			if sp := strings.IndexByte(key, ' '); sp > 0 {
+				key = key[:sp]
+			}
+			disabledLines[key] = true
+		}
+	}
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", f, err)
 		}
-		buf.WriteString(fmt.Sprintf("\n# --- %s ---\n", filepath.Base(f)))
-		if mode == models.SnuffleupagusModeSimulation {
-			// Append .simulation() to drop() actions so rules log without
-			// blocking. Snuffleupagus syntax: rule.drop().simulation().
-			// Idempotent: leave already-simulated chains alone.
-			data = simulationRe.ReplaceAll(data, []byte(".drop().simulation();"))
+		base := filepath.Base(f)
+		buf.WriteString(fmt.Sprintf("\n# --- %s ---\n", base))
+		for i, line := range strings.Split(string(data), "\n") {
+			if disabledLines[base+"#"+strconv.Itoa(i+1)] {
+				buf.WriteString("# DISABLED by operator: " + line + "\n")
+				continue
+			}
+			if mode == models.SnuffleupagusModeSimulation {
+				line = string(simulationRe.ReplaceAll([]byte(line), []byte(".drop().simulation();")))
+			}
+			buf.WriteString(line + "\n")
 		}
-		buf.Write(data)
 	}
 
 	// Operator overrides: emit kill directives. Snuffleupagus has no native
