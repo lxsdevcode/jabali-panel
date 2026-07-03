@@ -218,9 +218,12 @@ func addToTar(tw *tar.Writer, scope *filesafe.Scope, src, baseDir string) error 
 			_ = rf.Close()
 			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("not a regular file after open: %q", p)}
 		}
-		defer rf.Close()
-		if _, err := io.Copy(tw, rf); err != nil {
-			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("copy %q: %v", p, err)}
+		// GH #655: close per entry explicitly (not deferred) so a very wide tree
+		// never accumulates open fds within a single archive request.
+		_, cErr := io.Copy(tw, rf)
+		_ = rf.Close()
+		if cErr != nil {
+			return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("copy %q: %v", p, cErr)}
 		}
 		return nil
 	})

@@ -560,6 +560,16 @@ func (h *filesHandler) download(c *gin.Context) {
 		body = []byte(result.Content)
 	}
 
+	// GH #657: the agent hard-caps reads (100 MiB); never return a partial file
+	// as a successful download — it looks complete but is corrupt.
+	if result.Truncated {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"error":  "file_too_large",
+			"detail": "file exceeds the download size limit; fetch large files over SFTP/SSH",
+		})
+		return
+	}
+
 	filename := filepath.Base(p)
 	ct := result.MimeType
 	if ct == "" {
@@ -570,13 +580,12 @@ func (h *filesHandler) download(c *gin.Context) {
 		}
 	}
 
-	// Render inline for types browsers can display natively — images, pdf,
-	// text, json. Everything else forces a download.
-	inline := strings.HasPrefix(ct, "image/") ||
-		strings.HasPrefix(ct, "text/") ||
-		ct == "application/pdf" ||
-		strings.Contains(ct, "json") ||
-		strings.Contains(ct, "xml")
+	// GH #649: only inline content a browser renders passively — raster images
+	// + pdf. NEVER inline SVG/HTML/XML/JSON/text: they can carry active content
+	// that would execute under the authenticated panel origin. Everything else
+	// downloads as an attachment.
+	inline := (strings.HasPrefix(ct, "image/") && !strings.Contains(ct, "svg")) ||
+		ct == "application/pdf"
 	disposition := `attachment; filename="` + filename + `"`
 	if inline {
 		disposition = `inline; filename="` + filename + `"`
@@ -585,6 +594,9 @@ func (h *filesHandler) download(c *gin.Context) {
 	c.Header("Content-Type", ct)
 	c.Header("Content-Disposition", disposition)
 	c.Header("X-Content-Type-Options", "nosniff")
+	// Defense-in-depth: sandbox anything served, so even a mis-typed inline
+	// response can't run scripts / same-origin against the panel.
+	c.Header("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
 	c.Data(http.StatusOK, ct, body)
 }
 

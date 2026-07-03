@@ -74,6 +74,11 @@ func filesChmodHandler(ctx context.Context, params json.RawMessage) (any, error)
 		}
 	}
 
+	// GH #656: never let chmod widen a tenant secret file (wp-config.php/.env)
+	// back to group/world-readable — clamp to the owner-only sensitive mode,
+	// matching the write/upload hardening.
+	mode = sensitiveFileMode(cleanPath, mode)
+
 	// ChmodInScope opens the leaf O_NOFOLLOW against its escape-proof parent fd
 	// and Fchmods that fd — a symlink leaf is refused (never chased) and no
 	// parent-symlink swap can redirect the chmod (Gitea #428).

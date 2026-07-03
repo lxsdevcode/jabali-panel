@@ -121,9 +121,16 @@ func readContent(ctx context.Context, u *models.User, path string, limit int64) 
 	var res struct {
 		Content    string `json:"content"`
 		ContentB64 string `json:"content_b64"`
+		Truncated  bool   `json:"truncated"`
 	}
 	if uerr := json.Unmarshal(raw, &res); uerr != nil {
 		return nil, uerr
+	}
+	// GH #660: the agent hard-caps reads (100 MiB). Never write a partial file
+	// as a success — fail loudly so support/migration workflows don't silently
+	// produce corrupt local copies.
+	if res.Truncated {
+		return nil, fmt.Errorf("file exceeds the read limit and was truncated by the agent; fetch it over SFTP/SSH instead")
 	}
 	if res.ContentB64 != "" {
 		return base64.StdEncoding.DecodeString(res.ContentB64)
