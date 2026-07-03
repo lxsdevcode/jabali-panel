@@ -38,9 +38,9 @@ func renderVhostForCacheTest(t *testing.T, cacheEnabled bool) string {
 var cacheMarkers = []string{
 	"fastcgi_cache jabali_fcgi;",
 	"fastcgi_cache_key",
-	"fastcgi_cache_valid 200 301 302 60s;",
-	"fastcgi_cache_bypass $jabali_skip;",
-	"fastcgi_no_cache $jabali_skip $jabali_upstream_nocache;",
+	"fastcgi_cache_valid 200 301 60s;",
+	"fastcgi_cache_bypass $jabali_skip $http_authorization;",
+	"fastcgi_no_cache $jabali_skip $jabali_upstream_nocache $http_authorization $jabali_vary_nocache;",
 	"add_header X-Jabali-Cache $upstream_cache_status always;",
 	"set $jabali_skip 0;",
 	"set $jabali_skip 1;", // Gitea #416 fail-closed default

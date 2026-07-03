@@ -278,12 +278,12 @@ server {
         # collapse onto one entry. Safe because only empty/tracking-only queries
         # reach caching (others bypass via $jabali_qs_kind above).
         fastcgi_cache_key "$scheme$request_method$host$uri";
-        fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
-        fastcgi_cache_bypass $jabali_skip;
+        fastcgi_cache_valid 200 301 {{.CacheTTL}};
+        fastcgi_cache_bypass $jabali_skip $http_authorization;
         # GH #637: also skip STORING when the backend opted out via Cache-Control
         # (no-cache/no-store/private). $jabali_upstream_nocache is set by the map
         # in jabali-fastcgi-cache.conf from $upstream_http_cache_control.
-        fastcgi_no_cache $jabali_skip $jabali_upstream_nocache;
+        fastcgi_no_cache $jabali_skip $jabali_upstream_nocache $http_authorization $jabali_vary_nocache;
         fastcgi_cache_use_stale error timeout updating http_500 http_503;
         fastcgi_cache_lock on;
         # Gitea #596: serve the stale copy instantly (~100ms) on expiry and
@@ -333,12 +333,12 @@ server {
         # collapse onto one entry. Safe because only empty/tracking-only queries
         # reach caching (others bypass via $jabali_qs_kind above).
         fastcgi_cache_key "$scheme$request_method$host$uri";
-        fastcgi_cache_valid 200 301 302 {{.CacheTTL}};
-        fastcgi_cache_bypass $jabali_skip;
+        fastcgi_cache_valid 200 301 {{.CacheTTL}};
+        fastcgi_cache_bypass $jabali_skip $http_authorization;
         # GH #637: also skip STORING when the backend opted out via Cache-Control
         # (no-cache/no-store/private). $jabali_upstream_nocache is set by the map
         # in jabali-fastcgi-cache.conf from $upstream_http_cache_control.
-        fastcgi_no_cache $jabali_skip $jabali_upstream_nocache;
+        fastcgi_no_cache $jabali_skip $jabali_upstream_nocache $http_authorization $jabali_vary_nocache;
         fastcgi_cache_use_stale error timeout updating http_500 http_503;
         fastcgi_cache_lock on;
         # Gitea #596: serve the stale copy instantly (~100ms) on expiry and
