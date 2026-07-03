@@ -1,6 +1,7 @@
 package api
 
 import (
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -86,6 +87,11 @@ func RegisterApplicationRoutes(g *gin.RouterGroup, cfg ApplicationHandlerConfig)
 	apps.POST("/:id/cache-warmup", wp.cacheWarmup) // GH #615
 	apps.GET("/cache-profiles", wp.cacheProfiles) // GH #618
 	apps.GET("/:id/cache-stats", wp.cacheStats) // GH #617
+	// GH #617: admin cache overview — cache-enabled domains ranked by page-cache
+	// hit ratio so low-hit/noisy sites are visible.
+	adminCache := g.Group("/admin/cache")
+	adminCache.Use(middleware.RequireAdmin())
+	adminCache.GET("/overview", wp.cacheOverview)
 	apps.POST("/:id/cache-advise", wp.cacheAdvise) // GH #620
 }
 

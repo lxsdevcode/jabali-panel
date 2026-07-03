@@ -1,0 +1,66 @@
+// CacheOverviewPage — GH #617 admin cache visibility. Ranks cache-enabled
+// domains by nginx page-cache hit ratio so low-hit / high-bypass / noisy sites
+// are visible at a glance. Reads GET /api/v1/admin/cache/overview.
+import { App, Card, Table, Tag, Typography } from "antd";
+import { useEffect, useState } from "react";
+
+import { apiClient } from "../../../apiClient";
+import { extractApiError } from "../../../apiErrors";
+
+type Row = {
+  domain: string;
+  hit_ratio: number;
+  total: number;
+  bypass: number;
+  available: boolean;
+};
+
+export function CacheOverviewPage() {
+  const { message } = App.useApp();
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    apiClient
+      .get<{ domains: Row[] }>("/admin/cache/overview")
+      .then((res) => setRows(res.data.domains ?? []))
+      .catch((e) => message.error(extractApiError(e) ?? "Failed to load cache overview"))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Card title="Cache overview — page-cache hit ratio by domain">
+      <Typography.Paragraph type="secondary">
+        Cache-enabled WordPress domains, ranked with the lowest hit ratio (most in
+        need of attention) first. A low ratio with high traffic suggests a
+        cookie/plugin forcing bypass, or a site that hasn&apos;t been warmed.
+      </Typography.Paragraph>
+      <Table<Row>
+        rowKey="domain"
+        loading={loading}
+        dataSource={rows}
+        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
+        columns={[
+          { title: "Domain", dataIndex: "domain" },
+          {
+            title: "Hit ratio",
+            dataIndex: "hit_ratio",
+            render: (v: number, r) =>
+              !r.available || r.total === 0 ? (
+                <Tag>no data</Tag>
+              ) : (
+                <Tag color={v >= 70 ? "green" : v >= 30 ? "orange" : "red"}>
+                  {v.toFixed(1)}%
+                </Tag>
+              ),
+          },
+          { title: "Requests", dataIndex: "total" },
+          { title: "Bypass", dataIndex: "bypass" },
+        ]}
+      />
+    </Card>
+  );
+}

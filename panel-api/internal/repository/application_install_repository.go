@@ -45,6 +45,9 @@ type ApplicationInstallRepository interface {
 	// a domain (GH #601) — a domain can host several (/, /blog), and the nginx
 	// page-cache gate must allow every one of their path prefixes.
 	ListCacheEnabledByDomainID(ctx context.Context, domainID string) ([]models.ApplicationInstall, error)
+	// ListAllCacheEnabled returns every cache-enabled WordPress install (admin
+	// cache overview, GH #617).
+	ListAllCacheEnabled(ctx context.Context) ([]models.ApplicationInstall, error)
 	// CountCacheEnabledByUserID counts a user's WordPress installs with the
 	// object cache ON, excluding excludeID. The per-tenant Redis ACL user
 	// wp_<osuser> is shared across a tenant's installs, so it may only be
@@ -241,6 +244,14 @@ func (r *applicationInstallRepo) ListCacheEnabledByDomainID(ctx context.Context,
 	var out []models.ApplicationInstall
 	err := r.db.WithContext(ctx).
 		Where("domain_id = ? AND app_type = ? AND cache_enabled = ?", domainID, "wordpress", true).
+		Find(&out).Error
+	return out, err
+}
+
+func (r *applicationInstallRepo) ListAllCacheEnabled(ctx context.Context) ([]models.ApplicationInstall, error) {
+	var out []models.ApplicationInstall
+	err := r.db.WithContext(ctx).
+		Where("app_type = ? AND cache_enabled = ?", "wordpress", true).
 		Find(&out).Error
 	return out, err
 }

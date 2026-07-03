@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
+	"sort"
 	"strconv"
 	"math"
 	"path"
@@ -406,4 +408,77 @@ func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
 			"risky_endpoints": probe.RiskyEndpoints, "redis_evicted_keys": evicted,
 		},
 	})
+}
+
+// cacheOverview (GH #617, admin) lists cache-enabled domains ranked by their
+// nginx page-cache hit ratio, so operators can spot low-hit / high-bypass /
+// noisy domains. Per-domain page-cache stats are not cross-tenant, and this is
+// admin-gated anyway. Concurrent, bounded.
+func (h *wordPressHandler) cacheOverview(c *gin.Context) {
+	ctx := c.Request.Context()
+	insts, err := h.cfg.ApplicationInstalls.ListAllCacheEnabled(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "list_failed"})
+		return
+	}
+	// Dedup to distinct domains (a domain may host several installs; the page
+	// cache log is per-domain).
+	seen := map[string]bool{}
+	names := []string{}
+	for i := range insts {
+		if dom, dErr := h.cfg.Domains.FindByID(ctx, insts[i].DomainID); dErr == nil && dom != nil && !seen[dom.Name] {
+			seen[dom.Name] = true
+			names = append(names, dom.Name)
+		}
+	}
+	type overviewRow struct {
+		Domain    string  `json:"domain"`
+		HitRatio  float64 `json:"hit_ratio"`
+		Total     int     `json:"total"`
+		Bypass    int     `json:"bypass"`
+		Available bool    `json:"available"`
+	}
+	rows := make([]overviewRow, len(names))
+	if h.cfg.Agent != nil {
+		sem := make(chan struct{}, 8)
+		var wg sync.WaitGroup
+		for i, name := range names {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int, name string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				r := overviewRow{Domain: name}
+				sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+				defer cancel()
+				if res, cErr := h.cfg.Agent.Call(sctx, "nginx.cache.stats", map[string]any{"domain": name}); cErr == nil {
+					var st struct {
+						Available bool    `json:"available"`
+						HitRatio  float64 `json:"hit_ratio"`
+						Total     int     `json:"total"`
+						Bypass    int     `json:"bypass"`
+					}
+					if json.Unmarshal(res, &st) == nil {
+						r.Available, r.HitRatio, r.Total, r.Bypass = st.Available, st.HitRatio, st.Total, st.Bypass
+					}
+				}
+				rows[i] = r
+			}(i, name)
+		}
+		wg.Wait()
+	}
+	// Rank: domains WITH traffic + a low hit ratio first (the ones needing
+	// attention); no-traffic / unavailable sink to the bottom.
+	sort.Slice(rows, func(i, j int) bool {
+		ai := rows[i].Available && rows[i].Total > 0
+		aj := rows[j].Available && rows[j].Total > 0
+		if ai != aj {
+			return ai
+		}
+		if rows[i].HitRatio != rows[j].HitRatio {
+			return rows[i].HitRatio < rows[j].HitRatio
+		}
+		return rows[i].Total > rows[j].Total
+	})
+	c.JSON(http.StatusOK, gin.H{"domains": rows})
 }

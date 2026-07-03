@@ -16,6 +16,7 @@ import {
   BellOutlined,
   CalendarCheckOutlined,
   ChartBarOutlined,
+  ThunderboltOutlined,
   CloudServerOutlined,
   CodeOutlined,
   SquareTerminalOutlined,
@@ -134,6 +135,12 @@ export const adminNav: NavItem[] = [
     label: "Server Status",
     icon: navIcon(ChartBarOutlined),
     path: "/jabali-admin/server-status",
+  },
+  {
+    key: "cache",
+    label: "Cache",
+    icon: navIcon(ThunderboltOutlined),
+    path: "/jabali-admin/cache",
   },
   {
     key: "security",
