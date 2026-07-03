@@ -17,7 +17,7 @@ func SafeHTTPClient(allowPrivate bool, timeout time.Duration) *http.Client {
 	tr := &http.Transport{
 		Proxy: nil, // never honor env proxies for a migration pull
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, _, err := net.SplitHostPort(addr)
+			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
 			}
@@ -27,7 +27,10 @@ func SafeHTTPClient(allowPrivate bool, timeout time.Duration) *http.Client {
 			}
 			d := v.Dialer()
 			d.Timeout = 30 * time.Second
-			return d.DialContext(ctx, network, addr)
+			// Dial the validated IP (no second resolution -> no rebind
+			// false-positive on a stable public host). TLS SNI + cert
+			// verification still use the original hostname (GH #671).
+			return d.DialContext(ctx, network, v.DialAddr(port))
 		},
 		TLSHandshakeTimeout:   20 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,

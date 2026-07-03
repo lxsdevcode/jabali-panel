@@ -66,6 +66,23 @@ func ValidateHost(ctx context.Context, hostname string, allowPrivate bool) (*Hos
 	}, nil
 }
 
+// DialAddr returns "ip:port" for a VALIDATED resolved IP (IPv4 preferred), so
+// callers connect to an already-checked address instead of re-resolving the
+// hostname at dial time. A second resolution can disagree with the validated
+// set on some hosts' resolvers (systemd-resolved caching / ordering) and trip
+// the rebind guard on a perfectly stable public IP (GH #671). The Control hook
+// still fires as belt-and-suspenders.
+func (v *HostValidator) DialAddr(port string) string {
+	ip := v.resolved[0]
+	for _, cand := range v.resolved {
+		if cand.To4() != nil {
+			ip = cand
+			break
+		}
+	}
+	return net.JoinHostPort(ip.String(), port)
+}
+
 // Dialer returns a net.Dialer whose Control hook re-checks the peer IP
 // the kernel is about to connect to. If a DNS rebinding attack flipped
 // the record between ValidateHost() and Dial(), the new IP fails the
