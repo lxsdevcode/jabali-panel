@@ -81,19 +81,42 @@ func wordpressCacheProbeHandler(ctx context.Context, params json.RawMessage) (an
 	var plugins []string
 	_ = json.Unmarshal([]byte(strings.TrimSpace(pl)), &plugins)
 	ttfbMs := 0
-	if p.Host != "" && probeDomainRe.MatchString(strings.ToLower(p.Host)) {
-		// Timed request through LOCAL nginx (--resolve pins to loopback, no
-		// redirects — same SSRF posture as the warmup, GH #639).
-		cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
-		out, _ := exec.CommandContext(cctx, "curl", "-kso", "/dev/null",
-			"-w", "%{time_starttransfer}", "--max-time", "10",
-			"--resolve", p.Host+":443:127.0.0.1", "https://"+p.Host+"/").Output()
-		cancel()
-		if secs, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64); err == nil {
+	hitVerified := false
+	risky := []string{}
+	host := strings.ToLower(strings.TrimSpace(p.Host))
+	if host != "" && probeDomainRe.MatchString(host) {
+		curlLocal := func(path, writeOut string) string {
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			args := []string{"-kso", "/dev/null", "--max-time", "8", "--resolve", host + ":443:127.0.0.1"}
+			if writeOut != "" {
+				args = append(args, "-w", writeOut)
+			}
+			out, _ := exec.CommandContext(cctx, "curl", append(args, "https://"+host+path)...).Output()
+			return strings.TrimSpace(string(out))
+		}
+		// Homepage TTFB (GH #620).
+		if secs, err := strconv.ParseFloat(curlLocal("/", "%{time_starttransfer}"), 64); err == nil {
 			ttfbMs = int(secs * 1000)
 		}
+		// Page-cache HIT verification: prime once, then read X-Jabali-Cache.
+		_ = curlLocal("/", "")
+		cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		hdr, _ := exec.CommandContext(cctx, "curl", "-ksI", "--max-time", "8",
+			"--resolve", host+":443:127.0.0.1", "https://"+host+"/").Output()
+		cancel()
+		hitVerified = strings.Contains(strings.ToUpper(string(hdr)), "X-JABALI-CACHE: HIT")
+		// Risky endpoints that must never be cached (WooCommerce/EDD/membership).
+		for _, ep := range []string{"/cart", "/checkout", "/my-account"} {
+			if code := curlLocal(ep, "%{http_code}"); code == "200" || code == "302" {
+				risky = append(risky, ep)
+			}
+		}
 	}
-	return map[string]any{"active_plugins": plugins, "wp_version": strings.TrimSpace(ver), "ttfb_ms": ttfbMs}, nil
+	return map[string]any{
+		"active_plugins": plugins, "wp_version": strings.TrimSpace(ver),
+		"ttfb_ms": ttfbMs, "page_hit_verified": hitVerified, "risky_endpoints": risky,
+	}, nil
 }
 
 func init() {

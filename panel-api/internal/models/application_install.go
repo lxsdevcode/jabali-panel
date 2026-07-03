@@ -81,6 +81,21 @@ type CacheSettingsData struct {
 	// Profile is the Wave C (#618) cache profile: "", brochure, woocommerce,
 	// edd, membership_lms, custom. Empty = jabali defaults.
 	Profile string `json:"profile,omitempty"`
+
+	// Diagnostic is the last advisor result (GH #620), stored so operators can
+	// see the recommendation + findings without re-probing.
+	Diagnostic *CacheDiagnostic `json:"diagnostic,omitempty"`
+}
+
+// CacheDiagnostic is a stored advisor result (GH #620).
+type CacheDiagnostic struct {
+	RecommendedProfile string   `json:"recommended_profile"`
+	Note               string   `json:"note"`
+	TTFBMs             int      `json:"ttfb_ms"`
+	PageHitVerified    bool     `json:"page_hit_verified"`
+	RiskyEndpoints     []string `json:"risky_endpoints,omitempty"`
+	RedisEvictedKeys   int      `json:"redis_evicted_keys"`
+	WPVersion          string   `json:"wp_version,omitempty"`
 }
 
 // ParseCacheSettings decodes the JSON column; a nil/empty/invalid value yields

@@ -316,12 +316,41 @@ func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
 		return
 	}
 	var probe struct {
-		ActivePlugins []string `json:"active_plugins"`
-		WPVersion     string   `json:"wp_version"`
-		TTFBMs        int      `json:"ttfb_ms"`
+		ActivePlugins   []string `json:"active_plugins"`
+		WPVersion       string   `json:"wp_version"`
+		TTFBMs          int      `json:"ttfb_ms"`
+		PageHitVerified bool     `json:"page_hit_verified"`
+		RiskyEndpoints  []string `json:"risky_endpoints"`
 	}
 	_ = json.Unmarshal(res, &probe)
 	profile, note := recommendCacheProfile(probe.ActivePlugins)
+	// GH #620: extra findings folded into the note.
+	if len(probe.RiskyEndpoints) > 0 {
+		note += " Detected dynamic endpoints (" + strings.Join(probe.RiskyEndpoints, ", ") + ") — these must stay bypassed; the chosen profile already excludes them."
+	}
+	if inst.CacheEnabled && !probe.PageHitVerified {
+		note += " Warning: the homepage did not return a page-cache HIT on a repeat request — caching may be bypassed (a cookie/plugin) or not yet warmed."
+	}
+	// Redis eviction pressure (admin-privileged INFO).
+	evicted := 0
+	if claims.IsAdmin && h.cfg.Redis != nil {
+		if info, iErr := h.cfg.Redis.Info(c.Request.Context(), "stats").Result(); iErr == nil {
+			evicted = infoInt(info, "evicted_keys")
+			if evicted > 0 {
+				note += " Redis is evicting keys under memory pressure (evicted_keys>0) — object-cache entries may be dropped early; consider a smaller max-TTL or more Redis memory."
+			}
+		}
+	}
+	// Store the diagnostic on the install so it persists (GH #620).
+	settings, _ := inst.ParseCacheSettings()
+	settings.Diagnostic = &models.CacheDiagnostic{
+		RecommendedProfile: profile, Note: note, TTFBMs: probe.TTFBMs,
+		PageHitVerified: probe.PageHitVerified, RiskyEndpoints: probe.RiskyEndpoints,
+		RedisEvictedKeys: evicted, WPVersion: probe.WPVersion,
+	}
+	if raw, mErr := json.Marshal(settings); mErr == nil {
+		_ = h.cfg.ApplicationInstalls.UpdateCacheSettings(c.Request.Context(), inst.ID, raw)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"recommended": gin.H{
 			"profile":              profile,
@@ -329,6 +358,10 @@ func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
 			"page_cache_enabled":   true,
 			"note":                 note,
 		},
-		"probe": gin.H{"active_plugins": probe.ActivePlugins, "wp_version": probe.WPVersion, "ttfb_ms": probe.TTFBMs},
+		"probe": gin.H{
+			"active_plugins": probe.ActivePlugins, "wp_version": probe.WPVersion,
+			"ttfb_ms": probe.TTFBMs, "page_hit_verified": probe.PageHitVerified,
+			"risky_endpoints": probe.RiskyEndpoints, "redis_evicted_keys": evicted,
+		},
 	})
 }
