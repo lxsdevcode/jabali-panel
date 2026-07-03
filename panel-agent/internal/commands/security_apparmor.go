@@ -27,11 +27,14 @@ const apparmorCallTimeout = 10 * time.Second
 // allowedProfiles enumerates the jabali-shipped profiles the panel
 // can toggle. Adding a new profile here MUST be paired with adding
 // the profile file under install/apparmor/.
+// jabali-agent + jabali-kratos were DROPPED in M40.2/M40.3 (AA 4.x complain-mode
+// unix-socket mediation bug on Debian 13 / Ubuntu 24.04 returns EACCES on
+// connect() to mysqld.sock/pdns even in complain, breaking DNS + DB). They run
+// intentionally unconfined, so they are NOT listed here — otherwise the status
+// verb reports them as permanently "missing" (GH #679) which is a false alarm.
 var allowedProfiles = map[string]bool{
 	"jabali-panel":   true,
-	"jabali-agent":   true,
 	"jabali-bulwark": true,
-	"jabali-kratos":  true,
 	"stalwart-mail":  true,
 	"jabali-fpm-app": true,
 }
@@ -45,12 +48,8 @@ func apparmorProfileFile(name string) string {
 	switch name {
 	case "jabali-panel":
 		return "/etc/apparmor.d/usr.local.bin.jabali-panel-api"
-	case "jabali-agent":
-		return "/etc/apparmor.d/usr.local.bin.jabali-agent"
 	case "jabali-bulwark":
 		return "/etc/apparmor.d/usr.local.bin.jabali-bulwark"
-	case "jabali-kratos":
-		return "/etc/apparmor.d/usr.local.bin.jabali-kratos"
 	case "stalwart-mail":
 		return "/etc/apparmor.d/usr.local.bin.stalwart-mail"
 	case "jabali-fpm-app":
@@ -130,6 +129,12 @@ func mwApparmorStatusHandler(ctx context.Context, _ json.RawMessage) (any, error
 		}
 		// Skip complain-mode child shadow profiles (e.g. "jabali-panel//null-/usr/sbin/...").
 		if strings.Contains(name, "//") {
+			continue
+		}
+		// jabali-ssh-shell ships flags=(unconfined) BY DESIGN — it's a userns
+		// permission shim for bwrap (Ubuntu noble), not a confinement profile.
+		// Reporting it as an "unconfined" security row is a false alarm.
+		if name == "jabali-ssh-shell" {
 			continue
 		}
 		resp.Profiles = append(resp.Profiles, apparmorProfile{
