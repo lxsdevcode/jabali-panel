@@ -23,7 +23,7 @@ func TestSetWPConfigCacheConstants_RefusesSymlink(t *testing.T) {
 	if err := os.Symlink(victim, filepath.Join(install, "wp-config.php")); err != nil {
 		t.Fatal(err)
 	}
-	err := setWPConfigCacheConstants(install, "/run/redis/redis.sock", 1, "u:1", "tok", "wp_u", true, 0, false, 0)
+	err := setWPConfigCacheConstants(install, "/run/redis/redis.sock", 1, "u:1", "tok", "wp_u", true, 0, false, 0, 0)
 	if err == nil {
 		t.Fatal("expected refusal for symlinked wp-config.php (LPE/read-any-file)")
 	}
