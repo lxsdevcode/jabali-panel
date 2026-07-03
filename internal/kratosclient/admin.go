@@ -701,3 +701,69 @@ func randomCanarySuffix() (string, error) {
 	}
 	return hex.EncodeToString(buf[:]), nil
 }
+
+// SessionDevice is the subset of a Kratos session device Jabali surfaces.
+type SessionDevice struct {
+	IPAddress string `json:"ip_address"`
+	UserAgent string `json:"user_agent"`
+	Location  string `json:"location"`
+}
+
+// AdminSession is the subset of a Kratos admin Session (GH #338) the panel's
+// Active Sessions view consumes.
+type AdminSession struct {
+	ID              string          `json:"id"`
+	Active          bool            `json:"active"`
+	ExpiresAt       string          `json:"expires_at"`
+	AuthenticatedAt string          `json:"authenticated_at"`
+	AAL             string          `json:"authenticator_assurance_level"`
+	Identity        *Identity       `json:"identity"`
+	Devices         []SessionDevice `json:"devices"`
+}
+
+// ListActiveSessions returns all currently-active Kratos sessions with their
+// identity + devices (GH #338). Kratos admin: GET /admin/sessions.
+func (c *Client) ListActiveSessions(ctx context.Context) ([]AdminSession, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.adminURL+"/admin/sessions?active=true&expand=Identity&expand=Devices&page_size=250", nil)
+	if err != nil {
+		return nil, fmt.Errorf("listsessions: request: %w", err)
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("listsessions: do: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("listsessions: status %d: %s", resp.StatusCode, string(errBody))
+	}
+	var result []AdminSession
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("listsessions: decode: %w", err)
+	}
+	return result, nil
+}
+
+// RevokeSession deactivates a single Kratos session (GH #338). Kratos admin:
+// DELETE /admin/sessions/{id} (204 on success).
+func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("revokesession: empty session id")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.adminURL+"/admin/sessions/"+url.PathEscape(sessionID), nil)
+	if err != nil {
+		return fmt.Errorf("revokesession: request: %w", err)
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("revokesession: do: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("revokesession: status %d: %s", resp.StatusCode, string(errBody))
+	}
+	return nil
+}

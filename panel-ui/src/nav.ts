@@ -89,6 +89,12 @@ export const adminNav: NavItem[] = [
     path: "/jabali-admin/users",
   },
   {
+    key: "sessions",
+    label: "Sessions",
+    icon: navIcon(KeyOutlined),
+    path: "/jabali-admin/sessions",
+  },
+  {
     key: "domains",
     label: "Domains",
     icon: navIcon(GlobalOutlined),
