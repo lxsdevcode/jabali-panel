@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 )
 
 // migrate_refresh_cmd.go — GH #646. `jabali migrate refresh` orchestrates the
@@ -38,48 +39,20 @@ the refresh aborts if that backup fails. Requires --force.`,
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
 			defer cancel()
-			stamp := time.Now().UTC().Format("20060102-150405")
-
-			// Wave B: mandatory backup FIRST.
-			bres, err := sharedAgent.Call(ctx, "migration.refresh_backup", map[string]any{
-				"docroot": docroot, "os_user": osUser, "db_name": dbName, "stamp": stamp,
-			})
+			res, err := migrate.RunRefresh(ctx, sharedAgent, migrate.RefreshInput{
+				Docroot: docroot, DBName: dbName, OSUser: osUser, Domain: domain,
+				SrcDocroot: srcDocroot, SrcSQL: srcSQL, OldURL: oldURL, NewURL: newURL,
+			}, time.Now().UTC())
 			if err != nil {
-				return fmt.Errorf("pre-overwrite backup FAILED — aborting, dest untouched: %w", err)
+				return err
 			}
-			var b struct {
-				Snapshot string `json:"snapshot"`
-				DBDump   string `json:"db_dump"`
+			fmt.Printf("backup ok — snapshot=%s db_dump=%s\n", res.Snapshot, res.DBDump)
+			fmt.Printf("(rollback: rsync the snapshot back + `mysql %s < %s`)\n", dbName, res.DBDump)
+			fmt.Println("files mirrored, DB reimported, reconciled")
+			for _, w := range res.Warnings {
+				fmt.Printf("  warning: %s\n", w)
 			}
-			_ = json.Unmarshal(bres, &b)
-			fmt.Printf("backup ok — snapshot=%s db_dump=%s\n", b.Snapshot, b.DBDump)
-			fmt.Printf("(rollback: rsync the snapshot back + `mysql %s < %s`)\n", dbName, b.DBDump)
-
-			// Wave C: force writers.
-			if _, err := sharedAgent.Call(ctx, "migration.refresh_files", map[string]any{
-				"source": srcDocroot, "docroot": docroot, "os_user": osUser,
-			}); err != nil {
-				return fmt.Errorf("file mirror failed (backup preserved at %s): %w", b.Snapshot, err)
-			}
-			fmt.Println("files mirrored (jabali-managed files preserved)")
-			if _, err := sharedAgent.Call(ctx, "migration.refresh_db", map[string]any{
-				"db_name": dbName, "sql_path": srcSQL,
-			}); err != nil {
-				return fmt.Errorf("DB reimport failed (backup preserved at %s / %s): %w", b.Snapshot, b.DBDump, err)
-			}
-			fmt.Println("DB dropped + reimported")
-
-			// Wave D: reconcile.
-			if _, err := sharedAgent.Call(ctx, "migration.refresh_reconcile", map[string]any{
-				"os_user": osUser, "install_path": docroot, "domain": domain,
-				"old_url": oldURL, "new_url": newURL,
-			}); err != nil {
-				fmt.Printf("(reconcile warning: %v — files + DB are refreshed)\n", err)
-			}
-			if domain != "" {
-				_, _ = sharedAgent.Call(ctx, "nginx.cache.purge", map[string]any{"domain": domain})
-			}
-			fmt.Printf("refresh complete. Backup retained at %s (+ %s) — remove once verified.\n", b.Snapshot, b.DBDump)
+			fmt.Printf("refresh complete. Backup retained at %s (+ %s) — remove once verified.\n", res.Snapshot, res.DBDump)
 			return nil
 		},
 	}

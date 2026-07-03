@@ -68,6 +68,7 @@ func RegisterAdminMigrationRoutes(g *gin.RouterGroup, cfg AdminMigrationsHandler
 	rg.GET("/:id/stages", h.stages)
 	rg.DELETE("/:id", h.cancel)
 	rg.POST("/:id/destroy", h.destroy)
+	rg.POST("/refresh", h.refresh) // GH #646
 	// SPA-driven migration endpoints. Each writes/launches via the
 	// agent (transient systemd unit pattern, M29 §updates) so the
 	// long-running pull + import survive panel-api restarts.
@@ -1381,4 +1382,47 @@ func (h *adminMigrationsHandler) accountSizeProbe(c *gin.Context) {
 		"size_bytes":  size,
 		"from_cache":  false,
 	})
+}
+
+// refresh (GH #646) drives a guard-railed re-migration from the panel: backup
+// FIRST, then force-mirror files (preserving jabali-managed files) + DB reimport
+// + reconcile. Admin-gated, force-required, audited. Shares migrate.RunRefresh
+// with the `jabali migrate refresh` CLI so the ordering + invariants are identical.
+func (h *adminMigrationsHandler) refresh(c *gin.Context) {
+	var body struct {
+		Docroot       string `json:"docroot"`
+		DB            string `json:"db"`
+		OSUser        string `json:"os_user"`
+		Domain        string `json:"domain"`
+		SourceDocroot string `json:"source_docroot"`
+		SourceSQL     string `json:"source_sql"`
+		OldURL        string `json:"old_url"`
+		NewURL        string `json:"new_url"`
+		Force         bool   `json:"force"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	if !body.Force {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "force_required", "detail": "refresh overwrites a live account; a pre-overwrite backup is taken automatically"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	c.Set("audit_target", body.Domain+" migration-refresh")
+	c.Set("audit_target_type", "migration_refresh")
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Minute)
+	defer cancel()
+	res, err := migrate.RunRefresh(ctx, h.cfg.Agent, migrate.RefreshInput{
+		Docroot: body.Docroot, DBName: body.DB, OSUser: body.OSUser, Domain: body.Domain,
+		SrcDocroot: body.SourceDocroot, SrcSQL: body.SourceSQL, OldURL: body.OldURL, NewURL: body.NewURL,
+	}, time.Now().UTC())
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "refresh_failed", "detail": err.Error(), "result": res})
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
