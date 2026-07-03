@@ -859,6 +859,9 @@ type bulkCreateRequest struct {
 	SourceKind string   `json:"source_kind" binding:"required"`
 	SourceHost string   `json:"source_host" binding:"required"`
 	Accounts   []string `json:"accounts"    binding:"required"`
+	// AccountTargets (GH #665) — optional source_user -> existing target_user_id
+	// map. Absent/empty for an account = create a new Jabali user (default).
+	AccountTargets map[string]string `json:"account_targets,omitempty"`
 	// SourceJobID — optional. When set, the bulk handler copies the
 	// referenced job's secret env-file onto every newly created job
 	// + flips them to pending + auto-kicks pull-source. This is the
@@ -928,6 +931,11 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 			SourceHost: req.SourceHost,
 			SourceUser: acct,
 			State:      finalState,
+		}
+		if req.AccountTargets != nil {
+			if t := strings.TrimSpace(req.AccountTargets[acct]); t != "" {
+				row.TargetUserID = &t // map to existing user; else auto-create
+			}
 		}
 		if err := h.cfg.Jobs.Create(c.Request.Context(), row); err != nil {
 			// Skip dupes silently — operator re-selected an account

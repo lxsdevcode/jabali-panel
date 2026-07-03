@@ -22,6 +22,7 @@ import {
   Alert,
   Button,
   Checkbox,
+  Select,
   Drawer,
   Form,
   Input,
@@ -118,6 +119,12 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
   const [credValue, setCredValue] = useState<string>("");
   const [expectedHostKey, setExpectedHostKey] = useState<string>("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [accountTargets, setAccountTargets] = useState<Record<string, string>>({});
+  const usersQuery = useQuery<{ data: { id: string; username: string }[] }>({
+    queryKey: ["wizard", "users"],
+    queryFn: async () => (await apiClient.get<{ data: { id: string; username: string }[] }>("/users?page_size=500")).data,
+    enabled: open,
+  });
 
   // ADR-0095 decision 5 — wizard URL persistence. When the drawer
   // opens with ?wizard=<id> in the URL, fetch the draft row and
@@ -273,6 +280,9 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
           source_kind: sourceKind,
           source_host: sourceHost,
           accounts: [...selected],
+          account_targets: Object.fromEntries(
+            [...selected].map((login) => [login, accountTargets[login] ?? ""]).filter(([, t]) => t),
+          ),
           // M35.4 auto-restore — the discovery draft owns the SSH
           // creds; pass its id so each child inherits + lands in
           // state=pending with pull-source auto-kicked. Without it,
@@ -588,6 +598,21 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
                         </Typography.Text>
                       )}
                     </Checkbox>
+                    {selected.has(a.login) && (
+                      <Select
+                        size="small"
+                        style={{ marginLeft: 12, minWidth: 200 }}
+                        value={accountTargets[a.login] ?? ""}
+                        onChange={(v) => setAccountTargets((m) => ({ ...m, [a.login]: v }))}
+                        options={[
+                          { label: "→ Create new user", value: "" },
+                          ...(usersQuery.data?.data ?? []).map((u) => ({
+                            label: `→ Map to ${u.username}`,
+                            value: u.id,
+                          })),
+                        ]}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
