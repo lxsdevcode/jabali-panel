@@ -52,27 +52,24 @@ fatals.
 2. Activate it — the `object-cache.php` drop-in is installed automatically.
 3. **Settings → Jabali Cache** → confirm *Redis connection: Connected*.
 
-### Host prerequisites (panel admin, one-time)
+### Host prerequisites (panel-managed — do not do by hand)
 
-The panel performs these steps automatically during WordPress install. The
-manual commands below are for reference / non-panel setups.
+**The panel manages Redis socket access automatically** when you enable the cache
+for a site — nothing to run by hand.
 
-The shared Redis socket is `0660`, group `jabali-sockets`, and the tenant pool is
-`open_basedir`-jailed. For a tenant site to reach it:
+How it works (reference only): the shared Redis socket lives at
+`/run/redis/redis.sock`. Its owning group is `jabali-sockets`, which is
+**privileged (panel-api)** — a tenant site user must **NEVER** be added to it.
+Instead the panel grants each cache-enabled tenant read/write to the socket via a
+POSIX ACL for the dedicated `jabali-redis-clients` group (`setfacl -m
+g:jabali-redis-clients:rw /run/redis/redis.sock`) and adds the site user to
+`jabali-redis-clients`, then reloads the per-user FPM master. The pool's
+`open_basedir` already allows `/run/redis`.
 
-```bash
-# 1) allow the socket path in the pool's open_basedir (php_admin_value[open_basedir])
-#    add: /run/redis
-# 2) put the site user in the socket group
-usermod -aG jabali-sockets <site-user>
-systemctl restart jabali-fpm@<site-user>.service
-```
-
-Without these the plugin still works — just as a non-persistent cache — and the admin
-screen tells you which step is missing.
-
-> These are **operator** steps, documented here only. This plugin does not change any
-> panel install scripts.
+> Do **not** run `usermod -aG jabali-sockets <site-user>` — that would put a tenant
+> in the privileged panel group and is a security downgrade. If the admin screen
+> shows *Not reachable*, re-enable the cache in the panel (it re-applies the ACL +
+> group + FPM reload); the site keeps working as a non-persistent cache meanwhile.
 
 ## WP-CLI
 

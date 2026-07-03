@@ -86,6 +86,8 @@ chmod 0755 "$STAGE"/bin/*
 #     it FROM /usr/local/share/jabali/wp-plugins; ship it in the release so the
 #     tarball-update path matches install.sh's source-build bundle.
 if [[ -d "${REPO_ROOT}/wp-plugins/jabali-cache" ]]; then
+  # GH #627: fail the build if the plugin version / wp.org metadata drifts.
+  bash "${REPO_ROOT}/wp-plugins/jabali-cache/bin/check-version.sh" "${REPO_ROOT}/wp-plugins/jabali-cache"
   mkdir -p "$STAGE/wp-plugins"
   # cp, not rsync — the host CI runner has no rsync (build-release.sh used none
   # before #406). The plugin tree carries no nested .git, so a plain copy is fine.

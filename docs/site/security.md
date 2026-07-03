@@ -61,6 +61,20 @@ ADR-0084. nftables + cgroup v2 vmap. Each user's processes run in their slice; t
 - Allow `:587/465/993` to the panel's own mail host (so PHP scripts can submit mail).
 - Drop everything else by default.
 
+**External database ports are dropped by default** (GH #638). The default
+allowlist is web + mail only (`25, 53, 80, 443, 465, 587`); outbound to a
+**remote** database — MSSQL `1433`, MySQL/MariaDB `3306`, PostgreSQL `5432`,
+Redis `6379`, MongoDB `27017`, etc. — is dropped by the enforced chain. This is
+intentional (a compromised tenant can't exfiltrate to or pivot through an
+arbitrary remote DB), but it also blocks a *legitimate* app that connects to an
+external managed database. A dropped connection surfaces in the panel under
+**Users → Edit → Egress** (recent drops feed) so the operator can see *why* a
+tenant's outbound DB connection is failing rather than guessing.
+
+To allow a legitimate external DB, add the port (and optionally the destination
+CIDR) to that user's egress allowlist under **Users → Edit → Egress**. Prefer a
+CIDR-scoped rule (the specific DB host) over opening the port to `0.0.0.0/0`.
+
 Admin overrides per-user under Users → Edit → Egress.
 
 ## Malware (M33, M33.2)
