@@ -100,6 +100,17 @@ interface Props {
 export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
   const [step, setStep] = useState(0);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [areas, setAreas] = useState<Record<string, boolean>>({
+    websites: true, databases: true, mailboxes: true, dns: true, ssl: true, cron: true,
+  });
+  const savePlan = async () => {
+    if (!draftId) return;
+    try {
+      await apiClient.put(`/admin/migrations/${draftId}/plan`, { areas });
+    } catch {
+      /* best-effort — import defaults to all areas if the plan didn't save */
+    }
+  };
   const [sourceKind, setSourceKind] = useState<string>("whm_pkgacct");
   const [sourceHost, setSourceHost] = useState<string>("");
   const [sourceUser, setSourceUser] = useState<string>("");
@@ -289,6 +300,7 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
   const finalize = useMutation({
     mutationFn: async () => {
       if (!draftId) throw new Error("no draft");
+      await savePlan();
       const { data } = await apiClient.post<{
         job: DraftJob;
         pull_started: boolean;
@@ -617,6 +629,26 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
               </>
             }
           />
+          {sourceKind !== "wordpress_ssh" && sourceKind !== "wordpress_plugin" && (
+            <Card size="small" title="Import options">
+              <Checkbox.Group
+                value={Object.keys(areas).filter((k) => areas[k])}
+                onChange={(vals) => {
+                  const next: Record<string, boolean> = { websites: false, databases: false, mailboxes: false, dns: false, ssl: false, cron: false };
+                  (vals as string[]).forEach((v) => { next[v] = true; });
+                  setAreas(next);
+                }}
+                options={[
+                  { label: "Website files", value: "websites" },
+                  { label: "Databases", value: "databases" },
+                  { label: "Mailboxes", value: "mailboxes" },
+                  { label: "DNS zones", value: "dns" },
+                  { label: "SSL certificates", value: "ssl" },
+                  { label: "Cron jobs", value: "cron" },
+                ]}
+              />
+            </Card>
+          )}
           <Space>
             <Button onClick={() => setStep(isMultiAccount(sourceKind) ? 2 : 1)}>
               Back

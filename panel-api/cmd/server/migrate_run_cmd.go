@@ -594,6 +594,7 @@ func cpanelRestoreCallback(
 		// same as account-restore (1h) and system-restore (4h) already do.
 		restoreAgent := agent.NewClient(agent.Config{Timeout: 4 * time.Hour})
 
+		plan := migrationPlanAreas(job)
 		sshRes, err := cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("ssh: %w", err)
@@ -608,12 +609,16 @@ func cpanelRestoreCallback(
 		warnings = append(warnings, fmt.Sprintf("databases: created=%d", dbsRes.Created))
 		warnings = append(warnings, dbsRes.Skipped...)
 
-		dnsRes, err := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("dns: %w", err)
+		if plan.DNS {
+			dnsRes, err := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("dns: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf("dns: zones=%d records=%d", dnsRes.Zones, dnsRes.Records))
+			warnings = append(warnings, dnsRes.Skipped...)
+		} else {
+			warnings = append(warnings, "dns: skipped per migration plan")
 		}
-		warnings = append(warnings, fmt.Sprintf("dns: zones=%d records=%d", dnsRes.Zones, dnsRes.Records))
-		warnings = append(warnings, dnsRes.Skipped...)
 
 		// DA flow (2026-05-14 rework): backup tarball intentionally
 		// EXCLUDES the home tree. domains-paths.txt manifest inside
@@ -1089,4 +1094,31 @@ func preflightDAPivot(ctx context.Context, job *models.MigrationJob) (string, er
 		return accounts[0].ID, nil
 	}
 	return "", nil
+}
+
+// planAreas is the per-area import selection (GH #665). Zero value = nothing;
+// but migrationPlanAreas defaults to all-true when no plan is set, preserving
+// the import-everything behavior.
+type planAreas struct {
+	Websites  bool `json:"websites"`
+	Databases bool `json:"databases"`
+	Mailboxes bool `json:"mailboxes"`
+	DNS       bool `json:"dns"`
+	SSL       bool `json:"ssl"`
+	Cron      bool `json:"cron"`
+}
+
+// migrationPlanAreas reads job.PlanJSON; when absent, every area is included.
+func migrationPlanAreas(job *models.MigrationJob) planAreas {
+	all := planAreas{true, true, true, true, true, true}
+	if job == nil || job.PlanJSON == nil || *job.PlanJSON == "" {
+		return all
+	}
+	var wrap struct {
+		Areas planAreas `json:"areas"`
+	}
+	if err := json.Unmarshal([]byte(*job.PlanJSON), &wrap); err != nil {
+		return all // malformed plan -> safe default (import all)
+	}
+	return wrap.Areas
 }

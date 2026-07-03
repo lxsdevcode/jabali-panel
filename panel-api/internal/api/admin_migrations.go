@@ -73,6 +73,7 @@ func RegisterAdminMigrationRoutes(g *gin.RouterGroup, cfg AdminMigrationsHandler
 	// long-running pull + import survive panel-api restarts.
 	rg.POST("/:id/secrets", h.uploadSecrets)
 	rg.POST("/:id/test-connection", h.testConnection) // GH #665
+	rg.PUT("/:id/plan", h.updatePlan)                 // GH #665
 	rg.POST("/:id/pull-source", h.runPullSource)
 	rg.POST("/:id/import", h.runImport)
 	rg.POST("/:id/import-wp", h.runImportWP) // GH #647 wordpress_ssh
@@ -457,6 +458,30 @@ type runPullSourceRequest struct {
 // unit. Refuses if the job has no manifest (manifest = source-side
 // discovery output; pull-source assumes discovery already ran). State
 // must be pending or pulling_failed.
+// updatePlan stores the wizard's migration plan (selected accounts + import-area
+// toggles) as JSON on the job. The import honors it (absent = import all). #665.
+func (h *adminMigrationsHandler) updatePlan(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := h.cfg.Jobs.FindByID(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<16))
+	if err != nil || len(body) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_plan"})
+		return
+	}
+	if !json.Valid(body) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	if err := h.cfg.Jobs.UpdatePlan(c.Request.Context(), id, string(body)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *adminMigrationsHandler) runPullSource(c *gin.Context) {
 	id := c.Param("id")
 	job, err := h.cfg.Jobs.FindByID(c.Request.Context(), id)

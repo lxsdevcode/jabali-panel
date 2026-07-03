@@ -33,6 +33,8 @@ type MigrationJobRepository interface {
 	UpdateSourcePath(ctx context.Context, id, sourcePath string) error
 	// UpdateDestDomain sets the auto-resolved destination domain (GH #647/#648).
 	UpdateDestDomain(ctx context.Context, id, destDomain string) error
+	// UpdatePlan sets the migration plan JSON (GH #665).
+	UpdatePlan(ctx context.Context, id, planJSON string) error
 	// PatchDraft updates source-host/user + target-user-id on a row
 	// still in state='draft'. ADR-0095 decision 5. Returns ErrNotFound
 	// if the row is missing OR in any non-draft state — callers map
@@ -224,6 +226,20 @@ func (r *migrationJobRepo) UpdateDestDomain(ctx context.Context, id, destDomain 
 			"dest_domain": destDomain,
 			"updated_at":  time.Now().UTC(),
 		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdatePlan sets migration_jobs.plan_json (GH #665).
+func (r *migrationJobRepo) UpdatePlan(ctx context.Context, id, planJSON string) error {
+	res := r.db.WithContext(ctx).Model(&models.MigrationJob{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"plan_json": planJSON, "updated_at": time.Now().UTC()})
 	if res.Error != nil {
 		return res.Error
 	}
