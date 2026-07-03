@@ -139,7 +139,17 @@ live source SSH. Use scp directly for that kind.`,
 			// panel-account tarball). It stages dump.sql + files.tar.gz and STOPS
 			// (operator-gated import, A3) — handle before the tarball switch.
 			if job.SourceKind == models.MigrationSourceWordPressSSH {
-				if err := pullWordPressSSH(ctx, sshUser, job, secret, localDir, allowPrivate, repo); err != nil {
+				// GH #686: the SSH login for a wordpress_ssh source is the user the
+				// tenant entered (job.SourceUser) — the SAME value preflight verify
+				// uses. The old code fell through to the --ssh-user flag (default
+				// "root"), so a Cloudways/VPS master user that disables root SSH
+				// failed at Start even though verify passed. Fall back to the flag,
+				// then root, only when SourceUser is unset.
+				wpSSHUser := job.SourceUser
+				if wpSSHUser == "" {
+					wpSSHUser = sshUser
+				}
+				if err := pullWordPressSSH(ctx, wpSSHUser, job, secret, localDir, allowPrivate, repo); err != nil {
 					return markPullFailed(err)
 				}
 				return nil
