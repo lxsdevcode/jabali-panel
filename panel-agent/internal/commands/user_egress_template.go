@@ -44,12 +44,14 @@ type EgressDefaults struct {
 // CanonicalDefaults returns the safe-by-default allowlist. Removing any
 // of these would silently break the typical LAMP workload (memory pin
 // in plans/m34: loopback for MariaDB/Redis socket DSN drift, :443 for
-// wp-cron/Composer/apt, :587/:465/:25 for mail() submission).
+// wp-cron/Composer/apt, :587/:465/:25 for mail() submission, and
+// :993/:995/:143/:110 for apps that FETCH external mailboxes over IMAP/POP
+// (e.g. ITFlow's mail parser — GH #336).
 func CanonicalDefaults() EgressDefaults {
 	return EgressDefaults{
 		Loopback4: []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
 		Loopback6: []string{"::1/128", "fc00::/7", "fe80::/10"},
-		PortsTCP:  []int{53, 80, 443, 587, 465, 25},
+		PortsTCP:  []int{53, 80, 443, 587, 465, 25, 993, 995, 143, 110},
 		PortsUDP:  []int{53},
 	}
 }

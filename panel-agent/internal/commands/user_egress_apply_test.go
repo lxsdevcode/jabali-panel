@@ -20,7 +20,7 @@ func TestRenderEgressNFT_EmitsHeaderAndDefaults(t *testing.T) {
 	require.Contains(t, out, "127.0.0.0/8")
 	require.Contains(t, out, "set default_loopback6")
 	require.Contains(t, out, "fc00::/7")
-	require.Contains(t, out, "elements = { 53, 80, 443, 587, 465, 25 }")
+	require.Contains(t, out, "elements = { 53, 80, 443, 587, 465, 25, 993, 995, 143, 110 }")
 	require.Contains(t, out, "type cgroupsv2 : verdict")
 	require.Contains(t, out, "socket cgroupv2 level 3 vmap @cgroup_to_chain")
 }
