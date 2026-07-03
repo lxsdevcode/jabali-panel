@@ -62,3 +62,40 @@ familiar and merges stay clean.
 - Non-WP PHP apps with a session cookie not in the bypass regex could
   serve a cached authenticated page for ≤60 s; mitigated by the short
   TTL + `PHPSESSID` catch; surfaced in the UI copy.
+
+## Correctness + security updates (2026-07, GH #629–645)
+
+The v1 micro-cache was hardened for correctness and multi-tenant safety; these
+supersede several "out of scope" caveats above:
+
+- **Never cache authenticated requests** (#640): `fastcgi_cache_bypass` +
+  `fastcgi_no_cache` include `$http_authorization`. Supersedes the caveat about
+  a session app serving a cached authenticated page.
+- **Don't cache 302** (#641): dropped from `fastcgi_cache_valid` — temporary
+  redirects are per-request state, not a stable resource.
+- **Respect upstream Vary** (#642): a `$jabali_vary_nocache` map opts out any
+  response that varies on cookies/auth/language/UA; `Vary: Accept-Encoding`
+  alone stays cacheable (nginx serves by content-encoding).
+- **Revalidate expired entries** (#645): `fastcgi_cache_revalidate on` — nginx
+  conditional-GETs stale entries and honors 304, avoiding needless regeneration.
+- **Configurable TTL** (supersedes the fixed-60s note): TTL is per-domain
+  (`domains.cache_ttl_seconds`); a TTL *reduction* purges the domain cache
+  (#643), because nginx pins each entry's validity at store time.
+- **Targeted purge is O(1)** (supersedes the O(cache size) note, #631): an
+  exact-URL purge computes the cache file path directly (md5 of
+  `$scheme$request_method$host$uri`, levels=1:2) and unlinks it. Full-domain
+  purge keeps the host-key grep-unlink walk.
+- **Warm after purge** (#632): a manual purge fires a fire-and-forget
+  `nginx.cache_warmup` for cache-enabled domains, so the next visitor doesn't
+  eat a cold MISS.
+- **URL exclusions validated at the API** (#635): rejected at POST if they don't
+  match the agent's accepted path regex, instead of persisting then being
+  silently dropped at vhost render.
+- **Warmup doesn't follow redirects** (#639): the root-side warmup curl dropped
+  `-L`, so a tenant redirect can't send it off the `--resolve`-pinned local hop
+  (SSRF).
+
+Still deferred (honest): shared 64m/4g keyzone (per-domain `keys_zone` +
+configurable capacity is #634), WordPress auto-purge host-ownership from panel
+state rather than filesystem (#630), and cache HIT/MISS analytics in the panel
+(#633).
