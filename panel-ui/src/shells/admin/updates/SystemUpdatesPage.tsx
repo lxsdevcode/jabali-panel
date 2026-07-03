@@ -217,8 +217,14 @@ systemctl restart jabali-panel jabali-agent nginx   # only after reading the log
             <SystemPackagesCard check={apt} />
           </Col>
         </Row>
-        <RepairCard />
-        <DomainRepairCard />
+        <Row gutter={[16, 16]}>
+          <Col xs={24} xl={12}>
+            <RepairCard />
+          </Col>
+          <Col xs={24} xl={12}>
+            <DomainRepairCard />
+          </Col>
+        </Row>
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={12}>
             <AutomaticUpdatesCard />
