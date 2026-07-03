@@ -181,11 +181,13 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 
 	// GH #667: nginx serves index.html before index.php — move the Jabali
 	// placeholder aside so the migrated WordPress front controller wins at "/".
-	_, _ = sharedAgent.Call(ctx, "files.move", map[string]any{
+	if _, mvErr := sharedAgent.Call(ctx, "files.move", map[string]any{
 		"user_id": targetUserID, "username": destUser,
-		"old_path": filepath.Join(docSubpath, "index.html"),
-		"new_path": filepath.Join(docSubpath, "index.html.pre-migration-bak"),
-	})
+		"old_path": filepath.Join(docroot, "index.html"),
+		"new_path": filepath.Join(docroot, "index.html.pre-migration-bak"),
+	}); mvErr != nil {
+		pf("  (note: placeholder index.html not moved: %v)\n", mvErr)
+	}
 
 	// --- 4. rewrite wp-config.php to the new Jabali DB creds ---
 	pf("  → rewriting wp-config.php ...\n")
