@@ -480,5 +480,15 @@ func (h *wordPressHandler) cacheOverview(c *gin.Context) {
 		}
 		return rows[i].Total > rows[j].Total
 	})
-	c.JSON(http.StatusOK, gin.H{"domains": rows})
+	// GH #633: server-wide FastCGI cache zone size.
+	var sizeInfo any
+	if h.cfg.Agent != nil {
+		if res, sErr := h.cfg.Agent.Call(ctx, "nginx.cache.size", nil); sErr == nil {
+			var m map[string]any
+			if json.Unmarshal(res, &m) == nil {
+				sizeInfo = m
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"domains": rows, "cache_size": sizeInfo})
 }

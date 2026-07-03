@@ -81,6 +81,25 @@ func tallyCacheStatuses(r io.Reader) (map[string]int, int, float64) {
 	return counts, total, ratio
 }
 
+// nginxCacheSizeHandler (GH #633) returns the current on-disk size of the
+// shared FastCGI cache zone + its configured max (server-wide, not per-domain —
+// the keys_zone is shared, ADR-0108).
+func nginxCacheSizeHandler(ctx context.Context, _ json.RawMessage) (any, error) {
+	const cacheDir = "/var/cache/nginx/jabali"
+	var total int64
+	_ = filepath.WalkDir(cacheDir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if fi, iErr := d.Info(); iErr == nil {
+			total += fi.Size()
+		}
+		return nil
+	})
+	return map[string]any{"used_bytes": total, "max_bytes": int64(4) * 1024 * 1024 * 1024}, nil
+}
+
 func init() {
 	Default.Register("nginx.cache.stats", nginxCacheStatsHandler)
+	Default.Register("nginx.cache.size", nginxCacheSizeHandler)
 }
