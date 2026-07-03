@@ -42,11 +42,20 @@ func newMigrateImportWPCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load job: %w", err)
 			}
-			if job.TargetUserID == nil || *job.TargetUserID == "" {
-				return errors.New("job has no target_user_id")
+			// GH #666: admin-created jobs have no target_user_id — resolve it
+			// from --dest-user (the OS username) so the CLI import isn't a dead end.
+			tuid := ""
+			if job.TargetUserID != nil && *job.TargetUserID != "" {
+				tuid = *job.TargetUserID
+			} else {
+				u, uerr := repository.NewUserRepository(sharedDB).FindByUsername(ctx, destUser)
+				if uerr != nil || u == nil {
+					return fmt.Errorf("job has no target_user_id and --dest-user %q not found: %w", destUser, uerr)
+				}
+				tuid = u.ID
 			}
 			out := cmd.OutOrStdout()
-			return importWordPressSSH(ctx, out, jobs, job, destUser, *job.TargetUserID, destDomain)
+			return importWordPressSSH(ctx, out, jobs, job, destUser, tuid, destDomain)
 		},
 	}
 	cmd.Flags().StringVar(&jobID, "job-id", "", "wordpress_ssh migration_jobs.id (staged)")
@@ -61,6 +70,7 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 
 	pf := func(format string, a ...any) { fmt.Fprintf(out, format, a...) }
 	_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateRestoring, nil) // import phase
+	stRestore := wpMigStartStage(ctx, jobs, job.ID, "restore")
 	stageDir := filepath.Join("/var/lib/jabali-migrations", job.ID)
 	dumpSQL := filepath.Join(stageDir, "dump.sql")
 	filesTar := filepath.Join(stageDir, "files.tar.gz")
@@ -102,6 +112,7 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	fail := func(reason error) error {
 		msg := "import-wp: " + reason.Error()
 		_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateFailed, &msg)
+		_ = jobs.UpdateStage(ctx, stRestore, "failed", 0, &msg)
 		markInstall("failed", &msg, nil)
 		return reason
 	}
@@ -148,6 +159,11 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	_ = repository.NewDatabaseRepository(sharedDB).Create(ctx, dbRow)
+	// GH #670: link the migrated app to the DB it created.
+	if installID != "" {
+		_ = sharedDB.WithContext(ctx).Model(&models.ApplicationInstall{}).
+			Where("id = ?", installID).Update("db_id", dbRow.ID).Error
+	}
 
 	// --- 2. extract the file tarball to staging (containment-safe) ---
 	pf("  → extracting files ...\n")
@@ -162,6 +178,14 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	}); err != nil {
 		return fail(fmt.Errorf("import_home: %w", err))
 	}
+
+	// GH #667: nginx serves index.html before index.php — move the Jabali
+	// placeholder aside so the migrated WordPress front controller wins at "/".
+	_, _ = sharedAgent.Call(ctx, "files.move", map[string]any{
+		"user_id": targetUserID, "username": destUser,
+		"old_path": filepath.Join(docSubpath, "index.html"),
+		"new_path": filepath.Join(docSubpath, "index.html.pre-migration-bak"),
+	})
 
 	// --- 4. rewrite wp-config.php to the new Jabali DB creds ---
 	pf("  → rewriting wp-config.php ...\n")
@@ -206,6 +230,7 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 		pf("  (same domain — no search-replace)\n")
 	}
 
+	wpMigDoneStage(ctx, jobs, stRestore)
 	_ = jobs.UpdateState(ctx, job.ID, models.MigrationStateDone, nil)
 	var wpVer *string
 	if job.ManifestJSON != nil {
@@ -217,6 +242,10 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 		}
 	}
 	markInstall("ready", nil, wpVer)
+	// GH #669: reap the bearer-token secret + the large staging dir now that the
+	// migration is done (retry no longer needs them).
+	_ = os.RemoveAll(stageDir)
+	_ = os.Remove(filepath.Join(migrate.SecretsDir, job.ID+".env"))
 	pf("  \u2713 imported into %s (DB %s).\n", docroot, dbName)
 	return nil
 }

@@ -263,6 +263,23 @@ func pullCpanel(ctx context.Context, sshUser string, job *models.MigrationJob, s
 // <staging>/dump.sql, and streams the file tree into <staging>/files.tar.gz.
 // It does NOT import: per A3 the destructive import (migration.import_wp) is
 // operator-gated, so this leaves the job staged + in validating state.
+// wpMigStartStage/wpMigDoneStage write migration_stages rows so the GUI shows
+// progress instead of an idle "pending" during a long WordPress pull (GH #668).
+func wpMigStartStage(ctx context.Context, repo repository.MigrationJobRepository, jobID, name string) string {
+	id := ids.NewULID()
+	now := time.Now().UTC()
+	_ = repo.CreateStage(ctx, &models.MigrationStage{
+		ID: id, JobID: jobID, StageName: name, State: "running",
+		StartedAt: &now, CreatedAt: now, UpdatedAt: now,
+	})
+	return id
+}
+func wpMigDoneStage(ctx context.Context, repo repository.MigrationJobRepository, id string) {
+	if id != "" {
+		_ = repo.UpdateStage(ctx, id, "done", 0, nil)
+	}
+}
+
 func pullWordPressSSH(ctx context.Context, sshUser string, job *models.MigrationJob, secret migrate.SecretRef, localDir string, allowPrivate bool, repo repository.MigrationJobRepository) error {
 	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, secret, allowPrivate)
 	if err != nil {
@@ -286,6 +303,8 @@ func pullWordPressSSH(ctx context.Context, sshUser string, job *models.Migration
 
 	stageSQL := filepath.Join(localDir, "dump.sql")
 	stageTar := filepath.Join(localDir, "files.tar.gz")
+	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateAnalyzing, nil)
+	stAnalyze := wpMigStartStage(ctx, repo, job.ID, "analyze")
 	fmt.Printf("  \u2192 exporting DB from %s ...\n", facts.Root)
 	if err := sess.ExportDatabase(ctx, facts.Root, job.ID, stageSQL); err != nil {
 		return err
@@ -295,6 +314,12 @@ func pullWordPressSSH(ctx context.Context, sshUser string, job *models.Migration
 		return err
 	}
 	// Operator-gated import (A3): staged, awaiting `import_wp`. Not auto-kicked.
+	wpMigDoneStage(ctx, repo, stAnalyze)
+	wpMigDoneStage(ctx, repo, wpMigStartStage(ctx, repo, job.ID, "validate"))
+	wpMigDoneStage(ctx, repo, stAnalyze)
+	wpMigDoneStage(ctx, repo, wpMigStartStage(ctx, repo, job.ID, "validate"))
+	wpMigDoneStage(ctx, repo, stAnalyze)
+	wpMigDoneStage(ctx, repo, wpMigStartStage(ctx, repo, job.ID, "validate"))
 	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
 	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s\n", localDir)
 	maybeAutoImportWP(ctx, job)
@@ -437,6 +462,8 @@ func pullWordPressPlugin(ctx context.Context, job *models.MigrationJob, secret m
 	if mj, e := json.Marshal(facts); e == nil {
 		_ = repo.UpdateManifest(ctx, job.ID, string(mj))
 	}
+	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateAnalyzing, nil)
+	stAnalyze := wpMigStartStage(ctx, repo, job.ID, "analyze")
 	fmt.Printf("  \u2192 exporting DB from %s ...\n", siteURL)
 	if err := cli.ExportDatabase(ctx, filepath.Join(localDir, "dump.sql")); err != nil {
 		return err
@@ -447,6 +474,8 @@ func pullWordPressPlugin(ctx context.Context, job *models.MigrationJob, secret m
 	if err := cli.PullFilesTarball(ctx, filepath.Join(localDir, "files.tar.gz"), budget); err != nil {
 		return err
 	}
+	wpMigDoneStage(ctx, repo, stAnalyze)
+	wpMigDoneStage(ctx, repo, wpMigStartStage(ctx, repo, job.ID, "validate"))
 	_ = repo.UpdateState(ctx, job.ID, models.MigrationStateValidating, nil)
 	fmt.Printf("  \u2192 WordPress site staged (dump.sql + files.tar.gz) at %s\n", localDir)
 	maybeAutoImportWP(ctx, job)
