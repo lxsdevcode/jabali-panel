@@ -312,6 +312,10 @@ type ServerSettings struct {
 	NginxWorkerProcesses     string `gorm:"column:nginx_worker_processes;type:varchar(8);not null;default:'auto'"       json:"nginx_worker_processes"`
 	NginxWorkerConnections   uint32 `gorm:"column:nginx_worker_connections;type:int unsigned;not null;default:768"      json:"nginx_worker_connections"`
 	NginxCustomHTTP          string `gorm:"column:nginx_custom_http;type:varchar(4000);not null;default:''"             json:"nginx_custom_http"`
+	// GH #634: configurable shared FastCGI cache capacity (ADR-0108 keyzone).
+	NginxCacheMaxSizeGB   int `gorm:"column:nginx_cache_max_size_gb;type:int;not null;default:4"    json:"nginx_cache_max_size_gb"`
+	NginxCacheKeyzoneMB   int `gorm:"column:nginx_cache_keyzone_mb;type:int;not null;default:64"    json:"nginx_cache_keyzone_mb"`
+	NginxCacheInactiveMin int `gorm:"column:nginx_cache_inactive_min;type:int;not null;default:60"  json:"nginx_cache_inactive_min"`
 
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null"             json:"updated_at"`
 }

@@ -39,6 +39,9 @@ interface NginxSettings {
   nginx_worker_processes: string;
   nginx_worker_connections: number;
   nginx_custom_http: string;
+  nginx_cache_max_size_gb: number;
+  nginx_cache_keyzone_mb: number;
+  nginx_cache_inactive_min: number;
 }
 
 // nginx value grammars — mirror the API + agent regex so the UI rejects bad
@@ -172,6 +175,19 @@ export function NginxSettingsCard() {
           </Form.Item>
           <Form.Item name="nginx_worker_connections" label="worker_connections">
             <InputNumber min={64} max={1048576} style={{ width: 140 }} />
+          </Form.Item>
+        </Space>
+
+        <Divider plain>FastCGI cache capacity (GH #634)</Divider>
+        <Space wrap>
+          <Form.Item name="nginx_cache_max_size_gb" label="max_size (GB)" tooltip="Shared FastCGI cache max on-disk size">
+            <InputNumber min={1} max={1024} style={{ width: 140 }} />
+          </Form.Item>
+          <Form.Item name="nginx_cache_keyzone_mb" label="keys_zone (MB)" tooltip="Cache key metadata zone (~8000 keys/MB)">
+            <InputNumber min={8} max={1024} style={{ width: 140 }} />
+          </Form.Item>
+          <Form.Item name="nginx_cache_inactive_min" label="inactive (min)" tooltip="Evict entries not accessed within this window">
+            <InputNumber min={1} max={1440} style={{ width: 140 }} />
           </Form.Item>
         </Space>
 

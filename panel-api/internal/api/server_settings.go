@@ -196,6 +196,9 @@ type updateServerSettingsRequest struct {
 	NginxProxyConnectTimeout *string `json:"nginx_proxy_connect_timeout,omitempty"`
 	NginxProxyReadTimeout    *string `json:"nginx_proxy_read_timeout,omitempty"`
 	NginxProxySendTimeout    *string `json:"nginx_proxy_send_timeout,omitempty"`
+	NginxCacheMaxSizeGB      *int    `json:"nginx_cache_max_size_gb,omitempty"`
+	NginxCacheKeyzoneMB      *int    `json:"nginx_cache_keyzone_mb,omitempty"`
+	NginxCacheInactiveMin    *int    `json:"nginx_cache_inactive_min,omitempty"`
 	NginxWorkerProcesses     *string `json:"nginx_worker_processes,omitempty"`
 	NginxWorkerConnections   *uint32 `json:"nginx_worker_connections,omitempty"`
 	NginxCustomHTTP          *string `json:"nginx_custom_http,omitempty"`
@@ -509,6 +512,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 
 	// M55 nginx tunables. nginxTouched drives the re-sync dispatch below.
+	cacheCapTouched := req.NginxCacheMaxSizeGB != nil || req.NginxCacheKeyzoneMB != nil || req.NginxCacheInactiveMin != nil
 	nginxTouched := req.NginxClientMaxBodySize != nil || req.NginxKeepaliveTimeout != nil ||
 		req.NginxServerTokens != nil || req.NginxGzip != nil ||
 		req.NginxClientBodyTimeout != nil || req.NginxClientHeaderTimeout != nil ||
@@ -554,6 +558,15 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.NginxCustomHTTP != nil {
 		current.NginxCustomHTTP = strings.TrimSpace(*req.NginxCustomHTTP)
+	}
+	if req.NginxCacheMaxSizeGB != nil {
+		current.NginxCacheMaxSizeGB = *req.NginxCacheMaxSizeGB
+	}
+	if req.NginxCacheKeyzoneMB != nil {
+		current.NginxCacheKeyzoneMB = *req.NginxCacheKeyzoneMB
+	}
+	if req.NginxCacheInactiveMin != nil {
+		current.NginxCacheInactiveMin = *req.NginxCacheInactiveMin
 	}
 
 	// Validate — reject obviously bad input so we don't persist garbage.
@@ -822,6 +835,20 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 				"custom_http":           s.NginxCustomHTTP,
 			}); err != nil {
 				h.cfg.Log.Error("agent nginx tunables apply failed", "err", err)
+			}
+		}(*current)
+	}
+	// GH #634: apply the FastCGI cache capacity when it changed.
+	if cacheCapTouched && h.cfg.Agent != nil {
+		go func(s models.ServerSettings) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			if _, err := h.cfg.Agent.Call(bgCtx, "nginx.cache.capacity_apply", map[string]any{
+				"max_size_gb":  s.NginxCacheMaxSizeGB,
+				"keyzone_mb":   s.NginxCacheKeyzoneMB,
+				"inactive_min": s.NginxCacheInactiveMin,
+			}); err != nil {
+				h.cfg.Log.Error("agent nginx cache capacity apply failed", "err", err)
 			}
 		}(*current)
 	}

@@ -609,6 +609,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 				return
 			}
 
+			// GH #634: re-apply the configured FastCGI cache capacity from
+			// server_settings. install.sh copies the STATIC jabali-fastcgi-cache.conf
+			// on every `jabali update`, reverting any operator capacity change; this
+			// boot-time re-sync (idempotent — no-op if the conf already matches)
+			// restores it. Skip on first boot (row has struct-zero fields).
+			if !created && row != nil && row.NginxCacheMaxSizeGB > 0 && sharedAgent != nil {
+				cctx, ccancel := context.WithTimeout(seedCtx, 30*time.Second)
+				if _, cerr := sharedAgent.Call(cctx, "nginx.cache.capacity_apply", map[string]any{
+					"max_size_gb":  row.NginxCacheMaxSizeGB,
+					"keyzone_mb":   row.NginxCacheKeyzoneMB,
+					"inactive_min": row.NginxCacheInactiveMin,
+				}); cerr != nil {
+					log.Warn("nginx cache capacity re-apply failed", "err", cerr)
+				}
+				ccancel()
+			}
+
 			mutated := created
 			fillIfEmpty := func(target *string, source string) {
 				if *target == "" && source != "" {
