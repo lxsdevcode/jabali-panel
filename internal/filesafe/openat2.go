@@ -475,7 +475,10 @@ func (s *Scope) CopyTreeInScope(srcPath, dstPath string, uid, gid int) (int64, e
 		if err != nil {
 			return 0, err
 		}
-		_ = unix.Fchownat(dfd, "", uid, gid, unix.AT_EMPTY_PATH)
+		if chErr := unix.Fchownat(dfd, "", uid, gid, unix.AT_EMPTY_PATH); chErr != nil {
+			unix.Close(dfd)
+			return 0, fmt.Errorf("chown copied dir: %w", chErr) // GH #662
+		}
 		n, cerr := copyDirContents(int(sfd.Fd()), dfd, uid, gid)
 		unix.Close(dfd)
 		return n, cerr
@@ -491,8 +494,13 @@ func (s *Scope) CopyTreeInScope(srcPath, dstPath string, uid, gid int) (int64, e
 			return 0, err
 		}
 		out := os.NewFile(uintptr(ofd), dstLeaf)
+		// GH #663: chown BEFORE writing so the target user's quota is enforced
+		// during the copy (root has no quota). GH #662: fatal on chown failure.
+		if chErr := out.Chown(uid, gid); chErr != nil {
+			_ = out.Close()
+			return 0, fmt.Errorf("chown copied file %q: %w", dstLeaf, chErr)
+		}
 		n, cerr := io.Copy(out, in)
-		_ = out.Chown(uid, gid)
 		if closeErr := out.Close(); cerr == nil {
 			cerr = closeErr
 		}
@@ -583,8 +591,12 @@ func copyRegularAt(srcFd, dstFd int, name string, perm os.FileMode, uid, gid int
 		return 0, err
 	}
 	out := os.NewFile(uintptr(ofd), name)
+	// GH #663 + #662: chown before writing (quota) + fatal on failure.
+	if chErr := out.Chown(uid, gid); chErr != nil {
+		_ = out.Close()
+		return 0, fmt.Errorf("chown copied file %q: %w", name, chErr)
+	}
 	n, cerr := io.Copy(out, in)
-	_ = out.Chown(uid, gid)
 	if closeErr := out.Close(); cerr == nil {
 		cerr = closeErr
 	}
@@ -774,7 +786,13 @@ func (e *ExtractDir) descend(comps []string, mkMode os.FileMode) (fd int, isBase
 			return -1, false, oerr
 		}
 		if created {
-			_ = unix.Fchown(nfd, e.uid, e.gid)
+			if cerr := unix.Fchown(nfd, e.uid, e.gid); cerr != nil {
+				unix.Close(nfd)
+				if !curIsBase {
+					unix.Close(cur)
+				}
+				return -1, false, fmt.Errorf("chown extract dir: %w", cerr) // GH #662
+			}
 		}
 		if !curIsBase {
 			unix.Close(cur)
@@ -832,7 +850,12 @@ func (e *ExtractDir) Create(relPath string, perm os.FileMode) (*os.File, error) 
 		return nil, oerr
 	}
 	f := os.NewFile(uintptr(ofd), leaf)
-	_ = f.Chown(e.uid, e.gid)
+	// GH #662: chown MUST succeed — a root-owned file in the tenant tree is a
+	// quota + access bug. Fail closed (caller removes the partial file).
+	if cerr := f.Chown(e.uid, e.gid); cerr != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("chown extracted file %q: %w", leaf, cerr)
+	}
 	return f, nil
 }
 
