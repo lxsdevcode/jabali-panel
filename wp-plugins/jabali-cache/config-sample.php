@@ -37,7 +37,12 @@
 // Cap object-cache key TTL in seconds (0 = no expiry; rely on Redis LRU).
 // define( 'JABALI_CACHE_MAXTTL', 0 );
 
-// Enable the OPTIONAL full-page cache. Also requires WP_CACHE below.
+// Enable the OPTIONAL full-page cache (GH #625). WP_CACHE makes WordPress load
+// advanced-cache.php; JABALI_CACHE_PAGE_CACHE turns the jabali page cache on and
+// JABALI_CACHE_PAGE_TTL sets its TTL. These constants are honored by the early
+// drop-ins (same as the object-cache constants above).
 // NOTE: jabali already ships an nginx fastcgi microcache (ADR-0108); only
 // enable the WP page cache if you disabled that at the panel.
 // define( 'WP_CACHE', true );
+// define( 'JABALI_CACHE_PAGE_CACHE', true ); // WP full-page cache on/off
+// define( 'JABALI_CACHE_PAGE_TTL', 300 );    // page-cache TTL (seconds)

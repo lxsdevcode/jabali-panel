@@ -156,6 +156,10 @@ class Jabali_Cache_Config {
 			'JABALI_CACHE_PREFIX'   => array( 'prefix', false ),
 			'JABALI_CACHE_MAXTTL'   => array( 'maxttl', false ),
 			'JABALI_CACHE_SCHEME'   => array( 'scheme', false ),
+			// GH #625: full-page cache is now constant-configurable too, so the
+			// early drop-ins honor it (and the panel can stamp it) like the rest.
+			'JABALI_CACHE_PAGE_CACHE' => array( 'page_cache', false ),
+			'JABALI_CACHE_PAGE_TTL'   => array( 'page_ttl', false ),
 		);
 		foreach ( $map as $const => $spec ) {
 			if ( ! defined( $const ) ) {
