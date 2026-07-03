@@ -204,7 +204,10 @@ func importWordPressSSH(ctx context.Context, out io.Writer,
 	// GH #621: drop the SOURCE's Jabali cache constants so the migrated site
 	// doesn't read/write the source tenant's Redis namespace (cross-tenant
 	// bleed). The panel re-stamps fresh per-tenant constants when cache is enabled.
-	updated = migrate.StripJabaliCacheBlock(updated)
+	if stripped := migrate.StripJabaliCacheBlock(updated); stripped != updated {
+		updated = stripped
+		pf("  -> reset cache config (source constants stripped; cache starts COLD — enable + auto-warm in the panel)\n")
+	}
 	if !changed {
 		pf("  (warning: wp-config.php DB constants unchanged — check format)\n")
 	}
