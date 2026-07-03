@@ -34,6 +34,7 @@ import { apiClient } from "../../../apiClient";
 import { RowActions } from "../../../components/RowActions";
 import { DeleteOutlined, PlusOutlined, RedoOutlined, SwapOutlined } from "@icons";
 import { BulkWhmDrawer } from "./BulkWhmDrawer";
+import { RefreshMigrationModal } from "./RefreshMigrationModal";
 import { CreateMigrationDrawer } from "./CreateMigrationDrawer";
 import { CreateMigrationWizard } from "./CreateMigrationWizard";
 
@@ -83,6 +84,7 @@ export const AdminMigrationsPage = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [refreshOpen, setRefreshOpen] = useState(false);
   const screens = Grid.useBreakpoint();
 
   // M35.4 — auto-open wizard on landing if URL carries ?wizard=<id>.
@@ -233,6 +235,7 @@ export const AdminMigrationsPage = () => {
             </Tooltip>
             <Button onClick={() => setBulkOpen(true)}>Bulk WHM (paste)</Button>
             <Button onClick={() => setWizardOpen(true)}>Wizard</Button>
+            <Button danger onClick={() => setRefreshOpen(true)}>Refresh (re-pull)</Button>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -452,6 +455,7 @@ export const AdminMigrationsPage = () => {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
+      <RefreshMigrationModal open={refreshOpen} onClose={() => setRefreshOpen(false)} />
       <BulkWhmDrawer
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
