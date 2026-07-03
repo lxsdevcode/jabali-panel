@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -216,9 +217,21 @@ func migrationRefreshReconcileHandler(ctx context.Context, raw json.RawMessage) 
 		return nil, csInvalidArg("install_path must be under /home with no ..")
 	}
 	warnings := []string{}
-	// 1. Site-URL rewrite when the domain/path changed.
+	// 1. Site-URL rewrite when the domain/path changed. SECURITY: OldURL/NewURL
+	// are tenant/operator-supplied; validate them as real http(s) URLs (reject
+	// any leading "-" so they can't smuggle a wp-cli flag) and pass them as
+	// POSITIONAL args after a "--" separator (argument-injection defense).
 	if p.OldURL != "" && p.NewURL != "" && p.OldURL != p.NewURL {
-		if err := runWPAsTenant(ctx, p.OSUser, p.InstallPath, "search-replace", p.OldURL, p.NewURL, "--all-tables", "--skip-columns=guid"); err != nil {
+		for _, v := range []string{p.OldURL, p.NewURL} {
+			if strings.HasPrefix(v, "-") {
+				return nil, csInvalidArg("url must not start with '-'")
+			}
+			u, uErr := url.Parse(v)
+			if uErr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return nil, csInvalidArg("old_url/new_url must be valid http(s) URLs")
+			}
+		}
+		if err := runWPAsTenant(ctx, p.OSUser, p.InstallPath, "search-replace", "--all-tables", "--skip-columns=guid", "--", p.OldURL, p.NewURL); err != nil {
 			warnings = append(warnings, "search-replace: "+err.Error())
 		}
 	}

@@ -160,6 +160,10 @@ func (m *mockWordPressInstallRepo) ListCacheEnabledByDomainID(_ context.Context,
 	return out, nil
 }
 
+func (m *mockWordPressInstallRepo) ListAllCacheEnabled(_ context.Context) ([]models.ApplicationInstall, error) {
+	return nil, nil
+}
+
 func (m *mockWordPressInstallRepo) CountCacheEnabledByUserID(_ context.Context, userID, excludeID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
