@@ -518,9 +518,9 @@ export const CreateMigrationDrawer = ({
     onClose();
   };
 
-  const isScaffoldOnly =
-    created &&
-    ["directadmin", "hestiacp"].includes(created.source_kind);
+  // GH #327: DirectAdmin + HestiaCP are driven by the standard flow now
+  // (pull-source + import dispatch by kind); nothing is scaffold-only.
+  const isScaffoldOnly = false;
 
   return (
     <Drawer
