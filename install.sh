@@ -9403,7 +9403,7 @@ apply_apparmor_profiles() {
   # Glob covers BOTH `usr.local.bin.jabali-*` (panel-api/agent/bulwark/
   # kratos) AND every other profile we author (stalwart-mail, future
   # additions). Earlier `jabali-*` glob silently dropped stalwart-mail.
-  for profile in "$src_dir"/usr.local.bin.*; do
+  for profile in "$src_dir"/usr.local.bin.* "$src_dir"/usr.local.libexec.*; do
     [[ -e "$profile" ]] || continue
     # Skip *.disabled stubs — these are the old M40 profiles that lacked
     # AA 4.x unix-socket mediation rules. M40.1 re-authored all 5 profiles

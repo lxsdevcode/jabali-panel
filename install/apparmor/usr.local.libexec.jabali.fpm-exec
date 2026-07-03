@@ -1,0 +1,64 @@
+# AppArmor profile — jabali-fpm-app (GH #690)
+#
+# Confines per-user PHP-FPM workloads (WordPress + other tenant PHP). Attaches
+# to the fpm-exec wrapper (/usr/local/libexec/jabali/fpm-exec), which execs
+# php-fpm<ver> `ix` (inherit), so the workers run under this profile too.
+#
+# Ships in COMPLAIN mode: it only LOGS would-deny events (apparmor="ALLOWED"),
+# never blocks — so it can never break a running site. The operator reviews
+# per-profile soak-readiness (GH #688: 0 would-deny over the window) and flips
+# to enforce per-host via `jabali apparmor flip-mature --profile jabali-fpm-app`.
+#
+# Kernel-gated: install_apparmor() skips ALL jabali profiles on kernels lacking
+# /sys/kernel/security/apparmor/features/unix (broken unix-socket mediation),
+# so this is never loaded where it would EACCES the FPM listen socket.
+#
+# This is a shared WORKLOAD-CLASS profile (all per-user FPM masters exec the same
+# fpm-exec path); per-tenant filesystem isolation stays with POSIX ownership.
+# The profile's job is defense-in-depth: deny a compromised tenant PHP access to
+# system secrets, other users' homes, and arbitrary execution.
+#include <tunables/global>
+
+profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec flags=(complain) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  # fpm-exec wrapper (bash) reads the runtime version then execs php-fpm.
+  /usr/local/libexec/jabali/fpm-exec r,
+  /bin/bash rix,
+  /usr/bin/bash rix,
+  /usr/bin/cat rix,
+  /run/php/jabali-*/phpver r,
+  /usr/sbin/php-fpm* rix,
+
+  # PHP runtime + per-user pool config.
+  /etc/php/** r,
+  /usr/lib/php/** mr,
+  /etc/jabali-panel/fpm/*.conf r,
+
+  # Tenant docroots (POSIX perms enforce per-user isolation; this layer bounds
+  # escape to system files, not cross-tenant).
+  /home/*/domains/*/ r,
+  /home/*/domains/*/public_html/** rwkl,
+
+  # Temp + sessions.
+  /tmp/ r,
+  /tmp/** rwk,
+  /var/lib/php/sessions/** rwk,
+  /run/php/** rw,
+
+  # Backing services over unix sockets.
+  unix (connect, receive, send) type=stream,
+  /run/redis/redis.sock rw,
+  /run/mysqld/mysqld.sock rw,
+
+  # Logs.
+  /var/log/php*.log w,
+
+  # Hard denies — a tenant RCE must never reach these even if a POSIX bug existed.
+  deny /etc/shadow r,
+  deny /etc/gshadow r,
+  deny /root/** rwklx,
+  deny /home/*/.ssh/** rwklx,
+  deny /etc/jabali-panel/migration-secrets/** rwklx,
+}

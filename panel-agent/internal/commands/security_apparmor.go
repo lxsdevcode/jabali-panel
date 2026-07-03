@@ -33,6 +33,7 @@ var allowedProfiles = map[string]bool{
 	"jabali-bulwark": true,
 	"jabali-kratos":  true,
 	"stalwart-mail":  true,
+	"jabali-fpm-app": true,
 }
 
 // apparmorProfileFile maps a profile name to its on-disk file path.
@@ -52,6 +53,8 @@ func apparmorProfileFile(name string) string {
 		return "/etc/apparmor.d/usr.local.bin.jabali-kratos"
 	case "stalwart-mail":
 		return "/etc/apparmor.d/usr.local.bin.stalwart-mail"
+	case "jabali-fpm-app":
+		return "/etc/apparmor.d/usr.local.libexec.jabali.fpm-exec"
 	}
 	return ""
 }
@@ -82,6 +85,9 @@ type apparmorStatusResponse struct {
 	// journalctl across the last 24h. Empty list when nothing's been
 	// blocked (the desirable state for confined-and-correct daemons).
 	Denials []apparmorDenial `json:"denials"`
+	// Violations are complain-mode apparmor="ALLOWED" would-deny events (GH
+	// #688) — a complain profile that logs these is NOT soak-ready to enforce.
+	Violations []apparmorDenial `json:"violations"`
 	// Reason: human-readable when Enabled=false (e.g. "kernel LSM
 	// missing", "GRUB pending reboot").
 	Reason string `json:"reason,omitempty"`
@@ -143,7 +149,8 @@ func mwApparmorStatusHandler(ctx context.Context, _ json.RawMessage) (any, error
 
 	// Best-effort denial scrape. Failures (journalctl missing, no
 	// matches) leave Denials as the empty slice — never error here.
-	resp.Denials = readApparmorDenials(ctx)
+	resp.Denials = readApparmorEvents(ctx, "DENIED")
+	resp.Violations = readApparmorEvents(ctx, "ALLOWED")
 	return resp, nil
 }
 
@@ -173,7 +180,7 @@ const (
 	maxApparmorDenials    = 50
 )
 
-func readApparmorDenials(ctx context.Context) []apparmorDenial {
+func readApparmorEvents(ctx context.Context, status string) []apparmorDenial {
 	out := []apparmorDenial{}
 	if _, err := osexec.LookPath("journalctl"); err != nil {
 		return out
@@ -186,7 +193,7 @@ func readApparmorDenials(ctx context.Context) []apparmorDenial {
 		"--since", apparmorDenialsWindow,
 		"--no-pager",
 		"-q",
-		"--grep", `apparmor="DENIED"`,
+		"--grep", `apparmor="`+status+`"`,
 	)
 	stdout, err := cmd.Output()
 	if err != nil {
@@ -197,7 +204,7 @@ func readApparmorDenials(ctx context.Context) []apparmorDenial {
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !apparmorDeniedLineRe.MatchString(line) {
+		if !strings.Contains(line, `apparmor="`+status+`"`) {
 			continue
 		}
 		row := apparmorDenial{}
