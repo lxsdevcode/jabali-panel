@@ -28,8 +28,15 @@ ADR-0060. ModSecurity is **removed** (M27 cleanup_modsecurity purges packages + 
 
 ## AppArmor
 
-`/jabali-admin/security` → AppArmor — per-profile status (enforce / complain / disabled).
-Default-on profiles for: Stalwart, PowerDNS, nginx, php-fpm pools, Kratos, Bulwark.
+`/jabali-admin/security` → AppArmor — per-profile status (enforce / complain / **missing**).
+
+Jabali ships and manages these daemon profiles: `jabali-panel` (panel API), `jabali-agent`, `jabali-bulwark` (webmail), and `stalwart-mail`. A profile that fails to load or is purged is reported as **missing** (red) rather than silently omitted — an absent profile means an unconfined daemon.
+
+New profiles ship in **complain** mode for a 7-day burn-in soak; each profile shows a **soak-readiness** indicator (complain-mode profiles with zero would-deny events are ready to flip to enforce). Complain-mode `apparmor="ALLOWED"` would-deny events are surfaced alongside enforce-mode `DENIED` denials, so a complain-mode profile actively logging violations is not mistaken for a clean state.
+
+On kernels with broken unix-socket mediation (missing `/sys/kernel/security/apparmor/features/unix`), Jabali deliberately does **not** load the daemon profiles — on fresh install and on `jabali update` alike.
+
+The panel API daemon holds **no** AppArmor policy-management capability (`mac_admin`): mode flips are delegated to `panel-agent`, so a compromised panel cannot disable its own confinement.
 
 ## Snuffleupagus
 

@@ -62,6 +62,15 @@ export const AdminSecurityAppArmor = () => {
         profile after the soak (or via{" "}
         <code>jabali apparmor flip-mature</code>).
       </Typography.Paragraph>
+      {(data?.violations?.length ?? 0) > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={`${data?.violations?.length} complain-mode would-deny event(s) in the recent window`}
+          description="Complain-mode profiles are logging would-deny (apparmor ALLOWED) violations — not soak-ready to enforce. Resolve or allowlist these before flipping to enforce."
+        />
+      ) : null}
       <Table
         rowKey="name"
         dataSource={data.profiles}
@@ -81,22 +90,38 @@ export const AdminSecurityAppArmor = () => {
             ),
           },
           {
+            title: "Soak readiness",
+            width: 200,
+            render: (_: unknown, row: AppArmorProfile) => {
+              if (row.mode !== "complain") return <Typography.Text type="secondary">—</Typography.Text>;
+              const n = (data.violations ?? []).filter((v) => v.profile === row.name).length;
+              return n === 0 ? (
+                <Tag color="success">ready to enforce (0 would-deny)</Tag>
+              ) : (
+                <Tag color="warning">{n} would-deny — not ready</Tag>
+              );
+            },
+          },
+          {
             title: "Action",
             width: 200,
-            render: (_: unknown, row: AppArmorProfile) => (
-              <Button
-                size="small"
-                type={row.mode === "complain" ? "primary" : "default"}
-                onClick={() =>
-                  setPendingFlip({
-                    profile: row.name,
-                    nextMode: row.mode === "complain" ? "enforce" : "complain",
-                  })
-                }
-              >
-                Flip to {row.mode === "complain" ? "enforce" : "complain"}
-              </Button>
-            ),
+            render: (_: unknown, row: AppArmorProfile) =>
+              row.mode === "missing" ? (
+                <Typography.Text type="danger">not loaded</Typography.Text>
+              ) : (
+                <Button
+                  size="small"
+                  type={row.mode === "complain" ? "primary" : "default"}
+                  onClick={() =>
+                    setPendingFlip({
+                      profile: row.name,
+                      nextMode: row.mode === "complain" ? "enforce" : "complain",
+                    })
+                  }
+                >
+                  Flip to {row.mode === "complain" ? "enforce" : "complain"}
+                </Button>
+              ),
           },
         ]}
       />
