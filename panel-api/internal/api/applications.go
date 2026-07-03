@@ -83,6 +83,7 @@ func RegisterApplicationRoutes(g *gin.RouterGroup, cfg ApplicationHandlerConfig)
 	apps.PUT("/:id/cache", wp.cache) // GH #406: WP object cache + nginx page cache
 	apps.GET("/:id/cache-settings", wp.getCacheSettings) // GH #612/#616/#618
 	apps.PUT("/:id/cache-settings", wp.setCacheSettings)
+	apps.POST("/:id/cache-warmup", wp.cacheWarmup) // GH #615
 }
 
 type applicationsHandler struct{ cfg ApplicationHandlerConfig }

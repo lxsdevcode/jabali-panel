@@ -293,6 +293,19 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 		h.cfg.Reconciler.Schedule(domain.ID) // re-render vhost + nginx reload
 	}
 
+	// GH #615: warm the page cache after enabling, once the reconcile has
+	// re-rendered the vhost with the cache directives. Delayed + detached
+	// (best-effort) so we don't crawl before the cache is live.
+	if enabled && h.cfg.Agent != nil {
+		agent, host := h.cfg.Agent, domain.Name
+		go func() {
+			time.Sleep(75 * time.Second)
+			wctx, wcancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer wcancel()
+			_, _ = agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 100})
+		}()
+	}
+
 	// 4. Persist the install-level switch state.
 	if err := h.cfg.ApplicationInstalls.UpdateCacheEnabled(ctx, installID, enabled); err != nil {
 		slog.ErrorContext(ctx, "cache: install flag", "err", err, "install_id", installID)

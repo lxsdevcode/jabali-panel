@@ -9,9 +9,11 @@ package api
 import (
 	"strings"
 	"regexp"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -135,4 +137,40 @@ func validRuleList(list []string) bool {
 		}
 	}
 	return true
+}
+
+
+// cacheWarmup (GH #615) crawls the install's site (sitemap + homepage) to
+// pre-populate the nginx page cache, so operators don't wait for organic
+// traffic. Fire-and-forget with a detached context; returns 202 immediately.
+func (h *wordPressHandler) cacheWarmup(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	inst := h.loadOwnedInstall(c, claims)
+	if inst == nil {
+		return
+	}
+	if !inst.CacheEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cache_not_enabled"})
+		return
+	}
+	dom, err := h.cfg.Domains.FindByID(c.Request.Context(), inst.DomainID)
+	if err != nil || dom == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "domain_not_found"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	agent, host := h.cfg.Agent, dom.Name
+	go func() {
+		wctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		_, _ = agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 100})
+	}()
+	c.JSON(http.StatusAccepted, gin.H{"ok": true, "warming": host})
 }

@@ -131,6 +131,7 @@ const ActionsCell = ({
   };
 
   const [purging, setPurging] = useState(false);
+  const [warming, setWarming] = useState(false);
   const handlePurge = async () => {
     setPurging(true);
     try {
@@ -145,6 +146,24 @@ const ActionsCell = ({
       message.error(msg);
     } finally {
       setPurging(false);
+    }
+  };
+
+  // GH #615: warm the page cache by crawling the site (fire-and-forget).
+  const handleWarmup = async () => {
+    setWarming(true);
+    try {
+      await apiClient.post(`/applications/${record.id}/cache-warmup`);
+      message.success("Cache warmup started — crawling the site in the background");
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error ??
+        (err as { message?: string })?.message ??
+        "Warmup failed";
+      message.error(msg);
+    } finally {
+      setWarming(false);
     }
   };
 
@@ -166,6 +185,14 @@ const ActionsCell = ({
           icon: <ThunderboltOutlined />,
           onClick: handlePurge,
           loading: purging,
+          hidden: !record.cache_enabled,
+        },
+        {
+          key: "warmup",
+          label: "Warm cache",
+          icon: <ThunderboltOutlined />,
+          onClick: handleWarmup,
+          loading: warming,
           hidden: !record.cache_enabled,
         },
         {
