@@ -45,9 +45,25 @@ func nginxCacheStatsHandler(ctx context.Context, raw json.RawMessage) (any, erro
 		_, _ = f.Seek(fi.Size()-maxBytes, io.SeekStart)
 	}
 
+	counts, total, ratio := tallyCacheStatuses(f)
+	return map[string]any{
+		"available": true,
+		"total":     total,
+		"counts":    counts,
+		"hit_ratio": ratio,
+		"bypass":    counts["BYPASS"],
+	}, nil
+}
+
+// tallyCacheStatuses reads $upstream_cache_status tokens (one per line) and
+// returns per-status counts, the total, and the hit ratio over CACHEABLE
+// requests (HIT+REVALIDATED / HIT+REVALIDATED+MISS+EXPIRED+STALE+UPDATING).
+// BYPASS + "-" (non-cacheable / static) are excluded from the ratio. Pure +
+// testable (GH #617).
+func tallyCacheStatuses(r io.Reader) (map[string]int, int, float64) {
 	counts := map[string]int{}
 	total := 0
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		st := strings.TrimSpace(sc.Text())
 		if st == "" || st == "-" {
@@ -62,13 +78,7 @@ func nginxCacheStatsHandler(ctx context.Context, raw json.RawMessage) (any, erro
 	if cacheable > 0 {
 		ratio = math.Round(float64(hit)/float64(cacheable)*1000) / 10
 	}
-	return map[string]any{
-		"available": true,
-		"total":     total,
-		"counts":    counts,
-		"hit_ratio": ratio,
-		"bypass":    counts["BYPASS"],
-	}, nil
+	return counts, total, ratio
 }
 
 func init() {
