@@ -7,6 +7,8 @@
 package api
 
 import (
+	"strings"
+	"regexp"
 	"encoding/json"
 	"net/http"
 
@@ -106,12 +108,19 @@ func (h *wordPressHandler) loadOwnedInstall(c *gin.Context, claims *auth.AccessC
 	return inst
 }
 
+// cacheRuleRE mirrors the agent's bypassPathRE (domain_create.go) so the API
+// REJECTS a URL exclusion the agent would silently drop at render time, instead
+// of persisting it and confusing the operator (GH #635). Must be an absolute
+// path of safe chars.
+var cacheRuleRE = regexp.MustCompile(`^/[A-Za-z0-9._/-]{0,127}$`)
+
 func validRuleList(list []string) bool {
 	if len(list) > cacheMaxRules {
 		return false
 	}
 	for _, s := range list {
-		if s == "" || len(s) > cacheMaxRuleLen {
+		s = strings.TrimSpace(s)
+		if s == "" || len(s) > cacheMaxRuleLen || !cacheRuleRE.MatchString(s) {
 			return false
 		}
 	}
