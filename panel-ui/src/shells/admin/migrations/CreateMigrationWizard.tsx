@@ -22,6 +22,7 @@ import {
   Alert,
   Button,
   Checkbox,
+  Collapse,
   Select,
   Drawer,
   Form,
@@ -677,6 +678,25 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
               </Typography.Text>
             </Card>
           )}
+          <Collapse
+            ghost
+            size="small"
+            items={[
+              {
+                key: "cli",
+                label: "Show CLI (advanced)",
+                children: (
+                  <pre style={{ fontSize: 12, background: "rgba(0,0,0,0.03)", padding: 8, borderRadius: 4, overflowX: "auto" }}>
+{`# equivalent CLI on the Jabali server (per job)
+jabali migrate pull-source --job-id <job-id> --ssh-user ${sourceUser || "root"}
+${sourceKind === "wordpress_ssh" || sourceKind === "wordpress_plugin"
+  ? "jabali migrate import-wp --job-id <job-id> --dest-user <user> --dest-domain <domain>"
+  : "jabali migrate import --job-id <job-id> --target-user <user>"}`}
+                  </pre>
+                ),
+              },
+            ]}
+          />
           <Space>
             <Button onClick={() => setStep(isMultiAccount(sourceKind) ? 2 : 1)}>
               Back
