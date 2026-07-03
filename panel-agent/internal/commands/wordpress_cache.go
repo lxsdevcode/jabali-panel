@@ -229,6 +229,9 @@ func setWPConfigCacheConstants(installPath, socket string, db int, prefix, passw
 			"if ( ! defined( 'JABALI_CACHE_PASSWORD' ) ) define( 'JABALI_CACHE_PASSWORD', '" + esc(password) + "' );\n" +
 			"if ( ! defined( 'JABALI_CACHE_USER' ) )     define( 'JABALI_CACHE_USER', '" + esc(username) + "' );\n" +
 			"if ( ! defined( 'JABALI_CACHE_PREFIX' ) )   define( 'JABALI_CACHE_PREFIX', '" + esc(prefix) + "' );\n" +
+			"if ( ! defined( 'JABALI_CACHE_MAXTTL' ) )     define( 'JABALI_CACHE_MAXTTL', " + strconv.Itoa(maxTTL) + " );\n" +
+			"if ( ! defined( 'JABALI_CACHE_PAGE_CACHE' ) ) define( 'JABALI_CACHE_PAGE_CACHE', " + phpBool(pageCache) + " );\n" +
+			"if ( ! defined( 'JABALI_CACHE_PAGE_TTL' ) )   define( 'JABALI_CACHE_PAGE_TTL', " + strconv.Itoa(pageTTL) + " );\n" +
 			wpConfigEndMarker + "\n"
 		content = insertBeforeWPSettings(content, block)
 	}

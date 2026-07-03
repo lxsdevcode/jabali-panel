@@ -40,11 +40,21 @@ func TestSetWPConfigCacheConstants_RealFileInsertsBlock(t *testing.T) {
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := setWPConfigCacheConstants(dir, "/run/redis/redis.sock", 1, "shukivaknin:01ABC", "tok123", "wp_shukivaknin", true, 0, false, 0); err != nil {
+	if err := setWPConfigCacheConstants(dir, "/run/redis/redis.sock", 1, "shukivaknin:01ABC", "tok123", "wp_shukivaknin", true, 3600, true, 120); err != nil {
 		t.Fatalf("real wp-config.php should succeed: %v", err)
 	}
 	b, _ := os.ReadFile(cfg)
 	if !strings.Contains(string(b), "JABALI_CACHE_PASSWORD") || !strings.Contains(string(b), "wp-settings.php") {
 		t.Fatalf("managed block not inserted before wp-settings: %q", b)
+	}
+	// GH #612: behavioral constants stamped from the params.
+	for _, want := range []string{
+		"JABALI_CACHE_MAXTTL', 3600",
+		"JABALI_CACHE_PAGE_CACHE', true",
+		"JABALI_CACHE_PAGE_TTL', 120",
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("behavioral constant missing: %s\n%s", want, b)
+		}
 	}
 }
