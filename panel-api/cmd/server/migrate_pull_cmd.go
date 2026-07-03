@@ -266,7 +266,7 @@ func pullCpanel(ctx context.Context, sshUser string, job *models.MigrationJob, s
 func pullWordPressSSH(ctx context.Context, sshUser string, job *models.MigrationJob, secret migrate.SecretRef, localDir string, allowPrivate bool, repo repository.MigrationJobRepository) error {
 	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, secret, allowPrivate)
 	if err != nil {
-		return fmt.Errorf("wordpressssh.Connect: %w", err)
+		return fmt.Errorf("connect: %w", err)
 	}
 	defer sess.Close()
 

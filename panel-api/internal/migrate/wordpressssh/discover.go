@@ -76,8 +76,11 @@ func Connect(ctx context.Context, host string, port int, user string, secret mig
 	c, ch, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
 		conn.Close()
-		if strings.Contains(err.Error(), "attempted methods [none]") {
-			return nil, fmt.Errorf("wordpressssh.Connect: source rejected auth (PasswordAuthentication=no? upload an SSH private key instead): %w", err)
+		// Auth rejected — most often a Cloudways/managed host that disables
+		// password auth for the master user and requires a key. Catch both
+		// "attempted methods [none]" and "[none password]".
+		if strings.Contains(err.Error(), "unable to authenticate") || strings.Contains(err.Error(), "no supported methods remain") {
+			return nil, fmt.Errorf("the source rejected the credentials. If this is Cloudways or a managed host, it usually disables password login for the master user — use an SSH PRIVATE KEY instead of a password. Also verify the SSH user and that the key is authorized on the source. (%w)", err)
 		}
 		return nil, fmt.Errorf("wordpressssh.Connect: ssh handshake: %w", err)
 	}

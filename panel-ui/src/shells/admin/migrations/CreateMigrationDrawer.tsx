@@ -507,6 +507,9 @@ export const CreateMigrationDrawer = ({
   });
 
   const handleSubmit = async (values: CreateInput) => {
+    if (values.source_kind === "wordpress_plugin" && !values.source_user) {
+      values = { ...values, source_user: "wp" }; // token-authed; placeholder for the unique key
+    }
     await create.mutateAsync(values);
   };
 
@@ -544,20 +547,40 @@ export const CreateMigrationDrawer = ({
           >
             <SourceCards />
           </Form.Item>
-          <Form.Item
-            label="Source host"
-            name="source_host"
-            tooltip="Hostname of the source panel (e.g. src.example.com). Not required for WHM tarball uploads."
-          >
-            <Input placeholder="src.example.com" />
+          <Form.Item noStyle shouldUpdate={(a, b) => a.source_kind !== b.source_kind}>
+            {({ getFieldValue }) => {
+              const k = getFieldValue("source_kind");
+              const isPlugin = k === "wordpress_plugin";
+              return (
+                <Form.Item
+                  label={isPlugin ? "Source site URL" : "Source host"}
+                  name="source_host"
+                  tooltip={isPlugin ? "The source WordPress site URL (https://old-site.com)." : "Hostname/IP of the source panel. Not required for WHM tarball uploads."}
+                >
+                  <Input placeholder={isPlugin ? "https://old-site.com" : "src.example.com"} />
+                </Form.Item>
+              );
+            }}
           </Form.Item>
-          <Form.Item
-            label="Source user"
-            name="source_user"
-            rules={[{ required: true, message: "Source-side username required" }]}
-            tooltip="Login name on the source panel. cPanel: typically lowercase, 1–16 chars."
-          >
-            <Input placeholder="bob" />
+          <Form.Item noStyle shouldUpdate={(a, b) => a.source_kind !== b.source_kind}>
+            {({ getFieldValue }) => {
+              const k = getFieldValue("source_kind");
+              if (k === "wordpress_plugin") {
+                // token-authed — no SSH user. (source_user is auto-set to "wp"
+                // on submit to satisfy the unique key.)
+                return null;
+              }
+              return (
+                <Form.Item
+                  label={k === "wordpress_ssh" ? "SSH user" : "Source user"}
+                  name="source_user"
+                  rules={[{ required: true, message: "SSH username required" }]}
+                  tooltip={k === "wordpress_ssh" ? "SSH login on the source. Cloudways: the master_xxx user (needs an SSH KEY, not a password)." : "Login name on the source panel."}
+                >
+                  <Input placeholder={k === "wordpress_ssh" ? "root or master_xxxx" : "bob"} />
+                </Form.Item>
+              );
+            }}
           </Form.Item>
           <Form.Item noStyle shouldUpdate>
             {({ getFieldValue }) =>
