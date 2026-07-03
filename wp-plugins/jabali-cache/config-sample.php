@@ -3,11 +3,16 @@
  * Jabali Cache — sample wp-config.php constants.
  *
  * You normally do NOT need any of these: the plugin auto-detects the jabali
- * panel Redis (unix socket /run/redis/redis.sock, database 1) and writes its
- * own wp-content/jabali-cache-config.php from the settings screen.
+ * panel Redis (unix socket /run/redis/redis.sock, database 1).
  *
- * Define any of these in wp-config.php (ABOVE the "stop editing" line) only to
- * override the defaults. Constants take precedence over the settings screen.
+ * The early drop-ins read these `JABALI_CACHE_*` constants from wp-config.php
+ * (plus built-in defaults) — they load before WordPress boots, so they do NOT
+ * read the admin/CLI settings option. There is NO generated
+ * wp-content/jabali-cache-config.php (an older build wrote one; it is now
+ * legacy and is deleted on save/activation/uninstall).
+ *
+ * Define any of these in wp-config.php (ABOVE the "stop editing" line) to
+ * override the defaults.
  *
  * @package Jabali_Cache
  */

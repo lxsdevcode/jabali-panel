@@ -30,7 +30,7 @@ jabali-cache/
 │   ├── lib.php                   # Config resolver + Redis client (phpredis OR pure-PHP RESP)
 │   ├── class-object-cache.php    # WP_Object_Cache engine
 │   ├── class-page-cache.php      # full-page cache engine
-│   ├── class-settings.php        # options store + generated config file writer
+│   ├── class-settings.php        # options store (legacy generated config file is deleted on save)
 │   ├── class-dropin-manager.php  # installs/removes wp-content drop-ins (signature-guarded)
 │   ├── class-admin.php           # Settings → Jabali Cache screen + diagnostics
 │   └── class-cli.php             # `wp jabali-cache ...`
@@ -53,6 +53,9 @@ fatals.
 3. **Settings → Jabali Cache** → confirm *Redis connection: Connected*.
 
 ### Host prerequisites (panel admin, one-time)
+
+The panel performs these steps automatically during WordPress install. The
+manual commands below are for reference / non-panel setups.
 
 The shared Redis socket is `0660`, group `jabali-sockets`, and the tenant pool is
 `open_basedir`-jailed. For a tenant site to reach it:

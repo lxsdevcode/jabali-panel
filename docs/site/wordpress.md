@@ -45,12 +45,15 @@ Applications → Delete. Removes the install dir, drops the DB + DB user, remove
 
 Per-install toggle. When on, the panel runs `wp core update && wp plugin update --all && wp theme update --all` weekly via a systemd-user timer owned by the WP install's Linux user.
 
+## Caching (shipped)
+
+- **Per-domain nginx FastCGI page cache** — per-install toggle (ADR-0108). Cookie/auth-aware bypass (never caches authenticated requests), per-domain TTL, `Vary`-aware, revalidates expired entries, and targeted + full purge.
+- **Jabali Cache plugin** (`jabali-cache`) — ships WordPress object-cache + page-cache drop-ins and **auto-purges** the nginx page cache on content changes (post/comment/update).
+
 ## What is *not* shipped
 
-- **Object cache** — no Redis object cache plugin auto-install.
+- **Redis object cache auto-install** — a managed Redis object cache is on the roadmap (GH #606). Install a Redis object-cache plugin manually via `wp plugin install` if desired.
 - **WP-CLI globally** — `wp` is available to the install's user via `~/bin/wp`; not in `$PATH` for other users.
-- **Per-domain FastCGI cache** — planned (ADR-0108), not yet shipped.
-- **Auto-purge on post update** — depends on FastCGI cache landing first.
 
 ## Other apps
 

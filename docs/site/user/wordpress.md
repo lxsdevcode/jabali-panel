@@ -48,11 +48,14 @@ The clone preserves themes, plugins, and content. Salts are regenerated so the c
 
 Per-row **Delete**. Asks twice. Removes the install directory, drops the DB and DB user, removes the install record.
 
+## Caching (shipped)
+
+- **Page cache** — per-install nginx FastCGI page cache toggle. Anonymous pages served from cache; logged-in / authenticated requests always bypass. Reduces TTFB under load.
+- **Jabali Cache plugin** — object + page-cache drop-ins, and **auto-purges** the page cache when you publish/update content.
+
 ## What is *not* shipped
 
-- **Object cache plugin auto-install** (Redis object cache). Install manually via `wp plugin install` if desired.
-- **Per-domain FastCGI cache** — planned (ADR-0108), not yet shipped.
-- **Auto-purge on post update** — depends on the FastCGI cache landing first.
+- **Redis object cache auto-install** (roadmap). Install a Redis object-cache plugin manually via `wp plugin install` if desired.
 - **WP-CLI in your `$PATH`** — `wp` is available via `~/bin/wp` for your account; not globally.
 
 ## Multisite
