@@ -277,15 +277,23 @@ func (s *Scope) ExistsInScope(pathStr string) (*LeafInfo, error) {
 // is opened under RESOLVE_BENEATH and every entry is fstatat'd against that fd
 // with AT_SYMLINK_NOFOLLOW, so neither the directory nor any entry can be
 // redirected by a planted symlink. Entries are returned sorted by name.
+// maxListEntries bounds a single directory listing so a tenant-created
+// high-fanout directory can't force the root agent to allocate an unbounded
+// []LeafInfo response (GH #659).
+const maxListEntries = 100000
+
 func (s *Scope) ReadDirInScope(pathStr string) ([]LeafInfo, error) {
 	dir, err := s.OpenDirInScope(pathStr)
 	if err != nil {
 		return nil, err
 	}
 	defer dir.Close()
-	names, err := dir.Readdirnames(-1)
-	if err != nil {
+	names, err := dir.Readdirnames(maxListEntries + 1)
+	if err != nil && err != io.EOF {
 		return nil, err
+	}
+	if len(names) > maxListEntries {
+		return nil, fmt.Errorf("directory has more than %d entries; narrow the path", maxListEntries)
 	}
 	sort.Strings(names)
 	out := make([]LeafInfo, 0, len(names))

@@ -113,7 +113,7 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 	tw := tar.NewWriter(gz)
 
 	for _, path := range resolved {
-		if err := addToTar(tw, scope, path, filepath.Dir(path)); err != nil {
+		if err := addToTar(ctx, tw, scope, path, filepath.Dir(path)); err != nil {
 			tw.Close()
 			gz.Close()
 			f.Close()
@@ -169,8 +169,13 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 // bodies are opened through the filesafe scope (openat2 RESOLVE_BENEATH),
 // so a tenant cannot race a checked file into a symlink between the walk's
 // Lstat and the body read to disclose host files (Gitea #471).
-func addToTar(tw *tar.Writer, scope *filesafe.Scope, src, baseDir string) error {
+func addToTar(ctx context.Context, tw *tar.Writer, scope *filesafe.Scope, src, baseDir string) error {
 	return filepath.Walk(src, func(p string, info os.FileInfo, walkErr error) error {
+		// GH #664: abort promptly if the request was cancelled — don't keep the
+		// root agent walking a huge tree after the caller gave up.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
