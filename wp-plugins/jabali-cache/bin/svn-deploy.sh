@@ -56,6 +56,18 @@ STABLE="$(grep -oiP '^Stable tag:\s*\K[0-9]+\.[0-9]+\.[0-9]+' "${SRC_DIR}/readme
 [[ -n "$STABLE"  ]] || die "could not read Stable tag from readme.txt"
 [[ "$HDR_VER" == "$STABLE" ]] || die "version mismatch: header=${HDR_VER} readme Stable tag=${STABLE} — bump both first"
 VERSION="$HDR_VER"
+
+# GH #627: cross-check EVERY version touch point, not just header + stable tag.
+CONST_VER="$(grep -oiP "JABALI_CACHE_VERSION',\s*'\K[0-9]+\.[0-9]+\.[0-9]+" "${SRC_DIR}/jabali-cache.php" || true)"
+[[ -n "$CONST_VER" ]] || die "could not read JABALI_CACHE_VERSION from jabali-cache.php"
+[[ "$CONST_VER" == "$VERSION" ]] || die "version mismatch: JABALI_CACHE_VERSION=${CONST_VER} header=${VERSION} — bump the constant too"
+VER_RE="${VERSION//./\\.}"
+grep -qE "^##+ \[?${VER_RE}\]?" "${SRC_DIR}/CHANGELOG.md" 2>/dev/null \
+    || die "CHANGELOG.md has no release heading for ${VERSION} (add '## [${VERSION}] — <date>')"
+grep -qE "^= ${VER_RE} =" "${SRC_DIR}/readme.txt" 2>/dev/null \
+    || die "readme.txt changelog has no '= ${VERSION} =' section"
+echo "==> version consistent across header, JABALI_CACHE_VERSION, stable tag, CHANGELOG.md, readme.txt"
+
 echo "==> Releasing ${SLUG} ${VERSION}"
 
 # --- 2. Checkout the SVN repo (sparse: we only need trunk, tags, assets) ---
