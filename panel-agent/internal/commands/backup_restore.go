@@ -520,31 +520,23 @@ func applyAccountRestore(
 // otherwise leave the source tenant's Redis prefix/ACL active.
 func stripRestoredCacheBlocks(username string) int {
 	patterns := []string{
-		"/home/" + username + "/domains/*/public_html/wp-config.php",
-		"/home/" + username + "/domains/*/public_html/*/wp-config.php",
+		"/home/" + username + "/domains/*/public_html",
+		"/home/" + username + "/domains/*/public_html/*",
 	}
 	n := 0
 	for _, pat := range patterns {
-		matches, _ := filepath.Glob(pat)
-		for _, cfg := range matches {
-			fi, err := os.Lstat(cfg)
-			if err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		dirs, _ := filepath.Glob(pat)
+		for _, dir := range dirs {
+			// Cheap skip for non-WP dirs (the safe stripper errors otherwise).
+			if fi, err := os.Lstat(filepath.Join(dir, "wp-config.php")); err != nil || !fi.Mode().IsRegular() {
 				continue
 			}
-			b, err := os.ReadFile(cfg)
-			if err != nil {
-				continue
-			}
-			stripped := stripWPCacheBlock(string(b))
-			if stripped == string(b) {
-				continue
-			}
-			uid, gid := 0, 0
-			if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-				uid, gid = int(st.Uid), int(st.Gid)
-			}
-			if err := os.WriteFile(cfg, []byte(stripped), fi.Mode().Perm()); err == nil {
-				_ = os.Chown(cfg, uid, gid)
+			// GH #621 + security review: strip via setWPConfigCacheConstants, which
+			// opens wp-config with openat2 RESOLVE_NO_SYMLINKS (the kernel refuses
+			// if the file OR any path component is a symlink — race-free, no TOCTOU)
+			// and does read/truncate/write/fchown on the fd, never through a
+			// re-resolvable tenant path. enable=false strips the JABALI_CACHE_* block.
+			if err := setWPConfigCacheConstants(dir, "", 0, "", "", "", false, 0, false, 0); err == nil {
 				n++
 			}
 		}
