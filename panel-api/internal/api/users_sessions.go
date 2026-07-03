@@ -1,7 +1,10 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -52,18 +55,59 @@ func (h *userHandler) listSessions(c *gin.Context) {
 		}
 		rows = append(rows, r)
 	}
+	// GH #338 (SSH channel): merge live SSH sessions from the agent.
+	if h.cfg.Agent != nil {
+		if raw, aerr := h.cfg.Agent.Call(c.Request.Context(), "sessions.ssh.list", nil); aerr == nil {
+			var sshResp struct {
+				Sessions []struct {
+					ID       string `json:"id"`
+					User     string `json:"user"`
+					RemoteIP string `json:"remote_ip"`
+					Since    string `json:"since"`
+				} `json:"sessions"`
+			}
+			if json.Unmarshal(raw, &sshResp) == nil {
+				for _, ss := range sshResp.Sessions {
+					rows = append(rows, sessionRow{
+						ID: ss.ID, Username: ss.User, IP: ss.RemoteIP,
+						Channel: "ssh", AuthenticatedAt: ss.Since,
+					})
+				}
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"sessions": rows})
 }
 
 // revokeSession handles DELETE /admin/sessions/:id — deactivate one session.
 func (h *userHandler) revokeSession(c *gin.Context) {
+	id := c.Param("id")
+	c.Set("audit_target_type", "session")
+	// GH #338: SSH sessions revoke via the agent (terminate the sshd process);
+	// panel/Kratos sessions revoke via Kratos.
+	if strings.HasPrefix(id, "ssh:") {
+		c.Set("audit_target", id+" (ssh session revoke)")
+		if h.cfg.Agent == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+			return
+		}
+		pid, perr := strconv.Atoi(strings.TrimPrefix(id, "ssh:"))
+		if perr != nil || pid < 2 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_ssh_session"})
+			return
+		}
+		if _, err := h.cfg.Agent.Call(c.Request.Context(), "sessions.ssh.revoke", map[string]any{"pid": pid}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "revoke_failed", "detail": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+	c.Set("audit_target", id+" (panel session revoke)")
 	if h.cfg.KratosClient == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "kratos_unavailable"})
 		return
 	}
-	id := c.Param("id")
-	c.Set("audit_target", id+" (panel session revoke)")
-	c.Set("audit_target_type", "session")
 	if err := h.cfg.KratosClient.RevokeSession(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "revoke_failed", "detail": err.Error()})
 		return
