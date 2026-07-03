@@ -272,7 +272,10 @@ server {
 {{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
         # this domain (union of every cached install's prefix); other (non-WP,
         # differently-authed) apps on the same domain are never cached.
-        if ($request_uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
+        # GH #629: gate on $uri (normalized path, no query) — matching
+        # $request_uri broke the subdir homepage with tracking params (the "?"
+        # after the path failed the (/|$) anchor). $uri mirrors the cache_key.
+        if ($uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
         # Gitea #610: path-only key (no query) so tracking-param variants
         # collapse onto one entry. Safe because only empty/tracking-only queries
@@ -328,7 +331,10 @@ server {
 {{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
         # this domain (union of every cached install's prefix); other (non-WP,
         # differently-authed) apps on the same domain are never cached.
-        if ($request_uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
+        # GH #629: gate on $uri (normalized path, no query) — matching
+        # $request_uri broke the subdir homepage with tracking params (the "?"
+        # after the path failed the (/|$) anchor). $uri mirrors the cache_key.
+        if ($uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
         # Gitea #610: path-only key (no query) so tracking-param variants
         # collapse onto one entry. Safe because only empty/tracking-only queries

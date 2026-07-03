@@ -67,11 +67,11 @@ func TestVhostTemplate_PathScopedCache(t *testing.T) {
 		t.Error("a root install in the union must drop the gate (whole domain)")
 	}
 	// single subdir: gate scopes to that prefix.
-	if !strings.Contains(render(nil, "/blog"), `if ($request_uri !~ "^(/blog)(/|$)") { set $jabali_skip 1; }`) {
+	if !strings.Contains(render(nil, "/blog"), `if ($uri !~ "^(/blog)(/|$)") { set $jabali_skip 1; }`) {
 		t.Errorf("CachePath=/blog must scope cache to ^(/blog)\n%s", render(nil, "/blog"))
 	}
 	// GH #601 multi-path: union of two subdir installs → alternation gate.
-	if !strings.Contains(render([]string{"/blog", "/shop"}, "/"), `if ($request_uri !~ "^(/blog|/shop)(/|$)") { set $jabali_skip 1; }`) {
+	if !strings.Contains(render([]string{"/blog", "/shop"}, "/"), `if ($uri !~ "^(/blog|/shop)(/|$)") { set $jabali_skip 1; }`) {
 		t.Errorf("cache_paths [/blog /shop] must gate ^(/blog|/shop)\n%s", render([]string{"/blog", "/shop"}, "/"))
 	}
 }
