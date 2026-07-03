@@ -9,7 +9,7 @@
 //
 // A cookie bypass/allowlist was rejected: it would re-open the #416/#419
 // fail-open class (cross-visitor content bleed on the shared microcache).
-import { Alert, App, Descriptions, Drawer, Form, InputNumber, Select } from "antd";
+import { Alert, App, Button, Descriptions, Drawer, Form, InputNumber, Select } from "antd";
 import { useEffect, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
@@ -54,6 +54,8 @@ export function CacheSettingsDrawer({
   const [profile, setProfile] = useState<string>("");
   const [profiles, setProfiles] = useState<CacheProfile[]>([]);
   const [stats, setStats] = useState<CacheStats | null>(null);
+  const [advising, setAdvising] = useState(false);
+  const [advice, setAdvice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!install) return;
@@ -82,6 +84,24 @@ export function CacheSettingsDrawer({
       .catch(() => setStats(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [install]);
+
+  const advise = async () => {
+    if (!install) return;
+    setAdvising(true);
+    try {
+      const res = await apiClient.post<{ recommended: { profile: string; note: string } }>(
+        `/applications/${install.id}/cache-advise`,
+      );
+      const r = res.data.recommended;
+      setProfile(r.profile ?? "");
+      setAdvice(r.note ?? null);
+      message.success("Recommendation applied to the form — review and Save.");
+    } catch (e) {
+      message.error(extractApiError(e) ?? "Advisor failed");
+    } finally {
+      setAdvising(false);
+    }
+  };
 
   const save = async () => {
     if (!install) return;
@@ -161,6 +181,20 @@ export function CacheSettingsDrawer({
         description="TTLs are stamped as wp-config constants / the domain page-cache TTL by the panel — the WordPress plugin never writes them. URL exclusions bypass the page cache on top of the built-in set (wp-admin, login, cart, checkout, my-account, the REST API)."
       />
       <Form layout="vertical" disabled={loading}>
+        <Form.Item label="Advisor">
+          <Button onClick={() => void advise()} loading={advising}>
+            Suggest settings from the site
+          </Button>
+        </Form.Item>
+        {advice ? (
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="Recommendation"
+            description={advice}
+          />
+        ) : null}
         <Form.Item
           label="Cache profile"
           help="Presets extra bypass paths for your site type, on top of the built-in wp-admin/cart/checkout set."

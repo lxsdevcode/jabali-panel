@@ -62,7 +62,25 @@ func wordpressCacheStatsHandler(ctx context.Context, params json.RawMessage) (an
 	return stats, nil
 }
 
+// wordpressCacheProbeHandler (GH #620) returns the site's active plugins + WP
+// version so the panel advisor can recommend a cache profile + settings.
+func wordpressCacheProbeHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p cacheHealthParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if p.OSUser == "" || p.InstallPath == "" {
+		return nil, csInvalidArg("os_user and install_path are required")
+	}
+	pl, _ := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "list", "--status=active", "--field=name", "--format=json")
+	ver, _ := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "core", "version")
+	var plugins []string
+	_ = json.Unmarshal([]byte(strings.TrimSpace(pl)), &plugins)
+	return map[string]any{"active_plugins": plugins, "wp_version": strings.TrimSpace(ver)}, nil
+}
+
 func init() {
 	Default.Register("wordpress.cache_health", wordpressCacheHealthHandler)
+	Default.Register("wordpress.cache_probe", wordpressCacheProbeHandler)
 	Default.Register("wordpress.cache_stats", wordpressCacheStatsHandler)
 }

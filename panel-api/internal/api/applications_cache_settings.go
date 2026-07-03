@@ -219,3 +219,74 @@ func (h *wordPressHandler) cacheStats(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"stats": res})
 }
+
+// recommendCacheProfile maps a site's active plugins to a cache profile + a
+// safe default enable set (GH #620).
+func recommendCacheProfile(plugins []string) (profile string, note string) {
+	set := map[string]bool{}
+	for _, pl := range plugins {
+		set[strings.ToLower(strings.TrimSpace(pl))] = true
+	}
+	switch {
+	case set["woocommerce"]:
+		return "woocommerce", "WooCommerce detected — cart, checkout, and account pages will always bypass the cache."
+	case set["easy-digital-downloads"]:
+		return "edd", "Easy Digital Downloads detected — checkout and purchase pages will bypass."
+	case set["memberpress"] || set["learndash"] || set["lifterlms"] || set["paid-memberships-pro"] || set["restrict-content-pro"] || set["buddypress"]:
+		return "membership_lms", "Membership/LMS plugin detected — member and course pages will bypass."
+	default:
+		return "", "Brochure/content site — aggressive page caching is safe; only wp-admin/login bypass."
+	}
+}
+
+// cacheAdvise (GH #620) probes the install and recommends a profile + settings.
+func (h *wordPressHandler) cacheAdvise(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	inst := h.loadOwnedInstall(c, claims)
+	if inst == nil {
+		return
+	}
+	dom, err := h.cfg.Domains.FindByID(c.Request.Context(), inst.DomainID)
+	if err != nil || dom == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "domain_not_found"})
+		return
+	}
+	osUser := ""
+	if u, uErr := h.cfg.Users.FindByID(c.Request.Context(), inst.UserID); uErr == nil && u != nil && u.Username != nil {
+		osUser = *u.Username
+	}
+	if osUser == "" || h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
+		return
+	}
+	installPath := dom.DocRoot
+	if inst.Subdirectory != "" {
+		installPath = path.Join(dom.DocRoot, inst.Subdirectory)
+	}
+	res, err := h.cfg.Agent.Call(c.Request.Context(), "wordpress.cache_probe", map[string]any{
+		"os_user": osUser, "install_path": installPath,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "detail": err.Error()})
+		return
+	}
+	var probe struct {
+		ActivePlugins []string `json:"active_plugins"`
+		WPVersion     string   `json:"wp_version"`
+	}
+	_ = json.Unmarshal(res, &probe)
+	profile, note := recommendCacheProfile(probe.ActivePlugins)
+	c.JSON(http.StatusOK, gin.H{
+		"recommended": gin.H{
+			"profile":              profile,
+			"object_cache_enabled": true,
+			"page_cache_enabled":   true,
+			"note":                 note,
+		},
+		"probe": gin.H{"active_plugins": probe.ActivePlugins, "wp_version": probe.WPVersion},
+	})
+}
