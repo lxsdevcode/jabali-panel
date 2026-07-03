@@ -318,6 +318,12 @@ class Jabali_Cache_Admin {
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( self::NONCE );
 		echo '<input type="hidden" name="action" value="jabali_cache_save">';
+		// GH #602: when the panel manages this site (JABALI_CACHE_* constants
+		// present), the drop-ins read those constants, not these option fields —
+		// so DISABLE the whole form. The notice above already explains why; this
+		// stops an admin from typing values that silently do nothing.
+		$jc_managed = defined( 'JABALI_CACHE_SOCKET' ) || defined( 'JABALI_CACHE_MAXTTL' ) || defined( 'JABALI_CACHE_DISABLED' );
+		echo '<fieldset' . ( $jc_managed ? ' disabled' : '' ) . '>';
 
 		echo '<div class="jc-cols">';
 
@@ -368,6 +374,7 @@ class Jabali_Cache_Admin {
 		echo '</div>';
 
 		submit_button( 'Save settings' );
+		echo '</fieldset>';
 		echo '</form>';
 
 		echo '</div>'; // .wrap
