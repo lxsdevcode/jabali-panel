@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"archive/tar"
 	"bytes"
 	"io"
@@ -36,7 +37,7 @@ func TestAddToTarSymlinkBodyNotLeaked(t *testing.T) {
 	scope := filesafe.NewScopeForTest("u", "alice", home)
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	if err := addToTar(tw, scope, home, filepath.Dir(home)); err != nil {
+	if err := addToTar(context.Background(), tw, scope, home, filepath.Dir(home)); err != nil {
 		t.Fatalf("addToTar: %v", err)
 	}
 	if err := tw.Close(); err != nil {
