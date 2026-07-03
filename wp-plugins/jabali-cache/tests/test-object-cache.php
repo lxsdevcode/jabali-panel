@@ -40,6 +40,9 @@ if ( ! function_exists( 'get_current_blog_id' ) ) {
 		return 1; }
 }
 
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', sys_get_temp_dir() . '/' );
+}
 require __DIR__ . '/../includes/lib.php';
 
 // Point config at a live socket if available, else a dead one (in-memory mode).

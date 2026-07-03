@@ -23,6 +23,8 @@ documented rather than mistaken for an oversight, and flags the few worth a GUI.
 | `pdns backfill` | `pdns_cmd.go` | One-time PowerDNS backfill (ADR-0047). |
 | `appsec render-config` | `appsec_cmd.go` | Install-time config render; not an operator action. |
 | `ufw migrate-ip-bans` | `ufw_cmd.go` | One-time M43 ban migration (ADR-0089). |
+| `audit verify` / `audit prune` | audit CLI | GH #571: hash-chain integrity verification + retention pruning. Integrity verification is a forensic/operator action (a GUI button that says "chain valid" is a weak assurance a compromised panel could forge); retention pruning is destructive. The GUI browses/filters audit events; verification + pruning stay CLI-only by design. |
+| `nspawn build` / `nspawn prune` | nspawn CLI | GH #574: sealed nspawn image build (minutes-long, disk-heavy) + prune (destructive). The GUI lists available images and points here to build; the build/prune lifecycle is an operator CLI op, not a per-request GUI action. |
 
 > **GUI note:** these are operator escape hatches. The admin UI should *not*
 > grow buttons for them; surface this doc from the admin "Support"/"Updates"

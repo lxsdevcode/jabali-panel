@@ -426,14 +426,14 @@ class Jabali_Cache_Object_Cache {
 	private function step( $key, $delta, $group ) {
 		$id = $this->key( $key, $group );
 
-		if ( $this->is_non_persistent( $group ) ) {
+		if ( $this->is_non_persistent( $group ) || ! $this->ensure() ) {
+			// Non-persistent group, OR Redis is unavailable: runtime-only counter
+			// (mirrors set()'s runtime-only fallback), so incr/decr keep working
+			// within the request instead of returning false when Redis is down.
 			$cur                          = isset( $this->cache[ $group ][ $id ] ) ? (int) $this->cache[ $group ][ $id ] : 0;
 			$cur                          = max( 0, $cur + $delta );
 			$this->cache[ $group ][ $id ] = $cur;
 			return $cur;
-		}
-		if ( ! $this->ensure() ) {
-			return false;
 		}
 
 		// Current value: prefer runtime, else read from Redis.
