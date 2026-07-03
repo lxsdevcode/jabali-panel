@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"context"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,15 @@ import (
 )
 
 // PHPPoolHandlerConfig plugs the PHP pool handlers into the router.
+// Resource caps (GH #339 security): pm_max_children + idle timeout are
+// tenant-settable, so they MUST be bounded — an unbounded value is a
+// resource-exhaustion DoS on the shared host.
+const (
+	phpPoolUserMaxChildrenCap  = 100
+	phpPoolAdminMaxChildrenCap = 2000
+	phpPoolMaxIdleTimeoutSec   = 86400
+)
+
 type PHPPoolHandlerConfig struct {
 	PHPPools            repository.PHPPoolRepository
 	PHPPoolIniOverrides repository.PHPPoolIniOverrideRepository
@@ -238,14 +248,32 @@ func (h *phpPoolHandler) create(c *gin.Context) {
 		return
 	}
 
-	// Validate pm_max_children
+	// Validate pm_max_children (GH #339 security: bound it — see the cap consts).
 	if req.PmMaxChildren == 0 {
 		req.PmMaxChildren = 20 // default
 	}
+	maxChildren := uint32(phpPoolUserMaxChildrenCap)
+	if claims.IsAdmin {
+		maxChildren = phpPoolAdminMaxChildrenCap
+	}
+	if req.PmMaxChildren > maxChildren {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "pm_max_children_too_high",
+			"detail": fmt.Sprintf("pm_max_children must be <= %d", maxChildren),
+		})
+		return
+	}
 
-	// Validate process_idle_timeout_seconds
+	// Validate process_idle_timeout_seconds.
 	if req.ProcessIdleTimeoutSeconds == 0 {
 		req.ProcessIdleTimeoutSeconds = 60 // default
+	}
+	if req.ProcessIdleTimeoutSeconds > phpPoolMaxIdleTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "process_idle_timeout_too_high",
+			"detail": fmt.Sprintf("process_idle_timeout_seconds must be <= %d", phpPoolMaxIdleTimeoutSec),
+		})
+		return
 	}
 
 	// Check if user already has a pool (MVP constraint: one pool per user)
@@ -350,13 +378,34 @@ func (h *phpPoolHandler) update(c *gin.Context) {
 		pool.PmMode = req.PmMode
 	}
 
-	// Validate pm_max_children
+	// Validate pm_max_children. SECURITY: an unbounded value is a resource-
+	// exhaustion vector — a tenant could set 100000 and OOM the shared host,
+	// taking down every other tenant. Cap it; tenants get a low ceiling, admins
+	// a higher (still bounded) one to avoid a typo bricking the box.
 	if req.PmMaxChildren > 0 {
+		maxChildren := uint32(phpPoolUserMaxChildrenCap)
+		if claims.IsAdmin {
+			maxChildren = phpPoolAdminMaxChildrenCap
+		}
+		if req.PmMaxChildren > maxChildren {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "pm_max_children_too_high",
+				"detail": fmt.Sprintf("pm_max_children must be <= %d", maxChildren),
+			})
+			return
+		}
 		pool.PmMaxChildren = req.PmMaxChildren
 	}
 
-	// Validate process_idle_timeout_seconds
+	// Validate process_idle_timeout_seconds (cap so a worker can't idle forever).
 	if req.ProcessIdleTimeoutSeconds > 0 {
+		if req.ProcessIdleTimeoutSeconds > phpPoolMaxIdleTimeoutSec {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "process_idle_timeout_too_high",
+				"detail": fmt.Sprintf("process_idle_timeout_seconds must be <= %d", phpPoolMaxIdleTimeoutSec),
+			})
+			return
+		}
 		pool.ProcessIdleTimeoutSeconds = req.ProcessIdleTimeoutSeconds
 	}
 
