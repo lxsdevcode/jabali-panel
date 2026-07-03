@@ -224,8 +224,11 @@ func (h *wordPressHandler) cacheStats(c *gin.Context) {
 		stats = map[string]any{}
 	}
 	// GH #617: the tenant ACL can't run INFO, so fill the server-wide hit ratio +
-	// memory from the panel's privileged Redis client.
-	if h.cfg.Redis != nil {
+	// memory from the panel's privileged Redis client. ADMIN-ONLY: these numbers
+	// are Redis-instance-wide (shared across all tenants), so exposing them to a
+	// tenant would leak other tenants' aggregate cache activity (used_memory
+	// deltas). Tenants see only their own per-prefix stats (keys/connection).
+	if claims.IsAdmin && h.cfg.Redis != nil {
 		if info, iErr := h.cfg.Redis.Info(c.Request.Context(), "stats", "memory").Result(); iErr == nil {
 			hits := infoInt(info, "keyspace_hits")
 			miss := infoInt(info, "keyspace_misses")
