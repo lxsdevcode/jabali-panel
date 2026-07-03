@@ -27,6 +27,7 @@ import {
   Input,
   Modal,
   Radio,
+  Card,
   Space,
   Spin,
   Steps,
@@ -64,7 +65,16 @@ const SOURCE_OPTIONS = [
   // migrate_run_cmd.go.
   { value: "directadmin", label: "DirectAdmin (single account)" },
   { value: "hestiacp", label: "HestiaCP (single account)" },
+  { value: "wordpress_ssh", label: "WordPress site (SSH)" },
 ];
+
+const SOURCE_DESC: Record<string, string> = {
+  whm_pkgacct: "Live SSH — bulk-migrate every cPanel account on the box",
+  cpanel: "Live SSH or pkgacct backup — one full cPanel account",
+  directadmin: "Live SSH or backup_user tarball — DA account(s)",
+  hestiacp: "Live SSH or v-backup-user tarball — Hestia account(s)",
+  wordpress_ssh: "Cloudways / VPS / generic SSH — a single WordPress site",
+};
 
 // Source kinds that expose a usable ListAccounts on the source —
 // the wizard offers Step 3 (account picker) for these. WHM bulk-
@@ -368,21 +378,33 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
             message="Pick the source panel type"
             description="WHM enables bulk migration of every cPanel account. Single-account migrations are still available via the 'New migration' button."
           />
-          <Radio.Group
-            value={sourceKind}
-            onChange={(e) => setSourceKind(e.target.value)}
-            style={{ display: "flex", flexDirection: "column", gap: 8 }}
-          >
-            {SOURCE_OPTIONS.map((o) => (
-              <Radio
-                key={o.value}
-                value={o.value}
-                disabled={"disabled" in o ? Boolean(o.disabled) : false}
-              >
-                {o.label}
-              </Radio>
-            ))}
-          </Radio.Group>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {SOURCE_OPTIONS.map((o) => {
+              const disabled = "disabled" in o ? Boolean(o.disabled) : false;
+              const active = sourceKind === o.value;
+              return (
+                <Card
+                  key={o.value}
+                  hoverable={!disabled}
+                  size="small"
+                  onClick={() => !disabled && setSourceKind(o.value)}
+                  style={{
+                    opacity: disabled ? 0.5 : 1,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    borderColor: active ? "#1677ff" : undefined,
+                    borderWidth: active ? 2 : 1,
+                  }}
+                >
+                  <Typography.Text strong>{o.label}</Typography.Text>
+                  <div>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {SOURCE_DESC[o.value] ?? ""}
+                    </Typography.Text>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
           <Button
             type="primary"
             loading={createDraft.isPending}
