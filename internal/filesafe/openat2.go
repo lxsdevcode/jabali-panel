@@ -32,6 +32,7 @@
 package filesafe
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -375,19 +376,23 @@ func (s *Scope) RemoveInScope(pathStr string, isDir bool) error {
 // level so no component is ever re-resolved through a swapped parent symlink
 // (the os.RemoveAll(string) hole — #428). A leaf symlink is unlinked, never
 // followed. Idempotent: a missing leaf is success.
-func (s *Scope) RemoveAllInScope(pathStr string) error {
+func (s *Scope) RemoveAllInScope(ctx context.Context, pathStr string) error {
 	parent, leaf, err := s.OpenParentInScope(pathStr)
 	if err != nil {
 		return err
 	}
 	defer parent.Close()
-	return removeAllAt(int(parent.Fd()), leaf)
+	return removeAllAt(ctx, int(parent.Fd()), leaf)
 }
 
 // removeAllAt removes name (file, symlink, or directory subtree) relative to
 // dirFd. Directories are descended via an O_NOFOLLOW dir fd so a symlink can
 // never redirect the recursion.
-func removeAllAt(dirFd int, name string) error {
+func removeAllAt(ctx context.Context, dirFd int, name string) error {
+	// GH #664: honor cancellation before each unlink so a canceled delete stops.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Fast path: try a plain unlink (handles files and symlinks).
 	err := unix.Unlinkat(dirFd, name, 0)
 	if err == nil || err == unix.ENOENT {
@@ -418,7 +423,7 @@ func removeAllAt(dirFd int, name string) error {
 		return rerr
 	}
 	for _, n := range names {
-		if rmErr := removeAllAt(cfd, n); rmErr != nil {
+		if rmErr := removeAllAt(ctx, cfd, n); rmErr != nil {
 			child.Close()
 			return rmErr
 		}
@@ -434,7 +439,7 @@ func removeAllAt(dirFd int, name string) error {
 // Regular-file content is copied; symlinks are reproduced as symlinks (their
 // target string is data, not followed). Each created file/dir is chowned to
 // uid:gid. Returns total bytes of regular-file content copied.
-func (s *Scope) CopyTreeInScope(srcPath, dstPath string, uid, gid int) (int64, error) {
+func (s *Scope) CopyTreeInScope(ctx context.Context, srcPath, dstPath string, uid, gid int) (int64, error) {
 	srcInfo, err := s.StatInScope(srcPath)
 	if err != nil {
 		return 0, err
@@ -479,7 +484,7 @@ func (s *Scope) CopyTreeInScope(srcPath, dstPath string, uid, gid int) (int64, e
 			unix.Close(dfd)
 			return 0, fmt.Errorf("chown copied dir: %w", chErr) // GH #662
 		}
-		n, cerr := copyDirContents(int(sfd.Fd()), dfd, uid, gid)
+		n, cerr := copyDirContents(ctx, int(sfd.Fd()), dfd, uid, gid)
 		unix.Close(dfd)
 		return n, cerr
 
@@ -513,7 +518,7 @@ func (s *Scope) CopyTreeInScope(srcPath, dstPath string, uid, gid int) (int64, e
 
 // copyDirContents copies every entry under srcFd into dstFd (both open dir fds),
 // recursing with O_NOFOLLOW so neither side can be redirected mid-walk.
-func copyDirContents(srcFd, dstFd, uid, gid int) (int64, error) {
+func copyDirContents(ctx context.Context, srcFd, dstFd, uid, gid int) (int64, error) {
 	dup, err := unix.Dup(srcFd)
 	if err != nil {
 		return 0, err
@@ -526,12 +531,16 @@ func copyDirContents(srcFd, dstFd, uid, gid int) (int64, error) {
 	}
 	var total int64
 	for _, name := range names {
+		// GH #664: honor cancellation between entries so a canceled copy stops.
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
 		var st unix.Stat_t
 		if err := unix.Fstatat(srcFd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			continue
 		}
 		li := statToLeaf(name, &st)
-		n, err := copyEntryAt(srcFd, dstFd, name, li, uid, gid)
+		n, err := copyEntryAt(ctx, srcFd, dstFd, name, li, uid, gid)
 		if err != nil {
 			return total, err
 		}
@@ -541,7 +550,7 @@ func copyDirContents(srcFd, dstFd, uid, gid int) (int64, error) {
 }
 
 // copyEntryAt copies a single entry `name` from srcFd to dstFd.
-func copyEntryAt(srcFd, dstFd int, name string, li LeafInfo, uid, gid int) (int64, error) {
+func copyEntryAt(ctx context.Context, srcFd, dstFd int, name string, li LeafInfo, uid, gid int) (int64, error) {
 	switch {
 	case li.IsSymlink:
 		target, err := readlinkat(srcFd, name)
@@ -561,13 +570,18 @@ func copyEntryAt(srcFd, dstFd int, name string, li LeafInfo, uid, gid int) (int6
 		if err != nil {
 			return 0, err
 		}
-		_ = unix.Fchownat(ndst, "", uid, gid, unix.AT_EMPTY_PATH)
+		// GH #662: recursive subdir chown is fatal too — a root-owned dir inside
+		// a tenant tree bypasses quota accounting, same as a top-level dir.
+		if chErr := unix.Fchownat(ndst, "", uid, gid, unix.AT_EMPTY_PATH); chErr != nil {
+			unix.Close(ndst)
+			return 0, fmt.Errorf("chown copied dir %q: %w", name, chErr)
+		}
 		nsrc, err := unix.Openat(srcFd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			unix.Close(ndst)
 			return 0, err
 		}
-		n, cerr := copyDirContents(nsrc, ndst, uid, gid)
+		n, cerr := copyDirContents(ctx, nsrc, ndst, uid, gid)
 		unix.Close(nsrc)
 		unix.Close(ndst)
 		return n, cerr

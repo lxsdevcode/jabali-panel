@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"archive/tar"
 	"archive/zip"
 	"bytes"
@@ -18,7 +19,7 @@ func testExtractor(dir string) *extractor {
 	if err != nil {
 		panic(err)
 	}
-	return &extractor{ed: ed}
+	return &extractor{ctx: context.Background(), ed: ed}
 }
 
 func TestSafeDestRejectsTraversal(t *testing.T) {

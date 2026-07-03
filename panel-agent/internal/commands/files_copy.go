@@ -99,10 +99,10 @@ func filesCopyHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	}
 
 	uid, gid := hostingIDs(p.Username)
-	bytes, err := scope.CopyTreeInScope(srcClean, dstClean, uid, gid)
+	bytes, err := scope.CopyTreeInScope(ctx, srcClean, dstClean, uid, gid)
 	if err != nil {
 		// Attempt rollback — copy may have left a partial tree behind.
-		_ = scope.RemoveAllInScope(dstClean)
+		_ = scope.RemoveAllInScope(context.Background(), dstClean)
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("copy: %v", err),

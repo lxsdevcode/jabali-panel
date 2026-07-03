@@ -81,7 +81,7 @@ func filesDeleteHandler(ctx context.Context, params json.RawMessage) (any, error
 	// Delete file or directory, escape-proof.
 	var deleteErr error
 	if p.Recursive {
-		deleteErr = scope.RemoveAllInScope(cleanPath)
+		deleteErr = scope.RemoveAllInScope(ctx, cleanPath)
 	} else {
 		// Non-recursive: AT_REMOVEDIR needs to know if the leaf is a dir.
 		info, serr := scope.ExistsInScope(cleanPath)

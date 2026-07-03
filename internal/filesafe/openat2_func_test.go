@@ -1,6 +1,7 @@
 package filesafe
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,7 +39,7 @@ func TestCopyTreeInScope_ReproducesTree(t *testing.T) {
 	}
 
 	dst := filepath.Join(docroot, "dst")
-	n, err := scope.CopyTreeInScope(src, dst, os.Getuid(), os.Getgid())
+	n, err := scope.CopyTreeInScope(context.Background(), src, dst, os.Getuid(), os.Getgid())
 	if err != nil {
 		t.Fatalf("CopyTreeInScope: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestRemoveAllInScope_RemovesPopulatedTree(t *testing.T) {
 	if err := os.Symlink("x.txt", filepath.Join(tree, "lnk")); err != nil {
 		t.Fatal(err)
 	}
-	if err := scope.RemoveAllInScope(tree); err != nil {
+	if err := scope.RemoveAllInScope(context.Background(), tree); err != nil {
 		t.Fatalf("RemoveAllInScope: %v", err)
 	}
 	if _, err := os.Lstat(tree); !os.IsNotExist(err) {
@@ -88,7 +89,7 @@ func TestRemoveAllInScope_RemovesPopulatedTree(t *testing.T) {
 		t.Errorf("docroot must survive: %v", err)
 	}
 	// Idempotent: removing again is success.
-	if err := scope.RemoveAllInScope(tree); err != nil {
+	if err := scope.RemoveAllInScope(context.Background(), tree); err != nil {
 		t.Errorf("second RemoveAllInScope should be nil, got %v", err)
 	}
 }

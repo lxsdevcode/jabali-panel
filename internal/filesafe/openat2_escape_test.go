@@ -1,6 +1,7 @@
 package filesafe
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -122,7 +123,7 @@ func TestOpenat2_RemoveAllThroughParentSymlink_Rejected(t *testing.T) {
 	// Deleting through the symlink must not reach into the victim. Removing the
 	// symlink leaf itself is fine; removing a path BEYOND it must fail.
 	for _, via := range []string{"abs", "up"} {
-		_ = scope.RemoveAllInScope(filepath.Join(victim, "..", "home", via, "secret"))
+		_ = scope.RemoveAllInScope(context.Background(), filepath.Join(victim, "..", "home", via, "secret"))
 	}
 	victimUntouched(t, victim)
 }
@@ -155,7 +156,7 @@ func TestOpenat2_CopyTreeThroughParentSymlink_Rejected(t *testing.T) {
 	scope, docroot, victim := escapeEnv(t)
 	src := filepath.Join(docroot, "sub") // real in-scope dir
 	for _, via := range []string{"abs", "up"} {
-		if _, err := scope.CopyTreeInScope(src, filepath.Join(docroot, via, "clone"), os.Getuid(), os.Getgid()); err == nil {
+		if _, err := scope.CopyTreeInScope(context.Background(), src, filepath.Join(docroot, via, "clone"), os.Getuid(), os.Getgid()); err == nil {
 			t.Errorf("CopyTreeInScope into %q symlink succeeded — escape!", via)
 		}
 	}

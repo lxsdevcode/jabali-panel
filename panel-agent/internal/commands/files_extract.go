@@ -101,7 +101,7 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 	}
 	defer ed.Close()
 
-	ex := &extractor{ed: ed}
+	ex := &extractor{ctx: ctx, ed: ed}
 
 	// SECURITY (Gitea #423): open the archive through the escape-proof fd. The
 	// previous scope.Open(p.Path) / zip.OpenReader(path) re-resolved the path and
@@ -146,6 +146,7 @@ func filesExtractHandler(ctx context.Context, params json.RawMessage) (any, erro
 
 // extractor carries the scope + running counters/limits across one archive.
 type extractor struct {
+	ctx       context.Context // GH #664: cancellation for the extract loop
 	ed        *filesafe.ExtractDir
 	extracted int
 	skipped   int
@@ -265,6 +266,9 @@ func (ex *extractor) unzip(f *os.File) error {
 		return &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("not a valid zip: %v", err)}
 	}
 	for _, zf := range zr.File {
+		if err := ex.ctx.Err(); err != nil { // GH #664
+			return err
+		}
 		if err := ex.countGuard(); err != nil {
 			return err
 		}
@@ -298,6 +302,9 @@ func (ex *extractor) unzip(f *os.File) error {
 func (ex *extractor) untar(r io.Reader) error {
 	tr := tar.NewReader(r)
 	for {
+		if err := ex.ctx.Err(); err != nil { // GH #664
+			return err
+		}
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			return nil
