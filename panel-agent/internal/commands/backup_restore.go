@@ -527,15 +527,13 @@ func stripRestoredCacheBlocks(username string) int {
 	for _, pat := range patterns {
 		dirs, _ := filepath.Glob(pat)
 		for _, dir := range dirs {
-			// Cheap skip for non-WP dirs (the safe stripper errors otherwise).
-			if fi, err := os.Lstat(filepath.Join(dir, "wp-config.php")); err != nil || !fi.Mode().IsRegular() {
-				continue
-			}
-			// GH #621 + security review: strip via setWPConfigCacheConstants, which
-			// opens wp-config with openat2 RESOLVE_NO_SYMLINKS (the kernel refuses
-			// if the file OR any path component is a symlink — race-free, no TOCTOU)
-			// and does read/truncate/write/fchown on the fd, never through a
-			// re-resolvable tenant path. enable=false strips the JABALI_CACHE_* block.
+			// GH #621 + security review: the ONLY op on the tenant path is
+			// setWPConfigCacheConstants, which opens wp-config with openat2
+			// RESOLVE_NO_SYMLINKS (kernel refuses if the file OR any path component
+			// is a symlink — race-free, no TOCTOU) and does read/truncate/write/
+			// fchown on the fd. It errors + skips for a non-WP dir (no wp-config),
+			// so no pre-stat of the tenant path is needed. enable=false strips the
+			// JABALI_CACHE_* block.
 			if err := setWPConfigCacheConstants(dir, "", 0, "", "", "", false, 0, false, 0); err == nil {
 				n++
 			}
