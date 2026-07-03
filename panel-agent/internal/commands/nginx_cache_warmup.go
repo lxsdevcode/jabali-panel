@@ -41,7 +41,7 @@ var warmupFetch = func(ctx context.Context, host, path string) int {
 	}
 	args := []string{
 		"-s", "-o", "/dev/null", "-w", "%{http_code}",
-		"-k", "-L", "--max-time", "12",
+		"-k", "--max-time", "12", // GH #639: no -L (don't follow redirects off the pinned hop)
 		"-A", "jabali-cache-warmup/1.0",
 		"--resolve", host + ":443:" + probeTargetIP,
 		"--resolve", host + ":80:" + probeTargetIP,
@@ -58,7 +58,7 @@ var warmupFetch = func(ctx context.Context, host, path string) int {
 // warmupFetchBody fetches a URL's body (for the sitemap), bounded.
 var warmupFetchBody = func(ctx context.Context, host, path string) string {
 	args := []string{
-		"-s", "-k", "-L", "--max-time", "12",
+		"-s", "-k", "--max-time", "12", // GH #639: no -L (don't follow redirects off the pinned hop)
 		"-A", "jabali-cache-warmup/1.0",
 		"--resolve", host + ":443:" + probeTargetIP,
 		"--resolve", host + ":80:" + probeTargetIP,

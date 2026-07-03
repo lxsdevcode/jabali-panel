@@ -3,6 +3,8 @@ package commands
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -66,6 +68,27 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 		// Cache dir absent ⇒ nothing cached for anyone yet. Not an
 		// error: a purge with no cache is a successful no-op.
 		return map[string]any{"ok": true, "purged": 0, "domain": p.Domain}, nil
+	}
+
+	// GH #631: a targeted (exact-URL) purge doesn't need the full-tree walk —
+	// the cache key is deterministic ($scheme$request_method$host$uri), so
+	// compute each entry's file path directly (md5 of the key + levels=1:2) and
+	// unlink it. Falls through to the host-match walk only for a full purge.
+	if len(paths) > 0 {
+		purged := 0
+		for _, up := range paths {
+			for _, scheme := range []string{"https", "http"} {
+				for _, method := range []string{"GET", "HEAD"} {
+					sum := md5.Sum([]byte(scheme + method + p.Domain + up))
+					h := hex.EncodeToString(sum[:])
+					fp := filepath.Join(root, h[31:32], h[29:31], h)
+					if err := os.Remove(fp); err == nil {
+						purged++
+					}
+				}
+			}
+		}
+		return map[string]any{"ok": true, "purged": purged, "domain": p.Domain}, nil
 	}
 
 	// nginx stores a `KEY: <scheme><method><host><uri>` line in the cache file

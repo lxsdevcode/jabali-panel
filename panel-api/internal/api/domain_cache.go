@@ -122,6 +122,14 @@ func (h *domainCacheHandler) update(c *gin.Context) {
 			return
 		}
 	}
+	// GH #643: nginx pins each entry's validity at store time, so a TTL
+	// REDUCTION doesn't shorten already-cached pages — purge on reduction so
+	// stale content can't linger for up to the old (longer) TTL.
+	if req.TTLSeconds != nil && ttl < dom.CacheTTLSeconds && h.cfg.Agent != nil {
+		pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_, _ = h.cfg.Agent.Call(pctx, "nginx.cache.purge", map[string]any{"domain": dom.Name})
+		cancel()
+	}
 	if h.cfg.Reconciler != nil {
 		h.cfg.Reconciler.Schedule(dom.ID)
 	}
