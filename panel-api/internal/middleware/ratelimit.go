@@ -68,7 +68,7 @@ func (l *RateLimiter) Strict() gin.HandlerFunc { return l.handler(tierStrict) }
 
 func (l *RateLimiter) handler(t tier) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		lim := l.limiterFor(c.ClientIP(), t)
+		lim := l.limiterFor(clientIP(c), t)
 		res := lim.Reserve()
 		if !res.OK() {
 			// Can only happen with a misconfigured limit (rate=0 and burst=0);
