@@ -177,6 +177,13 @@ class Jabali_Cache_Admin {
 		$this->styles();
 		echo '<div class="wrap jc-wrap">';
 		echo '<h1 class="jc-title">Jabali Cache</h1>';
+		// GH #602: be honest about the source of truth. The early drop-ins read
+		// JABALI_CACHE_* constants that the Jabali panel writes into wp-config.php
+		// (they load before WordPress boots, so they never read the settings
+		// option). Saving here does NOT change runtime — the panel does.
+		echo '<div class="notice notice-info" style="margin:12px 0;"><p><strong>Managed by the Jabali panel.</strong> '
+			. 'Runtime caching (Redis connection, on/off, namespace) is driven by the <code>JABALI_CACHE_*</code> constants the panel writes into <code>wp-config.php</code>; the cache drop-ins read those constants, not the fields below. '
+			. 'Change caching from the <strong>Jabali panel</strong> — values entered here are advisory and do not override the panel constants.</p></div>';
 		$this->render_flash();
 
 		// Hero drop-in status banner.

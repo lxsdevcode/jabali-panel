@@ -66,7 +66,10 @@ class Jabali_Cache_CLI {
 		$s['enabled'] = true;
 		Jabali_Cache_Settings::save( $s );
 		$this->ensure_dropins();
-		\WP_CLI::success( 'Caching enabled.' );
+		\WP_CLI::success( 'Object-cache drop-ins installed/repaired.' );
+		// GH #602: on/off + connection are constant-driven (panel-managed), not
+		// gated by this option — be honest so "enabled" isn't a false claim.
+		\WP_CLI::warning( 'Runtime caching is driven by the JABALI_CACHE_* constants the Jabali panel writes to wp-config.php. This installed the drop-ins, but the Redis connection + on/off state are panel-managed — enable/disable caching from the Jabali panel.' );
 	}
 
 	/**
@@ -81,7 +84,8 @@ class Jabali_Cache_CLI {
 		if ( function_exists( 'wp_cache_flush' ) ) {
 			wp_cache_flush();
 		}
-		\WP_CLI::success( 'Caching disabled.' );
+		\WP_CLI::success( 'Local cache flushed and setting recorded.' );
+		\WP_CLI::warning( 'Runtime caching is driven by the JABALI_CACHE_* constants the Jabali panel writes to wp-config.php; this option does not gate the drop-ins. To actually turn caching off, disable it in the Jabali panel (which strips the constants + drop-ins).' );
 	}
 
 	/**
