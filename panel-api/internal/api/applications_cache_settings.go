@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -178,4 +179,43 @@ func (h *wordPressHandler) cacheWarmup(c *gin.Context) {
 // cacheProfiles returns the static cache-profile registry for the UI (GH #618).
 func (h *wordPressHandler) cacheProfiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"profiles": models.CacheProfiles})
+}
+
+// cacheStats (GH #617) returns the install's Redis cache stats (hit ratio, key
+// count, memory) by asking the agent to run `wp jabali-cache stats` as tenant.
+func (h *wordPressHandler) cacheStats(c *gin.Context) {
+	claims := ginctx.Claims(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	inst := h.loadOwnedInstall(c, claims)
+	if inst == nil {
+		return
+	}
+	dom, err := h.cfg.Domains.FindByID(c.Request.Context(), inst.DomainID)
+	if err != nil || dom == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "domain_not_found"})
+		return
+	}
+	osUser := ""
+	if u, uErr := h.cfg.Users.FindByID(c.Request.Context(), inst.UserID); uErr == nil && u != nil && u.Username != nil {
+		osUser = *u.Username
+	}
+	if osUser == "" || h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "unavailable"})
+		return
+	}
+	installPath := dom.DocRoot
+	if inst.Subdirectory != "" {
+		installPath = path.Join(dom.DocRoot, inst.Subdirectory)
+	}
+	res, err := h.cfg.Agent.Call(c.Request.Context(), "wordpress.cache_stats", map[string]any{
+		"os_user": osUser, "install_path": installPath,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent_error", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"stats": res})
 }

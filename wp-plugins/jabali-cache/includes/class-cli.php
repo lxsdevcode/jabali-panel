@@ -188,6 +188,47 @@ class Jabali_Cache_CLI {
 		\WP_CLI::log( '  - redis-server must be running on the panel host.' );
 	}
 
+	/**
+	 * Cache stats as JSON (GH #617). keyspace hits/misses + used_memory are
+	 * Redis-instance-wide (shared); `keys` is this site's prefix only.
+	 *
+	 * @when after_wp_load
+	 */
+	public function stats() {
+		$cfg = Jabali_Cache_Config::load();
+		$out = array(
+			'connected'   => false,
+			'driver'      => '-',
+			'keys'        => 0,
+			'hits'        => 0,
+			'misses'      => 0,
+			'hit_ratio'   => 0.0,
+			'used_memory' => 0,
+		);
+		$c = new Jabali_Cache_Client( $cfg );
+		if ( $c->connect() ) {
+			$out['connected'] = true;
+			$out['driver']    = $c->driver();
+			$out['keys']      = (int) $c->count_keys( $cfg['prefix'] );
+			$info             = $c->info();
+			$h                = $this->info_int( $info, 'keyspace_hits' );
+			$m                = $this->info_int( $info, 'keyspace_misses' );
+			$out['hits']      = $h;
+			$out['misses']    = $m;
+			$out['hit_ratio'] = ( $h + $m ) > 0 ? round( 100 * $h / ( $h + $m ), 1 ) : 0.0;
+			$out['used_memory'] = $this->info_int( $info, 'used_memory' );
+			$c->close();
+		}
+		\WP_CLI::log( wp_json_encode( $out ) );
+	}
+
+	private function info_int( $info, $key ) {
+		if ( preg_match( '/^' . preg_quote( $key, '/' ) . ':(\\d+)/m', (string) $info, $mm ) ) {
+			return (int) $mm[1];
+		}
+		return 0;
+	}
+
 	private function ensure_dropins() {
 		$mgr = new Jabali_Cache_Dropin_Manager( $this->plugin_dir );
 		return $mgr->install();

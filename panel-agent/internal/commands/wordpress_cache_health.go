@@ -41,6 +41,28 @@ func wordpressCacheHealthHandler(ctx context.Context, params json.RawMessage) (a
 	return map[string]any{"healthy": healthy, "detail": detail}, nil
 }
 
+// wordpressCacheStatsHandler (GH #617) returns Redis cache stats as JSON by
+// running `wp jabali-cache stats` as the tenant (which holds the ACL creds).
+func wordpressCacheStatsHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p cacheHealthParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if p.OSUser == "" || p.InstallPath == "" {
+		return nil, csInvalidArg("os_user and install_path are required")
+	}
+	out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "jabali-cache", "stats")
+	if err != nil {
+		return map[string]any{"connected": false, "detail": strings.TrimSpace(out)}, nil
+	}
+	var stats map[string]any
+	if jErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &stats); jErr != nil {
+		return map[string]any{"connected": false, "detail": "unparseable stats output"}, nil
+	}
+	return stats, nil
+}
+
 func init() {
 	Default.Register("wordpress.cache_health", wordpressCacheHealthHandler)
+	Default.Register("wordpress.cache_stats", wordpressCacheStatsHandler)
 }

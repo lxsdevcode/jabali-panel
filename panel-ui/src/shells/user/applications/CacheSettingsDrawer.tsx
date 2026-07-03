@@ -9,7 +9,7 @@
 //
 // A cookie bypass/allowlist was rejected: it would re-open the #416/#419
 // fail-open class (cross-visitor content bleed on the shared microcache).
-import { Alert, App, Drawer, Form, InputNumber, Select } from "antd";
+import { Alert, App, Descriptions, Drawer, Form, InputNumber, Select } from "antd";
 import { useEffect, useState } from "react";
 
 import { apiClient } from "../../../apiClient";
@@ -24,6 +24,13 @@ type CacheSettings = {
   profile?: string;
 };
 type CacheProfile = { key: string; label: string; warning: string };
+type CacheStats = {
+  connected?: boolean;
+  hit_ratio?: number;
+  keys?: number;
+  used_memory?: number;
+  driver?: string;
+};
 type GetResp = {
   cache_enabled: boolean;
   configured: boolean;
@@ -46,6 +53,7 @@ export function CacheSettingsDrawer({
   const [redisMaxMemory, setRedisMaxMemory] = useState<number | null>(null);
   const [profile, setProfile] = useState<string>("");
   const [profiles, setProfiles] = useState<CacheProfile[]>([]);
+  const [stats, setStats] = useState<CacheStats | null>(null);
 
   useEffect(() => {
     if (!install) return;
@@ -68,6 +76,10 @@ export function CacheSettingsDrawer({
       .get<{ profiles: CacheProfile[] }>(`/applications/cache-profiles`)
       .then((res) => setProfiles(res.data.profiles ?? []))
       .catch(() => setProfiles([]));
+    apiClient
+      .get<{ stats: CacheStats }>(`/applications/${install.id}/cache-stats`)
+      .then((res) => setStats(res.data.stats ?? null))
+      .catch(() => setStats(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [install]);
 
@@ -118,6 +130,24 @@ export function CacheSettingsDrawer({
           description="These settings are saved but only take effect once caching is enabled (the Cache toggle on the app row)."
         />
       )}
+      {stats?.connected ? (
+        <Descriptions
+          size="small"
+          bordered
+          column={1}
+          style={{ marginBottom: 16 }}
+          title="Object cache (Redis)"
+        >
+          <Descriptions.Item label="Hit ratio (server-wide)">
+            {(stats.hit_ratio ?? 0).toFixed(1)}%
+          </Descriptions.Item>
+          <Descriptions.Item label="Keys (this site)">{stats.keys ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="Redis memory">
+            {Math.round((stats.used_memory ?? 0) / (1024 * 1024))} MB
+          </Descriptions.Item>
+          <Descriptions.Item label="Client">{stats.driver ?? "-"}</Descriptions.Item>
+        </Descriptions>
+      ) : null}
       <Alert
         type="info"
         showIcon
