@@ -3,7 +3,7 @@
 // short landing card: hostname, top-level health roll-up, three count
 // stats (users / domains / mailboxes) and a prominent button into the
 // Server Status page.
-import { Alert, Button, Card, Col, Masonry, Row, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Masonry, Row, Space, Table, Tag, Typography , Avatar} from "antd";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -188,8 +188,13 @@ export const Dashboard = () => {
                           .filter(Boolean)
                           .join(" ")
                           .trim();
+                        const label = r.username || r.email || "?";
                         return (
-                          <div style={{ minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <Avatar size="small" style={{ flexShrink: 0, backgroundColor: "#1677ff" }}>
+                              {label.charAt(0).toUpperCase()}
+                            </Avatar>
+                            <div style={{ minWidth: 0 }}>
                             <div
                               style={{
                                 overflow: "hidden",
@@ -208,6 +213,7 @@ export const Dashboard = () => {
                                 {name}
                               </Typography.Text>
                             )}
+                            </div>
                           </div>
                         );
                       },
@@ -241,7 +247,17 @@ export const Dashboard = () => {
                   dataSource={recentDomains.items}
                   locale={{ emptyText: "No domains yet" }}
                   columns={[
-                    { title: "Domain", dataIndex: "name", ellipsis: true },
+                    {
+                      title: "Domain",
+                      dataIndex: "name",
+                      ellipsis: true,
+                      render: (v: string) => (
+                        <span>
+                          <GlobalOutlined style={{ marginRight: 8, color: "#1677ff" }} />
+                          {v}
+                        </span>
+                      ),
+                    },
                   ]}
                 />
               </Card>

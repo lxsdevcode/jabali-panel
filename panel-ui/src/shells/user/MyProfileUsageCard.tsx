@@ -55,7 +55,7 @@ function MetricCard({
   pct?: number;
 }) {
   return (
-    <Card size="small" styles={{ body: { padding: 12 } }}>
+    <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div
           style={{
@@ -87,7 +87,7 @@ function MetricCard({
           style={{ marginTop: 8, marginBottom: 0 }}
         />
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -164,12 +164,14 @@ export function MyProfileUsageCard({ userId }: { userId: string }) {
   ];
 
   return (
-    <Row gutter={[12, 12]}>
-      {metrics.map((m) => (
-        <Col xs={12} sm={8} lg={8} key={m.label}>
-          <MetricCard {...m} />
-        </Col>
-      ))}
-    </Row>
+    <Card title="System Health" size="small">
+      <Row gutter={[12, 24]}>
+        {metrics.map((m) => (
+          <Col xs={24} sm={8} lg={8} key={m.label}>
+            <MetricCard {...m} />
+          </Col>
+        ))}
+      </Row>
+    </Card>
   );
 }
