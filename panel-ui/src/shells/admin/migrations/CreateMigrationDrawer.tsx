@@ -265,10 +265,17 @@ function PullStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       initialValues={{ ssh_user: "root" }}
     >
       <Alert
+        type="warning"
+        showIcon
+        message="Pre-flight — review before you start"
+        description="The source is left untouched (read-only). DNS is NOT switched automatically — Jabali imports the zones and prepares suggested records. Watch the job's progress timeline once it starts; you can retry a failed stage."
+        style={{ marginBottom: 12 }}
+      />
+      <Alert
         type="info"
         showIcon
-        message="Pull account files from source"
-        description="Triggers jabali migrate pull-source on the server. It SSH-connects to the source, downloads the cpmove tarball to the staging directory, then unpacks it. Check the job's stage timeline for live progress."
+        message="Scan source & prepare migration"
+        description="SSH-connects to the source, packages the account(s), transfers to staging, then imports. Progress shows on the job's stage timeline."
         style={{ marginBottom: 16 }}
       />
       <Form.Item
@@ -279,7 +286,7 @@ function PullStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
         <Input placeholder="root" />
       </Form.Item>
       <Button type="primary" htmlType="submit" loading={mut.isPending}>
-        Start pull
+        Start migration
       </Button>
     </Form>
   );
