@@ -499,13 +499,9 @@ func RegisterSecurityCrowdSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterfac
 				})
 				return
 			}
-			if err := settings.Upsert(c.Request.Context(), &merged); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"status": "error", "error": "settings_save", "detail": err.Error(),
-				})
-				return
-			}
-			// Push to bouncer conf via agent.
+			// GH #685: apply to the bouncer FIRST, persist to server_settings only
+			// on success — otherwise a failed agent apply would leave the DB
+			// claiming captcha is enabled while the bouncer is unchanged.
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 			defer cancel()
 			_, err = cli.Call(ctx, "security.crowdsec.captcha.apply", map[string]any{
@@ -517,6 +513,12 @@ func RegisterSecurityCrowdSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterfac
 			if err != nil {
 				status, ebody := translateAgentError(err)
 				c.JSON(status, ebody)
+				return
+			}
+			if err := settings.Upsert(c.Request.Context(), &merged); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"status": "error", "error": "settings_save", "detail": err.Error(),
+				})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{

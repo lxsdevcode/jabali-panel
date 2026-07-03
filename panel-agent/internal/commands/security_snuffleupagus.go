@@ -90,10 +90,12 @@ func snuffleupagusStatusHandler(ctx context.Context, _ json.RawMessage) (any, er
 			so := filepath.Join("/usr/lib/php/jabali-snuffleupagus", m, "snuffleupagus.so")
 			loaded := false
 			if _, err := os.Stat(so); err == nil {
-				// Confirm the conf.d wiring resolves — checks the cli
-				// drop-in symlink so we don't lie about FPM-side.
-				cliDrop := filepath.Join("/etc/php", m, "cli/conf.d/30-jabali-snuffleupagus.ini")
-				if _, err := os.Stat(cliDrop); err == nil {
+				// GH #677: WEB protection comes from the FPM drop-in (Jabali's
+				// per-user FPM pools load it), NOT the CLI drop-in. Report loaded
+				// only when the FPM drop-in is present, so the panel never claims
+				// PHP is protected while FPM requests run unprotected.
+				fpmDrop := filepath.Join("/etc/php", m, "fpm/conf.d/30-jabali-snuffleupagus.ini")
+				if _, err := os.Stat(fpmDrop); err == nil {
 					loaded = true
 				}
 			}
