@@ -33,6 +33,19 @@ func RegisterSecurityAideRoutes(rg *gin.RouterGroup, cli agent.AgentInterface) {
 		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 	})
 
+	// GH #714: full-diff export — the raw AIDE report for download.
+	g.GET("/report", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), aideCallTimeout)
+		defer cancel()
+		raw, err := cli.Call(ctx, "security.aide.report", map[string]any{})
+		if err != nil {
+			status, body := translateAgentError(err)
+			c.JSON(status, body)
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	})
+
 	g.POST("/check", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), aideCheckTimeout)
 		defer cancel()

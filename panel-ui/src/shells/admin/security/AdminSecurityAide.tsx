@@ -1,6 +1,7 @@
 // AdminSecurityAide — admin Security tab "AIDE" sub-tab (M42, ADR-0087).
 // Read-only FIM status + manual recheck trigger.
 import { useState } from "react";
+import { apiClient } from "../../../apiClient";
 import { Alert, Badge, Button, Card, Popconfirm, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
 
 import {
@@ -73,6 +74,32 @@ export const AdminSecurityAide = () => {
         <Space>
           <Button size="small" onClick={() => refetch()}>
             Refresh
+          </Button>
+          <Button
+            size="small"
+            onClick={async () => {
+              // GH #714: full-diff export — download the raw AIDE report.
+              try {
+                const { data } = await apiClient.get<{ report: string; available: boolean }>(
+                  "/admin/security/aide/report",
+                );
+                if (!data.available || !data.report) {
+                  void message.warning("No AIDE report available yet");
+                  return;
+                }
+                const blob = new Blob([data.report], { type: "text/plain" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `aide-report-${new Date().toISOString().slice(0, 10)}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch {
+                void message.error("Report download failed");
+              }
+            }}
+          >
+            Download full diff
           </Button>
           <Button
             size="small"

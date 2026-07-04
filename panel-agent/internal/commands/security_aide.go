@@ -341,6 +341,21 @@ func parseAideReport(text string, resp *aideStatusResponse) {
 // mwAideCheckHandler invokes `aide --check` synchronously. Times out
 // at the agent's command timeout — operator should rely on the timer
 // for full runs.
+// mwAideReportHandler (GH #714) returns the raw AIDE report for full-diff
+// export — the UI downloads it as a file. Capped at 8 MiB (a large delta can
+// bloat the report); keeps the tail (newest block) when oversized.
+func mwAideReportHandler(_ context.Context, _ json.RawMessage) (any, error) {
+	const maxReport = 8 << 20
+	b, err := os.ReadFile(aideReportPath)
+	if err != nil {
+		return map[string]any{"report": "", "available": false, "reason": err.Error()}, nil
+	}
+	if len(b) > maxReport {
+		b = b[len(b)-maxReport:]
+	}
+	return map[string]any{"report": string(b), "available": true}, nil
+}
+
 func mwAideCheckHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 	if _, err := os.Stat("/usr/bin/aide"); err != nil {
 		return nil, mwInternal("aide binary not found", err)
@@ -408,6 +423,7 @@ func mwAideRebuildHandler(ctx context.Context, payload json.RawMessage) (any, er
 }
 
 func init() {
+	Default.Register("security.aide.report", mwAideReportHandler)
 	Default.Register("security.aide.status", mwAideStatusHandler)
 	Default.Register("security.aide.check", mwAideCheckHandler)
 	Default.Register("security.aide.rebuild", mwAideRebuildHandler)
