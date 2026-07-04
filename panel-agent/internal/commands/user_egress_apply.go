@@ -1,6 +1,7 @@
 package commands
 
 import (
+	osuser "os/user"
 	"log/slog"
 	"net"
 	"context"
@@ -131,8 +132,15 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 				Protocol: e.Protocol, Comment: e.Comment,
 			})
 		}
+		// GH #708: resolve the uid for the missing-slice UID-enforcement fallback.
+		uid := 0
+		if ou, lerr := osuser.Lookup(u.Username); lerr == nil {
+			if n, aerr := strconv.Atoi(ou.Uid); aerr == nil {
+				uid = n
+			}
+		}
 		users = append(users, EgressUser{
-			Username: u.Username, State: u.State, AllowedExtra: extras,
+			Username: u.Username, State: u.State, UID: uid, AllowedExtra: extras,
 		})
 	}
 
@@ -153,15 +161,21 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 			continue
 		}
 		if !defaultSliceExists(SlicePathFor(u.Username)) {
-			usersSkipped++
-			failOpen = append(failOpen, u.Username)
+			// GH #708: missing slice — enforced by UID fallback if the uid
+			// resolved; only truly fail-open (skipped) when we have no uid either.
+			if u.UID <= 0 {
+				usersSkipped++
+				failOpen = append(failOpen, u.Username)
+			} else {
+				usersEmitted++
+			}
 			continue
 		}
 		usersEmitted++
 	}
 	if len(failOpen) > 0 {
 		slog.WarnContext(ctx, "egress fail-open: enforced users skipped, slice missing on host",
-			"users", failOpen, "detail", "their traffic is NOT egress-controlled until the slice exists")
+			"users", failOpen, "detail", "no cgroup slice AND no resolvable uid — NOT egress-controlled until the slice exists")
 	}
 
 	content := RenderEgressNFT(users, defs, defaultSliceExists)

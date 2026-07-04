@@ -67,14 +67,24 @@ func TestRenderEgressNFT_VmapKeyMatchesM18Topology(t *testing.T) {
 		"vmap key must match the actual M18 cgroup topology — see VM verification 2026-04-29")
 }
 
-func TestRenderEgressNFT_MissingSliceSkipped(t *testing.T) {
+func TestRenderEgressNFT_MissingSliceNoUIDSkipped(t *testing.T) {
+	// No uid + missing slice — cannot enforce; skipped + surfaced as fail-open.
 	users := []EgressUser{{Username: "eve", State: "enforced"}}
 	out := RenderEgressNFT(users, CanonicalDefaults(), noneExist)
 
 	require.Contains(t, out, "eve: slice")
-	require.Contains(t, out, "missing on host — skipped")
+	require.Contains(t, out, "missing + no uid — skipped")
 	require.NotContains(t, out, "user_eve_drops")
-	require.NotContains(t, out, ": jump user_eve_enforced")
+}
+
+func TestRenderEgressNFT_MissingSliceUIDFallback(t *testing.T) {
+	// GH #708: missing slice BUT uid known -> enforced by uid, not fail-open.
+	users := []EgressUser{{Username: "eve", State: "enforced", UID: 1001}}
+	out := RenderEgressNFT(users, CanonicalDefaults(), noneExist)
+
+	require.Contains(t, out, "counter user_eve_drops")        // chain emitted
+	require.Contains(t, out, "meta skuid 1001 jump user_eve_enforced") // uid dispatch
+	require.NotContains(t, out, "policy accept;\n  }")       // (chain still ends with accept, sanity below)
 }
 
 func TestRenderEgressNFT_AllowedExtraEmittedInChain(t *testing.T) {

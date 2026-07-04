@@ -18,6 +18,10 @@ import (
 type EgressUser struct {
 	Username     string
 	State        string // "off" | "learning" | "enforced"
+	// UID (GH #708) is the OS uid, used for a `meta skuid` egress-enforcement
+	// fallback when the user's cgroup slice is missing (so an enforced tenant
+	// can't fail open). 0 = unknown (fallback unavailable).
+	UID          int
 	AllowedExtra []EgressExtra
 }
 
@@ -143,6 +147,11 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 		state    string
 	}
 	var emitted []rendered
+	type uidRendered struct {
+		username, state string
+		uid             int
+	}
+	var uidFallback []uidRendered
 
 	for _, u := range sorted {
 		if u.State == "off" {
@@ -150,13 +159,24 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 			continue
 		}
 		slicePath := SlicePathFor(u.Username)
-		if !existsFn(slicePath) {
-			fmt.Fprintf(&b, "\n  # %s: slice %s missing on host — skipped\n", u.Username, slicePath)
+		sliceMissing := !existsFn(slicePath)
+		if sliceMissing && u.UID <= 0 {
+			// Can't cgroup-match (no slice) AND can't UID-fallback (no uid).
+			// Surfaced by the apply handler's users_fail_open; skip here.
+			fmt.Fprintf(&b, "\n  # %s: slice %s missing + no uid — skipped\n", u.Username, slicePath)
 			continue
 		}
 		fmt.Fprintf(&b, "\n  counter user_%s_drops {}\n", u.Username)
 		writeUserChain(&b, u, defaults)
-		emitted = append(emitted, rendered{u.Username, u.State})
+		if sliceMissing {
+			// GH #708: dispatch this enforced user by UID so a missing cgroup
+			// slice no longer means their traffic falls through to accept. The
+			// chain is identical; only the dispatch differs (skuid vs cgroup).
+			fmt.Fprintf(&b, "  # %s: slice missing — enforcing by uid %d instead of cgroup (GH #708)\n", u.Username, u.UID)
+			uidFallback = append(uidFallback, uidRendered{u.Username, u.State, u.UID})
+		} else {
+			emitted = append(emitted, rendered{u.Username, u.State})
+		}
 	}
 
 	// vmap dispatch by cgroup path (level 3). Empty if no users emitted —
@@ -190,6 +210,12 @@ func RenderEgressNFT(users []EgressUser, defaults EgressDefaults, existsFn func(
 		fmt.Fprintf(&b, "    socket cgroupv2 level 2 \"%s\" ip6 daddr fe80::/10 counter name ssrf_floor_drops drop\n", tenantParentSlice)
 	}
 	b.WriteString("    socket cgroupv2 level 3 vmap @cgroup_to_chain\n")
+	// GH #708: UID-based fallback for enforced users whose cgroup slice is
+	// missing — keeps the fail-closed invariant (their traffic is still forced
+	// through the per-user chain instead of the trailing policy accept).
+	for _, uf := range uidFallback {
+		fmt.Fprintf(&b, "    meta skuid %d jump user_%s_%s\n", uf.uid, uf.username, uf.state)
+	}
 	b.WriteString("  }\n")
 	b.WriteString("}\n")
 
