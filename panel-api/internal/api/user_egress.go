@@ -1,6 +1,7 @@
 package api
 
 import (
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"encoding/json"
 	"errors"
 	"net"
@@ -33,6 +34,8 @@ type UserEgressHandlerConfig struct {
 	// the M34 deep-stats sparkline. Optional; nil → endpoint
 	// returns 503.
 	DropSamples repository.UserEgressDropSampleRepository
+	// Agent (GH #713) backs the drop-events drill-down (reads the nft drop log).
+	Agent agent.AgentInterface
 }
 
 // RegisterAdminUserEgressRoutes mounts the admin-side egress endpoints.
@@ -46,6 +49,7 @@ func RegisterAdminUserEgressRoutes(g *gin.RouterGroup, cfg UserEgressHandlerConf
 	g.POST("/egress-requests/:id/deny", h.denyRequest)
 	g.GET("/egress-summary", h.summary)
 	g.GET("/users/:id/egress/drops-24h", h.adminDrops24h)
+	g.GET("/users/:id/egress/drop-events", h.adminDropEvents) // GH #713
 }
 
 // RegisterMeEgressRoutes mounts the user-facing /me/egress endpoints.
@@ -519,4 +523,26 @@ func (h *userEgressHandler) adminDrops24h(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"user_id": userID, "buckets": out})
+}
+
+// adminDropEvents (GH #713) returns recent per-flow egress DROP events for a
+// user — destination, port, proto, aggregated count, last-seen — parsed from the
+// nft drop log (the sparkline's counter samples can't show WHAT was blocked).
+func (h *userEgressHandler) adminDropEvents(c *gin.Context) {
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent not wired"})
+		return
+	}
+	userID := c.Param("id")
+	u, err := h.cfg.Users.FindByID(c.Request.Context(), userID)
+	if err != nil || u == nil || u.Username == nil || *u.Username == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user_not_found"})
+		return
+	}
+	raw, aerr := h.cfg.Agent.Call(c.Request.Context(), "security.egress.drops", map[string]any{"username": *u.Username})
+	if aerr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "drop_events_failed", "detail": aerr.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", raw)
 }

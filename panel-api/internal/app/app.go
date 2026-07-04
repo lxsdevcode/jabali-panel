@@ -1217,6 +1217,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Policies:    deps.UserEgressPolicies,
 				Requests:    deps.UserEgressRequests,
 				DropSamples: deps.UserEgressDropSamples,
+				Agent:       deps.Agent,
 			}
 			api.RegisterAdminUserEgressRoutes(adminEgress, cfg)
 			api.RegisterMeEgressRoutes(v1, cfg)

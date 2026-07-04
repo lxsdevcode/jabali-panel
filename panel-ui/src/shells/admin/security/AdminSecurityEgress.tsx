@@ -174,10 +174,75 @@ const UserStateCell = ({ userID }: { userID: string }) => {
   return renderStateTag(q.data.state);
 };
 
+interface EgressDropEvent {
+  dest: string;
+  port: number;
+  proto: string;
+  count: number;
+  last_seen: string;
+}
+
+// DropEventsDrawer (GH #713) — drill-down into WHAT a user was blocked from,
+// parsed from the nft drop log (the count/sparkline alone can't show this).
+const DropEventsDrawer = ({
+  userID,
+  open,
+  onClose,
+}: {
+  userID: string;
+  open: boolean;
+  onClose: () => void;
+}) => {
+  const q = useQuery({
+    queryKey: ["admin/users", userID, "egress/drop-events"],
+    queryFn: async () =>
+      (await apiClient.get<{ source: string; events: EgressDropEvent[] }>(
+        `/admin/users/${userID}/egress/drop-events`,
+      )).data,
+    enabled: open,
+  });
+  return (
+    <Drawer title="Blocked egress — recent drops" width={620} open={open} onClose={onClose}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="Data source"
+        description={q.data?.source ?? "nftables drop log (kernel ring buffer)."}
+      />
+      <Table<EgressDropEvent>
+        rowKey={(r) => `${r.dest}:${r.port}:${r.proto}`}
+        loading={q.isLoading}
+        dataSource={q.data?.events ?? []}
+        size="small"
+        pagination={false}
+        scroll={{ x: "max-content" }}
+        locale={{ emptyText: "No drops logged (rate-limited 5/min; may have rotated)" }}
+        columns={[
+          { title: "Destination", dataIndex: "dest" },
+          { title: "Port", dataIndex: "port", width: 80, render: (v: number) => v || "—" },
+          { title: "Proto", dataIndex: "proto", width: 80, render: (v: string) => <Tag>{v || "?"}</Tag> },
+          { title: "Count", dataIndex: "count", width: 80 },
+          { title: "Last seen", dataIndex: "last_seen", width: 180, render: (v: string) => v || "—" },
+        ]}
+      />
+    </Drawer>
+  );
+};
+
 const UserDropsCell = ({ userID }: { userID: string }) => {
   const q = useUserEgressPolicy(userID);
+  const [open, setOpen] = useState(false);
   if (q.isLoading) return <span>—</span>;
-  return <span>{q.data?.drop_count_24h ?? 0}</span>;
+  const count = q.data?.drop_count_24h ?? 0;
+  return (
+    <>
+      <Button type="link" size="small" style={{ padding: 0 }} disabled={count === 0} onClick={() => setOpen(true)}>
+        {count}
+      </Button>
+      <DropEventsDrawer userID={userID} open={open} onClose={() => setOpen(false)} />
+    </>
+  );
 };
 
 // UserDrops24hSparkline — M34 deep stats. 24 hourly buckets fetched
