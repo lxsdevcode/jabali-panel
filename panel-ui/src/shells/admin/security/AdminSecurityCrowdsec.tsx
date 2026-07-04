@@ -130,6 +130,7 @@ export const AdminSecurityCrowdsec = () => {
   const deleteDecision = useDeleteCrowdsecDecision();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [detailDecision, setDetailDecision] = useState<CrowdsecDecision | null>(null); // GH #716
   const [addForm] = Form.useForm<AddDecisionFormValues>();
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
@@ -240,7 +241,16 @@ export const AdminSecurityCrowdsec = () => {
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No active decisions" /> }}
         scroll={{ x: "max-content" }}
       >
-        <Table.Column<CrowdsecDecision> dataIndex="ip" title="IP" key="ip" />
+        <Table.Column<CrowdsecDecision>
+          dataIndex="ip"
+          title="IP"
+          key="ip"
+          render={(v: string, row) => (
+            <Button type="link" style={{ padding: 0 }} onClick={() => setDetailDecision(row)}>
+              {v}
+            </Button>
+          )}
+        />
         <Table.Column<CrowdsecDecision> dataIndex="scenario" title="Scenario" key="scenario" />
         <Table.Column<CrowdsecDecision> dataIndex="reason" title="Reason" key="reason" />
         <Table.Column<CrowdsecDecision>
@@ -263,6 +273,31 @@ export const AdminSecurityCrowdsec = () => {
           )}
         />
       </Table>
+      <Drawer
+        title={detailDecision ? `Decision — ${detailDecision.ip}` : ""}
+        width={560}
+        open={!!detailDecision}
+        onClose={() => setDetailDecision(null)}
+      >
+        {detailDecision ? (
+          <>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="IP / value">{detailDecision.ip}</Descriptions.Item>
+              <Descriptions.Item label="Why (reason)">{detailDecision.reason || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Scenario fired">{detailDecision.scenario || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Ban duration">{detailDecision.duration || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Active until">{detailDecision.until || "—"}</Descriptions.Item>
+            </Descriptions>
+            <Alert
+              style={{ marginTop: 12 }}
+              type="info"
+              showIcon
+              message="How this is enforced"
+              description="This IP was banned because the scenario above fired on its traffic. Enforcement is applied by the active bouncers: the firewall bouncer drops it at nftables (all ports), and the nginx bouncer returns 403 on HTTP. To lift it, delete the decision (or add the IP to the Allowlist so it is never re-banned)."
+            />
+          </>
+        ) : null}
+      </Drawer>
     </Card>
   );
 
