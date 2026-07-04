@@ -25,7 +25,7 @@ abi <abi/3.0>,
 
 #include <tunables/global>
 
-profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec flags=(complain) {
+profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 
