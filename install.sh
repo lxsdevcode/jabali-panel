@@ -12031,6 +12031,30 @@ provision_new_software() {
       || _warn "provision: whois install had issues"
   fi
 
+  # GH #606: converge phpredis + igbinary onto EVERY installed PHP version so a
+  # host installed before #606 gets the fast native object-cache client (not the
+  # pure-PHP fallback) on `jabali update`. install_base_packages only runs on
+  # fresh installs; this is the existing-host path. Idempotent — apt skips
+  # already-present packages. Reload the per-user FPM masters so the extension
+  # is live immediately.
+  _php_cache_ext_pkgs=()
+  for _phpv in $(ls -1 /etc/php/ 2>/dev/null | grep -E '^[0-9]+\.[0-9]+$'); do
+    for _ext in redis igbinary; do
+      if ! dpkg -s "php${_phpv}-${_ext}" >/dev/null 2>&1 \
+         && apt-cache show "php${_phpv}-${_ext}" >/dev/null 2>&1; then
+        _php_cache_ext_pkgs+=("php${_phpv}-${_ext}")
+      fi
+    done
+  done
+  if [[ ${#_php_cache_ext_pkgs[@]} -gt 0 ]]; then
+    if apt-get install -y -qq --no-install-recommends "${_php_cache_ext_pkgs[@]}"; then
+      _ok "provision: installed missing PHP cache extensions: ${_php_cache_ext_pkgs[*]} (#606)"
+      systemctl reload 'jabali-fpm@*.service' 2>/dev/null || true
+    else
+      _warn "provision: PHP redis/igbinary ensure had issues"
+    fi
+  fi
+
   # Libexec helpers (fpm-pre-start, fpm-exec, fpm-post-start, cron-precheck)
   # — generated systemd units reference these by absolute path. The
   # fresh-install path installs them, and update.go's unit-sync heredoc
