@@ -132,6 +132,7 @@ export const AdminSecurityCrowdsec = () => {
 
   const [addOpen, setAddOpen] = useState(false);
   const [detailDecision, setDetailDecision] = useState<CrowdsecDecision | null>(null); // GH #716
+  const alertsLink = useCrowdsecAlerts(); // GH #716: link decisions -> alerts by IP
   const [addForm] = Form.useForm<AddDecisionFormValues>();
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.lg ?? (typeof window !== "undefined" ? window.innerWidth >= 992 : true);
@@ -297,6 +298,31 @@ export const AdminSecurityCrowdsec = () => {
               message="How this is enforced"
               description="This IP was banned because the scenario above fired on its traffic. Enforcement is applied by the active bouncers: the firewall bouncer drops it at nftables (all ports), and the nginx bouncer returns 403 on HTTP. To lift it, delete the decision (or add the IP to the Allowlist so it is never re-banned)."
             />
+            {(() => {
+              // GH #716: alert -> decision linkage. Show the alerts whose source
+              // IP matches this decision, so the operator sees WHAT fired it.
+              const matches = (alertsLink.data ?? []).filter((a) => a.source_ip === detailDecision.ip);
+              return (
+                <>
+                  <Typography.Title level={5} style={{ marginTop: 16 }}>
+                    Matching alerts ({matches.length})
+                  </Typography.Title>
+                  <Table<CrowdsecAlert>
+                    size="small"
+                    pagination={false}
+                    scroll={{ x: "max-content" }}
+                    rowKey="id"
+                    loading={alertsLink.isLoading}
+                    dataSource={matches}
+                    locale={{ emptyText: "No matching alerts in the loaded window" }}
+                    columns={[
+                      { title: "Scenario", dataIndex: "scenario", ellipsis: true },
+                      { title: "When", dataIndex: "created_at", width: 180, render: (v: string) => v || "—" },
+                    ]}
+                  />
+                </>
+              );
+            })()}
           </>
         ) : null}
       </Drawer>
