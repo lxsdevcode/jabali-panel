@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  Descriptions,
+  Drawer,
   Button,
   Card,
   Modal,
@@ -49,6 +51,7 @@ export function AdminSecuritySnuffleupagus() {
   const status = useSnuffleupagusStatus();
   const incidents = useSnuffleupagusIncidents({ limit: 50 });
   const rules = useSnuffleupagusRules();
+  const [detailIncident, setDetailIncident] = useState<SnuffleupagusIncident | null>(null); // GH #717
   const setMode = useSetSnuffleupagusMode();
   const toggleRule = useToggleSnuffleupagusRule();
 
@@ -252,6 +255,42 @@ export function AdminSecuritySnuffleupagus() {
           scroll={{ x: "max-content" }}
         />
       </Modal>
+      <Drawer
+        title={detailIncident ? `Incident #${detailIncident.id}` : ""}
+        width={620}
+        open={!!detailIncident}
+        onClose={() => setDetailIncident(null)}
+      >
+        {detailIncident ? (
+          <>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="When">{new Date(detailIncident.ts).toLocaleString()}</Descriptions.Item>
+              <Descriptions.Item label="Action">{detailIncident.action}</Descriptions.Item>
+              <Descriptions.Item label="Rule">{detailIncident.rule_name}</Descriptions.Item>
+              <Descriptions.Item label="Domain / tenant">{detailIncident.domain || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Request URI">{detailIncident.request_uri || "—"}</Descriptions.Item>
+              <Descriptions.Item label="Source IP">{detailIncident.source_ip || "—"}</Descriptions.Item>
+              <Descriptions.Item label="PHP version">{detailIncident.php_version || "—"}</Descriptions.Item>
+            </Descriptions>
+            {(() => {
+              const r = (rules.data ?? []).find((x) => x.name === detailIncident.rule_name);
+              return (
+                <Alert
+                  style={{ marginTop: 12 }}
+                  type={detailIncident.action === "block" ? "error" : "info"}
+                  showIcon
+                  message={detailIncident.action === "block" ? "This request was BLOCKED" : "Logged only (not blocked)"}
+                  description={
+                    r
+                      ? `Rule '${r.name}' is from ${r.source_file} and is currently ${r.enabled ? "ENABLED" : "DISABLED"}. ${r.reason ? r.reason + " " : ""}Before disabling a rule for a false positive, confirm the request URI/tenant above is legitimate — a block on a webshell-drop or exec sink is usually a real hit, not a false positive.`
+                      : "Rule metadata not found in the current rule set (it may be from a base policy). Review the request URI + tenant before treating it as a false positive."
+                  }
+                />
+              );
+            })()}
+          </>
+        ) : null}
+      </Drawer>
     </Card>
   );
 }
