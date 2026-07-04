@@ -13,10 +13,11 @@ import {
   useSetAppArmorMode,
 } from "../../../hooks/useSecurityAppArmor";
 
-const MODE_TINT: Record<AppArmorProfile["mode"], "success" | "warning" | "error"> = {
+const MODE_TINT: Record<AppArmorProfile["mode"], "success" | "warning" | "error" | "default"> = {
   enforce: "success",
   complain: "warning",
   missing: "error",
+  "kernel-gated": "default", // GH: intentional kernel-gate skip, not a failure
 };
 
 export const AdminSecurityAppArmor = () => {
@@ -71,6 +72,18 @@ export const AdminSecurityAppArmor = () => {
           description="Complain-mode profiles are logging would-deny (apparmor ALLOWED) violations — not soak-ready to enforce. Resolve or allowlist these before flipping to enforce."
         />
       ) : null}
+      {(data?.profiles ?? []).some((p) => p.mode === "kernel-gated") && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="AppArmor profiles intentionally not loaded on this kernel"
+          description={
+            data?.reason ||
+            "This kernel lacks AppArmor unix-socket mediation (Debian 13 / Ubuntu 24.04). Jabali profiles are deliberately not loaded here — attaching them would break DNS/DB over unix sockets. This is expected, not a failure or a security regression."
+          }
+        />
+      )}
       <Table
         rowKey="name"
         dataSource={data.profiles}
@@ -108,6 +121,8 @@ export const AdminSecurityAppArmor = () => {
             render: (_: unknown, row: AppArmorProfile) =>
               row.mode === "missing" ? (
                 <Typography.Text type="danger">not loaded</Typography.Text>
+              ) : row.mode === "kernel-gated" ? (
+                <Typography.Text type="secondary">kernel-gated</Typography.Text>
               ) : (
                 <Button
                   size="small"

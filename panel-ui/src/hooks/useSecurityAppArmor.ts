@@ -6,7 +6,7 @@ import { apiClient } from "../apiClient";
 
 export interface AppArmorProfile {
   name: string;
-  mode: "enforce" | "complain" | "missing";
+  mode: "enforce" | "complain" | "missing" | "kernel-gated";
 }
 
 export interface AppArmorDenial {

@@ -12,6 +12,7 @@
 package commands
 
 import (
+	"os"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -143,12 +144,27 @@ func mwApparmorStatusHandler(ctx context.Context, _ json.RawMessage) (any, error
 		})
 	}
 
-	// GH #679: report EXPECTED jabali profiles that are missing/unloaded (failed
-	// to load, purged, or never installed) as Mode="missing" instead of silently
-	// omitting them — an absent profile is an unconfined daemon, i.e. a problem.
+	// GH #679: report EXPECTED jabali profiles that are missing/unloaded instead
+	// of silently omitting them. BUT distinguish two cases: a genuine failure
+	// ("missing", red) vs a DELIBERATE kernel-gate skip. On kernels lacking
+	// /sys/kernel/security/apparmor/features/unix (Debian 13 / Ubuntu 24.04
+	// broken unix-socket mediation), install_apparmor intentionally does NOT load
+	// the daemon profiles (#687) — attaching them would EACCES DNS/DB. That is
+	// working-as-designed, not a failure, so report it as "kernel-gated" (neutral)
+	// and explain it, rather than an alarming red "missing".
+	unloadedMode := "missing"
+	if !apparmorUnixMediationAvailable() {
+		unloadedMode = "kernel-gated"
+		if resp.Reason == "" {
+			resp.Reason = "AppArmor unix-socket mediation is unavailable on this kernel " +
+				"(no /sys/kernel/security/apparmor/features/unix — Debian 13 / Ubuntu 24.04). " +
+				"Jabali profiles are intentionally NOT loaded here; attaching them would break " +
+				"DNS/DB over unix sockets. This is expected, not a failure."
+		}
+	}
 	for name := range allowedProfiles {
 		if _, ok := raw.Profiles[name]; !ok {
-			resp.Profiles = append(resp.Profiles, apparmorProfile{Name: name, Mode: "missing"})
+			resp.Profiles = append(resp.Profiles, apparmorProfile{Name: name, Mode: unloadedMode})
 		}
 	}
 
@@ -301,4 +317,14 @@ func mwApparmorSetModeHandler(ctx context.Context, raw json.RawMessage) (any, er
 func init() {
 	Default.Register("security.apparmor.status", mwApparmorStatusHandler)
 	Default.Register("security.apparmor.set_mode", mwApparmorSetModeHandler)
+}
+
+// apparmorUnixMediationAvailable reports whether the kernel supports AppArmor
+// unix-socket mediation (features/unix). On kernels without it (Debian 13 /
+// Ubuntu 24.04, AA 4.x bug), install_apparmor deliberately skips loading the
+// jabali daemon profiles — so a profile absent there is a kernel-gate skip, not
+// a failure (GH #687 / #679).
+func apparmorUnixMediationAvailable() bool {
+	_, err := os.Stat("/sys/kernel/security/apparmor/features/unix")
+	return err == nil
 }
