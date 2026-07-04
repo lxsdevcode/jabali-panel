@@ -71,7 +71,7 @@ test.describe("admin panel SSL card", () => {
       page.locator(".ant-tag", { hasText: "Not routable" }).first(),
     ).toBeVisible();
     await expect(
-      page.getByText(/non-routable hostname suffix/),
+      page.getByText(/non-routable hostname suffix/).first(),
     ).toBeVisible();
   });
 

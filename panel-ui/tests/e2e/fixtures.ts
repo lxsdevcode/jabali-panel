@@ -260,7 +260,7 @@ export async function mockApi(page: Page, initial: MockState): Promise<void> {
       }),
     });
   });
-  await page.route("**/.ory/self-service/logout*token=*", async (route) => {
+  await page.route(/self-service\/logout\?token=/, async (route) => { // match the returned logout_url (no .ory)
     state.session = null;
     state.accessToken = null;
     return route.fulfill({

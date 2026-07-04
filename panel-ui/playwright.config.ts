@@ -30,6 +30,11 @@ export default defineConfig({
 
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
+    // Block the PWA service worker (sw-push.js): its network-first nav handler
+    // intercepts top-level navigations before Playwright's page.route sees them
+    // (SW-initiated requests bypass page.route), which silently defeats mocked
+    // routes like the Kratos logout redirect. E2E must be deterministic.
+    serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
