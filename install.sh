@@ -11085,7 +11085,9 @@ _install_bulwark_impersonate_secrets() {
     # kept it, and it split BULWARK_JWT_AUTH_SECRET across two lines in
     # bulwark.env -> Bulwark read a truncated key -> "Invalid signature"
     # (GH #193). base64 96 bytes => 128 chars, always >= 64 after stripping.
-    openssl rand -base64 96 | tr -dc 'A-Za-z0-9' | head -c 64 > "$jwt_secret_file"
+    # GH #701: create under umask 077 so there is no world/group-readable window
+    # between creation and the chmod below (0600 -> 0640 never exposes to others).
+    ( umask 077; openssl rand -base64 96 | tr -dc 'A-Za-z0-9' | head -c 64 > "$jwt_secret_file" )
     chmod 0640 "$jwt_secret_file"
     chown root:jabali-webmail "$jwt_secret_file"
     _ok "generated BULWARK_JWT_AUTH_SECRET -> $jwt_secret_file"

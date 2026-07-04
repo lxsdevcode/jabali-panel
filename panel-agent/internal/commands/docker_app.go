@@ -207,7 +207,7 @@ func dockerAppInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: msg,
-			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
+			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, redactComposeOutput(out))),
 		}
 	}
 
@@ -289,7 +289,7 @@ func runLifecycle(ctx context.Context, params json.RawMessage, statusOnSuccess s
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("docker compose %v failed: %v", composeArgs, err),
-			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
+			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, redactComposeOutput(out))),
 		}
 	}
 	return dockerAppLifecycleResponse{Slug: p.Slug, Status: statusOnSuccess}, nil
@@ -315,7 +315,7 @@ func dockerAppDeleteHandler(ctx context.Context, params json.RawMessage) (any, e
 			downErr = &agentwire.AgentError{
 				Code:    agentwire.CodeInternal,
 				Message: fmt.Sprintf("docker compose down failed: %v", err),
-				Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
+				Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, redactComposeOutput(out))),
 			}
 		}
 	}
@@ -381,7 +381,7 @@ func dockerAppStatusHandler(ctx context.Context, params json.RawMessage) (any, e
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
 			Message: fmt.Sprintf("docker compose ps failed: %v", err),
-			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, out)),
+			Details: json.RawMessage(fmt.Sprintf(`{"stderr": %q}`, redactComposeOutput(out))),
 		}
 	}
 	lines := parseComposePSJSON(out)
@@ -452,7 +452,17 @@ func runDockerCompose(ctx context.Context, dir string, args ...string) (string, 
 // failed, an image-pull error, a MariaDB native-AIO crash inside LXC, ...)
 // instead of a bare "exit status 1". The full output still rides along in the
 // AgentError Details. GH#178.
+// redactComposeOutput (GH #700) strips jabali-internal + system-secret absolute
+// paths from surfaced subprocess output so a compose failure shown to the caller
+// doesn't leak host layout. General paths are kept for diagnosability.
+var composeSecretPathRe = regexp.MustCompile(`/(?:root|etc/jabali[A-Za-z0-9_./-]*|run/jabali[A-Za-z0-9_./-]*|var/lib/jabali[A-Za-z0-9_./-]*|etc/(?:shadow|gshadow|kratos)[A-Za-z0-9_./-]*)`)
+
+func redactComposeOutput(s string) string {
+	return composeSecretPathRe.ReplaceAllString(s, "[redacted]")
+}
+
 func composeFailMessage(action, out string, err error) string {
+	out = redactComposeOutput(out)
 	tail := lastNonEmptyLines(out, 8)
 	if tail == "" {
 		return fmt.Sprintf("docker compose %s failed: %v", action, err)

@@ -68,7 +68,7 @@ func userDeleteHandler(ctx context.Context, params json.RawMessage) (any, error)
 
 	// Remove the per-user slice BEFORE userdel so systemd can still resolve the UID
 	// while stopping user@<uid>.service.
-	sliceParams := json.RawMessage([]byte(`{"username":"` + p.Username + `"}`))
+	sliceParams, _ := json.Marshal(map[string]string{"username": p.Username}) // GH #694: Marshal, not string-concat
 	_, sliceErr := userSliceRemoveHandler(ctx, sliceParams)
 	if sliceErr != nil {
 		var ae *agentwire.AgentError

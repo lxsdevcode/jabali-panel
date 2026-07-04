@@ -136,7 +136,7 @@ func userCreateHandler(ctx context.Context, params json.RawMessage) (any, error)
 	}
 
 	// Provision the per-user slice and FPM drop-ins.
-	sliceParams := json.RawMessage([]byte(`{"username":"` + p.Username + `"}`))
+	sliceParams, _ := json.Marshal(map[string]string{"username": p.Username}) // GH #694: Marshal, not string-concat
 	_, sliceErr := userSliceEnsureHandler(ctx, sliceParams)
 	if sliceErr != nil {
 		// Rollback the user creation to avoid leaving a user without isolation.
