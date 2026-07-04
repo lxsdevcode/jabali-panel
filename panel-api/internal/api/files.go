@@ -742,6 +742,11 @@ func (h *filesHandler) upload(c *gin.Context) {
 		destName = override
 	}
 	destPath := filepath.Join(dirPath, destName)
+	// GH #658: record the FINAL resolved path (after any name override /
+	// collision handling) so the mutation audit reflects what was actually
+	// written — supersedes any earlier pre-override audit_target on this path.
+	c.Set("audit_target", destPath+" (upload)")
+	c.Set("audit_target_type", "file")
 	_, err = h.cfg.Agent.Call(c.Request.Context(), "files.ingest", filesIngestAgentParams{
 		UserID: userID, Username: username, TmpPath: tmpPath, DestPath: destPath,
 		Overwrite: c.Query("overwrite") == "true",

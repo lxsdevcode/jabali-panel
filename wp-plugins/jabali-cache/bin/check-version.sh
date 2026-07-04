@@ -36,6 +36,16 @@ if [[ -f "${SRC_DIR}/CHANGELOG.md" ]]; then
     || die "CHANGELOG.md has no '## [${HDR_VER}]' heading"
 fi
 
+# GH #627: lib.php ships a JABALI_CACHE_VERSION fallback for direct-loaded
+# drop-in/support code — it must match the header or a direct-load path reports
+# a stale version.
+if [[ -f "${SRC_DIR}/includes/lib.php" ]]; then
+  LIB_VER="$(grep -oiP "JABALI_CACHE_VERSION',\s*'\K[0-9]+\.[0-9]+\.[0-9]+" "${SRC_DIR}/includes/lib.php" | head -1 || true)"
+  if [[ -n "$LIB_VER" && "$LIB_VER" != "$HDR_VER" ]]; then
+    die "version mismatch: includes/lib.php fallback JABALI_CACHE_VERSION=$LIB_VER header=$HDR_VER"
+  fi
+fi
+
 # wp.org metadata cross-check (header vs readme) — a mismatch confuses wp.org's
 # compatibility display. Only fields present in BOTH files are compared.
 for field in "Requires at least" "Requires PHP"; do
