@@ -140,7 +140,13 @@ func whitelistableIP(s string) bool {
 	if ip == nil {
 		return false
 	}
-	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
+	// Skip only TRULY-local addresses that are never a real remote client.
+	// GH: private/LAN IPs (192.168/10/172.16) ARE allowlisted — the panel is
+	// commonly reached over a LAN/VPN, and (combined with the admin-only gate)
+	// the operator's own login IP should show up + be exempt. Note: this means
+	// CrowdSec will never ban an allowlisted LAN IP; bounded because only
+	// authenticated ADMIN logins reach here (#709).
+	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return false
 	}
 	return true
