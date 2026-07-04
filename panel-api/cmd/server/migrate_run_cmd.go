@@ -388,6 +388,10 @@ failed stage. Already-done stages are skipped.`,
 				hTarPath := filepath.Join("/var/lib/jabali-migrations", job.ID,
 					fmt.Sprintf("user.%s.tar.gz", job.SourceUser))
 				if h, herr := hestiacp.ParseHestiaTarball(hTarPath, extractDir); herr == nil {
+					// GH #327 diag: make an empty import self-explaining.
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"hestia import: parsed %d web domain(s), %d db dump(s); tar top-level=%v\n",
+						len(h.DomainDirs), len(h.MySQLDumps), h.TopLevel)
 					parsed = &cpanel.ParsedTarball{
 						ExtractDir: extractDir,
 						SourceUser: job.SourceUser,

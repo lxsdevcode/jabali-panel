@@ -42,6 +42,10 @@ type HestiaParsedTarball struct {
 	// writer via the Hestia adapter branch in migrate_run_cmd.go.
 	DomainDirs    map[string]string
 	Skipped       []string
+	// TopLevel (GH #327 diag) is the set of top-level path segments seen in the
+	// tar — used to explain an empty import (e.g. tar wraps everything under a
+	// <timestamp>/ or backup/ dir, so classifyHestia's web/mail/db keys miss).
+	TopLevel []string
 }
 
 func ParseHestiaTarball(tarballPath, extractDir string) (*HestiaParsedTarball, error) {
@@ -75,6 +79,7 @@ func ParseHestiaTarball(tarballPath, extractDir string) (*HestiaParsedTarball, e
 	}
 	tr := tar.NewReader(src)
 	out := &HestiaParsedTarball{ExtractDir: extractDir}
+	topSeen := map[string]bool{}
 
 	const maxEntrySize = 100 << 30
 
@@ -91,6 +96,9 @@ func ParseHestiaTarball(tarballPath, extractDir string) (*HestiaParsedTarball, e
 		if strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") || filepath.IsAbs(clean) {
 			out.Skipped = append(out.Skipped, "path_escape:"+hdr.Name)
 			continue
+		}
+		if seg := strings.SplitN(clean, string(filepath.Separator), 2)[0]; seg != "" && seg != "." {
+			topSeen[seg] = true
 		}
 		dest := filepath.Join(extractDir, clean)
 		switch hdr.Typeflag {
@@ -123,6 +131,9 @@ func ParseHestiaTarball(tarballPath, extractDir string) (*HestiaParsedTarball, e
 		default:
 			out.Skipped = append(out.Skipped, fmt.Sprintf("typeflag:%c:%s", hdr.Typeflag, clean))
 		}
+	}
+	for seg := range topSeen {
+		out.TopLevel = append(out.TopLevel, seg)
 	}
 	out.WebRoot = filepath.Join(extractDir, "web")
 	out.MailRoot = filepath.Join(extractDir, "mail")
