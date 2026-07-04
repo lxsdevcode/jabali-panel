@@ -189,6 +189,14 @@ func handleSSHLogLine(ctx context.Context, line string, dedup *loginDedup, log *
 		return
 	}
 	user, ip := m[1], m[2]
+	// GH #709: only the operator's root SSH is auto-allowlisted. A TENANT SSH
+	// login (their own OS username via jabali-ssh-shell) must NOT add a
+	// server-wide CrowdSec allowlist entry — a compromised tenant key would
+	// otherwise shield the attacker's IP. Mirrors the panel-side admin-only gate.
+	if user != "root" {
+		log.Info("login-allowlist: ssh login observed, skipped (non-root/tenant)", "ip", ip, "user", user)
+		return
+	}
 	if !loginWhitelistableIP(ip) {
 		// Observed but intentionally skipped (private/loopback). Logged at INFO
 		// (not Debug) so a live-verify on an RFC1918 test host can distinguish

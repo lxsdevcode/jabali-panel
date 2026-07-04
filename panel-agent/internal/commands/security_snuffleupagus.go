@@ -232,9 +232,15 @@ func snuffleupagusApplyHandler(ctx context.Context, raw json.RawMessage) (any, e
 	resp := snuffleupagusApplyResponse{
 		Sha256: hex.EncodeToString(sum[:]),
 	}
-	reload, _ := snuffleupagusReloadHandler(ctx, nil)
+	// GH #707: propagate the reload failure. The rules file is written, but if
+	// the FPM pools did not reload they are serving STALE rules — the apply must
+	// NOT report success, or the DB/UI claim a policy that is not live.
+	reload, reloadErr := snuffleupagusReloadHandler(ctx, nil)
 	if r, ok := reload.(snuffleupagusReloadResponse); ok {
 		resp.Pools = r.Pools
+	}
+	if reloadErr != nil {
+		return resp, reloadErr
 	}
 	return resp, nil
 }
