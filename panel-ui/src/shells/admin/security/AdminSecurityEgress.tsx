@@ -4,6 +4,7 @@
 //
 // Backed by panel-api/internal/api/user_egress.go.
 import {
+  App,
   Alert,
   Button,
   Card,
@@ -23,7 +24,7 @@ import { CheckOutlined, CloseOutlined } from "@icons";
 import { shortDateTime } from "../../../utils/datetime";
 import { RowActions } from "../../../components/RowActions";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../../../apiClient";
 import { Sparkline } from "../../../components/Sparkline";
@@ -201,6 +202,42 @@ const DropEventsDrawer = ({
       )).data,
     enabled: open,
   });
+  const qc = useQueryClient();
+  const { message } = App.useApp();
+  // GH #713 Phase 2: one-click "allow this destination" — fetch the policy,
+  // append to allowed_extra (preserving state), PUT it back.
+  const allow = useMutation({
+    mutationFn: async (ev: EgressDropEvent) => {
+      const cur = (
+        await apiClient.get<{ state: string; allowed_extra: unknown[] }>(`/admin/users/${userID}/egress`)
+      ).data;
+      const cidr = ev.dest.includes(":") ? `${ev.dest}/128` : `${ev.dest}/32`;
+      const extra = {
+        cidr,
+        port: ev.port || undefined,
+        protocol: (ev.proto || "tcp").toLowerCase(),
+        comment: "allowed from drop drill-down",
+      };
+      await apiClient.put(`/admin/users/${userID}/egress`, {
+        state: cur.state,
+        allowed_extra: [...(cur.allowed_extra ?? []), extra],
+      });
+    },
+    onSuccess: () => {
+      message.success("Destination allowed — the reconciler applies it shortly");
+      void qc.invalidateQueries({ queryKey: ["admin/users", userID, "egress/drop-events"] });
+    },
+    onError: (e) => message.error(String((e as Error).message)),
+  });
+  // GH #713 Phase 2: client-side filters (dest substring + protocol).
+  const [destFilter, setDestFilter] = useState("");
+  const [protoFilter, setProtoFilter] = useState<string | undefined>(undefined);
+  const events = (q.data?.events ?? []).filter(
+    (e) =>
+      (!destFilter || e.dest.includes(destFilter) || String(e.port).includes(destFilter)) &&
+      (!protoFilter || (e.proto || "").toUpperCase() === protoFilter),
+  );
+  const protos = Array.from(new Set((q.data?.events ?? []).map((e) => (e.proto || "?").toUpperCase())));
   return (
     <Drawer title="Blocked egress — recent drops" width={620} open={open} onClose={onClose}>
       <Alert
@@ -210,10 +247,27 @@ const DropEventsDrawer = ({
         message="Data source"
         description={q.data?.source ?? "nftables drop log (kernel ring buffer)."}
       />
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Input
+          allowClear
+          placeholder="Filter destination or port"
+          style={{ width: 240 }}
+          value={destFilter}
+          onChange={(e) => setDestFilter(e.target.value)}
+        />
+        <Select
+          allowClear
+          placeholder="Protocol"
+          style={{ width: 130 }}
+          value={protoFilter}
+          onChange={(v) => setProtoFilter(v)}
+          options={protos.map((p) => ({ label: p, value: p }))}
+        />
+      </Space>
       <Table<EgressDropEvent>
         rowKey={(r) => `${r.dest}:${r.port}:${r.proto}`}
         loading={q.isLoading}
-        dataSource={q.data?.events ?? []}
+        dataSource={events}
         size="small"
         pagination={false}
         scroll={{ x: "max-content" }}
@@ -224,6 +278,16 @@ const DropEventsDrawer = ({
           { title: "Proto", dataIndex: "proto", width: 80, render: (v: string) => <Tag>{v || "?"}</Tag> },
           { title: "Count", dataIndex: "count", width: 80 },
           { title: "Last seen", dataIndex: "last_seen", width: 180, render: (v: string) => v || "—" },
+          {
+            title: "",
+            key: "allow",
+            width: 90,
+            render: (_: unknown, r: EgressDropEvent) => (
+              <Button size="small" loading={allow.isPending} onClick={() => allow.mutate(r)}>
+                Allow
+              </Button>
+            ),
+          },
         ]}
       />
     </Drawer>
