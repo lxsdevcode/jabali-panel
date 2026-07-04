@@ -10,7 +10,7 @@
 // not be cached). Navigations are network-first with an offline fallback to the
 // cached shell; hashed static assets are stale-while-revalidate.
 
-const SHELL_CACHE = "jabali-shell-v1";
+const SHELL_CACHE = "jabali-shell-v2"; // v2: bulletproof asset fetch (blank-screen fix)
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -75,13 +75,29 @@ self.addEventListener("fetch", (event) => {
       (async () => {
         const cache = await caches.open(SHELL_CACHE);
         const cached = await cache.match(req);
-        const network = fetch(req)
-          .then((res) => {
-            if (res && res.ok) cache.put(req, res.clone());
-            return res;
-          })
-          .catch(() => cached);
-        return cached || network;
+        if (cached) {
+          // Serve the cached copy immediately; revalidate in the background,
+          // swallowing any error (a failed revalidate must never surface).
+          fetch(req)
+            .then((res) => {
+              if (res && res.ok) cache.put(req, res.clone());
+            })
+            .catch(() => {});
+          return cached;
+        }
+        // Not cached: go to network. CRITICAL (blank-screen fix): this MUST
+        // resolve to a Response. Returning undefined here — e.g. when the
+        // fetch rejects after a fresh deploy changed the asset hash — makes
+        // respondWith fail with "ServiceWorker encountered an unexpected error"
+        // and the SPA's main bundle never loads. Fall back to Response.error()
+        // (a normal network failure the browser can handle), never undefined.
+        try {
+          const res = await fetch(req);
+          if (res && res.ok) cache.put(req, res.clone());
+          return res;
+        } catch (_err) {
+          return Response.error();
+        }
       })(),
     );
   }
