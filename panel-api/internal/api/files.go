@@ -1138,6 +1138,9 @@ func (h *filesHandler) uploadChunk(c *gin.Context) {
 	// Final chunk: hand off to the agent to ingest the staging file
 	// into the user's homedir scope at the requested path/name.
 	destPath := filepath.Join(destDir, filename)
+	// GH #658: the chunked-upload finalize must record the mutation target too.
+	c.Set("audit_target", destPath+" (chunked upload)")
+	c.Set("audit_target_type", "file")
 	_, err = h.cfg.Agent.Call(c.Request.Context(), "files.ingest", filesIngestAgentParams{
 		UserID: userID, Username: username, TmpPath: tmpPath, DestPath: destPath,
 		Overwrite: c.Query("overwrite") == "true",

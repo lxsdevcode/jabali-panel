@@ -94,7 +94,35 @@ func archiveStagingBytesInUse() int64 {
 var (
 	archiveInFlightMu sync.Mutex
 	archiveInFlight   = map[string]int{}
+	// archiveReservedBytes (GH #652) tracks bytes RESERVED by in-flight archives
+	// (each reserves the per-archive max up-front). Guarded by archiveInFlightMu.
+	// Reservation is race-safe where a bare pre-check is not: two concurrent
+	// requests can't both pass, because each atomically adds its reservation to
+	// the on-disk total under the lock before any bytes are written.
+	archiveReservedBytes int64
 )
+
+// reserveArchiveBudget atomically reserves the per-archive max against the shared
+// staging budget (on-disk + already-reserved). Returns false if it would exceed.
+func reserveArchiveBudget() bool {
+	archiveInFlightMu.Lock()
+	defer archiveInFlightMu.Unlock()
+	if archiveStagingBytesInUse()+archiveReservedBytes+maxArchiveBytes > maxArchiveStagingBytes {
+		return false
+	}
+	archiveReservedBytes += maxArchiveBytes
+	return true
+}
+
+func releaseArchiveBudget() {
+	archiveInFlightMu.Lock()
+	if archiveReservedBytes >= maxArchiveBytes {
+		archiveReservedBytes -= maxArchiveBytes
+	} else {
+		archiveReservedBytes = 0
+	}
+	archiveInFlightMu.Unlock()
+}
 
 func acquireArchiveSlot(username string) bool {
 	archiveInFlightMu.Lock()
@@ -178,12 +206,15 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 	// staging area is still at budget (prevents many tenants' concurrent
 	// archives, or a pile of orphans, from filling /tmp).
 	reapStaleArchives()
-	if archiveStagingBytesInUse() >= maxArchiveStagingBytes {
+	// GH #652: reserve the shared budget atomically (race-safe: concurrent
+	// requests can't all pass a bare pre-check then collectively overflow /tmp).
+	if !reserveArchiveBudget() {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeUnavailable,
 			Message: "archive staging area is at capacity; retry shortly",
 		}
 	}
+	defer releaseArchiveBudget() // release the reservation once done (file is now on-disk-accounted)
 	out := filepath.Join("/tmp", fmt.Sprintf("jabali-archive-%s.tar.gz", hex.EncodeToString(rnd[:])))
 
 	f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
