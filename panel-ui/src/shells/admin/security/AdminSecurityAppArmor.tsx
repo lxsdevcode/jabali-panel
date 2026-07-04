@@ -3,7 +3,7 @@
 // flip behind a confirm modal. Recent denials feed (last 24h, capped
 // 50 rows) below the profile table — answers "what did AppArmor
 // actually drop?" without dropping to journalctl.
-import { Alert, Badge, Button, Card, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useState } from "react";
 
 import {
@@ -13,6 +13,13 @@ import {
   useSetAppArmorMode,
 } from "../../../hooks/useSecurityAppArmor";
 
+// GH #715: what each profile protects, for the detail drawer.
+const PROFILE_DESC: Record<string, string> = {
+  "jabali-panel": "Panel API daemon (jabali-panel) — the HTTP control plane; talks to MariaDB/agent over unix sockets.",
+  "jabali-bulwark": "Bulwark webmail fronting daemon (Node) — the untrusted-input boundary in front of Stalwart.",
+  "stalwart-mail": "Stalwart mail server — SMTP/IMAP/JMAP submission + transport.",
+  "jabali-fpm-app": "Per-user PHP-FPM tenant workloads (WordPress + other app PHP) via the fpm-exec wrapper.",
+};
 const MODE_TINT: Record<AppArmorProfile["mode"], "success" | "warning" | "error" | "default"> = {
   enforce: "success",
   complain: "warning",
@@ -24,6 +31,7 @@ export const AdminSecurityAppArmor = () => {
   const { data, isLoading, refetch } = useAppArmorStatus();
   const setMode = useSetAppArmorMode();
   const [pendingFlip, setPendingFlip] = useState<{ profile: string; nextMode: "enforce" | "complain" } | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -93,7 +101,15 @@ export const AdminSecurityAppArmor = () => {
         size="small"
         pagination={false}
         columns={[
-          { title: "Profile", dataIndex: "name", render: (v: string) => <code>{v}</code> },
+          {
+            title: "Profile",
+            dataIndex: "name",
+            render: (v: string) => (
+              <Button type="link" style={{ padding: 0 }} onClick={() => setDetail(v)}>
+                <code>{v}</code>
+              </Button>
+            ),
+          },
           {
             title: "Mode",
             dataIndex: "mode",
@@ -263,6 +279,63 @@ export const AdminSecurityAppArmor = () => {
           </Typography.Paragraph>
         )}
       </Modal>
+      <Drawer
+        title={detail ? `Profile: ${detail}` : ""}
+        width={640}
+        open={!!detail}
+        onClose={() => setDetail(null)}
+      >
+        {detail
+          ? (() => {
+              const prof = data.profiles.find((p) => p.name === detail);
+              const viols = (data.violations ?? []).filter((v) => v.profile === detail);
+              const dens = (data.denials ?? []).filter((d) => d.profile === detail);
+              const rows = [
+                ...viols.map((v) => ({ ...v, kind: "would-deny" })),
+                ...dens.map((d) => ({ ...d, kind: "denied" })),
+              ];
+              return (
+                <>
+                  <Descriptions column={1} size="small" bordered>
+                    <Descriptions.Item label="Protects">{PROFILE_DESC[detail] ?? "—"}</Descriptions.Item>
+                    <Descriptions.Item label="Mode">{prof?.mode ?? "?"}</Descriptions.Item>
+                    <Descriptions.Item label="Would-deny (complain)">{viols.length}</Descriptions.Item>
+                    <Descriptions.Item label="Denied (enforce blocks)">{dens.length}</Descriptions.Item>
+                  </Descriptions>
+                  {prof?.mode === "complain" ? (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type={viols.length === 0 ? "success" : "warning"}
+                      showIcon
+                      message={
+                        viols.length === 0
+                          ? "Ready to enforce — 0 would-deny events in the soak window."
+                          : `Not ready — ${viols.length} would-deny event(s); flipping to enforce now would BLOCK them. Resolve first.`
+                      }
+                    />
+                  ) : null}
+                  <Typography.Title level={5} style={{ marginTop: 16 }}>
+                    Recent events for this profile
+                  </Typography.Title>
+                  <Table
+                    size="small"
+                    pagination={false}
+                    scroll={{ x: "max-content" }}
+                    dataSource={rows}
+                    rowKey={(_, i) => String(i)}
+                    locale={{ emptyText: "No denials / would-denies logged for this profile" }}
+                    columns={[
+                      { title: "Kind", dataIndex: "kind", width: 110, render: (v: string) => <Tag color={v === "denied" ? "red" : "orange"}>{v}</Tag> },
+                      { title: "Operation", dataIndex: "operation", width: 120 },
+                      { title: "Path", dataIndex: "path", ellipsis: true, render: (v: string) => v || "—" },
+                      { title: "Comm", dataIndex: "comm", width: 130, render: (v: string) => v || "—" },
+                    ]}
+                  />
+                </>
+              );
+            })()
+          : null}
+      </Drawer>
     </Card>
   );
 };
