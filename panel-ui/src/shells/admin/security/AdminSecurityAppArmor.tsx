@@ -366,7 +366,10 @@ export const AdminSecurityAppArmor = () => {
                       { title: "Kind", dataIndex: "kind", width: 110, render: (v: string) => <Tag color={v === "denied" ? "red" : "orange"}>{v}</Tag> },
                       { title: "Operation", dataIndex: "operation", width: 120 },
                       { title: "Path", dataIndex: "path", ellipsis: true, render: (v: string) => v || "—" },
-                      { title: "Comm", dataIndex: "comm", width: 130, render: (v: string) => v || "—" },
+                      { title: "Comm", dataIndex: "comm", width: 120, render: (v: string) => v || "—" },
+                      { title: "Exe", dataIndex: "exe", ellipsis: true, render: (v: string) => v || "—" },
+                      { title: "PID", dataIndex: "pid", width: 80, render: (v: string) => v || "—" },
+                      { title: "fsuid", dataIndex: "fsuid", width: 70, render: (v: string) => v || "—" },
                     ]}
                   />
                 </>

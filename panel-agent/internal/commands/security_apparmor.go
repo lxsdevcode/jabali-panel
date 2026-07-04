@@ -76,6 +76,10 @@ type apparmorDenial struct {
 	RequestedMask string `json:"requested_mask,omitempty"`
 	DeniedMask    string `json:"denied_mask,omitempty"`
 	Comm          string `json:"comm,omitempty"`
+	// GH #715: richer denial fields for the profile drawer.
+	Exe   string `json:"exe,omitempty"`
+	PID   string `json:"pid,omitempty"`
+	FSUID string `json:"fsuid,omitempty"`
 }
 
 type apparmorStatusResponse struct {
@@ -266,6 +270,12 @@ func readApparmorEvents(ctx context.Context, status string) []apparmorDenial {
 				row.DeniedMask = val
 			case "comm":
 				row.Comm = val
+			case "exe":
+				row.Exe = val
+			case "pid":
+				row.PID = val
+			case "fsuid":
+				row.FSUID = val
 			}
 		}
 		// Skip rows without a profile — those are unrelated audit lines

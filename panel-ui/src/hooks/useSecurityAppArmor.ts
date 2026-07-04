@@ -17,6 +17,9 @@ export interface AppArmorDenial {
   requested_mask?: string;
   denied_mask?: string;
   comm?: string;
+  exe?: string;
+  pid?: string;
+  fsuid?: string;
 }
 
 export interface AppArmorStatus {
