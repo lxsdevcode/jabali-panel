@@ -12897,6 +12897,27 @@ EOF
 
   systemctl daemon-reload 2>/dev/null || true
 
+  # GH #690: purge jabali AppArmor profiles — unload from the kernel, delete the
+  # profile files + any disable symlinks, so an uninstall leaves no jabali MAC
+  # policy loaded or on disk.
+  if command -v apparmor_parser >/dev/null 2>&1; then
+    for _prof in /etc/apparmor.d/usr.local.bin.jabali-* \
+                 /etc/apparmor.d/usr.local.bin.stalwart-mail \
+                 /etc/apparmor.d/usr.local.libexec.jabali.* \
+                 /etc/apparmor.d/jabali-ssh-shell; do
+      [[ -e "$_prof" ]] || continue
+      apparmor_parser -R "$_prof" 2>/dev/null || true
+    done
+  fi
+  rm -f /etc/apparmor.d/usr.local.bin.jabali-* \
+        /etc/apparmor.d/usr.local.bin.stalwart-mail \
+        /etc/apparmor.d/usr.local.libexec.jabali.* \
+        /etc/apparmor.d/jabali-ssh-shell 2>/dev/null || true
+  rm -f /etc/apparmor.d/disable/usr.local.bin.jabali-* \
+        /etc/apparmor.d/disable/usr.local.bin.stalwart-mail \
+        /etc/apparmor.d/disable/usr.local.libexec.jabali.* 2>/dev/null || true
+  _ok "removed jabali AppArmor profiles"
+
   # Restart shared services so they re-read without jabali drop-ins.
   systemctl restart systemd-resolved 2>/dev/null || true
   systemctl restart pdns-recursor    2>/dev/null || true
