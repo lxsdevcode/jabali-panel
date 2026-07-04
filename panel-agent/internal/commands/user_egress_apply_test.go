@@ -19,7 +19,12 @@ func TestRenderEgressNFT_EmitsHeaderAndDefaults(t *testing.T) {
 	require.Contains(t, out, "set default_loopback4")
 	require.Contains(t, out, "127.0.0.0/8")
 	require.Contains(t, out, "set default_loopback6")
-	require.Contains(t, out, "fc00::/7")
+	require.Contains(t, out, "::1/128")
+	// GH #702: private ranges must NOT be blanket-accepted in the loopback set.
+	require.NotContains(t, out, "10.0.0.0/8")
+	require.NotContains(t, out, "172.16.0.0/12")
+	require.NotContains(t, out, "192.168.0.0/16")
+	require.NotContains(t, out, "fc00::/7")
 	require.Contains(t, out, "elements = { 53, 80, 443, 587, 465, 25, 993, 995, 143, 110 }")
 	require.Contains(t, out, "type cgroupsv2 : verdict")
 	require.Contains(t, out, "socket cgroupv2 level 3 vmap @cgroup_to_chain")

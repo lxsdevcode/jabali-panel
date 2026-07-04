@@ -27,6 +27,10 @@ type Opts struct {
 	Countries      []string
 	Inband         []string
 	AdminAllowlist bool
+	// PanelHost (GH #706) scopes the admin path-allowlist to the panel host so a
+	// tenant vhost serving /api/v1/, /phpmyadmin/, or /jabali-adminer/ paths cannot
+	// bypass AppSec. Empty = path-only (fallback; never breaks the operator tools).
+	PanelHost string
 	// WebmailHosts is the explicit allowlist of FQDNs exempted from
 	// CrowdSec AppSec. These are the dedicated webmail/autodiscover
 	// vhosts served exclusively by Bulwark + Stalwart, both of which
@@ -256,12 +260,18 @@ func Render(o Opts) string {
 		// unaffected (this only skips AppSec body inspection). Path-prefix,
 		// matching the /api/v1/ precedent — both are jabali-owned paths not
 		// routed on tenant vhosts.
-		b.WriteString(` - filter: req.URL.Path startsWith "/api/v1/" || req.URL.Path startsWith "/phpmyadmin/" || req.URL.Path startsWith "/jabali-adminer/"
-   apply:
-    - CancelEvent()
-    - CancelAlert()
-    - SetRemediation("allow")
-`)
+		adminFilter := `req.URL.Path startsWith "/api/v1/" || req.URL.Path startsWith "/phpmyadmin/" || req.URL.Path startsWith "/jabali-adminer/"`
+		if o.PanelHost != "" {
+			// GH #706: only skip AppSec for these paths ON THE PANEL HOST, so a
+			// tenant vhost serving the same paths is still WAF-inspected. req.Host
+			// equality (never a prefix — it is a client-controlled header).
+			adminFilter = "(" + adminFilter + `) && req.Host == "` + o.PanelHost + `"`
+		}
+		b.WriteString(" - filter: " + adminFilter + "\n")
+		b.WriteString("   apply:\n")
+		b.WriteString("    - CancelEvent()\n")
+		b.WriteString("    - CancelAlert()\n")
+		b.WriteString("    - SetRemediation(\"allow\")\n")
 	}
 	if len(hosts) > 0 {
 		parts := make([]string, len(hosts))

@@ -912,6 +912,7 @@ func renderAppSecGeoblockRule(mode string, countries []string) string {
 			"crowdsecurity/generic-*",
 		},
 		AdminAllowlist:     true,
+		PanelHost:          appsecPanelHost(),
 		WebmailHosts:       webmailHosts,
 	})
 }
@@ -1694,4 +1695,15 @@ func init() {
 	Default.Register("security.crowdsec.scenarios.list", csScenariosListHandler)
 	Default.Register("security.crowdsec.profiles.get", csProfilesGetHandler)
 	Default.Register("security.crowdsec.profiles.set", csProfilesSetHandler)
+}
+
+// appsecPanelHost returns the panel FQDN used to scope the AppSec admin
+// allowlist (GH #706). The panel hostname is the system hostname (M6.4); on
+// error we return "" so the renderer falls back to path-only (never breaks the
+// operator's phpMyAdmin/adminer access).
+func appsecPanelHost() string {
+	if h, err := os.Hostname(); err == nil {
+		return strings.TrimSpace(h)
+	}
+	return ""
 }

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -12,11 +13,12 @@ import (
 // single-sourced via internal/appseccfg).
 func TestRenderAppSecGeoblockRule_Golden(t *testing.T) {
 	off := renderAppSecGeoblockRule("off", nil)
+	host, _ := os.Hostname() // GH #706: admin allowlist is scoped to the panel host
 	for _, want := range []string{
 		"# jabali-mode: off\n",
 		"name: crowdsecurity/jabali-appsec\ndefault_remediation: ban\n",
 		"inband_rules:\n - crowdsecurity/base-config\n - crowdsecurity/vpatch-*\n - crowdsecurity/generic-*\n",
-		"on_match:\n - filter: req.URL.Path startsWith \"/api/v1/\" || req.URL.Path startsWith \"/phpmyadmin/\" || req.URL.Path startsWith \"/jabali-adminer/\"\n   apply:\n    - CancelEvent()\n    - CancelAlert()\n    - SetRemediation(\"allow\")\n",
+		"on_match:\n - filter: (req.URL.Path startsWith \"/api/v1/\" || req.URL.Path startsWith \"/phpmyadmin/\" || req.URL.Path startsWith \"/jabali-adminer/\") && req.Host == \"" + host + "\"\n   apply:\n    - CancelEvent()\n    - CancelAlert()\n    - SetRemediation(\"allow\")\n",
 	} {
 		if !strings.Contains(off, want) {
 			t.Fatalf("off mode missing %q\n%s", want, off)

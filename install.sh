@@ -9500,14 +9500,17 @@ JABRULE = p+i+n+u+g+s+m+c+sha256
 
 # EXCLUDE — paths jabali or its dependencies write to:
 !/etc/jabali
+# GH #704: egress nftables (/etc/nftables.d/jabali-*), audit rules
+# (/etc/audit/rules.d/jabali-*), and AppArmor profiles
+# (/etc/apparmor.d/usr.local.bin.jabali-*) are NO LONGER excluded — they are
+# static security-enforcement configs, so AIDE must flag tampering. Run
+# `aide --update` (jabali aide rebuild) after any legitimate change to them.
 !/etc/letsencrypt/live
 !/etc/letsencrypt/archive
 !/etc/letsencrypt/csr
 !/etc/letsencrypt/keys
 !/etc/letsencrypt/renewal
 !/etc/letsencrypt/accounts
-!/etc/nftables.d/jabali-.*
-!/etc/audit/rules.d/jabali-.*
 !/etc/nginx/sites-available/jabali-.*
 !/etc/nginx/sites-enabled/jabali-.*
 !/etc/php/.*/fpm/pool.d/jabali-.*
@@ -9517,7 +9520,6 @@ JABRULE = p+i+n+u+g+s+m+c+sha256
 !/etc/cron\.d/jabali-.*
 !/etc/aliases
 !/etc/aliases\.db
-!/etc/apparmor\.d/usr\.local\.bin\.jabali-.*
 !/etc/group-?
 !/etc/passwd-?
 !/etc/shadow-?

@@ -48,9 +48,17 @@ type EgressDefaults struct {
 // :993/:995/:143/:110 for apps that FETCH external mailboxes over IMAP/POP
 // (e.g. ITFlow's mail parser — GH #336).
 func CanonicalDefaults() EgressDefaults {
+	// GH #702: TRUE loopback ONLY. RFC1918 (10/8, 172.16/12, 192.168/16) and
+	// IPv6 ULA/link-local (fc00::/7, fe80::/10) were previously accepted here to
+	// ALL ports, which let a compromised tenant reach the host LAN + other
+	// tenants' docker networks + internal services on any port (lateral
+	// movement / SSRF). MariaDB/Redis are unix sockets (not egress-controlled),
+	// so loopback covers the LAMP DSN case; web/mail/dns to private hosts still
+	// works via the port allowlist below. Private-net access on other ports is
+	// now an explicit per-user allowlist entry, not a blanket default.
 	return EgressDefaults{
-		Loopback4: []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
-		Loopback6: []string{"::1/128", "fc00::/7", "fe80::/10"},
+		Loopback4: []string{"127.0.0.0/8"},
+		Loopback6: []string{"::1/128"},
 		PortsTCP:  []int{53, 80, 443, 587, 465, 25, 993, 995, 143, 110},
 		PortsUDP:  []int{53},
 	}
