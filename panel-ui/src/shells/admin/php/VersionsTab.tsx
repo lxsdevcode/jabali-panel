@@ -70,7 +70,6 @@ export const VersionsTab = () => {
       await apiClient.post(`/admin/php/versions/${version}/install`);
 
       const deadline = Date.now() + 20 * 60 * 1000; // generous: slow hosts
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         await new Promise((r) => setTimeout(r, 5000));
         if (Date.now() > deadline) {
