@@ -784,7 +784,7 @@ jabali crowdsec allowlists
 
 ##### `jabali crowdsec allowlists add`
 
-Add an allowlist entry
+Add an allowlist entry (use --me to allowlist your current SSH IP)
 
 ```
 jabali crowdsec allowlists add [flags]
@@ -792,8 +792,9 @@ jabali crowdsec allowlists add [flags]
 
 **Flags:**
 
+- `--me` — allowlist the IP you are SSH'd in from (roaming-admin recovery)
 - `--reason` — reason label (default `manual (cli)`)
-- `--value` — IP/CIDR to allowlist (required)
+- `--value` — IP/CIDR to allowlist (required unless --me)
 
 ##### `jabali crowdsec allowlists list`
 
@@ -3108,6 +3109,26 @@ jabali migrate reap-secrets [flags]
 
 - `--dry-run` — List would-delete paths without removing them
 - `--staging-max-age` — Reap /var/lib/jabali-migrations/<id>/ only when the job has been terminal at least this long (default 168h = 7d; pass 0 to wipe immediately) (default `168h0m0s`)
+
+#### `jabali migrate refresh`
+
+Force re-pull (refresh) an already-migrated account from a staged source
+
+```
+jabali migrate refresh [flags]
+```
+
+**Flags:**
+
+- `--db` — Dest DB name (identity unchanged)
+- `--docroot` — Dest docroot (overwritten)
+- `--domain` — Dest domain (for cache purge)
+- `--force` — Required — refresh overwrites a live account
+- `--new-url` — New site URL (search-replace)
+- `--old-url` — Old site URL (search-replace)
+- `--os-user` — Dest Linux user
+- `--source-docroot` — Staged source docroot
+- `--source-sql` — Staged source SQL dump
 
 #### `jabali migrate restore`
 
