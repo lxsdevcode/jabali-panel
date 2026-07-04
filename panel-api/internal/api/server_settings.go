@@ -773,6 +773,20 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 				"level": current.CrowdsecSensitivity,
 			}); err != nil {
 				h.cfg.Log.Error("agent crowdsec sensitivity apply failed", "err", err)
+				// GH #710: the apply did not reach the host. The agent apply is
+				// reload-committed (writes are atomic + the reload is the LAST
+				// step, so a failed apply never reloads and the host stays on the
+				// PREVIOUS level). Revert the persisted level so the DB/UI stop
+				// claiming a preset that is not live — closes the drift the QA
+				// flagged, without a schema change.
+				rctx, rcancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer rcancel()
+				if cur, gerr := h.cfg.Repo.Get(rctx); gerr == nil && cur != nil {
+					cur.CrowdsecSensitivity = prevCrowdsecSensitivity
+					if uerr := h.cfg.Repo.Upsert(rctx, cur); uerr != nil {
+						h.cfg.Log.Error("revert crowdsec sensitivity after failed apply", "err", uerr)
+					}
+				}
 			}
 		}()
 	}
