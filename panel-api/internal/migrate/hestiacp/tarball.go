@@ -1,6 +1,7 @@
 package hestiacp
 
 import (
+	"os/exec"
 	"archive/tar"
 	"compress/gzip"
 	"errors"
@@ -137,6 +138,12 @@ func ParseHestiaTarball(tarballPath, extractDir string) (*HestiaParsedTarball, e
 	}
 	out.WebRoot = filepath.Join(extractDir, "web")
 	out.MailRoot = filepath.Join(extractDir, "mail")
+	// GH #327: newer HestiaCP zstd-wraps everything — the per-domain site files
+	// live in web/<d>/domain_data.tar.zst, mailboxes in mail/<d>/accounts.tar.zst,
+	// and DB dumps are <name>.mysql.sql.zst. Decompress/extract them in place so
+	// the WebRoot scan + MySQLDumps below see real content (the old plain-tar
+	// layout still works — these globs simply match nothing on it).
+	hydrateHestiaZstd(extractDir, out)
 	// Post-extract scan: every immediate child of <WebRoot> names a
 	// hosted domain. Feeds DomainNames+DocRoots in the adapter so
 	// cpanel.ImportDomains can create panel rows + nginx vhosts
@@ -176,4 +183,65 @@ func classifyHestia(p *HestiaParsedTarball, path, abs string) {
 			p.CronFile = abs
 		}
 	}
+}
+
+// hydrateHestiaZstd (GH #327) decompresses the nested zstd archives a modern
+// HestiaCP v-backup-user tar contains, so the rest of the parser sees ordinary
+// files. zstd is installed by install.sh. Best-effort per archive: a failure is
+// recorded in Skipped, never fatal.
+func hydrateHestiaZstd(extractDir string, out *HestiaParsedTarball) {
+	// Web: web/<domain>/domain_data.tar.zst -> extract into web/<domain>/
+	// (yields public_html/, private/, logs/, ...).
+	webs, _ := filepath.Glob(filepath.Join(extractDir, "web", "*", "domain_data.tar.zst"))
+	for _, a := range webs {
+		if err := extractZstdTar(a, filepath.Dir(a)); err != nil {
+			out.Skipped = append(out.Skipped, "zstd-web:"+a+":"+err.Error())
+		}
+	}
+	// Mail: mail/<domain>/accounts.tar.zst -> extract into mail/<domain>/.
+	mails, _ := filepath.Glob(filepath.Join(extractDir, "mail", "*", "accounts.tar.zst"))
+	for _, a := range mails {
+		if err := extractZstdTar(a, filepath.Dir(a)); err != nil {
+			out.Skipped = append(out.Skipped, "zstd-mail:"+a+":"+err.Error())
+		}
+	}
+	// DB: db/<name>/*.sql.zst -> decompress to *.sql + record for import.
+	dbs, _ := filepath.Glob(filepath.Join(extractDir, "db", "*", "*.sql.zst"))
+	for _, a := range dbs {
+		dst := strings.TrimSuffix(a, ".zst") // <name>.mysql.sql
+		if err := decompressZstd(a, dst); err != nil {
+			out.Skipped = append(out.Skipped, "zstd-db:"+a+":"+err.Error())
+			continue
+		}
+		out.MySQLDumps = append(out.MySQLDumps, dst)
+	}
+}
+
+// extractZstdTar runs `zstd -dc <src> | tar -x -C <destDir>`. GNU tar strips
+// leading "/" and refuses ".." members, so extraction stays within destDir.
+func extractZstdTar(src, destDir string) error {
+	z := exec.Command("zstd", "-dc", src)
+	t := exec.Command("tar", "-x", "-C", destDir, "--no-same-owner")
+	pipe, err := z.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	t.Stdin = pipe
+	if err := t.Start(); err != nil {
+		return err
+	}
+	if err := z.Run(); err != nil {
+		_ = t.Wait()
+		return fmt.Errorf("zstd -dc %s: %w", src, err)
+	}
+	return t.Wait()
+}
+
+// decompressZstd runs `zstd -d -f -o <dst> <src>`.
+func decompressZstd(src, dst string) error {
+	out, err := exec.Command("zstd", "-d", "-f", "-o", dst, src).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zstd -d %s: %w (%s)", src, err, string(out))
+	}
+	return nil
 }
