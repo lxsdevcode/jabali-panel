@@ -273,6 +273,33 @@ export function AdminSecuritySnuffleupagus() {
               <Descriptions.Item label="PHP version">{detailIncident.php_version || "—"}</Descriptions.Item>
             </Descriptions>
             {(() => {
+              // GH #717: per-rule incident history from the loaded window — how
+              // often this rule fired, so you can judge false-positive vs real.
+              const hist = (incidents.data?.data ?? []).filter(
+                (i) => i.rule_name === detailIncident.rule_name,
+              );
+              return (
+                <>
+                  <Typography.Title level={5} style={{ marginTop: 16 }}>
+                    History for this rule ({hist.length} in the loaded window)
+                  </Typography.Title>
+                  <Table<SnuffleupagusIncident>
+                    size="small"
+                    pagination={false}
+                    scroll={{ x: "max-content" }}
+                    rowKey="id"
+                    dataSource={hist}
+                    columns={[
+                      { title: "When", dataIndex: "ts", width: 170, render: (t: string) => new Date(t).toLocaleString() },
+                      { title: "Action", dataIndex: "action", width: 110, render: (a: string) => <Tag color={ACTION_COLOR[a] ?? "default"}>{a}</Tag> },
+                      { title: "Domain", dataIndex: "domain", render: (v?: string) => v || "—" },
+                      { title: "URI", dataIndex: "request_uri", ellipsis: true, render: (v?: string) => v || "—" },
+                    ]}
+                  />
+                </>
+              );
+            })()}
+            {(() => {
               const r = (rules.data ?? []).find((x) => x.name === detailIncident.rule_name);
               return (
                 <Alert

@@ -3,7 +3,7 @@
 // flip behind a confirm modal. Recent denials feed (last 24h, capped
 // 50 rows) below the profile table — answers "what did AppArmor
 // actually drop?" without dropping to journalctl.
-import { Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Badge, Button, Card, Checkbox, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useState } from "react";
 
 import {
@@ -31,6 +31,7 @@ export const AdminSecurityAppArmor = () => {
   const { data, isLoading, refetch } = useAppArmorStatus();
   const setMode = useSetAppArmorMode();
   const [pendingFlip, setPendingFlip] = useState<{ profile: string; nextMode: "enforce" | "complain" } | null>(null);
+  const [ackRisk, setAckRisk] = useState(false); // GH #715: confirm gate for enforce-with-would-denies
   const [detail, setDetail] = useState<string | null>(null);
 
   if (isLoading) {
@@ -242,12 +243,22 @@ export const AdminSecurityAppArmor = () => {
 
       <Modal
         open={pendingFlip !== null}
+        afterOpenChange={(o) => { if (o) setAckRisk(false); }}
         title={
           pendingFlip
             ? `Flip ${pendingFlip.profile} → ${pendingFlip.nextMode}`
             : ""
         }
         okText="Flip"
+        okButtonProps={(() => {
+          // GH #715: block flip-to-enforce on a profile with unresolved
+          // would-deny events unless the operator explicitly acknowledges —
+          // enforcing a noisy profile can break the confined daemon.
+          const wd = pendingFlip && pendingFlip.nextMode === "enforce"
+            ? (data?.violations ?? []).filter((v) => v.profile === pendingFlip.profile).length
+            : 0;
+          return wd > 0 ? { danger: true, disabled: !ackRisk } : {};
+        })()}
         onCancel={() => setPendingFlip(null)}
         onOk={() => {
           if (!pendingFlip) return;
@@ -271,6 +282,21 @@ export const AdminSecurityAppArmor = () => {
             description="If the profile is missing a path the daemon needs, the daemon will fail. Review complain-mode AVC denials in journalctl -k before flipping."
             style={{ marginBottom: 12 }}
           />
+        ) : null}
+        {pendingFlip?.nextMode === "enforce" &&
+        (data?.violations ?? []).filter((v) => v.profile === pendingFlip.profile).length > 0 ? (
+          <>
+            <Alert
+              type="error"
+              showIcon
+              message={`${(data?.violations ?? []).filter((v) => v.profile === pendingFlip.profile).length} unresolved would-deny event(s) on this profile`}
+              description="This profile is NOT soak-ready. Enforcing now will BLOCK those operations and can break the daemon. Resolve or allowlist them first."
+              style={{ marginBottom: 12 }}
+            />
+            <Checkbox checked={ackRisk} onChange={(e) => setAckRisk(e.target.checked)}>
+              I understand this may break the daemon and want to enforce anyway.
+            </Checkbox>
+          </>
         ) : (
           <Typography.Paragraph>
             Complain mode logs would-deny events without enforcing.

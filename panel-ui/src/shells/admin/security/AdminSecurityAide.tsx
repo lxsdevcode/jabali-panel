@@ -1,6 +1,7 @@
 // AdminSecurityAide — admin Security tab "AIDE" sub-tab (M42, ADR-0087).
 // Read-only FIM status + manual recheck trigger.
-import { Alert, Badge, Button, Card, Popconfirm, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
+import { useState } from "react";
+import { Alert, Badge, Button, Card, Popconfirm, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
 
 import {
   type AideSampleRow,
@@ -36,6 +37,8 @@ function humanizeAge(seconds: number): string {
 
 export const AdminSecurityAide = () => {
   const { data, isLoading, refetch } = useAideStatus();
+  const [aideCatFilter, setAideCatFilter] = useState<string | undefined>(undefined);
+  const [aideTypeFilter, setAideTypeFilter] = useState<string | undefined>(undefined);
   const runCheck = useRunAideCheck();
   const runRebuild = useRunAideRebuild();
 
@@ -173,9 +176,31 @@ export const AdminSecurityAide = () => {
           ) : null}
         </div>
       )}
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Select
+          allowClear
+          placeholder="Category"
+          style={{ width: 180 }}
+          value={aideCatFilter}
+          onChange={setAideCatFilter}
+          options={Object.keys(data.categories ?? {}).map((c) => ({ label: c, value: c }))}
+        />
+        <Select
+          allowClear
+          placeholder="Change type"
+          style={{ width: 150 }}
+          value={aideTypeFilter}
+          onChange={setAideTypeFilter}
+          options={["added", "changed", "removed"].map((c) => ({ label: c, value: c }))}
+        />
+      </Space>
       <Table
         rowKey={(r, idx) => `${r.change_type}-${r.path}-${idx}`}
-        dataSource={data.sample}
+        dataSource={data.sample.filter(
+          (r) =>
+            (!aideCatFilter || r.category === aideCatFilter) &&
+            (!aideTypeFilter || r.change_type === aideTypeFilter),
+        )}
         size="small"
         tableLayout="fixed"
         scroll={{ x: "max-content" }}
