@@ -52,14 +52,11 @@ test.describe("admin migrations — DirectAdmin enabled (M35.3)", () => {
     // Open wizard.
     await page.getByRole("button", { name: "Wizard" }).click();
 
-    // The DA radio should NOT be disabled (M35.3 unblocks it). AntD
-    // Radio renders an <input type="radio"> per option — assert by
-    // value attribute on the input element.
-    const daRadio = page.locator('input[type="radio"][value="directadmin"]');
-    await expect(daRadio).toBeVisible({ timeout: 5_000 });
-    await expect(daRadio).toBeEnabled();
-
-    await daRadio.check();
+    // Source kind is picked via selectable Cards (wizard redesign), not radio
+    // inputs. Clicking the DirectAdmin card selects it (M35.3 unblocks it).
+    const daCard = page.getByText("DirectAdmin (single account)");
+    await expect(daCard).toBeVisible({ timeout: 5_000 });
+    await daCard.click();
 
     // Continue to next step → triggers POST /admin/migrations with
     // source_kind=directadmin + state=draft.
@@ -88,8 +85,9 @@ test.describe("admin migrations — DirectAdmin enabled (M35.3)", () => {
     await page.goto("/jabali-admin/migrations");
     await page.getByRole("button", { name: "Wizard" }).click();
 
-    const hestiaRadio = page.locator('input[type="radio"][value="hestiacp"]');
-    await expect(hestiaRadio).toBeVisible({ timeout: 5_000 });
-    await expect(hestiaRadio).toBeEnabled();
+    // Hestia is a selectable Card (M35.4 shipped — not disabled/dimmed).
+    const hestiaCard = page.getByText("HestiaCP (single account)");
+    await expect(hestiaCard).toBeVisible({ timeout: 5_000 });
+    await hestiaCard.click();
   });
 });
