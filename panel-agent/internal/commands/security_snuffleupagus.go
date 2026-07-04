@@ -12,6 +12,7 @@
 package commands
 
 import (
+	"strings"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -152,6 +153,7 @@ func snuffleupagusReloadHandler(ctx context.Context, _ json.RawMessage) (any, er
 	}
 	sort.Strings(units)
 
+	var failed []string
 	for _, unit := range units {
 		cmd := osexec.CommandContext(ctx, "systemctl", "reload-or-restart", unit)
 		rOut, err := cmd.CombinedOutput()
@@ -161,11 +163,19 @@ func snuffleupagusReloadHandler(ctx context.Context, _ json.RawMessage) (any, er
 				OK:     false,
 				Detail: fmt.Sprintf("%v: %s", err, string(rOut)),
 			})
+			failed = append(failed, unit)
 			continue
 		}
 		resp.Pools = append(resp.Pools, snuffleupagusPoolReloadResult{Unit: unit, OK: true})
 	}
 
+	// GH #707: a failed FPM reload means those pools keep serving with STALE
+	// Snuffleupagus rules (or PHP Defense effectively off) while the DB/UI would
+	// otherwise report the new policy as applied. Surface it as an error so the
+	// apply is not marked successful on a partial reload.
+	if len(failed) > 0 {
+		return resp, fmt.Errorf("%d of %d PHP-FPM pool reload(s) failed — PHP Defense may be stale on: %s", len(failed), len(units), strings.Join(failed, ", "))
+	}
 	return resp, nil
 }
 

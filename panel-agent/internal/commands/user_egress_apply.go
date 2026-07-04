@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"log/slog"
 	"net"
 	"context"
 	"crypto/sha256"
@@ -56,7 +57,9 @@ type userEgressApplyDefaults struct {
 type userEgressApplyResponse struct {
 	Applied        bool   `json:"applied"`
 	UsersEmitted   int    `json:"users_emitted"`
-	UsersSkipped   int    `json:"users_skipped"`
+	UsersSkipped   int      `json:"users_skipped"`
+	// GH #708: enforced users whose slice was missing -> egress NOT enforced.
+	UsersFailOpen  []string `json:"users_fail_open,omitempty"`
 	TableVersion   string `json:"table_version"`
 	NoChange       bool   `json:"no_change,omitempty"`
 	BytesWritten   int    `json:"bytes_written,omitempty"`
@@ -136,6 +139,14 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 	// Count emitted/skipped before render — same predicate as renderer.
 	usersEmitted := 0
 	usersSkipped := 0
+	// GH #708: an ENFORCED/learning user whose slice is missing gets skipped by
+	// the renderer and then falls through to the output chain's `policy accept`
+	// — i.e. their egress is NOT enforced (fail-open). We cannot emit an nft
+	// cgroup match for a non-existent slice, so we cannot fail-closed here; but
+	// we MUST NOT let it be silent. Collect them, report them in the response,
+	// and warn so the panel/operator re-creates the slice (or the reconciler
+	// retries) instead of the tenant silently escaping egress control.
+	var failOpen []string
 	for _, u := range users {
 		if u.State == "off" {
 			usersSkipped++
@@ -143,9 +154,14 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 		}
 		if !defaultSliceExists(SlicePathFor(u.Username)) {
 			usersSkipped++
+			failOpen = append(failOpen, u.Username)
 			continue
 		}
 		usersEmitted++
+	}
+	if len(failOpen) > 0 {
+		slog.WarnContext(ctx, "egress fail-open: enforced users skipped, slice missing on host",
+			"users", failOpen, "detail", "their traffic is NOT egress-controlled until the slice exists")
 	}
 
 	content := RenderEgressNFT(users, defs, defaultSliceExists)
@@ -155,8 +171,9 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 	// Idempotent write.
 	existing, _ := os.ReadFile(nftEgressFilePath)
 	resp := &userEgressApplyResponse{
-		UsersEmitted: usersEmitted,
-		UsersSkipped: usersSkipped,
+		UsersEmitted:  usersEmitted,
+		UsersSkipped:  usersSkipped,
+		UsersFailOpen: failOpen,
 		TableVersion: version,
 		BytesWritten: len(content),
 	}

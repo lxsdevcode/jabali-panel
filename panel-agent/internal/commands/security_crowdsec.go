@@ -739,7 +739,11 @@ func csHubInstallHandler(ctx context.Context, params json.RawMessage) (any, erro
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, csInternal(fmt.Sprintf("cscli %s install: %s", p.Type, strings.TrimSpace(string(out))), err)
 	}
-	_ = exec.CommandContext(ctx, "systemctl", "reload", "crowdsec").Run()
+	// GH #711: a failed reload means the newly-installed item is NOT live yet —
+	// don't report success, or the UI claims protection that isn't loaded.
+	if out, err := exec.CommandContext(ctx, "systemctl", "reload", "crowdsec").CombinedOutput(); err != nil {
+		return nil, csInternal(fmt.Sprintf("installed %s %s but crowdsec reload failed (item not live): %s", p.Type, p.Name, strings.TrimSpace(string(out))), err)
+	}
 	return map[string]any{"type": p.Type, "name": p.Name, "installed": true}, nil
 }
 
@@ -758,7 +762,10 @@ func csHubRemoveHandler(ctx context.Context, params json.RawMessage) (any, error
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, csInternal(fmt.Sprintf("cscli %s remove: %s", p.Type, strings.TrimSpace(string(out))), err)
 	}
-	_ = exec.CommandContext(ctx, "systemctl", "reload", "crowdsec").Run()
+	// GH #711: a failed reload means the removed item may STILL be loaded.
+	if out, err := exec.CommandContext(ctx, "systemctl", "reload", "crowdsec").CombinedOutput(); err != nil {
+		return nil, csInternal(fmt.Sprintf("removed %s %s but crowdsec reload failed (item may still be live): %s", p.Type, p.Name, strings.TrimSpace(string(out))), err)
+	}
 	return map[string]any{"type": p.Type, "name": p.Name, "installed": false}, nil
 }
 
