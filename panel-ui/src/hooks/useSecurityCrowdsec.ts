@@ -16,6 +16,9 @@ export type CrowdsecStatus = {
   machine_id?: string;
   last_heartbeat?: string;
   capi_reachable?: boolean;
+  config_valid?: boolean;
+  config_valid_detail?: string;
+  bouncer_count?: number;
 };
 
 export type CrowdsecDecision = {

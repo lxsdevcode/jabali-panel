@@ -76,6 +76,11 @@ type csStatusResponse struct {
 	MachineID     string `json:"machine_id,omitempty"`
 	LastHeartbeat string `json:"last_heartbeat,omitempty"`
 	CAPIReachable bool   `json:"capi_reachable"`
+	// GH #716: config validity (crowdsec -t) + active bouncer count for the
+	// health-cards overview.
+	ConfigValid       bool   `json:"config_valid"`
+	ConfigValidDetail string `json:"config_valid_detail,omitempty"`
+	BouncerCount      int    `json:"bouncer_count"`
 }
 
 func csStatusHandler(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -124,6 +129,23 @@ func csStatusHandler(ctx context.Context, _ json.RawMessage) (any, error) {
 			// systemd timestamps are operator-friendly, not parseable;
 			// pass through as-is and let the UI format.
 			resp.StartedAt = s
+		}
+	}
+	// GH #716: config validation via `crowdsec -t` (dry parse of the full config).
+	if out, err := exec.CommandContext(ctx, "crowdsec", "-t").CombinedOutput(); err == nil {
+		resp.ConfigValid = true
+	} else {
+		resp.ConfigValid = false
+		resp.ConfigValidDetail = strings.TrimSpace(string(out))
+		if len(resp.ConfigValidDetail) > 500 {
+			resp.ConfigValidDetail = resp.ConfigValidDetail[:500]
+		}
+	}
+	// GH #716: active bouncer count (cscli bouncers list -o json → array length).
+	if out, err := exec.CommandContext(ctx, "cscli", "bouncers", "list", "-o", "json").Output(); err == nil {
+		var arr []map[string]any
+		if json.Unmarshal(out, &arr) == nil {
+			resp.BouncerCount = len(arr)
 		}
 	}
 	// First locally-registered machine = this engine's LAPI ID +
