@@ -378,8 +378,15 @@ failed stage. Already-done stages are skipped.`,
 				// doesn't contain a top-level cron/ or
 				// .ssh/authorized_keys file the cpanel writers
 				// recognise — operator hand-imports those today).
+				// GH #327: the pull saves the Hestia backup as
+				// user.<user>.tar.gz (migrate_pull_cmd.go), same as the DA
+				// branch above — the import MUST use the same name or
+				// ParseHestiaTarball 404s, falls through to an empty tarball,
+				// and the job completes 'done' having imported only the user
+				// (no domains/DBs/mail). This was the 'created the user but
+				// nothing imported' bug.
 				hTarPath := filepath.Join("/var/lib/jabali-migrations", job.ID,
-					fmt.Sprintf("%s.tar.gz", job.SourceUser))
+					fmt.Sprintf("user.%s.tar.gz", job.SourceUser))
 				if h, herr := hestiacp.ParseHestiaTarball(hTarPath, extractDir); herr == nil {
 					parsed = &cpanel.ParsedTarball{
 						ExtractDir: extractDir,
@@ -408,6 +415,12 @@ failed stage. Already-done stages are skipped.`,
 								"/home", *user.Username, "web", name, "public_html")
 						}
 					}
+				} else if _, statErr := os.Stat(hTarPath); statErr == nil {
+					// GH #327: the tar is PRESENT but unparseable — do NOT
+					// silently fall through to an empty import + mark the job
+					// done. That is exactly the "created the user, imported
+					// nothing" failure. Fail loudly so the operator sees it.
+					return fmt.Errorf("hestia import: backup %s exists but ParseHestiaTarball failed: %w", hTarPath, herr)
 				} else {
 					parsed = &cpanel.ParsedTarball{
 						ExtractDir: extractDir,
