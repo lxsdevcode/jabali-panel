@@ -9,6 +9,7 @@ import {
   Drawer,
   Button,
   Card,
+  Input,
   Modal,
   Popconfirm,
   Radio,
@@ -52,6 +53,7 @@ export function AdminSecuritySnuffleupagus() {
   const incidents = useSnuffleupagusIncidents({ limit: 50 });
   const rules = useSnuffleupagusRules();
   const [detailIncident, setDetailIncident] = useState<SnuffleupagusIncident | null>(null); // GH #717
+  const [disabling, setDisabling] = useState<{ name: string; reason: string } | null>(null); // GH #717 disable-reason
   const setMode = useSetSnuffleupagusMode();
   const toggleRule = useToggleSnuffleupagusRule();
 
@@ -247,21 +249,30 @@ export function AdminSecuritySnuffleupagus() {
               title: "Enabled",
               dataIndex: "enabled",
               width: 110,
-              render: (_: boolean, row: SnuffleupagusRule) => (
-                <Popconfirm
-                  title={row.enabled ? "Disable this rule?" : "Re-enable this rule?"}
-                  onConfirm={() =>
-                    toggleRule
-                      .mutateAsync({ name: row.name, enabled: !row.enabled })
-                      .then(() => {
-                        void message.success(`Rule ${row.enabled ? "disabled" : "enabled"}`);
-                        void qc.invalidateQueries({ queryKey: ["security", "snuffleupagus"] });
-                      })
-                  }
-                >
-                  <Switch checked={row.enabled} loading={toggleRule.isPending} />
-                </Popconfirm>
-              ),
+              render: (_: boolean, row: SnuffleupagusRule) =>
+                row.enabled ? (
+                  // GH #717: disabling a rule requires a reason (audited via the
+                  // override table). Open a prompt instead of a bare confirm.
+                  <Switch
+                    checked
+                    loading={toggleRule.isPending}
+                    onChange={() => setDisabling({ name: row.name, reason: "" })}
+                  />
+                ) : (
+                  <Popconfirm
+                    title="Re-enable this rule?"
+                    onConfirm={() =>
+                      toggleRule
+                        .mutateAsync({ name: row.name, enabled: true })
+                        .then(() => {
+                          void message.success("Rule enabled");
+                          void qc.invalidateQueries({ queryKey: ["security", "snuffleupagus"] });
+                        })
+                    }
+                  >
+                    <Switch checked={false} loading={toggleRule.isPending} />
+                  </Popconfirm>
+                ),
             },
             { title: "Reason", dataIndex: "reason", ellipsis: true },
           ]}
@@ -331,6 +342,33 @@ export function AdminSecuritySnuffleupagus() {
           </>
         ) : null}
       </Drawer>
+      <Modal
+        title="Disable rule — reason required"
+        open={disabling !== null}
+        okText="Disable"
+        okButtonProps={{ danger: true, disabled: !disabling?.reason.trim() }}
+        onCancel={() => setDisabling(null)}
+        onOk={() => {
+          if (!disabling) return;
+          void toggleRule
+            .mutateAsync({ name: disabling.name, enabled: false, reason: disabling.reason.trim() })
+            .then(() => {
+              void message.success("Rule disabled");
+              void qc.invalidateQueries({ queryKey: ["security", "snuffleupagus"] });
+              setDisabling(null);
+            });
+        }}
+      >
+        <Typography.Paragraph type="secondary">
+          Disabling <code>{disabling?.name}</code>. A reason is recorded (who/when/why) for the audit trail.
+        </Typography.Paragraph>
+        <Input.TextArea
+          rows={2}
+          placeholder="e.g. false positive on tenant X's plugin update"
+          value={disabling?.reason ?? ""}
+          onChange={(e) => setDisabling((d) => (d ? { ...d, reason: e.target.value } : d))}
+        />
+      </Modal>
     </Card>
   );
 }
