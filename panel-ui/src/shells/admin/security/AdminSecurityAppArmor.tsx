@@ -3,7 +3,7 @@
 // flip behind a confirm modal. Recent denials feed (last 24h, capped
 // 50 rows) below the profile table — answers "what did AppArmor
 // actually drop?" without dropping to journalctl.
-import { Alert, Badge, Button, Card, Checkbox, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Badge, Button, Card, Checkbox, Descriptions, Drawer, Empty, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useState } from "react";
 
 import {
@@ -33,6 +33,7 @@ export const AdminSecurityAppArmor = () => {
   const [pendingFlip, setPendingFlip] = useState<{ profile: string; nextMode: "enforce" | "complain" } | null>(null);
   const [ackRisk, setAckRisk] = useState(false); // GH #715: confirm gate for enforce-with-would-denies
   const [detail, setDetail] = useState<string | null>(null);
+  const [modeFilter, setModeFilter] = useState<string | undefined>(undefined); // GH #715
 
   if (isLoading) {
     return (
@@ -93,9 +94,20 @@ export const AdminSecurityAppArmor = () => {
           }
         />
       )}
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Select
+          allowClear
+          size="small"
+          placeholder="Filter mode"
+          style={{ width: 160 }}
+          value={modeFilter}
+          onChange={setModeFilter}
+          options={["enforce", "complain", "missing", "kernel-gated"].map((m) => ({ label: m, value: m }))}
+        />
+      </Space>
       <Table
         rowKey="name"
-        dataSource={data.profiles}
+        dataSource={modeFilter ? data.profiles.filter((p) => p.mode === modeFilter) : data.profiles}
         loading={isLoading}
         tableLayout="fixed"
         scroll={{ x: "max-content" }}

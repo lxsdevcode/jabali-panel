@@ -229,6 +229,19 @@ export function AdminSecuritySnuffleupagus() {
           pagination={{ pageSize: 25 }}
           columns={[
             { title: "Rule", dataIndex: "name", ellipsis: true },
+            {
+              // GH #717: enforcement-readiness signal — how noisy this rule is,
+              // from the loaded incident window. Quiet -> safe; many -> review
+              // for false positives before enforcing / disabling.
+              title: "Readiness",
+              key: "readiness",
+              width: 130,
+              render: (_: unknown, row: SnuffleupagusRule) => {
+                const n = (incidents.data?.data ?? []).filter((i) => i.rule_name === row.name).length;
+                const color = n === 0 ? "green" : n < 5 ? "orange" : "red";
+                return <Tag color={color}>{n === 0 ? "quiet" : `${n} incident${n > 1 ? "s" : ""}`}</Tag>;
+              },
+            },
             { title: "Source", dataIndex: "source_file", width: 180 },
             {
               title: "Enabled",
