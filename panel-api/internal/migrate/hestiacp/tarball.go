@@ -1,6 +1,8 @@
 package hestiacp
 
 import (
+	"time"
+	"context"
 	"os/exec"
 	"archive/tar"
 	"compress/gzip"
@@ -217,31 +219,106 @@ func hydrateHestiaZstd(extractDir string, out *HestiaParsedTarball) {
 	}
 }
 
-// extractZstdTar runs `zstd -dc <src> | tar -x -C <destDir>`. GNU tar strips
-// leading "/" and refuses ".." members, so extraction stays within destDir.
+// Bounds for nested-archive hydration (untrusted-ish migration input): a ctx
+// timeout stops a hung/huge decompress, and a total-bytes cap stops a zstd bomb
+// (a tiny .zst that inflates to fill the disk). Per-entry cap mirrors the outer
+// parser's maxEntrySize.
+const (
+	hydrateTimeout    = 30 * time.Minute
+	hydrateMaxBytes   = int64(100) << 30 // 100 GiB total per nested archive
+	hydrateEntryBytes = int64(100) << 30
+)
+
+// extractZstdTar decompresses `src` (a .tar.zst) via the zstd CLI and extracts
+// the inner tar into destDir using Go's tar reader — with the SAME path-escape
+// guard, per-entry + total size caps, and a timeout as the outer parser, so a
+// malicious/corrupt nested archive cannot traverse out of destDir, fill the
+// disk, or hang the import.
 func extractZstdTar(src, destDir string) error {
-	z := exec.Command("zstd", "-dc", src)
-	t := exec.Command("tar", "-x", "-C", destDir, "--no-same-owner")
+	ctx, cancel := context.WithTimeout(context.Background(), hydrateTimeout)
+	defer cancel()
+	z := exec.CommandContext(ctx, "zstd", "-dc", src)
 	pipe, err := z.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	t.Stdin = pipe
-	if err := t.Start(); err != nil {
+	if err := z.Start(); err != nil {
 		return err
 	}
-	if err := z.Run(); err != nil {
-		_ = t.Wait()
-		return fmt.Errorf("zstd -dc %s: %w", src, err)
+	defer func() { _ = z.Wait() }()
+
+	tr := tar.NewReader(pipe)
+	var total int64
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("inner tar %s: %w", src, err)
+		}
+		clean := filepath.Clean(hdr.Name)
+		if strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") || filepath.IsAbs(clean) {
+			continue // path-escape guard
+		}
+		dest := filepath.Join(destDir, clean)
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			_ = os.MkdirAll(dest, 0o750)
+		case tar.TypeReg:
+			if hdr.Size > hydrateEntryBytes {
+				continue
+			}
+			total += hdr.Size
+			if total > hydrateMaxBytes {
+				return fmt.Errorf("nested archive %s exceeds %d bytes (possible decompression bomb)", src, hydrateMaxBytes)
+			}
+			if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+				return err
+			}
+			w, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+			if err != nil {
+				return err
+			}
+			// Bounded copy — never read more than the declared entry size.
+			_, cerr := io.CopyN(w, tr, hdr.Size)
+			_ = w.Close()
+			if cerr != nil && cerr != io.EOF {
+				return cerr
+			}
+		default:
+			// symlinks/hardlinks/devices skipped (defense-in-depth).
+		}
 	}
-	return t.Wait()
+	return nil
 }
 
-// decompressZstd runs `zstd -d -f -o <dst> <src>`.
+// decompressZstd decompresses `src` to `dst` (a plain SQL dump), bounded by a
+// timeout and a total-bytes cap to stop a decompression bomb.
 func decompressZstd(src, dst string) error {
-	out, err := exec.Command("zstd", "-d", "-f", "-o", dst, src).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), hydrateTimeout)
+	defer cancel()
+	z := exec.CommandContext(ctx, "zstd", "-dc", src)
+	pipe, err := z.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("zstd -d %s: %w (%s)", src, err, string(out))
+		return err
+	}
+	if err := z.Start(); err != nil {
+		return err
+	}
+	defer func() { _ = z.Wait() }()
+	w, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	// Cap the output; CopyN returns io.EOF when the source is smaller (normal).
+	n, cerr := io.CopyN(w, pipe, hydrateMaxBytes)
+	if cerr != nil && cerr != io.EOF {
+		return cerr
+	}
+	if n >= hydrateMaxBytes {
+		return fmt.Errorf("decompressed %s exceeds %d bytes (possible bomb)", src, hydrateMaxBytes)
 	}
 	return nil
 }
