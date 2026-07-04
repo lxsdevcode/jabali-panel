@@ -35,7 +35,8 @@ const (
 // downgrades to a no-op — it must never block or fail the request.
 //
 // Mounted after RequireKratosSession (needs claims). Sibling to
-// TrackAdminLogin; fires for ALL authenticated users, not just admins.
+// TrackAdminLogin; fires for ADMIN logins only (GH #709 — a tenant login must
+// not add a server-wide CrowdSec allowlist bypass).
 func WhitelistLoginIP(rdb *redis.Client, agentCli agent.AgentInterface, settings repository.ServerSettingsRepository, log *slog.Logger) gin.HandlerFunc {
 	if log == nil {
 		log = slog.Default()
@@ -47,6 +48,15 @@ func WhitelistLoginIP(rdb *redis.Client, agentCli agent.AgentInterface, settings
 		defer c.Next()
 		claims := ginctx.Claims(c)
 		if claims == nil || claims.UserID == "" {
+			return
+		}
+		// GH #709: auto-allowlist ADMIN logins ONLY. A tenant login used to add
+		// the source IP to the server-wide CrowdSec allowlist, so a compromised
+		// tenant account/SSH key could shield the attacker's public IP from ALL
+		// CrowdSec decisions for the TTL. Admins are trusted operators who must
+		// not be locked out; tenants are not, and a tenant tripping CrowdSec
+		// SHOULD still be actioned.
+		if !claims.IsAdmin {
 			return
 		}
 		cookie, err := c.Cookie("ory_kratos_session")
