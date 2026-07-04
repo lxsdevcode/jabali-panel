@@ -20,11 +20,13 @@ export default defineConfig({
   // (element resolved in DOM but wasn't "visible + enabled + editable"
   // within 15s under load). 30s is still under Playwright's own 30s
   // default; no structural risk, just breathing room.
-  timeout: 30_000,
-  expect: { timeout: 4_000 },
+  // CI runner is slower/contended — more headroom so timing-sensitive specs
+  // (which pass fast locally) do not flake. GH: stabilize CI E2E.
+  timeout: process.env.CI ? 60_000 : 30_000,
+  expect: { timeout: process.env.CI ? 15_000 : 4_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 3 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
 
