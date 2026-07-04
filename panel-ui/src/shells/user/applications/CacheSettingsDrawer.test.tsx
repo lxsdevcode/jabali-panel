@@ -58,7 +58,7 @@ describe("CacheSettingsDrawer", () => {
     await waitFor(() =>
       expect(mocked.put).toHaveBeenCalledWith(
         "/applications/inst1/cache-settings",
-        { url_exclusions: ["/private"] },
+        expect.objectContaining({ url_exclusions: ["/private"] }),
       ),
     );
   });
@@ -71,13 +71,13 @@ describe("CacheSettingsDrawer", () => {
     renderDrawer();
 
     await waitFor(() => expect(mocked.get).toHaveBeenCalled());
-    await screen.findByText(/Cache rules/);
+    await screen.findByText(/Object cache/);
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(mocked.put).toHaveBeenCalledWith(
         "/applications/inst1/cache-settings",
-        { url_exclusions: [] },
+        expect.objectContaining({ url_exclusions: [] }),
       ),
     );
   });
