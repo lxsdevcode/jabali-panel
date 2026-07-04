@@ -15,6 +15,12 @@
 # /run/jabali-bulwark.sock the M40 profile had). Similarly panel-api
 # lives at /run/jabali-panel/api.sock (not /run/jabali-panel.sock).
 
+# GH #705: pin AppArmor 3.0 ABI — predates unix-socket mediation, so
+# these broken-mediation kernels (Debian 13/Ubuntu 24.04) SKIP unix
+# mediation for this profile; attaching it can't EACCES a unix connect()
+# while still confining files/caps/network. Verified on .86.
+abi <abi/3.0>,
+
 #include <tunables/global>
 
 profile jabali-bulwark /usr/local/bin/jabali-bulwark {

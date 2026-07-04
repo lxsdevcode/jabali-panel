@@ -152,20 +152,29 @@ func mwApparmorStatusHandler(ctx context.Context, _ json.RawMessage) (any, error
 	// the daemon profiles (#687) — attaching them would EACCES DNS/DB. That is
 	// working-as-designed, not a failure, so report it as "kernel-gated" (neutral)
 	// and explain it, rather than an alarming red "missing".
-	unloadedMode := "missing"
-	if !apparmorUnixMediationAvailable() {
-		unloadedMode = "kernel-gated"
-		if resp.Reason == "" {
-			resp.Reason = "AppArmor unix-socket mediation is unavailable on this kernel " +
-				"(no /sys/kernel/security/apparmor/features/unix — Debian 13 / Ubuntu 24.04). " +
-				"Jabali profiles are intentionally NOT loaded here; attaching them would break " +
-				"DNS/DB over unix sockets. This is expected, not a failure."
-		}
-	}
+	// Profiles are now abi/3.0-pinned and LOADED in complain even on kernels
+	// without unix mediation (GH #705-followup), so a profile absent from
+	// aa-status on such a kernel is "kernel-gated" (couldn't load / was skipped
+	// by an older install) rather than a genuine "missing" failure. Only surface
+	// the explanatory reason if we actually have such a row.
+	unixOK := apparmorUnixMediationAvailable()
+	sawKernelGated := false
 	for name := range allowedProfiles {
 		if _, ok := raw.Profiles[name]; !ok {
-			resp.Profiles = append(resp.Profiles, apparmorProfile{Name: name, Mode: unloadedMode})
+			mode := "missing"
+			if !unixOK {
+				mode = "kernel-gated"
+				sawKernelGated = true
+			}
+			resp.Profiles = append(resp.Profiles, apparmorProfile{Name: name, Mode: mode})
 		}
+	}
+	if sawKernelGated && resp.Reason == "" {
+		resp.Reason = "AppArmor unix-socket mediation is unavailable on this kernel " +
+			"(no /sys/kernel/security/apparmor/features/unix — Debian 13 / Ubuntu 24.04). " +
+			"Jabali profiles are abi/3.0-pinned so they normally load in complain here; a " +
+			"profile still showing kernel-gated failed to load or predates this fix — run " +
+			"jabali update. This is not a security failure."
 	}
 
 	// Best-effort denial scrape. Failures (journalctl missing, no

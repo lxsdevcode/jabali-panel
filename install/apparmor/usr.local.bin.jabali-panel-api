@@ -13,6 +13,12 @@
 # from `network unix`. Without explicit unix rules the daemon fails to
 # dial MariaDB / Redis / agent sockets even in complain mode.
 
+# GH #705: pin AppArmor 3.0 ABI — predates unix-socket mediation, so
+# these broken-mediation kernels (Debian 13/Ubuntu 24.04) SKIP unix
+# mediation for this profile; attaching it can't EACCES a unix connect()
+# while still confining files/caps/network. Verified on .86.
+abi <abi/3.0>,
+
 #include <tunables/global>
 
 # Profile name only — no path attach. Auto-attach by binary path would

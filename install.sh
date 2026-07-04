@@ -9192,16 +9192,20 @@ install_apparmor() {
   # skipping when the kernel lacks the feature is the safe bias.
   local apparmor_unix_bug=0
   if [[ ! -d /sys/kernel/security/apparmor/features/unix ]]; then
-    apparmor_unix_bug=1
-    _warn "AppArmor kernel lacks unix/ socket-mediation feature"
-    _warn "  → host: $(uname -r) — no /sys/.../apparmor/features/unix"
-    _warn "  → ANY attached profile blocks unix-socket connect to unconfined peers"
-    _warn "  → skipping jabali daemon profiles; unloading any previously loaded"
-    _warn "  → tracked in ADR-0086; remove gate once kernel ships unix mediation"
-    touch /etc/jabali/.apparmor-unix-broken
-    # Durably disable (not just -R unload) so the system
-    # apparmor.service never re-loads them on the next reload/boot.
-    apparmor_durably_disable_jabali /etc/apparmor.d
+    # GH #705-followup: this kernel lacks working unix-socket mediation. The
+    # jabali daemon profiles are now pinned to `abi <abi/3.0>` (predates unix
+    # mediation), so the kernel SKIPS unix mediation for them — attaching them
+    # can no longer EACCES a unix-socket connect(). Verified on the AA-4.x
+    # broken-mediation kernel (6.12.x, no features/unix): panel DB access, the
+    # FPM listen socket, and a confined mysql connect all work. So instead of
+    # SKIPPING (the old bias, which left every daemon fully unconfined), we now
+    # LOAD the profiles in complain here; the soak surfaces any real denial in
+    # journalctl -k before an operator flips a profile to enforce.
+    _log "AppArmor kernel lacks unix/ mediation ($(uname -r)) — profiles are abi/3.0-pinned; loading in complain (unix mediation skipped by the ABI pin, files/caps/network still confined)"
+    # Undo any durable-disable a prior (skip-bias) install left behind, so the
+    # profiles actually load below.
+    apparmor_reenable_jabali /etc/apparmor.d
+    rm -f /etc/jabali/.apparmor-unix-broken
   else
     rm -f /etc/jabali/.apparmor-unix-broken
   fi
@@ -9255,6 +9259,17 @@ install_apparmor() {
 #
 # Arg $1: apparmor.d dir (default /etc/apparmor.d) — parameterised so
 # the contract is unit-testable in a sandbox without root.
+# apparmor_reenable_jabali removes the durable-disable symlinks a prior
+# skip-bias install created, so the profiles load again (GH #705-followup —
+# now safe via the abi/3.0 pin). Mirrors the globs in the disable fn below,
+# plus the libexec fpm-exec profile.
+apparmor_reenable_jabali() {
+  local aad="${1:-/etc/apparmor.d}"
+  rm -f "$aad"/disable/usr.local.bin.jabali-* \
+        "$aad"/disable/usr.local.bin.stalwart-mail \
+        "$aad"/disable/usr.local.libexec.jabali.* 2>/dev/null || true
+}
+
 apparmor_durably_disable_jabali() {
   local aad="${1:-/etc/apparmor.d}"
   local prof base

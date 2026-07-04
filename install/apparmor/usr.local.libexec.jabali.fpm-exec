@@ -17,6 +17,12 @@
 # fpm-exec path); per-tenant filesystem isolation stays with POSIX ownership.
 # The profile's job is defense-in-depth: deny a compromised tenant PHP access to
 # system secrets, other users' homes, and arbitrary execution.
+# GH #705: pin AppArmor 3.0 ABI — predates unix-socket mediation, so
+# these broken-mediation kernels (Debian 13/Ubuntu 24.04) SKIP unix
+# mediation for this profile; attaching it can't EACCES a unix connect()
+# while still confining files/caps/network. Verified on .86.
+abi <abi/3.0>,
+
 #include <tunables/global>
 
 profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec flags=(complain) {
