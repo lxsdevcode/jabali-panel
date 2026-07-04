@@ -7,6 +7,7 @@ import { apiClient } from "../apiClient";
 export interface AideSampleRow {
   path: string;
   change_type: "added" | "changed" | "removed";
+  category: string;
 }
 
 export interface AideStatus {
@@ -20,6 +21,7 @@ export interface AideStatus {
     removed: number;
   };
   sample: AideSampleRow[];
+  categories?: Record<string, number>;
 }
 
 // apiClient baseURL is already "/api/v1" — paths must be relative

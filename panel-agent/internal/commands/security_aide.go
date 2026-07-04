@@ -32,6 +32,9 @@ type aideStatusResponse struct {
 		Removed int `json:"removed"`
 	} `json:"summary"`
 	Sample []aideSampleRow `json:"sample"`
+	// Categories (GH #714) counts EVERY changed path by likely source, so the UI
+	// can triage a large delta (package churn vs security-control tampering).
+	Categories map[string]int `json:"categories,omitempty"`
 	// Reason: human-readable when Enabled=false (e.g. "AIDE not
 	// installed", "DB still building").
 	Reason string `json:"reason,omitempty"`
@@ -40,6 +43,43 @@ type aideStatusResponse struct {
 type aideSampleRow struct {
 	Path       string `json:"path"`
 	ChangeType string `json:"change_type"` // added|changed|removed
+	Category   string `json:"category"`    // GH #714
+}
+
+// classifyAidePath buckets a changed path by likely owner/source so a big AIDE
+// delta is triageable. "unknown" + "security-control" are the ones to scrutinize;
+// "system-package" is expected churn after apt/kernel updates.
+func classifyAidePath(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/etc/apparmor.d/") ||
+		strings.HasPrefix(path, "/etc/nftables") ||
+		strings.HasPrefix(path, "/etc/audit/") ||
+		strings.HasPrefix(path, "/etc/crowdsec/") ||
+		strings.HasPrefix(path, "/etc/snuffleupagus") ||
+		strings.HasPrefix(path, "/etc/aide"):
+		return "security-control"
+	case strings.HasPrefix(path, "/etc/jabali") ||
+		strings.HasPrefix(path, "/opt/jabali") ||
+		strings.HasPrefix(path, "/var/lib/jabali") ||
+		strings.HasPrefix(path, "/usr/local/bin/jabali") ||
+		strings.HasPrefix(path, "/usr/local/libexec/jabali"):
+		return "jabali-managed"
+	case strings.HasPrefix(path, "/etc/letsencrypt/") ||
+		strings.HasPrefix(path, "/etc/ssl/"):
+		return "certificate"
+	case strings.HasPrefix(path, "/usr/") || strings.HasPrefix(path, "/lib") ||
+		strings.HasPrefix(path, "/bin/") || strings.HasPrefix(path, "/sbin/") ||
+		strings.HasPrefix(path, "/etc/apt/") || strings.HasPrefix(path, "/var/lib/dpkg") ||
+		strings.HasPrefix(path, "/etc/alternatives/"):
+		return "system-package"
+	case strings.HasPrefix(path, "/var/log/") || strings.HasPrefix(path, "/var/cache/") ||
+		strings.HasPrefix(path, "/var/lib/") || strings.HasPrefix(path, "/run/"):
+		return "log-state"
+	case strings.HasPrefix(path, "/home/"):
+		return "user-content"
+	default:
+		return "unknown"
+	}
 }
 
 const (
@@ -158,6 +198,9 @@ func parseAideReport(text string, resp *aideStatusResponse) {
 		return "changed"
 	}
 
+	if resp.Categories == nil {
+		resp.Categories = map[string]int{}
+	}
 	pushSample := func(kind, path string) {
 		// Skip lines without an absolute path (defensive — AIDE always
 		// emits absolute paths for system-file rules but the report
@@ -165,16 +208,19 @@ func parseAideReport(text string, resp *aideStatusResponse) {
 		if !strings.HasPrefix(path, "/") {
 			return
 		}
-		resp.Sample = append(resp.Sample, aideSampleRow{
-			Path:       path,
-			ChangeType: kind,
-		})
+		resp.Categories[classifyAidePath(path)]++
+		if len(resp.Sample) < 300 {
+			resp.Sample = append(resp.Sample, aideSampleRow{
+				Path:       path,
+				ChangeType: kind,
+				Category:   classifyAidePath(path),
+			})
+		}
 	}
 
 	for scanner.Scan() {
-		if len(resp.Sample) >= 50 {
-			break
-		}
+		// GH #714: scan EVERY report row so Categories counts the full delta
+		// (the Sample list itself is still capped inside pushSample).
 		raw := scanner.Text()
 		line := strings.TrimRight(raw, " \t")
 		trimmed := strings.TrimLeft(line, " \t")

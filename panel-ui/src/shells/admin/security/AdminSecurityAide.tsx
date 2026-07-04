@@ -9,6 +9,15 @@ import {
   useRunAideRebuild,
 } from "../../../hooks/useSecurityAide";
 
+const CATEGORY_COLOR: Record<string, string> = {
+  "security-control": "red",
+  unknown: "volcano",
+  "jabali-managed": "blue",
+  certificate: "purple",
+  "system-package": "default",
+  "log-state": "default",
+  "user-content": "green",
+};
 const CHANGE_COLOR: Record<AideSampleRow["change_type"], string> = {
   added: "green",
   changed: "orange",
@@ -141,6 +150,29 @@ export const AdminSecurityAide = () => {
         />
       )}
 
+      {data.categories && Object.keys(data.categories).length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Text strong>Changes by source (GH #714): </Typography.Text>
+          <Space wrap style={{ marginTop: 8 }}>
+            {Object.entries(data.categories)
+              .sort((a, b) => b[1] - a[1])
+              .map(([cat, n]) => (
+                <Tag key={cat} color={CATEGORY_COLOR[cat] ?? "default"}>
+                  {cat}: {n}
+                </Tag>
+              ))}
+          </Space>
+          {(data.categories["unknown"] || data.categories["security-control"]) ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginTop: 12 }}
+              message="Prioritize these"
+              description="`security-control` and `unknown/unowned` changes deserve scrutiny before re-baselining — the rest is usually package/kernel churn."
+            />
+          ) : null}
+        </div>
+      )}
       <Table
         rowKey={(r, idx) => `${r.change_type}-${r.path}-${idx}`}
         dataSource={data.sample}
@@ -156,6 +188,12 @@ export const AdminSecurityAide = () => {
             render: (v: AideSampleRow["change_type"]) => (
               <Tag color={CHANGE_COLOR[v]}>{v}</Tag>
             ),
+          },
+          {
+            title: "Category",
+            dataIndex: "category",
+            width: 150,
+            render: (v: string) => <Tag color={CATEGORY_COLOR[v] ?? "default"}>{v || "?"}</Tag>,
           },
           {
             title: "Path",
