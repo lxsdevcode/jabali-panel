@@ -63,6 +63,22 @@ const maxArchivesPerUser = 2
 // maxArchiveBytes; this is the shared-staging ceiling on top of that.
 const maxArchiveStagingBytes = int64(6 * 1024 * 1024 * 1024)
 
+// reapStaleArchives (GH #652) removes orphaned scratch tarballs left by a
+// crashed / disconnected / timed-out request. The archive op is bounded to 5m
+// (GH #675), so anything older than 15m is definitely abandoned — deleting it
+// frees the shared budget so live requests aren't starved by dead files.
+func reapStaleArchives() {
+	matches, _ := filepath.Glob("/tmp/jabali-archive-*.tar.gz")
+	cutoff := 15 * time.Minute
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil {
+			if time.Since(fi.ModTime()) > cutoff {
+				_ = os.Remove(m)
+			}
+		}
+	}
+}
+
 // archiveStagingBytesInUse sums the current jabali-archive-* scratch files.
 func archiveStagingBytesInUse() int64 {
 	matches, _ := filepath.Glob("/tmp/jabali-archive-*.tar.gz")
@@ -158,8 +174,10 @@ func filesArchiveHandler(ctx context.Context, params json.RawMessage) (any, erro
 			Message: fmt.Sprintf("rand: %v", err),
 		}
 	}
-	// GH #652: reject if the shared archive staging area is already at budget —
-	// prevents many tenants' concurrent archives from filling /tmp.
+	// GH #652: reap abandoned scratch tarballs first, then reject if the shared
+	// staging area is still at budget (prevents many tenants' concurrent
+	// archives, or a pile of orphans, from filling /tmp).
+	reapStaleArchives()
 	if archiveStagingBytesInUse() >= maxArchiveStagingBytes {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeUnavailable,

@@ -39,15 +39,28 @@ class Jabali_Cache_CLI {
 		$c   = new Jabali_Cache_Client( $cfg );
 		$ok  = $c->connect();
 
+		// GH #602: report the RUNTIME state. When the Jabali panel manages this
+		// site (JABALI_CACHE_* constants in wp-config.php), the drop-ins read
+		// those constants, NOT the plugin options — so status must too, or it
+		// lies. Fall back to the option only on a non-panel-managed install.
+		$managed = defined( 'JABALI_CACHE_SOCKET' ) || defined( 'JABALI_CACHE_MAXTTL' ) || defined( 'JABALI_CACHE_DISABLED' );
+		$enabled = $managed
+			? ! ( defined( 'JABALI_CACHE_DISABLED' ) && JABALI_CACHE_DISABLED )
+			: (bool) $s['enabled'];
+		$page = $managed
+			? ( defined( 'JABALI_CACHE_PAGE_CACHE' ) && JABALI_CACHE_PAGE_CACHE )
+			: (bool) $s['page_cache'];
+
 		$rows = array(
-			array( 'field' => 'enabled', 'value' => $s['enabled'] ? 'yes' : 'no' ),
+			array( 'field' => 'managed_by', 'value' => $managed ? 'jabali panel (wp-config constants)' : 'plugin options' ),
+			array( 'field' => 'enabled', 'value' => $enabled ? 'yes' : 'no' ),
 			array( 'field' => 'connected', 'value' => $ok ? 'yes' : 'no' ),
 			array( 'field' => 'driver', 'value' => $ok ? $c->driver() : '-' ),
 			array( 'field' => 'target', 'value' => ( 'unix' === $cfg['scheme'] ? $cfg['socket'] : $cfg['host'] . ':' . $cfg['port'] ) ),
 			array( 'field' => 'database', 'value' => (string) $cfg['database'] ),
 			array( 'field' => 'prefix', 'value' => $cfg['prefix'] ),
 			array( 'field' => 'keys', 'value' => $ok ? (string) $c->count_keys( $cfg['prefix'] ) : '-' ),
-			array( 'field' => 'page_cache', 'value' => $s['page_cache'] ? 'on' : 'off' ),
+			array( 'field' => 'page_cache', 'value' => $page ? 'on' : 'off' ),
 		);
 		if ( ! $ok ) {
 			$rows[] = array( 'field' => 'error', 'value' => $c->last_error() );
@@ -62,9 +75,13 @@ class Jabali_Cache_CLI {
 	 * @when after_wp_load
 	 */
 	public function enable() {
-		$s            = Jabali_Cache_Settings::get();
-		$s['enabled'] = true;
-		Jabali_Cache_Settings::save( $s );
+		// GH #602: on a panel-managed site the option is inert (drop-ins read
+		// constants), so don't persist a misleading value — just warn.
+		if ( ! ( defined( 'JABALI_CACHE_SOCKET' ) || defined( 'JABALI_CACHE_MAXTTL' ) || defined( 'JABALI_CACHE_DISABLED' ) ) ) {
+			$s            = Jabali_Cache_Settings::get();
+			$s['enabled'] = true;
+			Jabali_Cache_Settings::save( $s );
+		}
 		$this->ensure_dropins();
 		\WP_CLI::success( 'Object-cache drop-ins installed/repaired.' );
 		// GH #602: on/off + connection are constant-driven (panel-managed), not
@@ -78,9 +95,11 @@ class Jabali_Cache_CLI {
 	 * @when after_wp_load
 	 */
 	public function disable() {
-		$s            = Jabali_Cache_Settings::get();
-		$s['enabled'] = false;
-		Jabali_Cache_Settings::save( $s );
+		if ( ! ( defined( 'JABALI_CACHE_SOCKET' ) || defined( 'JABALI_CACHE_MAXTTL' ) || defined( 'JABALI_CACHE_DISABLED' ) ) ) {
+			$s            = Jabali_Cache_Settings::get();
+			$s['enabled'] = false;
+			Jabali_Cache_Settings::save( $s );
+		}
 		if ( function_exists( 'wp_cache_flush' ) ) {
 			wp_cache_flush();
 		}

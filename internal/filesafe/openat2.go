@@ -464,7 +464,11 @@ func (s *Scope) CopyTreeInScope(ctx context.Context, srcPath, dstPath string, ui
 		if err := unix.Symlinkat(target, int(dstParent.Fd()), dstLeaf); err != nil {
 			return 0, err
 		}
-		_ = unix.Fchownat(int(dstParent.Fd()), dstLeaf, uid, gid, unix.AT_SYMLINK_NOFOLLOW)
+		// GH #662: chown the symlink itself fatal too — every root-created object
+		// in a tenant tree must be owned by the tenant or the copy fails.
+		if chErr := unix.Fchownat(int(dstParent.Fd()), dstLeaf, uid, gid, unix.AT_SYMLINK_NOFOLLOW); chErr != nil {
+			return 0, fmt.Errorf("chown copied symlink %q: %w", dstLeaf, chErr)
+		}
 		return 0, nil
 
 	case srcInfo.IsDir:
@@ -560,7 +564,9 @@ func copyEntryAt(ctx context.Context, srcFd, dstFd int, name string, li LeafInfo
 		if err := unix.Symlinkat(target, dstFd, name); err != nil {
 			return 0, err
 		}
-		_ = unix.Fchownat(dstFd, name, uid, gid, unix.AT_SYMLINK_NOFOLLOW)
+		if chErr := unix.Fchownat(dstFd, name, uid, gid, unix.AT_SYMLINK_NOFOLLOW); chErr != nil { // GH #662
+			return 0, fmt.Errorf("chown copied symlink %q: %w", name, chErr)
+		}
 		return 0, nil
 	case li.IsDir:
 		if err := unix.Mkdirat(dstFd, name, uint32(li.Mode.Perm())); err != nil {
