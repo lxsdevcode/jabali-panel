@@ -4793,14 +4793,25 @@ RuntimeDirectory=jabali-panel
 # pinned by the panel-api listener helper after net.Listen() returns.
 RuntimeDirectoryMode=0750
 EnvironmentFile=$ENV_FILE
-# GH #705 REVERTED (panel 502 on mx): confining the daemon via aa-exec broke it
-# — the jabali-panel profile is INCOMPLETE (blocks the unix connect to
-# /run/mysqld/mysqld.sock, and likely redis/kratos/agent/pdns sockets too), so a
-# confined serve crash-loops on the DB ping at startup. The profile was never
-# validated against the panel's real socket set (the daemon has always run
-# unconfined). Daemon confinement is deferred until the profile is completed +
-# soaked in complain. Back to a plain, unconfined serve — which works.
-ExecStart=$BIN_PATH serve
+# GH #705 re-applied after the #730 soak: confine the DAEMON under the
+# jabali-panel AppArmor profile via aa-exec. The original #705 502 was a
+# disconnected-path denial — the unit runs ProtectSystem=strict +
+# ReadWritePaths=/run/mysqld, so systemd bind-mounts the socket dir into a
+# private mount namespace and AppArmor sees /run/mysqld/mysqld.sock as a
+# "disconnected path" and denies connect() (a file-class name-lookup failure
+# complain mode can't downgrade → crash-loop). Fixed by
+# flags=(attach_disconnected) in the profile; the socket + external-tool rules
+# were completed via a live complain soak on mx (2026-07-05) and validated in
+# enforce (attr=jabali-panel(enforce), DB OK, 0 denials). The profile is
+# name-only so direct CLI (jabali update / repair / apparmor flip-mature, run by
+# the operator as root) stays UNCONFINED — only this serve process picks it up.
+# The wrapper PROBES `aa-exec -p jabali-panel -- true` (needs the /{usr,}/bin/true
+# rix rule) and falls back to a plain exec when the profile isn't loaded or
+# applicable, so a skip-bias kernel, a container, or a missing aa-exec can never
+# stop the daemon from starting. Mode follows the loaded profile: install_apparmor
+# sets COMPLAIN on first install; the operator flips enforce via
+# `jabali apparmor flip-mature` after their own soak window.
+ExecStart=/bin/sh -c 'if command -v aa-exec >/dev/null 2>&1 && aa-exec -p jabali-panel -- true 2>/dev/null; then exec aa-exec -p jabali-panel -- $BIN_PATH serve; else exec $BIN_PATH serve; fi'
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=10
