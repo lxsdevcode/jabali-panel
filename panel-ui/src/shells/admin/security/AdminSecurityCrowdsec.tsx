@@ -11,7 +11,6 @@
 import {
   Alert,
   Button,
-  Badge,
   Card,
   Col,
   Descriptions,
@@ -202,7 +201,6 @@ export const AdminSecurityCrowdsec = () => {
 
   const overviewPanel = (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <HealthCard />
       <RecentChangesCard />
       <EngineIdentityCard />
       <RemediationComponentsCard />
@@ -1661,34 +1659,6 @@ const RecentChangesCard = () => {
 };
 
 // GH #716: at-a-glance health cards — pass/fail per enforcement layer.
-const HealthCard = () => {
-  const status = useCrowdsecStatus();
-  const d = status.data;
-  const item = (ok: boolean | undefined, label: string, extra?: string) => (
-    <Badge status={ok ? "success" : "error"} text={extra ? `${label} (${extra})` : label} />
-  );
-  return (
-    <Card size="small" title="Health" loading={status.isLoading}>
-      <Space direction="vertical" size={4}>
-        {item(d?.running, "Engine running")}
-        {item(d?.lapi_reachable, "LAPI reachable")}
-        {item(d?.capi_reachable, "CAPI (central) reachable")}
-        {item(d?.config_valid, "Config valid (crowdsec -t)")}
-        {item((d?.bouncer_count ?? 0) > 0, "Bouncers registered", String(d?.bouncer_count ?? 0))}
-      </Space>
-      {d && d.config_valid === false && d.config_valid_detail ? (
-        <Alert
-          type="error"
-          showIcon
-          style={{ marginTop: 8 }}
-          message="Config validation failed"
-          description={<pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{d.config_valid_detail}</pre>}
-        />
-      ) : null}
-    </Card>
-  );
-};
-
 const EngineIdentityCard = () => {
   const status = useCrowdsecStatus();
   const metrics = useCrowdsecMetrics();
@@ -1728,9 +1698,29 @@ const EngineIdentityCard = () => {
               <Tag color={status.data?.capi_reachable ? "green" : "default"}>
                 CAPI {status.data?.capi_reachable ? "ok" : "offline"}
               </Tag>
+              <Tag color={status.data?.config_valid ? "green" : "red"}>
+                config {status.data?.config_valid ? "valid" : "invalid"}
+              </Tag>
+              <Tag color={(status.data?.bouncer_count ?? 0) > 0 ? "green" : "orange"}>
+                {status.data?.bouncer_count ?? 0} bouncer
+                {(status.data?.bouncer_count ?? 0) === 1 ? "" : "s"}
+              </Tag>
             </Space>
           </div>
         </Flex>
+
+        {status.data && status.data.config_valid === false && status.data.config_valid_detail ? (
+          <Alert
+            type="error"
+            showIcon
+            message="Config validation failed (crowdsec -t)"
+            description={
+              <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+                {status.data.config_valid_detail}
+              </pre>
+            }
+          />
+        ) : null}
 
         <Row gutter={[16, 8]}>
           <Col xs={24} md={12} lg={8}>
