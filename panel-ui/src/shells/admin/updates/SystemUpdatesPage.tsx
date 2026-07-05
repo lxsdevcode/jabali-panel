@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   Col,
   Empty,
   Row,
@@ -504,45 +505,64 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
         </Button>
       </Space>
 
-      {behind > 0 && pending.length > 0 ? (
-        <div style={{ marginTop: 16 }}>
-          <Text strong style={{ fontSize: 12 }}>
-            Included in this update ({behind})
-          </Text>
-          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-            {pending.map((c) => (
-              <li key={c.sha} style={{ marginBottom: 4 }}>
-                <Text>{c.subject}</Text>{" "}
-                <Text type="secondary" code style={{ fontSize: 11 }}>{c.sha}</Text>{" "}
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {c.date ? dayjs(c.date).format("MMM D") : ""}
-                </Text>
-              </li>
-            ))}
-          </ul>
-          {behind > pending.length ? (
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              + {behind - pending.length} more…
-            </Text>
-          ) : null}
-        </div>
-      ) : null}
-
-      {commits.length > 0 ? (
-        <div style={{ marginTop: 16 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>Recent changes</Text>
-          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-            {commits.map((c) => (
-              <li key={c.sha} style={{ marginBottom: 4 }}>
-                <Text>{c.subject}</Text>{" "}
-                <Text type="secondary" code style={{ fontSize: 11 }}>{c.sha}</Text>{" "}
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {c.date ? dayjs(c.date).format("MMM D") : ""}
-                </Text>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {(behind > 0 && pending.length > 0) || commits.length > 0 ? (
+        <Collapse
+          ghost
+          size="small"
+          style={{ marginTop: 8 }}
+          defaultActiveKey={behind > 0 && pending.length > 0 ? ["included"] : []}
+          items={[
+            ...(behind > 0 && pending.length > 0
+              ? [
+                  {
+                    key: "included",
+                    label: `Included in this update (${behind})`,
+                    children: (
+                      <>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {pending.map((c) => (
+                            <li key={c.sha} style={{ marginBottom: 4 }}>
+                              <Text>{c.subject}</Text>{" "}
+                              <Text type="secondary" code style={{ fontSize: 11 }}>{c.sha}</Text>{" "}
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                {c.date ? dayjs(c.date).format("MMM D") : ""}
+                              </Text>
+                            </li>
+                          ))}
+                        </ul>
+                        {behind > pending.length ? (
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            + {behind - pending.length} more…
+                          </Text>
+                        ) : null}
+                      </>
+                    ),
+                  },
+                ]
+              : []),
+            ...(commits.length > 0
+              ? [
+                  {
+                    key: "recent",
+                    label: "Recent changes",
+                    children: (
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {commits.map((c) => (
+                          <li key={c.sha} style={{ marginBottom: 4 }}>
+                            <Text>{c.subject}</Text>{" "}
+                            <Text type="secondary" code style={{ fontSize: 11 }}>{c.sha}</Text>{" "}
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              {c.date ? dayjs(c.date).format("MMM D") : ""}
+                            </Text>
+                          </li>
+                        ))}
+                      </ul>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ) : null}
     </Card>
   );
@@ -643,7 +663,30 @@ function SystemPackagesCard({ check }: { check: ReturnType<typeof useAptCheck> }
             ]}
           />
         </Space>
-      ) : null}
+      ) : check.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 8 }}
+          message="Couldn't check system packages"
+          description={
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={check.isPending}
+              onClick={() => check.mutate()}
+            >
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="Run a check to list available package updates"
+          style={{ marginTop: 8 }}
+        />
+      )}
 
       {running ? (
         <Alert
