@@ -1,5 +1,6 @@
 // filesApi.ts — typed wrappers around the /api/v1/files endpoints.
 import { apiClient } from "../../../apiClient";
+import { getActAs } from "../../../impersonation";
 
 export type FileEntry = {
   name: string;
@@ -52,7 +53,14 @@ export async function filesPreview(path: string): Promise<FilePreviewResponse> {
 }
 
 export function filesDownloadURL(path: string): string {
-  return `/api/v1/files/download?path=${encodeURIComponent(path)}`;
+  // window.open() and <img src> can't set the X-Jabali-Act-As header the
+  // apiClient interceptor injects, so an admin impersonating a tenant would
+  // otherwise hit /files/download as themselves and get not_in_scope. The
+  // backend honors ?act_as on GET (ResolveImpersonation), so carry the active
+  // grant in the query string — mirrors MyProfileBackupCard's download.
+  const actAs = getActAs();
+  const base = `/api/v1/files/download?path=${encodeURIComponent(path)}`;
+  return actAs ? `${base}&act_as=${encodeURIComponent(actAs.id)}` : base;
 }
 
 export interface UploadOpts {
