@@ -779,6 +779,45 @@ func TestApplications_Registry_ExposesRootOnly(t *testing.T) {
 	}
 }
 
+// GH #341: ITFlow needs PHP exec functions (git-based updater + expiry
+// lookups). The descriptor carries an InstallNotice warning the SPA renders in
+// the install modal, but the response DTO dropped it — so the operator never
+// saw the notice. GET /applications/registry MUST surface install_notice.
+func TestApplications_Registry_ExposesInstallNotice(t *testing.T) {
+	wpRepo := &mockWordPressInstallRepo{}
+	domainRepo := &mockDomainRepo{}
+	userRepo := &mockUserRepo{}
+	r, _, _ := applicationsRouter(t, "user1", false, wpRepo, domainRepo, userRepo, func(reg *apps.Registry) {
+		_ = reg.Register(apps.ITFlow)
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/applications/registry", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d", w.Code)
+	}
+	var resp struct {
+		Data []registryEntry `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	var itflow *registryEntry
+	for i := range resp.Data {
+		if resp.Data[i].Name == "itflow" {
+			itflow = &resp.Data[i]
+			break
+		}
+	}
+	if itflow == nil {
+		t.Fatalf("registry missing itflow entry: %+v", resp.Data)
+	}
+	if itflow.InstallNotice == "" {
+		t.Error("itflow registry entry must surface install_notice so the UI shows the exec-functions warning")
+	}
+}
+
 // --- GH #556: characterization test locking the app cache-toggle behavior
 // before it is extracted into a shared core for CLI parity. Asserts the
 // distinct status codes the UI depends on. ---

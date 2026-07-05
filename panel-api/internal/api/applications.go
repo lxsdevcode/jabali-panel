@@ -112,6 +112,10 @@ type registryEntry struct {
 	RootOnly             bool                      `json:"root_only,omitempty"`
 	SupportedPHPVersions []string                  `json:"supported_php_versions,omitempty"`
 	InstallParamSchema   map[string]apps.ParamSpec `json:"install_param_schema,omitempty"`
+	// InstallNotice (GH #341) — pre-install warning the UI shows in the
+	// install modal. Was defined on the registry + rendered by the SPA, but
+	// this DTO dropped it, so the notice never reached the client.
+	InstallNotice        string                    `json:"install_notice,omitempty"`
 }
 
 func (h *applicationsHandler) registry(c *gin.Context) {
@@ -130,6 +134,7 @@ func (h *applicationsHandler) registry(c *gin.Context) {
 			RootOnly:             d.RootOnly,
 			SupportedPHPVersions: d.SupportedPHPVersions,
 			InstallParamSchema:   d.InstallParamSchema,
+			InstallNotice:        d.InstallNotice,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out})
