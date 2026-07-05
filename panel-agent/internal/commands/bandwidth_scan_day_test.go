@@ -110,3 +110,32 @@ func mustWriteFile(t *testing.T, path string, data []byte) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+// TestGoaccessScanArgs_UsesDashOJson guards against the #M13.1 regression
+// where the scan passed the non-existent `--output-format=json` flag, which
+// fatals on goaccess 1.9.x ("unknown option") and silently zeroed bandwidth
+// stats. The correct JSON-to-stdout flag is `-o json`.
+func TestGoaccessScanArgs_UsesDashOJson(t *testing.T) {
+	args := goaccessScanArgs("/var/log/nginx/example.com-access.log.1")
+
+	for _, a := range args {
+		if a == "--output-format=json" || a == "--output-format" {
+			t.Fatalf("goaccess args still carry the invalid --output-format flag: %v", args)
+		}
+	}
+
+	found := false
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-o" && args[i+1] == "json" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected `-o json` (adjacent) in goaccess args, got: %v", args)
+	}
+
+	if args[0] != "/var/log/nginx/example.com-access.log.1" {
+		t.Fatalf("expected the log path as the first arg, got: %v", args)
+	}
+}

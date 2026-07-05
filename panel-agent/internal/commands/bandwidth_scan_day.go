@@ -8,7 +8,7 @@
 // today (running totals + tomorrow's rerun) or miss the last hour of
 // activity (if scanned before midnight).
 //
-// goaccess output: --output-format=json yields a structured object
+// goaccess output: `-o json` yields a structured object
 // whose `general.bandwidth` (total bytes) and `general.total_requests`
 // (incl. failed) are what we need. We don't need the full hosts/urls
 // breakdown for this M13.1 scope; agent returns just the totals so the
@@ -47,7 +47,7 @@ type bandwidthScanDayResponse struct {
 	Skipped []string               `json:"skipped,omitempty"`
 }
 
-// goaccessGeneral mirrors the slice of goaccess --output-format=json
+// goaccessGeneral mirrors the slice of goaccess `-o json`
 // output we care about. goaccess ships a stable schema for this
 // section across 1.5+; the rest of the JSON document is hosts/urls
 // breakdowns we don't need.
@@ -115,20 +115,30 @@ func bandwidthScanDayHandler(ctx context.Context, params json.RawMessage) (any, 
 	return bandwidthScanDayResponse{Stats: stats, Skipped: skipped}, nil
 }
 
+// goaccessScanArgs builds the goaccess CLI args for a single access log.
+// Extracted so the flag set is unit-testable without the binary present.
+//
+// goaccess has NO --output-format flag; JSON-to-stdout is `-o json` (`-o`
+// takes a format keyword or a filename, e.g. `-o csv`, `-o out.json`).
+// `--output-format=json` fatals on goaccess 1.9.x ("unknown option") and
+// silently broke the M13.1 bandwidth scan on hosts shipping that version.
+func goaccessScanArgs(path string) []string {
+	return []string{
+		path,
+		"--log-format=COMBINED",
+		"-o", "json",
+		"--no-html-last-updated",
+		"--ignore-crawlers",
+	}
+}
+
 func scanLogFile(ctx context.Context, path string) (uint64, uint64, error) {
 	// Bound the goaccess invocation to 90s to prevent a runaway scan
 	// holding the agent socket open across timer ticks.
 	scanCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(scanCtx,
-		"goaccess",
-		path,
-		"--log-format=COMBINED",
-		"--output-format=json",
-		"--no-html-last-updated",
-		"--ignore-crawlers",
-	)
+	cmd := exec.CommandContext(scanCtx, "goaccess", goaccessScanArgs(path)...)
 	out, err := cmd.Output()
 	if err != nil {
 		// goaccess exits non-zero on parse errors; emit the file basename
