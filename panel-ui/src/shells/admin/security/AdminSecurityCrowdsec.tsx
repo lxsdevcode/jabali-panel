@@ -203,6 +203,7 @@ export const AdminSecurityCrowdsec = () => {
   const overviewPanel = (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <HealthCard />
+      <RecentChangesCard />
       <EngineIdentityCard />
       <RemediationComponentsCard />
       <Alert
@@ -1616,6 +1617,49 @@ const RemediationComponentsCard = () => {
 // machine ID, last activity. Reads from /admin/security/crowdsec/
 // status (extended PR #160 with hostname/os/started/machine_id/
 // last_heartbeat fields) and server-settings public IP.
+// GH #716: recent CrowdSec config changes from the audit trail (hub install/
+// remove, captcha/geoblock/allowlist/blocklist/profile edits — everything on
+// the /admin/security/crowdsec/* routes is recorded by the audit middleware).
+type SecAuditEvent = {
+  id: string;
+  ts: string;
+  action: string;
+  target_id: string;
+  actor_kind: string;
+  result: string;
+};
+const RecentChangesCard = () => {
+  const q = useQuery({
+    queryKey: ["security", "crowdsec", "recent-changes"],
+    queryFn: async () =>
+      (
+        await apiClient.get<{ data: SecAuditEvent[] }>(
+          "/admin/audit?q=crowdsec&page_size=15",
+        )
+      ).data.data,
+  });
+  return (
+    <Card size="small" title="Recent changes (audit)">
+      <Table<SecAuditEvent>
+        size="small"
+        pagination={false}
+        scroll={{ x: "max-content" }}
+        rowKey="id"
+        loading={q.isLoading}
+        dataSource={q.data ?? []}
+        locale={{ emptyText: "No recent CrowdSec config changes recorded" }}
+        columns={[
+          { title: "When", dataIndex: "ts", width: 170, render: (v: string) => new Date(v).toLocaleString() },
+          { title: "Action", dataIndex: "action", ellipsis: true },
+          { title: "Target", dataIndex: "target_id", ellipsis: true, render: (v: string) => v || "—" },
+          { title: "By", dataIndex: "actor_kind", width: 90 },
+          { title: "Result", dataIndex: "result", width: 90, render: (v: string) => <Tag color={v === "ok" ? "green" : v === "denied" ? "red" : "orange"}>{v}</Tag> },
+        ]}
+      />
+    </Card>
+  );
+};
+
 // GH #716: at-a-glance health cards — pass/fail per enforcement layer.
 const HealthCard = () => {
   const status = useCrowdsecStatus();
