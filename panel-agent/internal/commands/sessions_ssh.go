@@ -28,8 +28,14 @@ type sshSession struct {
 
 // sessionsSSHListHandler lists established inbound SSH connections.
 func sessionsSSHListHandler(ctx context.Context, _ json.RawMessage) (any, error) {
-	// `ss` established connections on the local ssh port with the owning process.
-	out, err := exec.CommandContext(ctx, "ss", "-tnHp", "state", "established", "( sport = :22 )").Output()
+	// `ss` established inbound connections with the owning process. GH #338:
+	// do NOT filter on `sport = :22` — operators who move sshd to a non-standard
+	// port (a common hardening step) would then see zero SSH sessions. Every
+	// established connection whose owning process is sshd/sshd-session is an
+	// inbound session (sshd never dials out; outbound ssh is the `ssh` client),
+	// so the sshd-process match below scopes it correctly on any port, and SFTP
+	// (same sshd transport) is captured too.
+	out, err := exec.CommandContext(ctx, "ss", "-tnHp", "state", "established").Output()
 	if err != nil {
 		// No ss / no sessions — return empty, not an error.
 		return map[string]any{"sessions": []sshSession{}}, nil
