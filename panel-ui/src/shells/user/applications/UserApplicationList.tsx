@@ -212,7 +212,7 @@ const ActionsCell = ({
           loading: isDeleting,
           confirm: {
             title: "Delete this application?",
-            description: "The database and files will be removed. This cannot be undone.",
+            description: "The database, files, and any associated cron jobs will be removed. This cannot be undone.",
             okText: "Delete",
           },
         },
