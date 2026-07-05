@@ -16,6 +16,7 @@ import { CodeOutlined } from "@icons";
 import { apiClient } from "../../../apiClient";
 import { getIdentity, type Identity } from "../../../identity";
 import { isPHPEOL } from "../../../utils/phpEol";
+import { UserPHPPoolCard } from "./UserPHPPoolCard";
 
 type Domain = {
   id: string;
@@ -475,6 +476,7 @@ export function UserPHPSettingsPage() {
             </Spin>
           </Form>
         </Card>
+        <UserPHPPoolCard />
       </Space>
     </div>
   );
