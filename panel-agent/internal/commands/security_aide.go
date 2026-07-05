@@ -44,6 +44,62 @@ type aideSampleRow struct {
 	Path       string `json:"path"`
 	ChangeType string `json:"change_type"` // added|changed|removed
 	Category   string `json:"category"`    // GH #714
+	// Meta (GH #714): per-attribute old/new values from the report's "Detailed
+	// information about changes" section, when present. Empty otherwise (defensive).
+	Meta []aideAttrChange `json:"meta,omitempty"`
+}
+
+type aideAttrChange struct {
+	Attr string `json:"attr"`
+	Old  string `json:"old"`
+	New  string `json:"new"`
+}
+
+// parseAideDetail extracts per-file old/new attribute values from the report's
+// "Detailed information about changes:" section (AIDE emits it unless
+// report_summarize_changes=yes, which jabali does not set). Defensive: returns
+// an empty map if the section is absent or the format differs. Handles both the
+// `old | new` (AIDE 0.18+) and `old , new` separators.
+func parseAideDetail(text string) map[string][]aideAttrChange {
+	out := map[string][]aideAttrChange{}
+	idx := strings.Index(text, "Detailed information about changes:")
+	if idx < 0 {
+		return out
+	}
+	sc := bufio.NewScanner(strings.NewReader(text[idx:]))
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	known := map[string]bool{
+		"size": true, "sha256": true, "sha512": true, "perm": true, "perms": true,
+		"mtime": true, "ctime": true, "uid": true, "gid": true, "inode": true,
+		"linkname": true, "links": true, "b_count": true,
+	}
+	var cur string
+	for sc.Scan() {
+		t := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(t, "File:") || strings.HasPrefix(t, "Directory:") || strings.HasPrefix(t, "Entry:") {
+			cur = strings.TrimSpace(t[strings.Index(t, ":")+1:])
+			continue
+		}
+		ci := strings.Index(t, ":")
+		if cur == "" || ci < 0 {
+			continue
+		}
+		attr := strings.TrimSpace(t[:ci])
+		val := strings.TrimSpace(t[ci+1:])
+		if !known[strings.ToLower(attr)] {
+			continue
+		}
+		var oldV, newV string
+		if i := strings.Index(val, "|"); i >= 0 {
+			oldV, newV = strings.TrimSpace(val[:i]), strings.TrimSpace(val[i+1:])
+		} else if i := strings.LastIndex(val, ","); i >= 0 {
+			oldV, newV = strings.TrimSpace(val[:i]), strings.TrimSpace(val[i+1:])
+		} else {
+			continue
+		}
+		out[cur] = append(out[cur], aideAttrChange{Attr: attr, Old: oldV, New: newV})
+	}
+	return out
 }
 
 // classifyAidePath buckets a changed path by likely owner/source so a big AIDE
@@ -135,6 +191,15 @@ func mwAideStatusHandler(_ context.Context, _ json.RawMessage) (any, error) {
 			data = data[idx:]
 		}
 		parseAideReport(data, &resp)
+		// GH #714: attach per-file old/new metadata from the detail section.
+		detail := parseAideDetail(data)
+		if len(detail) > 0 {
+			for i := range resp.Sample {
+				if m, ok := detail[resp.Sample[i].Path]; ok {
+					resp.Sample[i].Meta = m
+				}
+			}
+		}
 	}
 
 	return resp, nil

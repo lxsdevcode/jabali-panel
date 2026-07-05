@@ -222,6 +222,25 @@ export const AdminSecurityAide = () => {
         />
       </Space>
       <Table
+        expandable={{
+          // GH #714: per-file old/new metadata (sha/size/perm/mtime...) when the
+          // AIDE report carries the detail section. rowExpandable hides the
+          // chevron for rows without metadata.
+          rowExpandable: (r) => (r.meta?.length ?? 0) > 0,
+          expandedRowRender: (r) => (
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="attr"
+              dataSource={r.meta ?? []}
+              columns={[
+                { title: "Attribute", dataIndex: "attr", width: 120 },
+                { title: "Old", dataIndex: "old", ellipsis: true, render: (v: string) => <code>{v || "—"}</code> },
+                { title: "New", dataIndex: "new", ellipsis: true, render: (v: string) => <code>{v || "—"}</code> },
+              ]}
+            />
+          ),
+        }}
         rowKey={(r, idx) => `${r.change_type}-${r.path}-${idx}`}
         dataSource={data.sample.filter(
           (r) =>

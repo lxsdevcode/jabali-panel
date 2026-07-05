@@ -8,6 +8,7 @@ export interface AideSampleRow {
   path: string;
   change_type: "added" | "changed" | "removed";
   category: string;
+  meta?: { attr: string; old: string; new: string }[];
 }
 
 export interface AideStatus {
