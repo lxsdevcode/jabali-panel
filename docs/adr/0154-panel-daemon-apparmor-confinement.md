@@ -36,3 +36,18 @@ unconfined by design (the name-only profile is never path-attached).
   (chown / exec / broad fs) the daemon no longer needs. Tightening it must ship
   in complain, soak 7 days on a live host to surface would-denies, then flip
   enforce per the standard jabali AppArmor lifecycle — not shipped blind.
+
+## Update 2026-07-05 — REVERTED (production 502)
+
+`jabali update` on mx applied the aa-exec wrapper and the panel crash-looped
+(502): the confined daemon could not `connect()` to `/run/mysqld/mysqld.sock`
+(`permission denied`), dying on the startup DB ping. The `jabali-panel` profile
+is **incomplete** — it was never validated against the panel's real unix-socket
+set (mysqld, and almost certainly redis/kratos/agent/pdns), because the daemon
+had always run unconfined. The `.86` check that "proved" it was insufficient: it
+did not exercise a confined daemon against a live MariaDB.
+
+Decision reversed: the daemon runs plain/unconfined again (ExecStart back to
+`$BIN serve`). Daemon confinement is a real goal but requires the full socket
+allow-set in the profile **plus** a complain-mode soak on a live host before
+enforce — not a single-box smoke test. Tracking as a proper follow-up.

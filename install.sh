@@ -4793,18 +4793,14 @@ RuntimeDirectory=jabali-panel
 # pinned by the panel-api listener helper after net.Listen() returns.
 RuntimeDirectoryMode=0750
 EnvironmentFile=$ENV_FILE
-# GH #705: confine the DAEMON under the jabali-panel AppArmor profile via
-# aa-exec. The profile is deliberately name-only (not path-attached) so it does
-# NOT confine direct CLI invocations (jabali update / repair / apparmor
-# flip-mature, run by the operator as root) — only this serve process picks it
-# up. Without this the profile loaded but attached to nothing, so the daemon ran
-# UNCONFINED. (systemd's AppArmorProfile= silently no-ops on this distro; aa-exec
-# is the mechanism already used for the Kratos migrate step.) The wrapper PROBES
-# that the profile is applicable and falls back to a plain exec otherwise — so a
-# kernel that skips the profile, a container, or a missing aa-exec can never stop
-# the daemon from starting. Mode (complain soak vs enforce) follows the loaded
-# profile, set by install_apparmor.
-ExecStart=/bin/sh -c 'if command -v aa-exec >/dev/null 2>&1 && aa-exec -p jabali-panel -- true 2>/dev/null; then exec aa-exec -p jabali-panel -- $BIN_PATH serve; else exec $BIN_PATH serve; fi'
+# GH #705 REVERTED (panel 502 on mx): confining the daemon via aa-exec broke it
+# — the jabali-panel profile is INCOMPLETE (blocks the unix connect to
+# /run/mysqld/mysqld.sock, and likely redis/kratos/agent/pdns sockets too), so a
+# confined serve crash-loops on the DB ping at startup. The profile was never
+# validated against the panel's real socket set (the daemon has always run
+# unconfined). Daemon confinement is deferred until the profile is completed +
+# soaked in complain. Back to a plain, unconfined serve — which works.
+ExecStart=$BIN_PATH serve
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=10
