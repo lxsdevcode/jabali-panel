@@ -71,33 +71,55 @@ func parseAideDetail(text string) map[string][]aideAttrChange {
 	known := map[string]bool{
 		"size": true, "sha256": true, "sha512": true, "perm": true, "perms": true,
 		"mtime": true, "ctime": true, "uid": true, "gid": true, "inode": true,
-		"linkname": true, "links": true, "b_count": true,
+		"linkname": true, "links": true, "linkcount": true, "b_count": true, "bcount": true,
+	}
+	// split returns the old|new (or old,new) halves of a value line, or false.
+	split := func(val string) (string, string, bool) {
+		if i := strings.Index(val, "|"); i >= 0 {
+			return strings.TrimSpace(val[:i]), strings.TrimSpace(val[i+1:]), true
+		}
+		if i := strings.LastIndex(val, ","); i >= 0 {
+			return strings.TrimSpace(val[:i]), strings.TrimSpace(val[i+1:]), true
+		}
+		return "", "", false
 	}
 	var cur string
+	var lastIdx = -1 // index into out[cur] of the attr being (continued)
 	for sc.Scan() {
 		t := strings.TrimSpace(sc.Text())
 		if strings.HasPrefix(t, "File:") || strings.HasPrefix(t, "Directory:") || strings.HasPrefix(t, "Entry:") {
 			cur = strings.TrimSpace(t[strings.Index(t, ":")+1:])
+			lastIdx = -1
+			continue
+		}
+		if cur == "" {
 			continue
 		}
 		ci := strings.Index(t, ":")
-		if cur == "" || ci < 0 {
+		// An attr line is "<Attr> : old | new". A continuation line (a wrapped
+		// long value, e.g. base64 SHA256) has NO ':' but still has the '|'/','
+		// separator — append its halves to the attr we're mid-parsing.
+		if ci < 0 {
+			if lastIdx >= 0 && lastIdx < len(out[cur]) {
+				if oc, nc, ok := split(t); ok {
+					out[cur][lastIdx].Old += oc
+					out[cur][lastIdx].New += nc
+				}
+			}
 			continue
 		}
 		attr := strings.TrimSpace(t[:ci])
-		val := strings.TrimSpace(t[ci+1:])
 		if !known[strings.ToLower(attr)] {
+			lastIdx = -1
 			continue
 		}
-		var oldV, newV string
-		if i := strings.Index(val, "|"); i >= 0 {
-			oldV, newV = strings.TrimSpace(val[:i]), strings.TrimSpace(val[i+1:])
-		} else if i := strings.LastIndex(val, ","); i >= 0 {
-			oldV, newV = strings.TrimSpace(val[:i]), strings.TrimSpace(val[i+1:])
-		} else {
+		oldV, newV, ok := split(strings.TrimSpace(t[ci+1:]))
+		if !ok {
+			lastIdx = -1
 			continue
 		}
 		out[cur] = append(out[cur], aideAttrChange{Attr: attr, Old: oldV, New: newV})
+		lastIdx = len(out[cur]) - 1
 	}
 	return out
 }
