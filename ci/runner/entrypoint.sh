@@ -40,10 +40,12 @@ if [[ ! -f .runner ]]; then
     --labels "$LABELS"
 fi
 
-# capacity 1: a 2-CPU box oversubscribes `go test -race` alongside the E2E.
+# capacity 4: the dedicated 8-CPU/14-GiB box runs 4 jobs concurrently
+  # (~2 CPU + ~3 GiB each). go test -race wants >=2 CPUs; only one E2E/vite
+  # build runs at a time (E2E serializes on port 4173) so memory stays safe.
 if [[ ! -f config.yml ]]; then
   forgejo-runner generate-config > config.yml
-  sed -i -E 's/^([[:space:]]*capacity:).*/\1 1/' config.yml
+  sed -i -E 's/^([[:space:]]*capacity:).*/\1 4/' config.yml
 fi
 
 exec forgejo-runner daemon --config config.yml
