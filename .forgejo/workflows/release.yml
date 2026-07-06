@@ -38,7 +38,7 @@ concurrency:
 jobs:
   release:
     name: Build + publish release tarball
-    runs-on: ubuntu-latest
+    runs-on: jabali-ci
     steps:
       - uses: actions/checkout@v4
         with:

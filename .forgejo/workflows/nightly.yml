@@ -27,7 +27,7 @@ env:
 jobs:
   go:
     name: Go tests + vet (race)
-    runs-on: ubuntu-latest
+    runs-on: jabali-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -39,7 +39,7 @@ jobs:
 
   ui-unit:
     name: panel-ui unit tests (vitest)
-    runs-on: ubuntu-latest
+    runs-on: jabali-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,7 +53,7 @@ jobs:
 
   e2e:
     name: Playwright E2E (full)
-    runs-on: ubuntu-latest
+    runs-on: jabali-ci
     concurrency:
       group: e2e-port-4173
       cancel-in-progress: false
@@ -91,7 +91,7 @@ jobs:
 
   audit:
     name: npm audit (advisory)
-    runs-on: ubuntu-latest
+    runs-on: jabali-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
