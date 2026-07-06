@@ -75,6 +75,7 @@ type createMailGroupRequest struct {
 	DisplayName    string `json:"display_name"`
 	Description    string `json:"description"`
 	GroupKind      string `json:"group_kind"`
+	InternalOnly   bool   `json:"internal_only"`
 	HasMailbox     *bool  `json:"has_mailbox"`
 	HasCalendar    *bool  `json:"has_calendar"`
 	HasAddressbook *bool  `json:"has_addressbook"`
@@ -282,6 +283,7 @@ func (h *mailGroupHandler) create(c *gin.Context) {
 		HasCalendar:    boolOr(req.HasCalendar, true),
 		HasAddressbook: boolOr(req.HasAddressbook, true),
 		HasFiles:       boolOr(req.HasFiles, true),
+		InternalOnly:   req.InternalOnly,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -296,9 +298,10 @@ func (h *mailGroupHandler) create(c *gin.Context) {
 
 	email := canonLocal + "@" + dom.Name
 	h.notifyAgent(ctx, "mailgroup.apply", map[string]any{
-		"email":        email,
-		"display_name": g.DisplayName,
-		"description":  g.Description,
+		"email":         email,
+		"display_name":  g.DisplayName,
+		"description":   g.Description,
+		"internal_only": g.InternalOnly,
 	})
 
 	g.EmailCached = email
@@ -387,9 +390,10 @@ func (h *mailGroupHandler) update(c *gin.Context) {
 	// display name / description changed. Idempotent on the agent side.
 	if metaChanged {
 		h.notifyAgent(ctx, "mailgroup.apply", map[string]any{
-			"email":        g.EmailCached,
-			"display_name": g.DisplayName,
-			"description":  g.Description,
+			"email":         g.EmailCached,
+			"display_name":  g.DisplayName,
+			"description":   g.Description,
+			"internal_only": g.InternalOnly,
 		})
 	}
 	_ = dom
