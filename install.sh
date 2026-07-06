@@ -5447,10 +5447,10 @@ install_nginx_default_vhost() {
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    # M24-aware: per-domain vhosts bind explicitly with `listen
-    # \${IPv4}:80` (when ListenIPv4 is non-empty in the vhost render
+    # M24-aware: per-domain vhosts bind explicitly with \`listen
+    # \${IPv4}:80\` (when ListenIPv4 is non-empty in the vhost render
     # path), which moves them into nginx's specific-IP listener pool.
-    # Wildcard listeners (`listen 80`) are NEVER consulted for an
+    # Wildcard listeners (\`listen 80\`) are NEVER consulted for an
     # IP+port that has at least one specific-IP listener — so without
     # this explicit \${JABALI_SRV_IPV4}:80 default_server line the
     # default vhost would be invisible for traffic to the public IP,
@@ -5498,9 +5498,9 @@ server {
     listen 443 ssl default_server${_NGX_H2_PARAM};
     listen [::]:443 ssl default_server${_NGX_H2_PARAM};
     # GH#135: mirror the \${JABALI_SRV_IPV4}:80 binding above onto :443.
-    # Per-domain vhosts bind `listen \${IPv4}:443 ssl` (M24), moving them
-    # into nginx's specific-IP listener pool. The wildcard `listen 443 ssl
-    # default_server` is NEVER consulted for an IP+port that already has a
+    # Per-domain vhosts bind \`listen \${IPv4}:443 ssl\` (M24), moving them
+    # into nginx's specific-IP listener pool. The wildcard \`listen 443 ssl
+    # default_server\` is NEVER consulted for an IP+port that already has a
     # specific-IP listener — so without this explicit line an unknown SNI
     # on the public IP (the panel hostname itself, which has no tenant
     # vhost) falls to the alphabetically-first tenant vhost and is served
@@ -7679,15 +7679,15 @@ CACHE_EXPIRATION=1
 # Enforce ONLY active remediation types. "all" causes the bouncer to
 # treat ANY decision present for an IP (including type=whitelist) as
 # grounds for the fallback remediation (ban) — every operator-issued
-# `cscli decisions add --type whitelist` then BLOCKS the IP instead of
+# \`cscli decisions add --type whitelist\` then BLOCKS the IP instead of
 # allowing it. Reproduced 2026-05-25 on testserver: whitelisting an
 # admin's home IP returned HTTP 403 CrowdSec Ban on every request until
 # this value was narrowed.
 #
 # The nginx Lua bouncer takes a SINGLE value here (ban | captcha | all),
-# NOT the firewall bouncer's comma-list — `ban,captcha` is rejected as
-# "unsupported value" and silently falls back to `ban`, spamming the
-# nginx error log on every reload (GH #212). We use `ban` directly:
+# NOT the firewall bouncer's comma-list — \`ban,captcha\` is rejected as
+# "unsupported value" and silently falls back to \`ban\`, spamming the
+# nginx error log on every reload (GH #212). We use \`ban\` directly:
 # identical effective behaviour, no log spam. (Captcha remediation also
 # needs recaptcha keys the panel doesn't provision, so it was never
 # actually enforced via this list.)
@@ -12453,7 +12453,7 @@ apply_dns_forwarder_override() {
   cat > /etc/resolv.conf <<EOF
 # Managed by jabali install.sh (JABALI_DNS_FORWARDER=${DNS_FORWARDER}).
 # systemd-resolved is masked to keep package postinst from re-symlinking
-# this file to the stub. `options use-vc` forces glibc onto TCP/53 — the
+# this file to the stub. \`options use-vc\` forces glibc onto TCP/53 — the
 # lab firewall blocks UDP/53 outbound but TCP works.
 nameserver ${DNS_FORWARDER}
 options use-vc timeout:5 attempts:2
