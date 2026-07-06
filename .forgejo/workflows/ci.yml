@@ -88,7 +88,7 @@ jobs:
             echo "$diff" | grep -qE '(\.go$)|(^go\.(mod|sum)$)|(^panel-(api|agent)/)|(^Makefile$)' && go=true
             echo "$diff" | grep -qE '(^install\.sh$)|(^tools/lint-install-sh\.sh$)' && install=true
             # A workflow or shared-tooling change re-exercises everything.
-            echo "$diff" | grep -qE '^\.gitea/workflows/' && { ui=true; go=true; install=true; }
+            echo "$diff" | grep -qE '^\.(gitea|forgejo)/workflows/' && { ui=true; go=true; install=true; }
           else
             echo "no base sha resolvable — running ALL checks"
           fi
