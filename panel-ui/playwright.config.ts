@@ -27,7 +27,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 3 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // CI => 2 workers against one webServer: specs mock the API per-test
+  // (page.route), so no shared backend state. Halves the 35-spec wall-clock;
+  // retries above absorb any transient cross-worker flake. Bump higher only
+  // after watching a few runs stay green.
+  workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
 
   use: {

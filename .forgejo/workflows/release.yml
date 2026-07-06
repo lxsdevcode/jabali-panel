@@ -26,7 +26,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25"
   NODE_VERSION: "20"
 
 # Serialize releases: a rapid double-push to main shouldn't try to
@@ -38,7 +38,7 @@ concurrency:
 jobs:
   release:
     name: Build + publish release tarball
-    runs-on: ubuntu-latest
+    runs-on: jabali-ci
     steps:
       - uses: actions/checkout@v4
         with:
