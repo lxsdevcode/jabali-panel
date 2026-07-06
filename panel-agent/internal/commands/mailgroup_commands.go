@@ -59,6 +59,10 @@ func mailGroupApplyHandler(ctx context.Context, params json.RawMessage) (any, er
 	if name != "" {
 		_ = setAccountDescription(ctx, email, name)
 	}
+	// GH #350: rename the group's auto-created "Personal (<addr>)" calendar +
+	// address book to the group name so shared resources read as the group,
+	// not each member's "Personal". Best-effort (guards on empty name).
+	renameGroupResources(ctx, email, name)
 	return mailGroupApplyResult{Ok: true, GroupID: gid}, nil
 }
 
