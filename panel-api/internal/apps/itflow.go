@@ -55,5 +55,17 @@ var ITFlow = App{
 			Required:    false,
 			Description: "Initial admin password. Leave blank to have one generated. ITFlow requires ≥8 chars; the generator satisfies that.",
 		},
+		"repo_branch": {
+			Type:     "enum",
+			Required: false,
+			Default:  "master",
+			Values:   []string{"master", "develop"},
+			// master is ITFlow's stable release (develop->master on release);
+			// we install a security-reviewed pinned master commit (GH #455).
+			// develop is their active dev branch: bleeding-edge and NOT
+			// security-reviewed. Both are pinned for reproducibility; only
+			// pick develop if you accept running unreviewed upstream code.
+			Description: "Install branch. 'master' = ITFlow's stable release (recommended). 'develop' = their active development branch — bleeding-edge and NOT security-reviewed; choose only if you accept running unreviewed code.",
+		},
 	},
 }

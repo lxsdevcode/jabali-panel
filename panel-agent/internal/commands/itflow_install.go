@@ -50,6 +50,7 @@ type itflowInstallReq struct {
 	AdminName    string `json:"admin_name"`
 	AdminEmail   string `json:"admin_email"`
 	AdminPass    string `json:"admin_pass"`
+	RepoBranch   string `json:"repo_branch"` // "master" (default) or "develop"
 }
 
 type itflowInstallResp struct {
@@ -60,7 +61,6 @@ type itflowInstallResp struct {
 // maintainer (#206) — ITFlow self-updates along master via git pull from
 // its admin UI, so there's no release tag to pin.
 const itflowRepoURL = "https://github.com/itflow-org/itflow.git"
-const itflowBranch = "master"
 
 // itflowPinnedCommit is the reviewed master commit the installer checks out
 // (GH #455). ITFlow ships no release tags and self-updates along master via
@@ -68,7 +68,22 @@ const itflowBranch = "master"
 // reset the working tree to this reviewed SHA at install time and verify HEAD
 // matches — installs are reproducible and never pull an unreviewed master tip.
 // Bump deliberately (code review) when adopting a newer ITFlow.
-const itflowPinnedCommit = "60563e33925bb3dc07911e8f6ad8b86dec89f552"
+const itflowMasterPinnedCommit = "60563e33925bb3dc07911e8f6ad8b86dec89f552"
+
+// itflowDevelopPinnedCommit pins the `develop` branch (GH #332). develop is
+// ITFlow's active dev branch  bleeding-edge and NOT security-reviewed; we pin
+// it (like master) so installs are reproducible and never drift to a raw tip,
+// but the UI labels it unreviewed. Bump deliberately when adopting newer dev.
+const itflowDevelopPinnedCommit = "78c3dd0eedec25186f82951fca33b5a372a8a560"
+
+// itflowResolveBranch maps the requested branch to (branch, pinnedCommit),
+// defaulting to master. Any unknown value falls back to master (fail-safe).
+func itflowResolveBranch(req string) (branch, pin string) {
+	if req == "develop" {
+		return "develop", itflowDevelopPinnedCommit
+	}
+	return "master", itflowMasterPinnedCommit
+}
 
 // itflowSafeText guards the free-text fields that setup_cli.php
 // interpolates UNESCAPED into SQL INSERTs (company_name, admin_name).
@@ -87,7 +102,7 @@ func computeITFlowInstallPath(docroot, subdirectory string) string {
 // cloneITFlow clones master into installPath as the site user. git clone
 // needs an empty target, so clone into a staging dir then cp -a the whole
 // tree (INCLUDING .git — the in-app updater needs it) into installPath.
-func cloneITFlow(ctx context.Context, osUser, installPath string) error {
+func cloneITFlow(ctx context.Context, osUser, installPath, branch, pin string) error {
 	stagingDir, err := stagingMkdirTemp("itflow-clone-")
 	if err != nil {
 		return fmt.Errorf("staging mktemp: %w", err)
@@ -101,17 +116,17 @@ func cloneITFlow(ctx context.Context, osUser, installPath string) error {
 	// Full clone (no --depth) so the reviewed pinned commit is reachable even
 	// after master advances upstream; master ref is kept for the in-app updater.
 	cloneCmd := buildSystemdRunCmd(ctx, osUser,
-		"git", "clone", "--branch", itflowBranch, itflowRepoURL, src,
+		"git", "clone", "--branch", branch, itflowRepoURL, src,
 	)
 	if out, err := runBoundedOutput(cloneCmd, 0); err != nil {
 		return fmt.Errorf("git clone: %w (output: %s)", err, truncateStr(string(out), 512))
 	}
 	// Pin the working tree (and master) to the reviewed commit (GH #455).
 	resetCmd := buildSystemdRunCmd(ctx, osUser,
-		"git", "-C", src, "reset", "--hard", itflowPinnedCommit,
+		"git", "-C", src, "reset", "--hard", pin,
 	)
 	if out, err := runBoundedOutput(resetCmd, 0); err != nil {
-		return fmt.Errorf("git reset to pinned commit %s: %w (output: %s)", itflowPinnedCommit, err, truncateStr(string(out), 512))
+		return fmt.Errorf("git reset to pinned commit %s: %w (output: %s)", pin, err, truncateStr(string(out), 512))
 	}
 	// Verify HEAD is exactly the pin — fail closed on any mismatch.
 	headCmd := buildSystemdRunCmd(ctx, osUser, "git", "-C", src, "rev-parse", "HEAD")
@@ -119,8 +134,8 @@ func cloneITFlow(ctx context.Context, osUser, installPath string) error {
 	if err != nil {
 		return fmt.Errorf("git rev-parse HEAD: %w (output: %s)", err, truncateStr(string(headOut), 256))
 	}
-	if got := strings.TrimSpace(string(headOut)); got != itflowPinnedCommit {
-		return fmt.Errorf("itflow pin mismatch: HEAD=%s want=%s — refusing to install unreviewed code", got, itflowPinnedCommit)
+	if got := strings.TrimSpace(string(headOut)); got != pin {
+		return fmt.Errorf("itflow pin mismatch: HEAD=%s want=%s — refusing to install unreviewed code", got, pin)
 	}
 	cpCmd := buildSystemdRunCmd(ctx, osUser, "sh", "-c",
 		fmt.Sprintf("cp -a %s/. %s/", shellQuote(src), shellQuote(installPath)),
@@ -137,6 +152,7 @@ func cloneITFlow(ctx context.Context, osUser, installPath string) error {
 // install window — same exposure as wp-cli / drush, acceptable on a
 // single-tenant slice.
 func runITFlowSetupCLI(ctx context.Context, req itflowInstallReq, installPath, baseURL string) error {
+	branch, _ := itflowResolveBranch(req.RepoBranch)
 	dbHost := req.DBHost
 	if dbHost == "" {
 		dbHost = "localhost"
@@ -158,6 +174,7 @@ func runITFlowSetupCLI(ctx context.Context, req itflowInstallReq, installPath, b
 		"--user-name=" + req.AdminName,
 		"--user-email=" + req.AdminEmail,
 		"--user-password=" + req.AdminPass,
+		"--repo-branch=" + branch,
 		"--non-interactive",
 	}
 	cmd := buildSystemdRunCmd(ctx, req.OSUser, args...)
@@ -220,7 +237,8 @@ func itflowInstallHandler(ctx context.Context, params json.RawMessage) (any, err
 
 	cloneCtx, cloneCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cloneCancel()
-	if err := cloneITFlow(cloneCtx, req.OSUser, installPath); err != nil {
+	branch, pin := itflowResolveBranch(req.RepoBranch)
+	if err := cloneITFlow(cloneCtx, req.OSUser, installPath, branch, pin); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
 
@@ -246,7 +264,7 @@ func itflowInstallHandler(ctx context.Context, params json.RawMessage) (any, err
 		}
 	}
 
-	return itflowInstallResp{Version: itflowBranch}, nil
+	return itflowInstallResp{Version: branch}, nil
 }
 
 func init() {
