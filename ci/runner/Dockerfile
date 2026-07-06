@@ -27,12 +27,13 @@ ARG FORGEJO_RUNNER_VERSION=12.12.0
 ARG PLAYWRIGHT_VERSION=1.55.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    PATH=/usr/local/go/bin:/home/ci/go/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    PATH=/usr/local/go/bin:/home/ci/go/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+    RUNNER_TOOL_CACHE=/home/ci/toolcache
 
 # 1. Base tools + build-essential (cgo/-race) + Playwright/browser prereqs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl wget git bash make zstd xz-utils \
-      procps iproute2 build-essential passwd \
+      procps iproute2 build-essential passwd gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Go (pinned to match go.mod).
@@ -55,6 +56,7 @@ RUN curl -fsSL -o /usr/local/bin/forgejo-runner \
 #    runtime root path would only widen the blast radius of PR-supplied code.
 RUN useradd -m -u 1000 -s /bin/bash ci \
     && install -d -o ci -g ci \
+         /home/ci/toolcache \
          /home/ci/.cache /home/ci/.cache/actcache /home/ci/.cache/go-build \
          /home/ci/.cache/ms-playwright /home/ci/.npm \
          /home/ci/go /home/ci/go/pkg /home/ci/go/pkg/mod
@@ -64,12 +66,15 @@ RUN useradd -m -u 1000 -s /bin/bash ci \
 RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
-USER ci
+# No `USER ci`: the entrypoint starts as root to chown the runtime volume
+# mounts (Docker creates named-volume mount points root-owned), then execs
+# the daemon as ci via gosu — so PR/job code still runs unprivileged.
 WORKDIR /home/ci/runner
 
 # The runner is registered at first boot (see entrypoint.sh) using
 # FORGEJO_RUNNER_REGISTRATION_TOKEN, then runs the daemon in the foreground
 # so the container's lifecycle IS the runner (auto-restarts with the container,
 # unlike the sshd-PID1 setup where the daemon didn't survive a restart).
-COPY --chown=ci:ci entrypoint.sh /home/ci/entrypoint.sh
+COPY entrypoint.sh /home/ci/entrypoint.sh
+RUN chmod +x /home/ci/entrypoint.sh
 ENTRYPOINT ["/home/ci/entrypoint.sh"]

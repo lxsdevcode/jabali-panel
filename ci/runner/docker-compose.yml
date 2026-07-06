@@ -24,9 +24,11 @@ services:
       FORGEJO_INSTANCE_URL: https://codeberg.org
       FORGEJO_RUNNER_NAME: jabali-ci-runner
       FORGEJO_RUNNER_LABELS: "jabali-ci:host"
+      RUNNER_TOOL_CACHE: /home/ci/toolcache
       FORGEJO_RUNNER_REGISTRATION_TOKEN: ${FORGEJO_RUNNER_REGISTRATION_TOKEN:-}
     volumes:
       - runner-state:/home/ci/runner        # .runner + config.yml (register once)
+      - toolcache:/home/ci/toolcache        # setup-* actions tool cache (Go/Node)
       - go-mod:/home/ci/go/pkg/mod          # Go module cache
       - go-build:/home/ci/.cache/go-build   # Go build cache
       - npm-cache:/home/ci/.npm             # npm cache
@@ -34,6 +36,7 @@ services:
 
 volumes:
   runner-state:
+  toolcache:
   go-mod:
   go-build:
   npm-cache:
