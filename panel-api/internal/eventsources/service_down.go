@@ -68,6 +68,21 @@ func runServiceDown(ctx context.Context, d Deps) {
 	}
 }
 
+// serviceStateNotDown reports whether a `systemctl is-active` result should
+// NOT be treated as an outage this tick: healthy (active/activating), a
+// transient in-between (deactivating/reloading), or — critically — EMPTY,
+// which means the check itself failed (systemctl timeout / momentary
+// unavailability) rather than the unit being down. GH: 57 false service.down
+// alarms fired during an AppArmor enforce-flip when systemctl briefly returned
+// empty for every unit.
+func serviceStateNotDown(state string) bool {
+	switch state {
+	case "", "active", "activating", "deactivating", "reloading":
+		return true
+	}
+	return false
+}
+
 func serviceDownPass(ctx context.Context, d Deps) {
 	for _, unit := range jabaliUnits {
 		state, err := unitState(ctx, unit)
@@ -77,16 +92,16 @@ func serviceDownPass(ctx context.Context, d Deps) {
 			// true execution failures (binary missing, etc.).
 			d.Log.Debug("eventsources: service_down lookup failed", "unit", unit, "err", err)
 		}
-		if state == "active" || state == "activating" {
-			// Active again — clear any down-since marker so the next
-			// outage starts its grace window fresh.
-			delete(serviceDownInactiveSince, unit)
-			continue
-		}
-		// `deactivating` and `reloading` are transient by definition.
-		// Don't latch onto them — wait for the unit to settle into
-		// inactive/failed/active before deciding.
-		if state == "deactivating" || state == "reloading" {
+		if serviceStateNotDown(state) {
+			// active/activating -> healthy: clear any down-since marker.
+			// empty/deactivating/reloading -> can't conclude "down" this
+			// tick; skip. Empty in particular means the check itself failed
+			// (systemctl timeout / momentary unavailability during a
+			// controlled restart or an AppArmor profile flip) — firing here
+			// spams a false service.down with a blank state ("<unit> is ").
+			if state == "active" || state == "activating" {
+				delete(serviceDownInactiveSince, unit)
+			}
 			continue
 		}
 		// `failed` always fires — distinct from operator-disabled, this
