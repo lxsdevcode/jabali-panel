@@ -4805,12 +4805,12 @@ EnvironmentFile=$ENV_FILE
 # enforce (attr=jabali-panel(enforce), DB OK, 0 denials). The profile is
 # name-only so direct CLI (jabali update / repair / apparmor flip-mature, run by
 # the operator as root) stays UNCONFINED — only this serve process picks it up.
-# The wrapper PROBES `aa-exec -p jabali-panel -- true` (needs the /{usr,}/bin/true
+# The wrapper PROBES \`aa-exec -p jabali-panel -- true\` (needs the /{usr,}/bin/true
 # rix rule) and falls back to a plain exec when the profile isn't loaded or
 # applicable, so a skip-bias kernel, a container, or a missing aa-exec can never
 # stop the daemon from starting. Mode follows the loaded profile: install_apparmor
 # sets COMPLAIN on first install; the operator flips enforce via
-# `jabali apparmor flip-mature` after their own soak window.
+# \`jabali apparmor flip-mature\` after their own soak window.
 ExecStart=/bin/sh -c 'if command -v aa-exec >/dev/null 2>&1 && aa-exec -p jabali-panel -- true 2>/dev/null; then exec aa-exec -p jabali-panel -- $BIN_PATH serve; else exec $BIN_PATH serve; fi'
 Restart=on-failure
 RestartSec=3
