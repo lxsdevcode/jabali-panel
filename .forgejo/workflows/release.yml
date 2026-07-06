@@ -24,6 +24,8 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual re-trigger for testing the publish path without a main push.
+  workflow_dispatch:
 
 env:
   GO_VERSION: "1.25"
@@ -34,6 +36,11 @@ env:
 concurrency:
   group: release-main
   cancel-in-progress: false
+
+# Forgejo Actions injects GITHUB_TOKEN read-only by default; creating a
+# release + uploading assets needs contents:write.
+permissions:
+  contents: write
 
 jobs:
   release:
