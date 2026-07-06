@@ -995,6 +995,7 @@ type itflowKickArgs struct {
 	AdminName    string
 	AdminEmail   string
 	AdminPass    string
+	RepoBranch   string
 	UseWWW       bool
 }
 
@@ -1029,6 +1030,7 @@ func createITFlowInstallAndKickAgent(parentCtx context.Context, args itflowKickA
 		"admin_name":   args.AdminName,
 		"admin_email":  args.AdminEmail,
 		"admin_pass":   args.AdminPass,
+		"repo_branch":  args.RepoBranch,
 		"use_www":      args.UseWWW,
 	})
 	if err != nil {

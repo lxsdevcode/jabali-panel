@@ -425,6 +425,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			AdminName:    paramOr(k.Params, "admin_name", "Administrator"),
 			AdminEmail:   k.AdminEmail,
 			AdminPass:    itflowPass,
+			RepoBranch:   paramOr(k.Params, "repo_branch", "master"),
 			UseWWW:       k.UseWWW,
 		}, deps)
 		adminPassword = itflowPass
