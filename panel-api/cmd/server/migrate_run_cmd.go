@@ -385,8 +385,23 @@ failed stage. Already-done stages are skipped.`,
 				// and the job completes 'done' having imported only the user
 				// (no domains/DBs/mail). This was the 'created the user but
 				// nothing imported' bug.
-				hTarPath := filepath.Join("/var/lib/jabali-migrations", job.ID,
-					fmt.Sprintf("user.%s.tar.gz", job.SourceUser))
+				// GH #327: the Hestia pull (pullHestia) saves the tar under
+				// its REMOTE basename to preserve .tar vs .tar.gz — e.g.
+				// itflowapp.2026-07-05_16-10-38.tar — NOT user.<user>.tar.gz.
+				// The old hardcoded name mismatched, so ParseHestiaTarball
+				// 404'd, the import fell through to an empty tarball, and the
+				// job finished "done" having created only the user (no
+				// domains/DBs/mail). Glob the job dir for whatever single tar
+				// the pull actually saved.
+				hDir := filepath.Join("/var/lib/jabali-migrations", job.ID)
+				hMatches, _ := filepath.Glob(filepath.Join(hDir, "*.tar"))
+				if gz, _ := filepath.Glob(filepath.Join(hDir, "*.tar.gz")); len(gz) > 0 {
+					hMatches = append(hMatches, gz...)
+				}
+				hTarPath := filepath.Join(hDir, fmt.Sprintf("user.%s.tar.gz", job.SourceUser))
+				if len(hMatches) > 0 {
+					hTarPath = hMatches[0]
+				}
 				if h, herr := hestiacp.ParseHestiaTarball(hTarPath, extractDir); herr == nil {
 					// GH #327 diag: make an empty import self-explaining.
 					fmt.Fprintf(cmd.ErrOrStderr(),
