@@ -1,6 +1,10 @@
 # AppArmor profile — jabali-panel (M40.1, ADR-0086)
 #
-# panel-api binary at /usr/local/bin/jabali-panel runs as root. It is
+# panel-api binary at /usr/local/bin/jabali-panel runs as the
+# unprivileged `jabali` user (systemd User=jabali, Group=jabali-sockets;
+# privileged ops are delegated to panel-agent). This matters for the
+# D-Bus rules below: an unprivileged user's `systemctl is-active` goes
+# via the system D-Bus, not root's /run/systemd/private socket. It is
 # the HTTP API surface (port 8443 via nginx upstream socket), talks to
 # MariaDB via unix socket, Redis via unix socket, and panel-agent via
 # the M25 unix socket. Reads /etc/jabali/panel.env (DB DSN + secrets)
@@ -41,6 +45,7 @@ profile jabali-panel flags=(attach_disconnected) {
   #include <abstractions/nameservice>
   #include <abstractions/openssl>
   #include <abstractions/ssl_certs>
+  #include <abstractions/dbus-strict>
 
   capability net_bind_service,
   capability setuid,
@@ -251,6 +256,16 @@ profile jabali-panel flags=(attach_disconnected) {
   # systemctl (reconciler service control + server-status) talks to
   # systemd's private socket and reads unit files.
   /run/systemd/private         rw,
+  # The panel runs as the unprivileged `jabali` user. Root's systemctl
+  # uses /run/systemd/private above, but an unprivileged user's
+  # `systemctl is-active` / `is-enabled` is routed through the system
+  # D-Bus to org.freedesktop.systemd1. Without these rules the confined
+  # daemon gets "Failed to retrieve unit state: Access denied" + empty
+  # output, which the service_down monitor misreads as every unit being
+  # down (including jabali-panel itself) — a false-alarm storm.
+  dbus send    bus=system peer=(name=org.freedesktop.systemd1),
+  dbus receive bus=system peer=(name=org.freedesktop.systemd1),
+  dbus send    bus=system path=/org/freedesktop/DBus interface=org.freedesktop.DBus member={Hello,AddMatch,RemoveMatch,GetNameOwner,NameHasOwner,StartServiceByName,ListNames} peer=(name=org.freedesktop.DBus),
   /run/systemd/                r,
   /run/systemd/**              r,
   /etc/systemd/                r,
