@@ -174,6 +174,7 @@ func newMailGroupShowCmd() *cobra.Command {
 
 func newMailGroupCreateCmd() *cobra.Command {
 	var displayName, description, kind string
+	var internalOnly bool
 	cmd := &cobra.Command{
 		Use:     "create <domain-name|domain-id> <local-part>",
 		Short:   "Create a mail group on a domain",
@@ -217,6 +218,7 @@ func newMailGroupCreateCmd() *cobra.Command {
 				HasCalendar:    true,
 				HasAddressbook: true,
 				HasFiles:       true,
+				InternalOnly:   internalOnly,
 				CreatedAt:      now,
 				UpdatedAt:      now,
 			}
@@ -227,9 +229,10 @@ func newMailGroupCreateCmd() *cobra.Command {
 			email := canonLocal + "@" + dom.Name
 			g.EmailCached = email
 			notifyAgentMailGroup(ctx, "mailgroup.apply", map[string]any{
-				"email":        email,
-				"display_name": g.DisplayName,
-				"description":  g.Description,
+				"email":         email,
+				"display_name":  g.DisplayName,
+				"description":   g.Description,
+				"internal_only": g.InternalOnly,
 			})
 			cliAuditOK(ctx, "mail_group.create", "mail_group", g.ID, nil)
 			fmt.Printf("created %s mail group %s\n", g.GroupKind, email)
@@ -239,6 +242,7 @@ func newMailGroupCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&displayName, "display-name", "", "display name (the From name)")
 	cmd.Flags().StringVar(&description, "description", "", "description")
 	cmd.Flags().StringVar(&kind, "kind", "resource", "group kind: resource | distribution")
+	cmd.Flags().BoolVar(&internalOnly, "internal-only", false, "reject mail from senders outside the group's domain (GH #348)")
 	return cmd
 }
 

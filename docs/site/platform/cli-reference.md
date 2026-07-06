@@ -2605,6 +2605,7 @@ jabali mail-group create <domain-name|domain-id> <local-part> [flags]
 
 - `--description` — description
 - `--display-name` — display name (the From name)
+- `--internal-only` — reject mail from senders outside the group's domain (GH #348)
 - `--kind` — group kind: resource | distribution (default `resource`)
 
 #### `jabali mail-group delete`

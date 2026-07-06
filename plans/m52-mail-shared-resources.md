@@ -222,3 +222,32 @@ enabled `has_*` flag + grants for current members.
 Ship only the honest #236 fix now: remove the non-functional resource toggles from the
 Groups UI + API (a group provides all shared resources), and revisit selectivity in M52.
 Small, stops the lie, doesn't block the redesign.
+
+---
+
+## Spike findings for GH #347–350 (2026-07-06, live on 192.168.100.86)
+
+Set up `testgrp@jabali-panel.local` (resource group, all resources on) + `member@` as a
+member, then probed via JMAP as `member@`. **Result: these 4 issues are targeted
+naming/rule fixes — NOT the queryMemberOf selectivity redesign. Send-as already works.**
+
+- **#347 (send on behalf): WORKS as-is.** `Identity/get` for `member@` returns BOTH
+  `member@` and `testgrp@` identities → a member can already send AS the group. No new
+  mechanism. Reply: compose from the shared mailbox / pick the group identity.
+- **#349 (compose From looks personal):** the `testgrp@` send-as identity exists but its
+  NAME is the member's account name (`member@…`), not the group's. Stalwart names the
+  send-as identity after the *querying account*, not the group principal (whose
+  `description` IS correctly "Test Group"). Two parts: (a) the group identity's From-name
+  wants setting to the group display name; (b) Bulwark defaulting From→shared when composing
+  inside the shared folder is upstream webmail behavior.
+- **#350 (resources named "Personal"): CONFIRMED.** The group's auto-created Calendar +
+  AddressBook are named **`Personal (testgrp@jabali-panel.local)`** — Stalwart's default
+  "Personal", not the group name. Fix = jabali agent renames the group's Calendar /
+  AddressBook / FileNode collections to the group display_name after provisioning (JMAP
+  admin `Calendar/set` etc.), same pattern as `setAccountDescription`.
+- **#348 (group internal-only delivery): not yet tested** — separate; a Stalwart inbound
+  rule restricting the group address to same-domain senders.
+- **Gate 2 confirmation (bonus):** registry membership grants ALL collections — `member@`
+  can `Calendar/get` on the group account (all-or-nothing), matching the plan's assumption.
+  The queryMemberOf mail-only experiment is still the path for SELECTIVE collections
+  (#236/#241/#242), but is NOT needed for #347–350.
