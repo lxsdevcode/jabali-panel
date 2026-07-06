@@ -32,7 +32,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # 1. Base tools + build-essential (cgo/-race) + Playwright/browser prereqs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl wget git bash make zstd xz-utils \
-      procps iproute2 build-essential sudo openssh-server \
+      procps iproute2 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Go (pinned to match go.mod).
@@ -50,9 +50,10 @@ RUN curl -fsSL -o /usr/local/bin/forgejo-runner \
       "https://code.forgejo.org/forgejo/runner/releases/download/v${FORGEJO_RUNNER_VERSION}/forgejo-runner-${FORGEJO_RUNNER_VERSION}-linux-amd64" \
     && chmod +x /usr/local/bin/forgejo-runner && forgejo-runner --version
 
-# 5. Non-root ci user (jobs run as this user).
-RUN useradd -m -u 1000 -s /bin/bash ci \
-    && echo "ci ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ci
+# 5. Non-root ci user (jobs run as this user). NO sudo grant: the workflows
+#    never sudo (deps are baked at build time, which is already root), so a
+#    runtime root path would only widen the blast radius of PR-supplied code.
+RUN useradd -m -u 1000 -s /bin/bash ci
 
 # 6. Playwright OS deps (root) — the browser binary itself is fetched by the
 #    job (cached in /home/ci/.cache/ms-playwright via the volume mount).
