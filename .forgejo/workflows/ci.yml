@@ -1,36 +1,19 @@
-# Gitea Actions CI — gate every PR against the test suite so the kind of
+# Forgejo Actions CI — gate every PR against the test suite so the kind of
 # silent baseline rot that slipped past M20 cutover can't recur.
 #
-# Jobs: Go (biggest), install.sh lint (cheap), vitest (cheap), Playwright
-# E2E (longest tail — needs a built SPA + Chromium).
+# Jobs (all run unconditionally): Go tests+vet, install.sh lint, vitest,
+# Playwright E2E. Runs on the self-hosted `jabali-ci` runner (host-exec,
+# dedicated 3-CPU/14-GiB box).
 #
-# COST MODEL (single serial host-mode act_runner): the jobs are declared
-# parallel but execute one-at-a-time, so wall-clock ≈ sum of jobs. To keep
-# that sum small, a `changes` gate job computes which trees a PR touched
-# and each downstream job SKIPS its expensive steps when its tree is
-# untouched. The job still RUNS and reports its status context as success
-# (green), so branch-protection required checks ("CI / <job> (pull_request)")
-# are always satisfied — we skip the *work*, not the *check*. A Go-only or
-# install.sh-only PR therefore never pays the ~15-min Playwright tail, and a
-# panel-ui-only PR never pays the Go race suite.
-#
-# Safety net: nightly.yml runs the FULL suite unconditionally (E2E + race +
-# audit) so a cross-cutting change that the path filter didn't attribute to
-# panel-ui still gets exercised within 24h.
-#
-# Runner requirements:
-#   - labels include `ubuntu-latest` (or the label(s) act_runner was registered with)
-#   - `host` executor works fine; `docker` executor also OK if registered that way
-#   - Go 1.24+ and Node 20+ either preinstalled or installable via actions/setup-*
+# HISTORY: a `changes` path-filter gate job used to skip untouched trees to
+# save wall-clock on the old single 2-CPU mx runner. On Codeberg's runner the
+# gate job failed intermittently in actions/checkout teardown (unreachable
+# logs) and the optimization wasn't worth the fragility on a capable box —
+# removed 2026-07-06. All four jobs now run every PR. nightly.yml still runs
+# the same suite on a schedule.
 
 name: CI
 
-# CI runs ONLY on pull_request — push-to-main triggers were duplicating
-# every PR's check (PR branch CI runs first + passes, then merge commit
-# triggers a redundant rerun on main which Gitea then cancels when the
-# next PR lands). The PR-branch run already proves the merge will be
-# green; the redundant main-branch run cluttered the Actions page with
-# orange cancelled icons that looked like failures.
 on:
   pull_request:
     branches: [main]
@@ -55,206 +38,95 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-  # Path-change gate. Cheap (~seconds). Every other job `needs` this and
-  # gates its expensive steps on the relevant output. Defensive: on any
-  # ambiguity (missing base sha, git error) it defaults everything to
-  # `true` so we NEVER silently skip a real check.
-  changes:
-    name: detect changed trees
-    runs-on: jabali-ci
-    outputs:
-      ui: ${{ steps.f.outputs.ui }}
-      go: ${{ steps.f.outputs.go }}
-      install: ${{ steps.f.outputs.install }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # depth 50 reaches the PR base without fetching all 880 mirror tags
-          # (a full fetch-depth:0 checkout was failing the gate job on this repo).
-          fetch-depth: 50
-          fetch-tags: false
-      - id: f
-        name: Compute change flags
-        run: |
-          set +e
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-            base="$(git merge-base origin/main HEAD 2>/dev/null)"
-          fi
-          ui=true; go=true; install=true
-          if [ -n "$base" ]; then
-            diff="$(git diff --name-only "${base}...HEAD" 2>/dev/null)"
-            echo "=== changed files vs ${base} ==="
-            echo "$diff"
-            ui=false; go=false; install=false
-            echo "$diff" | grep -qE '^panel-ui/' && ui=true
-            echo "$diff" | grep -qE '(\.go$)|(^go\.(mod|sum)$)|(^panel-(api|agent)/)|(^Makefile$)' && go=true
-            echo "$diff" | grep -qE '(^install\.sh$)|(^tools/lint-install-sh\.sh$)' && install=true
-            # A workflow or shared-tooling change re-exercises everything.
-            echo "$diff" | grep -qE '^\.(gitea|forgejo)/workflows/' && { ui=true; go=true; install=true; }
-          else
-            echo "no base sha resolvable — running ALL checks"
-          fi
-          echo "ui=$ui"           | tee -a "$GITHUB_OUTPUT"
-          echo "go=$go"           | tee -a "$GITHUB_OUTPUT"
-          echo "install=$install" | tee -a "$GITHUB_OUTPUT"
-          exit 0
-
   go:
     name: Go tests + vet
     runs-on: jabali-ci
-    needs: changes
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.go == 'true'
       - uses: actions/setup-go@v5
-        if: needs.changes.outputs.go == 'true'
         with:
           go-version: ${{ env.GO_VERSION }}
-          # cache: false (not true) on our host-mode act_runner:
-          # setup-go's cache layer tars $GOMODCACHE on one run and
-          # untars into the same path on the next. GitHub-hosted
-          # runners wipe between jobs, so no conflict. Our host-mode
-          # runner persists $GOMODCACHE across jobs (which is what we
-          # want for speed), so setup-go's tar hits "File exists" on
-          # every pre-existing module and the whole step cancels
-          # (see run 70's ~20,000 line tar error log). The host's
-          # persistent $GOMODCACHE already gives us the caching
-          # benefit; setup-go's extra layer is redundant here.
+          # cache: false — the runner's persistent volume-mounted $GOMODCACHE
+          # already gives the caching benefit; setup-go's tar layer conflicts
+          # with a pre-existing cache ("File exists").
           cache: false
       - name: go vet
-        if: needs.changes.outputs.go == 'true'
         run: make vet
       - name: go test -race
-        if: needs.changes.outputs.go == 'true'
         run: make test
-      - name: skipped (no Go changes)
-        if: needs.changes.outputs.go != 'true'
-        run: echo "No Go/Makefile changes in this PR — Go suite skipped (nightly.yml runs it unconditionally)."
 
   install-sh-lint:
     # Phantom-function detector for install.sh — guards against the
-    # install_snuffleupagus / verify_socket_perms regression class
-    # where a function gets removed from install.sh during a refactor
-    # but the call site (in update.go or elsewhere in install.sh)
-    # stays. Live-host crash with "command not found" mid-deploy
-    # was the historical symptom; this gate makes it a PR failure.
+    # install_snuffleupagus / verify_socket_perms regression class where a
+    # function gets removed from install.sh during a refactor but the call
+    # site stays. Live-host "command not found" mid-deploy was the symptom.
     name: install.sh phantom-function lint
     runs-on: jabali-ci
-    needs: changes
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.install == 'true'
       - name: Run lint
-        if: needs.changes.outputs.install == 'true'
         run: tools/lint-install-sh.sh
-      - name: skipped (no install.sh changes)
-        if: needs.changes.outputs.install != 'true'
-        run: echo "No install.sh changes in this PR — lint skipped."
 
   ui-unit:
     name: panel-ui unit tests (vitest)
     runs-on: jabali-ci
-    needs: changes
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.ui == 'true'
       - uses: actions/setup-node@v4
-        if: needs.changes.outputs.ui == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: panel-ui/package-lock.json
       - name: Install deps
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npm ci --no-audit --no-fund --prefer-offline
-      # ESLint (flat config, eslint.config.js): typescript-eslint + react-hooks
-      # rules. Fails the build on errors; warnings are advisory (npm run lint
-      # drops --max-warnings 0). Tighten toward zero-warnings incrementally.
+      # ESLint (flat config): typescript-eslint + react-hooks. Fails on errors;
+      # warnings advisory (npm run lint drops --max-warnings 0).
       - name: eslint
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npm run lint
       - name: vitest
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npm test
-      - name: skipped (no panel-ui changes)
-        if: needs.changes.outputs.ui != 'true'
-        run: echo "No panel-ui changes in this PR — vitest/eslint skipped."
 
   e2e:
     name: Playwright E2E
     runs-on: jabali-ci
-    needs: changes
-    # Serialize e2e across ALL refs, not just the same ref. Port 4173 is
-    # a host-level resource on the single-runner host-mode setup, so a
-    # PR run (refs/pull/N/head) and a main push run (refs/heads/main) — in
-    # different top-level concurrency groups — can both pass their own
-    # "Free port 4173" cleanup step, then race to bind 4173, and one
-    # loses with EADDRINUSE. Pinning every e2e job to a shared group makes
-    # them queue instead of race. cancel-in-progress: false preserves the
-    # authoritative green/red history on main and lets PR runs finish.
+    # Serialize e2e across ALL refs — port 4173 is a host-level resource, so a
+    # PR run and a main run must queue, not race to bind it (EADDRINUSE).
     concurrency:
       group: e2e-port-4173
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.ui == 'true'
       - uses: actions/setup-node@v4
-        if: needs.changes.outputs.ui == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: panel-ui/package-lock.json
       - name: Install deps
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npm ci --no-audit --no-fund --prefer-offline
-      # `install chromium` (NOT --with-deps): the host-mode runner is
-      # long-lived and already has the Chromium OS libraries from prior
-      # runs, and the browser binary itself is cached in the persistent
-      # ~/.cache/ms-playwright — so this becomes a near-instant version
-      # check instead of re-downloading ~130MB + apt-installing deps on
-      # every run. (If a FRESH runner host is ever provisioned, run
-      # `npx playwright install --with-deps chromium` once by hand.)
+      # `install chromium` (NOT --with-deps): the image bakes the OS libs and
+      # the browser caches in the persistent ~/.cache/ms-playwright volume, so
+      # this is a near-instant version check.
       - name: Install Playwright Chromium
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npx playwright install chromium
       - name: Build SPA
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npm run build
-      # Host-mode runners don't get a fresh netns per job, so a stuck
-      # vite-preview from a previous run can hold 4173. Playwright's
-      # webServer is configured with --strictPort (see playwright.config.ts)
-      # so any leftover fails the test loudly instead of picking 4174.
-      # Kill any prior vite-preview first; procps is always preinstalled
-      # so pkill is available (unlike fuser/lsof which are optional).
-      # ss is part of iproute2, also always present; we use it to verify
-      # the port is actually free after the kill so we don't race.
+      # A stuck vite-preview from a previous run can hold 4173. Kill any prior
+      # one and verify the port is free (procps/iproute2 are in the image).
       - name: Free port 4173
-        if: needs.changes.outputs.ui == 'true'
         run: |
-          echo "=== processes matching 'vite preview' ==="
           pgrep -a -f "vite preview" || echo "(none)"
-          echo "=== listeners on :4173 before ==="
-          ss -tln | awk 'NR==1 || /:4173 /' || true
           pkill -9 -f "vite preview" 2>/dev/null || true
-          # Wait up to 10s for the port to actually free (kernel TIME_WAIT
-          # is a SO_REUSEADDR concern, but vite-preview uses fresh sockets
-          # so kill → free is near-instant).
           for i in $(seq 1 10); do
             ss -tln | grep -q ":4173 " || break
             sleep 1
           done
-          echo "=== listeners on :4173 after ==="
-          ss -tln | awk 'NR==1 || /:4173 /' || true
           if ss -tln | grep -q ":4173 "; then
             echo "ERROR: port 4173 still in use after kill + 10s wait"
             exit 1
           fi
-      # --workers comes from playwright.config.ts (CI => 2). One vite
-      # webServer serves all workers; specs mock the API per-test via
-      # page.route, so there is no shared backend state between workers.
+      # --workers from playwright.config.ts (CI => 2); one webServer, per-test
+      # API mocking so no shared backend state between workers.
       - name: Playwright
-        if: needs.changes.outputs.ui == 'true'
         run: cd panel-ui && npx playwright test --project=chromium --reporter=list
       - name: Upload failure artifacts
         if: failure()
@@ -265,6 +137,3 @@ jobs:
             panel-ui/test-results/
             panel-ui/playwright-report/
           retention-days: 7
-      - name: skipped (no panel-ui changes)
-        if: needs.changes.outputs.ui != 'true'
-        run: echo "No panel-ui changes in this PR — E2E skipped (nightly.yml runs it unconditionally)."

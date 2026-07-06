@@ -27,12 +27,12 @@ ARG FORGEJO_RUNNER_VERSION=12.12.0
 ARG PLAYWRIGHT_VERSION=1.55.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    PATH=/usr/local/go/bin:/home/ci/go/bin:/usr/local/bin:/usr/bin:/bin
+    PATH=/usr/local/go/bin:/home/ci/go/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 # 1. Base tools + build-essential (cgo/-race) + Playwright/browser prereqs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl wget git bash make zstd xz-utils \
-      procps iproute2 build-essential \
+      procps iproute2 build-essential passwd \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Go (pinned to match go.mod).
@@ -53,7 +53,11 @@ RUN curl -fsSL -o /usr/local/bin/forgejo-runner \
 # 5. Non-root ci user (jobs run as this user). NO sudo grant: the workflows
 #    never sudo (deps are baked at build time, which is already root), so a
 #    runtime root path would only widen the blast radius of PR-supplied code.
-RUN useradd -m -u 1000 -s /bin/bash ci
+RUN useradd -m -u 1000 -s /bin/bash ci \
+    && install -d -o ci -g ci \
+         /home/ci/.cache /home/ci/.cache/actcache /home/ci/.cache/go-build \
+         /home/ci/.cache/ms-playwright /home/ci/.npm \
+         /home/ci/go /home/ci/go/pkg /home/ci/go/pkg/mod
 
 # 6. Playwright OS deps (root) — the browser binary itself is fetched by the
 #    job (cached in /home/ci/.cache/ms-playwright via the volume mount).
