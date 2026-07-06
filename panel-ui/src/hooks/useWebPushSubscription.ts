@@ -92,7 +92,7 @@ export function useWebPushSubscription(): WebPushState {
     let cancelled = false;
     (async () => {
       try {
-        await navigator.serviceWorker.register(SW_PATH, { scope: SW_SCOPE });
+        await navigator.serviceWorker.register(SW_PATH, { scope: SW_SCOPE, updateViaCache: "none" });
         const ready = await navigator.serviceWorker.ready;
         if (cancelled) return;
         setRegistration(ready);

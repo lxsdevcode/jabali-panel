@@ -73,6 +73,14 @@ func RegisterStatic(g *gin.Engine, panelFS fs.FS) {
 				c.Header("Clear-Site-Data", `"cache"`)
 			}
 		}
+		// The service worker script must never be HTTP-cached: a stale
+		// sw-push.js keeps an old (possibly broken) SW controlling the page
+		// across deploys, so every update's fresh app-shell references asset
+		// hashes the old SW mishandles → blank screen. The registration also
+		// sets updateViaCache:"none"; this is the origin-side belt.
+		if p == "/sw-push.js" {
+			c.Header("Cache-Control", "no-cache")
+		}
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
 }
