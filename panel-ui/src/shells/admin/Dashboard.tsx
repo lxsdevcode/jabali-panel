@@ -128,7 +128,7 @@ export const Dashboard = () => {
             icon={<MailOutlined />}
             iconBg="rgba(250, 140, 22, 0.14)"
             iconColor="#fa8c16"
-            to="/jabali-admin/domains"
+            to="/jabali-admin/mail"
           />
         </Col>
       </Row>
