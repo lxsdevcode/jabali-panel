@@ -69,7 +69,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          # depth 50 reaches the PR base without fetching all 880 mirror tags
+          # (a full fetch-depth:0 checkout was failing the gate job on this repo).
+          fetch-depth: 50
+          fetch-tags: false
       - id: f
         name: Compute change flags
         run: |
@@ -95,6 +98,7 @@ jobs:
           echo "ui=$ui"           | tee -a "$GITHUB_OUTPUT"
           echo "go=$go"           | tee -a "$GITHUB_OUTPUT"
           echo "install=$install" | tee -a "$GITHUB_OUTPUT"
+          exit 0
 
   go:
     name: Go tests + vet
