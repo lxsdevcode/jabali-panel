@@ -25,7 +25,7 @@ abi <abi/3.0>,
 
 #include <tunables/global>
 
-profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec {
+profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec flags=(attach_disconnected) {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 
@@ -41,6 +41,11 @@ profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec {
   /etc/php/** r,
   /usr/lib/php/** mr,
   /etc/jabali-panel/fpm/*.conf r,
+  # snuffleupagus rules (GH #359): the PHP ext reads its config at worker
+  # startup; without this the worker fatals "Could not open ... active.rules:
+  # Permission denied" and php-fpm 502s.
+  /etc/jabali/snuffleupagus/ r,
+  /etc/jabali/snuffleupagus/** r,
 
   # Tenant docroots (POSIX perms enforce per-user isolation; this layer bounds
   # escape to system files, not cross-tenant).
@@ -56,7 +61,10 @@ profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec {
   # Backing services over unix sockets.
   unix (connect, receive, send) type=stream,
   /run/redis/redis.sock rw,
+  /run/mysqld/ r,
   /run/mysqld/mysqld.sock rw,
+  # PHP's mysqli.default_socket is /var/run/mysqld/mysqld.sock (Debian).
+  /var/run/mysqld/mysqld.sock rw,
 
   # Logs.
   /var/log/php*.log w,
