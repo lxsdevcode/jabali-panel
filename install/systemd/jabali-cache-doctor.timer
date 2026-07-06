@@ -1,6 +1,6 @@
 [Unit]
 Description=Run jabali-cache-doctor.service hourly (GH #605 cache drift auto-repair)
-Documentation=https://git.jabali-panel.com/shukivaknin/jabali2
+Documentation=https://codeberg.org/shukivaknin/jabali2
 
 [Timer]
 # Give the panel + agent a head start after boot before the first sweep.
