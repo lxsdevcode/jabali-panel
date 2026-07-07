@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,15 +60,48 @@ var probeTargetIP = func() string {
 			}
 		}
 	}
+	// JAB-31 follow-up: a box with no default route to 1.1.1.1 (isolated test
+	// VM) previously fell through to 127.0.0.1, which every managed-IP vhost
+	// (M24 `listen <IP>:443`) refuses → false connection-refused. Fall back to
+	// the first non-loopback global IPv4 instead.
+	if hi, herr := exec.Command("hostname", "-I").Output(); herr == nil {
+		for _, tok := range strings.Fields(string(hi)) {
+			if strings.Contains(tok, ".") && !strings.HasPrefix(tok, "127.") {
+				return tok
+			}
+		}
+	}
 	return "127.0.0.1"
 }()
 
-var runProbeCurl = func(ctx context.Context, domain string) int {
+// nginxSitesDir is a var so tests can point vhostListenIP at a fixture dir.
+var nginxSitesDir = "/etc/nginx/sites-available"
+
+// vhostListenRe extracts the IPv4 from a rendered `listen <IP>:443` directive.
+var vhostListenRe = regexp.MustCompile(`(?m)^\s*listen\s+(\d{1,3}(?:\.\d{1,3}){3}):443\b`)
+
+// vhostListenIP returns the specific IPv4 a domain's rendered nginx vhost binds
+// (M24 per-domain listen IP), or "" when it listens on all addresses. The probe
+// must curl --resolve to THIS ip: a vhost bound to a managed IP refuses a
+// connection to any other address, which produced false 0-status health
+// failures inside a `done` migration (JAB-31 follow-up).
+func vhostListenIP(domain string) string {
+	b, err := os.ReadFile(filepath.Join(nginxSitesDir, domain+".conf"))
+	if err != nil {
+		return ""
+	}
+	if m := vhostListenRe.FindSubmatch(b); m != nil {
+		return string(m[1])
+	}
+	return ""
+}
+
+var runProbeCurl = func(ctx context.Context, domain, ip string) int {
 	args := []string{
 		"-s", "-o", "/dev/null", "-w", "%{http_code}",
 		"-k", "-L", "--max-time", "15",
-		"--resolve", domain + ":443:" + probeTargetIP,
-		"--resolve", domain + ":80:" + probeTargetIP,
+		"--resolve", domain + ":443:" + ip,
+		"--resolve", domain + ":80:" + ip,
 		"https://" + domain + "/",
 	}
 	out, _ := exec.CommandContext(ctx, "curl", args...).Output()
@@ -77,9 +112,15 @@ var runProbeCurl = func(ctx context.Context, domain string) int {
 var probeSleep = func() { time.Sleep(5 * time.Second) }
 
 func probeOneDomain(ctx context.Context, domain string) httpProbeResult {
+	// Resolve to the domain's actual vhost listen IP; fall back to the box's
+	// primary IPv4 when the vhost listens on all addresses (JAB-31 follow-up).
+	ip := vhostListenIP(domain)
+	if ip == "" {
+		ip = probeTargetIP
+	}
 	var code int
 	for attempt := 0; attempt < 3; attempt++ {
-		code = runProbeCurl(ctx, domain)
+		code = runProbeCurl(ctx, domain, ip)
 		// 0 = couldn't connect; 502/503 = upstream (FPM) not up yet.
 		// Those are transient just after restore — give the pool time.
 		if code != 0 && code != 502 && code != 503 {
