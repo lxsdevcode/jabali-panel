@@ -13,6 +13,8 @@ export interface ServerCapabilities {
   docker_apps_user_enabled: boolean;
   python_apps_enabled: boolean;
   tenant_domain_options_enabled: boolean;
+  /** GH #361: the server's public IPv4, for the dashboard. "" when unset. */
+  public_ipv4: string;
 }
 
 export function useServerCapabilities() {
@@ -26,6 +28,7 @@ export function useServerCapabilities() {
         docker_apps_user_enabled: !!data.docker_apps_user_enabled,
         python_apps_enabled: !!data.python_apps_enabled,
         tenant_domain_options_enabled: !!data.tenant_domain_options_enabled,
+        public_ipv4: data.public_ipv4 ?? "",
       };
     },
     staleTime: 60_000,

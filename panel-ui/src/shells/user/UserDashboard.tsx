@@ -12,6 +12,7 @@ import {
   Row,
   Space,
   Table,
+  Typography,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -29,6 +30,7 @@ import { useListQuery } from "../../hooks/useQueries";
 import type { Mailbox } from "../../hooks/useMailboxes";
 import { getIdentity, type Identity } from "../../identity";
 import { MyProfileUsageCard } from "./MyProfileUsageCard";
+import { useServerCapabilities } from "../../hooks/useServerCapabilities";
 import { StatCard } from "../../components/StatCard";
 
 const RECENT_LIMIT = 5;
@@ -115,6 +117,7 @@ export function UserDashboard() {
     resource: "databases",
     params: { pageSize: RECENT_LIMIT, sort: "created_at", order: "desc" },
   });
+  const { data: caps } = useServerCapabilities();
 
   const items = [
     {
@@ -250,6 +253,14 @@ export function UserDashboard() {
 
   return (
     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+      {caps?.public_ipv4 ? (
+        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+          Server IP:{" "}
+          <Typography.Text copyable code style={{ fontSize: 13 }}>
+            {caps.public_ipv4}
+          </Typography.Text>
+        </Typography.Text>
+      ) : null}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} md={6}>
           <StatCard
