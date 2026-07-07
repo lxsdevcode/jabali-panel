@@ -149,7 +149,7 @@ func (r *migrationJobRepo) UpdateState(ctx context.Context, id, state string, la
 	}
 	// Stamp ended_at on terminal states so the UI can render duration.
 	switch state {
-	case models.MigrationStateDone, models.MigrationStateFailed, models.MigrationStateCancelled:
+	case models.MigrationStateDone, models.MigrationStateDegraded, models.MigrationStateFailed, models.MigrationStateCancelled:
 		patch["ended_at"] = time.Now().UTC()
 	}
 	res := r.db.WithContext(ctx).Model(&models.MigrationJob{}).

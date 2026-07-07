@@ -3064,6 +3064,7 @@ jabali migrate import [flags]
 
 **Flags:**
 
+- `--allow-degraded` — exit 0 even if the restore ends degraded (a core area — DB/mail/health — failed)
 - `--job-id` — migration_jobs.id (ULID) — required
 - `--keep-staging` — do NOT delete /var/lib/jabali-migrations/<job-id>/ after run (debug aid)
 - `--target-email` — destination user email (only used when auto-creating)
