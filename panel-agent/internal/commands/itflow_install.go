@@ -68,7 +68,7 @@ const itflowRepoURL = "https://github.com/itflow-org/itflow.git"
 // reset the working tree to this reviewed SHA at install time and verify HEAD
 // matches — installs are reproducible and never pull an unreviewed master tip.
 // Bump deliberately (code review) when adopting a newer ITFlow.
-const itflowMasterPinnedCommit = "60563e33925bb3dc07911e8f6ad8b86dec89f552"
+const itflowMasterPinnedCommit = "698135d53d652e7fcbbd1ea48454ef3de7a3418b"
 
 // itflowDevelopPinnedCommit pins the `develop` branch (GH #332). develop is
 // ITFlow's active dev branch  bleeding-edge and NOT security-reviewed; we pin
