@@ -34,6 +34,7 @@ export interface MailGroup {
   has_calendar: boolean;
   has_addressbook: boolean;
   has_files: boolean;
+  internal_only: boolean;
   member_count: number;
   created_at: string;
   updated_at: string;
@@ -62,6 +63,7 @@ export interface CreateMailGroupInput {
   has_calendar?: boolean;
   has_addressbook?: boolean;
   has_files?: boolean;
+  internal_only?: boolean;
 }
 
 export interface UpdateMailGroupInput {
@@ -71,6 +73,7 @@ export interface UpdateMailGroupInput {
   has_calendar?: boolean;
   has_addressbook?: boolean;
   has_files?: boolean;
+  internal_only?: boolean;
 }
 
 export function useMailGroups(domainId: string | undefined): UseQueryResult<MailGroup[]> {

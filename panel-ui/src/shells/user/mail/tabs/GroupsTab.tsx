@@ -14,6 +14,7 @@ import {
   Select,
   Skeleton,
   Space,
+  Switch,
   Tag,
   Segmented,
   Typography,
@@ -224,12 +225,14 @@ export function GroupDrawer({
               display_name: group.display_name,
               group_kind: group.group_kind,
               description: group.description,
+              internal_only: group.internal_only,
             }
           : {
               name: "",
               display_name: "",
               group_kind: "resource",
               description: "",
+              internal_only: false,
             },
       );
     }
@@ -246,6 +249,7 @@ export function GroupDrawer({
           input: {
             display_name: v.display_name,
             description: v.description,
+            internal_only: v.internal_only,
           },
         });
         message.success("Group updated");
@@ -258,6 +262,7 @@ export function GroupDrawer({
             display_name: v.display_name,
             description: v.description,
             group_kind: v.group_kind,
+            internal_only: v.internal_only,
           },
         });
         message.success("Group created");
@@ -306,6 +311,14 @@ export function GroupDrawer({
         </Form.Item>
         <Form.Item label="Description" name="description">
           <Input.TextArea placeholder="Optional note" rows={2} maxLength={255} />
+        </Form.Item>
+        <Form.Item
+          label="Internal delivery only"
+          name="internal_only"
+          valuePropName="checked"
+          tooltip="When on, the group address accepts mail only from senders in its own domain; external senders are rejected (GH #348)."
+        >
+          <Switch />
         </Form.Item>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           <b>Shared workspace</b>: members also share the group's calendar, contacts and
