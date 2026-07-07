@@ -26,6 +26,7 @@ import {
 } from "antd";
 import { LinkOutlined, DownloadOutlined, LockOutlined } from "@ant-design/icons";
 import { apiClient } from "../../apiClient";
+import { MiniMarkdown } from "../../components/MiniMarkdown";
 
 // Minimal OpenAPI 3 shape — we only consume what we render.
 interface OpenAPISpec {
@@ -169,13 +170,7 @@ export function APIDocsPage(): JSX.Element {
             {spec.info.title}{" "}
             <Tag color="blue">{spec.info.version}</Tag>
           </Typography.Title>
-          {spec.info.description && (
-            <Typography.Paragraph>
-              <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", wordBreak: "break-word", overflowWrap: "anywhere" }}>
-                {spec.info.description}
-              </pre>
-            </Typography.Paragraph>
-          )}
+          {spec.info.description && <MiniMarkdown text={spec.info.description} />}
           <Space size="middle" wrap>
             <Typography.Link href="/api/v1/_meta/openapi.yaml" target="_blank">
               <DownloadOutlined /> Raw OpenAPI YAML
@@ -194,9 +189,9 @@ export function APIDocsPage(): JSX.Element {
             style={{ marginBottom: 16 }}
           >
             {tagDesc.has(tag) && (
-              <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-                {tagDesc.get(tag)}
-              </Typography.Paragraph>
+              <div style={{ marginTop: 0 }}>
+                <MiniMarkdown text={tagDesc.get(tag) ?? ""} />
+              </div>
             )}
             <Collapse
               accordion={false}
@@ -242,13 +237,7 @@ function OperationDetail(props: {
   const { op, method, path } = props;
   return (
     <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-      {op.description && (
-        <Typography.Paragraph>
-          <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>
-            {op.description}
-          </pre>
-        </Typography.Paragraph>
-      )}
+      {op.description && <MiniMarkdown text={op.description} />}
 
       {op.parameters && op.parameters.length > 0 && (
         <div>
