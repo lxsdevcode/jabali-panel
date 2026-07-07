@@ -692,16 +692,10 @@ func cpanelRestoreCallback(
 				"databases: %d dump(s) present but 0 imported", len(p.parsed.MySQLDumps)))
 		}
 
-		if plan.DNS {
-			dnsRes, err := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
-			if err != nil {
-				return bytes, warnings, fmt.Errorf("dns: %w", err)
-			}
-			warnings = append(warnings, fmt.Sprintf("dns: zones=%d records=%d", dnsRes.Zones, dnsRes.Records))
-			warnings = append(warnings, dnsRes.Skipped...)
-		} else {
-			warnings = append(warnings, "dns: skipped per migration plan")
-		}
+		// JAB-28 follow-up: DNS import moved to AFTER ImportDomains (below) so the
+		// bootstrap zone that domain.create renders can't clobber the imported
+		// source records (QA saw dns: zones=2 records=28 in the manifest but only
+		// bootstrap records in PowerDNS).
 
 		// DA flow (2026-05-14 rework): backup tarball intentionally
 		// EXCLUDES the home tree. domains-paths.txt manifest inside
@@ -880,6 +874,20 @@ func cpanelRestoreCallback(
 		}
 		warnings = append(warnings, fmt.Sprintf("domains: created=%d email_enabled=%d", domainsRes.Created, domainsRes.EmailEnabled))
 		warnings = append(warnings, domainsRes.Skipped...)
+
+		// JAB-28 follow-up: import source DNS records AFTER domain create so they
+		// overlay the bootstrapped zone instead of being clobbered by it. Apex
+		// NS + apex A/AAAA are filtered in ImportDNS (jabali owns the apex).
+		if plan.DNS {
+			dnsRes, derr := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
+			if derr != nil {
+				return bytes, warnings, fmt.Errorf("dns: %w", derr)
+			}
+			warnings = append(warnings, fmt.Sprintf("dns: zones=%d records=%d", dnsRes.Zones, dnsRes.Records))
+			warnings = append(warnings, dnsRes.Skipped...)
+		} else {
+			warnings = append(warnings, "dns: skipped per migration plan")
+		}
 
 		// Cron import runs HERE — after ImportHomeSplit rsynced the
 		// docroots + ImportDomains created the domains — so the curl→php

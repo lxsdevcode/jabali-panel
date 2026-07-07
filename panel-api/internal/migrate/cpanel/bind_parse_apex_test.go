@@ -22,9 +22,8 @@ func (okAgent) Call(_ context.Context, _ string, _ any) (json.RawMessage, error)
 var _ agent.AgentInterface = okAgent{}
 
 // TestImportDNS_ApexNSSkipEmittedOncePerZone is the bug-5 regression
-// guard. A normal zone carries two apex NS records (ns1 + ns2). The
-// filter must emit apex_ns_handled_by_pdns:<origin> ONCE per zone, not
-// once per filtered record, or the manifest duplicates the line.
+// guard. A normal zone carries two apex NS records (ns1 + ns2). The filter must emit apex_ns_a_handled_by_jabali:<origin> ONCE per zone
+// (covers apex NS + apex A/AAAA), not once per filtered record.
 func TestImportDNS_ApexNSSkipEmittedOncePerZone(t *testing.T) {
 	dir := t.TempDir()
 	zonePath := filepath.Join(dir, "example.com.db")
@@ -47,7 +46,7 @@ www     IN  A   192.0.2.10
 	}
 	n := 0
 	for _, s := range res.Skipped {
-		if strings.HasPrefix(s, "apex_ns_handled_by_pdns:") {
+		if strings.HasPrefix(s, "apex_ns_a_handled_by_jabali:") {
 			n++
 		}
 	}
