@@ -35,6 +35,11 @@ type PHPPoolInput = {
   pm_mode: string;
   pm_max_children: number;
   process_idle_timeout_seconds: number;
+  pm_start_servers: number;
+  pm_min_spare_servers: number;
+  pm_max_spare_servers: number;
+  pm_max_requests: number;
+  request_terminate_timeout_seconds: number;
   php_version?: string;
 };
 
@@ -57,6 +62,7 @@ export const PHPPoolEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [form] = Form.useForm<PHPPoolInput>();
+  const pmMode = Form.useWatch("pm_mode", form);
   const { token } = theme.useToken();
 
   const { data: pool, isLoading } = useOneQuery<PHPPoolRecord>({
@@ -184,6 +190,28 @@ export const PHPPoolEdit = () => {
           rules={[{ required: false }]}
         >
           <InputNumber min={0} placeholder="Idle timeout in seconds" />
+        </Form.Item>
+
+        {pmMode === "dynamic" && (
+          <>
+            <Form.Item label="Start Servers (dynamic)" name="pm_start_servers">
+              <InputNumber min={1} placeholder="pm.start_servers" />
+            </Form.Item>
+            <Form.Item label="Min Spare Servers (dynamic)" name="pm_min_spare_servers">
+              <InputNumber min={1} placeholder="pm.min_spare_servers" />
+            </Form.Item>
+            <Form.Item label="Max Spare Servers (dynamic, <= max children)" name="pm_max_spare_servers">
+              <InputNumber min={1} placeholder="pm.max_spare_servers" />
+            </Form.Item>
+          </>
+        )}
+
+        <Form.Item label="Max Requests per Worker (0 = never)" name="pm_max_requests">
+          <InputNumber min={0} placeholder="pm.max_requests" />
+        </Form.Item>
+
+        <Form.Item label="Request Terminate Timeout (seconds, 0 = no limit)" name="request_terminate_timeout_seconds">
+          <InputNumber min={0} placeholder="request_terminate_timeout" />
         </Form.Item>
 
         <Form.Item label="PHP Version" name="php_version">

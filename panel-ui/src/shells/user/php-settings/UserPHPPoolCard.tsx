@@ -25,6 +25,8 @@ import { apiClient } from "../../../apiClient";
 // Mirror of php_pools.go caps for a tenant. Server enforces these regardless.
 const USER_MAX_CHILDREN_CAP = 100;
 const MAX_IDLE_TIMEOUT_SEC = 86400;
+const MAX_REQUESTS_CAP = 100000;
+const MAX_TERMINATE_SEC = 3600;
 
 type PHPPool = {
   id: string;
@@ -32,6 +34,11 @@ type PHPPool = {
   pm_mode: string;
   pm_max_children: number;
   process_idle_timeout_seconds: number;
+  pm_start_servers: number;
+  pm_min_spare_servers: number;
+  pm_max_spare_servers: number;
+  pm_max_requests: number;
+  request_terminate_timeout_seconds: number;
 };
 
 const PM_MODES = [
@@ -44,6 +51,7 @@ const PoolForm = ({ pool }: { pool: PHPPool }) => {
   const qc = useQueryClient();
   const [form] = Form.useForm<Omit<PHPPool, "id" | "php_version">>();
   const [saving, setSaving] = useState(false);
+  const pmMode = Form.useWatch("pm_mode", form);
 
   const onSave = async () => {
     const vals = await form.validateFields();
@@ -53,6 +61,11 @@ const PoolForm = ({ pool }: { pool: PHPPool }) => {
         pm_mode: vals.pm_mode,
         pm_max_children: vals.pm_max_children,
         process_idle_timeout_seconds: vals.process_idle_timeout_seconds,
+        pm_start_servers: vals.pm_start_servers,
+        pm_min_spare_servers: vals.pm_min_spare_servers,
+        pm_max_spare_servers: vals.pm_max_spare_servers,
+        pm_max_requests: vals.pm_max_requests,
+        request_terminate_timeout_seconds: vals.request_terminate_timeout_seconds,
         php_version: pool.php_version,
       });
       message.success(`PHP ${pool.php_version} pool updated`);
@@ -78,6 +91,11 @@ const PoolForm = ({ pool }: { pool: PHPPool }) => {
         pm_mode: pool.pm_mode,
         pm_max_children: pool.pm_max_children,
         process_idle_timeout_seconds: pool.process_idle_timeout_seconds,
+        pm_start_servers: pool.pm_start_servers,
+        pm_min_spare_servers: pool.pm_min_spare_servers,
+        pm_max_spare_servers: pool.pm_max_spare_servers,
+        pm_max_requests: pool.pm_max_requests,
+        request_terminate_timeout_seconds: pool.request_terminate_timeout_seconds,
       }}
       style={{ maxWidth: 520 }}
     >
@@ -118,6 +136,45 @@ const PoolForm = ({ pool }: { pool: PHPPool }) => {
           max={MAX_IDLE_TIMEOUT_SEC}
           style={{ width: 160 }}
         />
+      </Form.Item>
+      {pmMode === "dynamic" && (
+        <>
+          <Form.Item
+            name="pm_start_servers"
+            label="Start servers (dynamic)"
+            rules={[{ type: "number", min: 1, max: USER_MAX_CHILDREN_CAP }]}
+          >
+            <InputNumber min={1} max={USER_MAX_CHILDREN_CAP} style={{ width: 160 }} />
+          </Form.Item>
+          <Form.Item
+            name="pm_min_spare_servers"
+            label="Min spare servers (dynamic)"
+            rules={[{ type: "number", min: 1, max: USER_MAX_CHILDREN_CAP }]}
+          >
+            <InputNumber min={1} max={USER_MAX_CHILDREN_CAP} style={{ width: 160 }} />
+          </Form.Item>
+          <Form.Item
+            name="pm_max_spare_servers"
+            label="Max spare servers (dynamic) — must be ≤ max children"
+            rules={[{ type: "number", min: 1, max: USER_MAX_CHILDREN_CAP }]}
+          >
+            <InputNumber min={1} max={USER_MAX_CHILDREN_CAP} style={{ width: 160 }} />
+          </Form.Item>
+        </>
+      )}
+      <Form.Item
+        name="pm_max_requests"
+        label="Max requests per worker (0 = never recycle)"
+        rules={[{ type: "number", min: 0, max: MAX_REQUESTS_CAP }]}
+      >
+        <InputNumber min={0} max={MAX_REQUESTS_CAP} style={{ width: 160 }} />
+      </Form.Item>
+      <Form.Item
+        name="request_terminate_timeout_seconds"
+        label="Request terminate timeout (seconds, 0 = no limit)"
+        rules={[{ type: "number", min: 0, max: MAX_TERMINATE_SEC }]}
+      >
+        <InputNumber min={0} max={MAX_TERMINATE_SEC} style={{ width: 160 }} />
       </Form.Item>
       <Button type="primary" loading={saving} onClick={onSave}>
         Save PHP {pool.php_version} pool

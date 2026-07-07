@@ -29,12 +29,17 @@ type phpPoolApplyParams struct {
 	// master alongside the default one; user=/group= in the pool conf stay the
 	// real OS user (the jabali-pma opaque-instance pattern), so privilege is
 	// unchanged — only the PHP version differs.
-	Slug                      string `json:"slug,omitempty"`
-	PmMode                    string `json:"pm_mode"`
-	PmMaxChildren             uint32 `json:"pm_max_children"`
-	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
-	AdminValues               []KV   `json:"admin_values"`
-	AdminFlags                []KV   `json:"admin_flags"`
+	Slug                           string `json:"slug,omitempty"`
+	PmMode                         string `json:"pm_mode"`
+	PmMaxChildren                  uint32 `json:"pm_max_children"`
+	ProcessIdleTimeoutSeconds      uint32 `json:"process_idle_timeout_seconds"`
+	PmStartServers                 uint32 `json:"pm_start_servers"`
+	PmMinSpareServers              uint32 `json:"pm_min_spare_servers"`
+	PmMaxSpareServers              uint32 `json:"pm_max_spare_servers"`
+	PmMaxRequests                  uint32 `json:"pm_max_requests"`
+	RequestTerminateTimeoutSeconds uint32 `json:"request_terminate_timeout_seconds"`
+	AdminValues                    []KV   `json:"admin_values"`
+	AdminFlags                     []KV   `json:"admin_flags"`
 	// DisableFunctions (GH #402) overrides the php_admin_value[disable_functions]
 	// line. nil = caller did not specify -> the safe default (#401) is used;
 	// "" = explicit admin opt-out (emit no line); any other value is rendered
@@ -58,16 +63,21 @@ type phpPoolApplyResponse struct {
 
 // phpPoolSpecTemplate represents the template data for rendering the pool config.
 type phpPoolSpecTemplate struct {
-	PoolName                  string
-	User                      string
-	Group                     string
-	SocketPath                string
-	PmMode                    string
-	PmMaxChildren             uint32
-	ProcessIdleTimeoutSeconds uint32
-	AdminValues               []KV
-	AdminFlags                []KV
-	DisableFunctions          string
+	PoolName                       string
+	User                           string
+	Group                          string
+	SocketPath                     string
+	PmMode                         string
+	PmMaxChildren                  uint32
+	ProcessIdleTimeoutSeconds      uint32
+	PmStartServers                 uint32
+	PmMinSpareServers              uint32
+	PmMaxSpareServers              uint32
+	PmMaxRequests                  uint32
+	RequestTerminateTimeoutSeconds uint32
+	AdminValues                    []KV
+	AdminFlags                     []KV
+	DisableFunctions               string
 }
 
 // phpVersionRegex validates PHP version format: X.Y where X and Y are digits.
@@ -413,6 +423,26 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
+	// GH #339: dynamic pm requires start/spare sizing and FPM enforces
+	// min_spare <= start <= max_spare <= max_children. Fail closed so a bad
+	// combo never reaches FPM (which would refuse to start the pool).
+	if p.PmMode == "dynamic" {
+		if p.PmStartServers == 0 || p.PmMinSpareServers == 0 || p.PmMaxSpareServers == 0 {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInvalidArgument,
+				Message: "dynamic pm requires pm_start_servers, pm_min_spare_servers, pm_max_spare_servers > 0",
+			}
+		}
+		if !(p.PmMinSpareServers <= p.PmStartServers &&
+			p.PmStartServers <= p.PmMaxSpareServers &&
+			p.PmMaxSpareServers <= p.PmMaxChildren) {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodeInvalidArgument,
+				Message: "dynamic pm requires pm_min_spare_servers <= pm_start_servers <= pm_max_spare_servers <= pm_max_children",
+			}
+		}
+	}
+
 	// Validate admin_values directives.
 	for _, av := range p.AdminValues {
 		if isForbiddenDirective(av.Name) {
@@ -560,16 +590,21 @@ func phpPoolApplyHandler(ctx context.Context, params json.RawMessage) (any, erro
 	}
 
 	spec := phpPoolSpecTemplate{
-		PoolName:                  poolName,
-		User:                      p.Username,
-		Group:                     p.Username,
-		SocketPath:                socketPath,
-		PmMode:                    p.PmMode,
-		PmMaxChildren:             p.PmMaxChildren,
-		ProcessIdleTimeoutSeconds: p.ProcessIdleTimeoutSeconds,
-		AdminValues:               p.AdminValues,
-		AdminFlags:                p.AdminFlags,
-		DisableFunctions:          disableFunctions,
+		PoolName:                       poolName,
+		User:                           p.Username,
+		Group:                          p.Username,
+		SocketPath:                     socketPath,
+		PmMode:                         p.PmMode,
+		PmMaxChildren:                  p.PmMaxChildren,
+		ProcessIdleTimeoutSeconds:      p.ProcessIdleTimeoutSeconds,
+		PmStartServers:                 p.PmStartServers,
+		PmMinSpareServers:              p.PmMinSpareServers,
+		PmMaxSpareServers:              p.PmMaxSpareServers,
+		PmMaxRequests:                  p.PmMaxRequests,
+		RequestTerminateTimeoutSeconds: p.RequestTerminateTimeoutSeconds,
+		AdminValues:                    p.AdminValues,
+		AdminFlags:                     p.AdminFlags,
+		DisableFunctions:               disableFunctions,
 	}
 
 	var buf strings.Builder

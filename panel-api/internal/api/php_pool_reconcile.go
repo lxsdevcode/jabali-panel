@@ -69,15 +69,20 @@ func reconcilePHPPoolViaAgent(
 	slug := models.PoolSlug(username, pool.PHPVersion, isDefault)
 
 	_, err = ag.Call(agentCtx, "php.pool.apply", map[string]any{
-		"username":                     username,
-		"slug":                         slug,
-		"additive":                     !isDefault,
-		"php_version":                  pool.PHPVersion,
-		"pm_mode":                      pool.PmMode,
-		"pm_max_children":              pool.PmMaxChildren,
-		"process_idle_timeout_seconds": pool.ProcessIdleTimeoutSeconds,
-		"admin_values":                 adminValues,
-		"admin_flags":                  adminFlags,
+		"username":                          username,
+		"slug":                              slug,
+		"additive":                          !isDefault,
+		"php_version":                       pool.PHPVersion,
+		"pm_mode":                           pool.PmMode,
+		"pm_max_children":                   pool.PmMaxChildren,
+		"process_idle_timeout_seconds":      pool.ProcessIdleTimeoutSeconds,
+		"pm_start_servers":                  pool.PmStartServers,
+		"pm_min_spare_servers":              pool.PmMinSpareServers,
+		"pm_max_spare_servers":              pool.PmMaxSpareServers,
+		"pm_max_requests":                   pool.PmMaxRequests,
+		"request_terminate_timeout_seconds": pool.RequestTerminateTimeoutSeconds,
+		"admin_values":                      adminValues,
+		"admin_flags":                       adminFlags,
 	})
 	if err != nil {
 		pool.Status = "error"
