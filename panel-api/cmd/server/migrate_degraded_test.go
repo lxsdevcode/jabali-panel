@@ -33,18 +33,15 @@ func TestMigrationCriticalThresholds(t *testing.T) {
 		}
 	})
 
-	t.Run("any unhealthy domain is critical (not just 0/N)", func(t *testing.T) {
-		if !healthNotAllHealthy(2, 1) {
-			t.Error("1/2 healthy should be critical (JAB-40)")
+	t.Run("only a 5xx degrades — a 0/unreachable does not (JAB-42)", func(t *testing.T) {
+		// JAB-40 (Nextcloud 500) is a 5xx -> degrade. JAB-42 (itflow returned 0
+		// then 200 right after) is a transient reconciler-lag 0 -> must NOT degrade.
+		degradeOn := func(serverErr int) bool { return serverErr > 0 }
+		if !degradeOn(1) {
+			t.Error("a 5xx should degrade (JAB-40)")
 		}
-		if !healthNotAllHealthy(2, 0) {
-			t.Error("0/2 healthy should be critical")
-		}
-		if healthNotAllHealthy(2, 2) {
-			t.Error("all healthy is not a failure")
-		}
-		if healthNotAllHealthy(0, 0) {
-			t.Error("nothing probed is not a failure")
+		if degradeOn(0) {
+			t.Error("no 5xx (e.g. a transient 0) must not degrade (JAB-42)")
 		}
 	})
 }

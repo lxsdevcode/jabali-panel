@@ -573,10 +573,6 @@ type cpanelRunPayload struct {
 // produced nothing usable — a "done" job in that state is misleading.
 func dbDumpsAllSkipped(dumps, created int) bool        { return dumps > 0 && created == 0 }
 func mailFoundNonePushed(found int, pushed int64) bool { return found > 0 && pushed == 0 }
-// healthNotAllHealthy (JAB-40): any probed domain that isn't healthy after the
-// restore's retry window is a core failure — a restore that leaves 1 of 2 sites
-// down must be degraded, not done.
-func healthNotAllHealthy(probed, healthy int) bool { return probed > 0 && healthy < probed }
 
 // shouldDowngradeToDegraded gates the done→degraded transition: the runner
 // stamped done but the restore recorded at least one core-area failure.
@@ -1075,14 +1071,17 @@ func cpanelRestoreCallback(
 				// the account isn't serving — core failure, not a warning.
 				// JAB-40: ANY domain not serving after a restore is a core problem
 				// — 1/2 must not read as a clean `done`. The probe already retries
-				// transient 502/503 (FPM warmup), so a still-unhealthy domain here
-				// is persistent: a 5xx (crashing app, e.g. Nextcloud missing a PHP
-				// driver), a 4xx, or no response. Downgrade to degraded whenever not
-				// every probed domain is healthy.
-				if healthNotAllHealthy(len(pr.Results), okCount) {
+				// JAB-42: ONLY a 5xx is a hard degrade — the app is serving but
+				// crashing (e.g. Nextcloud missing a PHP driver), which is JAB-40's
+				// real case. A `0`/connection-refused is almost always the reconciler
+				// not having rebound nginx for the just-created domain yet (the site
+				// answers 200 seconds later), so it stays a warning, NOT a degrade —
+				// otherwise a perfectly healthy restore false-degrades on probe
+				// timing. okCount<total without any 5xx = still `done`.
+				if serverErrCount > 0 {
 					p.criticals = append(p.criticals, fmt.Sprintf(
-						"health: only %d/%d domains healthy after restore (%d returned 5xx)",
-						okCount, len(pr.Results), serverErrCount))
+						"health: %d/%d domains returned 5xx (crashing app) after restore",
+						serverErrCount, len(pr.Results)))
 				}
 			}
 			probeCancel()
