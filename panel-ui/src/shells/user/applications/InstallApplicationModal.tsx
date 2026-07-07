@@ -662,6 +662,15 @@ export const InstallApplicationModal = ({
               </Form.Item>
             )}
 
+            {selectedApp?.install_notice && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={selectedApp.install_notice}
+              />
+            )}
+
             <Form.Item
               label="Domain"
               name="domain_id"
@@ -712,14 +721,6 @@ export const InstallApplicationModal = ({
                   </>
                 )}
 
-                {selectedApp?.install_notice && (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                    message={selectedApp.install_notice}
-                  />
-                )}
                 {fieldOrder.map((name) =>
                   renderParamField(name, activeSchema[name], undefined),
                 )}
