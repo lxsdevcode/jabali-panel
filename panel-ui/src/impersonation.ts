@@ -7,6 +7,7 @@
 // is active, GET /me returns the TARGET user, so the SPA naturally renders as
 // them; exiting clears the grant and /me returns the admin again.
 import { apiClient } from "./apiClient";
+import { clearIdentity } from "./identity";
 
 export const ACT_AS_KEY = "jabali_act_as";
 
@@ -35,6 +36,9 @@ export async function startImpersonation(userId: string): Promise<ActAsState> {
   }>("/admin/impersonation", { user_id: userId });
   const state: ActAsState = { id: data.id, username: data.target_username };
   setActAs(state);
+  // Codeberg #4: drop the cached /me so RequireAdmin re-resolves against the
+  // now-effective (tenant, act-as header) identity instead of the stale admin.
+  clearIdentity();
   return state;
 }
 
@@ -44,6 +48,8 @@ export async function startImpersonation(userId: string): Promise<ActAsState> {
 export async function stopImpersonation(): Promise<void> {
   const s = getActAs();
   setActAs(null);
+  // Codeberg #4: re-resolve as the real admin now the grant is gone.
+  clearIdentity();
   if (s) {
     try {
       await apiClient.delete(`/admin/impersonation/${s.id}`);
