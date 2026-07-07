@@ -43,6 +43,10 @@ type PackageCreateInput = {
   ssh_enabled: boolean;
   cgi_enabled: boolean;
   php_exec_enabled: boolean;
+  fpm_user_can_edit: boolean;
+  fpm_advanced_mode: boolean;
+  fpm_max_children_cap: number;
+  fpm_worker_mem_mb: number;
   docker_app_slugs?: string[];
   nspawn_image_version?: string | null;
 };
@@ -119,6 +123,10 @@ export const PackageCreate = () => {
           ssh_enabled: false,
           cgi_enabled: false,
           php_exec_enabled: false,
+          fpm_user_can_edit: false,
+          fpm_advanced_mode: false,
+          fpm_max_children_cap: 20,
+          fpm_worker_mem_mb: 64,
           disk_quota_mb: 0,
           cpu_quota_percent: 0,
           memory_limit_mb: 0,
@@ -317,6 +325,39 @@ export const PackageCreate = () => {
           </Form.Item>
           <Typography.Text>Allow PHP exec functions <Typography.Text type="warning">(proc_open / shell_exec — security risk)</Typography.Text></Typography.Text>
         </div>
+
+        <Typography.Title level={5} style={{ marginTop: 8 }}>
+          PHP-FPM Performance Policy
+        </Typography.Title>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <Form.Item
+            name="fpm_user_can_edit"
+            valuePropName="checked"
+            tooltip="Let tenants pick a safe PHP Performance Mode (Balanced / Low-memory / High-traffic / WordPress-optimized)."
+            noStyle
+          >
+            <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
+          </Form.Item>
+          <Typography.Text>Users can pick a PHP Performance Mode</Typography.Text>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <Form.Item
+            name="fpm_advanced_mode"
+            valuePropName="checked"
+            tooltip="Also expose the individual pm.* knobs (clamped to the cap). Implies the toggle above."
+            noStyle
+          >
+            <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
+          </Form.Item>
+          <Typography.Text>Users can use Advanced mode (raw pm.*, clamped to the cap)</Typography.Text>
+        </div>
+        <Form.Item name="fpm_max_children_cap" label="Max children per user (FPM cap)">
+          <InputNumber min={1} max={2000} style={{ width: 160 }} />
+        </Form.Item>
+        <Form.Item name="fpm_worker_mem_mb" label="Est. RAM per worker (MB) — drives the memory-budget estimate">
+          <InputNumber min={8} max={2048} style={{ width: 160 }} />
+        </Form.Item>
+
 
         <Form.Item
           label="Docker apps (per-package allowlist)"

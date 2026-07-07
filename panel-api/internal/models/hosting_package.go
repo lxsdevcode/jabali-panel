@@ -52,6 +52,19 @@ type HostingPackage struct {
 	// Admin-only (packages are admin-assigned); default 0 keeps the lockdown.
 	PHPExecEnabled bool `gorm:"column:php_exec_enabled;type:tinyint(1);not null;default:0" json:"php_exec_enabled"`
 
+	// PHP-FPM performance tiers (GH #339 phase 2). Per-package policy for the
+	// tiered pool tuning: FpmUserCanEdit gates the L1 "Performance Mode"
+	// dropdown; FpmAdvancedMode gates the L2 clamped pm.* knobs (implies
+	// FpmUserCanEdit). FpmMaxChildrenCap bounds any tenant-produced
+	// pm_max_children; FpmWorkerMemMb drives the advisory memory-impact budget
+	// (cap * mem). FpmVersionDefaults is a JSON map {"8.3":{pm_mode,...}} of the
+	// pm.* a fresh pool on this package gets, empty {} = the global mode default.
+	FpmMaxChildrenCap  uint32 `gorm:"column:fpm_max_children_cap;type:int unsigned;not null;default:20" json:"fpm_max_children_cap"`
+	FpmWorkerMemMb     uint32 `gorm:"column:fpm_worker_mem_mb;type:int unsigned;not null;default:64" json:"fpm_worker_mem_mb"`
+	FpmUserCanEdit     bool   `gorm:"column:fpm_user_can_edit;type:tinyint(1);not null;default:0" json:"fpm_user_can_edit"`
+	FpmAdvancedMode    bool   `gorm:"column:fpm_advanced_mode;type:tinyint(1);not null;default:0" json:"fpm_advanced_mode"`
+	FpmVersionDefaults string `gorm:"column:fpm_version_defaults;type:varchar(2000);not null;default:'{}'" json:"fpm_version_defaults"`
+
 	// NspawnImageVersion (M13 / ADR-0067) pins users on this package to a
 	// specific systemd-nspawn rootfs at /var/lib/jabali-nspawn/images/<v>/.
 	// NULL → reconciler stamps from server_settings.default_nspawn_image_version
