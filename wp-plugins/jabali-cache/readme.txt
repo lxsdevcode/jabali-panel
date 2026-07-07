@@ -4,7 +4,7 @@ Tags: redis, object cache, cache, performance, page cache
 Requires at least: 5.6
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.0.4
+Stable tag: 1.0.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -127,6 +127,9 @@ Only if your host does not already have one. On Jabali, nginx serves a FastCGI m
 Deactivating removes the `object-cache.php` drop-in cleanly, so WordPress reverts to its built-in non-persistent cache. Uninstalling removes the plugin's options. Your Redis data is just a cache and is safe to discard.
 
 == Changelog ==
+
+= 1.0.5 =
+* Redis object-cache socket failures (`Permission denied`) now include an actionable hint that the site's PHP-FPM user was missing from the `jabali-redis-clients` group; the panel self-heals that membership every reconcile and restarts the pool (GH #410 follow-up).
 
 = 1.0.4 =
 * Batch multi-key object-cache writes: set_multiple/add_multiple now pipeline their Redis commands and delete_multiple uses one native multi-key UNLINK, instead of one round-trip per key (GH #607).
