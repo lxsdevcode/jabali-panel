@@ -9895,7 +9895,7 @@ install_notify_template() {
 #   /etc/jabali-panel/bulwark-session.key — Bulwark SESSION_SECRET (jabali-webmail:jabali-webmail, 0640)
 
 install_stalwart() {
-  local stalwart_version="0.16.11"
+  local stalwart_version="0.16.12"
   _log "installing Stalwart Mail Server (v${stalwart_version})"
 
   # Purge any preinstalled MTA that would conflict with Stalwart on
