@@ -80,6 +80,8 @@ failed stage. Already-done stages are skipped.`,
 			cronsRepo := repository.NewCronJobRepository(sharedDB)
 			sshRepo := repository.NewSSHKeyRepository(sharedDB)
 			domainsRepo := repository.NewDomainRepository(sharedDB)
+			dnsZonesRepo := repository.NewDNSZoneRepository(sharedDB)
+			dnsRecordsRepo := repository.NewDNSRecordRepository(sharedDB)
 			mbRepo := repository.NewMailboxRepository(sharedDB)
 			fwdRepo := repository.NewEmailForwarderRepository(sharedDB)
 			arRepo := repository.NewEmailAutoresponderRepository(sharedDB)
@@ -496,7 +498,7 @@ failed stage. Already-done stages are skipped.`,
 					migrate.StageAnalyze:  cpanelAnalyzeCallback(jobsRepo),
 					migrate.StageValidate: validateStageCallback(usersRepo, domainsRepo, *user.Username),
 					migrate.StageRestore: cpanelRestoreCallback(
-						sshRepo, cronsRepo, dbsRepo, dbUsersRepo, dbGrantsRepo, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, usersRepo, kc,
+						sshRepo, cronsRepo, dbsRepo, dbUsersRepo, dbGrantsRepo, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, dnsZonesRepo, dnsRecordsRepo, usersRepo, kc,
 					),
 				},
 			}
@@ -650,6 +652,8 @@ func cpanelRestoreCallback(
 	arRepo repository.EmailAutoresponderRepository,
 	filtersRepo repository.EmailFilterRepository,
 	phpPoolsRepo repository.PHPPoolRepository,
+	dnsZonesRepo repository.DNSZoneRepository,
+	dnsRecordsRepo repository.DNSRecordRepository,
 	usersRepo repository.UserRepository,
 	kc *kratosclient.Client,
 ) migrate.StageCallback {
@@ -879,7 +883,7 @@ func cpanelRestoreCallback(
 		// overlay the bootstrapped zone instead of being clobbered by it. Apex
 		// NS + apex A/AAAA are filtered in ImportDNS (jabali owns the apex).
 		if plan.DNS {
-			dnsRes, derr := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
+			dnsRes, derr := cpanel.ImportDNS(ctx, dnsZonesRepo, dnsRecordsRepo, p.parsed)
 			if derr != nil {
 				return bytes, warnings, fmt.Errorf("dns: %w", derr)
 			}
