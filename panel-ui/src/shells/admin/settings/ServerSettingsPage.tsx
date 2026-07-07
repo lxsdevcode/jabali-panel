@@ -56,6 +56,7 @@ import { LookAndFeelCard } from "./LookAndFeelCard";
 import { DatabasesCard } from "./DatabasesCard";
 import { DockerMarketplaceCard } from "./DockerMarketplaceCard";
 import { PythonAppsCard } from "./PythonAppsCard";
+import { PHPPerformanceModesCard } from "./PHPPerformanceModesCard";
 import { DatabaseAdminSections } from "./DatabaseAdminSections";
 import { DNSResolversCard } from "./DNSResolversCard";
 import { DNSPermissionsCard } from "./DNSPermissionsCard";
@@ -984,6 +985,7 @@ export const ServerSettingsPage = () => {
           <Space direction="vertical" style={{ width: "100%" }} size="large">
             <DockerMarketplaceCard />
             <PythonAppsCard />
+        <PHPPerformanceModesCard />
           </Space>
         )}
         {activeTab === "nginx" && <NginxSettingsCard />}
