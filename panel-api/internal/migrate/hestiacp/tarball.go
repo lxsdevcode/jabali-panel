@@ -37,8 +37,12 @@ type HestiaParsedTarball struct {
 	MailRoot      string   // <root>/mail
 	MySQLDumps    []string // absolute paths to extracted db/<name>.sql files
 	UserConf      string   // <root>/user.conf
-	SSHKeys       string   // <root>/ssh_keys (when present)
+	SSHKeys       string   // authorized_keys: <root>/ssh_keys OR user_dir/.ssh/authorized_keys (JAB-30)
 	CronFile      string   // <root>/conf/cron/<user> (when present)
+	// ZoneFiles lists BIND-format zone files from dns/<domain>/conf/<domain>.db
+	// (JAB-28). Fed to cpanel.ImportDNS via the adapter so source DNS records are
+	// migrated instead of only the generic bootstrap zone.
+	ZoneFiles     []string
 	// DomainDirs maps each domain name to its source-side
 	// <WebRoot>/<dom>/ absolute path. Populated post-extract by
 	// scanning the dir; M35.4 consumer feeds the cpanel ImportDomains
@@ -184,6 +188,13 @@ func classifyHestia(p *HestiaParsedTarball, path, abs string) {
 		if len(parts) >= 3 && parts[1] == "cron" && p.CronFile == "" {
 			p.CronFile = abs
 		}
+	case "dns":
+		// JAB-28: dns/<domain>/conf/<domain>.db is the BIND zone with the
+		// source records (A/CNAME/MX/TXT/SRV/CAA/DKIM/DMARC). The sibling
+		// dns/<domain>/hestia/*.conf are Hestia metadata, not zone data.
+		if len(parts) >= 4 && parts[2] == "conf" && strings.HasSuffix(path, ".db") {
+			p.ZoneFiles = append(p.ZoneFiles, abs)
+		}
 	}
 }
 
@@ -216,6 +227,21 @@ func hydrateHestiaZstd(extractDir string, out *HestiaParsedTarball) {
 			continue
 		}
 		out.MySQLDumps = append(out.MySQLDumps, dst)
+	}
+	// SSH (JAB-30): modern Hestia stores authorized_keys in
+	// user_dir/.ssh.tar.zst -> .ssh/authorized_keys, not the legacy top-level
+	// ssh_keys file. Extract it and record the key file when the legacy one was
+	// absent (classifyHestia already set SSHKeys if ssh_keys existed).
+	sshArchive := filepath.Join(extractDir, "user_dir", ".ssh.tar.zst")
+	if _, serr := os.Stat(sshArchive); serr == nil {
+		if xerr := extractZstdTar(sshArchive, filepath.Dir(sshArchive)); xerr != nil {
+			out.Skipped = append(out.Skipped, "zstd-ssh:"+sshArchive+":"+xerr.Error())
+		} else if out.SSHKeys == "" {
+			ak := filepath.Join(extractDir, "user_dir", ".ssh", "authorized_keys")
+			if st, akerr := os.Stat(ak); akerr == nil && !st.IsDir() {
+				out.SSHKeys = ak
+			}
+		}
 	}
 }
 

@@ -420,6 +420,12 @@ failed stage. Already-done stages are skipped.`,
 					if h.CronFile != "" {
 						parsed.CronFiles = []string{h.CronFile}
 					}
+					// JAB-28: feed Hestia BIND zones (dns/<dom>/conf/<dom>.db)
+					// to cpanel.ImportDNS so source records migrate instead of
+					// only the generic bootstrap zone.
+					if len(h.ZoneFiles) > 0 {
+						parsed.ZoneFiles = h.ZoneFiles
+					}
 					// M35.4 Hestia DomainNames+DocRoots fallback for
 					// ImportDomains (no BIND zones in Hestia tarball).
 					// Target docroot mirrors the source layout:
@@ -788,7 +794,18 @@ func cpanelRestoreCallback(
 		// rest of the homedir (mail/ etc/ application_backups/) minus
 		// public_html. Falls back to the legacy whole-homedir rsync
 		// when no userdata YAML is present.
-		if !daHomeHandled {
+		if !daHomeHandled && job.SourceKind == models.MigrationSourceHestia {
+			// JAB-26: Hestia web content must land in the configured docroot
+			// /home/<user>/web/<dom>/public_html, not /home/<user>/<dom> via the
+			// legacy full-homedir rsync. Per-domain copy into DocRoots.
+			hhRes, err := cpanel.ImportHomeHestia(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("home_hestia: %w", err)
+			}
+			bytes += hhRes.BytesCopied
+			warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d domains=%d (hestia per-domain docroot)", hhRes.BytesCopied, hhRes.Files, hhRes.DomainsCopied))
+			warnings = append(warnings, hhRes.Skipped...)
+		} else if !daHomeHandled {
 			hsRes, err := cpanel.ImportHomeSplit(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("home_split: %w", err)

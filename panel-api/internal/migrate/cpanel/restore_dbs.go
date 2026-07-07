@@ -44,6 +44,29 @@ type DBCredential struct {
 // db.create succeeded — half-applied state.
 var dbRestoreNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 
+// deriveDestDBName turns a SQL dump file path into the destination Jabali DB
+// name (targetUsername-prefixed) plus the literal source base used for grant
+// translation. ok=false means the derived name fails validation.
+//
+// Handles both cPanel `<user>_<db>.sql` and HestiaCP `<user>_<db>.mysql.sql` /
+// `.pgsql.sql` dumps (JAB-27). The engine suffix (`.mysql`/`.pgsql`) is stripped
+// after `.sql` so the underscore split doesn't leave a dotted logical name
+// (`itflowapp_test.mysql.sql` → base `itflowapp_test` → logical `test` →
+// `<user>_test`, not the previously-rejected `<user>_test.mysql`).
+func deriveDestDBName(dumpPath, targetUsername string) (finalName, sourceBase string, ok bool) {
+	base := strings.TrimSuffix(filepath.Base(dumpPath), ".sql")
+	base = strings.TrimSuffix(base, ".mysql")
+	base = strings.TrimSuffix(base, ".pgsql")
+	// Strip the source-side username prefix if present (cpuser_blogdb → blogdb).
+	// Falls back to the full base when there is no underscore.
+	logical := base
+	if idx := strings.Index(base, "_"); idx > 0 && idx < len(base)-1 {
+		logical = base[idx+1:]
+	}
+	finalName = targetUsername + "_" + logical
+	return finalName, base, dbRestoreNameRe.MatchString(finalName)
+}
+
 // ImportDatabases walks each .sql dump in the parsed tarball,
 // derives the destination DB name (jabali-username-prefixed),
 // invokes agent db.create + db.restore, and inserts a databases
@@ -85,26 +108,14 @@ func ImportDatabases(
 	// scar).
 	sourceToFinalDB := map[string]string{}
 	for _, dumpPath := range parsed.MySQLDumps {
-		base := strings.TrimSuffix(filepath.Base(dumpPath), ".sql")
-		// Strip the cPanel-side username prefix if present
-		// (cpuser_blogdb → blogdb). Falls back to the full base
-		// if no underscore — the operator's source DB name is
-		// what we keep.
-		logical := base
-		if idx := strings.Index(base, "_"); idx > 0 && idx < len(base)-1 {
-			logical = base[idx+1:]
-		}
-		// Apply jabali prefix to land in the destination
-		// namespace. Same shape `databases` REST handler produces.
-		finalName := targetUsername + "_" + logical
-		if !dbRestoreNameRe.MatchString(finalName) {
+		finalName, base, ok := deriveDestDBName(dumpPath, targetUsername)
+		if !ok {
 			res.Skipped = append(res.Skipped, fmt.Sprintf("%s: derived name %q rejects validator", dumpPath, finalName))
 			continue
 		}
-		// Remember the source→destination mapping for the compat-user
-		// grant translation below. `base` is the literal cpmove DB
-		// name (`<cpacct>_<dbname>`) which is also how mysql.sql
-		// names the DB in its GRANT lines.
+		// `base` is the literal source DB name (`<user>_<db>`), which is also how
+		// the grants dump names the DB — remember source→destination for the
+		// compat-user grant translation below.
 		sourceToFinalDB[base] = finalName
 
 		// Idempotent collision check — resume after partial
