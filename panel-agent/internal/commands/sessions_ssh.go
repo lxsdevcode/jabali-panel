@@ -19,10 +19,11 @@ import (
 var sshPeerRe = regexp.MustCompile(`([0-9a-fA-F:.]+):\d+\s+users:\(\("(sshd[a-z-]*)",pid=(\d+)`)
 
 type sshSession struct {
-	ID       string `json:"id"`   // "ssh:<pid>"
+	ID       string `json:"id"` // "ssh:<pid>"
 	User     string `json:"user"`
 	RemoteIP string `json:"remote_ip"`
 	Since    string `json:"since"`
+	Channel  string `json:"channel"` // "ssh" (interactive pts) or "sftp" (notty) — GH #338
 	PID      int    `json:"pid"`
 }
 
@@ -52,9 +53,18 @@ func sessionsSSHListHandler(ctx context.Context, _ json.RawMessage) (any, error)
 			continue
 		}
 		seen[pid] = true
-		user, since := procUserAndStart(ctx, pid)
+		// Real logged-in user + channel come from the sshd process's cmdline
+		// (`sshd: <user>@<pts/N|notty>`), NOT `ps -o user=` — that reports the
+		// root privsep-monitor owner, so every session wrongly showed as `root`
+		// and SFTP was indistinguishable from SSH (GH #338). Skip pre-auth /
+		// listener sshd (no `user@…` yet).
+		user, channel := sshSessionIdentity(pid)
+		if user == "" {
+			continue
+		}
+		_, since := procUserAndStart(ctx, pid)
 		sessions = append(sessions, sshSession{
-			ID: "ssh:" + m[3], User: user, RemoteIP: m[1], Since: since, PID: pid,
+			ID: "ssh:" + m[3], User: user, RemoteIP: m[1], Since: since, Channel: channel, PID: pid,
 		})
 	}
 	return map[string]any{"sessions": sessions}, nil
@@ -92,6 +102,49 @@ func isSSHDProcess(pid int) bool {
 	}
 	comm := strings.TrimSpace(string(b))
 	return comm == "sshd" || comm == "sshd-session" || strings.HasPrefix(comm, "sshd")
+}
+
+// sshSessionIdentity reads /proc/<pid>/cmdline for the post-auth sshd label
+// `sshd: <user>@<pts/N|notty>` and returns the REAL logged-in user (not the
+// root privsep-monitor that owns the process) plus the channel: an interactive
+// terminal (pts/N) is "ssh", a no-tty session (notty — SFTP or a remote exec)
+// is "sftp". Returns ("","") for a pre-auth/listener sshd whose label is a
+// bracketed state like `[accepted]`/`[priv]` (no real user yet) so the caller
+// skips it. GH #338.
+func sshSessionIdentity(pid int) (user, channel string) {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
+	if err != nil {
+		return "", ""
+	}
+	// cmdline args are NUL-separated; the sshd label is one arg with spaces.
+	return parseSSHDLabel(strings.ReplaceAll(string(b), "\x00", " "))
+}
+
+// parseSSHDLabel extracts (user, channel) from an sshd process label like
+// `sshd: alice@pts/0` (ssh) or `sshd-session: bob@notty` (sftp). Pure so it's
+// unit-testable without a live /proc. Returns ("","") for pre-auth/listener
+// labels (`[accepted]`, `[priv]`, no `user@`).
+func parseSSHDLabel(cmdline string) (user, channel string) {
+	s := strings.TrimSpace(cmdline)
+	i := strings.Index(s, ": ") // after "sshd" / "sshd-session"
+	if i < 0 {
+		return "", ""
+	}
+	label := strings.TrimSpace(s[i+2:]) // e.g. "alice@pts/0" or "bob@notty"
+	at := strings.LastIndex(label, "@")
+	if at <= 0 {
+		return "", "" // pre-auth: "[accepted]", "[net]", "[priv]" — no user@
+	}
+	user = strings.TrimSpace(label[:at])
+	if user == "" || strings.HasPrefix(user, "[") {
+		return "", ""
+	}
+	tty := strings.TrimSpace(label[at+1:])
+	channel = "ssh"
+	if strings.HasPrefix(tty, "notty") || strings.Contains(tty, "sftp") {
+		channel = "sftp"
+	}
+	return user, channel
 }
 
 // procUserAndStart returns the process owner + its start time (best-effort).
