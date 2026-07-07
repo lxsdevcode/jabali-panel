@@ -48,9 +48,14 @@ profile jabali-fpm-app /usr/local/libexec/jabali/fpm-exec flags=(attach_disconne
   /etc/jabali/snuffleupagus/** r,
 
   # Tenant docroots (POSIX perms enforce per-user isolation; this layer bounds
-  # escape to system files, not cross-tenant).
+  # escape to system files, not cross-tenant). Two layouts: native jabali +
+  # cPanel/DA use domains/<dom>/public_html; HestiaCP-migrated accounts use
+  # web/<dom>/public_html (JAB-37 — the enforced profile denied restored Nextcloud
+  # PHP under web/ even though POSIX perms + open_basedir allowed it).
   /home/*/domains/*/ r,
   /home/*/domains/*/public_html/** rwkl,
+  /home/*/web/*/ r,
+  /home/*/web/*/public_html/** rwkl,
 
   # Temp + sessions.
   /tmp/ r,
