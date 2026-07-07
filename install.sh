@@ -12055,6 +12055,41 @@ ensure_jabali_panel_dir_traversable() {
   fi
 }
 
+# provision_php_extensions — self-heal PHP runtime extensions on every
+# `jabali update`. install_base_packages installs the ext set only on a full
+# install and only for JABALI_PHP_VERSIONS, so a newly-required extension (e.g.
+# php-sqlite3 for a restored Nextcloud — JAB-39) never reaches existing hosts or
+# extra PHP versions a tenant installed via the panel. Ensure the ext packages
+# for EVERY installed FPM version; idempotent (already-present = skip). Keep the
+# ext list in sync with install_base_packages.
+provision_php_extensions() {
+  command -v php >/dev/null 2>&1 || return 0
+  local exts="mysql mbstring zip gd curl xml intl bcmath opcache redis igbinary sqlite3"
+  local d ver e pkgs=()
+  for d in /etc/php/*/fpm; do
+    [[ -d "$d" ]] || continue
+    ver="$(basename "$(dirname "$d")")"
+    for e in $exts; do
+      if ! dpkg -s "php${ver}-${e}" >/dev/null 2>&1          && apt-cache show "php${ver}-${e}" >/dev/null 2>&1; then
+        pkgs+=("php${ver}-${e}")
+      fi
+    done
+  done
+  if (( ${#pkgs[@]} > 0 )); then
+    _log "installing missing PHP extensions: ${pkgs[*]}"
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${pkgs[@]}" >/dev/null 2>&1; then
+      _ok "PHP extensions ensured (${#pkgs[@]} newly installed)"
+      # New .so needs the per-user FPM masters to reload it.
+      local unit
+      while read -r unit; do
+        [[ -n "$unit" ]] && systemctl try-restart "$unit" >/dev/null 2>&1 || true
+      done < <(systemctl list-units 'jabali-fpm@*' --no-legend --plain --state=active 2>/dev/null | awk '{print $1}')
+    else
+      _warn "some PHP extensions failed to install: ${pkgs[*]}"
+    fi
+  fi
+}
+
 provision_new_software() {
   # Heal /etc/jabali-panel traversal FIRST — a 0750 parent here means
   # every per-user PHP-FPM is crash-looping right now; fix it before
@@ -12423,6 +12458,12 @@ EOF
   # NO redis/panel restart. Guarded on redis-server being installed.
   if declare -f install_redis_acl >/dev/null 2>&1 && command -v redis-server >/dev/null 2>&1; then
     install_redis_acl
+  fi
+
+  # JAB-39: ensure PHP runtime extensions (incl. sqlite3/pdo_sqlite) for every
+  # installed FPM version — install_base_packages doesn't run on update.
+  if declare -f provision_php_extensions >/dev/null 2>&1; then
+    provision_php_extensions
   fi
 
   # GH #346 / ADR-0042: re-apply the Stalwart JMAP plan on every `jabali update`
