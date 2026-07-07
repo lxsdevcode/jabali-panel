@@ -204,6 +204,14 @@ failed stage. Already-done stages are skipped.`,
 				if targetPackageID != "" {
 					cu.PackageID = &targetPackageID
 				}
+				// GH #327 (johnnyq): carry the HestiaCP Contact Name
+				// (user.conf FNAME/LNAME) onto the created user's name.
+				if job.SourceKind == models.MigrationSourceHestia {
+					if fn, ln := hestiacp.PeekUserName(extractDir); fn != "" || ln != "" {
+						cu.NameFirst, cu.NameLast = fn, ln
+						fmt.Printf("  → carried Hestia contact name: %s %s\n", fn, ln)
+					}
+				}
 				// KratosClient nil → userops skips the kratos atomic
 				// step (the panel row is still created cleanly).
 				// Operator path: send a kratos password-reset link

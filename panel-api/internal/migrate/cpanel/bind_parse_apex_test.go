@@ -225,3 +225,26 @@ func TestParseBINDZone_SRVPriorityColumn(t *testing.T) {
 		t.Errorf("SRV Content = %q, want \"0 587 mail.example.com\" (weight port target, no priority)", srv.Content)
 	}
 }
+
+// GH #327: CAA records must import (PowerDNS + the panel API both support them),
+// not be dropped as unsupported.
+func TestParseBINDZone_CAA(t *testing.T) {
+	zone := "$ORIGIN example.com.\n@  IN  CAA  0 issue \"letsencrypt.org\"\n"
+	z, _, ok := ParseBINDZone(strings.NewReader(zone), "example.com")
+	if !ok {
+		t.Fatal("ParseBINDZone failed")
+	}
+	var caa *migrate.DNSRecord
+	for i := range z.Records {
+		if z.Records[i].Type == "CAA" {
+			caa = &z.Records[i]
+			break
+		}
+	}
+	if caa == nil {
+		t.Fatal("CAA record dropped on import")
+	}
+	if caa.Content != "0 issue \"letsencrypt.org\"" {
+		t.Errorf("CAA content = %q, want verbatim rdata", caa.Content)
+	}
+}
