@@ -3143,6 +3143,7 @@ jabali migrate restore [flags]
 
 - `--cpanel` — source is a cPanel cpmove / WHM pkgacct tarball
 - `--file` — path to the cpmove tarball (cpmove-<user>.tar.gz) — required
+- `--hestiacp` — source is a HestiaCP v-backup-user tarball (<user>.<YYYY-MM-DD_HH-MM-SS>.tar[.gz])
 - `--keep-staging` — keep /var/lib/jabali-migrations/<job-id>/ after the run (debug)
 - `--restore-file` — alias of --file
 - `--source-host` — informational source host (offline restore leaves this empty)
