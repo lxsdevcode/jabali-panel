@@ -272,15 +272,17 @@ server {
 {{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
         # this domain (union of every cached install's prefix); other (non-WP,
         # differently-authed) apps on the same domain are never cached.
-        # GH #629: gate on $uri (normalized path, no query) — matching
-        # $request_uri broke the subdir homepage with tracking params (the "?"
-        # after the path failed the (/|$) anchor). $uri mirrors the cache_key.
-        if ($uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
+        # Gate on $jabali_cache_path — the ORIGINAL request path with the query
+        # stripped (Codeberg #5). $uri would be /index.php after the try_files
+        # rewrite (collapsing every permalink); $request_uri keeps the query which
+        # broke the subdir homepage anchor (GH #629). $jabali_cache_path fixes both
+        # and mirrors the cache_key below.
+        if ($jabali_cache_path !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
         # Gitea #610: path-only key (no query) so tracking-param variants
         # collapse onto one entry. Safe because only empty/tracking-only queries
         # reach caching (others bypass via $jabali_qs_kind above).
-        fastcgi_cache_key "$scheme$request_method$host$uri";
+        fastcgi_cache_key "$scheme$request_method$host$jabali_cache_path";
         fastcgi_cache_valid 200 301 {{.CacheTTL}};
         fastcgi_cache_bypass $jabali_skip $http_authorization;
         # GH #637: also skip STORING when the backend opted out via Cache-Control
@@ -332,15 +334,17 @@ server {
 {{ if ne .CacheGate "" }}        # Gitea #420/#601: cache only within the cache-enabled install path(s) on
         # this domain (union of every cached install's prefix); other (non-WP,
         # differently-authed) apps on the same domain are never cached.
-        # GH #629: gate on $uri (normalized path, no query) — matching
-        # $request_uri broke the subdir homepage with tracking params (the "?"
-        # after the path failed the (/|$) anchor). $uri mirrors the cache_key.
-        if ($uri !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
+        # Gate on $jabali_cache_path — the ORIGINAL request path with the query
+        # stripped (Codeberg #5). $uri would be /index.php after the try_files
+        # rewrite (collapsing every permalink); $request_uri keeps the query which
+        # broke the subdir homepage anchor (GH #629). $jabali_cache_path fixes both
+        # and mirrors the cache_key below.
+        if ($jabali_cache_path !~ "^{{.CacheGate}}(/|$)") { set $jabali_skip 1; }
 {{ end }}        fastcgi_cache {{.CacheKeyZone}};
         # Gitea #610: path-only key (no query) so tracking-param variants
         # collapse onto one entry. Safe because only empty/tracking-only queries
         # reach caching (others bypass via $jabali_qs_kind above).
-        fastcgi_cache_key "$scheme$request_method$host$uri";
+        fastcgi_cache_key "$scheme$request_method$host$jabali_cache_path";
         fastcgi_cache_valid 200 301 {{.CacheTTL}};
         fastcgi_cache_bypass $jabali_skip $http_authorization;
         # GH #637: also skip STORING when the backend opted out via Cache-Control
