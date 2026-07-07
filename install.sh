@@ -12070,7 +12070,7 @@ provision_php_extensions() {
     [[ -d "$d" ]] || continue
     ver="$(basename "$(dirname "$d")")"
     for e in $exts; do
-      if ! dpkg -s "php${ver}-${e}" >/dev/null 2>&1          && apt-cache show "php${ver}-${e}" >/dev/null 2>&1; then
+      if ! dpkg -s "php${ver}-${e}" 2>/dev/null | grep -q '^Status: install ok installed'          && apt-cache show "php${ver}-${e}" >/dev/null 2>&1; then
         pkgs+=("php${ver}-${e}")
       fi
     done
