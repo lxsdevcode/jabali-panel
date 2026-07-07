@@ -47,6 +47,18 @@ const (
 	migrationHomeTimeout = 4 * time.Hour
 )
 
+// migrationStagingRoots — every staging area the agent accepts src paths under.
+// The panel builds staging under <working_folder>/migrations, default
+// /var/lib/jabali/migrations (GH #327 — the config-driven working-folder scheme
+// replaced the flat legacy path). The legacy /var/lib/jabali-migrations stays
+// for pre-schema-bump installs (install.sh symlinks it). NOTE: a non-default
+// working_folder (e.g. /mnt/storage) is not covered here yet — the panel would
+// need to pass the resolved root.
+var migrationStagingRoots = []string{
+	"/var/lib/jabali-migrations",
+	"/var/lib/jabali/migrations",
+}
+
 // migrationHomeExcludes is the rsync --exclude pattern set. .ssh/ is
 // excluded because the panel's ssh_keys table is the truth on
 // authorized_keys (reconciler writes); .cpanel/ is cPanel-only
@@ -108,7 +120,7 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 	// files to copy into the tenant home. filesafe.Scope.Resolve rejects any
 	// path outside /var/lib/jabali-migrations and fails closed on a symlinked
 	// component.
-	srcScope, sErr := filesafe.NewScope(p.JobID, "migration", []string{migrationStagingRoot})
+	srcScope, sErr := filesafe.NewScope(p.JobID, "migration", migrationStagingRoots)
 	if sErr != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: "src scope init: " + sErr.Error()}
 	}
@@ -116,7 +128,7 @@ func migrationImportHomeHandler(ctx context.Context, raw json.RawMessage) (any, 
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
-			Message: fmt.Sprintf("src_dir must resolve under %s: %v", migrationStagingRoot, err),
+			Message: fmt.Sprintf("src_dir must resolve under %s: %v", strings.Join(migrationStagingRoots, " or "), err),
 		}
 	}
 

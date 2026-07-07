@@ -95,10 +95,17 @@ func migrationImportMailboxesHandler(ctx context.Context, raw json.RawMessage) (
 			Code: agentwire.CodeInvalidArgument, Message: "src_mail_dir not absolute: " + err.Error(),
 		}
 	}
-	if !strings.HasPrefix(srcAbs+"/", migrationStagingRoot+"/") {
+	underRoot := false
+	for _, root := range migrationStagingRoots {
+		if strings.HasPrefix(srcAbs+"/", root+"/") {
+			underRoot = true
+			break
+		}
+	}
+	if !underRoot {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInvalidArgument,
-			Message: fmt.Sprintf("src_mail_dir must live under %s, got %q", migrationStagingRoot, srcAbs),
+			Message: fmt.Sprintf("src_mail_dir must live under %s, got %q", strings.Join(migrationStagingRoots, " or "), srcAbs),
 		}
 	}
 
@@ -794,7 +801,7 @@ func normMsgID(s string) string {
 // (Gitea #477). ReadDir/Stat above may follow a symlink, but this open is the
 // gate: a symlinked component is refused here.
 func openMaildirFileInStaging(path string) (*os.File, error) {
-	scope, err := filesafe.NewScope("migration", "migration", []string{migrationStagingRoot})
+	scope, err := filesafe.NewScope("migration", "migration", migrationStagingRoots)
 	if err != nil {
 		return nil, err
 	}
