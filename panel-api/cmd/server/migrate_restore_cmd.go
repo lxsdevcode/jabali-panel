@@ -32,6 +32,20 @@ func cpmoveSourceUser(path string) string {
 	return ""
 }
 
+// hestiaUserRe extracts <user> from a HestiaCP v-backup-user filename
+// `<user>.<YYYY-MM-DD_HH-MM-SS>.tar[.gz]` (e.g. itflowapp.2026-07-05_16-10-38.tar).
+// A renamed archive without the timestamp component (hestia-sample.tar) does not
+// match, so the CLI requires an explicit --source-user for it (JAB-25).
+var hestiaUserRe = regexp.MustCompile(`^(.+)\.\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.tar(?:\.gz)?$`)
+
+func hestiaSourceUser(path string) string {
+	m := hestiaUserRe.FindStringSubmatch(filepath.Base(path))
+	if len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
 // stageTarball places src at dst (the path `jabali migrate import`
 // expects: /var/lib/jabali-migrations/<job>/cpmove-<user>.tar.gz).
 // Hardlink first — instant + zero extra disk when src and the staging
@@ -67,6 +81,7 @@ func stageTarball(src, dst string) error {
 // UI, no manual /var/lib steps, no separate job-id.
 func newMigrateRestoreCmd() *cobra.Command {
 	var cpanel bool
+	var hestia bool
 	var file, restoreFile, sourceUser, sourceHost string
 	var targetUser, targetEmail, targetPassword, targetPackageID string
 	var keepStaging bool
@@ -74,17 +89,20 @@ func newMigrateRestoreCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore",
 		Short: "One-shot offline restore from a cpmove tarball (create job + stage + import)",
-		Long: `Restore a cPanel cpmove / WHM pkgacct tarball you already have on
-this server, in one command:
+		Long: `Restore a cPanel cpmove / WHM pkgacct or HestiaCP v-backup-user
+tarball you already have on this server, in one command:
 
-  jabali migrate restore --cpanel --file /path/cpmove-<user>.tar.gz
+  jabali migrate restore --cpanel   --file /path/cpmove-<user>.tar.gz
+  jabali migrate restore --hestiacp --file /path/<user>.<ts>.tar --source-user <user>
 
 It creates the migration_jobs row, copies the tarball to the path the
 importer expects, and runs the full analyze → fix_perms → validate →
 restore pipeline (home, MySQL, mail, DNS/domains).
 
-Source account is read from the filename (cpmove-<user>.tar.gz);
-override with --source-user. Destination jabali user defaults to the
+Source account is read from the filename — cpmove-<user>.tar.gz for
+cPanel, <user>.<YYYY-MM-DD_HH-MM-SS>.tar[.gz] for HestiaCP. When the
+filename has no recognizable user (e.g. a renamed hestia-sample.tar),
+pass --source-user explicitly. Destination jabali user defaults to the
 source account; pass --target-email + --target-password to auto-create
 it (else pre-create via the admin UI / jabali user CLI). Re-run the
 same command to resume a failed job.`,
@@ -92,10 +110,15 @@ same command to resume a failed job.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			if !cpanel {
-				return errors.New("a source kind is required: pass --cpanel")
+			// JAB-25: offline restore supports HestiaCP as a first-class source
+			// kind alongside cPanel. Exactly one source kind must be selected.
+			if cpanel == hestia {
+				return errors.New("exactly one source kind is required: pass --cpanel OR --hestiacp")
 			}
 			kind := models.MigrationSourceCpanel
+			if hestia {
+				kind = models.MigrationSourceHestia
+			}
 
 			if file == "" {
 				file = restoreFile
@@ -117,12 +140,19 @@ same command to resume a failed job.`,
 
 			su := sourceUser
 			if su == "" {
-				su = cpmoveSourceUser(abs)
+				if hestia {
+					su = hestiaSourceUser(abs)
+				} else {
+					su = cpmoveSourceUser(abs)
+				}
 			}
 			if su == "" {
-				return fmt.Errorf("cannot derive source user from %q "+
-					"(expected cpmove-<user>.tar.gz) — pass --source-user",
-					filepath.Base(abs))
+				hint := "expected cpmove-<user>.tar.gz"
+				if hestia {
+					hint = "expected <user>.<YYYY-MM-DD_HH-MM-SS>.tar[.gz]"
+				}
+				return fmt.Errorf("cannot derive source user from %q (%s) — pass --source-user",
+					filepath.Base(abs), hint)
 			}
 
 			jobsRepo := repository.NewMigrationJobRepository(sharedDB)
@@ -151,6 +181,13 @@ same command to resume a failed job.`,
 				return fmt.Errorf("mkdir staging dir: %w", err)
 			}
 			dst := filepath.Join(staging, fmt.Sprintf("cpmove-%s.tar.gz", su))
+			if hestia {
+				// JAB-25: the Hestia importer looks for user.<user>.tar.gz (or the
+				// first *.tar) in the staging dir. ParseHestiaTarball auto-detects
+				// gzip by magic bytes, so this canonical name works for both plain
+				// and gzipped Hestia archives regardless of the source extension.
+				dst = filepath.Join(staging, fmt.Sprintf("user.%s.tar.gz", su))
+			}
 			if err := stageTarball(abs, dst); err != nil {
 				return fmt.Errorf("stage tarball: %w", err)
 			}
@@ -185,6 +222,7 @@ same command to resume a failed job.`,
 	}
 
 	cmd.Flags().BoolVar(&cpanel, "cpanel", false, "source is a cPanel cpmove / WHM pkgacct tarball")
+	cmd.Flags().BoolVar(&hestia, "hestiacp", false, "source is a HestiaCP v-backup-user tarball (<user>.<YYYY-MM-DD_HH-MM-SS>.tar[.gz])")
 	cmd.Flags().StringVar(&file, "file", "", "path to the cpmove tarball (cpmove-<user>.tar.gz) — required")
 	cmd.Flags().StringVar(&restoreFile, "restore-file", "", "alias of --file")
 	cmd.Flags().StringVar(&sourceUser, "source-user", "", "cPanel account (default: derived from the cpmove filename)")
