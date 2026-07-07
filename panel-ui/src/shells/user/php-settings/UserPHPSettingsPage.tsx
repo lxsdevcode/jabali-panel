@@ -1,4 +1,5 @@
 import {
+  Tabs,
   Alert,
   Button,
   Card,
@@ -13,6 +14,7 @@ import {
 } from "antd";
 import { useEffect, useState } from "react";
 import { CodeOutlined } from "@icons";
+import { UserPHPPerformanceCard } from "./UserPHPPerformanceCard";
 import { apiClient } from "../../../apiClient";
 import { getIdentity, type Identity } from "../../../identity";
 import { isPHPEOL } from "../../../utils/phpEol";
@@ -292,6 +294,14 @@ export function UserPHPSettingsPage() {
           showIcon
         />
 
+        <Tabs
+          defaultActiveKey="settings"
+          items={[
+            {
+              key: "settings",
+              label: "Version & Domains",
+              children: (
+                <Space direction="vertical" size="large" style={{ width: "100%" }}>
         <Card title="CLI / Terminal default PHP version" size="small">
           <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
             Sets which PHP version a bare <code>php</code> (and composer / wp-cli)
@@ -475,6 +485,16 @@ export function UserPHPSettingsPage() {
             </Spin>
           </Form>
         </Card>
+                </Space>
+              ),
+            },
+            {
+              key: "perf",
+              label: "Performance",
+              children: <UserPHPPerformanceCard versions={availableVersions} />,
+            },
+          ]}
+        />
       </Space>
     </div>
   );
