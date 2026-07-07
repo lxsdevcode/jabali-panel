@@ -89,6 +89,7 @@ type updateMailGroupRequest struct {
 	HasCalendar    *bool   `json:"has_calendar"`
 	HasAddressbook *bool   `json:"has_addressbook"`
 	HasFiles       *bool   `json:"has_files"`
+	InternalOnly   *bool   `json:"internal_only"` // GH #348
 }
 
 type setMailGroupMembersRequest struct {
@@ -107,6 +108,7 @@ type mailGroupResponse struct {
 	HasCalendar    bool      `json:"has_calendar"`
 	HasAddressbook bool      `json:"has_addressbook"`
 	HasFiles       bool      `json:"has_files"`
+	InternalOnly   bool      `json:"internal_only"` // GH #348
 	MemberCount    int64     `json:"member_count"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -135,6 +137,7 @@ func toMailGroupResponse(g models.MailGroup, memberCount int64) mailGroupRespons
 		HasCalendar:    g.HasCalendar,
 		HasAddressbook: g.HasAddressbook,
 		HasFiles:       g.HasFiles,
+		InternalOnly:   g.InternalOnly,
 		MemberCount:    memberCount,
 		CreatedAt:      g.CreatedAt,
 		UpdatedAt:      g.UpdatedAt,
@@ -384,6 +387,16 @@ func (h *mailGroupHandler) update(c *gin.Context) {
 			return
 		}
 		g.HasMailbox, g.HasCalendar, g.HasAddressbook, g.HasFiles = mbx, cal, ab, fl
+	}
+	// GH #348: toggling internal-only re-projects via mailgroup.apply, which
+	// installs/removes the sender-domain sieve on the group account.
+	if req.InternalOnly != nil && *req.InternalOnly != g.InternalOnly {
+		if err := h.cfg.Groups.UpdateInternalOnly(ctx, g.ID, *req.InternalOnly); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+			return
+		}
+		g.InternalOnly = *req.InternalOnly
+		metaChanged = true
 	}
 
 	// Re-project the principal description (drives the From name) when the

@@ -24,6 +24,8 @@ type MailGroupRepository interface {
 	Create(ctx context.Context, g *models.MailGroup) error
 	UpdateMeta(ctx context.Context, id, displayName, description string) error
 	UpdateResources(ctx context.Context, id string, mailbox, calendar, addressbook, files bool) error
+	// UpdateInternalOnly toggles the group's internal-delivery-only flag (GH #348).
+	UpdateInternalOnly(ctx context.Context, id string, internalOnly bool) error
 	Delete(ctx context.Context, id string) error
 	ExistsByDomainAndLocalPart(ctx context.Context, domainID, localPart string) (bool, error)
 
@@ -96,7 +98,7 @@ func (r *mailGroupRepo) ListAllWithDomain(ctx context.Context) ([]MailGroupWithD
 	var rows []MailGroupWithDomain
 	err := r.db.WithContext(ctx).
 		Table("mail_groups g").
-		Select("g.*, d.name AS domain_name, d.user_id AS owner_user_id, COALESCE(u.username, '') AS user_username, "+
+		Select("g.*, d.name AS domain_name, d.user_id AS owner_user_id, COALESCE(u.username, '') AS user_username, " +
 			"(SELECT COUNT(*) FROM mail_group_members m WHERE m.group_id = g.id) AS member_count").
 		Joins("JOIN domains d ON d.id = g.domain_id").
 		Joins("LEFT JOIN users u ON u.id = d.user_id").
@@ -120,6 +122,23 @@ func (r *mailGroupRepo) UpdateMeta(ctx context.Context, id, displayName, descrip
 			"display_name": displayName,
 			"description":  description,
 			"updated_at":   time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *mailGroupRepo) UpdateInternalOnly(ctx context.Context, id string, internalOnly bool) error {
+	res := r.db.WithContext(ctx).
+		Model(&models.MailGroup{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"internal_only": internalOnly,
+			"updated_at":    time.Now().UTC(),
 		})
 	if res.Error != nil {
 		return res.Error
