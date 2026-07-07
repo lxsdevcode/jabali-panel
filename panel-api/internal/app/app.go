@@ -999,7 +999,10 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			})
 		}
 		if deps.PHPPools != nil && deps.PHPPoolIniOverrides != nil {
-			api.RegisterPHPPoolRoutes(v1, api.PHPPoolHandlerConfig{
+			// Pool tuning (pm.*, ini overrides) is admin-only: tenants must not
+			// resize the shared worker pool. Per-domain PHP *version* binding
+			// stays user-facing via RegisterDomainPHPPoolRoutes below.
+			api.RegisterPHPPoolRoutes(v1.Group("", middleware.RequireAdmin()), api.PHPPoolHandlerConfig{
 				PHPPools:            deps.PHPPools,
 				PHPPoolIniOverrides: deps.PHPPoolIniOverrides,
 				Domains:             deps.Domains,
