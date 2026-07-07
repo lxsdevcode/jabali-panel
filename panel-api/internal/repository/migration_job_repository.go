@@ -50,6 +50,11 @@ type MigrationJobRepository interface {
 
 	// Stages
 	CreateStage(ctx context.Context, row *models.MigrationStage) error
+	// DeleteStagesForJob removes every migration_stages row for a job. Used by
+	// `jabali migrate restore --retry-from-scratch`: wiping the stage rows makes
+	// the runner re-seed + re-run the whole pipeline (analyze → restore) instead
+	// of skipping already-done stages.
+	DeleteStagesForJob(ctx context.Context, jobID string) error
 	ListStages(ctx context.Context, jobID string) ([]models.MigrationStage, error)
 	UpdateStage(ctx context.Context, id, state string, bytesProcessed int64, lastError *string) error
 }
@@ -352,6 +357,12 @@ func (r *migrationJobRepo) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *migrationJobRepo) DeleteStagesForJob(ctx context.Context, jobID string) error {
+	return r.db.WithContext(ctx).
+		Where("job_id = ?", jobID).
+		Delete(&models.MigrationStage{}).Error
 }
 
 func (r *migrationJobRepo) CreateStage(ctx context.Context, row *models.MigrationStage) error {
