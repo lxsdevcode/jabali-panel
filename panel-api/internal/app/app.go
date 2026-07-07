@@ -86,6 +86,7 @@ type Deps struct {
 	UserAPITokens       repository.UserAPITokenRepository
 	PHPPools            repository.PHPPoolRepository
 	PHPPoolIniOverrides repository.PHPPoolIniOverrideRepository
+	PHPPerformanceModes repository.PHPPerformanceModeRepository
 	WordPressInstalls   repository.WordPressInstallRepository
 	// ManagedIPs is the M24 IP-pool repo. NewWithDeps registers
 	// /admin/ips + /user/ips + /internal/agent/managed-ips when set;
@@ -1008,6 +1009,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Domains:             deps.Domains,
 				Users:               deps.Users,
 				Agent:               deps.Agent,
+			})
+		}
+		if deps.PHPPerformanceModes != nil {
+			api.RegisterPHPPerformanceModeRoutes(v1, api.PHPPerformanceModeHandlerConfig{
+				Modes: deps.PHPPerformanceModes,
 			})
 		}
 		if deps.Domains != nil && deps.PHPPools != nil {
