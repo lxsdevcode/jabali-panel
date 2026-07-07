@@ -13,6 +13,11 @@ export interface ServerCapabilities {
   docker_apps_user_enabled: boolean;
   python_apps_enabled: boolean;
   tenant_domain_options_enabled: boolean;
+  dns_enabled: boolean;
+  mail_enabled: boolean;
+  security_enabled: boolean;
+  quota_enabled: boolean;
+  api_enabled: boolean;
   /** GH #361: the server's public IPv4, for the dashboard. "" when unset. */
   public_ipv4: string;
 }
@@ -28,6 +33,11 @@ export function useServerCapabilities() {
         docker_apps_user_enabled: !!data.docker_apps_user_enabled,
         python_apps_enabled: !!data.python_apps_enabled,
         tenant_domain_options_enabled: !!data.tenant_domain_options_enabled,
+        dns_enabled: data.dns_enabled !== false,
+        mail_enabled: data.mail_enabled !== false,
+        security_enabled: data.security_enabled !== false,
+        quota_enabled: data.quota_enabled !== false,
+        api_enabled: data.api_enabled !== false,
         public_ipv4: data.public_ipv4 ?? "",
       };
     },
