@@ -257,12 +257,22 @@ export const SSLManagerTable = ({
               )}
             </Space>
             {aliases.length > 0 && (
+              // Codeberg #7: cap the alias line to 2 SANs + a "+N more" tooltip
+              // so long lists (www/mail/autoconfig/autodiscover…) don't clip
+              // horizontally on mobile. Full list on hover.
               <Typography.Text
                 type="secondary"
                 italic
                 style={{ fontFamily: "monospace", fontSize: 12 }}
               >
-                {aliases.join(", ")}
+                {aliases.slice(0, 2).join(", ")}
+                {aliases.length > 2 && (
+                  <Tooltip title={aliases.join(", ")}>
+                    <span style={{ cursor: "pointer", fontStyle: "normal" }}>
+                      {` +${aliases.length - 2} more`}
+                    </span>
+                  </Tooltip>
+                )}
               </Typography.Text>
             )}
           </Space>
