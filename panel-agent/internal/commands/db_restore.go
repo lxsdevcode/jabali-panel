@@ -73,7 +73,7 @@ func dbRestoreHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	//   /var/lib/jabali/restore/    — interactive restores
 	//   /var/lib/jabali-migrations/ — migration importer
 	restoreScope, scErr := filesafe.NewScope("system", "system", []string{
-		"/var/lib/jabali/restore", "/var/lib/jabali-migrations",
+		"/var/lib/jabali/restore", "/var/lib/jabali-migrations", "/var/lib/jabali/migrations",
 	})
 	if scErr != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("scope: %v", scErr)}
