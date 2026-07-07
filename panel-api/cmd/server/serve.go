@@ -204,6 +204,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		adminerSSOTokenRepo := repository.NewAdminerSSOTokenRepository(sharedDB)
 		logAccessStreamRepo := repository.NewLogAccessStreamRepository(sharedDB)
 		phpPoolRepo := repository.NewPHPPoolRepository(sharedDB)
+		phpPerfModeRepo := repository.NewPHPPerformanceModeRepository(sharedDB)
 		phpPoolIniOverrideRepo := repository.NewPHPPoolIniOverrideRepository(sharedDB)
 		wordpressInstallRepo := repository.NewWordPressInstallRepository(sharedDB)
 		cronJobsRepo := repository.NewCronJobRepository(sharedDB)
@@ -472,6 +473,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		deps.LogAccessStreams = logAccessStreamRepo
 		deps.TerminalSessions = repository.NewTerminalSessionRepository(sharedDB)
 		deps.PHPPools = phpPoolRepo
+		deps.PHPPerformanceModes = phpPerfModeRepo
 		deps.PHPPoolIniOverrides = phpPoolIniOverrideRepo
 		deps.WordPressInstalls = wordpressInstallRepo
 		deps.CronJobs = cronJobsRepo
@@ -585,6 +587,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 			defer seedCancel()
 			if err := packageRepo.EnsureDefaults(seedCtx); err != nil {
 				log.Error("failed to seed default hosting packages", "err", err)
+			}
+			if n, err := phpPerfModeRepo.EnsureDefaults(seedCtx); err != nil {
+				log.Error("failed to seed PHP performance modes", "err", err)
+			} else if n > 0 {
+				log.Info("seeded PHP performance modes", "count", n)
 			}
 		}()
 

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -70,21 +71,26 @@ type createPackageRequest struct {
 	Name        string `json:"name"               binding:"required"`
 	DiskQuotaMB uint32 `json:"disk_quota_mb"`
 	// M18 resource limits. Zero = unlimited on every field.
-	CPUQuotaPercent  uint32 `json:"cpu_quota_percent"`
-	MemoryLimitMB    uint32 `json:"memory_limit_mb"`
-	IOReadMbps       uint32 `json:"io_read_mbps"`
-	IOWriteMbps      uint32 `json:"io_write_mbps"`
-	MaxTasks         uint32 `json:"max_tasks"`
-	BandwidthQuotaMB uint32 `json:"bandwidth_quota_mb"`
-	MaxDomains       uint32 `json:"max_domains"`
-	MaxEmailAccounts uint32 `json:"max_email_accounts"`
-	MaxDatabases     uint32 `json:"max_databases"`
-	MaxDockerApps    uint32 `json:"max_docker_apps"`
-	MaxPythonApps    uint32 `json:"max_python_apps"`
-	SSHEnabled       bool   `json:"ssh_enabled"`
-	CGIEnabled       bool   `json:"cgi_enabled"`
-	PHPExecEnabled   bool   `json:"php_exec_enabled"`
-	DockerAppSlugs   string `json:"docker_app_slugs"`
+	CPUQuotaPercent    uint32 `json:"cpu_quota_percent"`
+	MemoryLimitMB      uint32 `json:"memory_limit_mb"`
+	IOReadMbps         uint32 `json:"io_read_mbps"`
+	IOWriteMbps        uint32 `json:"io_write_mbps"`
+	MaxTasks           uint32 `json:"max_tasks"`
+	BandwidthQuotaMB   uint32 `json:"bandwidth_quota_mb"`
+	MaxDomains         uint32 `json:"max_domains"`
+	MaxEmailAccounts   uint32 `json:"max_email_accounts"`
+	MaxDatabases       uint32 `json:"max_databases"`
+	MaxDockerApps      uint32 `json:"max_docker_apps"`
+	MaxPythonApps      uint32 `json:"max_python_apps"`
+	SSHEnabled         bool   `json:"ssh_enabled"`
+	CGIEnabled         bool   `json:"cgi_enabled"`
+	PHPExecEnabled     bool   `json:"php_exec_enabled"`
+	FpmMaxChildrenCap  uint32 `json:"fpm_max_children_cap"`
+	FpmWorkerMemMb     uint32 `json:"fpm_worker_mem_mb"`
+	FpmUserCanEdit     bool   `json:"fpm_user_can_edit"`
+	FpmAdvancedMode    bool   `json:"fpm_advanced_mode"`
+	FpmVersionDefaults string `json:"fpm_version_defaults"`
+	DockerAppSlugs     string `json:"docker_app_slugs"`
 	// M13: nspawn image pin (empty = use server default).
 	NspawnImageVersion string `json:"nspawn_image_version"`
 }
@@ -106,6 +112,11 @@ type updatePackageRequest struct {
 	SSHEnabled         *bool   `json:"ssh_enabled"`
 	CGIEnabled         *bool   `json:"cgi_enabled"`
 	PHPExecEnabled     *bool   `json:"php_exec_enabled"`
+	FpmMaxChildrenCap  *uint32 `json:"fpm_max_children_cap"`
+	FpmWorkerMemMb     *uint32 `json:"fpm_worker_mem_mb"`
+	FpmUserCanEdit     *bool   `json:"fpm_user_can_edit"`
+	FpmAdvancedMode    *bool   `json:"fpm_advanced_mode"`
+	FpmVersionDefaults *string `json:"fpm_version_defaults"`
 	DockerAppSlugs     *string `json:"docker_app_slugs"`
 	NspawnImageVersion *string `json:"nspawn_image_version"`
 }
@@ -136,27 +147,49 @@ func (h *packageHandler) create(c *gin.Context) {
 	}
 
 	now := time.Now().UTC()
+	// GH #339 phase 2: FPM policy defaults + validation.
+	if req.FpmMaxChildrenCap == 0 {
+		req.FpmMaxChildrenCap = 20
+	}
+	if req.FpmWorkerMemMb == 0 {
+		req.FpmWorkerMemMb = 64
+	}
+	if req.FpmMaxChildrenCap > phpPoolAdminMaxChildrenCap {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "fpm_cap_too_high", "detail": fmt.Sprintf("fpm_max_children_cap must be <= %d", phpPoolAdminMaxChildrenCap)})
+		return
+	}
+	if req.FpmVersionDefaults == "" {
+		req.FpmVersionDefaults = "{}"
+	}
+	if req.FpmAdvancedMode {
+		req.FpmUserCanEdit = true // advanced implies can-edit
+	}
 	pkg := &models.HostingPackage{
-		ID:               ids.NewULID(),
-		Name:             req.Name,
-		DiskQuotaMB:      req.DiskQuotaMB,
-		CPUQuotaPercent:  req.CPUQuotaPercent,
-		MemoryLimitMB:    req.MemoryLimitMB,
-		IOReadMbps:       req.IOReadMbps,
-		IOWriteMbps:      req.IOWriteMbps,
-		MaxTasks:         req.MaxTasks,
-		BandwidthQuotaMB: req.BandwidthQuotaMB,
-		MaxDomains:       req.MaxDomains,
-		MaxEmailAccounts: req.MaxEmailAccounts,
-		MaxDatabases:     req.MaxDatabases,
-		MaxDockerApps:    req.MaxDockerApps,
-		MaxPythonApps:    req.MaxPythonApps,
-		SSHEnabled:       req.SSHEnabled,
-		CGIEnabled:       req.CGIEnabled,
-		PHPExecEnabled:   req.PHPExecEnabled,
-		DockerAppSlugs:   req.DockerAppSlugs,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                 ids.NewULID(),
+		Name:               req.Name,
+		DiskQuotaMB:        req.DiskQuotaMB,
+		CPUQuotaPercent:    req.CPUQuotaPercent,
+		MemoryLimitMB:      req.MemoryLimitMB,
+		IOReadMbps:         req.IOReadMbps,
+		IOWriteMbps:        req.IOWriteMbps,
+		MaxTasks:           req.MaxTasks,
+		BandwidthQuotaMB:   req.BandwidthQuotaMB,
+		MaxDomains:         req.MaxDomains,
+		MaxEmailAccounts:   req.MaxEmailAccounts,
+		MaxDatabases:       req.MaxDatabases,
+		MaxDockerApps:      req.MaxDockerApps,
+		MaxPythonApps:      req.MaxPythonApps,
+		SSHEnabled:         req.SSHEnabled,
+		CGIEnabled:         req.CGIEnabled,
+		PHPExecEnabled:     req.PHPExecEnabled,
+		FpmMaxChildrenCap:  req.FpmMaxChildrenCap,
+		FpmWorkerMemMb:     req.FpmWorkerMemMb,
+		FpmUserCanEdit:     req.FpmUserCanEdit,
+		FpmAdvancedMode:    req.FpmAdvancedMode,
+		FpmVersionDefaults: req.FpmVersionDefaults,
+		DockerAppSlugs:     req.DockerAppSlugs,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	if v := strings.TrimSpace(req.NspawnImageVersion); v != "" {
 		if !isImageNamePattern(v) {
@@ -284,6 +317,28 @@ func (h *packageHandler) update(c *gin.Context) {
 	}
 	if req.PHPExecEnabled != nil {
 		pkg.PHPExecEnabled = *req.PHPExecEnabled
+	}
+	if req.FpmMaxChildrenCap != nil {
+		if *req.FpmMaxChildrenCap > phpPoolAdminMaxChildrenCap {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "fpm_cap_too_high", "detail": fmt.Sprintf("fpm_max_children_cap must be <= %d", phpPoolAdminMaxChildrenCap)})
+			return
+		}
+		pkg.FpmMaxChildrenCap = *req.FpmMaxChildrenCap
+	}
+	if req.FpmWorkerMemMb != nil {
+		pkg.FpmWorkerMemMb = *req.FpmWorkerMemMb
+	}
+	if req.FpmUserCanEdit != nil {
+		pkg.FpmUserCanEdit = *req.FpmUserCanEdit
+	}
+	if req.FpmAdvancedMode != nil {
+		pkg.FpmAdvancedMode = *req.FpmAdvancedMode
+	}
+	if req.FpmVersionDefaults != nil {
+		pkg.FpmVersionDefaults = *req.FpmVersionDefaults
+	}
+	if pkg.FpmAdvancedMode {
+		pkg.FpmUserCanEdit = true // advanced implies can-edit
 	}
 	if req.DockerAppSlugs != nil {
 		pkg.DockerAppSlugs = *req.DockerAppSlugs

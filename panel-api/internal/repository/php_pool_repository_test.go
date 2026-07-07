@@ -43,6 +43,7 @@ func TestPHPPoolRepository_Create(t *testing.T) {
 			sqlmock.AnyArg(), // pm_max_spare_servers
 			sqlmock.AnyArg(), // pm_max_requests
 			sqlmock.AnyArg(), // request_terminate_timeout_seconds
+			sqlmock.AnyArg(), // performance_mode
 			pool.Status,
 			sqlmock.AnyArg(), // last_error
 			sqlmock.AnyArg(), // created_at
@@ -197,6 +198,7 @@ func TestPHPPoolRepository_Update(t *testing.T) {
 			sqlmock.AnyArg(), // pm_max_spare_servers
 			sqlmock.AnyArg(), // pm_max_requests
 			sqlmock.AnyArg(), // request_terminate_timeout_seconds
+			sqlmock.AnyArg(), // performance_mode
 			sqlmock.AnyArg(), // status
 			sqlmock.AnyArg(), // last_error
 			sqlmock.AnyArg(), // created_at
