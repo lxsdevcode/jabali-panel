@@ -10,8 +10,9 @@
 #
 # Releasing = copy the plugin files into trunk/, snapshot trunk into
 # tags/<version>/, sync assets/, then `svn commit`. This script does all the
-# local staging and, only with --publish, runs the commit. It NEVER stores your
-# password: svn prompts for it (your SVN password IS your WordPress.org account
+# local staging and, only with --publish, runs the commit. Password comes from
+# the ## WordPress.org section of ~/cred.md when present, else svn prompts (your
+# SVN password IS your WordPress.org account
 # password). Dry-run by default.
 #
 # Prerequisites:
@@ -44,6 +45,22 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# WordPress.org SVN creds from ~/cred.md (## WordPress.org section) so --publish
+# doesn't prompt. Format inside the section:
+#   ## WordPress.org
+#   username: <wporg-user>
+#   password: <wporg-app-or-account-password>
+# Absent section → falls back to interactive svn prompt (unchanged behavior).
+CRED_FILE="${CRED_FILE:-$HOME/cred.md}"
+WPORG_PASS=""
+if [[ -f "$CRED_FILE" ]]; then
+  wporg_block="$(awk '/^##[[:space:]]+WordPress\.org/{f=1;next} /^##[[:space:]]/{f=0} f' "$CRED_FILE")"
+  if [[ -z "$WPORG_USER" ]]; then
+    WPORG_USER="$(printf '%s\n' "$wporg_block" | grep -oiP '^\s*user(name)?:\s*\K\S.*' | head -1 | sed 's/[[:space:]]*$//')"
+  fi
+  WPORG_PASS="$(printf '%s\n' "$wporg_block" | grep -oiP '^\s*pass(word)?:\s*\K\S.*' | head -1 | sed 's/[[:space:]]*$//')"
+fi
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 command -v svn   >/dev/null || die "svn not installed (apt install subversion)"
@@ -130,8 +147,16 @@ if [[ "$PUBLISH" -ne 1 ]]; then
   exit 0
 fi
 
-[[ -n "$WPORG_USER" ]] || die "--publish requires -u <wordpress.org-username>"
+[[ -n "$WPORG_USER" ]] || die "--publish needs a WordPress.org username: pass -u <user> or add a ## WordPress.org section (username:/password:) to ${CRED_FILE}"
 echo
-echo "==> Committing to WordPress.org as '${WPORG_USER}' (you will be prompted for your password)"
-svn commit "$WORK" -m "$MSG" --username "$WPORG_USER"
+svn_auth=(--username "$WPORG_USER")
+if [[ -n "$WPORG_PASS" ]]; then
+  # --password is briefly visible in `ps`; acceptable on a personal deploy box.
+  # --no-auth-cache keeps it out of ~/.subversion (cred.md stays the one store).
+  svn_auth+=(--password "$WPORG_PASS" --non-interactive --no-auth-cache)
+  echo "==> Committing to WordPress.org as '${WPORG_USER}' (credentials from ${CRED_FILE})"
+else
+  echo "==> Committing to WordPress.org as '${WPORG_USER}' (you will be prompted for your password)"
+fi
+svn commit "$WORK" -m "$MSG" "${svn_auth[@]}"
 echo "==> Done. https://wordpress.org/plugins/${SLUG}/ will show ${VERSION} shortly."
