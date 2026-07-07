@@ -4218,6 +4218,18 @@ build_backend() {
 
   install -m 0755 "$tmp_panel" "$BIN_PATH"
   install -m 0755 "$tmp_agent" "$AGENT_BIN_PATH"
+
+  # Codeberg #14: prune accumulated binary backups so /usr/local/bin doesn't
+  # grow unbounded (a host was found with 19 jabali-panel.bak.* ~ 1.3 GB on
+  # $PATH). Keep the 3 most recent of each — these are legacy/operator backups
+  # (the install above uses `install` with no backup), but old ones linger.
+  local _bakbase _old _pruned=0
+  for _bakbase in jabali-panel jabali-agent; do
+    while IFS= read -r _old; do
+      [[ -n "$_old" ]] && rm -f "$_old" && _pruned=$((_pruned + 1))
+    done < <(ls -1t "/usr/local/bin/${_bakbase}".bak.* 2>/dev/null | tail -n +4)
+  done
+  (( _pruned > 0 )) && _ok "pruned $_pruned old binary backup(s) from /usr/local/bin"
   # M13 Step 1: jabali-ssh-shell ships at 0755 root:root. The wrapper
   # falls back to /usr/sbin/nologin when sandbox dispatch isn't
   # wired (Step 1 = skeleton; Step 2 + 3 wire bwrap + nspawn argv).
