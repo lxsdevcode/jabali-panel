@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -137,6 +138,14 @@ same command to resume a failed job.`,
 			}
 			if fi.IsDir() {
 				return fmt.Errorf("--file %q is a directory", abs)
+			}
+			// JAB-41: disk preflight BEFORE creating the job, staging the tarball,
+			// or auto-creating the target user — so a low-disk host fails clean
+			// with nothing half-provisioned. ParseTarball re-checks as a backstop.
+			if err := os.MkdirAll("/var/lib/jabali-migrations", 0o750); err == nil {
+				if derr := migrate.CheckExtractDiskSpace(abs, "/var/lib/jabali-migrations"); derr != nil {
+					return derr
+				}
 			}
 
 			su := sourceUser
