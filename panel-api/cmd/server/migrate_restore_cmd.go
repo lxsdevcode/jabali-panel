@@ -85,6 +85,7 @@ func newMigrateRestoreCmd() *cobra.Command {
 	var file, restoreFile, sourceUser, sourceHost string
 	var targetUser, targetEmail, targetPassword, targetPackageID string
 	var keepStaging bool
+	var retryFromScratch bool
 
 	cmd := &cobra.Command{
 		Use:   "restore",
@@ -159,8 +160,28 @@ same command to resume a failed job.`,
 			var jobID string
 			if ex, _ := jobsRepo.FindBySource(ctx, kind, sourceHost, su); ex != nil {
 				jobID = ex.ID
-				fmt.Printf("  → reusing existing job %s (state=%s) for %s/%s\n",
-					ex.ID, ex.State, kind, su)
+				if retryFromScratch {
+					// Full retry: wipe stage rows + reset the job to pending so
+					// the runner re-seeds and re-runs analyze → fix_perms →
+					// validate → restore from clean state (re-creating the target
+					// user if it was deleted, replacing stale manifest/status).
+					// The default (no flag) stays a gentle resume that keeps
+					// already-done stages.
+					fmt.Printf("  → FULL RETRY (--retry-from-scratch): resetting job %s (was state=%s) — re-running the entire pipeline, NOT a resume\n",
+						ex.ID, ex.State)
+					if err := jobsRepo.DeleteStagesForJob(ctx, jobID); err != nil {
+						return fmt.Errorf("retry-from-scratch: delete stages: %w", err)
+					}
+					if err := jobsRepo.UpdateManifest(ctx, jobID, "{}"); err != nil {
+						return fmt.Errorf("retry-from-scratch: clear manifest: %w", err)
+					}
+					if err := jobsRepo.UpdateState(ctx, jobID, models.MigrationStatePending, nil); err != nil {
+						return fmt.Errorf("retry-from-scratch: reset job state: %w", err)
+					}
+				} else {
+					fmt.Printf("  → reusing existing job %s (state=%s) for %s/%s (resume — pass --retry-from-scratch for a full re-run)\n",
+						ex.ID, ex.State, kind, su)
+				}
 			} else {
 				row := &models.MigrationJob{
 					ID:         ids.NewULID(),
@@ -232,5 +253,7 @@ same command to resume a failed job.`,
 	cmd.Flags().StringVar(&targetPassword, "target-password", "", "destination password (auto-create only; ≥10 chars)")
 	cmd.Flags().StringVar(&targetPackageID, "target-package-id", "", "hosting package ULID (auto-create only)")
 	cmd.Flags().BoolVar(&keepStaging, "keep-staging", false, "keep /var/lib/jabali-migrations/<job-id>/ after the run (debug)")
+	cmd.Flags().BoolVar(&retryFromScratch, "retry-from-scratch", false, "reuse the source + options but wipe the existing job's stages and re-run the whole pipeline from analyze (recreates the target user, replaces stale manifest); default is a gentle resume")
+	cmd.Flags().BoolVar(&retryFromScratch, "fresh", false, "alias of --retry-from-scratch")
 	return cmd
 }
