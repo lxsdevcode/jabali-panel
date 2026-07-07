@@ -111,14 +111,21 @@ type updateServerSettingsRequest struct {
 	ReleaseChannel           *string `json:"release_channel,omitempty"`
 	// DNS record-type permissions (GH #466): supply either a named preset
 	// (permissive | hosting-safe | locked-down) or the full per-type matrix.
-	DNSUserRecordPolicy          *models.DNSUserRecordPolicy `json:"dns_user_record_policy,omitempty"`
-	DNSUserRecordPolicyPreset    *string                     `json:"dns_user_record_policy_preset,omitempty"`
-	DiskQuotaEnabled             *bool                       `json:"disk_quota_enabled,omitempty"`
-	WebmailEnabled               *bool                       `json:"webmail_enabled,omitempty"`
-	TenantDomainOptionsEnabled   *bool                       `json:"tenant_domain_options_enabled,omitempty"`
-	RootTerminalEnabled          *bool                       `json:"root_terminal_enabled,omitempty"`
-	BandwidthQuotaEnforceEnabled *bool                       `json:"bandwidth_quota_enforce_enabled,omitempty"`
-	UploadMaxSizeMB              *uint32                     `json:"upload_max_size_mb,omitempty"`
+	DNSUserRecordPolicy       *models.DNSUserRecordPolicy `json:"dns_user_record_policy,omitempty"`
+	DNSUserRecordPolicyPreset *string                     `json:"dns_user_record_policy_preset,omitempty"`
+	DiskQuotaEnabled          *bool                       `json:"disk_quota_enabled,omitempty"`
+	WebmailEnabled            *bool                       `json:"webmail_enabled,omitempty"`
+	// M353 Phase 1 (GH #353): per-module enable flags (admin toggles them from
+	// Server Settings -> Modules; the SPA gates nav + routes on them).
+	DNSEnabled                   *bool   `json:"dns_enabled,omitempty"`
+	MailEnabled                  *bool   `json:"mail_enabled,omitempty"`
+	SecurityEnabled              *bool   `json:"security_enabled,omitempty"`
+	QuotaEnabled                 *bool   `json:"quota_enabled,omitempty"`
+	APIEnabled                   *bool   `json:"api_enabled,omitempty"`
+	TenantDomainOptionsEnabled   *bool   `json:"tenant_domain_options_enabled,omitempty"`
+	RootTerminalEnabled          *bool   `json:"root_terminal_enabled,omitempty"`
+	BandwidthQuotaEnforceEnabled *bool   `json:"bandwidth_quota_enforce_enabled,omitempty"`
+	UploadMaxSizeMB              *uint32 `json:"upload_max_size_mb,omitempty"`
 
 	// M13 SSH shell sandbox.
 	SSHSandboxMode            *string `json:"ssh_sandbox_mode,omitempty"`
@@ -434,6 +441,21 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	}
 	if req.WebmailEnabled != nil {
 		current.WebmailEnabled = *req.WebmailEnabled
+	}
+	if req.DNSEnabled != nil {
+		current.DNSEnabled = *req.DNSEnabled
+	}
+	if req.MailEnabled != nil {
+		current.MailEnabled = *req.MailEnabled
+	}
+	if req.SecurityEnabled != nil {
+		current.SecurityEnabled = *req.SecurityEnabled
+	}
+	if req.QuotaEnabled != nil {
+		current.QuotaEnabled = *req.QuotaEnabled
+	}
+	if req.APIEnabled != nil {
+		current.APIEnabled = *req.APIEnabled
 	}
 	if req.TenantDomainOptionsEnabled != nil {
 		current.TenantDomainOptionsEnabled = *req.TenantDomainOptionsEnabled
