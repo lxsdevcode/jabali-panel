@@ -62,6 +62,7 @@ import { DNSResolversCard } from "./DNSResolversCard";
 import { DNSPermissionsCard } from "./DNSPermissionsCard";
 import { EmailCard } from "./EmailCard";
 import { WebmailToggleCard } from "./WebmailToggleCard";
+import { ModulesCard } from "./ModulesCard";
 import { StalwartWebadminCard } from "./StalwartWebadminCard";
 import { PageTemplatesCard } from "./PageTemplatesCard";
 import { PanelSSLCard } from "./PanelSSLCard";
@@ -457,6 +458,7 @@ const GeneralSettingsTab = () => {
         </Row>
       </Card>
 
+      <ModulesCard />
       <TenantDomainOptionsCard />
 
       <Space>
