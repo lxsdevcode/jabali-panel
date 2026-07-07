@@ -36,8 +36,14 @@ const (
 	MigrationStateValidating = "validating"
 	MigrationStateRestoring  = "restoring"
 	MigrationStateDone       = "done"
-	MigrationStateFailed     = "failed"
-	MigrationStateCancelled  = "cancelled"
+	// MigrationStateDegraded (JAB-31): the pipeline ran to completion but a core
+	// area failed (all DB dumps skipped, mailbox messages found but none pushed,
+	// or 0 healthy domains). Terminal like done/failed but signals "restored,
+	// needs attention" so operators don't trust an unusable account. The CLI
+	// exits non-zero for this state unless --allow-degraded is passed.
+	MigrationStateDegraded  = "degraded"
+	MigrationStateFailed    = "failed"
+	MigrationStateCancelled = "cancelled"
 )
 
 // MigrationJob is the header row for one migration attempt against

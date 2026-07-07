@@ -41,6 +41,7 @@ import (
 func newMigrateImportCmd() *cobra.Command {
 	var jobID, targetUser, targetEmail, targetPassword, targetPackageID string
 	var keepStaging bool
+	var allowDegraded bool
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Run (or resume) a migration job through the four-stage pipeline",
@@ -501,6 +502,23 @@ failed stage. Already-done stages are skipped.`,
 			}
 			runner.WithContext(payload)
 			runErr := runner.Run(ctx, job.ID)
+			// JAB-31: the pipeline stamps 'done' on best-effort imports even when
+			// core areas failed. If the restore recorded critical failures,
+			// downgrade done→degraded and (unless --allow-degraded) exit non-zero
+			// so operators don't trust an unusable account. Runs before cleanup so
+			// a degraded job's staging dir is retained for debugging.
+			if runErr == nil && len(payload.criticals) > 0 {
+				msg := "critical failures: " + strings.Join(payload.criticals, "; ")
+				if j, lerr := jobsRepo.FindByID(ctx, job.ID); lerr == nil && j != nil && shouldDowngradeToDegraded(j.State, payload.criticals) {
+					if uErr := jobsRepo.UpdateState(ctx, job.ID, models.MigrationStateDegraded, &msg); uErr != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "warning: mark degraded: %v\n", uErr)
+					}
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "DEGRADED: restore completed but %s\n", msg)
+				if !allowDegraded {
+					runErr = fmt.Errorf("migration degraded — %s (re-run after fixing, or pass --allow-degraded to accept)", msg)
+				}
+			}
 			// Staging-dir cleanup. Re-load the job so we see the
 			// terminal state the runner just stamped (done / failed).
 			// Operator can suppress via --keep-staging when debugging.
@@ -525,6 +543,7 @@ failed stage. Already-done stages are skipped.`,
 	}
 	cmd.Flags().StringVar(&jobID, "job-id", "", "migration_jobs.id (ULID) — required")
 	cmd.Flags().BoolVar(&keepStaging, "keep-staging", false, "do NOT delete /var/lib/jabali-migrations/<job-id>/ after run (debug aid)")
+	cmd.Flags().BoolVar(&allowDegraded, "allow-degraded", false, "exit 0 even if the restore ends degraded (a core area — DB/mail/health — failed)")
 	cmd.Flags().StringVar(&targetUser, "target-user", "", "destination jabali username — auto-created if --target-email + --target-password supplied")
 	cmd.Flags().StringVar(&targetEmail, "target-email", "", "destination user email (only used when auto-creating)")
 	cmd.Flags().StringVar(&targetPassword, "target-password", "", "destination user password (only used when auto-creating; ≥10 chars)")
@@ -538,6 +557,23 @@ type cpanelRunPayload struct {
 	parsed         *cpanel.ParsedTarball
 	targetUserID   string
 	targetUsername string
+	// criticals (JAB-31) collects core-area failures observed during the restore
+	// stage (DB dumps all skipped, mail found-but-not-pushed, 0 healthy domains).
+	// The run command reads it after the runner finishes and, when non-empty,
+	// downgrades the job from done to degraded + exits non-zero.
+	criticals []string
+}
+
+// Core-area failure thresholds (JAB-31). Each returns true when an area ran but
+// produced nothing usable — a "done" job in that state is misleading.
+func dbDumpsAllSkipped(dumps, created int) bool        { return dumps > 0 && created == 0 }
+func mailFoundNonePushed(found int, pushed int64) bool { return found > 0 && pushed == 0 }
+func healthNoneHealthy(probed, healthy int) bool       { return probed > 0 && healthy == 0 }
+
+// shouldDowngradeToDegraded gates the done→degraded transition: the runner
+// stamped done but the restore recorded at least one core-area failure.
+func shouldDowngradeToDegraded(state string, criticals []string) bool {
+	return state == models.MigrationStateDone && len(criticals) > 0
 }
 
 // validateStageCallback bridges the runner's StageCallback shape
@@ -649,6 +685,12 @@ func cpanelRestoreCallback(
 		}
 		warnings = append(warnings, fmt.Sprintf("databases: created=%d", dbsRes.Created))
 		warnings = append(warnings, dbsRes.Skipped...)
+		// JAB-31: DB dumps present but none imported is a core failure, not a
+		// warning — a "done" job here has no databases.
+		if dbDumpsAllSkipped(len(p.parsed.MySQLDumps), dbsRes.Created) {
+			p.criticals = append(p.criticals, fmt.Sprintf(
+				"databases: %d dump(s) present but 0 imported", len(p.parsed.MySQLDumps)))
+		}
 
 		if plan.DNS {
 			dnsRes, err := cpanel.ImportDNS(ctx, restoreAgent, p.parsed)
@@ -863,6 +905,12 @@ func cpanelRestoreCallback(
 				"mailboxes: maildirs=%d messages_found=%d messages_pushed=%d bytes_pushed=%d",
 				mailRes.MaildirsFound, mailRes.MessagesFound, mailRes.MessagesPushed, mailRes.BytesPushed))
 			warnings = append(warnings, mailRes.Skipped...)
+			// JAB-31: messages found but none pushed means the mailbox import hit
+			// an error (e.g. a JMAP failure) — core failure, not a warning.
+			if mailFoundNonePushed(mailRes.MessagesFound, mailRes.MessagesPushed) {
+				p.criticals = append(p.criticals, fmt.Sprintf(
+					"mailboxes: %d message(s) found but 0 pushed", mailRes.MessagesFound))
+			}
 		} else {
 			warnings = append(warnings, "mailboxes: skipped per migration plan")
 		}
@@ -994,6 +1042,12 @@ func cpanelRestoreCallback(
 						}()))
 				}
 				warnings = append(warnings, fmt.Sprintf("health_probe: %d/%d domains healthy", okCount, len(pr.Results)))
+				// JAB-31: 0 healthy domains after a restore that probed some means
+				// the account isn't serving — core failure, not a warning.
+				if healthNoneHealthy(len(pr.Results), okCount) {
+					p.criticals = append(p.criticals, fmt.Sprintf(
+						"health: 0/%d domains healthy after restore", len(pr.Results)))
+				}
 			}
 			probeCancel()
 		}
