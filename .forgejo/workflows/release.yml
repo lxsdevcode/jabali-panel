@@ -31,11 +31,15 @@ env:
   GO_VERSION: "1.25"
   NODE_VERSION: "20"
 
-# Serialize releases: a rapid double-push to main shouldn't try to
-# create the same release tag twice in parallel and race on the API.
+# Serialize releases AND supersede stale ones. cancel-in-progress: true so a
+# rapid burst of merges to main doesn't each cut a release (which piled up
+# behind the release-main group and starved the runner - 2026-07-06). Only the
+# LATEST main commit gets a release built; intermediate commits are superseded.
+# jabali update only ever wants the newest release/stable, so nothing is lost;
+# git keeps the full history regardless. One build at a time -> no API race.
 concurrency:
   group: release-main
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # Forgejo Actions injects GITHUB_TOKEN read-only by default; creating a
 # release + uploading assets needs contents:write.
