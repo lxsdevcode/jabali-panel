@@ -12425,6 +12425,20 @@ EOF
     install_redis_acl
   fi
 
+  # GH #346 / ADR-0042: re-apply the Stalwart JMAP plan on every `jabali update`
+  # so directory config changes (queryRecipient / queryEmailAliases) actually
+  # redeploy. The plan's Directory entry is an `upsert` (matchOn description), so
+  # re-apply converges the query in place instead of skipping the existing object
+  # (`stalwart-cli apply` create is one-shot). Guarded on a bootstrapped Stalwart
+  # (cli + admin token + DB password present) so non-mail / pre-bootstrap hosts
+  # skip it. Non-fatal — a failed re-apply must not abort the whole update.
+  if declare -f install_stalwart_apply >/dev/null 2>&1 \
+     && command -v stalwart-cli >/dev/null 2>&1 \
+     && [[ -f /etc/jabali-panel/stalwart-admin.token ]] \
+     && [[ -f /etc/jabali-panel/stalwart-mariadb.password ]]; then
+    install_stalwart_apply || _warn "stalwart JMAP re-apply on update failed (non-fatal)"
+  fi
+
   # Multi-tenant WP opcache tuning (#597) — self-heal on every update so the
   # stock 10000-file/128MB opcache defaults get raised on existing hosts.
   if declare -f install_php_opcache_tuning >/dev/null 2>&1; then

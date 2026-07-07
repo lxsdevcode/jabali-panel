@@ -1,7 +1,8 @@
 [
   {
-    "@type": "create",
+    "@type": "upsert",
     "object": "x:Directory",
+    "matchOn": ["description"],
     "value": {
       "#sql-directory": {
         "@type": "Sql",
