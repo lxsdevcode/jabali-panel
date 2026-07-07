@@ -942,7 +942,14 @@ func cpanelRestoreCallback(
 		// the rewriter reads each per-domain docroot under
 		// /home/<u>/domains/<dom>/public_html and splices values in.
 		// Best-effort: missing app config = silent skip.
-		appRes, err := cpanel.ImportAppConfigs(ctx, restoreAgent, p.targetUserID, p.targetUsername, dbsRes.Credentials)
+		// JAB-32: pass the resolved per-domain docroots so the scanner finds
+		// Hestia's web/<dom>/public_html (and any non-default cPanel layout),
+		// not just the hardcoded /home/<user>/domains tree.
+		appDocroots := make([]string, 0, len(p.parsed.DocRoots))
+		for _, dr := range p.parsed.DocRoots {
+			appDocroots = append(appDocroots, dr)
+		}
+		appRes, err := cpanel.ImportAppConfigs(ctx, restoreAgent, p.targetUserID, p.targetUsername, dbsRes.Credentials, appDocroots)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("appconfigs: %v", err))
 		} else {

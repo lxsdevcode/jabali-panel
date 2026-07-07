@@ -215,7 +215,7 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*CreateResult, error) 
 	// account later via the existing reprovision REST endpoint).
 	res := &CreateResult{User: u}
 	if d.Agent != nil && !in.SkipProvision && !in.IsAdmin && effectiveUsername != nil {
-		_, err := d.Agent.Call(ctx, "user.create", map[string]any{
+		raw, err := d.Agent.Call(ctx, "user.create", map[string]any{
 			"username": *effectiveUsername,
 			"home_dir": "/home/" + *effectiveUsername,
 			"shell":    "/usr/local/bin/jabali-ssh-shell",
@@ -228,6 +228,22 @@ func Create(ctx context.Context, d Deps, in CreateInput) (*CreateResult, error) 
 			}
 			res.ProvisionWarning = "user saved but OS account provisioning failed: " + err.Error()
 		} else {
+			// JAB-33: user.create returns the provisioned OS UID. Persist it to
+			// users.linux_uid so downstream (egress policy, quotas, SFTP) can map
+			// the panel row to the Linux account. Previously the response was
+			// discarded, leaving linux_uid NULL for every userops-created user
+			// (admin UI + migration alike). Best-effort: a failed update is a
+			// warning, not a rollback of the already-provisioned account.
+			var pr struct {
+				UID int `json:"uid"`
+			}
+			if jErr := json.Unmarshal(raw, &pr); jErr == nil && pr.UID > 0 {
+				uid := uint32(pr.UID)
+				u.LinuxUID = &uid
+				if uErr := d.Users.Update(ctx, u); uErr != nil && d.Log != nil {
+					d.Log.Warn("persist linux_uid failed", "user_id", u.ID, "uid", pr.UID, "err", uErr)
+				}
+			}
 			// M33: re-evaluate maldet inotify watches now that a new
 			// tenant home exists. Fire-and-forget; LMD inotify_minutes=45
 			// covers missed reloads automatically. Use a fresh ctx
