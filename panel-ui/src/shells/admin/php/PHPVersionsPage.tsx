@@ -3,8 +3,9 @@ import { Card, Typography } from "antd";
 import { CodeOutlined } from "@icons";
 import { VersionsTab } from "./VersionsTab";
 import { PHPExtensionsTab } from "./PHPExtensionsTab";
+import { FPMPoolsTab } from "./FPMPoolsTab";
 
-type TabKey = "versions" | "extensions";
+type TabKey = "versions" | "extensions" | "pools";
 
 export const PHPVersionsPage = () => {
   const [active, setActive] = useTabParam<TabKey>("versions");
@@ -21,11 +22,18 @@ export const PHPVersionsPage = () => {
         tabList={[
           { key: "versions", tab: "PHP Versions" },
           { key: "extensions", tab: "PHP Extensions" },
+          { key: "pools", tab: "FPM Pools" },
         ]}
         activeTabKey={active}
         onTabChange={(k) => setActive(k as TabKey)}
       >
-        {active === "versions" ? <VersionsTab /> : <PHPExtensionsTab />}
+        {active === "versions" ? (
+          <VersionsTab />
+        ) : active === "extensions" ? (
+          <PHPExtensionsTab />
+        ) : (
+          <FPMPoolsTab />
+        )}
       </Card>
     </div>
   );
