@@ -1194,10 +1194,15 @@ func (r *Reconciler) applyPHPPool(ctx context.Context, user *models.User, pool *
 		// Versioned pools MUST NOT wipe sibling-version pool files; the default
 		// pool keeps the legacy wipe-stale-versions behaviour (harmless — its
 		// glob only matches jabali-<user>.conf, never a versioned slug).
-		"additive":                     !isDefault,
-		"pm_mode":                      pool.PmMode,
-		"pm_max_children":              pool.PmMaxChildren,
-		"process_idle_timeout_seconds": pool.ProcessIdleTimeoutSeconds,
+		"additive":                          !isDefault,
+		"pm_mode":                           pool.PmMode,
+		"pm_max_children":                   pool.PmMaxChildren,
+		"process_idle_timeout_seconds":      pool.ProcessIdleTimeoutSeconds,
+		"pm_start_servers":                  pool.PmStartServers,
+		"pm_min_spare_servers":              pool.PmMinSpareServers,
+		"pm_max_spare_servers":              pool.PmMaxSpareServers,
+		"pm_max_requests":                   pool.PmMaxRequests,
+		"request_terminate_timeout_seconds": pool.RequestTerminateTimeoutSeconds,
 	}
 
 	// GH #402: if the user's package opts out of the #401 command-exec

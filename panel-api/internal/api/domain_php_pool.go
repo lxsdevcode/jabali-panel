@@ -160,13 +160,18 @@ func (h *domainPHPPoolHandler) bind(c *gin.Context) {
 				// it with the versioned slug/socket and regenerates this
 				// domain's vhost within a tick. pm_* copied from the default.
 				pool = &models.PHPPool{
-					ID:                        ids.NewULID(),
-					UserID:                    dom.UserID,
-					PHPVersion:                req.PHPVersion,
-					PmMode:                    defaultPool.PmMode,
-					PmMaxChildren:             defaultPool.PmMaxChildren,
-					ProcessIdleTimeoutSeconds: defaultPool.ProcessIdleTimeoutSeconds,
-					Status:                    "pending",
+					ID:                             ids.NewULID(),
+					UserID:                         dom.UserID,
+					PHPVersion:                     req.PHPVersion,
+					PmMode:                         defaultPool.PmMode,
+					PmMaxChildren:                  defaultPool.PmMaxChildren,
+					ProcessIdleTimeoutSeconds:      defaultPool.ProcessIdleTimeoutSeconds,
+					PmStartServers:                 defaultPool.PmStartServers,
+					PmMinSpareServers:              defaultPool.PmMinSpareServers,
+					PmMaxSpareServers:              defaultPool.PmMaxSpareServers,
+					PmMaxRequests:                  defaultPool.PmMaxRequests,
+					RequestTerminateTimeoutSeconds: defaultPool.RequestTerminateTimeoutSeconds,
+					Status:                         "pending",
 				}
 				if err := h.cfg.PHPPools.Create(ctx, pool); err != nil {
 					slog.ErrorContext(ctx, "bind php-pool: create versioned pool", "error", err, "php_version", req.PHPVersion)

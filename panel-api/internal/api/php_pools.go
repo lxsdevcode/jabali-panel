@@ -1,8 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -24,7 +24,50 @@ const (
 	phpPoolUserMaxChildrenCap  = 100
 	phpPoolAdminMaxChildrenCap = 2000
 	phpPoolMaxIdleTimeoutSec   = 86400
+	phpPoolMaxRequestsCap      = 100000 // worker recycle bound (0 = disabled)
+	phpPoolMaxTerminateSec     = 3600   // request_terminate_timeout ceiling (0 = disabled)
 )
+
+// resolvePMTuning applies defaults, caps, and the FPM dynamic-mode constraint
+// (min_spare <= start <= max_spare <= max_children) to the extended pm.* fields
+// (GH #339). It MUTATES the pointed-to values (fills dynamic defaults clamped to
+// max_children) and returns a client error + false when invalid. start/spare are
+// ignored by FPM outside dynamic mode, so they are only constrained there.
+func resolvePMTuning(mode string, maxChildren uint32, start, minSpare, maxSpare, maxReq, terminate *uint32) (string, bool) {
+	if *maxReq > phpPoolMaxRequestsCap {
+		return fmt.Sprintf("pm_max_requests must be <= %d", phpPoolMaxRequestsCap), false
+	}
+	if *terminate > phpPoolMaxTerminateSec {
+		return fmt.Sprintf("request_terminate_timeout_seconds must be <= %d", phpPoolMaxTerminateSec), false
+	}
+	if mode != "dynamic" {
+		return "", true
+	}
+	if *maxSpare == 0 {
+		if maxChildren < 3 {
+			*maxSpare = maxChildren
+		} else {
+			*maxSpare = 3
+		}
+	}
+	if *start == 0 {
+		if *maxSpare < 2 {
+			*start = *maxSpare
+		} else {
+			*start = 2
+		}
+	}
+	if *minSpare == 0 {
+		*minSpare = 1
+		if *minSpare > *start {
+			*minSpare = *start
+		}
+	}
+	if !(*minSpare <= *start && *start <= *maxSpare && *maxSpare <= maxChildren) {
+		return "dynamic pm requires pm_min_spare_servers <= pm_start_servers <= pm_max_spare_servers <= pm_max_children", false
+	}
+	return "", true
+}
 
 type PHPPoolHandlerConfig struct {
 	PHPPools            repository.PHPPoolRepository
@@ -72,17 +115,27 @@ type phpPoolHandler struct{ cfg PHPPoolHandlerConfig }
 // ---- Requests/Responses ----
 
 type createPHPPoolRequest struct {
-	UserID                    string `json:"user_id"`
-	PHPVersion                string `json:"php_version"`
-	PmMode                    string `json:"pm_mode"`
-	PmMaxChildren             uint32 `json:"pm_max_children"`
-	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
+	UserID                         string `json:"user_id"`
+	PHPVersion                     string `json:"php_version"`
+	PmMode                         string `json:"pm_mode"`
+	PmMaxChildren                  uint32 `json:"pm_max_children"`
+	ProcessIdleTimeoutSeconds      uint32 `json:"process_idle_timeout_seconds"`
+	PmStartServers                 uint32 `json:"pm_start_servers"`
+	PmMinSpareServers              uint32 `json:"pm_min_spare_servers"`
+	PmMaxSpareServers              uint32 `json:"pm_max_spare_servers"`
+	PmMaxRequests                  uint32 `json:"pm_max_requests"`
+	RequestTerminateTimeoutSeconds uint32 `json:"request_terminate_timeout_seconds"`
 }
 
 type updatePHPPoolRequest struct {
-	PmMode                    string `json:"pm_mode"`
-	PmMaxChildren             uint32 `json:"pm_max_children"`
-	ProcessIdleTimeoutSeconds uint32 `json:"process_idle_timeout_seconds"`
+	PmMode                         string `json:"pm_mode"`
+	PmMaxChildren                  uint32 `json:"pm_max_children"`
+	ProcessIdleTimeoutSeconds      uint32 `json:"process_idle_timeout_seconds"`
+	PmStartServers                 uint32 `json:"pm_start_servers"`
+	PmMinSpareServers              uint32 `json:"pm_min_spare_servers"`
+	PmMaxSpareServers              uint32 `json:"pm_max_spare_servers"`
+	PmMaxRequests                  uint32 `json:"pm_max_requests"`
+	RequestTerminateTimeoutSeconds uint32 `json:"request_terminate_timeout_seconds"`
 }
 
 type createPHPPoolIniOverrideRequest struct {
@@ -216,7 +269,7 @@ func (h *phpPoolHandler) create(c *gin.Context) {
 	}
 
 	// Validate target user exists
-	_,  err := h.cfg.Users.FindByID(ctx, targetUserID)
+	_, err := h.cfg.Users.FindByID(ctx, targetUserID)
 	if err != nil {
 		if isNotFound(err) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "user_not_found"})
@@ -276,6 +329,14 @@ func (h *phpPoolHandler) create(c *gin.Context) {
 		return
 	}
 
+	// GH #339: defaults + caps + FPM dynamic constraint for the fuller pm.* set.
+	if msg, ok := resolvePMTuning(req.PmMode, req.PmMaxChildren,
+		&req.PmStartServers, &req.PmMinSpareServers, &req.PmMaxSpareServers,
+		&req.PmMaxRequests, &req.RequestTerminateTimeoutSeconds); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pm_tuning_invalid", "detail": msg})
+		return
+	}
+
 	// Check if user already has a pool (MVP constraint: one pool per user)
 	existingPool, err := h.cfg.PHPPools.FindByUserID(ctx, targetUserID)
 	if err == nil && existingPool != nil {
@@ -294,15 +355,20 @@ func (h *phpPoolHandler) create(c *gin.Context) {
 	// Create pool record with status="pending"
 	now := time.Now().UTC()
 	pool := &models.PHPPool{
-		ID:                        ids.NewULID(),
-		UserID:                    targetUserID,
-		PHPVersion:                req.PHPVersion,
-		PmMode:                    req.PmMode,
-		PmMaxChildren:             req.PmMaxChildren,
-		ProcessIdleTimeoutSeconds: req.ProcessIdleTimeoutSeconds,
-		Status:                    "pending",
-		CreatedAt:                 now,
-		UpdatedAt:                 now,
+		ID:                             ids.NewULID(),
+		UserID:                         targetUserID,
+		PHPVersion:                     req.PHPVersion,
+		PmMode:                         req.PmMode,
+		PmMaxChildren:                  req.PmMaxChildren,
+		ProcessIdleTimeoutSeconds:      req.ProcessIdleTimeoutSeconds,
+		PmStartServers:                 req.PmStartServers,
+		PmMinSpareServers:              req.PmMinSpareServers,
+		PmMaxSpareServers:              req.PmMaxSpareServers,
+		PmMaxRequests:                  req.PmMaxRequests,
+		RequestTerminateTimeoutSeconds: req.RequestTerminateTimeoutSeconds,
+		Status:                         "pending",
+		CreatedAt:                      now,
+		UpdatedAt:                      now,
 	}
 
 	if err := h.cfg.PHPPools.Create(ctx, pool); err != nil {
@@ -407,6 +473,32 @@ func (h *phpPoolHandler) update(c *gin.Context) {
 			return
 		}
 		pool.ProcessIdleTimeoutSeconds = req.ProcessIdleTimeoutSeconds
+	}
+
+	// GH #339: extended pm.* tuning. 0 = "not provided" (same convention as
+	// the fields above), so setting a field back to 0 isn't expressible on
+	// update — mirrors pm_max_children. Apply provided values, then re-validate
+	// the resulting pool (defaults + caps + FPM dynamic constraint).
+	if req.PmStartServers > 0 {
+		pool.PmStartServers = req.PmStartServers
+	}
+	if req.PmMinSpareServers > 0 {
+		pool.PmMinSpareServers = req.PmMinSpareServers
+	}
+	if req.PmMaxSpareServers > 0 {
+		pool.PmMaxSpareServers = req.PmMaxSpareServers
+	}
+	if req.PmMaxRequests > 0 {
+		pool.PmMaxRequests = req.PmMaxRequests
+	}
+	if req.RequestTerminateTimeoutSeconds > 0 {
+		pool.RequestTerminateTimeoutSeconds = req.RequestTerminateTimeoutSeconds
+	}
+	if msg, ok := resolvePMTuning(pool.PmMode, pool.PmMaxChildren,
+		&pool.PmStartServers, &pool.PmMinSpareServers, &pool.PmMaxSpareServers,
+		&pool.PmMaxRequests, &pool.RequestTerminateTimeoutSeconds); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pm_tuning_invalid", "detail": msg})
+		return
 	}
 
 	pool.UpdatedAt = time.Now().UTC()

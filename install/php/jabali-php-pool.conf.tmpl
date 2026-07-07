@@ -11,6 +11,22 @@ listen.mode = 0660
 pm = {{.PmMode}}
 pm.max_children = {{.PmMaxChildren}}
 pm.process_idle_timeout = {{.ProcessIdleTimeoutSeconds}}s
+{{- if eq .PmMode "dynamic" }}
+; Dynamic-mode sizing (GH #339). FPM requires these for pm=dynamic and
+; enforces min_spare <= start <= max_spare <= max_children; the API validates
+; the same before writing, so FPM never fails to start on a bad combo.
+pm.start_servers = {{.PmStartServers}}
+pm.min_spare_servers = {{.PmMinSpareServers}}
+pm.max_spare_servers = {{.PmMaxSpareServers}}
+{{- end }}
+{{- if gt .PmMaxRequests 0 }}
+; Recycle a worker after this many requests to bound memory leaks (0 = never).
+pm.max_requests = {{.PmMaxRequests}}
+{{- end }}
+{{- if gt .RequestTerminateTimeoutSeconds 0 }}
+; Kill a request stuck longer than this (0 = no limit).
+request_terminate_timeout = {{.RequestTerminateTimeoutSeconds}}s
+{{- end }}
 chdir = /home/{{.User}}
 security.limit_extensions = .php
 ; Jailbreak defense (ADR-0023 decision 12). open_basedir is hard-coded
