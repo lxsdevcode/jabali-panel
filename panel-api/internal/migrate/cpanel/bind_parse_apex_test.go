@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
@@ -195,5 +196,32 @@ func TestToPanelRecordName(t *testing.T) {
 		if got := toPanelRecordName(c.name, c.origin); got != c.want {
 			t.Errorf("toPanelRecordName(%q,%q) = %q, want %q", c.name, c.origin, got, c.want)
 		}
+	}
+}
+
+// JAB-28: SRV priority must go in the DNSRecord.Prio column, with content =
+// "weight port target" only — else PowerDNS serves a malformed SRV that doesn't
+// resolve (QA: _submission._tcp.itflow.app existed but didn't answer).
+func TestParseBINDZone_SRVPriorityColumn(t *testing.T) {
+	zone := "$ORIGIN example.com.\n_submission._tcp  IN  SRV  1 0 587 mail.example.com.\n"
+	z, _, ok := ParseBINDZone(strings.NewReader(zone), "example.com")
+	if !ok {
+		t.Fatal("ParseBINDZone failed")
+	}
+	var srv *migrate.DNSRecord
+	for i := range z.Records {
+		if z.Records[i].Type == "SRV" {
+			srv = &z.Records[i]
+			break
+		}
+	}
+	if srv == nil {
+		t.Fatal("no SRV record parsed")
+	}
+	if srv.Prio != 1 {
+		t.Errorf("SRV Prio = %d, want 1 (priority in the prio column)", srv.Prio)
+	}
+	if srv.Content != "0 587 mail.example.com" {
+		t.Errorf("SRV Content = %q, want \"0 587 mail.example.com\" (weight port target, no priority)", srv.Content)
 	}
 }
