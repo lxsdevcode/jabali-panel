@@ -39,10 +39,12 @@ func (f *fakeDNSRecordRepo) Create(_ context.Context, r *models.DNSRecord) error
 	f.created = append(f.created, *r)
 	return nil
 }
-func (f *fakeDNSRecordRepo) Update(context.Context, *models.DNSRecord) error             { return nil }
-func (f *fakeDNSRecordRepo) Delete(context.Context, string) error                        { return nil }
-func (f *fakeDNSRecordRepo) FindByID(context.Context, string) (*models.DNSRecord, error) { return nil, nil }
-func (f *fakeDNSRecordRepo) DeleteByZoneID(context.Context, string) error                { return nil }
+func (f *fakeDNSRecordRepo) Update(context.Context, *models.DNSRecord) error { return nil }
+func (f *fakeDNSRecordRepo) Delete(context.Context, string) error            { return nil }
+func (f *fakeDNSRecordRepo) FindByID(context.Context, string) (*models.DNSRecord, error) {
+	return nil, nil
+}
+func (f *fakeDNSRecordRepo) DeleteByZoneID(context.Context, string) error { return nil }
 func (f *fakeDNSRecordRepo) DeleteByZoneIDAndManagedBy(context.Context, string, string) error {
 	return nil
 }
@@ -51,6 +53,25 @@ var (
 	_ repository.DNSZoneRepository   = (*fakeDNSZoneRepo)(nil)
 	_ repository.DNSRecordRepository = (*fakeDNSRecordRepo)(nil)
 )
+
+// fakeDomainRepo embeds the interface (nil) and overrides only FindByName —
+// the only method ImportDNS calls (JAB-28 find-or-create the zone).
+type fakeDomainRepo struct {
+	repository.DomainRepository
+	byName map[string]*models.Domain
+}
+
+func (f *fakeDomainRepo) FindByName(_ context.Context, name string) (*models.Domain, error) {
+	return f.byName[name], nil
+}
+
+func domains(names ...string) *fakeDomainRepo {
+	m := map[string]*models.Domain{}
+	for _, n := range names {
+		m[n] = &models.Domain{ID: "dom-" + n, Name: n}
+	}
+	return &fakeDomainRepo{byName: m}
+}
 
 func writeZone(t *testing.T, zone string) *ParsedTarball {
 	t.Helper()
@@ -82,7 +103,7 @@ www     IN  A   192.0.2.10
 `)
 	zones := &fakeDNSZoneRepo{byName: map[string]*models.DNSZone{"example.com": {ID: "z1", Name: "example.com"}}}
 	recs := &fakeDNSRecordRepo{}
-	res, err := ImportDNS(context.Background(), zones, recs, parsed)
+	res, err := ImportDNS(context.Background(), zones, recs, domains("example.com"), parsed)
 	if err != nil {
 		t.Fatalf("ImportDNS: %v", err)
 	}
@@ -117,7 +138,7 @@ mail._domainkey IN TXT "v=DKIM1; k=rsa; p=abc"
 `)
 	zones := &fakeDNSZoneRepo{byName: map[string]*models.DNSZone{"example.com": {ID: "z1", Name: "example.com"}}}
 	recs := &fakeDNSRecordRepo{existing: []models.DNSRecord{{Name: "@", Type: "MX", Content: "10 mail.example.com"}}}
-	if _, err := ImportDNS(context.Background(), zones, recs, parsed); err != nil {
+	if _, err := ImportDNS(context.Background(), zones, recs, domains("example.com"), parsed); err != nil {
 		t.Fatalf("ImportDNS: %v", err)
 	}
 	got := createdNames(recs)
@@ -138,18 +159,26 @@ www IN A 192.0.2.1
 `)
 	zones := &fakeDNSZoneRepo{byName: map[string]*models.DNSZone{}}
 	recs := &fakeDNSRecordRepo{}
-	res, _ := ImportDNS(context.Background(), zones, recs, parsed)
+	// Neither the zone nor the domain exist -> domain_not_found, nothing created.
+	res, _ := ImportDNS(context.Background(), zones, recs, &fakeDomainRepo{byName: map[string]*models.Domain{}}, parsed)
 	if len(recs.created) != 0 {
-		t.Errorf("no records should be created when zone is missing")
+		t.Errorf("no records should be created when the domain is missing")
 	}
 	found := false
 	for _, s := range res.Skipped {
-		if strings.HasPrefix(s, "zone_not_provisioned:") {
+		if strings.HasPrefix(s, "domain_not_found:") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected zone_not_provisioned skip, got %v", res.Skipped)
+		t.Errorf("expected domain_not_found skip, got %v", res.Skipped)
+	}
+
+	// Zone missing but the domain EXISTS -> the zone is created + records land.
+	recs2 := &fakeDNSRecordRepo{}
+	res2, _ := ImportDNS(context.Background(), &fakeDNSZoneRepo{byName: map[string]*models.DNSZone{}}, recs2, domains("example.com"), writeZone(t, "$ORIGIN example.com.\nwww IN A 192.0.2.1\n"))
+	if !createdNames(recs2)["www/A"] {
+		t.Errorf("zone should be auto-created and www A imported; created=%v skipped=%v", recs2.created, res2.Skipped)
 	}
 }
 

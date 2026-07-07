@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
@@ -328,9 +329,10 @@ func ImportDNS(
 	ctx context.Context,
 	zonesRepo repository.DNSZoneRepository,
 	recordsRepo repository.DNSRecordRepository,
+	domainsRepo repository.DomainRepository,
 	parsed *ParsedTarball,
 ) (*ImportDNSResult, error) {
-	if zonesRepo == nil || recordsRepo == nil {
+	if zonesRepo == nil || recordsRepo == nil || domainsRepo == nil {
 		return nil, fmt.Errorf("ImportDNS: dns repos nil")
 	}
 	if parsed == nil {
@@ -394,10 +396,35 @@ func ImportDNS(
 		// re-compiles this table into PowerDNS on its next tick, so a PDNS-direct
 		// write is clobbered. Resolve the zone domain.create provisioned during
 		// ImportDomains; skip if it is not there yet.
-		pz, zerr := zonesRepo.FindByName(ctx, zone.Origin)
-		if zerr != nil || pz == nil {
-			res.Skipped = append(res.Skipped, "zone_not_provisioned:"+zone.Origin)
-			continue
+		pz, _ := zonesRepo.FindByName(ctx, zone.Origin)
+		if pz == nil {
+			// JAB-28: the reconciler creates the dns_zone asynchronously on its
+			// next tick, AFTER the restore stage finishes — so during restore the
+			// zone does not exist yet (manifest showed zone_not_provisioned, 0
+			// records). Create it here from the domain ImportDomains just made so
+			// the records land + the reconciler compiles them into PowerDNS.
+			dom, derr := domainsRepo.FindByName(ctx, zone.Origin)
+			if derr != nil || dom == nil {
+				res.Skipped = append(res.Skipped, "domain_not_found:"+zone.Origin)
+				continue
+			}
+			now := time.Now().UTC()
+			pz = &models.DNSZone{
+				ID:             ids.NewULID(),
+				DomainID:       dom.ID,
+				Name:           zone.Origin,
+				RefreshSeconds: 3600,
+				RetrySeconds:   600,
+				ExpireSeconds:  604800,
+				MinimumTTL:     3600,
+				IsEnabled:      true,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			if cerr := zonesRepo.Create(ctx, pz); cerr != nil {
+				res.Skipped = append(res.Skipped, "zone_create:"+zone.Origin+":"+cerr.Error())
+				continue
+			}
 		}
 		// Skip an imported record whose (name,type) already exists in the zone so
 		// jabali's bootstrap MX/SPF/DMARC/apex records win over the source's.

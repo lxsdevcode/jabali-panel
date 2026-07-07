@@ -883,7 +883,7 @@ func cpanelRestoreCallback(
 		// overlay the bootstrapped zone instead of being clobbered by it. Apex
 		// NS + apex A/AAAA are filtered in ImportDNS (jabali owns the apex).
 		if plan.DNS {
-			dnsRes, derr := cpanel.ImportDNS(ctx, dnsZonesRepo, dnsRecordsRepo, p.parsed)
+			dnsRes, derr := cpanel.ImportDNS(ctx, dnsZonesRepo, dnsRecordsRepo, domainsRepo, p.parsed)
 			if derr != nil {
 				return bytes, warnings, fmt.Errorf("dns: %w", derr)
 			}
