@@ -108,6 +108,11 @@ func (r *packageRepo) Update(ctx context.Context, p *models.HostingPackage) erro
 		"cpu_quota_percent", "memory_limit_mb", "io_read_mbps", "io_write_mbps",
 		"max_tasks", "max_docker_apps", "max_python_apps", "docker_app_slugs",
 		"ssh_enabled", "cgi_enabled", "php_exec_enabled",
+		// GH #339: FPM performance-policy columns were missing from the Select
+		// allowlist, so GORM silently dropped them on update and the policy never
+		// persisted (the "allowlist silent drop" scar again).
+		"fpm_max_children_cap", "fpm_worker_mem_mb", "fpm_user_can_edit",
+		"fpm_advanced_mode", "fpm_version_defaults",
 		"nspawn_image_version", "updated_at",
 	).Updates(p).Error; err != nil {
 		return translate(err)
