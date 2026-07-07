@@ -33,24 +33,18 @@ func TestMigrationCriticalThresholds(t *testing.T) {
 		}
 	})
 
-	t.Run("zero healthy domains is critical", func(t *testing.T) {
-		if !healthNoneHealthy(2, 0) {
-			t.Error("2 probed, 0 healthy should be critical")
+	t.Run("any unhealthy domain is critical (not just 0/N)", func(t *testing.T) {
+		if !healthNotAllHealthy(2, 1) {
+			t.Error("1/2 healthy should be critical (JAB-40)")
 		}
-		if healthNoneHealthy(0, 0) {
-			t.Error("no domains probed is not a failure")
+		if !healthNotAllHealthy(2, 0) {
+			t.Error("0/2 healthy should be critical")
 		}
-		if healthNoneHealthy(2, 1) {
-			t.Error("at least one healthy is not a failure")
+		if healthNotAllHealthy(2, 2) {
+			t.Error("all healthy is not a failure")
 		}
-	})
-
-	t.Run("any 5xx (crashing app) is critical even when others are healthy", func(t *testing.T) {
-		if !healthAnyServerError(1) {
-			t.Error("1 domain returning 5xx should be critical (JAB-40)")
-		}
-		if healthAnyServerError(0) {
-			t.Error("no 5xx is not a failure")
+		if healthNotAllHealthy(0, 0) {
+			t.Error("nothing probed is not a failure")
 		}
 	})
 }

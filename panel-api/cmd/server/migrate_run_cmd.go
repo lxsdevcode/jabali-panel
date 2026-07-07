@@ -570,8 +570,10 @@ type cpanelRunPayload struct {
 // produced nothing usable — a "done" job in that state is misleading.
 func dbDumpsAllSkipped(dumps, created int) bool        { return dumps > 0 && created == 0 }
 func mailFoundNonePushed(found int, pushed int64) bool { return found > 0 && pushed == 0 }
-func healthNoneHealthy(probed, healthy int) bool       { return probed > 0 && healthy == 0 }
-func healthAnyServerError(serverErrs int) bool         { return serverErrs > 0 }
+// healthNotAllHealthy (JAB-40): any probed domain that isn't healthy after the
+// restore's retry window is a core failure — a restore that leaves 1 of 2 sites
+// down must be degraded, not done.
+func healthNotAllHealthy(probed, healthy int) bool { return probed > 0 && healthy < probed }
 
 // shouldDowngradeToDegraded gates the done→degraded transition: the runner
 // stamped done but the restore recorded at least one core-area failure.
@@ -1068,17 +1070,16 @@ func cpanelRestoreCallback(
 				warnings = append(warnings, fmt.Sprintf("health_probe: %d/%d domains healthy", okCount, len(pr.Results)))
 				// JAB-31: 0 healthy domains after a restore that probed some means
 				// the account isn't serving — core failure, not a warning.
-				if healthNoneHealthy(len(pr.Results), okCount) {
+				// JAB-40: ANY domain not serving after a restore is a core problem
+				// — 1/2 must not read as a clean `done`. The probe already retries
+				// transient 502/503 (FPM warmup), so a still-unhealthy domain here
+				// is persistent: a 5xx (crashing app, e.g. Nextcloud missing a PHP
+				// driver), a 4xx, or no response. Downgrade to degraded whenever not
+				// every probed domain is healthy.
+				if healthNotAllHealthy(len(pr.Results), okCount) {
 					p.criticals = append(p.criticals, fmt.Sprintf(
-						"health: 0/%d domains healthy after restore", len(pr.Results)))
-				}
-				// JAB-40: a 5xx is a CRASHING app (e.g. a restored Nextcloud whose
-				// PHP driver is missing), not a transient FPM warmup — mark the job
-				// degraded even when other domains are healthy (1/2 must not read
-				// as a clean `done`).
-				if healthAnyServerError(serverErrCount) {
-					p.criticals = append(p.criticals, fmt.Sprintf(
-						"health: %d domain(s) returned 5xx (crashing app) after restore", serverErrCount))
+						"health: only %d/%d domains healthy after restore (%d returned 5xx)",
+						okCount, len(pr.Results), serverErrCount))
 				}
 			}
 			probeCancel()
