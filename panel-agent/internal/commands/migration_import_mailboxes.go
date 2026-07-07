@@ -447,7 +447,10 @@ func loadMailboxNodes(ctx context.Context, accountID string) ([]mailboxNode, err
 		"ids":        nil,
 		"properties": []string{"id", "name", "role", "parentId"},
 	}
-	if err := jmapCall(ctx, "Mailbox/get", args, &resp); err != nil {
+	// JAB-29: Mailbox/get is a mail method — Stalwart rejects it (unknownMethod)
+	// unless urn:ietf:params:jmap:mail is in the request's `using` set, which the
+	// base jmapCall list omits. Advertise it here like the Email/* calls do.
+	if err := jmapCallWith(ctx, "urn:ietf:params:jmap:mail", "Mailbox/get", args, &resp); err != nil {
 		return nil, err
 	}
 	nodes := make([]mailboxNode, 0, len(resp.List))
@@ -544,7 +547,9 @@ func mailboxIDByRole(ctx context.Context, accountID, role string) (string, error
 	var resp struct {
 		IDs []string `json:"ids"`
 	}
-	if err := jmapCall(ctx, "Mailbox/query", map[string]any{
+	// JAB-29: Mailbox/query requires urn:ietf:params:jmap:mail in `using`
+	// (mailbox message import failed at "resolve inbox" without it).
+	if err := jmapCallWith(ctx, "urn:ietf:params:jmap:mail", "Mailbox/query", map[string]any{
 		"accountId": accountID,
 		"filter":    map[string]any{"role": role},
 		"limit":     1,
@@ -648,9 +653,16 @@ func uploadBlob(ctx context.Context, accountID, path string) (string, error) {
 // jmapCallWith is jmapCall with an extra capability URN appended to
 // the `using` array — Email/import requires
 // urn:ietf:params:jmap:mail beyond the base set jmapCall sends.
+// jmapUsingWith returns the base `using` set plus one extra capability URN.
+// Kept as a seam so a regression test can assert mail methods advertise
+// urn:ietf:params:jmap:mail (JAB-29).
+func jmapUsingWith(extraCap string) []string {
+	return append(append([]string{}, jmapUsing...), extraCap)
+}
+
 func jmapCallWith(ctx context.Context, extraCap, method string, args any, out any) error {
 	body := jmapRequestBody{
-		Using: append(append([]string{}, jmapUsing...), extraCap),
+		Using: jmapUsingWith(extraCap),
 		MethodCalls: []jmapMethodCall{
 			{Name: method, Args: args, CallID: "c0"},
 		},
