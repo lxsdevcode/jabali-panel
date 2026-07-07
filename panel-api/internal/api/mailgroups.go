@@ -108,6 +108,7 @@ type mailGroupResponse struct {
 	HasCalendar    bool      `json:"has_calendar"`
 	HasAddressbook bool      `json:"has_addressbook"`
 	HasFiles       bool      `json:"has_files"`
+	InternalOnly   bool      `json:"internal_only"` // GH #348
 	MemberCount    int64     `json:"member_count"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -136,6 +137,7 @@ func toMailGroupResponse(g models.MailGroup, memberCount int64) mailGroupRespons
 		HasCalendar:    g.HasCalendar,
 		HasAddressbook: g.HasAddressbook,
 		HasFiles:       g.HasFiles,
+		InternalOnly:   g.InternalOnly,
 		MemberCount:    memberCount,
 		CreatedAt:      g.CreatedAt,
 		UpdatedAt:      g.UpdatedAt,
