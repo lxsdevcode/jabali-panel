@@ -104,7 +104,7 @@ const (
 // - GET /php-pools (admin: all; user: scoped to self)
 // - GET /php-pools/:id (admin: all; user: scoped to self)
 // - POST /php-pools (admin: all; user: own only)
-// - PUT /php-pools/:id (admin: all; user: scoped to self)
+// - PUT + PATCH /php-pools/:id (admin: all; user: scoped to self)
 // - DELETE /php-pools/:id (admin: all; user: scoped to self)
 // - GET /php-pools/:id/ini-overrides (admin: all; user: scoped to self)
 // - POST /php-pools/:id/ini-overrides (admin: all; user: scoped to self)
@@ -118,6 +118,9 @@ func RegisterPHPPoolRoutes(g *gin.RouterGroup, cfg PHPPoolHandlerConfig) {
 	pools.GET("/:id", h.get)
 	pools.POST("", h.create)
 	pools.PUT("/:id", h.update)
+	// GH #339: the SPA's generic useUpdateMutation issues PATCH; php-pools only
+	// registered PUT, so editing a pool 405'd. Accept both.
+	pools.PATCH("/:id", h.update)
 	pools.DELETE("/:id", h.delete)
 
 	// INI overrides are nested under pools
