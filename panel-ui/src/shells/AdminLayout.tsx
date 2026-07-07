@@ -35,9 +35,17 @@ export function AdminLayout() {
   // via Server Settings -> Apps. /me/server-capabilities is cached
   // per-session; UI ergonomics outweigh staleness here.
   const { data: caps } = useServerCapabilities();
-  const visibleNav = caps?.docker_marketplace_enabled
-    ? adminNav
-    : adminNav.filter((n) => n.key !== "docker-apps");
+  // M353 Phase 1 (GH #353): hide a module's nav entry when it's disabled.
+  // Module flags default on (undefined/loading = shown) so an upgraded install
+  // and the brief pre-caps render never flash-hide a real feature.
+  const visibleNav = adminNav.filter((n) => {
+    if (n.key === "docker-apps") return !!caps?.docker_marketplace_enabled;
+    if (n.key === "mail") return caps?.mail_enabled !== false;
+    if (n.key === "dns") return caps?.dns_enabled !== false;
+    if (n.key === "security") return caps?.security_enabled !== false;
+    if (n.key === "api-tokens") return caps?.api_enabled !== false;
+    return true;
+  });
 
   const selected = selectedNavKey(visibleNav, location.pathname);
 

@@ -210,14 +210,28 @@ const ThemedApp = () => {
               <Route path="edit/:id" element={<DomainEdit />} />
               <Route path=":id/dns" element={<DNSRecordsPage />} />
             </Route>
-            <Route path="dns" element={<DNSZonesOverviewPage />} />
+            <Route
+              path="dns"
+              element={
+                <CapabilityRoute cap="dns_enabled" fallback="/jabali-admin/dashboard">
+                  <DNSZonesOverviewPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="ssl" element={<SSLManagerPage />} />
             <Route path="settings" element={<ServerSettingsPage />} />
             <Route path="php-pools">
               <Route index element={<PHPVersionsPage />} />
               <Route path="edit/:id" element={<PHPPoolEdit />} />
             </Route>
-            <Route path="mail" element={<AdminMailPage />} />
+            <Route
+              path="mail"
+              element={
+                <CapabilityRoute cap="mail_enabled" fallback="/jabali-admin/dashboard">
+                  <AdminMailPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="applications" element={<AdminApplicationList />} />
             <Route
               path="docker-apps"
@@ -235,7 +249,14 @@ const ThemedApp = () => {
               <Route path="create" element={<Navigate to="/jabali-admin/ips" replace />} />
               <Route path="edit/:id" element={<Navigate to="/jabali-admin/ips" replace />} />
             </Route>
-            <Route path="security" element={<AdminSecurityPage />} />
+            <Route
+              path="security"
+              element={
+                <CapabilityRoute cap="security_enabled" fallback="/jabali-admin/dashboard">
+                  <AdminSecurityPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="server-status" element={<ServerStatusPage />} />
             <Route path="mail/deliverability" element={<MailDeliverabilityPage />} />
             <Route path="mail/throttles" element={<MailThrottlesPage />} />
@@ -260,7 +281,14 @@ const ThemedApp = () => {
                 codes) which works for any authenticated session. */}
             <Route path="profile" element={<MyProfile />} />
             <Route path="api-docs" element={<APIDocsPage />} />
-            <Route path="api-tokens" element={<UserAPITokensPage />} />
+            <Route
+              path="api-tokens"
+              element={
+                <CapabilityRoute cap="api_enabled" fallback="/jabali-admin/dashboard">
+                  <UserAPITokensPage />
+                </CapabilityRoute>
+              }
+            />
           </Route>
 
           {/* ---------------- user shell ----------------- */}
@@ -289,7 +317,14 @@ const ThemedApp = () => {
             <Route path="database-users">
               <Route path="create" element={<Navigate to="../databases" replace />} />
             </Route>
-            <Route path="dns" element={<UserDNSZonesOverviewPage />} />
+            <Route
+              path="dns"
+              element={
+                <CapabilityRoute cap="dns_enabled" fallback="/jabali-panel/dashboard">
+                  <UserDNSZonesOverviewPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="ssl" element={<UserSSLManagerPage />} />
             <Route path="dnssec" element={<Navigate to="/jabali-panel/dns" replace />} />
             <Route path="php-settings" element={<UserPHPSettingsPage />} />
@@ -315,12 +350,26 @@ const ThemedApp = () => {
               }
             />
             <Route path="ssh-keys" element={<UserSSHKeysPage />} />
-            <Route path="api-tokens" element={<UserAPITokensPage />} />
+            <Route
+              path="api-tokens"
+              element={
+                <CapabilityRoute cap="api_enabled" fallback="/jabali-panel/dashboard">
+                  <UserAPITokensPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="api-docs" element={<APIDocsPage />} />
             <Route path="cron" element={<UserCronList />} />
             <Route path="backups" element={<UserBackupsPage />} />
             <Route path="mail" element={<Navigate to="/jabali-panel/mail/mailboxes" replace />} />
-            <Route path="mail/:tab" element={<MailTabsPage />} />
+            <Route
+              path="mail/:tab"
+              element={
+                <CapabilityRoute cap="mail_enabled" fallback="/jabali-panel/dashboard">
+                  <MailTabsPage />
+                </CapabilityRoute>
+              }
+            />
             <Route path="mailboxes" element={<Navigate to="/jabali-panel/mail/mailboxes" replace />} />
           </Route>
 
