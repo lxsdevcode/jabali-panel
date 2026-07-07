@@ -57,23 +57,33 @@ func ImportAppConfigs(
 	agentCli agent.AgentInterface,
 	targetUserID, targetUsername string,
 	creds map[string]DBCredential,
+	docroots []string,
 ) (*AppConfigsResult, error) {
 	res := &AppConfigsResult{}
 	if agentCli == nil || len(creds) == 0 {
 		return res, nil
 	}
-	root := filepath.Join("/home", targetUsername, "domains")
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		res.Skipped = append(res.Skipped, fmt.Sprintf("appconfigs_read_root:%s:%v", root, err))
-		return res, nil
+	// JAB-32: scan each domain's ACTUAL docroot. cPanel/DA use
+	// /home/<user>/domains/<dom>/public_html; HestiaCP uses
+	// /home/<user>/web/<dom>/public_html. When the caller supplies the
+	// resolved docroots (parsed.DocRoots) use them; otherwise fall back to the
+	// legacy cPanel scan so pre-existing callers stay unaffected.
+	docrootList := docroots
+	if len(docrootList) == 0 {
+		root := filepath.Join("/home", targetUsername, "domains")
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			res.Skipped = append(res.Skipped, fmt.Sprintf("appconfigs_read_root:%s:%v", root, err))
+			return res, nil
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				docrootList = append(docrootList, filepath.Join(root, e.Name(), "public_html"))
+			}
+		}
 	}
 
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		docroot := filepath.Join(root, e.Name(), "public_html")
+	for _, docroot := range docrootList {
 		// WordPress
 		for _, candidate := range []string{
 			filepath.Join(docroot, "wp-config.php"),
