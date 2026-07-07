@@ -89,6 +89,20 @@ var jobTransitions = map[string]map[string]struct{}{
 		models.MigrationStateAnalyzing: {},
 		models.MigrationStateCancelled: {},
 	},
+	// Degraded (JAB-31) is a terminal-but-RESUMABLE outcome: the restore
+	// finished yet a core area failed. Re-running the job (JAB-38) must be
+	// legal or the resume dies on `degraded → done`. A clean re-run flips it
+	// to done, a still-failing one stays degraded, a hard error → failed, and
+	// retry-from-scratch re-enters at analyze. Mirrors the failed-is-resumable
+	// contract so operator recovery + QA re-runs work.
+	models.MigrationStateDegraded: {
+		models.MigrationStateAnalyzing: {},
+		models.MigrationStateRestoring: {},
+		models.MigrationStateDone:      {},
+		models.MigrationStateDegraded:  {},
+		models.MigrationStateFailed:    {},
+		models.MigrationStateCancelled: {},
+	},
 	models.MigrationStateCancelled: {},
 }
 
