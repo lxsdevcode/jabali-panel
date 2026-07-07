@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [1.0.5] — 2026-07-07
+
+### Fixed
+- Redis object-cache socket failures (`connect /run/redis/redis.sock failed: Permission denied (13)`) now include an actionable hint: the site's PHP-FPM user was missing from the `jabali-redis-clients` group. The panel now self-heals that membership every reconcile tick (`user.slice.ensure`) and restarts the pool, so migrated / reprovisioned accounts recover automatically instead of silently running without object cache.
+
 ## [1.0.4] — 2026-07-02
 
 ### Added
