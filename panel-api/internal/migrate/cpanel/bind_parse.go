@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // openZone wraps os.Open with context for symmetry with the rest
@@ -21,10 +23,10 @@ func openZone(path string) (*os.File, error) { return os.Open(path) }
 // a DNSZoneSpec ready for migration.AccountManifest. Handles the
 // directives + record types cPanel actually emits in cpmove tarballs:
 //
-//   $ORIGIN <name>.
-//   $TTL <secs>
-//   <name> <ttl?> IN <type> <rdata...>
-//   <ttl?> IN <type> <rdata...>           (inherits previous owner)
+//	$ORIGIN <name>.
+//	$TTL <secs>
+//	<name> <ttl?> IN <type> <rdata...>
+//	<ttl?> IN <type> <rdata...>           (inherits previous owner)
 //
 // Supported types: A, AAAA, CNAME, MX, TXT, NS, SOA. Anything else
 // records as Skipped at the caller level — restore-stage upserts
@@ -105,8 +107,8 @@ func ParseBINDZone(r io.Reader, defaultOrigin string) (zone migrate.DNSZoneSpec,
 			})
 		case "TXT":
 			zone.Records = append(zone.Records, migrate.DNSRecord{
-				Name:    expandOwner(owner, zone.Origin),
-				Type:    "TXT",
+				Name: expandOwner(owner, zone.Origin),
+				Type: "TXT",
 				// Strip surrounding quotes from each string token
 				// then join with spaces — BIND multi-string TXT
 				// renders as "abc" "def" → content "abc def".
@@ -221,9 +223,10 @@ func stripCommentLite(s string) string {
 // inherits the previous owner.
 //
 // Accepted shapes:
-//   <owner> <ttl?> IN <type> <rdata...>
-//   <ttl?> IN <type> <rdata...>             (owner = lastOwner)
-//   <owner> <ttl?> <type> <rdata...>        (no class — IN implied)
+//
+//	<owner> <ttl?> IN <type> <rdata...>
+//	<ttl?> IN <type> <rdata...>             (owner = lastOwner)
+//	<owner> <ttl?> <type> <rdata...>        (no class — IN implied)
 //
 // Returns ok=false when the line doesn't parse to those.
 func splitBindLine(line, lastOwner string, defaultTTL int) (owner string, ttl int, rrType, rdata string, ok bool) {
@@ -263,9 +266,10 @@ func splitBindLine(line, lastOwner string, defaultTTL int) (owner string, ttl in
 }
 
 // expandOwner resolves BIND-style owner shorthand:
-//   @            → origin
-//   <name>       → <name>.<origin>
-//   <name>.      → <name> (FQDN, strip trailing dot)
+//
+//	@            → origin
+//	<name>       → <name>.<origin>
+//	<name>.      → <name> (FQDN, strip trailing dot)
 func expandOwner(owner, origin string) string {
 	owner = strings.TrimSpace(owner)
 	if owner == "" || owner == "@" {
@@ -306,9 +310,9 @@ func unquoteTXT(rdata string) string {
 
 // ImportDNSResult is returned to the restore-stage caller.
 type ImportDNSResult struct {
-	Zones    int
-	Records  int
-	Skipped  []string
+	Zones   int
+	Records int
+	Skipped []string
 }
 
 // ImportDNS walks each ZoneFile recorded by the parser and upserts
@@ -322,11 +326,12 @@ type ImportDNSResult struct {
 // agentCaller is required.
 func ImportDNS(
 	ctx context.Context,
-	agentCaller agent.AgentInterface,
+	zonesRepo repository.DNSZoneRepository,
+	recordsRepo repository.DNSRecordRepository,
 	parsed *ParsedTarball,
 ) (*ImportDNSResult, error) {
-	if agentCaller == nil {
-		return nil, fmt.Errorf("ImportDNS: agent caller nil")
+	if zonesRepo == nil || recordsRepo == nil {
+		return nil, fmt.Errorf("ImportDNS: dns repos nil")
 	}
 	if parsed == nil {
 		return nil, fmt.Errorf("ImportDNS: parsed nil")
@@ -384,31 +389,63 @@ func ImportDNS(
 			continue
 		}
 
-		// dns.zone.upsert takes records as []map[string]any so we
-		// can avoid importing the agent's typed param struct.
-		wireRecords := make([]map[string]any, 0, len(zone.Records))
-		for _, r := range zone.Records {
-			row := map[string]any{
-				"name":    r.Name,
-				"type":    r.Type,
-				"content": r.Content,
-				"ttl":     r.TTL,
-			}
-			if r.Prio != 0 {
-				row["priority"] = r.Prio
-			}
-			wireRecords = append(wireRecords, row)
-		}
-
-		if _, err := agentCaller.Call(ctx, "dns.zone.upsert", map[string]any{
-			"zone":    zone.Origin,
-			"records": wireRecords,
-		}); err != nil {
-			res.Skipped = append(res.Skipped, fmt.Sprintf("upsert %s: %v", zone.Origin, err))
+		// JAB-28: write to the panel dns_records table (the reconciler's source
+		// of truth), NOT straight to PDNS via dns.zone.upsert — the reconciler
+		// re-compiles this table into PowerDNS on its next tick, so a PDNS-direct
+		// write is clobbered. Resolve the zone domain.create provisioned during
+		// ImportDomains; skip if it is not there yet.
+		pz, zerr := zonesRepo.FindByName(ctx, zone.Origin)
+		if zerr != nil || pz == nil {
+			res.Skipped = append(res.Skipped, "zone_not_provisioned:"+zone.Origin)
 			continue
 		}
+		// Skip an imported record whose (name,type) already exists in the zone so
+		// jabali's bootstrap MX/SPF/DMARC/apex records win over the source's.
+		existing, _ := recordsRepo.ListByZoneID(ctx, pz.ID)
+		have := make(map[string]bool, len(existing))
+		for _, er := range existing {
+			have[er.Name+"|"+er.Type] = true
+		}
+		inserted := 0
+		for _, r := range zone.Records {
+			pname := toPanelRecordName(r.Name, zone.Origin)
+			if have[pname+"|"+r.Type] {
+				res.Skipped = append(res.Skipped, "dup_skip:"+pname+"/"+r.Type)
+				continue
+			}
+			rec := &models.DNSRecord{
+				ID:        ids.NewULID(),
+				ZoneID:    pz.ID,
+				Name:      pname,
+				Type:      r.Type,
+				Content:   r.Content,
+				TTL:       r.TTL,
+				Priority:  r.Prio,
+				IsEnabled: true,
+			}
+			if cerr := recordsRepo.Create(ctx, rec); cerr != nil {
+				res.Skipped = append(res.Skipped, fmt.Sprintf("insert %s/%s: %v", pname, r.Type, cerr))
+				continue
+			}
+			inserted++
+		}
 		res.Zones++
-		res.Records += len(zone.Records)
+		res.Records += inserted
 	}
 	return res, nil
+}
+
+// toPanelRecordName converts a parsed FQDN record name into the panel's
+// zone-relative convention: "@" for the apex, otherwise the leftmost labels
+// with the origin suffix stripped (digibandit.itflow.app -> digibandit).
+func toPanelRecordName(name, origin string) string {
+	name = strings.TrimSuffix(name, ".")
+	origin = strings.TrimSuffix(origin, ".")
+	if name == "" || name == "@" || name == origin {
+		return "@"
+	}
+	if strings.HasSuffix(name, "."+origin) {
+		return strings.TrimSuffix(name, "."+origin)
+	}
+	return name
 }
