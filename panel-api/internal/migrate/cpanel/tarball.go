@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 )
 
 // ParsedTarball is the index produced by parsing a cpmove-<user>.tar.gz.
@@ -86,6 +88,9 @@ func ParseTarball(tarballPath, extractDir string) (*ParsedTarball, error) {
 	}
 	if err := os.MkdirAll(extractDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", extractDir, err)
+	}
+	if err := migrate.CheckExtractDiskSpace(tarballPath, extractDir); err != nil {
+		return nil, err
 	}
 
 	f, err := os.Open(tarballPath)
@@ -277,21 +282,21 @@ func ParseTarball(tarballPath, extractDir string) (*ParsedTarball, error) {
 //
 // Two cPanel backup layouts handled:
 //
-//   pkgacct cpmove format (cp/<user>/...):
-//     cp/<user>/mysql/<db>.sql
-//     cp/<user>/dnszones/<dom>.db
-//     cp/<user>/cron/<user>
-//     cp/<user>/homedir/.ssh/authorized_keys
-//     cp/<user>/homedir/...
+//	pkgacct cpmove format (cp/<user>/...):
+//	  cp/<user>/mysql/<db>.sql
+//	  cp/<user>/dnszones/<dom>.db
+//	  cp/<user>/cron/<user>
+//	  cp/<user>/homedir/.ssh/authorized_keys
+//	  cp/<user>/homedir/...
 //
-//   Full-backup wizard format (mysql/, dnszones/, homedir/ at root,
-//   cp/<user> as a FILE not a directory):
-//     mysql/<db>.sql
-//     dnszones/<dom>.db
-//     cron (top-level file)
-//     homedir/.ssh/authorized_keys
-//     homedir/...
-//     cp/<user>     (single file with account config)
+//	Full-backup wizard format (mysql/, dnszones/, homedir/ at root,
+//	cp/<user> as a FILE not a directory):
+//	  mysql/<db>.sql
+//	  dnszones/<dom>.db
+//	  cron (top-level file)
+//	  homedir/.ssh/authorized_keys
+//	  homedir/...
+//	  cp/<user>     (single file with account config)
 //
 // Both formats classify identically — area name + extension. cpmove
 // path uses parts[2:] (skip cp/<user>); full-backup uses parts[0:].

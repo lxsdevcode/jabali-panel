@@ -1,29 +1,31 @@
 package hestiacp
 
 import (
-	"time"
-	"context"
-	"os/exec"
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate/cpanel"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/migrate"
 )
 
 // HestiaParsedTarball indexes a v-backup-user tar. Layout:
 //
-//   web/<dom>/public_html/...
-//   web/<dom>/private/...
-//   mail/<dom>/<local>/...                  (Maildir tree)
-//   db/<dbname>.sql                         (per-DB dump)
-//   user.conf
-//   ssh_keys                                (sometimes)
-//   conf/cron/                              (varies by Hestia minor)
+//	web/<dom>/public_html/...
+//	web/<dom>/private/...
+//	mail/<dom>/<local>/...                  (Maildir tree)
+//	db/<dbname>.sql                         (per-DB dump)
+//	user.conf
+//	ssh_keys                                (sometimes)
+//	conf/cron/                              (varies by Hestia minor)
 //
 // Hestia tarballs may or may not be gzipped depending on
 // /usr/local/hestia/conf/hestia.conf BACKUP_GZIP. ParseHestiaTarball
@@ -32,23 +34,23 @@ import (
 // **STATUS:** Coded against documented Hestia v-backup-user output.
 // NOT validated against a live Hestia tar.
 type HestiaParsedTarball struct {
-	ExtractDir    string
-	WebRoot       string   // <root>/web
-	MailRoot      string   // <root>/mail
-	MySQLDumps    []string // absolute paths to extracted db/<name>.sql files
-	UserConf      string   // <root>/user.conf
-	SSHKeys       string   // authorized_keys: <root>/ssh_keys OR user_dir/.ssh/authorized_keys (JAB-30)
-	CronFile      string   // <root>/conf/cron/<user> (when present)
+	ExtractDir string
+	WebRoot    string   // <root>/web
+	MailRoot   string   // <root>/mail
+	MySQLDumps []string // absolute paths to extracted db/<name>.sql files
+	UserConf   string   // <root>/user.conf
+	SSHKeys    string   // authorized_keys: <root>/ssh_keys OR user_dir/.ssh/authorized_keys (JAB-30)
+	CronFile   string   // <root>/conf/cron/<user> (when present)
 	// ZoneFiles lists BIND-format zone files from dns/<domain>/conf/<domain>.db
 	// (JAB-28). Fed to cpanel.ImportDNS via the adapter so source DNS records are
 	// migrated instead of only the generic bootstrap zone.
-	ZoneFiles     []string
+	ZoneFiles []string
 	// DomainDirs maps each domain name to its source-side
 	// <WebRoot>/<dom>/ absolute path. Populated post-extract by
 	// scanning the dir; M35.4 consumer feeds the cpanel ImportDomains
 	// writer via the Hestia adapter branch in migrate_run_cmd.go.
-	DomainDirs    map[string]string
-	Skipped       []string
+	DomainDirs map[string]string
+	Skipped    []string
 	// TopLevel (GH #327 diag) is the set of top-level path segments seen in the
 	// tar — used to explain an empty import (e.g. tar wraps everything under a
 	// <timestamp>/ or backup/ dir, so classifyHestia's web/mail/db keys miss).
@@ -61,6 +63,9 @@ func ParseHestiaTarball(tarballPath, extractDir string) (*HestiaParsedTarball, e
 	}
 	if err := os.MkdirAll(extractDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", extractDir, err)
+	}
+	if err := migrate.CheckExtractDiskSpace(tarballPath, extractDir); err != nil {
+		return nil, err
 	}
 	f, err := os.Open(tarballPath)
 	if err != nil {

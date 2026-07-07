@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // maxExtractFileBytes caps a single extracted file (loose backstop against a
@@ -85,6 +86,30 @@ func ExtractTarGz(tarPath, dest string) error {
 			}
 			// TypeSymlink / TypeLink and everything else: skipped (no write-through).
 		}
+	}
+	return nil
+}
+
+// CheckExtractDiskSpace refuses to extract a backup when the destination
+// filesystem lacks room for the (estimated) uncompressed tree, so a low-disk
+// host fails FAST with a clear message instead of half-extracting and then
+// erroring deep in the restore pipeline (JAB-41). Estimate = compressed size ×5
+// (conservative gzip/zstd ratio; the multiplier is the headroom). Best-effort:
+// if the tarball or filesystem can't be stat'd, it does not block.
+func CheckExtractDiskSpace(tarballPath, dest string) error {
+	fi, err := os.Stat(tarballPath)
+	if err != nil {
+		return nil
+	}
+	needed := uint64(fi.Size()) * 5
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(dest, &st); err != nil {
+		return nil
+	}
+	free := st.Bavail * uint64(st.Bsize)
+	if free < needed {
+		return fmt.Errorf("insufficient disk space to extract %s: need ~%d MiB, only %d MiB free on %s (free up space or move staging)",
+			filepath.Base(tarballPath), needed>>20, free>>20, dest)
 	}
 	return nil
 }

@@ -118,15 +118,22 @@ func probeOneDomain(ctx context.Context, domain string) httpProbeResult {
 	if ip == "" {
 		ip = probeTargetIP
 	}
+	// JAB-42: the per-user FPM pool + a freshly-restored app (WP/NC bootstrapping
+	// caches, opcache cold) can take well over 15s to answer right after a
+	// restore — 3×5s produced false-negatives that (post-JAB-40) wrongly flipped
+	// the job to degraded. Retry the transient codes longer (6 tries ≈ 25s of
+	// backoff) so only a persistently-down site is reported unhealthy. A 500
+	// (crashing app) is NOT transient and still breaks immediately.
+	const probeAttempts = 6
 	var code int
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < probeAttempts; attempt++ {
 		code = runProbeCurl(ctx, domain, ip)
 		// 0 = couldn't connect; 502/503 = upstream (FPM) not up yet.
 		// Those are transient just after restore — give the pool time.
 		if code != 0 && code != 502 && code != 503 {
 			break
 		}
-		if attempt < 2 {
+		if attempt < probeAttempts-1 {
 			probeSleep()
 		}
 	}

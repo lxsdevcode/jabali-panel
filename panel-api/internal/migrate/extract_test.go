@@ -22,9 +22,9 @@ func TestExtractTarGz_Containment(t *testing.T) {
 	}
 	writeFile("wp-config.php", "<?php define('DB_NAME','x');")
 	writeFile("wp-content/themes/t/style.css", "body{}")
-	writeFile("../escape.txt", "PWNED")             // traversal
-	writeFile("a/../../escape2.txt", "PWNED")       // traversal via ..
-	writeFile("/abs.txt", "PWNED")                  // absolute
+	writeFile("../escape.txt", "PWNED")       // traversal
+	writeFile("a/../../escape2.txt", "PWNED") // traversal via ..
+	writeFile("/abs.txt", "PWNED")            // absolute
 	_ = tw.WriteHeader(&tar.Header{Name: "evil-link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"})
 	_ = tw.Close()
 	_ = gz.Close()
@@ -90,5 +90,21 @@ func TestExtractTarGz_RealTarball(t *testing.T) {
 	t.Logf("extracted %d regular files under dest", n)
 	if n < 100 {
 		t.Errorf("suspiciously few files: %d", n)
+	}
+}
+
+// JAB-41: CheckExtractDiskSpace is best-effort — a missing tarball or unstattable
+// dest must not block; a small tarball on a normal fs passes.
+func TestCheckExtractDiskSpace(t *testing.T) {
+	if err := CheckExtractDiskSpace("/nonexistent/tarball.tar.gz", "/tmp"); err != nil {
+		t.Errorf("missing tarball should not block (best-effort), got %v", err)
+	}
+	dir := t.TempDir()
+	f := dir + "/small.tar.gz"
+	if err := os.WriteFile(f, make([]byte, 1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckExtractDiskSpace(f, dir); err != nil {
+		t.Errorf("1KiB tarball should pass on a normal fs, got %v", err)
 	}
 }

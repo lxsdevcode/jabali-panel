@@ -507,8 +507,7 @@ failed stage. Already-done stages are skipped.`,
 			// JAB-31: the pipeline stamps 'done' on best-effort imports even when
 			// core areas failed. If the restore recorded critical failures,
 			// downgrade done→degraded and (unless --allow-degraded) exit non-zero
-			// so operators don't trust an unusable account. Runs before cleanup so
-			// a degraded job's staging dir is retained for debugging.
+			// so operators don't trust an unusable account.
 			if runErr == nil && len(payload.criticals) > 0 {
 				msg := "critical failures: " + strings.Join(payload.criticals, "; ")
 				if j, lerr := jobsRepo.FindByID(ctx, job.ID); lerr == nil && j != nil && shouldDowngradeToDegraded(j.State, payload.criticals) {
@@ -524,10 +523,14 @@ failed stage. Already-done stages are skipped.`,
 			// Staging-dir cleanup. Re-load the job so we see the
 			// terminal state the runner just stamped (done / failed).
 			// Operator can suppress via --keep-staging when debugging.
+			// JAB-43: degraded is terminal too — clean it like done/failed so a
+			// degraded restore doesn't silently leave GBs in /var/lib/jabali-
+			// migrations (pass --keep-staging to retain for debugging).
 			if !keepStaging {
 				if j, lerr := jobsRepo.FindByID(ctx, job.ID); lerr == nil && j != nil {
 					switch j.State {
-					case models.MigrationStateDone, models.MigrationStateFailed, models.MigrationStateCancelled:
+					case models.MigrationStateDone, models.MigrationStateFailed,
+						models.MigrationStateCancelled, models.MigrationStateDegraded:
 						stagingDir := filepath.Join("/var/lib/jabali-migrations", job.ID)
 						if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
 							fmt.Fprintf(cmd.ErrOrStderr(),
