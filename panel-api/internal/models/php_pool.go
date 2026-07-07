@@ -16,6 +16,7 @@ type PHPPool struct {
 	PmMaxSpareServers              uint32    `gorm:"column:pm_max_spare_servers;type:int unsigned;not null;default:3" json:"pm_max_spare_servers"`
 	PmMaxRequests                  uint32    `gorm:"column:pm_max_requests;type:int unsigned;not null;default:0" json:"pm_max_requests"`
 	RequestTerminateTimeoutSeconds uint32    `gorm:"column:request_terminate_timeout_seconds;type:int unsigned;not null;default:0" json:"request_terminate_timeout_seconds"`
+	PerformanceMode                string    `gorm:"column:performance_mode;type:varchar(24);not null;default:'balanced'" json:"performance_mode"`
 	Status                         string    `gorm:"type:varchar(16);not null;default:'pending'" json:"status"`
 	LastError                      *string   `gorm:"type:text" json:"last_error,omitempty"`
 	CreatedAt                      time.Time `gorm:"type:datetime(6);not null" json:"created_at"`

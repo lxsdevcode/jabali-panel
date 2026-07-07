@@ -1016,6 +1016,16 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Modes: deps.PHPPerformanceModes,
 			})
 		}
+		if deps.PHPPools != nil && deps.Packages != nil && deps.PHPPerformanceModes != nil {
+			api.RegisterPHPUserTuningRoutes(v1, api.PHPUserTuningHandlerConfig{
+				Agent:               deps.Agent,
+				Users:               deps.Users,
+				Packages:            deps.Packages,
+				PHPPools:            deps.PHPPools,
+				PHPPoolIniOverrides: deps.PHPPoolIniOverrides,
+				Modes:               deps.PHPPerformanceModes,
+			})
+		}
 		if deps.Domains != nil && deps.PHPPools != nil {
 			api.RegisterDomainPHPPoolRoutes(v1, api.DomainPHPPoolHandlerConfig{
 				Domains:             deps.Domains,

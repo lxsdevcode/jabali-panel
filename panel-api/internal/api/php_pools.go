@@ -28,6 +28,23 @@ const (
 	phpPoolMaxTerminateSec     = 3600   // request_terminate_timeout ceiling (0 = disabled)
 )
 
+// clampToPackageCap bounds pm_max_children (and dependent spare/start servers)
+// to a hosting package's fpm_max_children_cap, then re-runs the FPM dynamic
+// constraint via resolvePMTuning. Load-bearing safety for the L1/L2 user tiers
+// (GH #339 phase 2): whatever a non-admin produces can never exceed the cap.
+func clampToPackageCap(cap uint32, mode string, maxChildren, start, minSpare, maxSpare, maxReq, terminate *uint32) (string, bool) {
+	if cap > 0 && *maxChildren > cap {
+		*maxChildren = cap
+	}
+	if *start > *maxChildren {
+		*start = *maxChildren
+	}
+	if *maxSpare > *maxChildren {
+		*maxSpare = *maxChildren
+	}
+	return resolvePMTuning(mode, *maxChildren, start, minSpare, maxSpare, maxReq, terminate)
+}
+
 // resolvePMTuning applies defaults, caps, and the FPM dynamic-mode constraint
 // (min_spare <= start <= max_spare <= max_children) to the extended pm.* fields
 // (GH #339). It MUTATES the pointed-to values (fills dynamic defaults clamped to
