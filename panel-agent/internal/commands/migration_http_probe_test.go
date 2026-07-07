@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -15,16 +16,21 @@ func TestMigrationHTTPProbe(t *testing.T) {
 
 	// 200 healthy, 500 crash (flagged), 502 that recovers to 200 on retry,
 	// 502 that stays (transient/unhealthy), and an invalid domain (skipped).
+	// Domains probe in parallel now, so the shared call-counter needs a lock.
+	var mu sync.Mutex
 	calls := map[string]int{}
 	runProbeCurl = func(_ context.Context, d, _ string) int {
+		mu.Lock()
 		calls[d]++
+		n := calls[d]
+		mu.Unlock()
 		switch d {
 		case "ok.com":
 			return 200
 		case "crash.com":
 			return 500
 		case "warming.com":
-			if calls[d] < 2 {
+			if n < 2 {
 				return 502
 			}
 			return 200
