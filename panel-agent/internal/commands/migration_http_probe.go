@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
@@ -22,9 +23,11 @@ import (
 // cache can fatal on jabali (no object cache) over malformed option data —
 // this surfaces it (a 500) at migration time instead of from the customer.
 //
-// Retries 502/503/connection-refused a few times because the per-user FPM
-// pool converges asynchronously just after restore; a genuine app crash
-// (500) is reported immediately.
+// Waits (up to ~90s, re-resolving the listen IP each round) for connection-
+// refused / 502 / 503 because the vhost, its managed IP, and the per-user FPM
+// pool converge on the reconciler's next tick after a restore; it records the
+// site's first REAL HTTP response so a genuine app crash (5xx) is caught rather
+// than lost behind an early "not up yet" 0. Domains are probed in parallel.
 
 type migrationHTTPProbeParams struct {
 	Domains []string `json:"domains"`
@@ -112,24 +115,27 @@ var runProbeCurl = func(ctx context.Context, domain, ip string) int {
 var probeSleep = func() { time.Sleep(5 * time.Second) }
 
 func probeOneDomain(ctx context.Context, domain string) httpProbeResult {
-	// Resolve to the domain's actual vhost listen IP; fall back to the box's
-	// primary IPv4 when the vhost listens on all addresses (JAB-31 follow-up).
-	ip := vhostListenIP(domain)
-	if ip == "" {
-		ip = probeTargetIP
-	}
-	// JAB-42: the per-user FPM pool + a freshly-restored app (WP/NC bootstrapping
-	// caches, opcache cold) can take well over 15s to answer right after a
-	// restore — 3×5s produced false-negatives that (post-JAB-40) wrongly flipped
-	// the job to degraded. Retry the transient codes longer (6 tries ≈ 25s of
-	// backoff) so only a persistently-down site is reported unhealthy. A 500
-	// (crashing app) is NOT transient and still breaks immediately.
-	const probeAttempts = 6
+	// JAB-42 (follow-up): right after a restore the domain's nginx vhost, its
+	// managed listen IP (M24), and the per-user FPM pool all converge on the
+	// reconciler's NEXT tick — which is often past a short window. A probe that
+	// gives up early gets 0/connection-refused on every domain and can't tell
+	// "not up yet" from "crashed", so it never catches a real 5xx. Wait up to
+	// ~90s for the site to return ANY HTTP response, RE-RESOLVING the vhost listen
+	// IP each round (the .conf file materialises mid-wait), then record that real
+	// state: a genuine 5xx is caught (degrade), while a site that truly never
+	// answers stays a 0 warning (not a hard degrade — see migrate_run_cmd.go).
+	const probeAttempts = 18 // ~90s of 5s backoff
 	var code int
 	for attempt := 0; attempt < probeAttempts; attempt++ {
+		// Resolve to the domain's actual vhost listen IP; fall back to the box's
+		// primary IPv4 when the vhost listens on all addresses (JAB-31 follow-up).
+		ip := vhostListenIP(domain)
+		if ip == "" {
+			ip = probeTargetIP
+		}
 		code = runProbeCurl(ctx, domain, ip)
-		// 0 = couldn't connect; 502/503 = upstream (FPM) not up yet.
-		// Those are transient just after restore — give the pool time.
+		// Any real HTTP response (2xx/3xx/4xx/5xx) is the site's true state — stop.
+		// 0 = not reachable yet (vhost/IP not bound); 502/503 = FPM warming up.
 		if code != 0 && code != 502 && code != 503 {
 			break
 		}
@@ -154,15 +160,24 @@ func migrationHTTPProbeHandler(ctx context.Context, params json.RawMessage) (any
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
 	}
-	results := make([]httpProbeResult, 0, len(p.Domains))
-	for _, d := range p.Domains {
-		d = strings.TrimSpace(strings.ToLower(d))
+	// Probe domains in parallel — each waits up to ~90s for convergence, so a
+	// sequential loop would multiply the wall-clock past the caller's timeout
+	// for a multi-domain account (JAB-42 follow-up).
+	results := make([]httpProbeResult, len(p.Domains))
+	var wg sync.WaitGroup
+	for i, raw := range p.Domains {
+		d := strings.TrimSpace(strings.ToLower(raw))
 		if !probeDomainRe.MatchString(d) {
-			results = append(results, httpProbeResult{Domain: d, Status: 0, OK: false, Note: "skipped: invalid domain"})
+			results[i] = httpProbeResult{Domain: d, Status: 0, OK: false, Note: "skipped: invalid domain"}
 			continue
 		}
-		results = append(results, probeOneDomain(ctx, d))
+		wg.Add(1)
+		go func(i int, d string) {
+			defer wg.Done()
+			results[i] = probeOneDomain(ctx, d)
+		}(i, d)
 	}
+	wg.Wait()
 	return migrationHTTPProbeResponse{Results: results}, nil
 }
 
