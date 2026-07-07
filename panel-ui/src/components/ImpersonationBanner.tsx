@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import { Alert, Button } from "antd";
 
 import { getActAs, stopImpersonation } from "../impersonation";
+import { ClampedText } from "./ClampedText";
 
 export function ImpersonationBanner() {
   const actAs = getActAs();
@@ -50,9 +51,9 @@ export function ImpersonationBanner() {
         // banner is near-black and doesn't read as an alert.
         style={{ background: "#fa8c16", borderBottom: "1px solid #ffc53d" }}
         message={
-          <span style={{ color: "#1f1300", fontWeight: 600 }}>
+          <ClampedText lines={2} style={{ color: "#1f1300", fontWeight: 600 }}>
             {`Viewing as ${actAs.username || actAs.id} — acting on this user's behalf. Every action is logged.`}
-          </span>
+          </ClampedText>
         }
         action={
           <Button size="small" danger onClick={exit}>
