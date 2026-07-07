@@ -571,6 +571,7 @@ type cpanelRunPayload struct {
 func dbDumpsAllSkipped(dumps, created int) bool        { return dumps > 0 && created == 0 }
 func mailFoundNonePushed(found int, pushed int64) bool { return found > 0 && pushed == 0 }
 func healthNoneHealthy(probed, healthy int) bool       { return probed > 0 && healthy == 0 }
+func healthAnyServerError(serverErrs int) bool         { return serverErrs > 0 }
 
 // shouldDowngradeToDegraded gates the done→degraded transition: the runner
 // stamped done but the restore recorded at least one core-area failure.
@@ -1045,7 +1046,11 @@ func cpanelRestoreCallback(
 				}
 				_ = json.Unmarshal(raw, &pr)
 				okCount := 0
+				serverErrCount := 0
 				for _, r := range pr.Results {
+					if r.Status >= 500 {
+						serverErrCount++
+					}
 					if r.OK {
 						okCount++
 						continue
@@ -1066,6 +1071,14 @@ func cpanelRestoreCallback(
 				if healthNoneHealthy(len(pr.Results), okCount) {
 					p.criticals = append(p.criticals, fmt.Sprintf(
 						"health: 0/%d domains healthy after restore", len(pr.Results)))
+				}
+				// JAB-40: a 5xx is a CRASHING app (e.g. a restored Nextcloud whose
+				// PHP driver is missing), not a transient FPM warmup — mark the job
+				// degraded even when other domains are healthy (1/2 must not read
+				// as a clean `done`).
+				if healthAnyServerError(serverErrCount) {
+					p.criticals = append(p.criticals, fmt.Sprintf(
+						"health: %d domain(s) returned 5xx (crashing app) after restore", serverErrCount))
 				}
 			}
 			probeCancel()

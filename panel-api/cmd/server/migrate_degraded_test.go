@@ -44,6 +44,15 @@ func TestMigrationCriticalThresholds(t *testing.T) {
 			t.Error("at least one healthy is not a failure")
 		}
 	})
+
+	t.Run("any 5xx (crashing app) is critical even when others are healthy", func(t *testing.T) {
+		if !healthAnyServerError(1) {
+			t.Error("1 domain returning 5xx should be critical (JAB-40)")
+		}
+		if healthAnyServerError(0) {
+			t.Error("no 5xx is not a failure")
+		}
+	})
 }
 
 func TestShouldDowngradeToDegraded(t *testing.T) {

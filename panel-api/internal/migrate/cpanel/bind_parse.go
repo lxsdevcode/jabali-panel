@@ -123,13 +123,19 @@ func ParseBINDZone(r io.Reader, defaultOrigin string) (zone migrate.DNSZoneSpec,
 				skipped = append(skipped, "malformed_srv:"+line)
 				continue
 			}
+			// JAB-28: PowerDNS stores SRV priority in the dedicated prio column;
+			// content is "weight port target" ONLY. Stuffing the priority into
+			// content (with prio=0) makes pdns serve a malformed SRV that doesn't
+			// resolve. Split it out like MX above.
+			prio, _ := strconv.Atoi(fields[0])
 			target := strings.TrimSuffix(fields[3], ".")
-			content := fields[0] + " " + fields[1] + " " + fields[2] + " " + target
+			content := fields[1] + " " + fields[2] + " " + target
 			zone.Records = append(zone.Records, migrate.DNSRecord{
 				Name:    expandOwner(owner, zone.Origin),
 				Type:    "SRV",
 				Content: content,
 				TTL:     ttl,
+				Prio:    prio,
 			})
 		case "SOA":
 			// cPanel emits SOA with the cPanel server's NS as primary.
