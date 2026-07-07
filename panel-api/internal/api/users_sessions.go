@@ -64,13 +64,18 @@ func (h *userHandler) listSessions(c *gin.Context) {
 					User     string `json:"user"`
 					RemoteIP string `json:"remote_ip"`
 					Since    string `json:"since"`
+					Channel  string `json:"channel"`
 				} `json:"sessions"`
 			}
 			if json.Unmarshal(raw, &sshResp) == nil {
 				for _, ss := range sshResp.Sessions {
+					ch := ss.Channel // "ssh" | "sftp" (GH #338)
+					if ch == "" {
+						ch = "ssh"
+					}
 					rows = append(rows, sessionRow{
 						ID: ss.ID, Username: ss.User, IP: ss.RemoteIP,
-						Channel: "ssh", AuthenticatedAt: ss.Since,
+						Channel: ch, AuthenticatedAt: ss.Since,
 					})
 				}
 			}

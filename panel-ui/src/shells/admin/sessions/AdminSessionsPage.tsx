@@ -82,7 +82,9 @@ export function AdminSessionsPage() {
             title: "Channel",
             dataIndex: "channel",
             width: 110,
-            render: (v: string) => <Tag color={v === "panel" ? "blue" : "default"}>{v}</Tag>,
+            render: (v: string) => (
+              <Tag color={{ panel: "blue", ssh: "green", sftp: "gold" }[v] ?? "default"}>{v}</Tag>
+            ),
           },
           { title: "Source IP", dataIndex: "ip", width: 150, render: (v: string) => v || "—" },
           {
