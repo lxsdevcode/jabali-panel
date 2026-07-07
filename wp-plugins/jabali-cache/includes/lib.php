@@ -335,7 +335,11 @@ class Jabali_Cache_Client {
 			$this->connected = true;
 			return true;
 		} catch ( \Throwable $e ) {
-			$this->last_error = 'phpredis: ' . $e->getMessage();
+			$m                = $e->getMessage();
+			$this->last_error = 'phpredis: ' . $m;
+			if ( false !== stripos( $m, 'permission denied' ) ) {
+				$this->last_error .= ' — PHP-FPM user likely missing from the jabali-redis-clients group (the Jabali panel re-adds it automatically; retry shortly).';
+			}
 			return false;
 		}
 	}
@@ -356,7 +360,15 @@ class Jabali_Cache_Client {
 		// boolean result and graceful-disable path handle the failure.
 		$stream = @stream_socket_client( $target, $errno, $errstr, $timeout ); // phpcs:ignore
 		if ( ! $stream ) {
-			$this->fail( sprintf( 'connect %s failed: %s (%d)', $target, $errstr, $errno ) );
+			$msg = sprintf( 'connect %s failed: %s (%d)', $target, $errstr, $errno );
+			// A socket-level EACCES means the PHP-FPM user isn't in the
+			// jabali-redis-clients group (migrated/reprovisioned accounts). The
+			// panel reconciler now re-adds it automatically (user.slice.ensure)
+			// and restarts the pool, so this self-resolves within a tick.
+			if ( 13 === (int) $errno || false !== stripos( (string) $errstr, 'permission denied' ) ) {
+				$msg .= ' — the PHP-FPM user is likely missing from the "jabali-redis-clients" group; the Jabali panel re-adds it automatically and restarts the pool, so retry shortly.';
+			}
+			$this->fail( $msg );
 			return false;
 		}
 		stream_set_timeout( $stream, (int) $timeout, (int) ( ( $timeout - (int) $timeout ) * 1e6 ) );

@@ -103,6 +103,31 @@ func userSliceEnsureHandler(ctx context.Context, params json.RawMessage) (any, e
 		_ = gErr
 	}
 
+	// GH #410 follow-up: ensure every tenant is in jabali-redis-clients so its
+	// php-fpm workers can open /run/redis/redis.sock for the jabali-cache object
+	// cache. Membership grants ONLY the right to attempt a connection — ADR-0148
+	// locks the default Redis user, so nothing is reachable without the per-site
+	// ACL user — hence it is safe for all tenants. Self-healing here fixes
+	// migrated / reprovisioned accounts that dropped out of the one-shot
+	// cache-enable path and silently hit "Permission denied" on the socket.
+	// Group membership is fixed at fpm-master start, so restart the master ONLY
+	// when we just added it (never per tick).
+	if out, _, idErr := runCmdFn(ctx, "id", "-nG", p.Username); idErr == nil {
+		inRedisGroup := false
+		for _, g := range strings.Fields(string(out)) {
+			if g == "jabali-redis-clients" {
+				inRedisGroup = true
+				break
+			}
+		}
+		if !inRedisGroup {
+			_, _, _ = runCmdFn(ctx, "groupadd", "-f", "jabali-redis-clients")
+			if _, _, uErr := runCmdFn(ctx, "usermod", "-aG", "jabali-redis-clients", p.Username); uErr == nil {
+				_, _, _ = runCmdFn(ctx, "systemctl", "restart", "jabali-fpm@"+p.Username+".service")
+			}
+		}
+	}
+
 	testMutex.Lock()
 	systemdRootFn := systemdRoot
 	testMutex.Unlock()

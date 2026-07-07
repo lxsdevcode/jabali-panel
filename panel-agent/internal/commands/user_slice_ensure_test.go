@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -351,4 +352,62 @@ func TestBuildLoginDropinContent(t *testing.T) {
 	assert.Contains(t, content, "Slice=jabali-user-testuser.slice")
 	// Should be in [Service] section, not [Slice]
 	assert.NotContains(t, content, "[Slice]")
+}
+
+// GH #410 follow-up: user.slice.ensure self-heals jabali-redis-clients
+// membership so migrated/reprovisioned tenants can reach the Redis socket.
+func TestUserSliceEnsure_RedisGroupSelfHeal(t *testing.T) {
+	run := func(t *testing.T, idNGOut string) []string {
+		t.Helper()
+		tmpdir := t.TempDir()
+		oldRunCmd := runCmd
+		oldSystemdRoot := systemdRoot
+		defer func() {
+			testMutex.Lock()
+			runCmd = oldRunCmd
+			systemdRoot = oldSystemdRoot
+			testMutex.Unlock()
+		}()
+		var calls []string
+		testMutex.Lock()
+		runCmd = func(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+			if name == "id" && len(args) >= 2 && args[0] == "-u" {
+				return []byte("1000\n"), nil, nil
+			}
+			if name == "id" && len(args) >= 1 && args[0] == "-nG" {
+				return []byte(idNGOut), nil, nil
+			}
+			return nil, nil, nil
+		}
+		systemdRoot = func() string { return tmpdir }
+		testMutex.Unlock()
+		paramsJSON, _ := json.Marshal(userSliceEnsureParams{Username: "testuser"})
+		_, err := userSliceEnsureHandler(context.Background(), paramsJSON)
+		require.NoError(t, err)
+		return calls
+	}
+
+	has := func(calls []string, want string) bool {
+		for _, c := range calls {
+			if c == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Not in the group -> usermod + fpm restart.
+	calls := run(t, "testuser other\n")
+	assert.True(t, has(calls, "usermod -aG jabali-redis-clients testuser"),
+		"should add missing tenant to jabali-redis-clients; calls=%v", calls)
+	assert.True(t, has(calls, "systemctl restart jabali-fpm@testuser.service"),
+		"should restart fpm master after adding the group")
+
+	// Already in the group -> no usermod, no restart.
+	calls = run(t, "testuser jabali-redis-clients\n")
+	assert.False(t, has(calls, "usermod -aG jabali-redis-clients testuser"),
+		"must not re-add when already a member")
+	assert.False(t, has(calls, "systemctl restart jabali-fpm@testuser.service"),
+		"must not restart fpm when membership unchanged")
 }
