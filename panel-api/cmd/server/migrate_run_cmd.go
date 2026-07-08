@@ -685,209 +685,235 @@ func cpanelRestoreCallback(
 		// same as account-restore (1h) and system-restore (4h) already do.
 		restoreAgent := agent.NewClient(agent.Config{Timeout: 4 * time.Hour})
 
-		plan := migrationPlanAreas(job)
-		sshRes, err := cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("ssh: %w", err)
-		}
-		warnings = append(warnings, fmt.Sprintf("ssh: created=%d", sshRes.Created))
-		warnings = append(warnings, sshRes.Skipped...)
-
-		dbsRes, err := cpanel.ImportDatabases(ctx, dbsRepo, dbUsersRepo, dbGrantsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("databases: %w", err)
-		}
-		warnings = append(warnings, fmt.Sprintf("databases: created=%d", dbsRes.Created))
-		warnings = append(warnings, dbsRes.Skipped...)
-		// JAB-31: DB dumps present but none imported is a core failure, not a
-		// warning — a "done" job here has no databases.
-		if dbDumpsAllSkipped(len(p.parsed.MySQLDumps), dbsRes.Created) {
-			p.criticals = append(p.criticals, fmt.Sprintf(
-				"databases: %d dump(s) present but 0 imported", len(p.parsed.MySQLDumps)))
+		plan, planOK := migrationPlanAreasChecked(job)
+		if !planOK {
+			// JAB-56: fail closed on a malformed plan instead of importing all.
+			return bytes, warnings, fmt.Errorf("migration plan (PlanJSON) is malformed — refusing to import; fix or clear the plan")
 		}
 
-		// JAB-28 follow-up: DNS import moved to AFTER ImportDomains (below) so the
-		// bootstrap zone that domain.create renders can't clobber the imported
-		// source records (QA saw dns: zones=2 records=28 in the manifest but only
-		// bootstrap records in PowerDNS).
+		// JAB-56: SSH keys are account/shell data — gate under the websites area
+		// (the account-hosting toggle). Skipped areas are reported, not imported.
+		var err error
+		var sshRes *cpanel.SSHKeyImportResult
+		if plan.Websites {
+			sshRes, err = cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("ssh: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf("ssh: created=%d", sshRes.Created))
+			warnings = append(warnings, sshRes.Skipped...)
+		} else {
+			warnings = append(warnings, "ssh: skipped (websites disabled in plan)")
+		}
 
-		// DA flow (2026-05-14 rework): backup tarball intentionally
-		// EXCLUDES the home tree. domains-paths.txt manifest inside
-		// the tar lists one source-side docroot per domain. Dispatch
-		// agent.migration.rsync_remote_home once per row — pull
-		// straight from source over SSH instead of tar middleware.
-		// Survives transient failures (rsync resumes) + skips files
-		// already on dest.
-		// Source-of-truth for the per-domain (dom, src-path) list:
-		//   - DA:         cpmove-<user>/domains-paths.txt
-		//                 (absolute source paths, written by BackupUser)
-		//   - cpanel/WHM: cpmove-<user>/userdata/<dom> YAMLs
-		//                 (documentroot line; absolute on source)
-		type rsyncPair struct{ Dom, SrcPath string }
-		var rsyncRows []rsyncPair
-		switch job.SourceKind {
-		case models.MigrationSourceDirectAdmin:
-			manifest := filepath.Join(p.parsed.ExtractDir, "cpmove-"+p.parsed.SourceUser, "domains-paths.txt")
-			if raw, rerr := os.ReadFile(manifest); rerr == nil {
-				for _, line := range strings.Split(string(raw), "\n") {
-					line = strings.TrimSpace(line)
-					if line == "" {
+		// Non-nil so a disabled databases area still yields empty Credentials for
+		// the app-config rewriter below (no nil deref).
+		dbsRes := &cpanel.DBImportResult{}
+		if plan.Databases {
+			dbsRes, err = cpanel.ImportDatabases(ctx, dbsRepo, dbUsersRepo, dbGrantsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("databases: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf("databases: created=%d", dbsRes.Created))
+			warnings = append(warnings, dbsRes.Skipped...)
+			// JAB-31: DB dumps present but none imported is a core failure, not a
+			// warning — a "done" job here has no databases.
+			if dbDumpsAllSkipped(len(p.parsed.MySQLDumps), dbsRes.Created) {
+				p.criticals = append(p.criticals, fmt.Sprintf(
+					"databases: %d dump(s) present but 0 imported", len(p.parsed.MySQLDumps)))
+			}
+		} else {
+			warnings = append(warnings, "databases: skipped (databases disabled in plan)")
+		}
+
+		// JAB-56: gate all website content (home/docroot rsync + domain rows) on
+		// the websites plan area. Skipped => no home copy, no domain creation.
+		if plan.Websites {
+			// JAB-28 follow-up: DNS import moved to AFTER ImportDomains (below) so the
+			// bootstrap zone that domain.create renders can't clobber the imported
+			// source records (QA saw dns: zones=2 records=28 in the manifest but only
+			// bootstrap records in PowerDNS).
+
+			// DA flow (2026-05-14 rework): backup tarball intentionally
+			// EXCLUDES the home tree. domains-paths.txt manifest inside
+			// the tar lists one source-side docroot per domain. Dispatch
+			// agent.migration.rsync_remote_home once per row — pull
+			// straight from source over SSH instead of tar middleware.
+			// Survives transient failures (rsync resumes) + skips files
+			// already on dest.
+			// Source-of-truth for the per-domain (dom, src-path) list:
+			//   - DA:         cpmove-<user>/domains-paths.txt
+			//                 (absolute source paths, written by BackupUser)
+			//   - cpanel/WHM: cpmove-<user>/userdata/<dom> YAMLs
+			//                 (documentroot line; absolute on source)
+			type rsyncPair struct{ Dom, SrcPath string }
+			var rsyncRows []rsyncPair
+			switch job.SourceKind {
+			case models.MigrationSourceDirectAdmin:
+				manifest := filepath.Join(p.parsed.ExtractDir, "cpmove-"+p.parsed.SourceUser, "domains-paths.txt")
+				if raw, rerr := os.ReadFile(manifest); rerr == nil {
+					for _, line := range strings.Split(string(raw), "\n") {
+						line = strings.TrimSpace(line)
+						if line == "" {
+							continue
+						}
+						parts := strings.SplitN(line, "\t", 2)
+						if len(parts) == 2 {
+							rsyncRows = append(rsyncRows, rsyncPair{Dom: parts[0], SrcPath: parts[1]})
+						}
+					}
+				}
+			case models.MigrationSourceCpanel, models.MigrationSourceWHMpkgacct:
+				// The remote-rsync home pull below requires an SSH source
+				// (host + per-job secret env). It belongs ONLY to the
+				// online `jabali migrate pull-source` flow. An OFFLINE
+				// restore (`jabali migrate restore` / tarball upload) has
+				// job.SourceHost == "" and ships the home tree INSIDE the
+				// cpmove (cpmove-<user>/homedir/). For offline, leave
+				// rsyncRows empty so daHomeHandled stays false and the
+				// local ImportHomeSplit/ImportHome (tarball copy) runs —
+				// without this gate offline restores called
+				// migration.rsync_remote_home with an empty host →
+				// invalid_argument → home bytes=0 (silent: job still
+				// marked done). DA is intentionally remote-only (its
+				// tarball excludes the home tree) and not gated here.
+				if job.SourceHost == "" {
+					break
+				}
+				for _, root := range []string{
+					filepath.Join(p.parsed.ExtractDir, "cpmove-"+p.parsed.SourceUser, "userdata"),
+					filepath.Join(p.parsed.ExtractDir, "userdata"),
+					filepath.Join(p.parsed.ExtractDir, "cp", p.parsed.SourceUser, "userdata"),
+				} {
+					entries, derr := os.ReadDir(root)
+					if derr != nil {
 						continue
 					}
-					parts := strings.SplitN(line, "\t", 2)
-					if len(parts) == 2 {
-						rsyncRows = append(rsyncRows, rsyncPair{Dom: parts[0], SrcPath: parts[1]})
+					for _, e := range entries {
+						if e.IsDir() {
+							continue
+						}
+						name := e.Name()
+						if strings.HasSuffix(name, ".php-fpm.yaml") ||
+							strings.HasSuffix(name, ".php-fpm.yaml.transferred") ||
+							strings.HasSuffix(name, "_SSL") ||
+							name == "main" || name == "cache.json" || name == "scope" {
+							continue
+						}
+						body, rerr := os.ReadFile(filepath.Join(root, name))
+						if rerr != nil {
+							continue
+						}
+						dom := name
+						var docroot string
+						for _, ln := range strings.Split(string(body), "\n") {
+							ln = strings.TrimSpace(ln)
+							if strings.HasPrefix(ln, "documentroot:") {
+								docroot = strings.TrimSpace(strings.TrimPrefix(ln, "documentroot:"))
+								docroot = strings.Trim(docroot, `'"`)
+							}
+							if strings.HasPrefix(ln, "servername:") {
+								dom = strings.Trim(strings.TrimSpace(strings.TrimPrefix(ln, "servername:")), `'"`)
+							}
+						}
+						if docroot == "" || dom == "" {
+							continue
+						}
+						rsyncRows = append(rsyncRows, rsyncPair{Dom: dom, SrcPath: docroot})
+					}
+					if len(rsyncRows) > 0 {
+						break
 					}
 				}
 			}
-		case models.MigrationSourceCpanel, models.MigrationSourceWHMpkgacct:
-			// The remote-rsync home pull below requires an SSH source
-			// (host + per-job secret env). It belongs ONLY to the
-			// online `jabali migrate pull-source` flow. An OFFLINE
-			// restore (`jabali migrate restore` / tarball upload) has
-			// job.SourceHost == "" and ships the home tree INSIDE the
-			// cpmove (cpmove-<user>/homedir/). For offline, leave
-			// rsyncRows empty so daHomeHandled stays false and the
-			// local ImportHomeSplit/ImportHome (tarball copy) runs —
-			// without this gate offline restores called
-			// migration.rsync_remote_home with an empty host →
-			// invalid_argument → home bytes=0 (silent: job still
-			// marked done). DA is intentionally remote-only (its
-			// tarball excludes the home tree) and not gated here.
-			if job.SourceHost == "" {
-				break
-			}
-			for _, root := range []string{
-				filepath.Join(p.parsed.ExtractDir, "cpmove-"+p.parsed.SourceUser, "userdata"),
-				filepath.Join(p.parsed.ExtractDir, "userdata"),
-				filepath.Join(p.parsed.ExtractDir, "cp", p.parsed.SourceUser, "userdata"),
-			} {
-				entries, derr := os.ReadDir(root)
-				if derr != nil {
-					continue
-				}
-				for _, e := range entries {
-					if e.IsDir() {
-						continue
-					}
-					name := e.Name()
-					if strings.HasSuffix(name, ".php-fpm.yaml") ||
-						strings.HasSuffix(name, ".php-fpm.yaml.transferred") ||
-						strings.HasSuffix(name, "_SSL") ||
-						name == "main" || name == "cache.json" || name == "scope" {
-						continue
-					}
-					body, rerr := os.ReadFile(filepath.Join(root, name))
+			daHomeHandled := false
+			if len(rsyncRows) > 0 {
+				secretPath := fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)
+				totalBytes := int64(0)
+				domCount := 0
+				for _, r := range rsyncRows {
+					destPath := filepath.Join("/home", p.targetUsername, "domains", r.Dom, "public_html")
+					rawResp, rerr := restoreAgent.Call(ctx, "migration.rsync_remote_home", map[string]any{
+						"job_id":      job.ID,
+						"host":        job.SourceHost,
+						"ssh_user":    "root",
+						"secret_path": secretPath,
+						"src_path":    r.SrcPath,
+						"dest_path":   destPath,
+						"dest_user":   p.targetUsername,
+					})
 					if rerr != nil {
+						warnings = append(warnings, fmt.Sprintf("home_rsync_remote: %s: %v", r.Dom, rerr))
 						continue
 					}
-					dom := name
-					var docroot string
-					for _, ln := range strings.Split(string(body), "\n") {
-						ln = strings.TrimSpace(ln)
-						if strings.HasPrefix(ln, "documentroot:") {
-							docroot = strings.TrimSpace(strings.TrimPrefix(ln, "documentroot:"))
-							docroot = strings.Trim(docroot, `'"`)
-						}
-						if strings.HasPrefix(ln, "servername:") {
-							dom = strings.Trim(strings.TrimSpace(strings.TrimPrefix(ln, "servername:")), `'"`)
-						}
+					var rs struct {
+						BytesCopied int64 `json:"bytes_copied"`
+						Files       int64 `json:"files"`
 					}
-					if docroot == "" || dom == "" {
-						continue
-					}
-					rsyncRows = append(rsyncRows, rsyncPair{Dom: dom, SrcPath: docroot})
+					_ = json.Unmarshal(rawResp, &rs)
+					totalBytes += rs.BytesCopied
+					domCount++
 				}
-				if len(rsyncRows) > 0 {
-					break
-				}
+				bytes += totalBytes
+				warnings = append(warnings, fmt.Sprintf("home: bytes=%d domains=%d (direct-rsync source→dest, no tar middleware)", totalBytes, domCount))
+				daHomeHandled = true
 			}
-		}
-		daHomeHandled := false
-		if len(rsyncRows) > 0 {
-			secretPath := fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)
-			totalBytes := int64(0)
-			domCount := 0
-			for _, r := range rsyncRows {
-				destPath := filepath.Join("/home", p.targetUsername, "domains", r.Dom, "public_html")
-				rawResp, rerr := restoreAgent.Call(ctx, "migration.rsync_remote_home", map[string]any{
-					"job_id":      job.ID,
-					"host":        job.SourceHost,
-					"ssh_user":    "root",
-					"secret_path": secretPath,
-					"src_path":    r.SrcPath,
-					"dest_path":   destPath,
-					"dest_user":   p.targetUsername,
-				})
-				if rerr != nil {
-					warnings = append(warnings, fmt.Sprintf("home_rsync_remote: %s: %v", r.Dom, rerr))
-					continue
-				}
-				var rs struct {
-					BytesCopied int64 `json:"bytes_copied"`
-					Files       int64 `json:"files"`
-				}
-				_ = json.Unmarshal(rawResp, &rs)
-				totalBytes += rs.BytesCopied
-				domCount++
-			}
-			bytes += totalBytes
-			warnings = append(warnings, fmt.Sprintf("home: bytes=%d domains=%d (direct-rsync source→dest, no tar middleware)", totalBytes, domCount))
-			daHomeHandled = true
-		}
 
-		// M35.8 P7: per-domain rsync split. cpanel ships all sites
-		// under <homedir>/public_html/(<addon>/) flat layout; jabali
-		// uses /home/<user>/domains/<dom>/public_html/. ImportHomeSplit
-		// reads per-domain documentroot from cpmove userdata YAML and
-		// dispatches one rsync per docroot, then a final pass for the
-		// rest of the homedir (mail/ etc/ application_backups/) minus
-		// public_html. Falls back to the legacy whole-homedir rsync
-		// when no userdata YAML is present.
-		if !daHomeHandled && job.SourceKind == models.MigrationSourceHestia {
-			// JAB-26: Hestia web content must land in the configured docroot
-			// /home/<user>/web/<dom>/public_html, not /home/<user>/<dom> via the
-			// legacy full-homedir rsync. Per-domain copy into DocRoots.
-			hhRes, err := cpanel.ImportHomeHestia(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
-			if err != nil {
-				return bytes, warnings, fmt.Errorf("home_hestia: %w", err)
-			}
-			bytes += hhRes.BytesCopied
-			warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d domains=%d (hestia per-domain docroot)", hhRes.BytesCopied, hhRes.Files, hhRes.DomainsCopied))
-			warnings = append(warnings, hhRes.Skipped...)
-		} else if !daHomeHandled {
-			hsRes, err := cpanel.ImportHomeSplit(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
-			if err != nil {
-				return bytes, warnings, fmt.Errorf("home_split: %w", err)
-			}
-			var fallback bool
-			for _, sk := range hsRes.Skipped {
-				if strings.HasPrefix(sk, "home_split_skip:no_userdata_yaml") {
-					fallback = true
-					break
-				}
-			}
-			if fallback || hsRes.DomainsCopied == 0 {
-				homeRes, err := cpanel.ImportHome(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
+			// M35.8 P7: per-domain rsync split. cpanel ships all sites
+			// under <homedir>/public_html/(<addon>/) flat layout; jabali
+			// uses /home/<user>/domains/<dom>/public_html/. ImportHomeSplit
+			// reads per-domain documentroot from cpmove userdata YAML and
+			// dispatches one rsync per docroot, then a final pass for the
+			// rest of the homedir (mail/ etc/ application_backups/) minus
+			// public_html. Falls back to the legacy whole-homedir rsync
+			// when no userdata YAML is present.
+			if !daHomeHandled && job.SourceKind == models.MigrationSourceHestia {
+				// JAB-26: Hestia web content must land in the configured docroot
+				// /home/<user>/web/<dom>/public_html, not /home/<user>/<dom> via the
+				// legacy full-homedir rsync. Per-domain copy into DocRoots.
+				hhRes, err := cpanel.ImportHomeHestia(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
 				if err != nil {
-					return bytes, warnings, fmt.Errorf("home: %w", err)
+					return bytes, warnings, fmt.Errorf("home_hestia: %w", err)
 				}
-				bytes += homeRes.BytesCopied
-				warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d (legacy full-homedir mode)", homeRes.BytesCopied, homeRes.Files))
-				warnings = append(warnings, homeRes.Skipped...)
-			} else {
-				bytes += hsRes.BytesCopied
-				warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d domains=%d (per-domain split)", hsRes.BytesCopied, hsRes.Files, hsRes.DomainsCopied))
-				warnings = append(warnings, hsRes.Skipped...)
+				bytes += hhRes.BytesCopied
+				warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d domains=%d (hestia per-domain docroot)", hhRes.BytesCopied, hhRes.Files, hhRes.DomainsCopied))
+				warnings = append(warnings, hhRes.Skipped...)
+			} else if !daHomeHandled {
+				hsRes, err := cpanel.ImportHomeSplit(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
+				if err != nil {
+					return bytes, warnings, fmt.Errorf("home_split: %w", err)
+				}
+				var fallback bool
+				for _, sk := range hsRes.Skipped {
+					if strings.HasPrefix(sk, "home_split_skip:no_userdata_yaml") {
+						fallback = true
+						break
+					}
+				}
+				if fallback || hsRes.DomainsCopied == 0 {
+					homeRes, err := cpanel.ImportHome(ctx, restoreAgent, p.parsed, job.ID, p.targetUsername)
+					if err != nil {
+						return bytes, warnings, fmt.Errorf("home: %w", err)
+					}
+					bytes += homeRes.BytesCopied
+					warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d (legacy full-homedir mode)", homeRes.BytesCopied, homeRes.Files))
+					warnings = append(warnings, homeRes.Skipped...)
+				} else {
+					bytes += hsRes.BytesCopied
+					warnings = append(warnings, fmt.Sprintf("home: bytes=%d files=%d domains=%d (per-domain split)", hsRes.BytesCopied, hsRes.Files, hsRes.DomainsCopied))
+					warnings = append(warnings, hsRes.Skipped...)
+				}
 			}
-		}
 
-		domainsRes, err := cpanel.ImportDomains(ctx, domainsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
-		if err != nil {
-			return bytes, warnings, fmt.Errorf("domains: %w", err)
+			domainsRes, err := cpanel.ImportDomains(ctx, domainsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
+			if err != nil {
+				return bytes, warnings, fmt.Errorf("domains: %w", err)
+			}
+			warnings = append(warnings, fmt.Sprintf("domains: created=%d email_enabled=%d", domainsRes.Created, domainsRes.EmailEnabled))
+			warnings = append(warnings, domainsRes.Skipped...)
+		} else {
+			warnings = append(warnings, "websites: skipped (websites disabled in plan) — no home/docroot or domain import")
 		}
-		warnings = append(warnings, fmt.Sprintf("domains: created=%d email_enabled=%d", domainsRes.Created, domainsRes.EmailEnabled))
-		warnings = append(warnings, domainsRes.Skipped...)
 
 		// JAB-28 follow-up: import source DNS records AFTER domain create so they
 		// overlay the bootstrapped zone instead of being clobbered by it. Apex
@@ -963,14 +989,18 @@ func cpanelRestoreCallback(
 		for _, dr := range p.parsed.DocRoots {
 			appDocroots = append(appDocroots, dr)
 		}
-		appRes, err := cpanel.ImportAppConfigs(ctx, restoreAgent, p.targetUserID, p.targetUsername, dbsRes.Credentials, appDocroots)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("appconfigs: %v", err))
+		if plan.Websites {
+			appRes, aerr := cpanel.ImportAppConfigs(ctx, restoreAgent, p.targetUserID, p.targetUsername, dbsRes.Credentials, appDocroots)
+			if aerr != nil {
+				warnings = append(warnings, fmt.Sprintf("appconfigs: %v", aerr))
+			} else {
+				warnings = append(warnings, fmt.Sprintf(
+					"appconfigs: wordpress=%d joomla=%d drupal=%d magento=%d caches_cleared=%d php_ini_fixed=%d",
+					appRes.WordPress, appRes.Joomla, appRes.Drupal, appRes.Magento, appRes.CachesCleared, appRes.PhpIniFixed))
+				warnings = append(warnings, appRes.Skipped...)
+			}
 		} else {
-			warnings = append(warnings, fmt.Sprintf(
-				"appconfigs: wordpress=%d joomla=%d drupal=%d magento=%d caches_cleared=%d php_ini_fixed=%d",
-				appRes.WordPress, appRes.Joomla, appRes.Drupal, appRes.Magento, appRes.CachesCleared, appRes.PhpIniFixed))
-			warnings = append(warnings, appRes.Skipped...)
+			warnings = append(warnings, "appconfigs: skipped (websites disabled in plan)")
 		}
 
 		extrasRes, err := cpanel.ImportExtras(ctx, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
@@ -1270,16 +1300,24 @@ type planAreas struct {
 }
 
 // migrationPlanAreas reads job.PlanJSON; when absent, every area is included.
+// A MALFORMED plan is NOT silently treated as import-all (JAB-56): it fails
+// closed via ok=false so the caller aborts instead of copying everything the
+// operator may have intended to exclude.
 func migrationPlanAreas(job *models.MigrationJob) planAreas {
+	pa, _ := migrationPlanAreasChecked(job)
+	return pa
+}
+
+func migrationPlanAreasChecked(job *models.MigrationJob) (planAreas, bool) {
 	all := planAreas{true, true, true, true, true, true}
 	if job == nil || job.PlanJSON == nil || *job.PlanJSON == "" {
-		return all
+		return all, true // no plan supplied -> import everything (intended default)
 	}
 	var wrap struct {
 		Areas planAreas `json:"areas"`
 	}
 	if err := json.Unmarshal([]byte(*job.PlanJSON), &wrap); err != nil {
-		return all // malformed plan -> safe default (import all)
+		return planAreas{}, false // malformed -> fail closed
 	}
-	return wrap.Areas
+	return wrap.Areas, true
 }
