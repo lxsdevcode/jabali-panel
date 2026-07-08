@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,6 +41,7 @@ var (
 	offStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
+	appStyle    = lipgloss.NewStyle().Padding(1, 2)
 )
 
 // Model is the installer state machine.
@@ -54,6 +56,9 @@ type Model struct {
 	dryRun    bool
 	events    chan tea.Msg
 	spinner   spinner.Model
+	progress  progress.Model
+	stepsDone int
+	stepsTot  int
 
 	logLines   []string
 	phase      string
@@ -76,7 +81,9 @@ func New(installSh string, dryRun bool) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
+	pr := progress.New(progress.WithDefaultGradient(), progress.WithWidth(46))
 	return Model{
+		progress:  pr,
 		screen:    screenWelcome,
 		profiles:  modules.Profiles,
 		mods:      modules.Registry,
@@ -107,19 +114,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+	case progress.FrameMsg:
+		pm, cmd := m.progress.Update(msg)
+		m.progress = pm.(progress.Model)
+		return m, cmd
 	case logLineMsg:
 		line := string(msg)
 		m.logLines = append(m.logLines, line)
 		if len(m.logLines) > 400 {
 			m.logLines = m.logLines[len(m.logLines)-400:]
 		}
+		var pcmd tea.Cmd
 		if p, ok := phaseFromLine(line); ok {
 			m.phase = p
+			m.stepsDone++
+			pct := float64(m.stepsDone) / float64(m.stepsTot)
+			if pct > 0.97 {
+				pct = 0.97
+			}
+			pcmd = m.progress.SetPercent(pct)
 		}
-		return m, waitForEvent(m.events)
+		return m, tea.Batch(waitForEvent(m.events), pcmd)
 	case installDoneMsg:
 		m.installed = true
 		m.installErr = msg.err
+		_ = m.progress.SetPercent(1.0)
 		if msg.err != nil {
 			m.ExitCode = 1
 		}
@@ -286,6 +305,7 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter", "y":
 			m.Confirmed = true
 			m.screen = screenInstalling
+			m.stepsTot = estimateSteps(m.SelectedKeys())
 			env := append(configEnv(m.fields, m.selected["dns"]), "JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","))
 			return m, tea.Batch(m.spinner.Tick, startInstall(m.installSh, env, m.dryRun, m.events))
 		case "b", "backspace", "left":
@@ -382,8 +402,9 @@ func (m Model) View() string {
 		b.WriteString("\n" + helpStyle.Render("enter/y: install   b: back   q: quit"))
 	case screenInstalling:
 		b.WriteString(fmt.Sprintf("%s %s\n", m.spinner.View(), titleStyle.Render("Installing…")))
+		b.WriteString("\n" + m.progress.View() + "\n")
 		if m.phase != "" {
-			b.WriteString(helpStyle.Render("current: ") + m.phase + "\n")
+			b.WriteString("\n" + helpStyle.Render("current: ") + m.phase + "\n")
 		}
 		b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
 		b.WriteString(helpStyle.Render("streaming install.sh — please wait (ctrl+c aborts)"))
@@ -398,8 +419,7 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
 	}
-	b.WriteString("\n")
-	return b.String()
+	return appStyle.Render(b.String())
 }
 
 // tailLog returns the last logTail streamed lines, ANSI-stripped, for the box.
@@ -408,14 +428,35 @@ func (m Model) tailLog() string {
 	if len(lines) > logTail {
 		lines = lines[len(lines)-logTail:]
 	}
-	out := make([]string, len(lines))
-	for i, l := range lines {
-		out[i] = truncate(stripANSI(l), 76)
+	out := make([]string, logTail) // fixed height → box never shrinks (no ghost lines)
+	base := logTail - len(lines)
+	for i := range out {
+		if i < base {
+			out[i] = ""
+			continue
+		}
+		out[i] = truncate(stripANSI(lines[i-base]), 76)
 	}
-	if len(out) == 0 {
-		return helpStyle.Render("(waiting for output…)")
+	if len(lines) == 0 {
+		out[0] = helpStyle.Render("(waiting for output…)")
 	}
 	return strings.Join(out, "\n")
+}
+
+// estimateSteps guesses the number of [i] phase markers install.sh will emit,
+// so the progress bar advances smoothly. Rough on purpose — capped at 0.97 in
+// Update and snapped to 1.0 on completion, so an over/under estimate only
+// changes the fill speed, never correctness. Heavier modules weigh more.
+func estimateSteps(keys []string) int {
+	total := 55 // core: base packages, php, nginx, mariadb, panel, agent, certs…
+	weight := map[string]int{"dns": 10, "mail": 28, "security": 30, "docker": 8,
+		"docker_apps": 6, "python_apps": 8, "postgres": 8, "quota": 5, "api": 2}
+	for _, k := range keys {
+		if w, ok := weight[k]; ok {
+			total += w
+		}
+	}
+	return total
 }
 
 func truncate(s string, n int) string {
