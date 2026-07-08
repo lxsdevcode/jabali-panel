@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -106,9 +107,20 @@ Always run with --dry-run first. --yes skips the interactive prompt.`,
 				}
 			}
 
+			// JAB-7: recovery CSV holds plaintext temp passwords. Default it to a
+			// root-only dir (never /tmp) and create it exclusively + symlink-safe
+			// so a local tenant can't pre-seed a symlink to capture the secrets or
+			// truncate a root file.
+			if outputPath == "" {
+				dir := "/var/lib/jabali-panel/recovery"
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					return fmt.Errorf("create recovery dir: %w", err)
+				}
+				outputPath = filepath.Join(dir, fmt.Sprintf("jabali-recovery-tokens-%d.csv", time.Now().Unix()))
+			}
 			// CSV open before we start — no point rebuilding if we can't
 			// emit the tokens. Write header first.
-			f, err := os.OpenFile(outputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+			f, err := openSecretOutputFile(outputPath)
 			if err != nil {
 				return fmt.Errorf("open output csv: %w", err)
 			}
@@ -157,8 +169,9 @@ Always run with --dry-run first. --yes skips the interactive prompt.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&outputPath, "output", "/tmp/jabali-recovery-tokens.csv",
-		"CSV file to emit (email, new kratos_identity_id, recovery_link, status)")
+	cmd.Flags().StringVar(&outputPath, "output", "",
+		"CSV file to emit temp passwords (default: /var/lib/jabali-panel/recovery/, root-only). "+
+			"Contains PLAINTEXT temporary passwords — delete after distribution.")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "List target users and exit without writing")
 	cmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip interactive confirmation prompt")
 	cmd.Flags().StringVar(&expiresIn, "expires-in", "24h",
@@ -296,4 +309,22 @@ func shortID(id string) string {
 		return id
 	}
 	return id[:8] + "…"
+}
+
+// openSecretOutputFile opens path for a secret CSV (JAB-7): it refuses a
+// world-writable parent directory and creates the file exclusively
+// (O_EXCL), so an existing file or a pre-seeded symlink is rejected rather
+// than followed/truncated. Mode 0600, owner = the (root) caller.
+func openSecretOutputFile(path string) (*os.File, error) {
+	parent := filepath.Dir(path)
+	if fi, err := os.Stat(parent); err == nil {
+		if fi.Mode().Perm()&0o002 != 0 {
+			return nil, fmt.Errorf("refusing to write secret file under world-writable directory %s — pass --output to a root-only path", parent)
+		}
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("%w (existing file or symlink at target is refused for safety)", err)
+	}
+	return f, nil
 }
