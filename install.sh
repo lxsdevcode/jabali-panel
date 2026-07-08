@@ -2771,16 +2771,21 @@ install_redis() {
   fi
 
   # Ping via the socket; fail loud if Redis didn't actually come up on
-  # the expected path (wrong config, SELinux, etc.).
-  local i
+  # the expected path (wrong config, SELinux, etc.). A locked `default` user
+  # (install_redis_acl, #406, runs on the NEXT step and on every re-run) makes
+  # a bare PING answer NOAUTH/NOPERM instead of PONG — that still proves the
+  # server is up and listening on the socket, which is all this check needs, so
+  # accept those replies too (otherwise `jabali update` false-fails here).
+  local i _reply
   for i in 1 2 3 4 5 6 7 8 9 10; do
-    if redis-cli -s /run/redis/redis.sock ping 2>/dev/null | grep -q PONG; then
+    _reply="$(redis-cli -s /run/redis/redis.sock ping 2>&1)"
+    if printf '%s' "$_reply" | grep -qE 'PONG|NOAUTH|NOPERM|WRONGPASS'; then
       break
     fi
     sleep 1
   done
-  if ! redis-cli -s /run/redis/redis.sock ping 2>/dev/null | grep -q PONG; then
-    _die "Redis did not respond to PING on /run/redis/redis.sock — check 'journalctl -u redis-server'"
+  if ! printf '%s' "$_reply" | grep -qE 'PONG|NOAUTH|NOPERM|WRONGPASS'; then
+    _die "Redis did not respond on /run/redis/redis.sock (last reply: ${_reply:-none}) — check 'journalctl -u redis-server'"
   fi
 
   # Verify no TCP listener. Same invariant check as MariaDB's
