@@ -399,9 +399,6 @@ func (m Model) View() string {
 				b.WriteString(fmt.Sprintf("%s%s%s\n    %s\n", cur, f.label, req, f.input.View()))
 			}
 		}
-		if !m.selected["dns"] {
-			b.WriteString("\n" + helpStyle.Render("(nameservers appear here when the DNS module is enabled)") + "\n")
-		}
 		if m.configErr != "" {
 			b.WriteString("\n" + errStyle.Render(m.configErr) + "\n")
 		}

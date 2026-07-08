@@ -34,27 +34,23 @@ func TestPHPSelectDefault(t *testing.T) {
 	}
 }
 
-func TestConfigEnv_DNSGating(t *testing.T) {
+func TestConfigEnv_NSAlwaysPresent(t *testing.T) {
 	f := newConfigFields("h.example.com")
 	f[1].input.SetValue("a@b.com")
 	f[2].input.SetValue("ns1.example.com")
 	f[3].input.SetValue("ns2.example.com")
-	// dns off → NS fields excluded
+	// NS fields are no longer dns-gated — always emitted.
 	env := configEnv(f, false)
+	var ns1, ns2 bool
 	for _, e := range env {
-		if e[:9] == "JABALI_NS" {
-			t.Errorf("NS env leaked with dns off: %s", e)
+		if e == "JABALI_NS1_NAME=ns1.example.com" {
+			ns1 = true
+		}
+		if e == "JABALI_NS2_NAME=ns2.example.com" {
+			ns2 = true
 		}
 	}
-	// dns on → NS included
-	envOn := configEnv(f, true)
-	var hasNS bool
-	for _, e := range envOn {
-		if len(e) >= 9 && e[:9] == "JABALI_NS" {
-			hasNS = true
-		}
-	}
-	if !hasNS {
-		t.Error("NS env missing with dns on")
+	if !ns1 || !ns2 {
+		t.Errorf("NS env missing when dns off: %v", env)
 	}
 }
