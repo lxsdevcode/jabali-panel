@@ -12823,7 +12823,10 @@ main() {
   run_if_module security install_crowdsec_blocklists
   cleanup_modsecurity
   run_if_module security install_malware_stack
-  install_ufw
+  # UFW is part of the security suite (it fronts the CrowdSec firewall bouncer).
+  # A Minimal install opted out of security, so don't enable an unprompted
+  # default-deny firewall — gate it on the security module.
+  run_if_module security install_ufw
   install_per_user_egress
   install_goaccess
   install_restart_drop_ins
