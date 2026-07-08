@@ -257,10 +257,15 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ExitCode = 130
 		return m, tea.Quit
 	case "q":
+		// On the config screen 'q' is a valid input character (hostnames,
+		// emails); only treat it as quit on the selection screens.
+		if m.screen == screenConfig {
+			break
+		}
+		if m.screen == screenResult {
+			return m, tea.Quit
+		}
 		if m.screen != screenInstalling {
-			if m.screen == screenResult {
-				return m, tea.Quit
-			}
 			m.Aborted = true
 			m.ExitCode = 130
 			return m, tea.Quit
@@ -390,6 +395,9 @@ func (m Model) View() string {
 			} else {
 				b.WriteString(fmt.Sprintf("%s%s%s\n    %s\n", cur, f.label, req, f.input.View()))
 			}
+		}
+		if !m.selected["dns"] {
+			b.WriteString("\n" + helpStyle.Render("(nameservers appear here when the DNS module is enabled)") + "\n")
 		}
 		if m.configErr != "" {
 			b.WriteString("\n" + errStyle.Render(m.configErr) + "\n")
