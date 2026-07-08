@@ -6,9 +6,11 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -21,6 +23,7 @@ const (
 	screenWelcome screen = iota
 	screenProfile
 	screenModules
+	screenConfig
 	screenConfirm
 	screenInstalling
 	screenResult
@@ -57,6 +60,11 @@ type Model struct {
 	installed  bool
 	installErr error
 
+	// Config screen (T3): host/admin/NS/PHP inputs + focus + validation error.
+	fields    []configField
+	focus     int
+	configErr string
+
 	Confirmed bool
 	Aborted   bool
 	ExitCode  int
@@ -77,6 +85,7 @@ func New(installSh string, dryRun bool) Model {
 		dryRun:    dryRun,
 		events:    make(chan tea.Msg, 256),
 		spinner:   sp,
+		fields:    newConfigFields(os.Getenv("JABALI_HOSTNAME")),
 	}
 }
 
@@ -118,8 +127,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	default:
+		if m.screen == screenConfig && len(m.fields) > 0 {
+			cmd := updateFocusedField(m.fields, m.focus, msg)
+			return m, cmd
+		}
 	}
 	return m, nil
+}
+
+// focusField focuses field index i (blurring the rest) and returns the blink cmd.
+func (m *Model) focusField(i int) tea.Cmd {
+	for j := range m.fields {
+		if j == i {
+			m.fields[j].input.Focus()
+		} else {
+			m.fields[j].input.Blur()
+		}
+	}
+	return textinput.Blink
+}
+
+// handleConfigKey drives the config screen: tab/↑↓ move between the visible
+// fields, typing edits the focused input, enter validates and advances.
+func (m Model) handleConfigKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	vis := visibleFields(m.fields, m.selected["dns"])
+	// position of m.focus within the visible slice
+	pos := 0
+	for i, idx := range vis {
+		if idx == m.focus {
+			pos = i
+		}
+	}
+	switch key.String() {
+	case "tab", "down":
+		pos = (pos + 1) % len(vis)
+		m.focus = vis[pos]
+		return m, m.focusField(m.focus)
+	case "shift+tab", "up":
+		pos = (pos - 1 + len(vis)) % len(vis)
+		m.focus = vis[pos]
+		return m, m.focusField(m.focus)
+	case "enter":
+		if e := validateConfig(m.fields, m.selected["dns"]); e != "" {
+			m.configErr = e
+			return m, nil
+		}
+		m.configErr = ""
+		m.screen = screenConfirm
+		return m, nil
+	case "esc":
+		m.screen = screenModules
+		return m, nil
+	default:
+		cmd := updateFocusedField(m.fields, m.focus, key)
+		return m, cmd
+	}
 }
 
 func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -184,14 +247,19 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selected = modules.Resolve(m.selected, mod.Key)
 			}
 		case "enter":
-			m.screen = screenConfirm
+			m.screen = screenConfig
+			m.focus = 0
+			m.configErr = ""
+			return m, m.focusField(0)
 		}
+	case screenConfig:
+		return m.handleConfigKey(key)
 	case screenConfirm:
 		switch key.String() {
 		case "enter", "y":
 			m.Confirmed = true
 			m.screen = screenInstalling
-			env := []string{"JABALI_MODULES=" + strings.Join(m.SelectedKeys(), ",")}
+			env := append(configEnv(m.fields, m.selected["dns"]), "JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","))
 			return m, tea.Batch(m.spinner.Tick, startInstall(m.installSh, env, m.dryRun, m.events))
 		case "b", "backspace", "left":
 			m.screen = screenModules
@@ -238,6 +306,25 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n" + helpStyle.Render("↑/↓: move   space: toggle   enter: continue   q: quit"))
 		b.WriteString("\n" + helpStyle.Render("(dependencies auto-select; conflicts auto-clear)"))
+	case screenConfig:
+		b.WriteString(titleStyle.Render("Configuration"))
+		b.WriteString("\n\n")
+		for _, i := range visibleFields(m.fields, m.selected["dns"]) {
+			f := m.fields[i]
+			cur := "  "
+			if i == m.focus {
+				cur = cursorStyle.Render("> ")
+			}
+			req := ""
+			if f.required {
+				req = helpStyle.Render(" *")
+			}
+			b.WriteString(fmt.Sprintf("%s%s%s\n    %s\n", cur, f.label, req, f.input.View()))
+		}
+		if m.configErr != "" {
+			b.WriteString("\n" + errStyle.Render(m.configErr) + "\n")
+		}
+		b.WriteString("\n" + helpStyle.Render("tab/↑↓: move   type: edit   enter: continue   esc: back"))
 	case screenConfirm:
 		b.WriteString(titleStyle.Render("Confirm"))
 		b.WriteString("\n\nCore: web (nginx + PHP-FPM), database (MariaDB), panel + auth\n\nOptional modules to install:\n")
@@ -249,6 +336,15 @@ func (m Model) View() string {
 			b.WriteString(onStyle.Render("  + " + k + "\n"))
 		}
 		b.WriteString("\n" + helpStyle.Render("JABALI_MODULES=") + onStyle.Render(strings.Join(keys, ",")) + "\n")
+		b.WriteString("\nConfiguration:\n")
+		for _, i := range visibleFields(m.fields, m.selected["dns"]) {
+			f := m.fields[i]
+			v := strings.TrimSpace(f.input.Value())
+			if v == "" {
+				continue
+			}
+			b.WriteString(helpStyle.Render("  "+f.label+": ") + v + "\n")
+		}
 		if m.dryRun {
 			b.WriteString("\n" + helpStyle.Render("(dry run — will preview the plan, not install)\n"))
 		}
