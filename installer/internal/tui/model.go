@@ -1,13 +1,14 @@
 // Package tui is the Bubble Tea installer front-end (M353 / GH #353). It walks
 // the operator through a deploy profile, an optional-module checklist with live
-// dependency resolution, and a confirm screen, then hands the selected module
-// set back to main, which execs install.sh with JABALI_MODULES=<keys>.
+// dependency resolution, a confirm screen, then runs install.sh with
+// JABALI_MODULES=<keys> and streams its output into a scrolling progress pane.
 package tui
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -21,8 +22,12 @@ const (
 	screenProfile
 	screenModules
 	screenConfirm
-	screenDone
+	screenInstalling
+	screenResult
 )
+
+// logTail is how many streamed lines the progress pane shows.
+const logTail = 16
 
 var (
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
@@ -30,6 +35,8 @@ var (
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	onStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	offStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
+	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
 )
 
 // Model is the installer state machine.
@@ -38,19 +45,38 @@ type Model struct {
 	cursor   int
 	profiles []modules.Profile
 	mods     []modules.Module
-	selected map[string]bool // optional-module key -> enabled
-	// Result flags read by main after the program exits.
+	selected map[string]bool
+
+	installSh string
+	dryRun    bool
+	events    chan tea.Msg
+	spinner   spinner.Model
+
+	logLines   []string
+	phase      string
+	installed  bool
+	installErr error
+
 	Confirmed bool
 	Aborted   bool
+	ExitCode  int
 }
 
-// New builds the initial model with the "Web host" profile pre-selected.
-func New() Model {
+// New builds the model. installSh is the path to install.sh; dryRun passes
+// --dry-run so a run previews the plan without changing the system.
+func New(installSh string, dryRun bool) Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
 	return Model{
-		screen:   screenWelcome,
-		profiles: modules.Profiles,
-		mods:     modules.Registry,
-		selected: map[string]bool{},
+		screen:    screenWelcome,
+		profiles:  modules.Profiles,
+		mods:      modules.Registry,
+		selected:  map[string]bool{},
+		installSh: installSh,
+		dryRun:    dryRun,
+		events:    make(chan tea.Msg, 256),
+		spinner:   sp,
 	}
 }
 
@@ -58,7 +84,7 @@ func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) SelectedKeys() []string {
 	var out []string
-	for _, mod := range m.mods { // registry order
+	for _, mod := range m.mods {
 		if m.selected[mod.Key] {
 			out = append(out, mod.Key)
 		}
@@ -67,14 +93,50 @@ func (m Model) SelectedKeys() []string {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
-	if !ok {
+	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case logLineMsg:
+		line := string(msg)
+		m.logLines = append(m.logLines, line)
+		if len(m.logLines) > 400 {
+			m.logLines = m.logLines[len(m.logLines)-400:]
+		}
+		if p, ok := phaseFromLine(line); ok {
+			m.phase = p
+		}
+		return m, waitForEvent(m.events)
+	case installDoneMsg:
+		m.installed = true
+		m.installErr = msg.err
+		if msg.err != nil {
+			m.ExitCode = 1
+		}
+		m.screen = screenResult
 		return m, nil
+	case tea.KeyMsg:
+		return m.handleKey(msg)
 	}
+	return m, nil
+}
+
+func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c":
 		m.Aborted = true
+		m.ExitCode = 130
 		return m, tea.Quit
+	case "q":
+		if m.screen != screenInstalling {
+			if m.screen == screenResult {
+				return m, tea.Quit
+			}
+			m.Aborted = true
+			m.ExitCode = 130
+			return m, tea.Quit
+		}
 	}
 	switch m.screen {
 	case screenWelcome:
@@ -128,10 +190,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch key.String() {
 		case "enter", "y":
 			m.Confirmed = true
-			m.screen = screenDone
-			return m, tea.Quit
+			m.screen = screenInstalling
+			env := []string{"JABALI_MODULES=" + strings.Join(m.SelectedKeys(), ",")}
+			return m, tea.Batch(m.spinner.Tick, startInstall(m.installSh, env, m.dryRun, m.events))
 		case "b", "backspace", "left":
 			m.screen = screenModules
+		}
+	case screenResult:
+		if key.String() == "enter" {
+			return m, tea.Quit
 		}
 	}
 	return m, nil
@@ -182,10 +249,51 @@ func (m Model) View() string {
 			b.WriteString(onStyle.Render("  + " + k + "\n"))
 		}
 		b.WriteString("\n" + helpStyle.Render("JABALI_MODULES=") + onStyle.Render(strings.Join(keys, ",")) + "\n")
+		if m.dryRun {
+			b.WriteString("\n" + helpStyle.Render("(dry run — will preview the plan, not install)\n"))
+		}
 		b.WriteString("\n" + helpStyle.Render("enter/y: install   b: back   q: quit"))
-	case screenDone:
-		b.WriteString(titleStyle.Render("Starting install…"))
+	case screenInstalling:
+		b.WriteString(fmt.Sprintf("%s %s\n", m.spinner.View(), titleStyle.Render("Installing…")))
+		if m.phase != "" {
+			b.WriteString(helpStyle.Render("current: ") + m.phase + "\n")
+		}
+		b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
+		b.WriteString(helpStyle.Render("streaming install.sh — please wait (ctrl+c aborts)"))
+	case screenResult:
+		if m.installErr != nil {
+			b.WriteString(errStyle.Render("Install failed"))
+			b.WriteString("\n\n" + m.installErr.Error() + "\n")
+			b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
+		} else {
+			b.WriteString(onStyle.Render("✓ Install complete"))
+			b.WriteString("\n\n" + helpStyle.Render("Log in at the panel URL printed above.") + "\n")
+		}
+		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
 	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+// tailLog returns the last logTail streamed lines, ANSI-stripped, for the box.
+func (m Model) tailLog() string {
+	lines := m.logLines
+	if len(lines) > logTail {
+		lines = lines[len(lines)-logTail:]
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = truncate(stripANSI(l), 76)
+	}
+	if len(out) == 0 {
+		return helpStyle.Render("(waiting for output…)")
+	}
+	return strings.Join(out, "\n")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }

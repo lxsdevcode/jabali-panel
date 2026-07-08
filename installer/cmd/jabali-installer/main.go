@@ -1,12 +1,11 @@
 // Command jabali-installer is the Bubble Tea front-end to install.sh (M353 /
-// GH #353, Option A). It collects a deploy profile + optional-module selection
-// in a TUI, then execs install.sh with JABALI_MODULES=<keys> so the proven bash
-// engine does the actual install.
+// GH #353, Option A). Interactively it collects a deploy profile + module
+// selection, then runs install.sh with JABALI_MODULES=<keys> and streams the
+// output into a progress pane. install.sh stays the engine.
 //
 // Non-interactive parity is mandatory: when JABALI_MODULES is already set, when
 // there's no TTY (CI / cloud-init), or when --unattended is passed, the TUI is
-// skipped and install.sh runs directly with the inherited environment. This
-// keeps every automated deploy working exactly as before.
+// skipped and install.sh runs directly with the inherited environment.
 package main
 
 import (
@@ -30,31 +29,29 @@ func main() {
 
 	if !interactive {
 		// Headless / preset / unattended: run install.sh directly with the
-		// current environment (JABALI_MODULES, if any, passes through).
-		runInstall(installSh, nil, dryRun)
+		// current environment (JABALI_MODULES passes through), inherited stdio.
+		runDirect(installSh, dryRun)
 		return
 	}
 
-	m := tui.New()
-	p := tea.NewProgram(m)
-	final, err := p.Run()
+	if installSh == "" {
+		fmt.Fprintln(os.Stderr, "install.sh not found (pass --install-sh <path> or run from the repo root)")
+		os.Exit(1)
+	}
+	final, err := tea.NewProgram(tui.New(installSh, dryRun)).Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "installer TUI error: %v\n", err)
 		os.Exit(1)
 	}
 	fm := final.(tui.Model)
-	if fm.Aborted || !fm.Confirmed {
+	if fm.Aborted {
 		fmt.Fprintln(os.Stderr, "install cancelled.")
-		os.Exit(130)
 	}
-	keys := fm.SelectedKeys()
-	runInstall(installSh, []string{"JABALI_MODULES=" + strings.Join(keys, ",")}, dryRun)
+	os.Exit(fm.ExitCode)
 }
 
-// runInstall execs install.sh with the current env plus extraEnv, streaming its
-// stdio straight through (Phase T1: inherited stdio; the scrolling progress
-// pane is Phase T2).
-func runInstall(installSh string, extraEnv []string, dryRun bool) {
+// runDirect execs install.sh with inherited stdio (non-interactive path).
+func runDirect(installSh string, dryRun bool) {
 	if installSh == "" {
 		fmt.Fprintln(os.Stderr, "install.sh not found (pass --install-sh <path> or run from the repo root)")
 		os.Exit(1)
@@ -64,10 +61,8 @@ func runInstall(installSh string, extraEnv []string, dryRun bool) {
 		args = append(args, "--dry-run")
 	}
 	cmd := exec.Command("bash", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), extraEnv...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Env = os.Environ()
 	if err := cmd.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			os.Exit(ee.ExitCode())
@@ -77,8 +72,6 @@ func runInstall(installSh string, extraEnv []string, dryRun bool) {
 	}
 }
 
-// findInstallSh resolves install.sh from --install-sh, $JABALI_INSTALL_SH, or
-// the current directory.
 func findInstallSh() string {
 	if v := flagValue("--install-sh"); v != "" {
 		return v
@@ -102,9 +95,10 @@ func hasFlag(f string) bool {
 }
 
 func flagValue(f string) string {
-	for i, a := range os.Args[1:] {
-		if a == f && i+1 < len(os.Args[1:]) {
-			return os.Args[1:][i+1]
+	rest := os.Args[1:]
+	for i, a := range rest {
+		if a == f && i+1 < len(rest) {
+			return rest[i+1]
 		}
 		if strings.HasPrefix(a, f+"=") {
 			return strings.TrimPrefix(a, f+"=")
