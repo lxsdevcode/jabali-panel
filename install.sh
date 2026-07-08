@@ -12760,7 +12760,7 @@ main() {
   # DNS is deliberately left alone at install time (see the block
   # following install_base_packages for rationale).
   configure_cgroups_v2
-  configure_disk_quota
+  run_if_module quota configure_disk_quota
   configure_tmp_tmpfs
   install_nginx
   install_php
@@ -12816,7 +12816,7 @@ main() {
   #   - cleanup_modsecurity removes the M26 ModSecurity stack on existing
   #     hosts that ran an earlier install (ADR-0055 superseded 2026-04-26).
   run_if_module security install_crowdsec
-  configure_crowdsec_mariadb
+  run_if_module security configure_crowdsec_mariadb
   run_if_module security install_crowdsec_appsec
   run_if_module security install_crowdsec_nginx_bouncer
   run_if_module security install_crowdsec_profiles
@@ -12938,9 +12938,10 @@ main() {
   # install_stalwart_apply (Stalwart ready to accept the domain-add
   # command the reconciler will fire).
   run_if_module dns install_panel_primary_domain
-  # Bulwark webmail. Depends on Stalwart being live (JMAP backend) so it
-  # runs after install_stalwart_apply.
-  install_bulwark
+  # Bulwark webmail. Part of the mail stack (JMAP client to Stalwart) — needs
+  # the Stalwart admin token + a live JMAP backend, so gate it on the mail
+  # module. Without mail there's no webmail to install.
+  run_if_module mail install_bulwark
   # M25: jabali-webmail user now exists; second pass over the socket group
   # picks it up. Idempotent for SERVICE_USER + www-data which were added
   # earlier (post clone_or_update_repo).
