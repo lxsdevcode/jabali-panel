@@ -13,12 +13,16 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
@@ -36,10 +40,14 @@ type AutomationConfig struct {
 	// (the M14 dispatcher already needs Redis on every install, so
 	// this is a no-cost share). Nil disables the SETNX gate — only
 	// for tests / non-prod.
-	Redis           *redis.Client
-	Domains         repository.DomainRepository
-	Users           repository.UserRepository
-	Applications    repository.ApplicationInstallRepository
+	Redis        *redis.Client
+	Domains      repository.DomainRepository
+	Users        repository.UserRepository
+	Applications repository.ApplicationInstallRepository
+	// Agent powers the read:status metrics endpoint (JAB-75) — reuses the
+	// M31 system.* collectors so a fleet monitor gets the same data the admin
+	// Server Status page shows. Nil → /status stays the bare healthy stub.
+	Agent agent.AgentInterface
 }
 
 func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
@@ -131,10 +139,95 @@ func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
 		})
 	}
 
-	g.GET("/status", middleware.RequireScope("read:status"), func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"healthy": true,
-			"time":    time.Now().UTC(),
+	// read:status — fleet-monitor metrics (JAB-75). Reuses the M31 agent
+	// collectors (system.info = host/load/mem/swap/disk, service_details =
+	// unit health). Cached a few seconds so frequent polling doesn't hammer
+	// the agent. Falls back to the bare healthy stub when no Agent is wired.
+	metrics := newAutomationMetrics(cfg.Agent)
+	g.GET("/status", middleware.RequireScope("read:status"), metrics.handle)
+}
+
+// automationMetrics caches the aggregated server metrics for a short TTL so a
+// fleet monitor polling every few seconds doesn't issue a fresh agent fan-out
+// per request. Concurrency-safe.
+type automationMetrics struct {
+	agent    agent.AgentInterface
+	mu       sync.Mutex
+	cached   gin.H
+	cachedAt time.Time
+	ttl      time.Duration
+}
+
+func newAutomationMetrics(a agent.AgentInterface) *automationMetrics {
+	return &automationMetrics{agent: a, ttl: 5 * time.Second}
+}
+
+func (m *automationMetrics) handle(c *gin.Context) {
+	// No agent wired → keep the original healthy stub (never fail closed).
+	if m.agent == nil {
+		c.JSON(http.StatusOK, gin.H{"healthy": true, "time": time.Now().UTC()})
+		return
+	}
+
+	m.mu.Lock()
+	if m.cached != nil && time.Since(m.cachedAt) < m.ttl {
+		out := m.cached
+		m.mu.Unlock()
+		c.JSON(http.StatusOK, out)
+		return
+	}
+	m.mu.Unlock()
+
+	ctx := c.Request.Context()
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(4)
+	var (
+		mu       sync.Mutex
+		info     json.RawMessage
+		services json.RawMessage
+		cpu      json.RawMessage
+		errs     = map[string]string{}
+	)
+	fetch := func(name, cmd string, dst *json.RawMessage) {
+		g.Go(func() error {
+			sub, cancel := context.WithTimeout(gctx, 8*time.Second)
+			defer cancel()
+			raw, err := m.agent.Call(sub, cmd, nil)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs[name] = err.Error()
+				return nil
+			}
+			*dst = raw
+			return nil
 		})
-	})
+	}
+	fetch("info", "system.info", &info)
+	fetch("services", "system.service_details", &services)
+	fetch("cpu", "system.cpu_usage", &cpu)
+	_ = g.Wait()
+
+	out := gin.H{
+		"healthy": len(errs) == 0,
+		"time":    time.Now().UTC(),
+		"version": Version,
+	}
+	if info != nil {
+		out["system"] = info
+	}
+	if services != nil {
+		out["services"] = services
+	}
+	if cpu != nil {
+		out["cpu"] = cpu
+	}
+	if len(errs) > 0 {
+		out["errors"] = errs
+	}
+
+	m.mu.Lock()
+	m.cached, m.cachedAt = out, time.Now()
+	m.mu.Unlock()
+	c.JSON(http.StatusOK, out)
 }
