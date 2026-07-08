@@ -62,6 +62,7 @@ type Model struct {
 	stepsDone int
 	stepsTot  int
 	creep     float64 // intra-phase progress (0..1), advanced by a timer, reset on each [i]
+	logHidden bool    // hide the streaming log box (toggle with \'l\')
 
 	logLines   []string
 	phase      string
@@ -345,6 +346,10 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "b", "backspace", "left":
 			m.screen = screenModules
 		}
+	case screenInstalling:
+		if key.String() == "l" {
+			m.logHidden = !m.logHidden
+		}
 	case screenResult:
 		if key.String() == "enter" {
 			return m, tea.Quit
@@ -440,8 +445,12 @@ func (m Model) View() string {
 		if m.phase != "" {
 			b.WriteString("\n" + helpStyle.Render("current: ") + m.phase + "\n")
 		}
-		b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
-		b.WriteString(helpStyle.Render("streaming install.sh — please wait (ctrl+c aborts)"))
+		if m.logHidden {
+			b.WriteString("\n" + helpStyle.Render("l: show log   ctrl+c: abort") + "\n")
+		} else {
+			b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
+			b.WriteString(helpStyle.Render("l: hide log   installing… please wait (ctrl+c aborts)"))
+		}
 	case screenResult:
 		if m.installErr != nil {
 			b.WriteString(errStyle.Render("Install failed"))

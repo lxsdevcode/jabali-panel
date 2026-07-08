@@ -354,7 +354,7 @@ run_if_module() {
 # JABALI_MODULES is set (a modular install); a plain install keeps the default-on
 # flags. Best-effort: a SQL failure warns but never aborts the install.
 seed_module_flags() {
-  [[ -z "${JABALI_MODULES:-}" ]] && return 0
+  [[ -z "${JABALI_MODULES+x}" ]] && return 0
   command -v mariadb >/dev/null 2>&1 || return 0
   local flag key sets=""
   # map: server_settings column -> JABALI_MODULES key
@@ -378,8 +378,10 @@ seed_module_flags() {
 # an operator verify the selection before committing to a real install.
 print_module_plan() {
   printf '\n=== Jabali install plan (dry run) ===\n'
-  if [[ -z "${JABALI_MODULES:-}" ]]; then
+  if [[ -z "${JABALI_MODULES+x}" ]]; then
     printf 'JABALI_MODULES: (unset) → ALL modules enabled (default install)\n'
+  elif [[ -z "${JABALI_MODULES}" ]]; then
+    printf 'JABALI_MODULES: (empty) → minimal — no optional modules\n'
   else
     printf 'JABALI_MODULES: %s\n' "${JABALI_MODULES}"
   fi
