@@ -44,7 +44,24 @@ var (
 	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
 	appStyle    = lipgloss.NewStyle().Padding(1, 2)
+	logoStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
+
+// jabaliLogo is the ASCII wordmark shown at the top of every screen (mirrors
+// install.sh print_banner so the TUI and the streamed log share one brand).
+const jabaliLogo = `  ▀██▀         ▀██              ▀██   ██
+   ██   ▄▄▄▄    ██ ▄▄▄   ▄▄▄▄    ██  ▄▄▄
+   ██  ▀▀ ▄██   ██▀  ██ ▀▀ ▄██   ██   ██
+   ██  ▄█▀ ██   ██    █ ▄█▀ ██   ██   ██
+██ ▄█▀  ▀█▄▄▀█▀  ▀█▄▄▄▀  ▀█▄▄▀█▀ ▄██▄ ▄██▄
+ ▀▀▀`
+
+// bannerView renders the logo + tagline, prepended to every screen.
+func bannerView() string {
+	return logoStyle.Render(jabaliLogo) + "\n" +
+		tagStyle.Render("  JABALI PANEL · Linux Web Hosting Control Panel") + "\n\n"
+}
 
 // Model is the installer state machine.
 type Model struct {
@@ -483,7 +500,7 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
 	}
-	return appStyle.Render(b.String())
+	return appStyle.Render(bannerView() + b.String())
 }
 
 // tailLog returns the last logTail streamed lines, ANSI-stripped, for the box.

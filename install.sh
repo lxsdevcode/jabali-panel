@@ -5984,7 +5984,7 @@ install_adminer() {
   # Upstream single-file Adminer build. Pin v4.8.1 for reproducibility.
   if [[ ! -f "${adminer_dir}/adminer.php" ]]; then
     _log "downloading adminer.php"
-    if ! curl -fsSL -o "${adminer_dir}/adminer.php" "${adminer_url}"; then
+    if ! curl -fsSL --retry 4 --retry-delay 2 --retry-connrefused -o "${adminer_dir}/adminer.php" "${adminer_url}"; then
       _err "failed to download adminer from ${adminer_url}"
       return 1
     fi
@@ -5995,9 +5995,12 @@ install_adminer() {
   # Adminer's plugin loader (separate from the main file).
   if [[ ! -f "${adminer_dir}/plugin.php" ]]; then
     _log "downloading Adminer plugin loader"
-    if ! curl -fsSL -o "${adminer_dir}/plugin.php" "${adminer_plugin_url}"; then
-      _err "failed to download adminer plugin loader"
-      return 1
+    if ! curl -fsSL --retry 4 --retry-delay 2 --retry-connrefused -o "${adminer_dir}/plugin.php" "${adminer_plugin_url}"; then
+      # Non-fatal: the plugin loader only enhances Adminer (jabali-sso plugin).
+      # A transient GitHub-raw hiccup shouldn't brick the whole install; the DB
+      # admin tool still works, and `jabali update` / repair can refetch it.
+      _warn "failed to download adminer plugin loader (non-fatal) — Adminer SSO plugin disabled until next update"
+      rm -f "${adminer_dir}/plugin.php"
     fi
   else
     _ok "adminer plugin loader already present"
