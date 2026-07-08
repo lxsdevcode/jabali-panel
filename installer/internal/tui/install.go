@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -86,4 +87,38 @@ func stripANSI(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// aptProgress parses apt's machine-readable progress lines (emitted when
+// install.sh runs the long apt step with -o APT::Status-Fd=1 under the TUI):
+//
+//	dlstatus:<id>:<pct>:<desc>   during download (pct 0..100)
+//	pmstatus:<pkg>:<pct>:<desc>  during unpack/configure (pct 0..100)
+//
+// Returns the intra-phase creep (0..1) — download mapped to the first half,
+// install to the second — and ok=true so the caller drives the bar with the
+// real percentage and hides the line from the log. Non-status lines → ok=false.
+func aptProgress(line string) (float64, bool) {
+	var half float64
+	switch {
+	case strings.HasPrefix(line, "dlstatus:"):
+		half = 0.0
+	case strings.HasPrefix(line, "pmstatus:"):
+		half = 0.5
+	default:
+		return 0, false
+	}
+	parts := strings.SplitN(line, ":", 4)
+	if len(parts) < 3 {
+		return 0, true // a status line, just no usable pct → hide it anyway
+	}
+	pct, err := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
+	if err != nil {
+		return 0, true
+	}
+	c := half + (pct/100.0)*0.5
+	if c > 0.98 {
+		c = 0.98
+	}
+	return c, true
 }

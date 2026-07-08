@@ -152,6 +152,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case logLineMsg:
 		line := string(msg)
+		// apt machine-progress lines drive the bar's intra-phase creep with the
+		// real download/install percentage; they're hidden from the log box.
+		if c, ok := aptProgress(line); ok {
+			if c > m.creep {
+				m.creep = c
+			}
+			return m, tea.Batch(waitForEvent(m.events), m.progress.SetPercent(m.overallPct()))
+		}
 		m.logLines = append(m.logLines, line)
 		if len(m.logLines) > 400 {
 			m.logLines = m.logLines[len(m.logLines)-400:]

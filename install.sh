@@ -321,13 +321,17 @@ _die()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"
 
 # is_module_enabled — M353 (GH #353) modular install. Returns 0 (enabled) when
 # the given optional-module key should be installed. JABALI_MODULES is a comma
-# list emitted by the TUI (installer/) or set for a headless install. When it is
-# UNSET or EMPTY, every module is enabled — preserving the current all-in
-# behaviour for existing automation, CI, and `curl … | bash` without the TUI.
-# Core modules (nginx, MariaDB, panel, Kratos) are never gated by this.
+# list emitted by the TUI (installer/) or set for a headless install.
+#   - UNSET entirely  → every module on (backward-compatible default: plain
+#     curl|bash, CI, cloud-init, jabali update).
+#   - SET but EMPTY   → the operator chose a minimal install (TUI "Minimal")
+#     → NO optional modules.
+# ${JABALI_MODULES+x} expands to "x" only when the var is set (even if empty),
+# so this distinguishes unset from set-but-empty. Core modules (nginx, MariaDB,
+# panel, Kratos) are never gated by this.
 is_module_enabled() {
   local key="$1"
-  [[ -z "${JABALI_MODULES:-}" ]] && return 0
+  [[ -z "${JABALI_MODULES+x}" ]] && return 0
   case ",${JABALI_MODULES}," in
     *",${key},"*) return 0 ;;
     *) return 1 ;;
@@ -1102,32 +1106,47 @@ POLICYEOF
   # One big install. Downstream functions (install_nginx, _install_php_version,
   # install_node, install_powerdns, setup_certbot) short-circuit on
   # `command -v` / package-present checks now that the packages land here.
-  _spin "apt install system packages (this is the long one)" \
-    apt-get install -y -qq --no-install-recommends \
-      git curl ca-certificates build-essential tar bzip2 unzip openssl gnupg sudo \
-      mariadb-server mariadb-client \
-      rsync acl \
-      systemd-resolved \
-      quota quotatool xfsprogs \
-      nginx \
-      certbot python3-certbot-nginx \
-      nodejs \
-      pdns-server pdns-backend-mysql pdns-recursor \
-      bind9-dnsutils \
-      ufw yq \
-      whois \
-      redis-server redis-tools \
-      dbus dbus-user-session \
-      bubblewrap debootstrap systemd-container \
-      yara \
-      ed inotify-tools \
-      logrotate \
-      acl \
-      unattended-upgrades \
-      restic zstd \
-      sshpass \
-      "${php_extensions[@]}" \
-      "${optional_pkgs[@]}"
+  local -a _base_pkgs=(
+    git curl ca-certificates build-essential tar bzip2 unzip openssl gnupg sudo
+    mariadb-server mariadb-client
+    rsync acl
+    systemd-resolved
+    quota quotatool xfsprogs
+    nginx
+    certbot python3-certbot-nginx
+    nodejs
+    pdns-server pdns-backend-mysql pdns-recursor
+    bind9-dnsutils
+    ufw yq
+    whois
+    redis-server redis-tools
+    dbus dbus-user-session
+    bubblewrap debootstrap systemd-container
+    yara
+    ed inotify-tools
+    logrotate
+    acl
+    unattended-upgrades
+    restic zstd
+    sshpass
+    "${php_extensions[@]}"
+    "${optional_pkgs[@]}"
+  )
+  if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+    # TUI install: emit apt's machine-readable progress (dlstatus/pmstatus lines)
+    # on stdout via APT::Status-Fd=1 so the installer can drive its progress bar
+    # with the real download/unpack percentage. The TUI parses + hides these
+    # lines. _spin would swallow all output into a temp file, so bypass it here.
+    _log "apt install system packages (this is the long one)…"
+    local _aptrc=0
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o APT::Status-Fd=1 \
+      --no-install-recommends "${_base_pkgs[@]}" || _aptrc=$?
+    [[ $_aptrc -eq 0 ]] || _die "apt install system packages FAILED (exit $_aptrc)"
+    _ok "apt install system packages (this is the long one)"
+  else
+    _spin "apt install system packages (this is the long one)" \
+      apt-get install -y -qq --no-install-recommends "${_base_pkgs[@]}"
+  fi
 
   # Undo the policy-rc.d trap regardless of exit path above (set -e would
   # have left the trap in place — restore is best-effort but ordered so
