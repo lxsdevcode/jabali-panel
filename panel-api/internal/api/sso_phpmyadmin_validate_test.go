@@ -366,3 +366,56 @@ func (m *mockSSOTokenRepoValidate) ConsumeByHash(ctx context.Context, hash strin
 func (m *mockSSOTokenRepoValidate) PurgeExpired(ctx context.Context) (int64, error) {
 	return 0, nil
 }
+
+// jab8Setup builds a valid-token harness; callers mutate the user/db before
+// running to exercise the JAB-8 validation-time authorization checks.
+func jab8Setup(t *testing.T, user *models.User, db *models.Database) (*ssoPhpMyAdminValidateHandler, string) {
+	t.Helper()
+	key := generateTestKeyValidate(t)
+	enc, err := key.Seal([]byte("secret123"))
+	require.NoError(t, err)
+	if user.MysqladminPasswordEnc == nil {
+		user.MysqladminPasswordEnc = enc
+	}
+	tokenBytes := []byte("test-token-32-bytes-abcdefghijk")
+	plaintextToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
+	hash := sha256.Sum256(tokenBytes)
+	hashStr := fmt.Sprintf("%x", hash[:])
+	cfg := SSOPhpMyAdminValidateHandlerConfig{
+		Databases: &mockDatabaseRepoValidate{databases: map[string]*models.Database{db.ID: db}},
+		Users:     &mockUserRepoValidate{users: map[string]*models.User{user.ID: user}},
+		Tokens: &mockSSOTokenRepoValidate{tokens: map[string]*models.PhpMyAdminSSOToken{
+			hashStr: {ID: "token1", UserID: "user1", DatabaseID: "db1", TokenHash: hashStr, ExpiresAt: time.Now().Add(5 * time.Minute)},
+		}},
+		SSOKey: &key,
+		Log:    slog.Default(),
+	}
+	return &ssoPhpMyAdminValidateHandler{cfg: cfg}, plaintextToken
+}
+
+func jab8Run(t *testing.T, h *ssoPhpMyAdminValidateHandler, token string) int {
+	t.Helper()
+	bodyJSON, _ := json.Marshal(ssoValidateRequest{Token: token})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/sso/phpmyadmin/validate", bytes.NewReader(bodyJSON))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.validate(c)
+	return w.Code
+}
+
+// JAB-8: a suspended user must not redeem an existing SSO token.
+func TestValidate_SuspendedUserRefused(t *testing.T) {
+	user := &models.User{ID: "user1", Username: ptrString("u"), MysqladminUsername: ptrString("u_my"), Suspended: true}
+	db := &models.Database{ID: "db1", Name: "testdb", UserID: "user1"}
+	h, tok := jab8Setup(t, user, db)
+	assert.Equal(t, http.StatusUnauthorized, jab8Run(t, h, tok))
+}
+
+// JAB-8: a database no longer owned by the token user must be refused.
+func TestValidate_OwnerMismatchRefused(t *testing.T) {
+	user := &models.User{ID: "user1", Username: ptrString("u"), MysqladminUsername: ptrString("u_my")}
+	db := &models.Database{ID: "db1", Name: "testdb", UserID: "someone-else"}
+	h, tok := jab8Setup(t, user, db)
+	assert.Equal(t, http.StatusUnauthorized, jab8Run(t, h, tok))
+}
