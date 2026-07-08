@@ -146,23 +146,16 @@ func (h *ssoPhpMyAdminValidateHandler) validate(c *gin.Context) {
 		return
 	}
 
-	if user.MysqladminUsername == nil || user.MysqladminPasswordEnc == nil {
-		h.cfg.Log.WarnContext(ctx, "user missing shadow credentials")
-		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized")
-		c.JSON(http.StatusInternalServerError, ssoErrorResponse{Error: "internal"})
+	// JAB-8: re-check current panel state at validation time, BEFORE decrypting
+	// any shadow credentials. A token minted just before suspension must not be
+	// redeemable, and the database must still belong to the token's user.
+	if user.Suspended {
+		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized:user_suspended")
+		c.JSON(http.StatusUnauthorized, ssoErrorResponse{Error: "unauthorized"})
 		return
 	}
 
-	// Decrypt password
-	plaintextBytes, err := h.cfg.SSOKey.Open(user.MysqladminPasswordEnc)
-	if err != nil {
-		h.cfg.Log.ErrorContext(ctx, "decrypt password failed", "err", err)
-		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized")
-		c.JSON(http.StatusInternalServerError, ssoErrorResponse{Error: "internal"})
-		return
-	}
-
-	// Load database for the db name
+	// Load database first so ownership is verified before any decryption.
 	db, err := h.cfg.Databases.FindByID(ctx, token.DatabaseID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -171,6 +164,27 @@ func (h *ssoPhpMyAdminValidateHandler) validate(c *gin.Context) {
 			return
 		}
 		h.cfg.Log.ErrorContext(ctx, "find database failed", "err", err)
+		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized")
+		c.JSON(http.StatusInternalServerError, ssoErrorResponse{Error: "internal"})
+		return
+	}
+	if db.UserID != token.UserID {
+		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized:owner_mismatch_at_validate")
+		c.JSON(http.StatusUnauthorized, ssoErrorResponse{Error: "unauthorized"})
+		return
+	}
+
+	if user.MysqladminUsername == nil || user.MysqladminPasswordEnc == nil {
+		h.cfg.Log.WarnContext(ctx, "user missing shadow credentials")
+		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized")
+		c.JSON(http.StatusInternalServerError, ssoErrorResponse{Error: "internal"})
+		return
+	}
+
+	// Decrypt password (only after suspended + ownership checks pass).
+	plaintextBytes, err := h.cfg.SSOKey.Open(user.MysqladminPasswordEnc)
+	if err != nil {
+		h.cfg.Log.ErrorContext(ctx, "decrypt password failed", "err", err)
 		h.auditLog(ctx, token.UserID, token.DatabaseID, hashPrefix, "unauthorized")
 		c.JSON(http.StatusInternalServerError, ssoErrorResponse{Error: "internal"})
 		return

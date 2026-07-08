@@ -123,6 +123,14 @@ func (h *ssoAdminerValidateHandler) validate(c *gin.Context) {
 		return
 	}
 
+	// JAB-8: re-check current panel state at validation time (not just at mint).
+	// A suspended user must not redeem a token minted just before suspension.
+	if user.Suspended {
+		h.audit(ctx, token.UserID, token.DatabaseID, token.Engine, hashPrefix, "unauthorized:user_suspended")
+		c.JSON(http.StatusUnauthorized, ssoErrorResponse{Error: "unauthorized"})
+		return
+	}
+
 	db, err := h.cfg.Databases.FindByID(ctx, token.DatabaseID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -131,6 +139,15 @@ func (h *ssoAdminerValidateHandler) validate(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ssoErrorResponse{Error: "internal"})
+		return
+	}
+
+	// JAB-8: the DB must still belong to the token's user at validation time
+	// (reassigned/recreated rows must not leak the new owner's credentials).
+	// Checked before any shadow-credential decryption.
+	if db.UserID != token.UserID {
+		h.audit(ctx, token.UserID, token.DatabaseID, token.Engine, hashPrefix, "unauthorized:owner_mismatch_at_validate")
+		c.JSON(http.StatusUnauthorized, ssoErrorResponse{Error: "unauthorized"})
 		return
 	}
 

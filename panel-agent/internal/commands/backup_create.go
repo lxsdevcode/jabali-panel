@@ -54,13 +54,13 @@ func (s *jobSlot) release(kind, userID, repoURL string) {
 }
 
 type backupCreateParams struct {
-	JobID      string   `json:"job_id"`
-	UserID     string   `json:"user_id"`
-	Username   string   `json:"username"`
-	Email      string   `json:"email,omitempty"`
-	IsAdmin    bool     `json:"is_admin"`
-	Databases  []string `json:"databases,omitempty"`
-	Mailboxes  []string `json:"mailboxes,omitempty"`
+	JobID     string   `json:"job_id"`
+	UserID    string   `json:"user_id"`
+	Username  string   `json:"username"`
+	Email     string   `json:"email,omitempty"`
+	IsAdmin   bool     `json:"is_admin"`
+	Databases []string `json:"databases,omitempty"`
+	Mailboxes []string `json:"mailboxes,omitempty"`
 	// Content selects which stages run (GH #294): "" / "full" = home + db
 	// + mail; "files" = home only; "database" = db only (home excluded);
 	// "folders" = a subset of home (see Folders). db/mail are additionally
@@ -82,8 +82,8 @@ type backupCreateParams struct {
 	// path, sftp:..., s3:..., etc.). Empty falls back to the legacy
 	// local repo at /var/lib/jabali-backups/repo for back-compat with
 	// pre-M30.2 callers.
-	RepoURL string `json:"repo_url,omitempty"`
-	PasswordFile   string   `json:"password_file,omitempty"`
+	RepoURL      string `json:"repo_url,omitempty"`
+	PasswordFile string `json:"password_file,omitempty"`
 	// CredentialsRef is the absolute path to the 0600 root:root env
 	// file holding backend credentials (AWS_*, B2_*, SSHPASS, …).
 	// Loaded by the agent and merged into the restic process env.
@@ -332,23 +332,26 @@ func runDatabaseStage(ctx context.Context, req backupCreateParams) []backup.Mani
 // Kratos DB connection (would need a second GORM dialect + creds).
 // No-op when meta is nil or the user is admin-only / never linked to
 // a Kratos identity.
-func enrichKratos(ctx context.Context, meta *backup.AccountMetadata) {
+func enrichKratos(ctx context.Context, meta *backup.AccountMetadata) error {
 	if meta == nil {
-		return
+		return nil
 	}
 	email := meta.User.Email
 	if email == "" {
-		return
+		return nil
 	}
 
-	// Use Kratos export API instead of manual database queries
-
-	kratosClient := kratosclient.NewClient("unix:///run/jabali-kratos/admin.sock", "unix:///run/jabali-kratos/public.sock")
+	// JAB-6: NewClient(publicURL, adminURL) — public socket FIRST, admin SECOND.
+	// This was reversed, so ExportIdentities (which hits adminURL) was sent to the
+	// public socket, always failed, and the credential export was silently dropped
+	// from the backup — a disaster-recovery footgun. Order fixed + failures are now
+	// surfaced as a stage warning instead of a silent skip.
+	kratosClient := kratosclient.NewClient("unix:///run/jabali-kratos/public.sock", "unix:///run/jabali-kratos/admin.sock")
 
 	// Export all identities from Kratos
 	exports, err := kratosClient.ExportIdentities(ctx)
 	if err != nil {
-		return // Silently skip if export fails
+		return fmt.Errorf("kratos identity export failed — backup omits login credentials for %s: %w", email, err)
 	}
 
 	// Find the identity matching this user's email
@@ -364,15 +367,18 @@ func enrichKratos(ctx context.Context, meta *backup.AccountMetadata) {
 			// Found matching identity, store the raw exported data
 			exportedJSON, err := json.Marshal(exported)
 			if err != nil {
-				return
+				return fmt.Errorf("kratos identity marshal failed for %s: %w", email, err)
 			}
 
 			meta.Kratos = &backup.MetadataKratos{
 				ExportedIdentity: string(exportedJSON),
 			}
-			return
+			return nil
 		}
 	}
+	// No matching identity — the user may legitimately have no Kratos login
+	// (e.g. a system/service account), so this is not an error.
+	return nil
 }
 
 // runMetadataStage writes the panel-side bundle (DB users, app
@@ -389,7 +395,11 @@ func runMetadataStage(ctx context.Context, req backupCreateParams) backup.Manife
 	// Agent-side enrichment: pull Kratos identity + credentials by the
 	// user's email so the meta bundle carries everything panel-api
 	// can't reach (jabali_kratos isn't on panel-api's DSN).
-	enrichKratos(ctx, req.Metadata)
+	if kerr := enrichKratos(ctx, req.Metadata); kerr != nil {
+		// Partial backup: content still written, but flag the missing credentials
+		// so the operator sees it instead of a silently-incomplete "success".
+		st.Warnings = append(st.Warnings, kerr.Error())
+	}
 	body, err := json.Marshal(req.Metadata)
 	if err != nil {
 		st.Status = backup.StageStatusFailed
