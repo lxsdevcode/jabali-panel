@@ -384,6 +384,10 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Users:        deps.Users,
 				Applications: deps.WordPressInstalls,
 				Agent:        deps.Agent, // JAB-75: powers read:status metrics
+				// JAB-77: read:mail mail-stack inventory.
+				Mailboxes:  deps.Mailboxes,
+				MailGroups: deps.MailGroups,
+				Forwarders: deps.Forwarders,
 			})
 		}
 
