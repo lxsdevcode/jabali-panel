@@ -69,7 +69,7 @@ jabali admin rebuild-kratos [flags]
 
 - `--dry-run` — List target users and exit without writing
 - `--expires-in` — Kratos recovery-code TTL (e.g. 1h, 24h) — operators typically need ≥24h to distribute (default `24h`)
-- `--output` — CSV file to emit (email, new kratos_identity_id, recovery_link, status) (default `/tmp/jabali-recovery-tokens.csv`)
+- `--output` — CSV file to emit temp passwords (default: /var/lib/jabali-panel/recovery/, root-only). Contains PLAINTEXT temporary passwords — delete after distribution.
 - `--yes` — Skip interactive confirmation prompt
 
 #### `jabali admin relabel-identifiers`
