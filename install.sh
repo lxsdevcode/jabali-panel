@@ -803,8 +803,14 @@ prompt_server_settings() {
   # controlling terminal). So we don't pre-test — we try the exec
   # directly inside an `if`, which neutralises errexit and lets us
   # fall through to the stdin-TTY branch on failure.
+  # JABALI_NONINTERACTIVE=1 (set by the TUI installer, which owns the terminal
+  # and streams our output) forces the defaults/env path so we never open
+  # /dev/tty — a raw read there would block behind the TUI's screen. All values
+  # come from env (JABALI_HOSTNAME/NS1/NS2) or auto-detected defaults.
   local input_fd
-  if exec 3</dev/tty 2>/dev/null; then
+  if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+    input_fd=""
+  elif exec 3</dev/tty 2>/dev/null; then
     input_fd=3
   elif [[ -t 0 ]]; then
     input_fd=0
@@ -5010,6 +5016,14 @@ prompt_admin_account() {
   local _def_host _def_email _ans _email_re='^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
   _def_host="${JABALI_HOSTNAME:-$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo localhost)}"
   _def_email="admin@${_def_host}"
+  # Non-interactive (TUI installer owns the terminal): use the default email
+  # instead of opening /dev/tty, which would block behind the TUI screen.
+  if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+    JABALI_ADMIN_EMAIL="$_def_email"
+    export JABALI_ADMIN_EMAIL
+    _log "panel admin login email set to $JABALI_ADMIN_EMAIL (non-interactive default)"
+    return 0
+  fi
   if exec 3</dev/tty 2>/dev/null; then
     {
       printf '\n'
@@ -5061,7 +5075,9 @@ seed_admin_env() {
   admin_email="${JABALI_BOOTSTRAP_ADMIN_EMAIL:-${JABALI_ADMIN_EMAIL:-}}"
   if [[ -z "$admin_email" ]]; then
     local _def_email="admin@${_def_host}"
-    if exec 3</dev/tty 2>/dev/null; then
+    if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+      admin_email="$_def_email"
+    elif exec 3</dev/tty 2>/dev/null; then
       local _ans
       # Unambiguous wording + a visually separated banner so this is
       # never mistaken for the SSL/ACME contact email that the cert

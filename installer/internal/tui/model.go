@@ -330,7 +330,10 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Confirmed = true
 			m.screen = screenInstalling
 			m.stepsTot = estimateSteps(m.SelectedKeys())
-			env := append(configEnv(m.fields, m.selected["dns"]), "JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","))
+			env := append(configEnv(m.fields, m.selected["dns"]),
+				"JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","),
+				"JABALI_NONINTERACTIVE=1") // TUI owns the terminal; install.sh must not open /dev/tty
+
 			return m, tea.Batch(m.spinner.Tick, startInstall(m.installSh, env, m.dryRun, m.events))
 		case "b", "backspace", "left":
 			m.screen = screenModules
