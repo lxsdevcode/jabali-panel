@@ -59,9 +59,11 @@ type Model struct {
 	events    chan tea.Msg
 	spinner   spinner.Model
 	progress  progress.Model
-	stepsDone int
-	stepsTot  int
-	creep     float64 // intra-phase progress (0..1), advanced by a timer, reset on each [i]
+	stepsDone float64 // completed phase weight (apt phase counts as aptWeight)
+	stepsTot  float64 // total phase weight (estimate + aptWeight)
+	creep     float64 // intra-phase progress (0..1); apt uses parsed %, others a timer
+	inApt     bool    // current phase is the long "apt install system packages" step
+	started   bool    // at least one phase marker seen (so we know a prev phase to close)
 	logHidden bool    // hide the streaming log box (toggle with \'l\')
 
 	logLines   []string
@@ -96,6 +98,7 @@ func New(installSh string, dryRun bool) Model {
 		dryRun:    dryRun,
 		events:    make(chan tea.Msg, 256),
 		spinner:   sp,
+		logHidden: true, // log hidden by default; press 'l' to reveal
 		fields:    newConfigFields(defaultHostname()),
 	}
 }
@@ -165,8 +168,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logLines = m.logLines[len(m.logLines)-400:]
 		}
 		if p, ok := phaseFromLine(line); ok {
+			// Close the previous phase, adding its weight (the long apt phase is
+			// worth aptWeight; everything else is worth 1).
+			if m.started {
+				w := 1.0
+				if m.inApt {
+					w = aptWeight
+				}
+				m.stepsDone += w
+			}
+			m.started = true
 			m.phase = p
-			m.stepsDone++
+			m.inApt = strings.Contains(p, "apt install system packages")
 			m.creep = 0
 		}
 		return m, tea.Batch(waitForEvent(m.events), m.progress.SetPercent(m.overallPct()))
@@ -345,7 +358,7 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter", "y":
 			m.Confirmed = true
 			m.screen = screenInstalling
-			m.stepsTot = estimateSteps(m.SelectedKeys())
+			m.stepsTot = float64(estimateSteps(m.SelectedKeys())) + aptWeight
 			env := append(configEnv(m.fields, m.selected["dns"]),
 				"JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","),
 				"JABALI_NONINTERACTIVE=1") // TUI owns the terminal; install.sh must not open /dev/tty
@@ -539,6 +552,12 @@ func phpChips(f configField, focused bool) string {
 	return strings.Join(parts, " ")
 }
 
+// aptWeight is how many phase-units the long "apt install system packages" step
+// is worth. It takes minutes (vs seconds for other phases) and is driven by
+// apt's real dl/pm percentage, so it must own a large slice of the bar or it
+// looks frozen. ~45 puts it around a third of a full install.
+const aptWeight = 45.0
+
 // tickMsg drives the intra-phase progress creep on a timer.
 type tickMsg struct{}
 
@@ -553,11 +572,15 @@ func (m Model) overallPct() float64 {
 	if m.stepsTot <= 0 {
 		return 0
 	}
-	c := m.creep
-	if c > 0.9 {
-		c = 0.9
+	w := 1.0
+	if m.inApt {
+		w = aptWeight
 	}
-	pct := (float64(m.stepsDone) + c) / float64(m.stepsTot)
+	c := m.creep
+	if c > 1.0 {
+		c = 1.0
+	}
+	pct := (m.stepsDone + c*w) / m.stepsTot
 	if pct > 0.97 {
 		pct = 0.97
 	}
