@@ -19,6 +19,21 @@ func TestValidateConfig(t *testing.T) {
 	}
 }
 
+func TestPHPSelectDefault(t *testing.T) {
+	f := newConfigFields("h.example.com")
+	f[1].input.SetValue("a@b.com")
+	env := configEnv(f, false)
+	var got string
+	for _, e := range env {
+		if len(e) >= 20 && e[:20] == "JABALI_PHP_VERSIONS=" {
+			got = e[20:]
+		}
+	}
+	if got != "8.4" {
+		t.Errorf("default PHP env = %q, want 8.4", got)
+	}
+}
+
 func TestConfigEnv_DNSGating(t *testing.T) {
 	f := newConfigFields("h.example.com")
 	f[1].input.SetValue("a@b.com")

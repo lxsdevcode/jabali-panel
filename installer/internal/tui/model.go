@@ -159,6 +159,26 @@ func (m Model) handleConfigKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			pos = i
 		}
 	}
+	// PHP multi-select field: left/right move the version cursor, space toggles.
+	if m.fields[m.focus].phpSelect {
+		switch key.String() {
+		case "left", "h":
+			if m.fields[m.focus].phpCursor > 0 {
+				m.fields[m.focus].phpCursor--
+			}
+			return m, nil
+		case "right", "l":
+			if m.fields[m.focus].phpCursor < len(m.fields[m.focus].phpVers)-1 {
+				m.fields[m.focus].phpCursor++
+			}
+			return m, nil
+		case " ", "space", "x":
+			f := &m.fields[m.focus]
+			v := f.phpVers[f.phpCursor]
+			f.phpChecked[v] = !f.phpChecked[v]
+			return m, nil
+		}
+	}
 	switch key.String() {
 	case "tab", "down":
 		pos = (pos + 1) % len(vis)
@@ -181,6 +201,13 @@ func (m Model) handleConfigKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	default:
 		cmd := updateFocusedField(m.fields, m.focus, key)
+		if m.fields[m.focus].env == "JABALI_HOSTNAME" {
+			// Hostname edited → refresh the untouched derived fields.
+			applyDerived(m.fields, m.fields[m.focus].input.Value())
+		} else if m.fields[m.focus].derive != nil {
+			// Operator typed into a derivable field → stop auto-deriving it.
+			m.fields[m.focus].touched = true
+		}
 		return m, cmd
 	}
 }
@@ -319,12 +346,16 @@ func (m Model) View() string {
 			if f.required {
 				req = helpStyle.Render(" *")
 			}
-			b.WriteString(fmt.Sprintf("%s%s%s\n    %s\n", cur, f.label, req, f.input.View()))
+			if f.phpSelect {
+				b.WriteString(fmt.Sprintf("%s%s\n    %s\n", cur, f.label, phpChips(f, i == m.focus)))
+			} else {
+				b.WriteString(fmt.Sprintf("%s%s%s\n    %s\n", cur, f.label, req, f.input.View()))
+			}
 		}
 		if m.configErr != "" {
 			b.WriteString("\n" + errStyle.Render(m.configErr) + "\n")
 		}
-		b.WriteString("\n" + helpStyle.Render("tab/↑↓: move   type: edit   enter: continue   esc: back"))
+		b.WriteString("\n" + helpStyle.Render("tab/↑↓: move fields   ←→+space: toggle PHP   enter: continue   esc: back"))
 	case screenConfirm:
 		b.WriteString(titleStyle.Render("Confirm"))
 		b.WriteString("\n\nCore: web (nginx + PHP-FPM), database (MariaDB), panel + auth\n\nOptional modules to install:\n")
@@ -392,4 +423,26 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// phpChips renders the PHP version multi-select as [x]/[ ] chips, highlighting
+// the cursor position when the field is focused.
+func phpChips(f configField, focused bool) string {
+	parts := make([]string, len(f.phpVers))
+	for i, v := range f.phpVers {
+		box := "[ ]"
+		st := offStyle
+		if f.phpChecked[v] {
+			box = "[x]"
+			st = onStyle
+		}
+		chip := st.Render(box + " " + v)
+		if focused && i == f.phpCursor {
+			chip = cursorStyle.Render("‹") + chip + cursorStyle.Render("›")
+		} else {
+			chip = " " + chip + " "
+		}
+		parts[i] = chip
+	}
+	return strings.Join(parts, " ")
 }
