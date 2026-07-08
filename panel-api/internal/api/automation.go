@@ -48,6 +48,11 @@ type AutomationConfig struct {
 	// M31 system.* collectors so a fleet monitor gets the same data the admin
 	// Server Status page shows. Nil → /status stays the bare healthy stub.
 	Agent agent.AgentInterface
+	// Mail-stack read repos power the read:mail endpoints (JAB-77). Nil → those
+	// routes aren't mounted.
+	Mailboxes  repository.MailboxRepository
+	MailGroups repository.MailGroupRepository
+	Forwarders repository.EmailForwarderRepository
 }
 
 func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
@@ -145,6 +150,87 @@ func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
 	// the agent. Falls back to the bare healthy stub when no Agent is wired.
 	metrics := newAutomationMetrics(cfg.Agent)
 	g.GET("/status", middleware.RequireScope("read:status"), metrics.handle)
+
+	// read:mail — mail-stack inventory for a fleet manager (JAB-77). Thin,
+	// secrets-free: never password hashes / SSO tokens. Reuses the same
+	// server-wide repos the admin pages use.
+	if cfg.Mailboxes != nil {
+		mg := g.Group("/mail", middleware.RequireScope("read:mail"))
+
+		mg.GET("/mailboxes", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			defer cancel()
+			rows, err := cfg.Mailboxes.ListAllWithDomain(ctx)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+				return
+			}
+			out := make([]map[string]any, 0, len(rows))
+			for _, m := range rows {
+				out = append(out, map[string]any{
+					"email":            m.EmailCached,
+					"domain":           m.DomainName,
+					"owner":            m.UserUsername,
+					"quota_bytes":      m.QuotaBytes,
+					"last_usage_bytes": m.LastUsageBytes,
+					"disabled":         m.IsDisabled,
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
+		})
+
+		mg.GET("/domains", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			defer cancel()
+			rows, _, err := cfg.Domains.List(ctx, repository.ListOptions{Limit: 500})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+				return
+			}
+			out := make([]map[string]any, 0)
+			for _, d := range rows {
+				if !d.EmailEnabled {
+					continue
+				}
+				out = append(out, map[string]any{"id": d.ID, "name": d.Name, "user_id": d.UserID})
+			}
+			c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
+		})
+
+		mg.GET("/summary", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			defer cancel()
+			mailboxes, _ := cfg.Mailboxes.ListAllWithDomain(ctx)
+			mailDomains := 0
+			if cfg.Domains != nil {
+				if doms, _, err := cfg.Domains.List(ctx, repository.ListOptions{Limit: 500}); err == nil {
+					for _, d := range doms {
+						if d.EmailEnabled {
+							mailDomains++
+						}
+					}
+				}
+			}
+			groups := 0
+			if cfg.MailGroups != nil {
+				if gr, err := cfg.MailGroups.ListAllWithDomain(ctx); err == nil {
+					groups = len(gr)
+				}
+			}
+			forwarders := 0
+			if cfg.Forwarders != nil {
+				if _, n, err := cfg.Forwarders.ListAll(ctx, repository.ListOptions{Limit: 1}); err == nil {
+					forwarders = int(n)
+				}
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"mail_domains": mailDomains,
+				"mailboxes":    len(mailboxes),
+				"forwarders":   forwarders,
+				"mail_groups":  groups,
+			})
+		})
+	}
 }
 
 // automationMetrics caches the aggregated server metrics for a short TTL so a

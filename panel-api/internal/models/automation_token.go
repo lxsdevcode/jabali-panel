@@ -13,15 +13,15 @@ import (
 // HMAC verify middleware on every request and never leaves the
 // process. Plaintext secret is returned once at mint time.
 type AutomationToken struct {
-	ID          string         `gorm:"column:id;primaryKey;type:char(26)" json:"id"`
-	Name        string         `gorm:"column:name;type:varchar(100);not null;uniqueIndex:uq_automation_tokens_name" json:"name"`
-	Scopes      AutomationScopes `gorm:"column:scopes_json;type:json;not null" json:"scopes"`
-	SecretEnc   []byte         `gorm:"column:secret_enc;type:varbinary(255);not null" json:"-"`
-	CreatedBy   *string        `gorm:"column:created_by;type:char(26)" json:"created_by,omitempty"`
-	CreatedAt   time.Time      `gorm:"column:created_at;type:datetime(6);not null" json:"created_at"`
-	LastUsedAt  *time.Time     `gorm:"column:last_used_at;type:datetime(6)" json:"last_used_at,omitempty"`
-	LastUsedIP  *string        `gorm:"column:last_used_ip;type:varchar(45)" json:"last_used_ip,omitempty"`
-	RevokedAt   *time.Time     `gorm:"column:revoked_at;type:datetime(6)" json:"revoked_at,omitempty"`
+	ID         string           `gorm:"column:id;primaryKey;type:char(26)" json:"id"`
+	Name       string           `gorm:"column:name;type:varchar(100);not null;uniqueIndex:uq_automation_tokens_name" json:"name"`
+	Scopes     AutomationScopes `gorm:"column:scopes_json;type:json;not null" json:"scopes"`
+	SecretEnc  []byte           `gorm:"column:secret_enc;type:varbinary(255);not null" json:"-"`
+	CreatedBy  *string          `gorm:"column:created_by;type:char(26)" json:"created_by,omitempty"`
+	CreatedAt  time.Time        `gorm:"column:created_at;type:datetime(6);not null" json:"created_at"`
+	LastUsedAt *time.Time       `gorm:"column:last_used_at;type:datetime(6)" json:"last_used_at,omitempty"`
+	LastUsedIP *string          `gorm:"column:last_used_ip;type:varchar(45)" json:"last_used_ip,omitempty"`
+	RevokedAt  *time.Time       `gorm:"column:revoked_at;type:datetime(6)" json:"revoked_at,omitempty"`
 }
 
 func (AutomationToken) TableName() string { return "automation_tokens" }
@@ -91,6 +91,7 @@ var AllowedAutomationScopes = []string{
 	"read:users",
 	"read:applications",
 	"read:status",
+	"read:mail",
 }
 
 // IsAllowedAutomationScope reports whether s is a recognised automation scope.
