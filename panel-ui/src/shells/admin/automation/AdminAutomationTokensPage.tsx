@@ -160,10 +160,11 @@ export const AdminAutomationTokensPage = () => {
           />
           <Table.Column<Token>
             title="Scopes"
+            width={260}
             render={(_, r) => (
-              <Space wrap size={4}>
+              <Space wrap size={4} style={{ maxWidth: 260 }}>
                 {r.scopes.map((s) => (
-                  <Tag key={s} color={s === "read:*" ? "purple" : "blue"}>
+                  <Tag key={s} color={s === "read:*" ? "purple" : "blue"} style={{ marginInlineEnd: 0 }}>
                     {s}
                   </Tag>
                 ))}
