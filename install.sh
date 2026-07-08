@@ -12785,7 +12785,7 @@ main() {
   # the Databases tab; panel-api dispatches db.postgres.install which
   # sources install.sh and runs install_postgres on demand.
   run_if_module dns install_powerdns
-  bootstrap_pdns_self_zone
+  run_if_module dns bootstrap_pdns_self_zone
   # M6.3: recursor owns loopback :53 and forwards panel-authoritative zones
   # into pdns-server at :5300. Must run AFTER bootstrap_pdns_self_zone (the
   # self-zone has to exist in pdns before the recursor's post-install probe
@@ -12926,7 +12926,7 @@ main() {
   # exists — FK-asserted inside install_panel_primary_domain) AND after
   # install_stalwart_apply (Stalwart ready to accept the domain-add
   # command the reconciler will fire).
-  install_panel_primary_domain
+  run_if_module dns install_panel_primary_domain
   # Bulwark webmail. Depends on Stalwart being live (JMAP backend) so it
   # runs after install_stalwart_apply.
   install_bulwark
