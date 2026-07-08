@@ -7,6 +7,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -92,11 +93,29 @@ func New(installSh string, dryRun bool) Model {
 		dryRun:    dryRun,
 		events:    make(chan tea.Msg, 256),
 		spinner:   sp,
-		fields:    newConfigFields(os.Getenv("JABALI_HOSTNAME")),
+		fields:    newConfigFields(defaultHostname()),
 	}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
+
+// defaultHostname pre-fills the hostname field: JABALI_HOSTNAME if set, else the
+// machine's FQDN (hostname -f), else the short hostname. The operator can still
+// edit it; admin/NS fields derive from whatever ends up here.
+func defaultHostname() string {
+	if v := strings.TrimSpace(os.Getenv("JABALI_HOSTNAME")); v != "" {
+		return v
+	}
+	if out, err := exec.Command("hostname", "-f").Output(); err == nil {
+		if h := strings.TrimSpace(string(out)); h != "" && h != "localhost" {
+			return h
+		}
+	}
+	if h, err := os.Hostname(); err == nil && h != "" && h != "localhost" {
+		return h
+	}
+	return ""
+}
 
 func (m Model) SelectedKeys() []string {
 	var out []string
