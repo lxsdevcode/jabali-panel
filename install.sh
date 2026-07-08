@@ -175,6 +175,9 @@ INSTALL FLAGS (all optional, combinable)
   -y, --yes            Assume "yes" for prompts (non-interactive).
 
 UNINSTALL FLAGS
+  --dry-run            Print the module install plan (which optional modules
+                       would install vs skip for JABALI_MODULES) and exit
+                       without changing anything.
   --uninstall          Remove Jabali (see above). Confirms unless --yes.
   --purge-packages     With --uninstall: also apt-purge the OS packages
                        Jabali pulled in (nginx, mariadb, crowdsec, php...).
@@ -196,6 +199,7 @@ _cli_hostname=""
 _cli_token=""
 _cli_debug=""
 _cli_uninstall=""
+_cli_dry_run=""
 _cli_yes=""
 _cli_purge_packages=""
 _positional=()
@@ -209,6 +213,7 @@ while [[ $# -gt 0 ]]; do
     --uninstall)  _cli_uninstall=1; shift ;;
     --purge-packages) _cli_purge_packages=1; shift ;;
     --yes|-y)     _cli_yes=1; shift ;;
+    --dry-run)    _cli_dry_run=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     --)           shift; while [[ $# -gt 0 ]]; do _positional+=("$1"); shift; done ;;
     --*)          printf 'install.sh: unknown flag: %s\n' "$1" >&2; exit 64 ;;
@@ -365,6 +370,43 @@ seed_module_flags() {
   else
     _warn "could not seed module flags (server_settings) — set them in Server Settings → Modules"
   fi
+}
+
+# print_module_plan — dry-run output (--dry-run). Shows exactly which optional
+# modules would be installed vs skipped for the current JABALI_MODULES, and the
+# server_settings flags that would be seeded — WITHOUT touching the system. Lets
+# an operator verify the selection before committing to a real install.
+print_module_plan() {
+  printf '\n=== Jabali install plan (dry run) ===\n'
+  if [[ -z "${JABALI_MODULES:-}" ]]; then
+    printf 'JABALI_MODULES: (unset) → ALL modules enabled (default install)\n'
+  else
+    printf 'JABALI_MODULES: %s\n' "${JABALI_MODULES}"
+  fi
+  printf '\nCore (always installed): nginx + PHP-FPM, MariaDB, panel-api, agent, Kratos\n'
+  printf '\nOptional modules:\n'
+  local key label
+  for pair in "dns:PowerDNS (DNS server)" \
+              "mail:Stalwart + Bulwark (mail)" \
+              "security:CrowdSec + malware/ClamAV + AppArmor" \
+              "python_apps:Python app runtime" \
+              "quota:Filesystem quota" \
+              "api:REST API (API keys)"; do
+    key="${pair%%:*}"; label="${pair#*:}"
+    if is_module_enabled "$key"; then
+      printf '  [x] %-10s %s\n' "$key" "$label"
+    else
+      printf '  [ ] %-10s %s (skipped)\n' "$key" "$label"
+    fi
+  done
+  printf '\nserver_settings flags that would be seeded:\n'
+  local flag k
+  for pair in "dns_enabled:dns" "mail_enabled:mail" "security_enabled:security" \
+              "quota_enabled:quota" "api_enabled:api"; do
+    flag="${pair%%:*}"; k="${pair##*:}"
+    if is_module_enabled "$k"; then printf '  %-18s = 1\n' "$flag"; else printf '  %-18s = 0\n' "$flag"; fi
+  done
+  printf '\nNo changes made. Re-run without --dry-run to install.\n\n'
 }
 
 # is_container returns 0 inside LXC/Docker/Podman/systemd-nspawn etc.
@@ -12636,6 +12678,12 @@ check_ptr_rdns() {
 
 main() {
   print_banner
+  # --dry-run: print the module plan (which optional modules install vs skip for
+  # the current JABALI_MODULES) and exit before any system change. M353 GH #353.
+  if [[ -n "${_cli_dry_run:-}${JABALI_DRY_RUN:-}" ]]; then
+    print_module_plan
+    exit 0
+  fi
   # Set the system hostname up front so every downstream step (certs, mail,
   # DNS, panel identity) uses it.
   apply_system_hostname

@@ -23,6 +23,7 @@ import (
 
 func main() {
 	installSh := findInstallSh()
+	dryRun := hasFlag("--dry-run")
 	unattended := hasFlag("--unattended") || hasFlag("-y")
 	_, modulesPreset := os.LookupEnv("JABALI_MODULES")
 	interactive := term.IsTerminal(int(os.Stdin.Fd())) && !unattended && !modulesPreset
@@ -30,7 +31,7 @@ func main() {
 	if !interactive {
 		// Headless / preset / unattended: run install.sh directly with the
 		// current environment (JABALI_MODULES, if any, passes through).
-		runInstall(installSh, nil)
+		runInstall(installSh, nil, dryRun)
 		return
 	}
 
@@ -47,18 +48,22 @@ func main() {
 		os.Exit(130)
 	}
 	keys := fm.SelectedKeys()
-	runInstall(installSh, []string{"JABALI_MODULES=" + strings.Join(keys, ",")})
+	runInstall(installSh, []string{"JABALI_MODULES=" + strings.Join(keys, ",")}, dryRun)
 }
 
 // runInstall execs install.sh with the current env plus extraEnv, streaming its
 // stdio straight through (Phase T1: inherited stdio; the scrolling progress
 // pane is Phase T2).
-func runInstall(installSh string, extraEnv []string) {
+func runInstall(installSh string, extraEnv []string, dryRun bool) {
 	if installSh == "" {
 		fmt.Fprintln(os.Stderr, "install.sh not found (pass --install-sh <path> or run from the repo root)")
 		os.Exit(1)
 	}
-	cmd := exec.Command("bash", installSh)
+	args := []string{installSh}
+	if dryRun {
+		args = append(args, "--dry-run")
+	}
+	cmd := exec.Command("bash", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
