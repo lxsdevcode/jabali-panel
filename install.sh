@@ -314,6 +314,59 @@ _warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; _log_to_file "[!] $*"; }
 _err()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"; }
 _die()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"; exit 1; }
 
+# is_module_enabled — M353 (GH #353) modular install. Returns 0 (enabled) when
+# the given optional-module key should be installed. JABALI_MODULES is a comma
+# list emitted by the TUI (installer/) or set for a headless install. When it is
+# UNSET or EMPTY, every module is enabled — preserving the current all-in
+# behaviour for existing automation, CI, and `curl … | bash` without the TUI.
+# Core modules (nginx, MariaDB, panel, Kratos) are never gated by this.
+is_module_enabled() {
+  local key="$1"
+  [[ -z "${JABALI_MODULES:-}" ]] && return 0
+  case ",${JABALI_MODULES}," in
+    *",${key},"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# run_if_module <module-key> <install-fn> [args…] — run the install function only
+# when its module is enabled (see is_module_enabled), else log a skip. Used to
+# gate the OPTIONAL install steps in the fresh-install flow. On `jabali update`
+# JABALI_MODULES is unset, so every module reads enabled and the update path is
+# unchanged.
+run_if_module() {
+  local key="$1"; shift
+  if is_module_enabled "$key"; then
+    "$@"
+  else
+    _log "module '${key}' disabled (JABALI_MODULES) — skipping ${1}"
+  fi
+}
+
+# seed_module_flags — M353 (GH #353). Write the per-module server_settings flags
+# to match the install selection so the panel's page-gating (serverCapabilities →
+# nav/route hide + 409 guards) reflects what was actually installed. No-op unless
+# JABALI_MODULES is set (a modular install); a plain install keeps the default-on
+# flags. Best-effort: a SQL failure warns but never aborts the install.
+seed_module_flags() {
+  [[ -z "${JABALI_MODULES:-}" ]] && return 0
+  command -v mariadb >/dev/null 2>&1 || return 0
+  local flag key sets=""
+  # map: server_settings column -> JABALI_MODULES key
+  for pair in "dns_enabled:dns" "mail_enabled:mail" "security_enabled:security" \
+              "quota_enabled:quota" "api_enabled:api"; do
+    flag="${pair%%:*}"; key="${pair##*:}"
+    if is_module_enabled "$key"; then val=1; else val=0; fi
+    sets+="${flag}=${val},"
+  done
+  sets="${sets%,}"
+  if mariadb jabali_panel -e "UPDATE server_settings SET ${sets} WHERE id=1;" 2>/dev/null; then
+    _ok "module flags seeded from JABALI_MODULES (${JABALI_MODULES})"
+  else
+    _warn "could not seed module flags (server_settings) — set them in Server Settings → Modules"
+  fi
+}
+
 # is_container returns 0 inside LXC/Docker/Podman/systemd-nspawn etc.
 # Gates kernel-LSM-touching steps (auditd, AppArmor) and host-kernel-
 # only services (systemd-timesyncd) that warn noisily in a container
@@ -12646,14 +12699,14 @@ main() {
   # fresh install. Operator flips server_settings.postgres_enabled in
   # the Databases tab; panel-api dispatches db.postgres.install which
   # sources install.sh and runs install_postgres on demand.
-  install_powerdns
+  run_if_module dns install_powerdns
   bootstrap_pdns_self_zone
   # M6.3: recursor owns loopback :53 and forwards panel-authoritative zones
   # into pdns-server at :5300. Must run AFTER bootstrap_pdns_self_zone (the
   # self-zone has to exist in pdns before the recursor's post-install probe
   # tries to resolve it) and BEFORE setup_certbot (certbot's HTTP-01 flow
   # needs the panel's own hostname to resolve locally).
-  install_pdns_recursor
+  run_if_module dns install_pdns_recursor
   setup_certbot
   # M26 Step 1 — security foundation. Wired here (after pdns/certbot,
   # before clone_or_update_repo and the long build_frontend / npm steps)
@@ -12669,17 +12722,17 @@ main() {
   #     doesn't strand the host without a firewall).
   #   - cleanup_modsecurity removes the M26 ModSecurity stack on existing
   #     hosts that ran an earlier install (ADR-0055 superseded 2026-04-26).
-  install_crowdsec
+  run_if_module security install_crowdsec
   configure_crowdsec_mariadb
-  install_crowdsec_appsec
-  install_crowdsec_nginx_bouncer
-  install_crowdsec_profiles
-  install_login_allowlist_default_conf
-  install_crowdsec_jabali_scenarios
-  install_crowdsec_jabali_stalwart_scenarios
-  install_crowdsec_blocklists
+  run_if_module security install_crowdsec_appsec
+  run_if_module security install_crowdsec_nginx_bouncer
+  run_if_module security install_crowdsec_profiles
+  run_if_module security install_login_allowlist_default_conf
+  run_if_module security install_crowdsec_jabali_scenarios
+  run_if_module security install_crowdsec_jabali_stalwart_scenarios
+  run_if_module security install_crowdsec_blocklists
   cleanup_modsecurity
-  install_malware_stack
+  run_if_module security install_malware_stack
   install_ufw
   install_per_user_egress
   install_goaccess
@@ -12690,8 +12743,8 @@ main() {
   # install_apparmor and install_aide run AFTER clone_or_update_repo because
   # both functions source profile/unit files from $REPO_DIR/install/; on a
   # fresh install that directory does not exist until the repo is cloned.
-  install_apparmor
-  install_aide
+  run_if_module security install_apparmor
+  run_if_module security install_aide
   install_snuffleupagus
   protect_panel_docs
   # M25: source the socket-helper definitions now that the repo's install/
@@ -12709,7 +12762,7 @@ main() {
   install_jabali_slices
   install_kratos
   install_php_pool_template
-  install_python_apps_runtime
+  run_if_module python_apps install_python_apps_runtime
   build_frontend
   build_backend
   # Re-run AppSec wiring now that build_backend produced
@@ -12719,7 +12772,7 @@ main() {
   # This second call renders the config + writes the acquis + reloads
   # crowdsec with AppSec live. Idempotent (write-on-diff) so on a
   # re-install where AppSec is already wired it's a cheap no-op.
-  install_crowdsec_appsec
+  run_if_module security install_crowdsec_appsec
   write_config_file
   provision_tls_cert
   bootstrap_panel_acme_webroot
@@ -12763,19 +12816,25 @@ main() {
   write_systemd_unit
   start_and_verify_agent
   start_and_verify
+  # M353 (GH #353): seed the per-module server_settings flags from the install
+  # selection, so the panel hides the pages + 409s the endpoints for whatever
+  # wasn't installed. Runs AFTER start_and_verify (first boot migrated the schema
+  # + seeded the server_settings row). Only acts when JABALI_MODULES is set; a
+  # plain install leaves every flag default-on, so existing flows are unchanged.
+  seed_module_flags
   # First-phase Stalwart bootstrap (binary download, service user,
   # stalwart-cli, admin token, MariaDB password file, apply plan render,
   # unit file install). Safe to run after start_and_verify — doesn't
   # depend on the panel being up, just on the repo being cloned.
-  install_stalwart
+  run_if_module mail install_stalwart
   # Second-phase Stalwart bootstrap: needs jabali_panel.{mailboxes,domains}
   # to exist, which the panel service creates via migration 000054 on its
   # first start (inside start_and_verify). Must run after, never before.
-  install_stalwart_apply
+  run_if_module mail install_stalwart_apply
   # GH #233 / ADR-0143: loopback MTA-hook that appends disclaimers by
   # rewriting the MIME body. Needs the stalwart-ro DB creds + jabali_panel
   # schema (install_stalwart_apply) to be in place first.
-  install_jabali_mailhook
+  run_if_module mail install_jabali_mailhook
   # M6.4 (ADR-0048): auto-register the panel hostname as an email-enabled
   # domain. Ordering: after start_and_verify (admin user exists via
   # BootstrapAdmin) AND after bootstrap_pdns_self_zone (pdns zone row
