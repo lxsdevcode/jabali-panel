@@ -18,6 +18,7 @@ build: ## Compile both binaries (panel + agent)
 	mkdir -p bin
 	$(GO) build -o $(BIN) ./panel-api/cmd/server
 	$(GO) build -o $(AGENT_BIN) ./panel-agent/cmd/jabali-agent
+	$(GO) build -o bin/jabali-installer ./installer/cmd/jabali-installer
 
 run: ## Run the panel server (dev)
 	$(GO) run ./panel-api/cmd/server
