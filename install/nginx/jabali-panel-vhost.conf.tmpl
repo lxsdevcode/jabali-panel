@@ -33,6 +33,11 @@ server {
   ${NGX_H2_DIR}
   server_name _;
 
+  # Plain HTTP sent to this HTTPS port (e.g. http://<host>:8443) → redirect to
+  # HTTPS instead of nginx's default 400 "plain HTTP request was sent to HTTPS
+  # port". 497 is nginx's internal code for exactly that case.
+  error_page 497 =301 https://$host:8443$request_uri;
+
   ssl_certificate     ${SSL_CERT_PATH};
   ssl_certificate_key ${SSL_KEY_PATH};
   ssl_protocols       TLSv1.2 TLSv1.3;
