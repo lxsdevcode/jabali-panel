@@ -9,6 +9,40 @@ The same surface as [Server Status](../server-status.md) but exposed at machine-
 | `GET /api/v1/health` | none | `{ "status": "ok" \| "degraded" \| "down", "version": "...", "uptime_s": N }` — used as the basic liveness probe. |
 | `GET /api/v1/health/detailed` | admin Bearer / cookie | Per-service status (same as `/jabali-admin/server-status`) as JSON. |
 | `GET /metrics` | admin Bearer | Prometheus-format metrics (request counts, latencies, reconciler tick durations, queue depths). |
+| `GET /api/v1/automation/status` | Automation token, scope `read:status` | Full server metrics for an external fleet monitor (see below). |
+
+## Fleet metrics — `/api/v1/automation/status`
+
+For a multi-server manager that polls each Jabali server without a panel session
+(GH #308 / JAB-75). Authenticated with an **automation token** (HMAC, replay-defended)
+carrying the `read:status` scope — mint one with:
+
+```
+jabali automation-token create --scope read:status
+```
+
+Returns the same collectors as the admin Server Status page (one source of truth),
+gathered from the agent in parallel and cached ~5 s so frequent polling doesn't
+hammer the agent:
+
+```json
+{
+  "healthy": true,
+  "time": "2026-07-08T20:10:00Z",
+  "version": "<panel build sha>",
+  "system":   { "hostname": "...", "uptime_seconds": N, "load_avg": [..],
+                "cpu_count": N, "mem_total_kb": N, "mem_used_kb": N,
+                "swap_total_kb": N, "partitions": [{ "mount_point": "/",
+                "total_bytes": N, "used_bytes": N, "free_bytes": N }] },
+  "services": { "services": [ { "unit": "...", "load_state": "...", "active_state": "..." } ] },
+  "cpu":      { ... live CPU usage ... },
+  "errors":   { "info": "timeout" }   // only present when a collector failed
+}
+```
+
+- `healthy` is `true` when every collector returned; a partial failure surfaces
+  per-slot in `errors` but still returns HTTP 200 with whatever was collected.
+- The payload is **metrics only** — no credentials, tokens, or per-tenant infra.
 
 ## Status semantics
 
