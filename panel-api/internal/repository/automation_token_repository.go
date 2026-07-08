@@ -37,7 +37,11 @@ func (r *automationTokenRepo) Create(ctx context.Context, t *models.AutomationTo
 
 func (r *automationTokenRepo) List(ctx context.Context) ([]models.AutomationToken, error) {
 	var rows []models.AutomationToken
+	// Hide revoked tokens from the admin list — a revoked token is dead to the
+	// HMAC middleware (rejected on revoked_at), so it only clutters the view.
+	// The row is kept for audit/forensics; the audit log records the revoke.
 	if err := r.db.WithContext(ctx).
+		Where("revoked_at IS NULL").
 		Order("created_at DESC").
 		Find(&rows).Error; err != nil {
 		return nil, err
