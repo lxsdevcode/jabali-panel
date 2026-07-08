@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -60,6 +61,7 @@ type Model struct {
 	progress  progress.Model
 	stepsDone int
 	stepsTot  int
+	creep     float64 // intra-phase progress (0..1), advanced by a timer, reset on each [i]
 
 	logLines   []string
 	phase      string
@@ -129,6 +131,16 @@ func (m Model) SelectedKeys() []string {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		if m.screen != screenInstalling || m.installed {
+			return m, nil
+		}
+		// Creep across the current phase toward (but never reaching) the next
+		// boundary, so the bar advances during long/silent steps like apt.
+		if m.creep < 0.9 {
+			m.creep += 0.05
+		}
+		return m, tea.Batch(tickCmd(), m.progress.SetPercent(m.overallPct()))
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -143,17 +155,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.logLines) > 400 {
 			m.logLines = m.logLines[len(m.logLines)-400:]
 		}
-		var pcmd tea.Cmd
 		if p, ok := phaseFromLine(line); ok {
 			m.phase = p
 			m.stepsDone++
-			pct := float64(m.stepsDone) / float64(m.stepsTot)
-			if pct > 0.97 {
-				pct = 0.97
-			}
-			pcmd = m.progress.SetPercent(pct)
+			m.creep = 0
 		}
-		return m, tea.Batch(waitForEvent(m.events), pcmd)
+		return m, tea.Batch(waitForEvent(m.events), m.progress.SetPercent(m.overallPct()))
 	case installDoneMsg:
 		m.installed = true
 		m.installErr = msg.err
@@ -334,7 +341,7 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				"JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","),
 				"JABALI_NONINTERACTIVE=1") // TUI owns the terminal; install.sh must not open /dev/tty
 
-			return m, tea.Batch(m.spinner.Tick, startInstall(m.installSh, env, m.dryRun, m.events))
+			return m, tea.Batch(m.spinner.Tick, tickCmd(), startInstall(m.installSh, env, m.dryRun, m.events))
 		case "b", "backspace", "left":
 			m.screen = screenModules
 		}
@@ -513,4 +520,29 @@ func phpChips(f configField, focused bool) string {
 		parts[i] = chip
 	}
 	return strings.Join(parts, " ")
+}
+
+// tickMsg drives the intra-phase progress creep on a timer.
+type tickMsg struct{}
+
+// tickCmd fires a tickMsg roughly twice a second while installing.
+func tickCmd() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
+// overallPct combines completed phases with the current-phase creep, capped
+// below 100% until the install actually finishes.
+func (m Model) overallPct() float64 {
+	if m.stepsTot <= 0 {
+		return 0
+	}
+	c := m.creep
+	if c > 0.9 {
+		c = 0.9
+	}
+	pct := (float64(m.stepsDone) + c) / float64(m.stepsTot)
+	if pct > 0.97 {
+		pct = 0.97
+	}
+	return pct
 }
