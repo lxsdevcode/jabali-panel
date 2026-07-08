@@ -150,6 +150,15 @@ export const AdminAutomationTokensPage = () => {
         >
           <Table.Column<Token> title="Name" dataIndex="name" />
           <Table.Column<Token>
+            title="Token ID"
+            dataIndex="id"
+            render={(v: string) => (
+              <Typography.Text copyable code style={{ fontSize: 12 }}>
+                {v}
+              </Typography.Text>
+            )}
+          />
+          <Table.Column<Token>
             title="Scopes"
             render={(_, r) => (
               <Space wrap size={4}>
