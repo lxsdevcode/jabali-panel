@@ -441,6 +441,19 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		// M49 — record one audit event per mutating request (never
 		// the body). No-op when AuditRecorder is nil (no Redis).
 		v1.Use(middleware.AuditRecord(deps.AuditRecorder))
+
+		// M353 Phase 1 (GH #353): module guards. A disabled module's routes must
+		// 409, not just be hidden in the UI. Build one guard factory (shared TTL
+		// cache) and mount each module's routes on a guarded sub-group. Fails
+		// open (module on) when settings can't be read, so a DB blip never locks
+		// a live feature out. Nil ServerSettings (tests) → unguarded plain v1.
+		mailGroup, dnsGroup, securityGroup := v1, v1, v1
+		if deps.ServerSettings != nil {
+			guard := middleware.NewModuleGuard(deps.ServerSettings)
+			mailGroup = v1.Group("", guard(middleware.ModuleMail, "mail"))
+			dnsGroup = v1.Group("", guard(middleware.ModuleDNS, "dns"))
+			securityGroup = v1.Group("", guard(middleware.ModuleSecurity, "security"))
+		}
 		api.RegisterMeRoutes(v1, api.MeHandlerConfig{
 			Users:          deps.Users,
 			Packages:       deps.Packages,
@@ -544,7 +557,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				// listen_ipv4 / listen_ipv6 onto each row. Optional —
 				// when unset, the listen-IP fields are 503 on PATCH and
 				// dropped from GET.
-				ManagedIPs: deps.ManagedIPs,
+				ManagedIPs:     deps.ManagedIPs,
 				ServerSettings: deps.ServerSettings,
 			})
 		}
@@ -621,7 +634,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			})
 		}
 		if deps.Mailboxes != nil && deps.Domains != nil {
-			api.RegisterMailboxRoutes(v1, api.MailboxHandlerConfig{
+			api.RegisterMailboxRoutes(mailGroup, api.MailboxHandlerConfig{
 				Mailboxes: deps.Mailboxes,
 				Domains:   deps.Domains,
 				Agent:     deps.Agent,
@@ -630,7 +643,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			})
 		}
 		if deps.MailGroups != nil && deps.Mailboxes != nil && deps.Domains != nil {
-			api.RegisterMailGroupRoutes(v1, api.MailGroupHandlerConfig{
+			api.RegisterMailGroupRoutes(mailGroup, api.MailGroupHandlerConfig{
 				Groups:    deps.MailGroups,
 				Mailboxes: deps.Mailboxes,
 				Domains:   deps.Domains,
@@ -638,7 +651,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			})
 		}
 		if deps.Domains != nil {
-			api.RegisterDomainEmailRoutes(v1, api.DomainEmailHandlerConfig{
+			api.RegisterDomainEmailRoutes(mailGroup, api.DomainEmailHandlerConfig{
 				Domains:       deps.Domains,
 				Agent:         deps.Agent,
 				DNSZones:      deps.DNSZones,
@@ -654,7 +667,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		if deps.DB != nil {
 			srRepo = repository.NewSharedResourceRepository(deps.DB)
 		}
-		api.RegisterM65Routes(v1, api.M65RouteDeps{
+		api.RegisterM65Routes(mailGroup, api.M65RouteDeps{
 			Agent:           deps.Agent,
 			Domains:         deps.Domains,
 			Mailboxes:       deps.Mailboxes,
@@ -757,7 +770,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			})
 		}
 		if deps.Domains != nil && deps.DNSZones != nil && deps.DNSRecords != nil {
-			api.RegisterDNSRoutes(v1, api.DNSHandlerConfig{
+			api.RegisterDNSRoutes(dnsGroup, api.DNSHandlerConfig{
 				Domains:        deps.Domains,
 				Zones:          deps.DNSZones,
 				Records:        deps.DNSRecords,
@@ -887,18 +900,18 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			// M26 Step 4 — admin Security tab. CrowdSec + UFW are pure
 			// agent passthroughs. ModSecurity removed 2026-04-26 (ADR-0055
 			// SUPERSEDED) — CrowdSec AppSec covers the WAF role.
-			api.RegisterSecurityCrowdSecRoutes(v1, deps.Agent, deps.ServerSettings)
-			api.RegisterSecurityAppSecRoutes(v1, deps.Agent, deps.ServerSettings)
-			api.RegisterSecurityUFWRoutes(v1, deps.Agent)
+			api.RegisterSecurityCrowdSecRoutes(securityGroup, deps.Agent, deps.ServerSettings)
+			api.RegisterSecurityAppSecRoutes(securityGroup, deps.Agent, deps.ServerSettings)
+			api.RegisterSecurityUFWRoutes(securityGroup, deps.Agent)
 			// M40 (ADR-0086) AppArmor admin status + per-profile mode flip.
-			api.RegisterSecurityAppArmorRoutes(v1, deps.Agent)
+			api.RegisterSecurityAppArmorRoutes(securityGroup, deps.Agent)
 			// M42 (ADR-0087) AIDE FIM read-only status + manual check trigger.
-			api.RegisterSecurityAideRoutes(v1, deps.Agent)
+			api.RegisterSecurityAideRoutes(securityGroup, deps.Agent)
 			// M43 (ADR-0089) Trust test bench — "would this IP be blocked?" admin endpoint.
-			api.RegisterSecurityTrustRoutes(v1, deps.Agent)
+			api.RegisterSecurityTrustRoutes(securityGroup, deps.Agent)
 			// M41 (ADR-0088) Snuffleupagus PHP hardening — status/mode/rules/incidents.
 			if deps.Snuffleupagus != nil {
-				api.RegisterSecuritySnuffleupagusRoutes(v1, api.SecuritySnuffleupagusConfig{
+				api.RegisterSecuritySnuffleupagusRoutes(securityGroup, api.SecuritySnuffleupagusConfig{
 					Agent:      deps.Agent,
 					Repo:       deps.Snuffleupagus,
 					Reconciler: deps.SnuffleupagusReconciler,
