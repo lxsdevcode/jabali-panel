@@ -8,7 +8,7 @@
 |---|---|---|
 | **cPanel** | `cpmove-<user>.tar.gz` | ✅ — preserves MySQL users + bcrypt password hashes (so migrated apps keep working); see "preserve cpanel MySQL users + password hashes" commit. |
 | **DirectAdmin** | DA backup tarball | ✅ — see `docs/user/directadmin-migration.astro` (legacy) for source-side prep notes. |
-| **Hestia** | Hestia backup | 🟡 — partial. Files + DBs + DNS; mail subset (Stalwart vs. Exim model mismatch). |
+| **Hestia** | Hestia `v-backup-user` tarball (`<user>.<ts>.tar[.gz]`) | ✅ — files, DBs, DNS (incl. SRV + CAA), and apps (e.g. Nextcloud) restore end-to-end; the account Contact Name (FNAME/LNAME) carries onto the user. Mail is the Exim→Stalwart subset (see below). |
 | **WHM** | WHM-level dump (multiple `cpmove`s in one) | 🟡 — same caveats as cPanel per-user. |
 
 ## Workflow
@@ -36,8 +36,23 @@
 
 ### Hestia
 
-- Bind zones translated to PowerDNS schema rows.
-- Exim → Stalwart routing rules: forwards + autoresponders ported; complex Exim acl rules need manual re-implementation.
+- BIND zones translated to PowerDNS schema rows — A/AAAA/CNAME/MX/TXT/**SRV** (priority in the pdns prio column) / **CAA** all import; the source SOA is dropped (pdns generates its own).
+- Hestia's `web/<domain>/public_html` docroot layout is handled for both the file split and the app-config scan (differs from the native `domains/<domain>/public_html`).
+- The account **Contact Name** (`user.conf` FNAME/LNAME) carries onto the created jabali user's name.
+- Exim → Stalwart routing rules: forwards + autoresponders ported; complex Exim ACL rules need manual re-implementation.
+
+**Offline restore (CLI):**
+
+```
+jabali migrate restore --hestiacp --file /path/<user>.<ts>.tar --source-user <user> \
+  --target-email <email> --target-password <pw>
+```
+
+- A low-disk host **aborts before** staging or creating the user (disk preflight).
+- Re-run the same command to **resume**; add `--retry-from-scratch` (alias `--fresh`)
+  to wipe the job and re-run the whole pipeline (recreates a deleted target user).
+- A restore that leaves a site returning **5xx** (a crashing app) ends `degraded`,
+  not `done`; a transient `0` during nginx/FPM convergence does not degrade it.
 
 ### WHM
 
