@@ -157,3 +157,66 @@ diff shows the what.
 
 **Never** `git push --force` on `main`. The codebase is shared with other
 agents; always `git fetch && git pull --rebase` before pushing.
+
+## Project workflow & tooling
+
+### Issue tracking
+
+Two trackers, by audience:
+
+- **Plane** — the internal engineering tracker. Issues are `JAB-<n>` (e.g.
+  `JAB-75`). Project `jabali` (`JAB`). Used for planned work, QA rounds, and
+  milestone tasks. States: Backlog → Todo → In Progress → Done / Cancelled.
+- **GitHub Issues** (`github.com/shukiv/jabali-panel`) — the **community** tracker
+  where users file bugs + feature requests (`#<n>`). Answered/fixed there; a
+  commit referencing `GH #<n>` links back.
+
+Reference the tracker id in the commit + PR (`feat(x): … (JAB-75)` /
+`fix(y): … (GH #346)`) so the work is traceable both ways.
+
+### Remotes — keep three in sync
+
+| Remote | Role |
+|---|---|
+| **codeberg** (`codeberg.org/shukivaknin/jabali2`) | **primary** — CI runs here, PRs merge here |
+| **github** (`github.com/shukiv/jabali-panel`) | **live mirror** — where community issues live; must track codeberg/main |
+| origin (Gitea, `git.linux-hosting.co.il`) | legacy, still present |
+
+**After every merge to `codeberg/main`**, sync the mirror **and** the local tree:
+
+```
+git fetch codeberg main
+git push github codeberg/main:refs/heads/main          # mirror
+git checkout main && git merge --ff-only codeberg/main # advance local
+```
+
+Merges done via the **codeberg web/API** advance `codeberg/main` with no local
+push, so github + local silently drift if you skip this. Verify both are zero:
+
+```
+git rev-list --count github/main..codeberg/main   # github behind
+git rev-list --count main..codeberg/main          # local behind
+```
+
+The github push may print `Required status check "quality" is expected` — a
+branch-protection notice, **not** a failure; the ref still updates.
+
+### CI + release pipeline
+
+- **`.gitea/workflows/ci.yml`** runs on every PR: Go tests + vet, panel-ui vitest,
+  install.sh phantom-function lint, Playwright E2E. All four must be green before
+  merge. CI runs with `-race`, so a parallel test that races the mock fails here
+  even when it passes locally without `-race`.
+- **`.gitea/workflows/release.yml`** runs on every push to `main`: builds the SPA +
+  Go binaries, bundles a `release-<sha>` tarball + sha256, and publishes it as a
+  Gitea release. `jabali update` on a server downloads that tarball — so **a red
+  release build means no new release publishes and `jabali update` is stuck**.
+  A common cause is a version-consistency check failing (e.g. the `jabali-cache`
+  plugin version drifting across `jabali-cache.php` / `readme.txt` / `lib.php`).
+
+### Merge flow
+
+Feature branch → push to codeberg → open PR → CI green → merge (fast-forward when
+the branch was cut from current `codeberg/main`) → sync github + local (above).
+Never commit straight to `main`. Test VM for live validation: `.86` (`ssh
+testserver`).
