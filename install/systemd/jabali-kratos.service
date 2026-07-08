@@ -58,7 +58,12 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/jabali-panel /run/jabali-kratos /run/mysqld
+# JAB-2: /etc/jabali-panel is READ-ONLY for Kratos. It only reads kratos.yml +
+# the identity schema from there; sockets live under RuntimeDirectory
+# /run/jabali-kratos. Dropping config write access stops a Kratos RCE/dep
+# compromise from rewriting panel config/secrets (persistent panel compromise)
+# and keeps AIDE/AppArmor's "config is immutable" expectation honest.
+ReadWritePaths=/run/jabali-kratos /run/mysqld
 
 StandardOutput=journal
 StandardError=journal
