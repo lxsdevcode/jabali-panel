@@ -87,6 +87,8 @@ type Model struct {
 	phase      string
 	installed  bool
 	installErr error
+	summary    []string // captured "JABALI PANEL — installed" block (URL/user/pass)
+	capSummary bool
 
 	// Config screen (T3): host/admin/NS/PHP inputs + focus + validation error.
 	fields    []configField
@@ -184,6 +186,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.logLines) > 400 {
 			m.logLines = m.logLines[len(m.logLines)-400:]
 		}
+		m.captureSummary(stripANSI(line))
 		if p, ok := phaseFromLine(line); ok {
 			// Close the previous phase, adding its weight (the long apt phase is
 			// worth aptWeight; everything else is worth 1).
@@ -496,7 +499,11 @@ func (m Model) View() string {
 			b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
 		} else {
 			b.WriteString(onStyle.Render("✓ Install complete"))
-			b.WriteString("\n\n" + helpStyle.Render("Log in at the panel URL printed above.") + "\n")
+			if len(m.summary) > 0 {
+				b.WriteString("\n\n" + boxStyle.Render(strings.Join(m.summary, "\n")) + "\n")
+			} else {
+				b.WriteString("\n\n" + helpStyle.Render("Log in at the panel URL printed above.") + "\n")
+			}
 		}
 		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
 	}
@@ -602,4 +609,30 @@ func (m Model) overallPct() float64 {
 		pct = 0.97
 	}
 	return pct
+}
+
+// captureSummary collects install.sh's final "JABALI PANEL — installed" block
+// (URL / Username / Password + login advisory) from the streamed output so the
+// result screen can show it even though the live log box is hidden. The block
+// is bordered by ===== lines around a "JABALI PANEL … installed" banner.
+func (m *Model) captureSummary(s string) {
+	sc := strings.TrimSpace(s)
+	if strings.Contains(sc, "JABALI PANEL") && strings.Contains(sc, "installed") {
+		m.capSummary = true
+		m.summary = nil
+		return
+	}
+	if !m.capSummary {
+		return
+	}
+	isBorder := sc != "" && strings.Trim(sc, "=") == ""
+	if isBorder {
+		if len(m.summary) > 0 { // closing border → block done
+			m.capSummary = false
+		}
+		return
+	}
+	if sc != "" {
+		m.summary = append(m.summary, sc)
+	}
 }

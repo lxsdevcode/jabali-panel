@@ -21,3 +21,46 @@ func TestPhaseFromLine(t *testing.T) {
 		t.Error("a non-marker line should not set a phase")
 	}
 }
+
+func TestCaptureSummary(t *testing.T) {
+	m := &Model{}
+	lines := []string{
+		"============================================================",
+		"  JABALI PANEL  —  installed",
+		"============================================================",
+		"",
+		"  URL:       https://host:8443",
+		"  Username:  admin",
+		"  Password:  s3cr3t",
+		"",
+		"  > Log in at the URL above using the HOSTNAME, not the server IP.",
+		"============================================================",
+		"",
+	}
+	for _, l := range lines {
+		m.captureSummary(l)
+	}
+	if len(m.summary) == 0 {
+		t.Fatal("no summary captured")
+	}
+	joined := ""
+	for _, s := range m.summary {
+		joined += s + "\n"
+	}
+	for _, want := range []string{"https://host:8443", "Username:  admin", "Password:  s3cr3t"} {
+		if !contains(joined, want) {
+			t.Errorf("summary missing %q; got:\n%s", want, joined)
+		}
+	}
+}
+
+func contains(hay, needle string) bool {
+	return len(hay) >= len(needle) && (func() bool {
+		for i := 0; i+len(needle) <= len(hay); i++ {
+			if hay[i:i+len(needle)] == needle {
+				return true
+			}
+		}
+		return false
+	})()
+}
