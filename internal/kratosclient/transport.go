@@ -91,6 +91,13 @@ func newKratosTransport(sockets map[string]string, dialTimeout time.Duration) ht
 	if len(sockets) == 0 {
 		return t
 	}
+	// Unix-socket mode (JAB-1): the admin/public URLs were rewritten to synthetic
+	// http://kratos-admin / http://kratos-public hosts, but an HTTP(S)_PROXY in the
+	// process env would otherwise route those requests through the proxy instead of
+	// DialContext opening the socket — leaking unauthenticated Kratos Admin traffic
+	// and defeating the M25 socket boundary. Fail closed: never use an env proxy for
+	// mapped synthetic hosts; requests reach only the configured socket.
+	t.Proxy = nil
 	dialer := &net.Dialer{Timeout: dialTimeout}
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(addr)

@@ -185,3 +185,41 @@ func TestNewClient_HTTPURLBackcompat(t *testing.T) {
 
 	require.NoError(t, client.AdminReady(context.Background()))
 }
+
+// TestNewKratosTransport_IgnoresEnvProxy is the JAB-1 regression: with
+// HTTP_PROXY/HTTPS_PROXY set in the environment, a request to a mapped synthetic
+// Kratos host must still reach the Unix socket (never the proxy), and the
+// transport must have Proxy disabled in socket mode.
+func TestNewKratosTransport_IgnoresEnvProxy(t *testing.T) {
+	// Point the env proxy at a black hole; if the transport honored it the
+	// request would fail to connect there instead of hitting the socket.
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+
+	dir := t.TempDir()
+	sockPath := filepath.Join(dir, "kratos-admin.sock")
+	listener, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/admin/identities", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 2 * time.Second}
+	go func() { _ = srv.Serve(listener) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	transport := newKratosTransport(map[string]string{"kratos-admin": sockPath}, 2*time.Second)
+	if ht, ok := transport.(*http.Transport); ok {
+		assert.Nil(t, ht.Proxy, "socket-mode transport must not use an env proxy")
+	}
+
+	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "http://kratos-admin/admin/identities", nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err, "must reach the socket, not the env proxy")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
