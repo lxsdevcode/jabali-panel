@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,11 +42,23 @@ type setCacheRequest struct {
 // makes the token non-deterministic from (secret, osuser) alone, so a single
 // tenant can be rotated (regenerate its salt) without rotating the global
 // secret and breaking every other tenant.
-func cacheTenantToken(secret, osUser, salt string) string {
+// cacheInstallToken derives the PER-INSTALL Redis ACL token (JAB-62). Including
+// installID in the HMAC input means each install gets a distinct credential, so a
+// compromised install's stamped token can't authenticate as a sibling.
+func cacheInstallToken(secret, osUser, installID, salt string) string {
 	m := hmac.New(sha256.New, []byte(secret))
-	m.Write([]byte("wp-cache-tenant:" + osUser + ":" + salt))
+	m.Write([]byte("wp-cache-install:" + osUser + ":" + installID + ":" + salt))
 	return hex.EncodeToString(m.Sum(nil))
 }
+
+// installACLUser is the per-install Redis ACL username (JAB-62). MUST match the
+// agent's derivation from p.Prefix (wp_<osuser>_<installID>) exactly, or the
+// bundled object cache can't authenticate.
+func installACLUser(osUser, installID string) string { return "wp_" + osUser + "_" + installID }
+
+// installACLKeyPattern fences an ACL user to ONE install's keyspace. NOT the
+// broad ~jc:<osUser>:* — that was the JAB-62 cross-install hole.
+func installACLKeyPattern(osUser, installID string) string { return "~jc:" + osUser + ":" + installID + ":*" }
 
 // cachePathFromSubdir maps a WP install subdirectory to the nginx page-cache
 // path prefix (Gitea #420). "" (root install) → "/" (whole domain); "blog" or
@@ -69,6 +82,54 @@ func revokeTenantRedisACL(ctx context.Context, rdb *redis.Client, osUser string)
 	}
 	if err := rdb.Do(ctx, "ACL", "DELUSER", "wp_"+osUser).Err(); err != nil {
 		return err
+	}
+	return rdb.Do(ctx, "ACL", "SAVE").Err()
+}
+
+// revokeInstallACL removes ONE install's per-install ACL user (JAB-62). Idempotent
+// (DELUSER of an absent user is a no-op). Unlike revokeTenantRedisACL, no
+// sibling-coordination is needed — each install owns its own ACL user.
+func revokeInstallACL(ctx context.Context, rdb *redis.Client, osUser, installID string) error {
+	if rdb == nil || osUser == "" || installID == "" {
+		return nil
+	}
+	if err := rdb.Do(ctx, "ACL", "DELUSER", installACLUser(osUser, installID)).Err(); err != nil {
+		return err
+	}
+	return rdb.Do(ctx, "ACL", "SAVE").Err()
+}
+
+// revokeAllUserCacheACLs removes EVERY cache ACL user of an OS user on the
+// user-delete cascade (JAB-62): the legacy shared wp_<osUser> plus every
+// per-install wp_<osUser>_<installID>. Enumerates via ACL LIST so it needs no
+// install repo. The per-install match is anchored to the fixed 26-char ULID so a
+// sibling account named "<osUser>_..." (whose own install users carry an extra
+// _<ULID> suffix) is never caught. Idempotent + best-effort.
+// ReapLegacySharedCacheACL removes the legacy per-OS-user shared cache ACL user
+// (wp_<osUser>) during the JAB-62 per-install migration. Exported for the
+// app-cache doctor's --migrate-acl reap. The caller MUST have re-provisioned
+// EVERY one of the user's cache-enabled installs to a per-install ACL user
+// first, or a not-yet-migrated sibling loses its cache (DELUSER pulls the shared
+// principal it still authenticates with).
+func ReapLegacySharedCacheACL(ctx context.Context, rdb *redis.Client, osUser string) error {
+	return revokeTenantRedisACL(ctx, rdb, osUser)
+}
+
+func revokeAllUserCacheACLs(ctx context.Context, rdb *redis.Client, osUser string) error {
+	if rdb == nil || osUser == "" {
+		return nil
+	}
+	_ = rdb.Do(ctx, "ACL", "DELUSER", "wp_"+osUser).Err() // legacy shared user
+	lines, err := rdb.Do(ctx, "ACL", "LIST").StringSlice()
+	if err != nil {
+		return err
+	}
+	re := regexp.MustCompile(`^wp_` + regexp.QuoteMeta(osUser) + `_[0-9A-Z]{26}$`)
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "user" && re.MatchString(fields[1]) {
+			_ = rdb.Do(ctx, "ACL", "DELUSER", fields[1]).Err()
+		}
 	}
 	return rdb.Do(ctx, "ACL", "SAVE").Err()
 }
@@ -203,9 +264,9 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 			}
 			salt = s2
 		}
-		token := cacheTenantToken(h.cfg.CacheTokenSecret, osUser, salt)
-		if err := h.provisionTenantACL(ctx, osUser, token); err != nil {
-			slog.ErrorContext(ctx, "cache: ACL provision", "err", err, "os_user", osUser)
+		token := cacheInstallToken(h.cfg.CacheTokenSecret, osUser, installID, salt)
+		if err := h.provisionInstallACL(ctx, osUser, installID, token); err != nil {
+			slog.ErrorContext(ctx, "cache: ACL provision", "err", err, "os_user", osUser, "install_id", installID)
 			return errCacheACLProvision
 		}
 		// 2. Agent: stage plugin + write config + activate + enable, as the tenant.
@@ -325,13 +386,10 @@ func (h *wordPressHandler) setCacheCore(ctx context.Context, installID string, e
 	// otherwise siblings lose their cache. Best-effort: a revoke failure is
 	// logged, never fails the disable (the toggle already succeeded).
 	if !enabled {
-		remaining, cErr := h.cfg.ApplicationInstalls.CountCacheEnabledByUserID(ctx, install.UserID, installID)
-		if cErr != nil {
-			slog.WarnContext(ctx, "cache: count remaining cache-enabled installs", "err", cErr, "user_id", install.UserID)
-		} else if remaining == 0 {
-			if rErr := revokeTenantRedisACL(ctx, h.cfg.Redis, osUser); rErr != nil {
-				slog.WarnContext(ctx, "cache: revoke tenant ACL", "err", rErr, "os_user", osUser)
-			}
+		// JAB-62: each install owns its per-install ACL user, so revoke exactly
+		// this one — no sibling coordination, siblings are untouched. Best-effort.
+		if rErr := revokeInstallACL(ctx, h.cfg.Redis, osUser, installID); rErr != nil {
+			slog.WarnContext(ctx, "cache: revoke install ACL", "err", rErr, "os_user", osUser, "install_id", installID)
 		}
 	}
 
@@ -397,8 +455,8 @@ func (h *wordPressHandler) enableObjectCache(ctx context.Context, install *model
 		}
 		salt = s2
 	}
-	token := cacheTenantToken(h.cfg.CacheTokenSecret, osUser, salt)
-	if err := h.provisionTenantACL(ctx, osUser, token); err != nil {
+	token := cacheInstallToken(h.cfg.CacheTokenSecret, osUser, install.ID, salt)
+	if err := h.provisionInstallACL(ctx, osUser, install.ID, token); err != nil {
 		return fmt.Errorf("acl provision: %w", err)
 	}
 	if _, err := h.cfg.Agent.Call(ctx, "wordpress.cache_set", map[string]any{
@@ -417,8 +475,8 @@ func (h *wordPressHandler) enableObjectCache(ctx context.Context, install *model
 	return nil
 }
 
-func (h *wordPressHandler) provisionTenantACL(ctx context.Context, osUser, token string) error {
-	user := "wp_" + osUser
+func (h *wordPressHandler) provisionInstallACL(ctx context.Context, osUser, installID, token string) error {
+	user := installACLUser(osUser, installID)
 	// resetkeys/resetchannels make the rule absolute (idempotent re-apply); the
 	// keyspace is fenced to ~jc:<osuser>:* — no access to jabali:* / automation:*.
 	// Explicit command ALLOWLIST (Gitea #413) instead of the broad +@keyspace
@@ -432,7 +490,7 @@ func (h *wordPressHandler) provisionTenantACL(ctx context.Context, osUser, token
 	if err := h.cfg.Redis.Do(ctx, "ACL", "SETUSER", user,
 		"reset",
 		"on", ">"+token,
-		"~jc:"+osUser+":*",
+		installACLKeyPattern(osUser, installID),
 		"+GET", "+SET", "+SETEX", "+PSETEX", "+SETNX", "+DEL", "+UNLINK",
 		"+MGET", "+MSET", "+INCR", "+INCRBY", "+DECR", "+DECRBY",
 		"+EXPIRE", "+PEXPIRE", "+TTL", "+PTTL", "+PERSIST", "+TYPE", "+EXISTS",
