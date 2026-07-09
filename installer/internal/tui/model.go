@@ -44,8 +44,9 @@ var (
 	offStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
-	bgBlack     = lipgloss.Color("0")
-	appStyle    = lipgloss.NewStyle().Padding(1, 2).Background(bgBlack)
+	bgWhite     = lipgloss.Color("15")
+	fgDark      = lipgloss.Color("236")
+	appStyle    = lipgloss.NewStyle().Padding(1, 2).Background(bgWhite).Foreground(fgDark)
 	logoStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
 	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
@@ -522,9 +523,14 @@ func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return content // no size yet (pre first WindowSizeMsg)
 	}
-	// Center the whole block on a black screen filling the terminal.
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content,
-		lipgloss.WithWhitespaceBackground(bgBlack))
+	// Fill the ENTIRE terminal white and center the content block on it — a solid
+	// Width×Height container is reliable where Place+WhitespaceBackground left the
+	// terminal's own dark background showing through.
+	return lipgloss.NewStyle().
+		Width(m.width).Height(m.height).
+		Background(bgWhite).Foreground(fgDark).
+		Align(lipgloss.Center, lipgloss.Center).
+		Render(content)
 }
 
 // tailLog returns the last logTail streamed lines, ANSI-stripped, for the box.
