@@ -178,7 +178,7 @@ Reference the tracker id in the commit + PR (`feat(x): … (JAB-75)` /
 
 | Remote | Role |
 |---|---|
-| **codeberg** (`codeberg.org/shukivaknin/jabali2`) | **primary** — CI runs here, PRs merge here |
+| **codeberg** (`codeberg.org/shukivaknin/jabali2`) | **source of truth** — CI runs here, PRs merge here, installs + release tarballs are served from here |
 | **github** (`github.com/shukiv/jabali-panel`) | **live mirror** — where community issues live; must track codeberg/main |
 | origin (Gitea, `git.linux-hosting.co.il`) | legacy, still present |
 
