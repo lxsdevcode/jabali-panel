@@ -313,7 +313,7 @@ export const AdminAutomationTokensPage = () => {
           description="Copy it now and store it in your automation's secret manager. The server only keeps an encrypted copy. If you lose it, revoke this token and mint a new one."
           style={{ marginBottom: 16 }}
         />
-        <Typography.Paragraph copyable={{ tooltips: ["Copy", "Copied"] }}>
+        <Typography.Paragraph copyable={{ text: revealSecret ?? "", tooltips: ["Copy", "Copied"] }}>
           <code style={{ wordBreak: "break-all", display: "block", padding: 12, background: token.colorBgLayout, border: `1px solid ${token.colorBorder}`, borderRadius: token.borderRadius }}>
             {revealSecret}
           </code>
