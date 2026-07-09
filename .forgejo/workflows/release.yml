@@ -138,8 +138,7 @@ jobs:
             curl -sS --fail \
               -X POST "${API_BASE}/repos/${REPO}/releases/${release_id}/assets?name=${name}" \
               -H "Authorization: token ${TOKEN}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@${f}" \
+              -F "attachment=@${f};type=application/octet-stream" \
               | python3 -c 'import json,sys; d=json.load(sys.stdin); print("uploaded id=%s size=%s" % (d.get("id"), d.get("size")))' \
               || {
                 # Sometimes assets exist from a prior partial run.
@@ -154,11 +153,20 @@ jobs:
                   curl -sS --fail \
                     -X POST "${API_BASE}/repos/${REPO}/releases/${release_id}/assets?name=${name}" \
                     -H "Authorization: token ${TOKEN}" \
-                    -H "Content-Type: application/octet-stream" \
-                    --data-binary "@${f}"
+                    -F "attachment=@${f};type=application/octet-stream"
                 else
                   exit 1
                 fi
               }
           done
-          echo "==> release ${TAG} published"
+
+          # JAB: verify BOTH assets actually landed — a partial/failed upload used
+          # to leave an asset-less orphan release (red X, but the tag existed so
+          # nobody noticed the bootstrap/update had nothing to fetch). Fail loud.
+          assets_json="$(curl -sS -H "Authorization: token ${TOKEN}" \
+            "${API_BASE}/repos/${REPO}/releases/${release_id}/assets")"
+          for name in "jabali-release-${SHORT_SHA}.tar.gz" "jabali-release-${SHORT_SHA}.tar.gz.sha256"; do
+            echo "$assets_json" | python3 -c "import json,sys,os; n=os.environ['N']; d=json.load(sys.stdin); sys.exit(0 if any(a.get('name')==n for a in d) else 1)" N="$name" \
+              || { echo "ASSET MISSING after upload: $name"; exit 1; }
+          done
+          echo "==> release ${TAG} published with both assets"
