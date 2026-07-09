@@ -5,10 +5,30 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
+	"strings"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
+
+// logNginxTestFailure records the raw `nginx -t` output server-side only
+// (JAB-68). The output carries host filesystem paths (/etc/nginx/sites-
+// available/…), module info, and config internals that must never reach a
+// tenant through the API error message. `op` is a fixed operation label.
+func logNginxTestFailure(op, rawOutput string) {
+	slog.Error("nginx -t failed", "op", op, "output", strings.TrimSpace(rawOutput))
+}
+
+// nginxTestFailure logs the raw output (server-side) and returns a leak-free
+// AgentError carrying only the operation label — never the raw nginx output.
+func nginxTestFailure(op, rawOutput string) *agentwire.AgentError {
+	logNginxTestFailure(op, rawOutput)
+	return &agentwire.AgentError{
+		Code:    agentwire.CodeInternal,
+		Message: "nginx configuration test failed: " + op,
+	}
+}
 
 // nginxTestResponse is the output shape for nginx.test.
 type nginxTestResponse struct {
@@ -28,10 +48,7 @@ func nginxTestHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	testCmd.Stderr = &combinedOutput
 
 	if err := testCmd.Run(); err != nil {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("nginx test failed: %s", combinedOutput.String()),
-		}
+		return nil, nginxTestFailure("nginx.test", combinedOutput.String())
 	}
 
 	return nginxTestResponse{Valid: true}, nil

@@ -65,7 +65,8 @@ func nginxCacheCapacityApplyHandler(ctx context.Context, raw json.RawMessage) (a
 	// Validate; restore the prior conf on failure so nginx stays reloadable.
 	if out, terr := exec.CommandContext(ctx, "nginx", "-t").CombinedOutput(); terr != nil {
 		_ = os.WriteFile(jabaliFcgiConfPath, orig, 0o644)
-		return nil, csInvalidArg(fmt.Sprintf("nginx -t rejected the new capacity, reverted: %s", string(out)))
+		logNginxTestFailure("nginx.cache_capacity (reverted)", string(out))
+		return nil, csInvalidArg("nginx rejected the new cache capacity (reverted)")
 	}
 	if out, rerr := exec.CommandContext(ctx, "systemctl", "reload", "nginx").CombinedOutput(); rerr != nil {
 		return nil, csInternal("nginx reload", fmt.Errorf("%v: %s", rerr, string(out)))

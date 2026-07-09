@@ -162,7 +162,8 @@ func reloadNginxAfterSnippet(ctx context.Context, snippet string) error {
 		// Pull the snippet we just wrote so nginx doesn't stay broken
 		// across the next manual reload.
 		_ = os.Remove(snippet)
-		return fmt.Errorf("nginx -t failed, snippet removed: %w: %s", err, out)
+		logNginxTestFailure("nginx.app_rewrite (snippet removed)", string(out))
+		return fmt.Errorf("nginx configuration test failed for app rewrite (snippet removed)")
 	}
 	reload := exec.CommandContext(ctx, "systemctl", "reload", "nginx.service")
 	if out, err := reload.CombinedOutput(); err != nil {

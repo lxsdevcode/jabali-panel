@@ -133,7 +133,7 @@ func TestValidateNginxRules(t *testing.T) {
 				{
 					Type:   "proxy_pass",
 					Path:   "/api",
-					Target: "http://localhost:9000",
+					Target: "http://backend.example.com:9000", // external (JAB-65: localhost rejected)
 				},
 			},
 			wantError: false,

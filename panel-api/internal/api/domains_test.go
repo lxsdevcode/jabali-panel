@@ -37,18 +37,20 @@ func TestValidateNginxDirectives(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name:      "proxy_pass basic",
+			name:      "proxy_pass basic (JAB-66: removed from raw allowlist)",
 			input:     "proxy_pass http://localhost:3000;",
-			wantError: false,
+			wantError: true,
+			errMsg:    "forbidden directive: proxy_pass",
 		},
 		{
-			name:      "proxy_pass with trailing comment",
+			name:      "proxy_pass with trailing comment (JAB-66: forbidden)",
 			input:     "proxy_pass http://localhost:3000; # forward traffic",
-			wantError: false,
+			wantError: true,
+			errMsg:    "forbidden directive: proxy_pass",
 		},
 		{
 			name:      "multiple valid directives",
-			input:     "add_header X-Foo bar;\nproxy_pass http://localhost:3000;",
+			input:     "add_header X-Foo bar;\nproxy_set_header X-Real-IP $remote_addr;",
 			wantError: false,
 		},
 		{
@@ -72,9 +74,10 @@ func TestValidateNginxDirectives(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name:      "mixed case proxy_pass",
+			name:      "mixed case proxy_pass (JAB-66: forbidden regardless of case)",
 			input:     "PROXY_PASS http://localhost:3000;",
-			wantError: false,
+			wantError: true,
+			errMsg:    "forbidden directive: proxy_pass",
 		},
 		{
 			name:      "try_files directive",
@@ -93,7 +96,7 @@ func TestValidateNginxDirectives(t *testing.T) {
 		},
 		{
 			name:      "location block",
-			input:     "location /api {\nproxy_pass http://backend;\n}",
+			input:     "location /api {\nadd_header X-Api 1;\n}",
 			wantError: false,
 		},
 		{
@@ -248,18 +251,19 @@ func TestValidateNginxDirectives(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name:      "auth_basic_user_file",
+			name:      "auth_basic_user_file (JAB-66: removed — file-read oracle)",
 			input:     "auth_basic_user_file /etc/nginx/.htpasswd;",
-			wantError: false,
+			wantError: true,
+			errMsg:    "forbidden directive: auth_basic_user_file",
 		},
 		{
 			name:      "empty line between directives",
-			input:     "add_header X-Foo bar;\n\nproxy_pass http://localhost:3000;",
+			input:     "add_header X-Foo bar;\n\nproxy_set_header X-Real-IP $remote_addr;",
 			wantError: false,
 		},
 		{
 			name:      "trailing whitespace and comments",
-			input:     "add_header X-Foo bar;  \t  # comment\nproxy_pass http://localhost:3000; # another",
+			input:     "add_header X-Foo bar;  \t  # comment\nproxy_set_header X-Real-IP $remote_addr; # another",
 			wantError: false,
 		},
 		{

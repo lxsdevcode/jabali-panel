@@ -146,10 +146,7 @@ func nginxRateLimitsApplyHandler(ctx context.Context, params json.RawMessage) (a
 		if _, bakErr := os.Stat(backupPath); bakErr == nil {
 			_ = os.Rename(backupPath, nginxRatelimitsFragmentPath)
 		}
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("nginx -t failed after rate-limits update, rolled back: %s", testOut.String()),
-		}
+		return nil, nginxTestFailure("nginx.ratelimits (rolled back)", testOut.String())
 	}
 	// nginx -t passed — discard the backup.
 	_ = os.Remove(backupPath)

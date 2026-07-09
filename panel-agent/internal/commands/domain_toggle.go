@@ -66,10 +66,7 @@ func domainEnableHandler(ctx context.Context, params json.RawMessage) (any, erro
 	if err := testCmd.Run(); err != nil {
 		// Remove symlink on test failure
 		os.Remove(enabledPath)
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("nginx test failed: %s", testOutput.String()),
-		}
+		return nil, nginxTestFailure("domain.enable", testOutput.String())
 	}
 
 	// Reload nginx

@@ -802,7 +802,7 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 		// Clean up on test failure.
 		os.Remove(enabledPath)
 		os.Remove(configPath)
-		return "", fmt.Errorf("nginx test failed: %s", testOutput.String())
+		return "", nginxTestFailure("domain.vhost", testOutput.String())
 	}
 
 	// Reload nginx.
