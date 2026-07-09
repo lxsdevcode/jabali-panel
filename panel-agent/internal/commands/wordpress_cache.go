@@ -85,26 +85,23 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	//    JABALI_WP_CACHE_SOURCE=bundled (debug/override path).
 	dest := filepath.Join(p.InstallPath, "wp-content", "plugins", "jabali-cache")
 	staged := false
-	if strings.EqualFold(os.Getenv("JABALI_WP_CACHE_SOURCE"), "bundled") {
-		// Explicit override: skip WordPress.org entirely.
-	} else if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "install", "jabali-cache", "--force"); err == nil {
-		staged = true
-	} else {
-		// WordPress.org unreachable (egress-restricted tenant, offline host, or
-		// WP.org outage) — fall through to the bundled fallback below.
-		slog.WarnContext(ctx, "jabali-cache: wordpress.org install failed, using bundled fallback",
-			"os_user", p.OSUser, "install_path", p.InstallPath, "detail", truncateReason(out, 300))
+	// JAB-64: the release-bundled plugin is the DEFAULT trusted artifact. Cache
+	// enable must NOT pull mutable PHP into tenant installs from WordPress.org by
+	// default — a compromised package/CDN would be fleet-wide code exec, and this
+	// plugin handles the cache drop-ins + Redis credentials. Only an explicit
+	// opt-in to the "latest" channel (JABALI_WP_CACHE_SOURCE=wordpress-org)
+	// fetches from WP.org; anything else (including unset) uses the bundled copy.
+	if strings.EqualFold(os.Getenv("JABALI_WP_CACHE_SOURCE"), "wordpress-org") {
+		if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "install", "jabali-cache", "--force"); err == nil {
+			staged = true
+		} else {
+			slog.WarnContext(ctx, "jabali-cache: opt-in wordpress.org install failed, using bundled",
+				"os_user", p.OSUser, "install_path", p.InstallPath, "detail", truncateReason(out, 300))
+		}
 	}
 	if !staged {
-		if _, err := os.Stat(bundledWPCachePluginDir); err != nil {
-			return nil, &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition,
-				Message: fmt.Sprintf("could not install jabali-cache from wordpress.org and the bundled fallback is missing at %s — re-run install.sh", bundledWPCachePluginDir)}
-		}
-		if err := exec.CommandContext(ctx, "rm", "-rf", dest).Run(); err != nil {
-			return nil, bkInternal("clear old plugin", err)
-		}
-		if err := exec.CommandContext(ctx, "cp", "-a", bundledWPCachePluginDir, dest).Run(); err != nil {
-			return nil, bkInternal("stage plugin (bundled fallback)", err)
+		if err := stageBundledCachePlugin(ctx, dest, p.OSUser); err != nil {
+			return nil, err
 		}
 	}
 	// Normalize ownership regardless of source: nginx (www-data) must be able to
@@ -375,13 +372,43 @@ func wordpressCachePluginRefreshHandler(ctx context.Context, raw json.RawMessage
 	// always fetches the *current* WordPress.org version and overwrites, so the
 	// sweep reliably converges every site to the published release (WP.org is
 	// canonical per #613). Reinstalling keeps the plugin's activation state.
-	if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "install", "jabali-cache", "--force"); err != nil {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
-			Message: fmt.Sprintf("wp plugin install --force jabali-cache: %v: %s", err, out)}
+	// JAB-64: refresh re-stages the trusted release-bundled plugin by default;
+	// only the opt-in "latest" channel reinstalls from WordPress.org.
+	if strings.EqualFold(os.Getenv("JABALI_WP_CACHE_SOURCE"), "wordpress-org") {
+		if out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "install", "jabali-cache", "--force"); err != nil {
+			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal,
+				Message: fmt.Sprintf("wp plugin install --force jabali-cache: %v: %s", err, out)}
+		}
+	} else {
+		dest := filepath.Join(p.InstallPath, "wp-content", "plugins", "jabali-cache")
+		if err := stageBundledCachePlugin(ctx, dest, p.OSUser); err != nil {
+			return nil, err
+		}
 	}
 	// Report the resulting version (best-effort).
 	ver, _ := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "plugin", "get", "jabali-cache", "--field=version")
 	return wordpressCachePluginRefreshResult{Refreshed: true, Version: strings.TrimSpace(ver)}, nil
+}
+
+// stageBundledCachePlugin installs the release-bundled jabali-cache plugin into
+// dest (rm + cp -a) and normalizes ownership so the per-user PHP-FPM pool and
+// nginx (www-data) can read it. This is the DEFAULT trusted source (JAB-64):
+// panel-managed infra code must not come from a mutable external channel.
+func stageBundledCachePlugin(ctx context.Context, dest, osUser string) error {
+	if _, err := os.Stat(bundledWPCachePluginDir); err != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeFailedPrecondition,
+			Message: fmt.Sprintf("bundled jabali-cache missing at %s \u2014 re-run install.sh", bundledWPCachePluginDir)}
+	}
+	if err := exec.CommandContext(ctx, "rm", "-rf", dest).Run(); err != nil {
+		return bkInternal("clear old plugin", err)
+	}
+	if err := exec.CommandContext(ctx, "cp", "-a", bundledWPCachePluginDir, dest).Run(); err != nil {
+		return bkInternal("stage plugin (bundled)", err)
+	}
+	if err := exec.CommandContext(ctx, "chown", "-R", osUser+":www-data", dest).Run(); err != nil {
+		return bkInternal("chown plugin", err)
+	}
+	return nil
 }
 
 func init() {
