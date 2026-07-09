@@ -706,7 +706,10 @@ func renderSummaryCard(lines []string) string {
 	if len(notes) > 0 {
 		body.WriteString("\n\n" + helpStyle.Render(strings.Join(notes, "\n")))
 	}
-	return cardStyle.Render(body.String())
+	// No border: the advisory notes are long, unwrapped lines that overflowed the
+	// bordered box and scattered its pipes mid-line. Plain left-aligned text reads
+	// cleanly and lets the terminal soft-wrap long lines.
+	return body.String()
 }
 
 var (
