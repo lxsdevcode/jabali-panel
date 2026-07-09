@@ -71,17 +71,19 @@ type Model struct {
 	mods     []modules.Module
 	selected map[string]bool
 
-	installSh string
-	dryRun    bool
-	events    chan tea.Msg
-	spinner   spinner.Model
-	progress  progress.Model
-	stepsDone float64 // completed phase weight (apt phase counts as aptWeight)
-	stepsTot  float64 // total phase weight (estimate + aptWeight)
-	creep     float64 // intra-phase progress (0..1); apt uses parsed %, others a timer
-	inApt     bool    // current phase is the long "apt install system packages" step
-	started   bool    // at least one phase marker seen (so we know a prev phase to close)
-	logHidden bool    // hide the streaming log box (toggle with \'l\')
+	installSh  string
+	dryRun     bool
+	events     chan tea.Msg
+	spinner    spinner.Model
+	progress   progress.Model
+	stepsDone  float64 // completed phase weight (apt phase counts as aptWeight)
+	stepsTot   float64 // total phase weight (estimate + aptWeight)
+	creep      float64 // intra-phase progress (0..1); apt uses parsed %, others a timer
+	inApt      bool    // current phase is the long "apt install system packages" step
+	started    bool    // at least one phase marker seen (so we know a prev phase to close)
+	prevSample sysSample
+	stats      sysStats
+	logHidden  bool // hide the streaming log box (toggle with \'l\')
 
 	logLines   []string
 	phase      string
@@ -163,6 +165,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.creep < 0.9 {
 			m.creep += 0.05
 		}
+		cur := sampleSys(time.Time(msg))
+		m.stats = computeStats(m.prevSample, cur)
+		m.prevSample = cur
 		return m, tea.Batch(tickCmd(), m.progress.SetPercent(m.overallPct()))
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -492,6 +497,7 @@ func (m Model) View() string {
 			b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
 			b.WriteString(helpStyle.Render("l: hide log   installing… please wait (ctrl+c aborts)"))
 		}
+		b.WriteString("\n\n" + statsFooter(m.stats))
 	case screenResult:
 		if m.installErr != nil {
 			b.WriteString(errStyle.Render("Install failed"))
@@ -582,12 +588,13 @@ func phpChips(f configField, focused bool) string {
 // looks frozen. ~45 puts it around a third of a full install.
 const aptWeight = 45.0
 
-// tickMsg drives the intra-phase progress creep on a timer.
-type tickMsg struct{}
+// tickMsg drives the intra-phase progress creep + the system-stats footer on a
+// timer; it carries the tick time so stats rates have a delta.
+type tickMsg time.Time
 
 // tickCmd fires a tickMsg roughly twice a second while installing.
 func tickCmd() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 // overallPct combines completed phases with the current-phase creep, capped
@@ -677,4 +684,55 @@ func renderSummaryCard(lines []string) string {
 		body.WriteString("\n\n" + helpStyle.Render(strings.Join(notes, "\n")))
 	}
 	return cardStyle.Render(body.String())
+}
+
+var (
+	barOKStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	barWarnStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	barHotStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	statLabel    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+)
+
+// statBar renders a compact [████░░░░] bar coloured by load, plus the percent.
+func statBar(label string, pct float64, width int) string {
+	if pct < 0 {
+		pct = 0
+	} else if pct > 100 {
+		pct = 100
+	}
+	filled := int(pct/100*float64(width) + 0.5)
+	st := barOKStyle
+	if pct >= 90 {
+		st = barHotStyle
+	} else if pct >= 70 {
+		st = barWarnStyle
+	}
+	bar := st.Render(strings.Repeat("█", filled)) + offStyle.Render(strings.Repeat("░", width-filled))
+	return statLabel.Render(label+" ") + bar + statLabel.Render(fmt.Sprintf(" %3.0f%%", pct))
+}
+
+// humanRate formats bytes/sec as B/K/M/G per second.
+func humanRate(bps float64) string {
+	units := []string{"B", "K", "M", "G"}
+	i := 0
+	for bps >= 1024 && i < len(units)-1 {
+		bps /= 1024
+		i++
+	}
+	return fmt.Sprintf("%.1f%s/s", bps, units[i])
+}
+
+// statsFooter is the live system-metrics line shown while installing.
+func statsFooter(s sysStats) string {
+	parts := []string{
+		statBar("CPU", s.cpuPct, 10),
+		statBar("MEM", s.memPct, 10),
+	}
+	if s.haveNet {
+		parts = append(parts, statLabel.Render("NET ")+humanRate(s.netBps))
+	}
+	if s.haveIO {
+		parts = append(parts, statLabel.Render("DISK ")+humanRate(s.ioBps))
+	}
+	return strings.Join(parts, statLabel.Render("   "))
 }
