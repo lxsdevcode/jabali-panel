@@ -126,7 +126,12 @@ func wordpressCacheSetHandler(ctx context.Context, raw json.RawMessage) (any, er
 	//    key prefix (~jc:<osuser>:*) are always correct regardless of any value
 	//    saved via the admin screen. We no longer write a jabali-cache-config.php
 	//    file (the plugin stopped reading one; it deletes any legacy copy).
-	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, "wp_"+p.OSUser, true, p.MaxTTL, p.PageCache, p.PageTTL, p.MaxMemMB); err != nil {
+	// JAB-62: the ACL username is PER-INSTALL (wp_<osuser>_<installID>). p.Prefix is
+	// "<osuser>:<installID>", so wp_ + prefix-with-:-as-_ reproduces exactly the
+	// name panel-api provisioned (installACLUser). Never revert to wp_<osuser> —
+	// that credential could read sibling installs' keys.
+	aclUser := "wp_" + strings.ReplaceAll(p.Prefix, ":", "_")
+	if err := setWPConfigCacheConstants(p.InstallPath, socket, db, p.Prefix, p.RedisPassword, aclUser, true, p.MaxTTL, p.PageCache, p.PageTTL, p.MaxMemMB); err != nil {
 		return nil, bkInternal("write wp-config constants", err)
 	}
 

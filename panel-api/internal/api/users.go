@@ -739,7 +739,7 @@ func (h *userHandler) delete(c *gin.Context) {
 	// Best-effort: a revoke failure is logged, never blocks the delete.
 	if h.cfg.Redis != nil && username != "" {
 		rctx, rcancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-		if rErr := revokeTenantRedisACL(rctx, h.cfg.Redis, username); rErr != nil {
+		if rErr := revokeAllUserCacheACLs(rctx, h.cfg.Redis, username); rErr != nil {
 			slog.Warn("cascade delete: revoke tenant cache ACL failed",
 				"user_id", id, "username", username, "err", rErr)
 		}

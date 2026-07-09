@@ -24,7 +24,7 @@ import (
 )
 
 func newAppCacheDoctorCmd() *cobra.Command {
-	var repair, jsonOut bool
+	var repair, jsonOut, migrateACL bool
 	cmd := &cobra.Command{
 		Use:     "cache-doctor",
 		Short:   "Detect (and optionally --repair) drift on cache-enabled WordPress installs",
@@ -57,7 +57,7 @@ func newAppCacheDoctorCmd() *cobra.Command {
 			// cfg is only needed for --repair; build it lazily so a plain check
 			// never requires Redis/secret wiring.
 			var repairCfg api.ApplicationHandlerConfig
-			if repair {
+			if repair || migrateACL {
 				repairCfg, err = buildAppDeps()
 				if err != nil {
 					return fmt.Errorf("wire app deps for --repair: %w", err)
@@ -146,6 +146,53 @@ func newAppCacheDoctorCmd() *cobra.Command {
 					checked, drifted, repaired, failed)
 			}
 
+			if migrateACL {
+				// JAB-62: force re-provision EVERY cache-enabled install to a per-install
+				// ACL user (drift-repair only touches unhealthy installs; a healthy
+				// install on the legacy shared user must still migrate). Then reap the
+				// orphaned shared user, but ONLY after ALL of that user's installs
+				// re-provisioned this run — else a not-yet-migrated sibling loses cache.
+				perUserTotal := map[string]int{}
+				perUserOK := map[string]int{}
+				migFailed := 0
+				for i := range installs {
+					in := installs[i]
+					if in.AppType != "wordpress" || !in.CacheEnabled || in.Status != "ready" {
+						continue
+					}
+					u, uErr := userRepo.FindByID(ctx, in.UserID)
+					if uErr != nil || u == nil || u.Username == nil || *u.Username == "" {
+						continue
+					}
+					osUser := *u.Username
+					perUserTotal[osUser]++
+					if rErr := api.SetApplicationCache(ctx, repairCfg, in.ID, true, true, ""); rErr != nil {
+						migFailed++
+						fmt.Printf("MIGRATE-ACL FAILED %s (%s): %v\n", in.ID, osUser, rErr)
+					} else {
+						perUserOK[osUser]++
+					}
+				}
+				reaped, skipped := 0, 0
+				for osUser, total := range perUserTotal {
+					if perUserOK[osUser] == total {
+						if rErr := api.ReapLegacySharedCacheACL(ctx, repairCfg.Redis, osUser); rErr != nil {
+							fmt.Printf("reap wp_%s: %v\n", osUser, rErr)
+						} else {
+							reaped++
+							cliAuditOK(ctx, "cache_acl_reap_shared", "cache_acl", "wp_"+osUser, nil)
+						}
+					} else {
+						skipped++
+						fmt.Printf("SKIP reap wp_%s: %d/%d installs migrated (leaving shared user for un-migrated sibling)\n", osUser, perUserOK[osUser], total)
+					}
+				}
+				fmt.Printf("migrate-acl: %d users, %d reaped, %d skipped, %d install re-provision failures\n", len(perUserTotal), reaped, skipped, migFailed)
+				if migFailed > 0 {
+					return fmt.Errorf("%d install(s) failed ACL migration", migFailed)
+				}
+			}
+
 			cliAuditOK(ctx, "app.cache_doctor", "app_install", "*", nil)
 			if failed > 0 {
 				return fmt.Errorf("%d install(s) failed to repair", failed)
@@ -154,6 +201,7 @@ func newAppCacheDoctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&repair, "repair", false, "re-provision drifted installs (re-stamp constants, re-provision ACL, re-verify)")
+	cmd.Flags().BoolVar(&migrateACL, "migrate-acl", false, "JAB-62: re-provision every cache-enabled install to a per-install Redis ACL user, then reap orphaned legacy shared users (safe/idempotent)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a JSON report")
 	return cmd
 }

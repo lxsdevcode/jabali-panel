@@ -166,6 +166,7 @@ jabali app cache-doctor [flags]
 **Flags:**
 
 - `--json` — emit a JSON report
+- `--migrate-acl` — JAB-62: re-provision every cache-enabled install to a per-install Redis ACL user, then reap orphaned legacy shared users (safe/idempotent)
 - `--repair` — re-provision drifted installs (re-stamp constants, re-provision ACL, re-verify)
 
 #### `jabali app clone`
