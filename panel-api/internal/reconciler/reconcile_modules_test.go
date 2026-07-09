@@ -130,3 +130,25 @@ func TestModuleInstallBackoff(t *testing.T) {
 		t.Fatal("attempt after the retry window should be due again")
 	}
 }
+
+// Locks the convergence registry wiring: every optional module install.sh
+// supports is present, mail depends on dns, and the rest have no dependency.
+func TestConvergedModulesWiring(t *testing.T) {
+	deps := map[string]string{}
+	for _, m := range convergedModules {
+		deps[m.key] = m.dependsOn
+	}
+	for _, want := range []string{"dns", "mail", "quota", "security"} {
+		if _, ok := deps[want]; !ok {
+			t.Errorf("convergedModules missing %q", want)
+		}
+	}
+	if deps["mail"] != "dns" {
+		t.Errorf("mail dependsOn = %q, want dns", deps["mail"])
+	}
+	for _, indep := range []string{"dns", "quota", "security"} {
+		if deps[indep] != "" {
+			t.Errorf("%s dependsOn = %q, want none", indep, deps[indep])
+		}
+	}
+}

@@ -364,13 +364,12 @@ run_if_module() {
 #
 # SAFETY: each install_module_<key> below must be standalone-runnable +
 # idempotent. Only modules whose functions have been AUDITED for that are wired
-# here (quota, dns, mail); security returns a clear error until its env-from-DB
-# reconstruction lands (it reads server-settings env that main() sets during a
-# full install; a runtime pass must reload it first — see
-# plans/module-install-on-enable.md Step 0). dns + mail use
-# reconstruct_server_env_from_db below to repopulate that env from the
-# server_settings DB row. mail additionally requires the dns module (pdns
-# self-zone), asserted at the top of install_module_mail.
+# here (all optional modules: quota, dns, mail, security). dns + mail use
+# reconstruct_server_env_from_db below to repopulate the identity env from the
+# server_settings DB row (main() gets it from prompts). mail additionally
+# requires the dns module (pdns self-zone), asserted at the top of
+# install_module_mail. security needs no identity env (server-wide) and no
+# cross-module dependency.
 install_module() {
   local key="${1:-}"
   # Refuse to run if the panel isn't installed — this mode adds a module to an
@@ -382,8 +381,7 @@ install_module() {
     quota)    install_module_quota ;;
     dns)      install_module_dns ;;
     mail)     install_module_mail ;;
-    security)
-      _die "install.sh --install-module security: not yet supported at runtime (server-settings env reconstruction pending — plans/module-install-on-enable.md Step 0). quota, dns and mail are available today." ;;
+    security) install_module_security ;;
     *)        _die "install.sh --install-module: unknown module '$key' (want: quota|dns|mail|security)" ;;
   esac
   _ok "module '$key' install complete"
@@ -525,6 +523,53 @@ install_module_mail() {
   # above, so the self-zone FK holds.
   install_panel_primary_domain
   install_bulwark
+}
+
+# install_module_security — runtime install of the security module (CrowdSec +
+# AppSec + nginx bouncer + login-allowlist + jabali scenarios + blocklists +
+# malware/ClamAV/YARA stack + UFW + AppArmor + AIDE) on an already-installed
+# host. Standalone equivalent of main()'s `run_if_module security …` block, minus
+# the intervening non-security steps (cleanup_modsecurity, clone_or_update_repo,
+# etc. — already done on an installed host). No hostname/server env dependency
+# (security is server-wide) and no cross-module dependency. Each fn apt-installs
+# its own packages (guarded by dpkg -s); those services are safe to auto-start,
+# so NO policy-rc.d shim is needed (unlike dns). install_crowdsec self-adds the
+# packagecloud apt source and MUST run first (install_crowdsec_appsec renders
+# config that needs the crowdsec binary — GH#109 ordering scar). appsec runs ONCE
+# here (main() calls it twice only because a fresh install has no panel binary
+# until build_backend; at runtime /usr/local/bin/jabali-panel already exists).
+# install_apparmor / install_aide read profile/unit files from $REPO_DIR/install/
+# which is present on an installed host.
+#
+# Idempotent: guarded package installs, soft (|| _warn) hub/blocklist/malware
+# downloads, `ufw allow` is idempotent and `ufw --force enable` runs LAST +
+# interrupt-safe (default-deny isn't enforced until enable), `aide --init` is
+# backgrounded (nohup). SAFETY: install_ufw enables a default-deny firewall — the
+# allow-list (22/80/443/8443/25/465/587/993/995/4190/53) covers the panel + mail
+# + dns listeners and 22 is hard-asserted, so a --minimal host converging under
+# the reconciler cannot lock itself out.
+#
+# CONVERGENCE COMPLETENESS (deliberate): system.module.status probes crowdsec as
+# the security marker. A run that installs crowdsec then hard-fails a later fn
+# would report installed=true and the convergence pass would stop re-dispatching,
+# so full-stack completeness relies on this function running to completion. The
+# fns are crowdsec-first and mostly soft-failing, so one successful run installs
+# the whole stack; a hard mid-sequence failure surfaces in the agent log + is
+# retryable from the operator toggle.
+install_module_security() {
+  install_crowdsec
+  configure_crowdsec_mariadb
+  install_crowdsec_appsec
+  install_crowdsec_nginx_bouncer
+  install_crowdsec_profiles
+  install_login_allowlist_default_conf
+  install_crowdsec_jabali_scenarios
+  install_crowdsec_jabali_stalwart_scenarios
+  install_crowdsec_blocklists
+  install_malware_stack
+  install_ufw
+  install_apparmor
+  install_aide
 }
 
 # seed_module_flags — M353 (GH #353). Write the per-module server_settings flags
