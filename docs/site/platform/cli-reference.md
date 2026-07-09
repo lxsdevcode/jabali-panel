@@ -3067,6 +3067,7 @@ jabali migrate import [flags]
 - `--allow-degraded` — exit 0 even if the restore ends degraded (a core area — DB/mail/health — failed)
 - `--job-id` — migration_jobs.id (ULID) — required
 - `--keep-staging` — do NOT delete /var/lib/jabali-migrations/<job-id>/ after run (debug aid)
+- `--preserve-source-state` — keep imported source state ACTIVE (mail forwarders/catchalls/filters/autoresponders, and — as later PRs land — credentials/SSL/SSH). Default OFF: imported artifacts land inert and the operator re-activates trusted ones in the panel (JAB-46). Only use for trusted same-owner migrations.
 - `--target-email` — destination user email (only used when auto-creating)
 - `--target-package-id` — hosting package ULID (only used when auto-creating)
 - `--target-password` — destination user password (only used when auto-creating; ≥10 chars)
