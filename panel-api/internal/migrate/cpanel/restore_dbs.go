@@ -85,6 +85,7 @@ func ImportDatabases(
 	agentClient agent.AgentInterface,
 	parsed *ParsedTarball,
 	targetUserID, targetUsername string,
+	preserveCredentials bool,
 ) (*DBImportResult, error) {
 	if dbsRepo == nil {
 		return nil, fmt.Errorf("ImportDatabases: dbs repo nil")
@@ -290,8 +291,18 @@ func ImportDatabases(
 	// apps Just Work, zero config rewrite. Only `@localhost` entries
 	// are kept (jabali is single-host); the panel-managed user above
 	// remains for UI-driven password rotation.
+	// JAB-48: recreating the source's original MySQL users with their native
+	// password HASHES preserves old/weak/compromised DB credentials by default.
+	// The panel-managed user above is fresh + rotated; apps rewritten to it work.
+	// Only recreate the original-hash compatibility users when the operator opts
+	// in (preserve.Credentials / --preserve-source-state) — for apps with
+	// hardcoded original creds. Default: quarantine (record, don't create).
 	grantsPath := filepath.Join(parsed.ExtractDir, "cpmove-"+parsed.SourceUser, "mysql.sql")
-	if compatUsers, gerr := ParseMySQLGrants(grantsPath); gerr == nil && len(compatUsers) > 0 {
+	if compatUsers, gerr := ParseMySQLGrants(grantsPath); gerr == nil && len(compatUsers) > 0 && !preserveCredentials {
+		res.Skipped = append(res.Skipped, fmt.Sprintf(
+			"compat_users: %d source MySQL user(s) with original password hashes NOT recreated (opt in with --preserve-source-state; apps using the panel-managed user are unaffected)",
+			len(compatUsers)))
+	} else if compatUsers, gerr := ParseMySQLGrants(grantsPath); gerr == nil && len(compatUsers) > 0 {
 		compatCreated := 0
 		for _, u := range compatUsers {
 			if !IsNativePasswordHash(u.Hash) {
