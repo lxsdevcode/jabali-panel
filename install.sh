@@ -364,11 +364,13 @@ run_if_module() {
 #
 # SAFETY: each install_module_<key> below must be standalone-runnable +
 # idempotent. Only modules whose functions have been AUDITED for that are wired
-# here (quota, dns); the rest return a clear error until their env-from-DB
-# reconstruction lands (mail/security read server-settings env that main() sets
-# during a full install; a runtime pass must reload it first — see
-# plans/module-install-on-enable.md Step 0). dns uses reconstruct_server_env_from_db
-# below to repopulate that env from the server_settings DB row.
+# here (quota, dns, mail); security returns a clear error until its env-from-DB
+# reconstruction lands (it reads server-settings env that main() sets during a
+# full install; a runtime pass must reload it first — see
+# plans/module-install-on-enable.md Step 0). dns + mail use
+# reconstruct_server_env_from_db below to repopulate that env from the
+# server_settings DB row. mail additionally requires the dns module (pdns
+# self-zone), asserted at the top of install_module_mail.
 install_module() {
   local key="${1:-}"
   # Refuse to run if the panel isn't installed — this mode adds a module to an
@@ -379,8 +381,9 @@ install_module() {
   case "$key" in
     quota)    install_module_quota ;;
     dns)      install_module_dns ;;
-    mail|security)
-      _die "install.sh --install-module $key: not yet supported at runtime (server-settings env reconstruction pending — plans/module-install-on-enable.md Step 0). quota and dns are available today." ;;
+    mail)     install_module_mail ;;
+    security)
+      _die "install.sh --install-module security: not yet supported at runtime (server-settings env reconstruction pending — plans/module-install-on-enable.md Step 0). quota, dns and mail are available today." ;;
     *)        _die "install.sh --install-module: unknown module '$key' (want: quota|dns|mail|security)" ;;
   esac
   _ok "module '$key' install complete"
@@ -484,6 +487,44 @@ install_module_dns() {
   install_powerdns
   bootstrap_pdns_self_zone
   install_pdns_recursor
+}
+
+# install_module_mail — runtime install of the mail module (Stalwart + Bulwark)
+# on an already-installed host. Standalone equivalent of main()'s mail block.
+# No apt / policy-rc.d: Stalwart is a pinned GitHub-release binary (install_stalwart
+# skips re-download when the installed --version already matches) and Bulwark is a
+# Node app on the core nodejs.
+#
+# HARD dependency on the dns module: install_panel_primary_domain FK-asserts the
+# pdns self-zone, and the whole mail stack needs the jabali_pdns database that
+# install_powerdns creates — so mail-on/dns-off is incoherent. We assert the
+# self-zone up front (before any mail work) so an unmet dependency fails clean
+# with NO partial install, rather than dying halfway through install_stalwart.
+install_module_mail() {
+  reconstruct_server_env_from_db
+  if [[ -z "${JABALI_SRV_HOSTNAME:-}" ]]; then
+    _die "install.sh --install-module mail: panel hostname unknown (server_settings not populated); cannot configure the primary mail domain"
+  fi
+  # dns precondition: the pdns self-zone row for the panel hostname must exist.
+  # The query tolerates the jabali_pdns DB being absent entirely (dns never
+  # installed) — any error/empty result => treat as "dns not ready".
+  local self_zone
+  self_zone="$(mariadb jabali_pdns -Ns -e \
+    "SELECT id FROM domains WHERE name='$(_sql_escape "$JABALI_SRV_HOSTNAME")';" 2>/dev/null || true)"
+  if [[ -z "$self_zone" ]]; then
+    _die "install.sh --install-module mail: the DNS module must be installed first (pdns self-zone for '$JABALI_SRV_HOSTNAME' not found). Enable DNS, then mail."
+  fi
+
+  install_stalwart
+  install_stalwart_apply
+  install_jabali_mailhook
+  # install_panel_primary_domain is `run_if_module dns` in main() (it writes a
+  # DNS zone), but at mail-install time we deliberately run it here: it needs
+  # Stalwart ready (the reconciler fires a domain-add) and the mail stack is
+  # useless without the panel's own domain mail-enabled. dns is asserted present
+  # above, so the self-zone FK holds.
+  install_panel_primary_domain
+  install_bulwark
 }
 
 # seed_module_flags — M353 (GH #353). Write the per-module server_settings flags
@@ -10230,7 +10271,11 @@ install_stalwart() {
   # across 0.14.x-0.16.x ("Stalwart Mail Server v0.16.0").
   if [[ -x "$stalwart_binary" ]]; then
     local installed_version
-    installed_version=$("$stalwart_binary" --version 2>&1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || echo "unknown")
+    # `stalwart --version` prints a bare semver ("0.16.12", no `v` prefix), so
+    # match the plain version — an anchored `v\K` matched nothing here, leaving
+    # installed_version="unknown" and re-downloading the binary on EVERY run
+    # (every `jabali update` / `--install-module mail`). (M353 idempotency fix.)
+    installed_version=$("$stalwart_binary" --version 2>&1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || echo "unknown")
     if [[ "$installed_version" == "$stalwart_version" ]]; then
       _ok "Stalwart $stalwart_version already installed"
     else

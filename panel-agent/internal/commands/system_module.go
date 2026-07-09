@@ -48,7 +48,7 @@ type moduleProbe struct {
 
 var moduleProbes = map[string]moduleProbe{
 	"dns":      {bins: []string{"pdns_server"}, binGlob: []string{"/usr/sbin/pdns_server"}, service: "pdns"},
-	"mail":     {bins: []string{"stalwart"}, binGlob: []string{"/usr/local/bin/stalwart", "/opt/stalwart/**/stalwart"}, service: "jabali-stalwart"},
+	"mail":     {bins: []string{"stalwart"}, binGlob: []string{"/usr/local/bin/stalwart"}, service: "jabali-stalwart"}, // symlink + LookPath; filepath.Glob has no **
 	"security": {bins: []string{"cscli", "crowdsec"}, service: "crowdsec"},
 	"quota":    {bins: []string{"quota"}, binGlob: []string{"/usr/sbin/quota"}, service: ""}, // tooling, no service
 }

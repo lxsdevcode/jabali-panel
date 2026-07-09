@@ -16,27 +16,31 @@ import (
 // enabled module's real state and, if it isn't installed+active, dispatch a
 // (detached, backoff-gated) install.
 //
-// Only modules install.sh supports at runtime today are converged (dns, quota);
-// mail/security stay flag-only until their install.sh env-reconstruction lands.
+// Only modules install.sh supports at runtime are converged (dns, mail, quota);
+// security stays flag-only until its install.sh env-reconstruction lands.
 
 // moduleInstallRetryInterval bounds how often a single module's install is
 // re-dispatched. Long enough that a persistently-failing install doesn't hot-
 // loop apt; short enough that an operator retry converges within a coffee break.
 const moduleInstallRetryInterval = 15 * time.Minute
 
-// convergedModules lists the module keys the reconciler will install on demand.
-// Keep in sync with install.sh's --install-module dispatcher + the panel-api
-// PATCH dispatch (serverSettingsHandler.dispatchModuleInstall).
+// convergedModules lists the module keys the reconciler will install on demand,
+// in dependency order (a module's dependsOn must appear earlier). Keep in sync
+// with install.sh's --install-module dispatcher + the panel-api PATCH dispatch
+// (serverSettingsHandler.dispatchModuleInstall).
 var convergedModules = []struct {
-	key     string
-	enabled func(srv moduleFlags) bool
+	key       string
+	dependsOn string // module that must be installed+active first ("" = none)
+	enabled   func(f moduleFlags) bool
 }{
-	{"dns", func(f moduleFlags) bool { return f.dns }},
-	{"quota", func(f moduleFlags) bool { return f.quota }},
+	{key: "dns", enabled: func(f moduleFlags) bool { return f.dns }},
+	{key: "mail", dependsOn: "dns", enabled: func(f moduleFlags) bool { return f.mail }},
+	{key: "quota", enabled: func(f moduleFlags) bool { return f.quota }},
 }
 
 type moduleFlags struct {
 	dns   bool
+	mail  bool
 	quota bool
 }
 
@@ -48,41 +52,43 @@ func (r *Reconciler) reconcileModuleInstalls(ctx context.Context) {
 	if err != nil || srv == nil {
 		return
 	}
-	flags := moduleFlags{dns: srv.DNSEnabled, quota: srv.QuotaEnabled}
+	flags := moduleFlags{dns: srv.DNSEnabled, mail: srv.MailEnabled, quota: srv.QuotaEnabled}
 	for _, m := range convergedModules {
 		if !m.enabled(flags) {
 			continue
 		}
-		r.convergeModule(ctx, m.key)
+		r.convergeModule(ctx, m.key, m.dependsOn)
 	}
 }
 
 // convergeModule probes one module's status and, if it isn't fully up, kicks a
 // detached install. The probe is quick; the install runs in its own goroutine
-// so a multi-minute apt run never blocks ReconcileAll.
-func (r *Reconciler) convergeModule(ctx context.Context, key string) {
-	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	raw, err := r.agent.Call(sctx, "system.module.status", map[string]any{"key": key})
-	if err != nil {
+// so a multi-minute apt/download run never blocks ReconcileAll.
+func (r *Reconciler) convergeModule(ctx context.Context, key, dependsOn string) {
+	// A module with an unmet dependency (e.g. mail needs dns's pdns self-zone +
+	// jabali_pdns DB) must NOT be dispatched — install.sh would _die. Skip
+	// WITHOUT recording a backoff attempt so this module installs promptly on
+	// the tick after its dependency converges, not 15 min later.
+	if dependsOn != "" {
+		di, da, ok := r.moduleStatus(ctx, dependsOn)
+		if !ok || !di || !da {
+			return
+		}
+	}
+
+	installed, active, ok := r.moduleStatus(ctx, key)
+	if !ok {
 		return // agent unreachable — retry next tick, no backoff burned
-	}
-	var st struct {
-		Installed bool `json:"installed"`
-		Active    bool `json:"active"`
-	}
-	if err := json.Unmarshal(raw, &st); err != nil {
-		return
 	}
 	// Converged only when BOTH installed AND active. installed-but-inactive
 	// (crashed/never-started service — the exact reported bug) must still
 	// re-run the install, whose config functions own the start-if-inactive
 	// convergence.
-	if st.Installed && st.Active {
+	if installed && active {
 		return
 	}
 	if !r.moduleInstallDue(key) {
-		return // recently attempted — don't hot-loop apt on a persistent failure
+		return // recently attempted — don't hot-loop on a persistent failure
 	}
 	go func() {
 		ictx, icancel := context.WithTimeout(context.Background(), 12*time.Minute)
@@ -93,6 +99,25 @@ func (r *Reconciler) convergeModule(ctx context.Context, key string) {
 		}
 		r.log.Info("module convergence install dispatched", "key", key)
 	}()
+}
+
+// moduleStatus probes one module's {installed, active} via the agent. ok=false
+// means the agent was unreachable or the response was unparseable.
+func (r *Reconciler) moduleStatus(ctx context.Context, key string) (installed, active, ok bool) {
+	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	raw, err := r.agent.Call(sctx, "system.module.status", map[string]any{"key": key})
+	if err != nil {
+		return false, false, false
+	}
+	var st struct {
+		Installed bool `json:"installed"`
+		Active    bool `json:"active"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return false, false, false
+	}
+	return st.Installed, st.Active, true
 }
 
 // moduleInstallDue returns true and records the attempt when a module hasn't
