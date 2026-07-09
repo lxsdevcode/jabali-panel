@@ -10840,7 +10840,10 @@ _install_stalwart_apply_plan() {
     STALWART_PASSWORD="$admin_token" \
     /usr/local/bin/stalwart-cli query Directory --json 2>/dev/null \
     | python3 -c 'import json,sys
-data = json.load(sys.stdin)
+# stalwart-cli >=1.0.7 emits NDJSON (one object per line), not a JSON array —
+# json.load() would raise "Extra data" and the id never resolved, silently
+# skipping query-field convergence. Parse line-by-line.
+data = [json.loads(l) for l in sys.stdin if l.strip()]
 sql = [d for d in data if d.get("@type") == "Sql"]
 print(sql[0]["id"] if sql else "")' 2>/dev/null || true)"
   if [[ -z "$sql_dir_id" ]]; then
