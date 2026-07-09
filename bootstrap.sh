@@ -26,38 +26,40 @@ for bin in curl tar sha256sum; do
   command -v "$bin" >/dev/null 2>&1 || die "missing required tool: $bin"
 done
 
-log "resolving latest release with a published tarball from ${API_BASE}"
+log "resolving latest release with a verified tarball from ${API_BASE}"
 # Scan the releases list (newest first) rather than /releases/latest: the very
 # newest tag may be published seconds before its build finishes, so it can be
-# asset-less. grep/sed only — no jq dependency on a fresh box. The first
-# jabali-release-*.tar.gz URL in the list belongs to the newest release that has
-# one; the .sha256 sidecar lives at the same download path.
+# asset-less. grep/sed only — no jq dependency on a fresh box. The tarball URLs
+# are already newest-first; the matching .sha256 sidecar is ALWAYS derived from
+# the same tarball URL (same release, same path) so we never pair a tarball with
+# a different release's checksum. Walk candidates until one downloads + verifies.
 rel="$(curl -fsSL "${API_BASE}/releases?limit=30")" || die "could not reach the release API"
-tar_url="$(printf '%s' "$rel" \
+tar_urls="$(printf '%s' "$rel" \
   | grep -oE '"browser_download_url": *"[^"]+"' \
   | sed 's/.*"\(https[^"]*\)"/\1/' \
-  | grep -E 'jabali-release-[0-9a-f]+\.tar\.gz$' | head -1 || true)"
-[[ -n "$tar_url" ]] || die "no published release tarball found (the release build may not have attached assets yet)"
-sum_url="$(printf '%s' "$rel" \
-  | grep -oE '"browser_download_url": *"[^"]+"' \
-  | sed 's/.*"\(https[^"]*\)"/\1/' \
-  | grep -E 'jabali-release-[0-9a-f]+\.tar\.gz\.sha256$' | head -1 || true)"
-[[ -n "$sum_url" ]] || die "release has no .sha256 checksum asset — refusing to run an unverified tarball"
+  | grep -E 'jabali-release-[0-9a-f]+\.tar\.gz$' || true)"
+[[ -n "$tar_urls" ]] || die "no published release tarball found (the release build may not have attached assets yet)"
 
 tmp="$(mktemp -d /tmp/jabali-bootstrap.XXXXXX)"
 trap 'rm -rf "$tmp"' EXIT
 
-log "downloading release tarball"
-curl -fsSL "$tar_url" -o "$tmp/release.tar.gz" || die "tarball download failed"
-curl -fsSL "$sum_url" -o "$tmp/release.sha256" || die "checksum download failed"
-
-# Verify: the .sha256 asset is "<hex>  <filename>"; compare the hex only so a
-# differing filename in the asset doesn't matter.
-expected="$(awk '{print $1}' "$tmp/release.sha256")"
-actual="$(sha256sum "$tmp/release.tar.gz" | awk '{print $1}')"
-[[ -n "$expected" && "$expected" == "$actual" ]] \
-  || die "checksum mismatch — refusing to run (expected ${expected:-none}, got ${actual})"
-log "checksum verified"
+verified=""
+while IFS= read -r tar_url; do
+  [[ -n "$tar_url" ]] || continue
+  sum_url="${tar_url}.sha256"                       # same release, same path
+  log "trying $(basename "$tar_url")"
+  curl -fsSL "$sum_url" -o "$tmp/release.sha256" 2>/dev/null || { log "  no checksum sidecar, skipping"; continue; }
+  curl -fsSL "$tar_url" -o "$tmp/release.tar.gz"  || { log "  tarball download failed, skipping"; continue; }
+  expected="$(awk '{print $1}' "$tmp/release.sha256")"
+  actual="$(sha256sum "$tmp/release.tar.gz" | awk '{print $1}')"
+  if [[ -n "$expected" && "$expected" == "$actual" ]]; then
+    verified=1
+    log "checksum verified"
+    break
+  fi
+  log "  checksum mismatch, skipping"
+done <<< "$tar_urls"
+[[ -n "$verified" ]] || die "no release had a matching .tar.gz + .sha256 pair (the release build may be mid-flight — retry shortly)"
 
 # Extract only what the bootstrap needs.
 tar -C "$tmp" -xzf "$tmp/release.tar.gz" bin/jabali-installer install.sh \
