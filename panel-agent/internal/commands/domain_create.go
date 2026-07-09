@@ -181,6 +181,15 @@ server {
     server_name {{.Domain}} www.{{.Domain}};
     ssl_certificate {{.SSLCertPath}};
     ssl_certificate_key {{.SSLKeyPath}};
+    # JAB-69: modern TLS + Mozilla-intermediate ciphers (no 3DES/RC4/CBC-weak).
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    # JAB-70: baseline security headers (location / inherits these; cache-status
+    # locations that set their own add_header re-declare them below).
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
 {{ end }}
 {{ if .IsEnabled }}
     root {{.DocRoot}};
@@ -298,6 +307,11 @@ server {
         fastcgi_cache_revalidate on;
         access_log /var/log/nginx/jcache-{{.Domain}}.log jcache buffer=8k flush=5s;
         add_header X-Jabali-Cache $upstream_cache_status always;
+        # JAB-70: re-declare security headers (a location's add_header suppresses
+        # server-scope ones).
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are
         # not, and a skip-miss must never be amplified to Cloudflare scale. The
@@ -360,6 +374,11 @@ server {
         fastcgi_cache_revalidate on;
         access_log /var/log/nginx/jcache-{{.Domain}}.log jcache buffer=8k flush=5s;
         add_header X-Jabali-Cache $upstream_cache_status always;
+        # JAB-70: re-declare security headers (a location's add_header suppresses
+        # server-scope ones).
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
         # Do NOT advertise public/CDN caching for dynamic PHP responses (Gitea
         # #417): the origin micro-cache is purgeable but browser/CDN copies are
         # not, and a skip-miss must never be amplified to Cloudflare scale. The
