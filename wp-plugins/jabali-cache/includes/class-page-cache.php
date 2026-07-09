@@ -142,6 +142,13 @@ class Jabali_Cache_Page_Cache {
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			return false;
 		}
+		// JAB-60: never serve/store the page cache for an authenticated request.
+		// nginx already bypasses on $http_authorization; the WP layer must match
+		// or a bearer/basic-authed GET could be cached and replayed without its
+		// auth context.
+		if ( self::has_auth_credentials( isset( $_SERVER ) ? (array) $_SERVER : array() ) ) { // phpcs:ignore
+			return false;
+		}
 		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/'; // phpcs:ignore
 
 		// Query strings: skip by default (dynamic). Allow a short safelist
@@ -195,7 +202,78 @@ class Jabali_Cache_Page_Cache {
 				return false;
 			}
 		}
+		// JAB-61: honor the response's own cache-control opt-outs, matching
+		// nginx's private/no-store/no-cache bypass. A plugin may protect a page
+		// with Cache-Control: private / no-store (or Pragma/Expires/Vary) without
+		// setting a cookie on every response.
+		if ( self::response_opts_out( headers_list() ) ) {
+			return false;
+		}
 		return true;
+	}
+
+	/**
+	 * JAB-60: true when the request carries any HTTP auth credential. Static and
+	 * array-injected so it is unit-testable without the $_SERVER superglobal.
+	 *
+	 * @param array $server $_SERVER-style map.
+	 * @return bool
+	 */
+	public static function has_auth_credentials( array $server ) {
+		foreach ( array( 'HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'PHP_AUTH_USER', 'PHP_AUTH_PW', 'PHP_AUTH_DIGEST' ) as $k ) {
+			if ( isset( $server[ $k ] ) && '' !== (string) $server[ $k ] ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * JAB-61: true when the RESPONSE opted out of shared caching via its headers.
+	 * Mirrors nginx's no-store/private bypass so the WP page cache never persists
+	 * a response the application marked private. Static + array-injected for
+	 * unit testing.
+	 *
+	 * @param array $headers headers_list()-style "Name: value" strings.
+	 * @return bool
+	 */
+	public static function response_opts_out( array $headers ) {
+		foreach ( $headers as $h ) {
+			$lower = strtolower( (string) $h );
+			$cpos  = strpos( $lower, ':' );
+			if ( false === $cpos ) {
+				continue;
+			}
+			$name = trim( substr( $lower, 0, $cpos ) );
+			$val  = trim( substr( $lower, $cpos + 1 ) );
+			switch ( $name ) {
+				case 'cache-control':
+					if ( false !== strpos( $val, 'private' )
+						|| false !== strpos( $val, 'no-store' )
+						|| false !== strpos( $val, 'no-cache' )
+						|| preg_match( '/max-age\s*=\s*0(\D|$)/', $val ) ) {
+						return true;
+					}
+					break;
+				case 'pragma':
+					if ( false !== strpos( $val, 'no-cache' ) ) {
+						return true;
+					}
+					break;
+				case 'vary':
+					if ( '*' === $val || false !== strpos( $val, 'cookie' ) || false !== strpos( $val, 'authorization' ) ) {
+						return true;
+					}
+					break;
+				case 'expires':
+					$exp = strtotime( trim( substr( (string) $h, $cpos + 1 ) ) );
+					if ( false !== $exp && $exp <= time() ) {
+						return true;
+					}
+					break;
+			}
+		}
+		return false;
 	}
 
 	private function has_identity_cookie() {
