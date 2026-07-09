@@ -1466,6 +1466,9 @@ func validateNginxRules(rules models.NginxRules) error {
 			if r.Pattern == "" || r.Replacement == "" {
 				return fmt.Errorf("rule %d: pattern and replacement required", i)
 			}
+			if err := validateRewritePattern(r.Pattern, 256); err != nil {
+				return fmt.Errorf("rule %d: %v", i, err)
+			}
 			switch r.Flag {
 			case "", "last", "break", "redirect", "permanent":
 			default:
@@ -1519,6 +1522,32 @@ func validateNginxRules(rules models.NginxRules) error {
 				return fmt.Errorf("rule %d: invalid chars in IP %q", i, ip)
 			}
 		}
+	}
+	return nil
+}
+
+// redosNestedQuantRE flags the classic catastrophic-backtracking shape: a group
+// that itself contains a + or * quantifier and is ITSELF quantified with + or *
+// — e.g. (a+)+, (.*)*, (\\d+)*. nginx uses PCRE (backtracking), so these can
+// pin a worker on every request to the vhost. Go's RE2 is linear and won't
+// "detect" ReDoS by running, so we match the shape textually.
+var redosNestedQuantRE = regexp.MustCompile(`\([^)]*[+*][^)]*\)\s*[+*]`)
+
+// validateRewritePattern guards the nginx `rewrite` pattern (JAB-72), which is
+// rendered verbatim (unquoted) into the vhost. Cap the length, reject nested
+// quantifiers (ReDoS), and reject grossly invalid regex syntax via a RE2
+// compile pre-check. RE2 is stricter than PCRE on a few constructs (named
+// groups, backreferences) which nginx rewrites almost never use in the MATCH;
+// the trade favors blocking a worker-pinning pattern over allowing exotic ones.
+func validateRewritePattern(pattern string, maxLen int) error {
+	if len(pattern) > maxLen {
+		return fmt.Errorf("rewrite pattern too long (%d > %d chars)", len(pattern), maxLen)
+	}
+	if redosNestedQuantRE.MatchString(pattern) {
+		return fmt.Errorf("rewrite pattern has nested quantifiers (ReDoS risk)")
+	}
+	if _, err := regexp.Compile(pattern); err != nil {
+		return fmt.Errorf("rewrite pattern is not valid regex: %v", err)
 	}
 	return nil
 }
@@ -1579,6 +1608,10 @@ func validateTenantNginxRules(rules models.NginxRules) error {
 			rep := strings.TrimSpace(r.Replacement)
 			if strings.Contains(rep, "://") || strings.HasPrefix(rep, "//") {
 				return fmt.Errorf("rule %d: rewrite target must be a local path (no scheme or host)", i)
+			}
+			// JAB-72: tenants get a stricter pattern length cap than admins.
+			if err := validateRewritePattern(r.Pattern, 128); err != nil {
+				return fmt.Errorf("rule %d: %v", i, err)
 			}
 		}
 	}
