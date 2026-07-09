@@ -500,7 +500,7 @@ func (m Model) View() string {
 		} else {
 			b.WriteString(onStyle.Render("✓ Install complete"))
 			if len(m.summary) > 0 {
-				b.WriteString("\n\n" + boxStyle.Render(strings.Join(m.summary, "\n")) + "\n")
+				b.WriteString("\n\n" + renderSummaryCard(m.summary) + "\n")
 			} else {
 				b.WriteString("\n\n" + helpStyle.Render("Log in at the panel URL printed above.") + "\n")
 			}
@@ -635,4 +635,46 @@ func (m *Model) captureSummary(s string) {
 	if sc != "" {
 		m.summary = append(m.summary, sc)
 	}
+}
+
+var (
+	fieldLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(11)
+	urlValueStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	credValueStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
+	cardStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("42")).Padding(0, 2)
+	cardTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
+)
+
+// renderSummaryCard turns the captured install summary lines into a styled
+// "Panel access" card: URL/Username/Password as aligned coloured fields, and
+// the "> ..." advisory lines as a dim note block below.
+func renderSummaryCard(lines []string) string {
+	var fields []string
+	var notes []string
+	for _, ln := range lines {
+		t := strings.TrimSpace(ln)
+		switch {
+		case strings.HasPrefix(t, "URL:"):
+			fields = append(fields, fieldLabelStyle.Render("URL")+urlValueStyle.Render(strings.TrimSpace(strings.TrimPrefix(t, "URL:"))))
+		case strings.HasPrefix(t, "Username:"):
+			fields = append(fields, fieldLabelStyle.Render("Username")+credValueStyle.Render(strings.TrimSpace(strings.TrimPrefix(t, "Username:"))))
+		case strings.HasPrefix(t, "Password:"):
+			fields = append(fields, fieldLabelStyle.Render("Password")+credValueStyle.Render(strings.TrimSpace(strings.TrimPrefix(t, "Password:"))))
+		case strings.HasPrefix(t, ">"):
+			notes = append(notes, "• "+strings.TrimSpace(strings.TrimPrefix(t, ">")))
+		default:
+			// continuation of a previous note (wrapped advisory line)
+			if len(notes) > 0 && t != "" {
+				notes[len(notes)-1] += " " + t
+			}
+		}
+	}
+	var body strings.Builder
+	body.WriteString(cardTitleStyle.Render("Panel access") + "\n\n")
+	body.WriteString(strings.Join(fields, "\n"))
+	if len(notes) > 0 {
+		body.WriteString("\n\n" + helpStyle.Render(strings.Join(notes, "\n")))
+	}
+	return cardStyle.Render(body.String())
 }
