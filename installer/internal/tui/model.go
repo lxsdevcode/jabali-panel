@@ -44,14 +44,14 @@ var (
 	offStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
-	bgWhite     = lipgloss.Color("15")
-	fgDark      = lipgloss.Color("236")
+	bgWhite     = lipgloss.Color("#ffffff")
+	fgDark      = lipgloss.Color("#1a1a1a")
 	appStyle    = lipgloss.NewStyle().Padding(1, 2).Background(bgWhite).Foreground(fgDark)
 	logoStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
 	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
-// jabaliLogo is the brand logo shown at the top of every screen. It's a chafa
+// jabaliLogo is the brand logo shown on the welcome screen. It's a chafa
 // render of jabali_logo.png (truecolor block art, white background) embedded at
 // build time so there's no ANSI-escaping in source.
 //
@@ -59,9 +59,15 @@ var (
 var jabaliLogo string
 
 // bannerView renders the logo + tagline, prepended to every screen.
-func bannerView() string {
-	return strings.TrimRight(jabaliLogo, "\n") + "\n" +
-		tagStyle.Render("JABALI PANEL · Linux Web Hosting Control Panel") + "\n\n"
+func bannerView(m Model) string {
+	tag := tagStyle.Render("JABALI PANEL · Linux Web Hosting Control Panel")
+	// Full logo only on the welcome screen; elsewhere a compact one-line brand
+	// so tall screens (modules, config, installing) don't push the art off the
+	// top of the terminal — the "hog is up" cutoff.
+	if m.screen == screenWelcome {
+		return strings.TrimRight(jabaliLogo, "\n") + "\n" + tag + "\n\n"
+	}
+	return tag + "\n\n"
 }
 
 // Model is the installer state machine.
@@ -519,7 +525,7 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
 	}
-	content := appStyle.Render(bannerView() + b.String())
+	content := appStyle.Render(bannerView(m) + b.String())
 	if m.width <= 0 || m.height <= 0 {
 		return content // no size yet (pre first WindowSizeMsg)
 	}
