@@ -828,6 +828,29 @@ func cpanelRestoreCallback(
 			}
 			daHomeHandled := false
 			if len(rsyncRows) > 0 {
+				// JAB-45: the remote source paths must live under the SOURCE ACCOUNT
+				// home (/home/<SourceUser>/), not just /home/. A tampered manifest
+				// pointing a docroot at /home/victim/... would otherwise copy another
+				// source tenant's files (the SSH session is root/admin). Reject rows
+				// outside the account root (clean path, no traversal) as a security
+				// critical — the job degrades rather than silently copying.
+				if p.parsed.SourceUser != "" {
+					srcRoot := "/home/" + p.parsed.SourceUser
+					kept := rsyncRows[:0]
+					for _, r := range rsyncRows {
+						cl := filepath.Clean(r.SrcPath)
+						if cl == srcRoot || strings.HasPrefix(cl, srcRoot+"/") {
+							kept = append(kept, r)
+						} else {
+							p.criticals = append(p.criticals, fmt.Sprintf(
+								"security: rsync source %q for domain %q is outside the source account %s — refused",
+								r.SrcPath, r.Dom, srcRoot))
+						}
+					}
+					rsyncRows = kept
+				}
+			}
+			if len(rsyncRows) > 0 {
 				secretPath := fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)
 				// JAB-52: reuse the operator's pull-source SSH login (job.SourceUser,
 				// possibly DA-pivoted) instead of hardcoding root; legacy jobs fall back
@@ -1148,6 +1171,16 @@ func cpanelRestoreCallback(
 // operator-driven workflow today often has the cpmove tarball
 // already on disk + no need to re-run discovery. Restore stage
 // works without analyze having succeeded.
+// migrationSSHUser is the source SSH login for all remote stages (analyze, DA
+// pivot, pull, home rsync) — the operator-supplied job.SourceUser (JAB-58/52),
+// falling back to root for legacy jobs that never persisted one.
+func migrationSSHUser(job *models.MigrationJob) string {
+	if job != nil && job.SourceUser != "" {
+		return job.SourceUser
+	}
+	return "root"
+}
+
 func cpanelAnalyzeCallback(jobsRepo repository.MigrationJobRepository) migrate.StageCallback {
 	return func(ctx context.Context, job *models.MigrationJob, payload any) (int64, []string, error) {
 		secretPath := fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)
@@ -1174,7 +1207,7 @@ func cpanelAnalyzeCallback(jobsRepo repository.MigrationJobRepository) migrate.S
 		if s, sErr := settingsRepo.Get(ctx); sErr == nil && s != nil {
 			migrate.ApplyAllowPrivate(disc, s.MigrationAllowPrivateHosts)
 		}
-		s, err := disc.Connect(ctx, job.SourceHost, "root", migrate.SecretRef{Path: secretPath})
+		s, err := disc.Connect(ctx, job.SourceHost, migrationSSHUser(job), migrate.SecretRef{Path: secretPath})
 		if err != nil {
 			return 0, nil, fmt.Errorf("connect: %w", err)
 		}
@@ -1280,7 +1313,7 @@ func preflightDAPivot(ctx context.Context, job *models.MigrationJob) (string, er
 	}
 	subctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	s, err := disc.Connect(subctx, job.SourceHost, "root", migrate.SecretRef{Path: secretPath})
+	s, err := disc.Connect(subctx, job.SourceHost, migrationSSHUser(job), migrate.SecretRef{Path: secretPath})
 	if err != nil {
 		return "", nil
 	}

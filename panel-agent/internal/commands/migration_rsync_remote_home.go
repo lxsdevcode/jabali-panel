@@ -28,6 +28,7 @@ type migrationRsyncRemoteHomeParams struct {
 	SSHUser    string `json:"ssh_user"`
 	SecretPath string `json:"secret_path"` // /etc/jabali-panel/migration-secrets/<job>.env
 	SrcPath    string `json:"src_path"`    // absolute source path, e.g. /home/<acct>/domains/<dom>/public_html
+	SrcAccount string `json:"src_account"` // source cPanel/DA account; src_path must live under /home/<src_account>/ (JAB-45)
 	DestPath   string `json:"dest_path"`   // absolute dest path on this host
 	DestUser   string `json:"dest_user"`   // chown target after rsync
 }
@@ -57,6 +58,21 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
 			Message: "invalid dest_user"}
 	}
+	// JAB-45: validate the UNTRUSTED remote source path first — scope it to the
+	// source account home (/home/<src_account>), not just /home/, so a tampered
+	// manifest can't pull another source tenant's files (the SSH login is usually
+	// root/admin). filepath.Clean collapses any ../ traversal.
+	if p.SrcAccount == "" || strings.ContainsAny(p.SrcAccount, "/.") {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
+			Message: "src_account required and must be a bare account name"}
+	}
+	srcRoot := "/home/" + p.SrcAccount
+	cleanSrc := filepath.Clean(p.SrcPath)
+	if cleanSrc != srcRoot && !strings.HasPrefix(cleanSrc, srcRoot+"/") {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
+			Message: "src_path must be under /home/<src_account> on source"}
+	}
+	p.SrcPath = cleanSrc
 	// Bind the destination to the destination user's own home and resolve it
 	// symlink-safe (Gitea #465). A bare strings.HasPrefix(dest, "/home/") let a
 	// call pair dest_user=alice with dest_path=/home/bob/... — root would then
@@ -75,11 +91,6 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 			Message: fmt.Sprintf("dest_path %q must resolve under %s: %v", p.DestPath, homeRoot, rsErr)}
 	}
 	p.DestPath = resolvedDest
-	// src_path lives on the REMOTE source host; only a sanity prefix applies.
-	if !strings.HasPrefix(p.SrcPath, "/home/") {
-		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
-			Message: "src_path must be under /home/ on source"}
-	}
 	// Secret path must live in the panel's migration-secrets dir.
 	if !strings.HasPrefix(p.SecretPath, "/etc/jabali-panel/migration-secrets/") {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
