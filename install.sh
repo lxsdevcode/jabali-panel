@@ -179,6 +179,8 @@ UNINSTALL FLAGS
                        would install vs skip for JABALI_MODULES) and exit
                        without changing anything.
   --uninstall          Remove Jabali (see above). Confirms unless --yes.
+  --install-module KEY Install one optional module (quota today; dns|mail|security
+                       pending) onto an already-installed host, then exit.
   --purge-packages     With --uninstall: also apt-purge the OS packages
                        Jabali pulled in (nginx, mariadb, crowdsec, php...).
   -y, --yes            Skip the uninstall confirmation prompt.
@@ -202,6 +204,7 @@ _cli_uninstall=""
 _cli_dry_run=""
 _cli_yes=""
 _cli_purge_packages=""
+_cli_install_module=""
 _positional=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -212,6 +215,8 @@ while [[ $# -gt 0 ]]; do
     --debug)      _cli_debug=1; shift ;;
     --uninstall)  _cli_uninstall=1; shift ;;
     --purge-packages) _cli_purge_packages=1; shift ;;
+    --install-module=*) _cli_install_module="${1#*=}"; shift ;;
+    --install-module)   _cli_install_module="${2:-}"; shift 2 ;;
     --yes|-y)     _cli_yes=1; shift ;;
     --dry-run)    _cli_dry_run=1; shift ;;
     -h|--help)    usage; exit 0 ;;
@@ -350,6 +355,41 @@ run_if_module() {
   else
     _log "module '${key}' disabled (JABALI_MODULES) — skipping ${1}"
   fi
+}
+
+# install_module <key> — M353 runtime module install. Runs ONLY the given
+# module's install functions on an ALREADY-INSTALLED host (Server Settings ->
+# Modules toggles this via the agent: `install.sh --install-module <key>`). It
+# does NOT run the core install path — the panel/nginx/mariadb are already here.
+#
+# SAFETY: each install_module_<key> below must be standalone-runnable +
+# idempotent. Only modules whose functions have been AUDITED for that are wired
+# here; the rest return a clear error until their env-from-DB reconstruction
+# lands (dns/mail/security read server-settings env that main() sets during a
+# full install; a runtime pass must reload it first — see
+# plans/module-install-on-enable.md Step 0).
+install_module() {
+  local key="${1:-}"
+  # Refuse to run if the panel isn't installed — this mode adds a module to an
+  # existing host, never bootstraps one.
+  if [[ ! -d "${REPO_DIR:-/opt/jabali-panel}" ]]; then
+    _die "install.sh --install-module: no panel install found at ${REPO_DIR:-/opt/jabali-panel}; run a full install first"
+  fi
+  case "$key" in
+    quota)    install_module_quota ;;
+    dns|mail|security)
+      _die "install.sh --install-module $key: not yet supported at runtime (server-settings env reconstruction pending — plans/module-install-on-enable.md Step 0). quota is available today." ;;
+    *)        _die "install.sh --install-module: unknown module '$key' (want: quota|dns|mail|security)" ;;
+  esac
+  _ok "module '$key' install complete"
+}
+
+# install_module_quota — configure_disk_quota is standalone-safe: it probes the
+# /home filesystem, has no server-settings env dependency, is idempotent, and
+# returns 0 gracefully on a fs that can't do POSIX quota. Keep this list in sync
+# with main()'s `run_if_module quota …` calls.
+install_module_quota() {
+  configure_disk_quota
 }
 
 # seed_module_flags — M353 (GH #353). Write the per-module server_settings flags
@@ -13630,6 +13670,8 @@ SQL
 if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
   if [[ -n "${_cli_uninstall:-}" ]]; then
     uninstall
+  elif [[ -n "${_cli_install_module:-}" ]]; then
+    install_module "$_cli_install_module"
   else
     main "$@"
   fi
