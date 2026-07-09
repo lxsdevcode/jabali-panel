@@ -33,6 +33,8 @@ type MigrationJobRepository interface {
 	UpdateSourcePath(ctx context.Context, id, sourcePath string) error
 	// UpdateDestDomain sets the auto-resolved destination domain (GH #647/#648).
 	UpdateDestDomain(ctx context.Context, id, destDomain string) error
+	// UpdateDestUser sets the destination jabali username (JAB-87 offline restore).
+	UpdateDestUser(ctx context.Context, id, destUser string) error
 	// UpdatePlan sets the migration plan JSON (GH #665).
 	UpdatePlan(ctx context.Context, id, planJSON string) error
 	// PatchDraft updates source-host/user + target-user-id on a row
@@ -230,6 +232,25 @@ func (r *migrationJobRepo) UpdateDestDomain(ctx context.Context, id, destDomain 
 		Updates(map[string]any{
 			"dest_domain": destDomain,
 			"updated_at":  time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateDestUser sets migration_jobs.dest_user (JAB-87 — offline restore records
+// where the account landed so the admin Migrations screen shows the destination;
+// only the SSH pull path populated dest_* before).
+func (r *migrationJobRepo) UpdateDestUser(ctx context.Context, id, destUser string) error {
+	res := r.db.WithContext(ctx).Model(&models.MigrationJob{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"dest_user":  destUser,
+			"updated_at": time.Now().UTC(),
 		})
 	if res.Error != nil {
 		return res.Error

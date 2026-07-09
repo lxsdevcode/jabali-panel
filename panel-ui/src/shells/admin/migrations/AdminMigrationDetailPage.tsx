@@ -51,6 +51,8 @@ type MigrationJob = {
   source_host: string;
   source_user: string;
   target_user_id: string | null;
+  dest_user?: string | null;
+  dest_domain?: string | null;
   state: string;
   started_at: string;
   ended_at: string | null;
@@ -205,6 +207,12 @@ export const AdminMigrationDetailPage = () => {
             ) : (
               "—"
             )}
+          </Descriptions.Item>
+          <Descriptions.Item label="Destination user">
+            {job.dest_user ? job.dest_user : <Typography.Text type="secondary">—</Typography.Text>}
+          </Descriptions.Item>
+          <Descriptions.Item label="Destination domain">
+            {job.dest_domain ? job.dest_domain : <Typography.Text type="secondary">—</Typography.Text>}
           </Descriptions.Item>
           <Descriptions.Item label="Last error">
             {job.last_error ?? "—"}

@@ -535,6 +535,42 @@ failed stage. Already-done stages are skipped.`,
 					runErr = fmt.Errorf("migration degraded — %s (re-run after fixing, or pass --allow-degraded to accept)", msg)
 				}
 			}
+			// JAB-87: record where an offline restore landed (dest_user +
+			// dest_domain) so the admin Migrations list/detail shows the
+			// destination — only the SSH pull path set these before. Best-effort:
+			// a successful restore must never fail because we couldn't stamp
+			// observability columns. Gate on a terminal SUCCESS state (done or
+			// degraded — the account was actually restored).
+			if j, lerr := jobsRepo.FindByID(ctx, job.ID); lerr == nil && j != nil {
+				switch j.State {
+				case models.MigrationStateDone, models.MigrationStateDegraded:
+					if payload.targetUsername != "" {
+						if uerr := jobsRepo.UpdateDestUser(ctx, job.ID, payload.targetUsername); uerr != nil {
+							fmt.Fprintf(cmd.ErrOrStderr(), "warning: record dest_user: %v\n", uerr)
+						}
+					}
+					destDomain := ""
+					if meta != nil {
+						destDomain = meta.PrimaryDomain // cpanel: authoritative DNS= value
+					}
+					if destDomain == "" && payload.parsed != nil && len(payload.parsed.DomainNames) > 0 {
+						// Hestia/DirectAdmin tarballs carry no primary flag; the parser +
+						// describe treat the FIRST scanned domain as primary
+						// (hestiacp/describe.go). Follow the same convention.
+						destDomain = payload.parsed.DomainNames[0]
+					}
+					if destDomain == "" {
+						// Defensive: some jobs may carry a full AccountManifest here.
+						destDomain = primaryDomainFromManifest(j.ManifestJSON)
+					}
+					if destDomain != "" {
+						if derr := jobsRepo.UpdateDestDomain(ctx, job.ID, destDomain); derr != nil {
+							fmt.Fprintf(cmd.ErrOrStderr(), "warning: record dest_domain: %v\n", derr)
+						}
+					}
+				}
+			}
+
 			// Staging-dir cleanup. Re-load the job so we see the
 			// terminal state the runner just stamped (done / failed).
 			// Operator can suppress via --keep-staging when debugging.
@@ -1442,4 +1478,31 @@ func migrationPlanPreserve(job *models.MigrationJob) planPreserve {
 		return planPreserve{}
 	}
 	return wrap.Preserve
+}
+
+// primaryDomainFromManifest extracts the primary domain (is_primary, else the
+// first) from a migration_jobs.manifest_json blob. Empty on nil/parse error/no
+// domains. Source-agnostic — works for cpanel + hestia manifests (JAB-87).
+func primaryDomainFromManifest(manifestJSON *string) string {
+	if manifestJSON == nil || *manifestJSON == "" {
+		return ""
+	}
+	var mf struct {
+		Domains []struct {
+			Name      string `json:"name"`
+			IsPrimary bool   `json:"is_primary"`
+		} `json:"domains"`
+	}
+	if err := json.Unmarshal([]byte(*manifestJSON), &mf); err != nil {
+		return ""
+	}
+	for _, d := range mf.Domains {
+		if d.IsPrimary && d.Name != "" {
+			return d.Name
+		}
+	}
+	if len(mf.Domains) > 0 {
+		return mf.Domains[0].Name
+	}
+	return ""
 }
