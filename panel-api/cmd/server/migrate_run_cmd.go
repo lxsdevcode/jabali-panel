@@ -242,7 +242,13 @@ failed stage. Already-done stages are skipped.`,
 				// works on the destination box unchanged. Kratos panel
 				// login keeps the random plaintext we just used because
 				// crypt(3) and Argon2 are incompatible.
-				if meta != nil && meta.PasswordHash != "" && sharedAgent != nil {
+				// JAB-47: only carry the source's Linux shadow hash onto
+				// /etc/shadow when the operator opts in. Default: the migrated
+				// account uses the panel-set password (reset via panel) + SSH
+				// keys, so a compromised/weak SOURCE SSH password is not silently
+				// valid on the new host.
+				preserveCreds := preserveSourceState || migrationPlanPreserve(job).Credentials
+				if meta != nil && meta.PasswordHash != "" && sharedAgent != nil && preserveCreds {
 					hashCtx, hashCancel := context.WithTimeout(ctx, 10*time.Second)
 					if _, perr := sharedAgent.Call(hashCtx, "user.password", map[string]any{
 						"username":      *user.Username,
@@ -753,7 +759,7 @@ func cpanelRestoreCallback(
 		// the app-config rewriter below (no nil deref).
 		dbsRes := &cpanel.DBImportResult{}
 		if plan.Databases {
-			dbsRes, err = cpanel.ImportDatabases(ctx, dbsRepo, dbUsersRepo, dbGrantsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
+			dbsRes, err = cpanel.ImportDatabases(ctx, dbsRepo, dbUsersRepo, dbGrantsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername, preserve.Credentials)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("databases: %w", err)
 			}
