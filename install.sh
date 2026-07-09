@@ -364,10 +364,11 @@ run_if_module() {
 #
 # SAFETY: each install_module_<key> below must be standalone-runnable +
 # idempotent. Only modules whose functions have been AUDITED for that are wired
-# here; the rest return a clear error until their env-from-DB reconstruction
-# lands (dns/mail/security read server-settings env that main() sets during a
-# full install; a runtime pass must reload it first — see
-# plans/module-install-on-enable.md Step 0).
+# here (quota, dns); the rest return a clear error until their env-from-DB
+# reconstruction lands (mail/security read server-settings env that main() sets
+# during a full install; a runtime pass must reload it first — see
+# plans/module-install-on-enable.md Step 0). dns uses reconstruct_server_env_from_db
+# below to repopulate that env from the server_settings DB row.
 install_module() {
   local key="${1:-}"
   # Refuse to run if the panel isn't installed — this mode adds a module to an
@@ -377,8 +378,9 @@ install_module() {
   fi
   case "$key" in
     quota)    install_module_quota ;;
-    dns|mail|security)
-      _die "install.sh --install-module $key: not yet supported at runtime (server-settings env reconstruction pending — plans/module-install-on-enable.md Step 0). quota is available today." ;;
+    dns)      install_module_dns ;;
+    mail|security)
+      _die "install.sh --install-module $key: not yet supported at runtime (server-settings env reconstruction pending — plans/module-install-on-enable.md Step 0). quota and dns are available today." ;;
     *)        _die "install.sh --install-module: unknown module '$key' (want: quota|dns|mail|security)" ;;
   esac
   _ok "module '$key' install complete"
@@ -390,6 +392,98 @@ install_module() {
 # with main()'s `run_if_module quota …` calls.
 install_module_quota() {
   configure_disk_quota
+}
+
+# reconstruct_server_env_from_db — repopulate the JABALI_SRV_* identity vars from
+# the server_settings DB row (the source of truth: panel-api seeds it from
+# config.toml on first boot, then owns it). main() gets these from
+# prompt_server_settings; a runtime `--install-module` invocation on an
+# already-installed host has no prompts, so dns/mail config functions that read
+# these vars (bootstrap_pdns_self_zone, install_panel_primary_domain, …) would
+# otherwise see them empty. Only sets a var when it is currently unset/empty, so
+# it never overrides values main() already exported.
+reconstruct_server_env_from_db() {
+  command -v mariadb >/dev/null 2>&1 || return 0
+  local row
+  row="$(mariadb jabali_panel -Ns -e \
+    "SELECT hostname, public_ipv4, public_ipv6, ns1_name, ns1_ipv4, ns2_name, ns2_ipv4 \
+     FROM server_settings WHERE id=1;" 2>/dev/null || true)"
+  [[ -z "$row" ]] && return 0
+  local h i4 i6 n1 n1i n2 n2i
+  IFS=$'\t' read -r h i4 i6 n1 n1i n2 n2i <<<"$row"
+  : "${JABALI_SRV_HOSTNAME:=$h}"
+  : "${JABALI_SRV_IPV4:=$i4}"
+  : "${JABALI_SRV_IPV6:=$i6}"
+  : "${JABALI_SRV_NS1_NAME:=$n1}"
+  : "${JABALI_SRV_NS1_IPV4:=$n1i}"
+  : "${JABALI_SRV_NS2_NAME:=$n2}"
+  : "${JABALI_SRV_NS2_IPV4:=$n2i}"
+  export JABALI_SRV_HOSTNAME JABALI_SRV_IPV4 JABALI_SRV_IPV6 \
+         JABALI_SRV_NS1_NAME JABALI_SRV_NS1_IPV4 JABALI_SRV_NS2_NAME JABALI_SRV_NS2_IPV4
+}
+
+# _install_dns_packages — apt-install the PowerDNS packages on a host that didn't
+# get them in the base batch (a --minimal install). The pdns postinst would try
+# to start pdns before its MySQL backend is wired, so a policy-rc.d start-
+# suppression shim is dropped for the duration (identical to install_base_packages).
+# CRITICAL: the shim is restored on EVERY exit path — a leftover `exit 101`
+# policy-rc.d blocks ALL service starts host-wide. We capture apt's rc, restore
+# the shim, THEN _die, so the die never fires while the shim is live.
+_install_dns_packages() {
+  _log "installing PowerDNS packages (dns module runtime install)"
+  local policy_rc=/usr/sbin/policy-rc.d
+  local policy_rc_preexisted=0
+  if [[ -e "$policy_rc" ]]; then
+    policy_rc_preexisted=1
+    mv "$policy_rc" "${policy_rc}.jabali-bak"
+  fi
+  cat > "$policy_rc" <<'POLICYEOF'
+#!/bin/sh
+# Temporarily installed by jabali-panel install.sh (--install-module dns).
+# Suppresses pdns service auto-start during the package install; the config
+# functions start it explicitly once the MySQL backend is wired.
+exit 101
+POLICYEOF
+  chmod 0755 "$policy_rc"
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq || _warn "apt update failed; proceeding with cached package lists"
+  local _rc=0
+  apt-get install -y -qq --no-install-recommends \
+    pdns-server pdns-backend-mysql pdns-recursor bind9-dnsutils || _rc=$?
+
+  # Restore policy-rc.d before any exit path (die included).
+  rm -f "$policy_rc"
+  [[ "$policy_rc_preexisted" == "1" ]] && mv "${policy_rc}.jabali-bak" "$policy_rc"
+
+  [[ $_rc -eq 0 ]] || _die "apt install of PowerDNS packages failed (exit $_rc)"
+
+  # pdns-server postinst creates the `pdns` group; the config fns chown to it.
+  if ! getent group pdns >/dev/null; then
+    _die "pdns group missing after apt-install — pdns-server postinst failed; run 'apt-get install -f'"
+  fi
+  _ok "PowerDNS packages installed"
+}
+
+# install_module_dns — runtime install of the DNS module on an already-installed
+# host. Standalone equivalent of main()'s `run_if_module dns …` block, which
+# assumes install_base_packages already apt-installed the pdns packages and
+# prompt_server_settings already exported the identity env. Here we reconstruct
+# that env from the DB and apt-install the packages ourselves, then run the SAME
+# three config functions main() runs. Those functions own service convergence
+# (enable + restart-on-change + start-if-inactive, no needless bounce), so this
+# is idempotent: on a converged host it is a fast no-op; on the reported
+# "DNS On / pdns inactive" host it installs + starts pdns.
+install_module_dns() {
+  reconstruct_server_env_from_db
+  if ! dpkg -s pdns-server        >/dev/null 2>&1 \
+     || ! dpkg -s pdns-backend-mysql >/dev/null 2>&1 \
+     || ! dpkg -s pdns-recursor    >/dev/null 2>&1; then
+    _install_dns_packages
+  fi
+  install_powerdns
+  bootstrap_pdns_self_zone
+  install_pdns_recursor
 }
 
 # seed_module_flags — M353 (GH #353). Write the per-module server_settings flags

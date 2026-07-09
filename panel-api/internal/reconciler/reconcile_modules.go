@@ -1,0 +1,112 @@
+package reconciler
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+)
+
+// M353 module install-on-enable — convergence pass.
+//
+// The transition-triggered install (panel-api settings PATCH) only fires on a
+// false→true flip. But on a --minimal install the module flags can default On
+// while nothing was installed (seed_module_flags failure + model default 1) —
+// there is no flip to trigger, so the reported "DNS On / pdns inactive" host is
+// only fixable by a convergence pass. Every reconcile tick we probe each
+// enabled module's real state and, if it isn't installed+active, dispatch a
+// (detached, backoff-gated) install.
+//
+// Only modules install.sh supports at runtime today are converged (dns, quota);
+// mail/security stay flag-only until their install.sh env-reconstruction lands.
+
+// moduleInstallRetryInterval bounds how often a single module's install is
+// re-dispatched. Long enough that a persistently-failing install doesn't hot-
+// loop apt; short enough that an operator retry converges within a coffee break.
+const moduleInstallRetryInterval = 15 * time.Minute
+
+// convergedModules lists the module keys the reconciler will install on demand.
+// Keep in sync with install.sh's --install-module dispatcher + the panel-api
+// PATCH dispatch (serverSettingsHandler.dispatchModuleInstall).
+var convergedModules = []struct {
+	key     string
+	enabled func(srv moduleFlags) bool
+}{
+	{"dns", func(f moduleFlags) bool { return f.dns }},
+	{"quota", func(f moduleFlags) bool { return f.quota }},
+}
+
+type moduleFlags struct {
+	dns   bool
+	quota bool
+}
+
+func (r *Reconciler) reconcileModuleInstalls(ctx context.Context) {
+	if r.agent == nil || r.serverSettings == nil {
+		return
+	}
+	srv, err := r.serverSettings.Get(ctx)
+	if err != nil || srv == nil {
+		return
+	}
+	flags := moduleFlags{dns: srv.DNSEnabled, quota: srv.QuotaEnabled}
+	for _, m := range convergedModules {
+		if !m.enabled(flags) {
+			continue
+		}
+		r.convergeModule(ctx, m.key)
+	}
+}
+
+// convergeModule probes one module's status and, if it isn't fully up, kicks a
+// detached install. The probe is quick; the install runs in its own goroutine
+// so a multi-minute apt run never blocks ReconcileAll.
+func (r *Reconciler) convergeModule(ctx context.Context, key string) {
+	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	raw, err := r.agent.Call(sctx, "system.module.status", map[string]any{"key": key})
+	if err != nil {
+		return // agent unreachable — retry next tick, no backoff burned
+	}
+	var st struct {
+		Installed bool `json:"installed"`
+		Active    bool `json:"active"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return
+	}
+	// Converged only when BOTH installed AND active. installed-but-inactive
+	// (crashed/never-started service — the exact reported bug) must still
+	// re-run the install, whose config functions own the start-if-inactive
+	// convergence.
+	if st.Installed && st.Active {
+		return
+	}
+	if !r.moduleInstallDue(key) {
+		return // recently attempted — don't hot-loop apt on a persistent failure
+	}
+	go func() {
+		ictx, icancel := context.WithTimeout(context.Background(), 12*time.Minute)
+		defer icancel()
+		if _, err := r.agent.Call(ictx, "system.module.install", map[string]any{"key": key}); err != nil {
+			r.log.Error("module convergence install failed", "key", key, "err", err)
+			return
+		}
+		r.log.Info("module convergence install dispatched", "key", key)
+	}()
+}
+
+// moduleInstallDue returns true and records the attempt when a module hasn't
+// been install-dispatched within moduleInstallRetryInterval. Serializes the
+// map access; the agent-side aptMu serializes the installs themselves.
+func (r *Reconciler) moduleInstallDue(key string) bool {
+	r.moduleInstallMu.Lock()
+	defer r.moduleInstallMu.Unlock()
+	if r.moduleInstallAttempt == nil {
+		r.moduleInstallAttempt = map[string]time.Time{}
+	}
+	if last, ok := r.moduleInstallAttempt[key]; ok && time.Since(last) < moduleInstallRetryInterval {
+		return false
+	}
+	r.moduleInstallAttempt[key] = time.Now()
+	return true
+}
