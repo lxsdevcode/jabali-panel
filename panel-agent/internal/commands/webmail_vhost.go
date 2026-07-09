@@ -279,6 +279,11 @@ func webmailVhostApplyHandler(ctx context.Context, params json.RawMessage) (any,
 	configPath := filepath.Join(mailVhostSitesAvailable, p.DomainName+"-mail.conf")
 	enabledPath := filepath.Join(mailVhostSitesEnabled, p.DomainName+"-mail.conf")
 
+	// JAB-71: serialize the whole write→test→reload (both the fast-path relink
+	// branch and the full write) against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	// Hash-gated write: if the on-disk content matches what we'd render,
 	// skip the write + reload. Matches writeVhost's idempotency contract.
 	if existing, err := os.ReadFile(configPath); err == nil && bytes.Equal(existing, rendered.Bytes()) {
@@ -345,6 +350,10 @@ func webmailVhostRemoveHandler(ctx context.Context, params json.RawMessage) (any
 
 	configPath := filepath.Join(mailVhostSitesAvailable, p.DomainName+"-mail.conf")
 	enabledPath := filepath.Join(mailVhostSitesEnabled, p.DomainName+"-mail.conf")
+
+	// JAB-71: serialize remove→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
 
 	// Idempotent remove. If neither file exists we still return ok+changed=false
 	// so the reconciler can cheaply ask us on every tick.

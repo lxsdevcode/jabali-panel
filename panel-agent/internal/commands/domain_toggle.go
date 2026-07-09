@@ -40,6 +40,10 @@ func domainEnableHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
+	// JAB-71: serialize the symlink→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	// Create symlink from sites-available to sites-enabled
 	availablePath := filepath.Join("/etc/nginx/sites-available", p.Domain+".conf")
 	enabledPath := filepath.Join("/etc/nginx/sites-enabled", p.Domain+".conf")
@@ -102,6 +106,10 @@ func domainDisableHandler(ctx context.Context, params json.RawMessage) (any, err
 			Message: fmt.Sprintf("invalid domain %q: must match ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", p.Domain),
 		}
 	}
+
+	// JAB-71: serialize the unlink→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
 
 	// Remove symlink from sites-enabled (keep sites-available)
 	enabledPath := filepath.Join("/etc/nginx/sites-enabled", p.Domain+".conf")

@@ -151,6 +151,11 @@ func dockerAppVhostApplyHandler(ctx context.Context, params json.RawMessage) (an
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("template execute: %v", err)}
 	}
 
+	// JAB-71: serialize the whole write→test→reload (both the fast-path symlink
+	// branch and the full write) against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	configPath, enabledPath := dockerAppVhostPaths(p.DomainName)
 
 	// Hash-gated write — skip write + reload when on-disk content matches.
@@ -207,6 +212,10 @@ func dockerAppVhostRemoveHandler(ctx context.Context, params json.RawMessage) (a
 	if err := validateDomainNameForShell(p.DomainName); err != nil {
 		return nil, err
 	}
+
+	// JAB-71: serialize remove→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
 
 	configPath, enabledPath := dockerAppVhostPaths(p.DomainName)
 

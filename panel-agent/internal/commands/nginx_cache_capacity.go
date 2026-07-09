@@ -44,6 +44,10 @@ func nginxCacheCapacityApplyHandler(ctx context.Context, raw json.RawMessage) (a
 		return nil, csInvalidArg("inactive_min must be 1..1440")
 	}
 
+	// JAB-71: serialize read→write→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	orig, err := os.ReadFile(jabaliFcgiConfPath)
 	if err != nil {
 		return nil, csInternal("read cache conf", err)

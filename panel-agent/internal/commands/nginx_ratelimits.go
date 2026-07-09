@@ -93,6 +93,10 @@ func nginxRateLimitsApplyHandler(ctx context.Context, params json.RawMessage) (a
 		}, nil
 	}
 
+	// JAB-71: serialize stage→swap→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	// Stage the candidate beside the live file so nginx -t can
 	// validate the whole http{} block with the new zones present.
 	// We swap atomic after validation passes.

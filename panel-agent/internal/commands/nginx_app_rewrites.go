@@ -95,6 +95,10 @@ func writeAppRewrite(ctx context.Context, appType, domain, osUser, subdir string
 		return fmt.Errorf("invalid os_user %q", osUser)
 	}
 
+	// JAB-71: serialize write→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	domainDir := filepath.Join(nginxJabaliDir, domain)
 	if err := os.MkdirAll(domainDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", domainDir, err)
@@ -137,6 +141,10 @@ func removeAppRewrite(ctx context.Context, appType, domain, subdir string) error
 	if !appTypeSafeRE.MatchString(appType) {
 		return fmt.Errorf("invalid app_type %q", appType)
 	}
+
+	// JAB-71: serialize remove→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
 
 	dest := snippetPath(domain, appType, subdir)
 	if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
