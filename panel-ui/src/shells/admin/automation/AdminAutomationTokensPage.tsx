@@ -66,6 +66,23 @@ export const AdminAutomationTokensPage = () => {
   const [revealSecret, setRevealSecret] = useState<string | null>(null);
   const [revealName, setRevealName] = useState<string | null>(null);
   const [form] = Form.useForm<{ name: string; scopes: string[] }>();
+  const scopeVals = (Form.useWatch("scopes", form) as string[] | undefined) ?? [];
+  const wildcardSelected = scopeVals.includes("read:*");
+  // JAB-84: read:* is mutually exclusive with individual read scopes. Use the
+  // previous value to detect intent: picking read:* collapses to just the
+  // wildcard; picking any child clears the wildcard.
+  const normalizeScopes = (checked: string[]): string[] => {
+    const prev = (form.getFieldValue("scopes") as string[] | undefined) ?? [];
+    if (checked.includes("read:*") && !prev.includes("read:*")) return ["read:*"];
+    const addedChild = checked.some(
+      (x) => x !== "read:*" && x.startsWith("read:") && !prev.includes(x),
+    );
+    if (addedChild) return checked.filter((x) => x !== "read:*");
+    return checked;
+  };
+  const scopeOptions = SCOPE_OPTIONS.map((o) =>
+    o.value === "read:*" ? o : { ...o, disabled: wildcardSelected },
+  );
 
   const list = useQuery<ListResp>({
     queryKey: ["list", "admin/automation/tokens"],
@@ -260,9 +277,10 @@ export const AdminAutomationTokensPage = () => {
             name="scopes"
             label="Scopes"
             rules={[{ required: true, message: "At least one scope" }]}
-            extra="Wildcard 'read:*' grants every read; otherwise tick only the resources the automation needs."
+            getValueFromEvent={normalizeScopes}
+            extra="Wildcard 'read:*' grants every read; otherwise tick only the resources the automation needs (mutually exclusive)."
           >
-            <Checkbox.Group options={SCOPE_OPTIONS} style={{ display: "flex", flexDirection: "column", gap: 8 }} />
+            <Checkbox.Group options={scopeOptions} style={{ display: "flex", flexDirection: "column", gap: 8 }} />
           </Form.Item>
 
         </Form>

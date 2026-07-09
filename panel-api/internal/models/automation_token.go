@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -102,4 +103,35 @@ func IsAllowedAutomationScope(s string) bool {
 		}
 	}
 	return false
+}
+
+// HasReadWildcardConflict reports whether a scope list contains BOTH read:* and
+// an individual read:<resource> scope — a redundant/confusing combination the
+// mint flow rejects (JAB-84): a token is either wildcard or explicit, not both.
+func HasReadWildcardConflict(scopes []string) bool {
+	var wild, child bool
+	for _, s := range scopes {
+		if s == "read:*" {
+			wild = true
+		} else if strings.HasPrefix(s, "read:") {
+			child = true
+		}
+	}
+	return wild && child
+}
+
+// NormalizeScopes drops redundant individual read:<resource> scopes when read:*
+// is present, so existing mixed tokens display cleanly (JAB-84). Order preserved.
+func NormalizeScopes(scopes []string) []string {
+	if !HasReadWildcardConflict(scopes) {
+		return scopes
+	}
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if s != "read:*" && strings.HasPrefix(s, "read:") {
+			continue // covered by read:*
+		}
+		out = append(out, s)
+	}
+	return out
 }

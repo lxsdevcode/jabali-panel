@@ -1,9 +1,10 @@
 // Admin Automation API token management (M44).
 //
 // Endpoints under /api/v1/admin/automation/tokens:
-//   POST          mint a new token (returns plaintext secret ONCE)
-//   GET           list tokens (no secrets in response)
-//   DELETE /:id   revoke a token (soft delete via revoked_at)
+//
+//	POST          mint a new token (returns plaintext secret ONCE)
+//	GET           list tokens (no secrets in response)
+//	DELETE /:id   revoke a token (soft delete via revoked_at)
 //
 // Mint flow: admin posts {name, scopes}; server generates a 32-byte
 // secret, encrypts via ssokey, persists, returns the plaintext secret
@@ -79,6 +80,13 @@ func (h *adminAutoTokensHandler) create(c *gin.Context) {
 			return
 		}
 	}
+	// JAB-84: read:* is a wildcard over every read scope — reject a mix of read:*
+	// and individual read:<resource> scopes so a token is either wildcard or
+	// explicit, never a redundant both.
+	if models.HasReadWildcardConflict(req.Scopes) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read:* cannot be combined with individual read scopes — pick the wildcard or the explicit list"})
+		return
+	}
 
 	// Generate 32 bytes of secret entropy + hex-encode for the
 	// returned plaintext. Hex (not base64) keeps the value
@@ -144,6 +152,11 @@ func (h *adminAutoTokensHandler) list(c *gin.Context) {
 	}
 	// AutomationToken's `secret_enc` field has json:"-" so it won't
 	// leak; respond with the plain rows.
+	// JAB-84: normalize redundant read:*+child combos for clean display of any
+	// pre-existing mixed tokens.
+	for i := range rows {
+		rows[i].Scopes = models.AutomationScopes(models.NormalizeScopes([]string(rows[i].Scopes)))
+	}
 	c.JSON(http.StatusOK, gin.H{"data": rows, "total": len(rows)})
 }
 
