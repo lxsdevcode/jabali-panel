@@ -39,6 +39,10 @@ func RegisterServerSettingsRoutes(g *gin.RouterGroup, cfg ServerSettingsHandlerC
 	admin.GET("/python-runtime", h.pythonRuntimeStatus)
 	// GH #243: reveal / rotate the Stalwart admin GUI login (admin:<token>).
 	admin.POST("/stalwart-admin-credential", h.stalwartAdminCredential)
+	// M353 module install-on-enable: the Modules card polls status while a
+	// toggle installs, and re-dispatches an install as a retry affordance.
+	admin.GET("/modules/status", h.moduleStatus)
+	admin.POST("/modules/install", h.moduleInstall)
 }
 
 type serverSettingsHandler struct{ cfg ServerSettingsHandlerConfig }
@@ -1220,4 +1224,75 @@ func (h *serverSettingsHandler) dispatchModuleInstall(key string) {
 			h.cfg.Log.Error("agent module install failed", "key", key, "err", err)
 		}
 	}()
+}
+
+// installableModules are the module keys with a runtime install path (mirrors
+// install.sh's --install-module dispatcher + the agent allowlist). api_enabled
+// is flag-only (no packages) and is intentionally absent.
+var installableModules = []string{"dns", "mail", "security", "quota"}
+
+func isInstallableModule(key string) bool {
+	for _, k := range installableModules {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
+type moduleStatusEntry struct {
+	Installed bool `json:"installed"`
+	Active    bool `json:"active"`
+}
+
+// moduleStatus proxies the agent's system.module.status for every installable
+// module so the Modules card can render installing / active / failed states and
+// poll a just-toggled module until it comes up. Probes are cheap; a missing
+// agent yields an empty map (the card falls back to flag-only display).
+func (h *serverSettingsHandler) moduleStatus(c *gin.Context) {
+	out := map[string]moduleStatusEntry{}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusOK, gin.H{"modules": out})
+		return
+	}
+	ctx := c.Request.Context()
+	for _, key := range installableModules {
+		sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		raw, err := h.cfg.Agent.Call(sctx, "system.module.status", map[string]any{"key": key})
+		cancel()
+		if err != nil {
+			continue // agent hiccup — omit this key; the UI treats absent as unknown
+		}
+		var e moduleStatusEntry
+		if err := json.Unmarshal(raw, &e); err != nil {
+			continue
+		}
+		out[key] = e
+	}
+	c.JSON(http.StatusOK, gin.H{"modules": out})
+}
+
+// moduleInstall re-dispatches a module install in the background. It is the UI's
+// retry affordance: because a failed install never rolls the flag back, the
+// operator needs a way to re-trigger the install without toggling off/on. The
+// module flag must already be enabled — this only (re)installs, it does not flip
+// the flag.
+func (h *serverSettingsHandler) moduleInstall(c *gin.Context) {
+	var req struct {
+		Key string `json:"key"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		return
+	}
+	if !isInstallableModule(req.Key) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown_module", "detail": "want: dns|mail|security|quota"})
+		return
+	}
+	if h.cfg.Agent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent_unavailable"})
+		return
+	}
+	h.dispatchModuleInstall(req.Key)
+	c.JSON(http.StatusAccepted, gin.H{"status": "installing", "key": req.Key})
 }
