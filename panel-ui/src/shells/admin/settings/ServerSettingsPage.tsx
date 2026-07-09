@@ -3,6 +3,7 @@ import { useTabParam } from "../../../hooks/useTabParam";
 import {
   BgColorsOutlined,
   CheckOutlined,
+  CodeOutlined,
   CloseOutlined,
   DatabaseOutlined,
   GlobalOutlined,
@@ -115,7 +116,7 @@ function notifyError(notify: NotifyFn, title: string, err: unknown) {
   });
 }
 
-// GeneralSettingsTab — Identity + Server Time + SSH Access. Owns its own
+// GeneralSettingsTab — Identity + Server Time + Root Terminal. Owns its own
 // form + Save button; PATCH /admin/settings supports partial updates so
 // sending only this tab's fields doesn't disturb DNS settings.
 const GeneralSettingsTab = () => {
@@ -123,10 +124,6 @@ const GeneralSettingsTab = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [originalHostname, setOriginalHostname] = useState("");
-  const [originalSSHPort, setOriginalSSHPort] = useState(22);
-  const [originalSSHPasswordAuth, setOriginalSSHPasswordAuth] = useState(false);
-  const [originalSSHUserPasswordAuth, setOriginalSSHUserPasswordAuth] = useState(false);
-  const [nspawnImages, setNspawnImages] = useState<NspawnImage[]>([]);
   const notify = useNotify();
 
   useEffect(() => {
@@ -137,18 +134,6 @@ const GeneralSettingsTab = () => {
         if (cancelled) return;
         form.setFieldsValue(resp.data);
         setOriginalHostname(resp.data.hostname);
-        setOriginalSSHPort(resp.data.ssh_port || 22);
-        setOriginalSSHPasswordAuth(resp.data.ssh_password_auth || false);
-        setOriginalSSHUserPasswordAuth(resp.data.ssh_user_password_auth || false);
-        // Fetch nspawn images for the default-image dropdown.
-        try {
-          const imgResp = await apiClient.get<{ images: NspawnImage[] }>(
-            "/system/nspawn-images",
-          );
-          if (!cancelled) setNspawnImages(imgResp.data.images || []);
-        } catch {
-          // Empty list is fine — admin sees a placeholder + warning.
-        }
       } catch (err) {
         notifyError(notify, "Failed to load settings", err);
       } finally {
@@ -170,27 +155,15 @@ const GeneralSettingsTab = () => {
         public_ipv6: values.public_ipv6 || "",
         admin_email: values.admin_email || "",
         timezone: values.timezone || "",
-        ssh_port: values.ssh_port || 22,
-        ssh_password_auth: values.ssh_password_auth || false,
-        ssh_user_password_auth: values.ssh_user_password_auth || false,
-        ssh_sandbox_mode: values.ssh_sandbox_mode || "bubblewrap",
         // Root Terminal toggle lives on General (next to SSH/identity)
         // rather than Storage — moved 2026-06-04 because operators kept
         // missing it under the Storage tab where it logically didn't
         // fit. Storage tab no longer PATCHes this field.
         root_terminal_enabled: values.root_terminal_enabled || false,
-        // Omit when blank so the server keeps its current value — never
-        // clobber the row with a hardcoded UI fallback.
-        ...(values.default_nspawn_image_version
-          ? { default_nspawn_image_version: values.default_nspawn_image_version }
-          : {}),
       });
       notify({ type: "success", message: "Settings saved" });
       form.setFieldsValue(resp.data);
       setOriginalHostname(resp.data.hostname);
-      setOriginalSSHPort(resp.data.ssh_port || 22);
-      setOriginalSSHPasswordAuth(resp.data.ssh_password_auth || false);
-      setOriginalSSHUserPasswordAuth(resp.data.ssh_user_password_auth || false);
     } catch (err) {
       notifyError(notify, "Failed to save", err);
     } finally {
@@ -321,113 +294,6 @@ const GeneralSettingsTab = () => {
         </Form.Item>
       </Card>
 
-      <Card title="SSH Access" style={{ marginBottom: 16 }}>
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          Configure SSH port and authentication method. Changes are applied
-          immediately and are reversible.
-        </Typography.Paragraph>
-
-        <Row gutter={16}>
-          <Col span={24}>
-            <Form.Item
-              label="SSH Port"
-              name="ssh_port"
-              rules={[
-                { required: true, message: "SSH port required" },
-                {
-                  type: "number",
-                  min: 1,
-                  max: 65535,
-                  message: "Port must be between 1 and 65535",
-                },
-              ]}
-              extra="Standard SSH port is 22. Change to reduce automated attack attempts."
-            >
-              <InputNumber min={1} max={65535} style={{ width: 200 }} />
-            </Form.Item>
-          </Col>
-        </Row>
-        <Row gutter={16}>
-          <Col xs={24} md={12}>
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <Form.Item name="ssh_password_auth" valuePropName="checked" noStyle>
-                  <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
-                </Form.Item>
-                <Typography.Text>Root Password Authentication</Typography.Text>
-              </div>
-              <Typography.Text type="secondary">
-                Allow root and other non-hosting users to log in with a password. Key-based authentication is always available.
-              </Typography.Text>
-            </div>
-          </Col>
-          <Col xs={24} md={12}>
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <Form.Item name="ssh_user_password_auth" valuePropName="checked" noStyle>
-                  <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
-                </Form.Item>
-                <Typography.Text>User Password Authentication</Typography.Text>
-              </div>
-              <Typography.Text type="secondary">
-                Allow hosting users (jabali-sftp group) to authenticate with a password. They are still SFTP-only — no shell.
-              </Typography.Text>
-            </div>
-          </Col>
-        </Row>
-
-        <Divider style={{ margin: "8px 0 16px" }}>Shell Sandbox</Divider>
-
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          SSH-shell users land in a sandbox. Bubblewrap is lightweight
-          and runs against the host kernel; nspawn boots an ephemeral
-          systemd-nspawn container off a sealed, versioned rootfs.
-          <b> Mode change applies on the next SSH connect — no reload needed.</b>
-        </Typography.Paragraph>
-
-        <Row gutter={16}>
-          <Col xs={24} md={12}>
-            <Form.Item
-              label="Sandbox Mode"
-              name="ssh_sandbox_mode"
-              rules={[{ required: true }]}
-              extra="Bubblewrap = no rootfs needed. nspawn = build an image first via 'jabali nspawn build'."
-            >
-              <Select
-                options={[
-                  { value: "bubblewrap", label: "Bubblewrap (default, lightweight)" },
-                  { value: "nspawn", label: "systemd-nspawn (full container)" },
-                ]}
-                style={{ width: "100%" }}
-              />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={12}>
-            <Form.Item
-              label="Default nspawn Image"
-              name="default_nspawn_image_version"
-              extra={
-                nspawnImages.length === 0
-                  ? "No images built yet. Run 'jabali nspawn build --version v1 --snapshot ...' to seed."
-                  : "Pinned to new SSH-enabled users at create. Existing users keep their pin."
-              }
-            >
-              <Select
-                showSearch
-                allowClear
-                placeholder="debian-12-v1"
-                options={nspawnImages.map((img) => ({
-                  value: img.name,
-                  label: img.name,
-                }))}
-                style={{ width: "100%" }}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-      </Card>
-
-      <NspawnImagesCard />
       <SSOMaintenanceCard />
       <PanelSSLCard />
       <Card title="Root Terminal (M45)" style={{ marginBottom: 16 }}>
@@ -459,60 +325,13 @@ const GeneralSettingsTab = () => {
       </Card>
 
       <ModulesCard />
-      <TenantDomainOptionsCard />
 
       <Space>
         <Button
           type="primary"
           icon={<SaveOutlined />}
           loading={saving}
-          onClick={() => {
-            const currentSSHPort = form.getFieldValue("ssh_port") || 22;
-            const currentSSHPasswordAuth =
-              form.getFieldValue("ssh_password_auth") || false;
-            const currentSSHUserPasswordAuth =
-              form.getFieldValue("ssh_user_password_auth") || false;
-
-            const sshPortChanged = currentSSHPort !== originalSSHPort;
-            const sshAuthChanged =
-              currentSSHPasswordAuth !== originalSSHPasswordAuth;
-            const sshUserAuthChanged =
-              currentSSHUserPasswordAuth !== originalSSHUserPasswordAuth;
-
-            if (sshPortChanged || sshAuthChanged || sshUserAuthChanged) {
-              Modal.confirm({
-                title: "Confirm SSH Configuration Change",
-                content: (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    title="Potential Lockout Risk"
-                    description={
-                      <>
-                        Changing SSH settings may affect your ability to
-                        connect remotely. <b>Make sure you have:</b>
-                        <ul>
-                          <li>Verified the new SSH port or authentication method works</li>
-                          <li>An alternative way to access the server if the changes break connectivity</li>
-                          <li>The ability to roll back quickly if needed</li>
-                        </ul>
-                      </>
-                    }
-                    style={{ marginBottom: 12 }}
-                  />
-                ),
-                okText: "Apply Changes",
-                okType: "primary",
-                cancelText: "Cancel",
-                icon: <WarningOutlined />,
-                onOk() {
-                  form.submit();
-                },
-              });
-            } else {
-              form.submit();
-            }
-          }}
+          onClick={() => form.submit()}
         >
           Save Settings
         </Button>
@@ -861,6 +680,7 @@ const StorageSettingsTab = () => {
 
 type SettingsTabKey =
   | "general"
+  | "ssh"
   | "storage"
   | "dns"
   | "email"
@@ -876,6 +696,249 @@ const BrandingSettingsTab = () => (
     <PageTemplatesCard />
   </>
 );
+
+// SSHSettingsTab — SSH Access (port + password auth) and the Shell Sandbox
+// (bubblewrap/nspawn mode + default nspawn image) plus nspawn image management.
+// Own form + Save; PATCH /admin/settings is partial so this tab sends only its
+// SSH-related fields and never disturbs General/DNS/etc.
+const SSHSettingsTab = () => {
+  const [form] = Form.useForm<ServerSettings>();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [originalSSHPort, setOriginalSSHPort] = useState(22);
+  const [originalSSHPasswordAuth, setOriginalSSHPasswordAuth] = useState(false);
+  const [originalSSHUserPasswordAuth, setOriginalSSHUserPasswordAuth] = useState(false);
+  const [nspawnImages, setNspawnImages] = useState<NspawnImage[]>([]);
+  const notify = useNotify();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await apiClient.get<ServerSettings>("/admin/settings");
+        if (cancelled) return;
+        form.setFieldsValue(resp.data);
+        setOriginalSSHPort(resp.data.ssh_port || 22);
+        setOriginalSSHPasswordAuth(resp.data.ssh_password_auth || false);
+        setOriginalSSHUserPasswordAuth(resp.data.ssh_user_password_auth || false);
+        try {
+          const imgResp = await apiClient.get<{ images: NspawnImage[] }>(
+            "/system/nspawn-images",
+          );
+          if (!cancelled) setNspawnImages(imgResp.data.images || []);
+        } catch {
+          // Empty list is fine — admin sees a placeholder + warning.
+        }
+      } catch (err) {
+        notifyError(notify, "Failed to load settings", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSubmit = async (values: ServerSettings) => {
+    setSaving(true);
+    try {
+      const resp = await apiClient.patch<ServerSettings>("/admin/settings", {
+        ssh_port: values.ssh_port || 22,
+        ssh_password_auth: values.ssh_password_auth || false,
+        ssh_user_password_auth: values.ssh_user_password_auth || false,
+        ssh_sandbox_mode: values.ssh_sandbox_mode || "bubblewrap",
+        ...(values.default_nspawn_image_version
+          ? { default_nspawn_image_version: values.default_nspawn_image_version }
+          : {}),
+      });
+      notify({ type: "success", message: "Settings saved" });
+      form.setFieldsValue(resp.data);
+      setOriginalSSHPort(resp.data.ssh_port || 22);
+      setOriginalSSHPasswordAuth(resp.data.ssh_password_auth || false);
+      setOriginalSSHUserPasswordAuth(resp.data.ssh_user_password_auth || false);
+    } catch (err) {
+      notifyError(notify, "Failed to save", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Form
+      form={form}
+      layout="vertical"
+      onFinish={handleSubmit}
+      disabled={loading}
+    >
+      <Card title="SSH Access" style={{ marginBottom: 16 }}>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          Configure SSH port and authentication method. Changes are applied
+          immediately and are reversible.
+        </Typography.Paragraph>
+
+        <Row gutter={16}>
+          <Col span={24}>
+            <Form.Item
+              label="SSH Port"
+              name="ssh_port"
+              rules={[
+                { required: true, message: "SSH port required" },
+                {
+                  type: "number",
+                  min: 1,
+                  max: 65535,
+                  message: "Port must be between 1 and 65535",
+                },
+              ]}
+              extra="Standard SSH port is 22. Change to reduce automated attack attempts."
+            >
+              <InputNumber min={1} max={65535} style={{ width: 200 }} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <Form.Item name="ssh_password_auth" valuePropName="checked" noStyle>
+                  <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
+                </Form.Item>
+                <Typography.Text>Root Password Authentication</Typography.Text>
+              </div>
+              <Typography.Text type="secondary">
+                Allow root and other non-hosting users to log in with a password. Key-based authentication is always available.
+              </Typography.Text>
+            </div>
+          </Col>
+          <Col xs={24} md={12}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <Form.Item name="ssh_user_password_auth" valuePropName="checked" noStyle>
+                  <Switch checkedChildren={<CheckOutlined />} unCheckedChildren={<CloseOutlined />} />
+                </Form.Item>
+                <Typography.Text>User Password Authentication</Typography.Text>
+              </div>
+              <Typography.Text type="secondary">
+                Allow hosting users (jabali-sftp group) to authenticate with a password. They are still SFTP-only — no shell.
+              </Typography.Text>
+            </div>
+          </Col>
+        </Row>
+
+        <Divider style={{ margin: "8px 0 16px" }}>Shell Sandbox</Divider>
+
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          SSH-shell users land in a sandbox. Bubblewrap is lightweight
+          and runs against the host kernel; nspawn boots an ephemeral
+          systemd-nspawn container off a sealed, versioned rootfs.
+          <b> Mode change applies on the next SSH connect — no reload needed.</b>
+        </Typography.Paragraph>
+
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <Form.Item
+              label="Sandbox Mode"
+              name="ssh_sandbox_mode"
+              rules={[{ required: true }]}
+              extra="Bubblewrap = no rootfs needed. nspawn = build an image first via 'jabali nspawn build'."
+            >
+              <Select
+                options={[
+                  { value: "bubblewrap", label: "Bubblewrap (default, lightweight)" },
+                  { value: "nspawn", label: "systemd-nspawn (full container)" },
+                ]}
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={12}>
+            <Form.Item
+              label="Default nspawn Image"
+              name="default_nspawn_image_version"
+              extra={
+                nspawnImages.length === 0
+                  ? "No images built yet. Run 'jabali nspawn build --version v1 --snapshot ...' to seed."
+                  : "Pinned to new SSH-enabled users at create. Existing users keep their pin."
+              }
+            >
+              <Select
+                showSearch
+                allowClear
+                placeholder="debian-12-v1"
+                options={nspawnImages.map((img) => ({
+                  value: img.name,
+                  label: img.name,
+                }))}
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+      </Card>
+
+      <NspawnImagesCard />
+
+      <Space>
+        <Button
+          type="primary"
+          icon={<SaveOutlined />}
+          loading={saving}
+          onClick={() => {
+            const currentSSHPort = form.getFieldValue("ssh_port") || 22;
+            const currentSSHPasswordAuth =
+              form.getFieldValue("ssh_password_auth") || false;
+            const currentSSHUserPasswordAuth =
+              form.getFieldValue("ssh_user_password_auth") || false;
+
+            const sshPortChanged = currentSSHPort !== originalSSHPort;
+            const sshAuthChanged =
+              currentSSHPasswordAuth !== originalSSHPasswordAuth;
+            const sshUserAuthChanged =
+              currentSSHUserPasswordAuth !== originalSSHUserPasswordAuth;
+
+            if (sshPortChanged || sshAuthChanged || sshUserAuthChanged) {
+              Modal.confirm({
+                title: "Confirm SSH Configuration Change",
+                content: (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    title="Potential Lockout Risk"
+                    description={
+                      <>
+                        Changing SSH settings may affect your ability to
+                        connect remotely. <b>Make sure you have:</b>
+                        <ul>
+                          <li>Verified the new SSH port or authentication method works</li>
+                          <li>An alternative way to access the server if the changes break connectivity</li>
+                          <li>The ability to roll back quickly if needed</li>
+                        </ul>
+                      </>
+                    }
+                    style={{ marginBottom: 12 }}
+                  />
+                ),
+                okText: "Apply Changes",
+                okType: "primary",
+                cancelText: "Cancel",
+                icon: <WarningOutlined />,
+                onOk() {
+                  form.submit();
+                },
+              });
+            } else {
+              form.submit();
+            }
+          }}
+        >
+          Save Settings
+        </Button>
+      </Space>
+    </Form>
+  );
+};
 
 export const ServerSettingsPage = () => {
   const [activeTab, setActiveTab] = useTabParam<SettingsTabKey>("general");
@@ -897,6 +960,15 @@ export const ServerSettingsPage = () => {
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                 <SettingOutlined />
                 General
+              </span>
+            ),
+          },
+          {
+            key: "ssh",
+            tab: (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                <CodeOutlined />
+                SSH
               </span>
             ),
           },
@@ -968,6 +1040,7 @@ export const ServerSettingsPage = () => {
         onTabChange={(k) => setActiveTab(k as SettingsTabKey)}
       >
         {activeTab === "general" && <GeneralSettingsTab />}
+        {activeTab === "ssh" && <SSHSettingsTab />}
         {activeTab === "storage" && <StorageSettingsTab />}
         {activeTab === "dns" && <DNSSettingsTab />}
         {activeTab === "email" && (
@@ -990,7 +1063,12 @@ export const ServerSettingsPage = () => {
         <PHPPerformanceModesCard />
           </Space>
         )}
-        {activeTab === "nginx" && <NginxSettingsCard />}
+        {activeTab === "nginx" && (
+          <>
+            <NginxSettingsCard />
+            <TenantDomainOptionsCard />
+          </>
+        )}
         {activeTab === "branding" && <BrandingSettingsTab />}
       </Card>
     </div>
