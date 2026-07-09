@@ -739,7 +739,7 @@ func cpanelRestoreCallback(
 		var err error
 		var sshRes *cpanel.SSHKeyImportResult
 		if plan.Websites {
-			sshRes, err = cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID)
+			sshRes, err = cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID, preserve.SSH)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("ssh: %w", err)
 			}
@@ -1039,7 +1039,7 @@ func cpanelRestoreCallback(
 
 		// M35.8 P3: per-domain custom SSL certs from apache_tls/.
 		if plan.SSL {
-			sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed)
+			sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed, preserve.SSL)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("ssl: %w", err)
 			}

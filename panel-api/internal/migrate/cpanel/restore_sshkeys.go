@@ -39,7 +39,7 @@ type SSHKeyImportResult struct {
 //
 // targetUserID must be the destination jabali user the restore
 // stage created moments earlier. ID is the FK target.
-func ImportSSHKeys(ctx context.Context, repo repository.SSHKeyRepository, parsed *ParsedTarball, targetUserID string) (*SSHKeyImportResult, error) {
+func ImportSSHKeys(ctx context.Context, repo repository.SSHKeyRepository, parsed *ParsedTarball, targetUserID string, preserveSSH bool) (*SSHKeyImportResult, error) {
 	if repo == nil {
 		return nil, fmt.Errorf("ImportSSHKeys: repo nil")
 	}
@@ -81,6 +81,17 @@ func ImportSSHKeys(ctx context.Context, repo repository.SSHKeyRepository, parsed
 				continue
 			}
 			seen[fp] = struct{}{}
+
+			// JAB-53: a migration moves data but RESETS access paths unless the
+			// operator explicitly opts in. Without --preserve-source-state, do
+			// NOT grant SSH access from source authorized_keys (a compromised
+			// source could carry attacker/contractor/CI keys forward). Record the
+			// fingerprint for the manifest so the admin can re-add trusted keys in
+			// the SSH Keys page; never store nothing silently.
+			if !preserveSSH {
+				res.Skipped = append(res.Skipped, fmt.Sprintf("quarantined:%s:%d fp=%s (SSH access reset; opt in with --preserve-source-state)", akPath, lineNum, fp))
+				continue
+			}
 
 			row := &models.SSHKey{
 				ID:          ids.NewULID(),
