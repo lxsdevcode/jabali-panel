@@ -5,6 +5,7 @@
 package tui
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,19 +50,17 @@ var (
 	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
-// jabaliLogo is the ASCII wordmark shown at the top of every screen (mirrors
-// install.sh print_banner so the TUI and the streamed log share one brand).
-const jabaliLogo = `  ▀██▀         ▀██              ▀██   ██
-   ██   ▄▄▄▄    ██ ▄▄▄   ▄▄▄▄    ██  ▄▄▄
-   ██  ▀▀ ▄██   ██▀  ██ ▀▀ ▄██   ██   ██
-   ██  ▄█▀ ██   ██    █ ▄█▀ ██   ██   ██
-██ ▄█▀  ▀█▄▄▀█▀  ▀█▄▄▄▀  ▀█▄▄▀█▀ ▄██▄ ▄██▄
- ▀▀▀`
+// jabaliLogo is the brand logo shown at the top of every screen. It's a chafa
+// render of jabali_logo.png (truecolor block art, white background) embedded at
+// build time so there's no ANSI-escaping in source.
+//
+//go:embed logo.ansi
+var jabaliLogo string
 
 // bannerView renders the logo + tagline, prepended to every screen.
 func bannerView() string {
-	return logoStyle.Render(jabaliLogo) + "\n" +
-		tagStyle.Render("  JABALI PANEL · Linux Web Hosting Control Panel") + "\n\n"
+	return strings.TrimRight(jabaliLogo, "\n") + "\n" +
+		tagStyle.Render("JABALI PANEL · Linux Web Hosting Control Panel") + "\n\n"
 }
 
 // Model is the installer state machine.
