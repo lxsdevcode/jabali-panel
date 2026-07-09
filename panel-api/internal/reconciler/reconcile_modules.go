@@ -16,8 +16,8 @@ import (
 // enabled module's real state and, if it isn't installed+active, dispatch a
 // (detached, backoff-gated) install.
 //
-// Only modules install.sh supports at runtime are converged (dns, mail, quota);
-// security stays flag-only until its install.sh env-reconstruction lands.
+// All optional modules install.sh supports at runtime are converged (dns, mail,
+// quota, security).
 
 // moduleInstallRetryInterval bounds how often a single module's install is
 // re-dispatched. Long enough that a persistently-failing install doesn't hot-
@@ -36,12 +36,14 @@ var convergedModules = []struct {
 	{key: "dns", enabled: func(f moduleFlags) bool { return f.dns }},
 	{key: "mail", dependsOn: "dns", enabled: func(f moduleFlags) bool { return f.mail }},
 	{key: "quota", enabled: func(f moduleFlags) bool { return f.quota }},
+	{key: "security", enabled: func(f moduleFlags) bool { return f.security }},
 }
 
 type moduleFlags struct {
-	dns   bool
-	mail  bool
-	quota bool
+	dns      bool
+	mail     bool
+	quota    bool
+	security bool
 }
 
 func (r *Reconciler) reconcileModuleInstalls(ctx context.Context) {
@@ -52,7 +54,7 @@ func (r *Reconciler) reconcileModuleInstalls(ctx context.Context) {
 	if err != nil || srv == nil {
 		return
 	}
-	flags := moduleFlags{dns: srv.DNSEnabled, mail: srv.MailEnabled, quota: srv.QuotaEnabled}
+	flags := moduleFlags{dns: srv.DNSEnabled, mail: srv.MailEnabled, quota: srv.QuotaEnabled, security: srv.SecurityEnabled}
 	for _, m := range convergedModules {
 		if !m.enabled(flags) {
 			continue

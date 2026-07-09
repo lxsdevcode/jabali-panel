@@ -240,6 +240,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevDNSEnabled := current.DNSEnabled
 	prevMailEnabled := current.MailEnabled
 	prevQuotaEnabled := current.QuotaEnabled
+	prevSecurityEnabled := current.SecurityEnabled
 	prevPanelBrandText := current.PanelBrandText
 	prevDockerEnabled := current.DockerMarketplaceEnabled
 	prevDockerForUsers := current.DockerAppsForUsersEnabled
@@ -665,6 +666,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			{"dns", prevDNSEnabled, current.DNSEnabled},
 			{"mail", prevMailEnabled, current.MailEnabled},
 			{"quota", prevQuotaEnabled, current.QuotaEnabled},
+			{"security", prevSecurityEnabled, current.SecurityEnabled},
 		} {
 			if m.current && !m.prev {
 				h.dispatchModuleInstall(m.key)
