@@ -32,13 +32,23 @@ type SSLResult struct {
 	Skipped   []string // human-readable reasons (path missing, parse fail, …)
 }
 
-func ImportSSL(ctx context.Context, agentCli agent.AgentInterface, parsed *ParsedTarball) (*SSLResult, error) {
+func ImportSSL(ctx context.Context, agentCli agent.AgentInterface, parsed *ParsedTarball, preserveSSL bool) (*SSLResult, error) {
 	if parsed == nil {
 		return nil, errors.New("ImportSSL: parsed nil")
 	}
 	res := &SSLResult{}
 	if agentCli == nil {
 		res.Skipped = append(res.Skipped, "ssl_skip:agent_unwired")
+		return res, nil
+	}
+
+	// JAB-54: don't auto-install the source's custom certificate + PRIVATE KEY
+	// unless the operator opts in — a leaked/compromised source key must not be
+	// silently trusted on the new host. Skipping is safe: the reconciler's
+	// auto-LE path issues a fresh cert for every migrated (domain, vhost), so
+	// the domain degrades to a clean Let's Encrypt cert, not to no TLS.
+	if !preserveSSL {
+		res.Skipped = append(res.Skipped, "ssl_quarantined:source certs not installed; reconciler auto-LE issues fresh certs (opt in with --preserve-source-state)")
 		return res, nil
 	}
 

@@ -42,6 +42,7 @@ func newMigrateImportCmd() *cobra.Command {
 	var jobID, targetUser, targetEmail, targetPassword, targetPackageID string
 	var keepStaging bool
 	var allowDegraded bool
+	var preserveSourceState bool
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Run (or resume) a migration job through the four-stage pipeline",
@@ -506,7 +507,7 @@ failed stage. Already-done stages are skipped.`,
 					migrate.StageAnalyze:  cpanelAnalyzeCallback(jobsRepo),
 					migrate.StageValidate: validateStageCallback(usersRepo, domainsRepo, *user.Username),
 					migrate.StageRestore: cpanelRestoreCallback(
-						sshRepo, cronsRepo, dbsRepo, dbUsersRepo, dbGrantsRepo, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, dnsZonesRepo, dnsRecordsRepo, usersRepo, kc,
+						sshRepo, cronsRepo, dbsRepo, dbUsersRepo, dbGrantsRepo, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, dnsZonesRepo, dnsRecordsRepo, usersRepo, kc, preserveSourceState,
 					),
 				},
 			}
@@ -557,6 +558,7 @@ failed stage. Already-done stages are skipped.`,
 	cmd.Flags().StringVar(&jobID, "job-id", "", "migration_jobs.id (ULID) — required")
 	cmd.Flags().BoolVar(&keepStaging, "keep-staging", false, "do NOT delete /var/lib/jabali-migrations/<job-id>/ after run (debug aid)")
 	cmd.Flags().BoolVar(&allowDegraded, "allow-degraded", false, "exit 0 even if the restore ends degraded (a core area — DB/mail/health — failed)")
+	cmd.Flags().BoolVar(&preserveSourceState, "preserve-source-state", false, "keep imported source state ACTIVE (mail forwarders/catchalls/filters/autoresponders, and — as later PRs land — credentials/SSL/SSH). Default OFF: imported artifacts land inert and the operator re-activates trusted ones in the panel (JAB-46). Only use for trusted same-owner migrations.")
 	cmd.Flags().StringVar(&targetUser, "target-user", "", "destination jabali username — auto-created if --target-email + --target-password supplied")
 	cmd.Flags().StringVar(&targetEmail, "target-email", "", "destination user email (only used when auto-creating)")
 	cmd.Flags().StringVar(&targetPassword, "target-password", "", "destination user password (only used when auto-creating; ≥10 chars)")
@@ -697,12 +699,22 @@ func cpanelRestoreCallback(
 	dnsRecordsRepo repository.DNSRecordRepository,
 	usersRepo repository.UserRepository,
 	kc *kratosclient.Client,
+	preserveSourceState bool,
 ) migrate.StageCallback {
 	return func(ctx context.Context, job *models.MigrationJob, payload any) (int64, []string, error) {
 		var _ agent.AgentInterface = sharedAgent // compile-time guard
 		p, ok := payload.(*cpanelRunPayload)
 		if !ok {
 			return 0, nil, fmt.Errorf("restore: bad payload type")
+		}
+
+		// JAB-46: what imported source state may come in ACTIVE. Read the
+		// wizard's per-concern opt-in from PlanJSON (absent/malformed => preserve
+		// nothing = secure); the --preserve-source-state CLI flag forces all-on
+		// for trusted same-owner migrations.
+		preserve := migrationPlanPreserve(job)
+		if preserveSourceState {
+			preserve = planPreserve{MailRouting: true, Credentials: true, SSL: true, SSH: true}
 		}
 		var warnings []string
 		var bytes int64
@@ -727,7 +739,7 @@ func cpanelRestoreCallback(
 		var err error
 		var sshRes *cpanel.SSHKeyImportResult
 		if plan.Websites {
-			sshRes, err = cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID)
+			sshRes, err = cpanel.ImportSSHKeys(ctx, sshRepo, p.parsed, p.targetUserID, preserve.SSH)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("ssh: %w", err)
 			}
@@ -1027,7 +1039,7 @@ func cpanelRestoreCallback(
 
 		// M35.8 P3: per-domain custom SSL certs from apache_tls/.
 		if plan.SSL {
-			sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed)
+			sslRes, err := cpanel.ImportSSL(ctx, restoreAgent, p.parsed, preserve.SSL)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("ssl: %w", err)
 			}
@@ -1065,7 +1077,7 @@ func cpanelRestoreCallback(
 			warnings = append(warnings, "appconfigs: skipped (websites disabled in plan)")
 		}
 
-		extrasRes, err := cpanel.ImportExtras(ctx, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername)
+		extrasRes, err := cpanel.ImportExtras(ctx, domainsRepo, mbRepo, fwdRepo, arRepo, filtersRepo, phpPoolsRepo, restoreAgent, p.parsed, p.targetUserID, p.targetUsername, preserve.MailRouting)
 		if err != nil {
 			return bytes, warnings, fmt.Errorf("extras: %w", err)
 		}
@@ -1085,7 +1097,7 @@ func cpanelRestoreCallback(
 		// (MailboxID=NULL). Stalwart push deferred to a domain-scoped
 		// reconciler phase.
 		if job.SourceKind == models.MigrationSourceDirectAdmin {
-			fwdRes, ferr := directadmin.ImportForwarders(ctx, fwdRepo, domainsRepo, p.parsed.ExtractDir, p.parsed.SourceUser)
+			fwdRes, ferr := directadmin.ImportForwarders(ctx, fwdRepo, domainsRepo, p.parsed.ExtractDir, p.parsed.SourceUser, preserve.MailRouting)
 			if ferr != nil {
 				warnings = append(warnings, fmt.Sprintf("da_forwarders: %v", ferr))
 			} else {
@@ -1392,4 +1404,36 @@ func migrationPlanAreasChecked(job *models.MigrationJob) (planAreas, bool) {
 		return planAreas{}, false // malformed -> fail closed
 	}
 	return wrap.Areas, true
+}
+
+// planPreserve is the per-concern opt-in to keep imported source state ACTIVE
+// (JAB-46 and the wider migration-security cluster). Zero value = preserve
+// nothing = the secure default: imported forwarders/catchalls/filters/
+// autoresponders (and, as later PRs land, credentials/SSL/SSH) arrive INERT and
+// the operator re-activates the trusted ones in the panel's existing Mail / SSL
+// / SSH pages. Stored as an object even though the CLI exposes a single
+// --preserve-source-state flag, so granular per-concern opt-in stays a purely
+// additive change with no re-migration.
+type planPreserve struct {
+	MailRouting bool `json:"mail_routing"`
+	Credentials bool `json:"credentials"`
+	SSL         bool `json:"ssl"`
+	SSH         bool `json:"ssh"`
+}
+
+// migrationPlanPreserve reads job.PlanJSON's "preserve" object. Absent or
+// malformed => preserve nothing (fail closed = secure). Unlike planAreas
+// (which defaults to import-everything), the safe default here is the ZERO
+// value, so a missing/old plan never silently re-activates source mail routing.
+func migrationPlanPreserve(job *models.MigrationJob) planPreserve {
+	if job == nil || job.PlanJSON == nil || *job.PlanJSON == "" {
+		return planPreserve{}
+	}
+	var wrap struct {
+		Preserve planPreserve `json:"preserve"`
+	}
+	if err := json.Unmarshal([]byte(*job.PlanJSON), &wrap); err != nil {
+		return planPreserve{}
+	}
+	return wrap.Preserve
 }
