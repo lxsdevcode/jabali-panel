@@ -99,6 +99,10 @@ func nginxTunablesApplyHandler(ctx context.Context, params json.RawMessage) (any
 		return &nginxTunablesApplyResponse{FragmentPath: nginxTunablesFragmentPath, NoChange: true}, nil
 	}
 
+	// JAB-71: serialize swap→test→reload against every other nginx op.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	var rollbacks []func()
 	restore := func() {
 		for i := len(rollbacks) - 1; i >= 0; i-- {

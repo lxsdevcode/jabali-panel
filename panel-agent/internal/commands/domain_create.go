@@ -760,6 +760,12 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 	// saw 181 reloads/hr = constant Lua reinit = ~340 MB PSS bloat.
 	// Check before write: if the live file already matches AND the
 	// symlink already points at it, no write + no reload needed.
+	// JAB-71: hold the global nginx mutex across the whole decide→write→test→
+	// reload below, so a concurrent handler can't write a broken vhost between
+	// our `nginx -t` passing and our reload.
+	nginxOpMu.Lock()
+	defer nginxOpMu.Unlock()
+
 	existingBytes, readErr := os.ReadFile(configPath)
 	linkOK := false
 	if target, lerr := os.Readlink(enabledPath); lerr == nil && target == configPath {
