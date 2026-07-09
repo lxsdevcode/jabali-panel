@@ -1,0 +1,680 @@
+// Package tui is the Bubble Tea installer front-end (M353 / GH #353). It walks
+// the operator through a deploy profile, an optional-module checklist with live
+// dependency resolution, a confirm screen, then runs install.sh with
+// JABALI_MODULES=<keys> and streams its output into a scrolling progress pane.
+package tui
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"git.jabali-panel.com/shukivaknin/jabali2/installer/internal/modules"
+)
+
+type screen int
+
+const (
+	screenWelcome screen = iota
+	screenProfile
+	screenModules
+	screenConfig
+	screenConfirm
+	screenInstalling
+	screenResult
+)
+
+// logTail is how many streamed lines the progress pane shows.
+const logTail = 16
+
+var (
+	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	onStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	offStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
+	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
+	appStyle    = lipgloss.NewStyle().Padding(1, 2)
+	logoStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+)
+
+// jabaliLogo is the ASCII wordmark shown at the top of every screen (mirrors
+// install.sh print_banner so the TUI and the streamed log share one brand).
+const jabaliLogo = `  ▀██▀         ▀██              ▀██   ██
+   ██   ▄▄▄▄    ██ ▄▄▄   ▄▄▄▄    ██  ▄▄▄
+   ██  ▀▀ ▄██   ██▀  ██ ▀▀ ▄██   ██   ██
+   ██  ▄█▀ ██   ██    █ ▄█▀ ██   ██   ██
+██ ▄█▀  ▀█▄▄▀█▀  ▀█▄▄▄▀  ▀█▄▄▀█▀ ▄██▄ ▄██▄
+ ▀▀▀`
+
+// bannerView renders the logo + tagline, prepended to every screen.
+func bannerView() string {
+	return logoStyle.Render(jabaliLogo) + "\n" +
+		tagStyle.Render("  JABALI PANEL · Linux Web Hosting Control Panel") + "\n\n"
+}
+
+// Model is the installer state machine.
+type Model struct {
+	screen   screen
+	cursor   int
+	profiles []modules.Profile
+	mods     []modules.Module
+	selected map[string]bool
+
+	installSh string
+	dryRun    bool
+	events    chan tea.Msg
+	spinner   spinner.Model
+	progress  progress.Model
+	stepsDone float64 // completed phase weight (apt phase counts as aptWeight)
+	stepsTot  float64 // total phase weight (estimate + aptWeight)
+	creep     float64 // intra-phase progress (0..1); apt uses parsed %, others a timer
+	inApt     bool    // current phase is the long "apt install system packages" step
+	started   bool    // at least one phase marker seen (so we know a prev phase to close)
+	logHidden bool    // hide the streaming log box (toggle with \'l\')
+
+	logLines   []string
+	phase      string
+	installed  bool
+	installErr error
+	summary    []string // captured "JABALI PANEL — installed" block (URL/user/pass)
+	capSummary bool
+
+	// Config screen (T3): host/admin/NS/PHP inputs + focus + validation error.
+	fields    []configField
+	focus     int
+	configErr string
+
+	Confirmed bool
+	Aborted   bool
+	ExitCode  int
+}
+
+// New builds the model. installSh is the path to install.sh; dryRun passes
+// --dry-run so a run previews the plan without changing the system.
+func New(installSh string, dryRun bool) Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
+	pr := progress.New(progress.WithDefaultGradient(), progress.WithWidth(46))
+	return Model{
+		progress:  pr,
+		screen:    screenWelcome,
+		profiles:  modules.Profiles,
+		mods:      modules.Registry,
+		selected:  map[string]bool{},
+		installSh: installSh,
+		dryRun:    dryRun,
+		events:    make(chan tea.Msg, 256),
+		spinner:   sp,
+		logHidden: true, // log hidden by default; press 'l' to reveal
+		fields:    newConfigFields(defaultHostname()),
+	}
+}
+
+func (m Model) Init() tea.Cmd { return nil }
+
+// defaultHostname pre-fills the hostname field: JABALI_HOSTNAME if set, else the
+// machine's FQDN (hostname -f), else the short hostname. The operator can still
+// edit it; admin/NS fields derive from whatever ends up here.
+func defaultHostname() string {
+	if v := strings.TrimSpace(os.Getenv("JABALI_HOSTNAME")); v != "" {
+		return v
+	}
+	if out, err := exec.Command("hostname", "-f").Output(); err == nil {
+		if h := strings.TrimSpace(string(out)); h != "" && h != "localhost" {
+			return h
+		}
+	}
+	if h, err := os.Hostname(); err == nil && h != "" && h != "localhost" {
+		return h
+	}
+	return ""
+}
+
+func (m Model) SelectedKeys() []string {
+	var out []string
+	for _, mod := range m.mods {
+		if m.selected[mod.Key] {
+			out = append(out, mod.Key)
+		}
+	}
+	return out
+}
+
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tickMsg:
+		if m.screen != screenInstalling || m.installed {
+			return m, nil
+		}
+		// Creep across the current phase toward (but never reaching) the next
+		// boundary, so the bar advances during long/silent steps like apt.
+		if m.creep < 0.9 {
+			m.creep += 0.05
+		}
+		return m, tea.Batch(tickCmd(), m.progress.SetPercent(m.overallPct()))
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case progress.FrameMsg:
+		pm, cmd := m.progress.Update(msg)
+		m.progress = pm.(progress.Model)
+		return m, cmd
+	case logLineMsg:
+		line := string(msg)
+		// apt machine-progress lines drive the bar's intra-phase creep with the
+		// real download/install percentage; they're hidden from the log box.
+		if c, ok := aptProgress(line); ok {
+			if c > m.creep {
+				m.creep = c
+			}
+			return m, tea.Batch(waitForEvent(m.events), m.progress.SetPercent(m.overallPct()))
+		}
+		m.logLines = append(m.logLines, line)
+		if len(m.logLines) > 400 {
+			m.logLines = m.logLines[len(m.logLines)-400:]
+		}
+		m.captureSummary(stripANSI(line))
+		if p, ok := phaseFromLine(line); ok {
+			// Close the previous phase, adding its weight (the long apt phase is
+			// worth aptWeight; everything else is worth 1).
+			if m.started {
+				w := 1.0
+				if m.inApt {
+					w = aptWeight
+				}
+				m.stepsDone += w
+			}
+			m.started = true
+			m.phase = p
+			m.inApt = strings.Contains(p, "apt install system packages")
+			m.creep = 0
+		}
+		return m, tea.Batch(waitForEvent(m.events), m.progress.SetPercent(m.overallPct()))
+	case installDoneMsg:
+		m.installed = true
+		m.installErr = msg.err
+		_ = m.progress.SetPercent(1.0)
+		if msg.err != nil {
+			m.ExitCode = 1
+		}
+		m.screen = screenResult
+		return m, nil
+	case tea.KeyMsg:
+		return m.handleKey(msg)
+	default:
+		if m.screen == screenConfig && len(m.fields) > 0 {
+			cmd := updateFocusedField(m.fields, m.focus, msg)
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
+// focusField focuses field index i (blurring the rest) and returns the blink cmd.
+func (m *Model) focusField(i int) tea.Cmd {
+	for j := range m.fields {
+		if j == i {
+			m.fields[j].input.Focus()
+		} else {
+			m.fields[j].input.Blur()
+		}
+	}
+	return textinput.Blink
+}
+
+// handleConfigKey drives the config screen: tab/↑↓ move between the visible
+// fields, typing edits the focused input, enter validates and advances.
+func (m Model) handleConfigKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	vis := visibleFields(m.fields, m.selected["dns"])
+	// position of m.focus within the visible slice
+	pos := 0
+	for i, idx := range vis {
+		if idx == m.focus {
+			pos = i
+		}
+	}
+	// PHP multi-select field: left/right move the version cursor, space toggles.
+	if m.fields[m.focus].phpSelect {
+		switch key.String() {
+		case "left", "h":
+			if m.fields[m.focus].phpCursor > 0 {
+				m.fields[m.focus].phpCursor--
+			}
+			return m, nil
+		case "right", "l":
+			if m.fields[m.focus].phpCursor < len(m.fields[m.focus].phpVers)-1 {
+				m.fields[m.focus].phpCursor++
+			}
+			return m, nil
+		case " ", "space", "x":
+			f := &m.fields[m.focus]
+			v := f.phpVers[f.phpCursor]
+			f.phpChecked[v] = !f.phpChecked[v]
+			return m, nil
+		}
+	}
+	switch key.String() {
+	case "tab", "down":
+		pos = (pos + 1) % len(vis)
+		m.focus = vis[pos]
+		return m, m.focusField(m.focus)
+	case "shift+tab", "up":
+		pos = (pos - 1 + len(vis)) % len(vis)
+		m.focus = vis[pos]
+		return m, m.focusField(m.focus)
+	case "enter":
+		if e := validateConfig(m.fields, m.selected["dns"]); e != "" {
+			m.configErr = e
+			return m, nil
+		}
+		m.configErr = ""
+		m.screen = screenConfirm
+		return m, nil
+	case "esc":
+		m.screen = screenModules
+		return m, nil
+	default:
+		cmd := updateFocusedField(m.fields, m.focus, key)
+		if m.fields[m.focus].env == "JABALI_HOSTNAME" {
+			// Hostname edited → refresh the untouched derived fields.
+			applyDerived(m.fields, m.fields[m.focus].input.Value())
+		} else if m.fields[m.focus].derive != nil {
+			// Operator typed into a derivable field → stop auto-deriving it.
+			m.fields[m.focus].touched = true
+		}
+		return m, cmd
+	}
+}
+
+func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "ctrl+c":
+		m.Aborted = true
+		m.ExitCode = 130
+		return m, tea.Quit
+	case "q":
+		// On the config screen 'q' is a valid input character (hostnames,
+		// emails); only treat it as quit on the selection screens.
+		if m.screen == screenConfig {
+			break
+		}
+		if m.screen == screenResult {
+			return m, tea.Quit
+		}
+		if m.screen != screenInstalling {
+			m.Aborted = true
+			m.ExitCode = 130
+			return m, tea.Quit
+		}
+	}
+	switch m.screen {
+	case screenWelcome:
+		if key.String() == "enter" {
+			m.screen = screenProfile
+			m.cursor = 0
+		}
+	case screenProfile:
+		switch key.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.profiles)-1 {
+				m.cursor++
+			}
+		case "enter":
+			p := m.profiles[m.cursor]
+			m.selected = map[string]bool{}
+			for _, k := range p.Modules {
+				m.selected[k] = true
+			}
+			m.selected = modules.Resolve(m.selected, "")
+			m.screen = screenModules
+			m.cursor = 0
+		}
+	case screenModules:
+		switch key.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.mods)-1 {
+				m.cursor++
+			}
+		case " ", "space", "x":
+			mod := m.mods[m.cursor]
+			if m.selected[mod.Key] {
+				delete(m.selected, mod.Key)
+				m.selected = modules.Resolve(m.selected, "")
+			} else {
+				m.selected[mod.Key] = true
+				m.selected = modules.Resolve(m.selected, mod.Key)
+			}
+		case "enter":
+			m.screen = screenConfig
+			m.focus = 0
+			m.configErr = ""
+			return m, m.focusField(0)
+		}
+	case screenConfig:
+		return m.handleConfigKey(key)
+	case screenConfirm:
+		switch key.String() {
+		case "enter", "y":
+			m.Confirmed = true
+			m.screen = screenInstalling
+			m.stepsTot = float64(estimateSteps(m.SelectedKeys())) + aptWeight
+			env := append(configEnv(m.fields, m.selected["dns"]),
+				"JABALI_MODULES="+strings.Join(m.SelectedKeys(), ","),
+				"JABALI_NONINTERACTIVE=1") // TUI owns the terminal; install.sh must not open /dev/tty
+
+			return m, tea.Batch(m.spinner.Tick, tickCmd(), startInstall(m.installSh, env, m.dryRun, m.events))
+		case "b", "backspace", "left":
+			m.screen = screenModules
+		}
+	case screenInstalling:
+		if key.String() == "l" {
+			m.logHidden = !m.logHidden
+		}
+	case screenResult:
+		if key.String() == "enter" {
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m Model) View() string {
+	var b strings.Builder
+	switch m.screen {
+	case screenWelcome:
+		b.WriteString(titleStyle.Render("Jabali Panel installer"))
+		b.WriteString("\n\nModular install: pick a deploy profile, then fine-tune the\noptional modules. Core services (web, database, panel) are\nalways installed.\n\n")
+		b.WriteString(helpStyle.Render("enter: continue   q: quit"))
+	case screenProfile:
+		b.WriteString(titleStyle.Render("Deploy profile"))
+		b.WriteString("\n\n")
+		for i, p := range m.profiles {
+			cur := "  "
+			if i == m.cursor {
+				cur = cursorStyle.Render("> ")
+			}
+			b.WriteString(fmt.Sprintf("%s%s\n    %s\n", cur, p.Title, helpStyle.Render(p.Desc)))
+		}
+		b.WriteString("\n" + helpStyle.Render("↑/↓: move   enter: select   q: quit"))
+	case screenModules:
+		b.WriteString(titleStyle.Render("Optional modules"))
+		b.WriteString("\n\n")
+		for i, mod := range m.mods {
+			cur := "  "
+			if i == m.cursor {
+				cur = cursorStyle.Render("> ")
+			}
+			box := offStyle.Render("[ ]")
+			if m.selected[mod.Key] {
+				box = onStyle.Render("[x]")
+			}
+			b.WriteString(fmt.Sprintf("%s%s %s\n      %s\n", cur, box, mod.Title, helpStyle.Render(mod.Desc)))
+		}
+		b.WriteString("\n" + helpStyle.Render("↑/↓: move   space: toggle   enter: continue   q: quit"))
+		b.WriteString("\n" + helpStyle.Render("(dependencies auto-select; conflicts auto-clear)"))
+	case screenConfig:
+		b.WriteString(titleStyle.Render("Configuration"))
+		b.WriteString("\n\n")
+		for _, i := range visibleFields(m.fields, m.selected["dns"]) {
+			f := m.fields[i]
+			cur := "  "
+			if i == m.focus {
+				cur = cursorStyle.Render("> ")
+			}
+			req := ""
+			if f.required {
+				req = helpStyle.Render(" *")
+			}
+			if f.phpSelect {
+				b.WriteString(fmt.Sprintf("%s%s\n    %s\n", cur, f.label, phpChips(f, i == m.focus)))
+			} else {
+				b.WriteString(fmt.Sprintf("%s%s%s\n    %s\n", cur, f.label, req, f.input.View()))
+			}
+		}
+		if m.configErr != "" {
+			b.WriteString("\n" + errStyle.Render(m.configErr) + "\n")
+		}
+		b.WriteString("\n" + helpStyle.Render("tab/↑↓: move fields   ←→+space: toggle PHP   enter: continue   esc: back"))
+	case screenConfirm:
+		b.WriteString(titleStyle.Render("Confirm"))
+		b.WriteString("\n\nCore: web (nginx + PHP-FPM), database (MariaDB), panel + auth\n\nOptional modules to install:\n")
+		keys := m.SelectedKeys()
+		if len(keys) == 0 {
+			b.WriteString(helpStyle.Render("  (none — minimal install)\n"))
+		}
+		for _, k := range keys {
+			b.WriteString(onStyle.Render("  + " + k + "\n"))
+		}
+		b.WriteString("\n" + helpStyle.Render("JABALI_MODULES=") + onStyle.Render(strings.Join(keys, ",")) + "\n")
+		b.WriteString("\nConfiguration:\n")
+		for _, i := range visibleFields(m.fields, m.selected["dns"]) {
+			f := m.fields[i]
+			v := strings.TrimSpace(f.input.Value())
+			if v == "" {
+				continue
+			}
+			b.WriteString(helpStyle.Render("  "+f.label+": ") + v + "\n")
+		}
+		if m.dryRun {
+			b.WriteString("\n" + helpStyle.Render("(dry run — will preview the plan, not install)\n"))
+		}
+		b.WriteString("\n" + helpStyle.Render("enter/y: install   b: back   q: quit"))
+	case screenInstalling:
+		b.WriteString(fmt.Sprintf("%s %s\n", m.spinner.View(), titleStyle.Render("Installing…")))
+		b.WriteString("\n" + m.progress.View() + "\n")
+		if m.phase != "" {
+			b.WriteString("\n" + helpStyle.Render("current: ") + m.phase + "\n")
+		}
+		if m.logHidden {
+			b.WriteString("\n" + helpStyle.Render("l: show log   ctrl+c: abort") + "\n")
+		} else {
+			b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
+			b.WriteString(helpStyle.Render("l: hide log   installing… please wait (ctrl+c aborts)"))
+		}
+	case screenResult:
+		if m.installErr != nil {
+			b.WriteString(errStyle.Render("Install failed"))
+			b.WriteString("\n\n" + m.installErr.Error() + "\n")
+			b.WriteString("\n" + boxStyle.Render(m.tailLog()) + "\n")
+		} else {
+			b.WriteString(onStyle.Render("✓ Install complete"))
+			if len(m.summary) > 0 {
+				b.WriteString("\n\n" + renderSummaryCard(m.summary) + "\n")
+			} else {
+				b.WriteString("\n\n" + helpStyle.Render("Log in at the panel URL printed above.") + "\n")
+			}
+		}
+		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
+	}
+	return appStyle.Render(bannerView() + b.String())
+}
+
+// tailLog returns the last logTail streamed lines, ANSI-stripped, for the box.
+func (m Model) tailLog() string {
+	lines := m.logLines
+	if len(lines) > logTail {
+		lines = lines[len(lines)-logTail:]
+	}
+	out := make([]string, logTail) // fixed height → box never shrinks (no ghost lines)
+	base := logTail - len(lines)
+	for i := range out {
+		if i < base {
+			out[i] = ""
+			continue
+		}
+		out[i] = truncate(stripANSI(lines[i-base]), 76)
+	}
+	if len(lines) == 0 {
+		out[0] = helpStyle.Render("(waiting for output…)")
+	}
+	return strings.Join(out, "\n")
+}
+
+// estimateSteps guesses the number of [i] phase markers install.sh will emit,
+// so the progress bar advances smoothly. Rough on purpose — capped at 0.97 in
+// Update and snapped to 1.0 on completion, so an over/under estimate only
+// changes the fill speed, never correctness. Heavier modules weigh more.
+func estimateSteps(keys []string) int {
+	total := 55 // core: base packages, php, nginx, mariadb, panel, agent, certs…
+	weight := map[string]int{"dns": 10, "mail": 28, "security": 30, "docker": 8,
+		"docker_apps": 6, "python_apps": 8, "postgres": 8, "quota": 5, "api": 2}
+	for _, k := range keys {
+		if w, ok := weight[k]; ok {
+			total += w
+		}
+	}
+	return total
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
+}
+
+// phpChips renders the PHP version multi-select as [x]/[ ] chips, highlighting
+// the cursor position when the field is focused.
+func phpChips(f configField, focused bool) string {
+	parts := make([]string, len(f.phpVers))
+	for i, v := range f.phpVers {
+		box := "[ ]"
+		st := offStyle
+		if f.phpChecked[v] {
+			box = "[x]"
+			st = onStyle
+		}
+		chip := st.Render(box + " " + v)
+		if focused && i == f.phpCursor {
+			chip = cursorStyle.Render("‹") + chip + cursorStyle.Render("›")
+		} else {
+			chip = " " + chip + " "
+		}
+		parts[i] = chip
+	}
+	return strings.Join(parts, " ")
+}
+
+// aptWeight is how many phase-units the long "apt install system packages" step
+// is worth. It takes minutes (vs seconds for other phases) and is driven by
+// apt's real dl/pm percentage, so it must own a large slice of the bar or it
+// looks frozen. ~45 puts it around a third of a full install.
+const aptWeight = 45.0
+
+// tickMsg drives the intra-phase progress creep on a timer.
+type tickMsg struct{}
+
+// tickCmd fires a tickMsg roughly twice a second while installing.
+func tickCmd() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
+// overallPct combines completed phases with the current-phase creep, capped
+// below 100% until the install actually finishes.
+func (m Model) overallPct() float64 {
+	if m.stepsTot <= 0 {
+		return 0
+	}
+	w := 1.0
+	if m.inApt {
+		w = aptWeight
+	}
+	c := m.creep
+	if c > 1.0 {
+		c = 1.0
+	}
+	pct := (m.stepsDone + c*w) / m.stepsTot
+	if pct > 0.97 {
+		pct = 0.97
+	}
+	return pct
+}
+
+// captureSummary collects install.sh's final "JABALI PANEL — installed" block
+// (URL / Username / Password + login advisory) from the streamed output so the
+// result screen can show it even though the live log box is hidden. The block
+// is bordered by ===== lines around a "JABALI PANEL … installed" banner.
+func (m *Model) captureSummary(s string) {
+	sc := strings.TrimSpace(s)
+	if strings.Contains(sc, "JABALI PANEL") && strings.Contains(sc, "installed") {
+		m.capSummary = true
+		m.summary = nil
+		return
+	}
+	if !m.capSummary {
+		return
+	}
+	isBorder := sc != "" && strings.Trim(sc, "=") == ""
+	if isBorder {
+		if len(m.summary) > 0 { // closing border → block done
+			m.capSummary = false
+		}
+		return
+	}
+	if sc != "" {
+		m.summary = append(m.summary, sc)
+	}
+}
+
+var (
+	fieldLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(11)
+	urlValueStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	credValueStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
+	cardStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("42")).Padding(0, 2)
+	cardTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
+)
+
+// renderSummaryCard turns the captured install summary lines into a styled
+// "Panel access" card: URL/Username/Password as aligned coloured fields, and
+// the "> ..." advisory lines as a dim note block below.
+func renderSummaryCard(lines []string) string {
+	var fields []string
+	var notes []string
+	for _, ln := range lines {
+		t := strings.TrimSpace(ln)
+		switch {
+		case strings.HasPrefix(t, "URL:"):
+			fields = append(fields, fieldLabelStyle.Render("URL")+urlValueStyle.Render(strings.TrimSpace(strings.TrimPrefix(t, "URL:"))))
+		case strings.HasPrefix(t, "Username:"):
+			fields = append(fields, fieldLabelStyle.Render("Username")+credValueStyle.Render(strings.TrimSpace(strings.TrimPrefix(t, "Username:"))))
+		case strings.HasPrefix(t, "Password:"):
+			fields = append(fields, fieldLabelStyle.Render("Password")+credValueStyle.Render(strings.TrimSpace(strings.TrimPrefix(t, "Password:"))))
+		case strings.HasPrefix(t, ">"):
+			notes = append(notes, "• "+strings.TrimSpace(strings.TrimPrefix(t, ">")))
+		default:
+			// continuation of a previous note (wrapped advisory line)
+			if len(notes) > 0 && t != "" {
+				notes[len(notes)-1] += " " + t
+			}
+		}
+	}
+	var body strings.Builder
+	body.WriteString(cardTitleStyle.Render("Panel access") + "\n\n")
+	body.WriteString(strings.Join(fields, "\n"))
+	if len(notes) > 0 {
+		body.WriteString("\n\n" + helpStyle.Render(strings.Join(notes, "\n")))
+	}
+	return cardStyle.Render(body.String())
+}

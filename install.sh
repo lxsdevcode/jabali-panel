@@ -175,6 +175,9 @@ INSTALL FLAGS (all optional, combinable)
   -y, --yes            Assume "yes" for prompts (non-interactive).
 
 UNINSTALL FLAGS
+  --dry-run            Print the module install plan (which optional modules
+                       would install vs skip for JABALI_MODULES) and exit
+                       without changing anything.
   --uninstall          Remove Jabali (see above). Confirms unless --yes.
   --purge-packages     With --uninstall: also apt-purge the OS packages
                        Jabali pulled in (nginx, mariadb, crowdsec, php...).
@@ -196,6 +199,7 @@ _cli_hostname=""
 _cli_token=""
 _cli_debug=""
 _cli_uninstall=""
+_cli_dry_run=""
 _cli_yes=""
 _cli_purge_packages=""
 _positional=()
@@ -209,6 +213,7 @@ while [[ $# -gt 0 ]]; do
     --uninstall)  _cli_uninstall=1; shift ;;
     --purge-packages) _cli_purge_packages=1; shift ;;
     --yes|-y)     _cli_yes=1; shift ;;
+    --dry-run)    _cli_dry_run=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     --)           shift; while [[ $# -gt 0 ]]; do _positional+=("$1"); shift; done ;;
     --*)          printf 'install.sh: unknown flag: %s\n' "$1" >&2; exit 64 ;;
@@ -313,6 +318,102 @@ _warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; _log_to_file "[!] $*"; }
 # so any future caller has a matching pair to _warn.
 _err()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"; }
 _die()  { printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; _log_to_file "[✗] $*"; exit 1; }
+
+# is_module_enabled — M353 (GH #353) modular install. Returns 0 (enabled) when
+# the given optional-module key should be installed. JABALI_MODULES is a comma
+# list emitted by the TUI (installer/) or set for a headless install.
+#   - UNSET entirely  → every module on (backward-compatible default: plain
+#     curl|bash, CI, cloud-init, jabali update).
+#   - SET but EMPTY   → the operator chose a minimal install (TUI "Minimal")
+#     → NO optional modules.
+# ${JABALI_MODULES+x} expands to "x" only when the var is set (even if empty),
+# so this distinguishes unset from set-but-empty. Core modules (nginx, MariaDB,
+# panel, Kratos) are never gated by this.
+is_module_enabled() {
+  local key="$1"
+  [[ -z "${JABALI_MODULES+x}" ]] && return 0
+  case ",${JABALI_MODULES}," in
+    *",${key},"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# run_if_module <module-key> <install-fn> [args…] — run the install function only
+# when its module is enabled (see is_module_enabled), else log a skip. Used to
+# gate the OPTIONAL install steps in the fresh-install flow. On `jabali update`
+# JABALI_MODULES is unset, so every module reads enabled and the update path is
+# unchanged.
+run_if_module() {
+  local key="$1"; shift
+  if is_module_enabled "$key"; then
+    "$@"
+  else
+    _log "module '${key}' disabled (JABALI_MODULES) — skipping ${1}"
+  fi
+}
+
+# seed_module_flags — M353 (GH #353). Write the per-module server_settings flags
+# to match the install selection so the panel's page-gating (serverCapabilities →
+# nav/route hide + 409 guards) reflects what was actually installed. No-op unless
+# JABALI_MODULES is set (a modular install); a plain install keeps the default-on
+# flags. Best-effort: a SQL failure warns but never aborts the install.
+seed_module_flags() {
+  [[ -z "${JABALI_MODULES+x}" ]] && return 0
+  command -v mariadb >/dev/null 2>&1 || return 0
+  local flag key sets=""
+  # map: server_settings column -> JABALI_MODULES key
+  for pair in "dns_enabled:dns" "mail_enabled:mail" "security_enabled:security" \
+              "quota_enabled:quota" "api_enabled:api"; do
+    flag="${pair%%:*}"; key="${pair##*:}"
+    if is_module_enabled "$key"; then val=1; else val=0; fi
+    sets+="${flag}=${val},"
+  done
+  sets="${sets%,}"
+  if mariadb jabali_panel -e "UPDATE server_settings SET ${sets} WHERE id=1;" 2>/dev/null; then
+    _ok "module flags seeded from JABALI_MODULES (${JABALI_MODULES})"
+  else
+    _warn "could not seed module flags (server_settings) — set them in Server Settings → Modules"
+  fi
+}
+
+# print_module_plan — dry-run output (--dry-run). Shows exactly which optional
+# modules would be installed vs skipped for the current JABALI_MODULES, and the
+# server_settings flags that would be seeded — WITHOUT touching the system. Lets
+# an operator verify the selection before committing to a real install.
+print_module_plan() {
+  printf '\n=== Jabali install plan (dry run) ===\n'
+  if [[ -z "${JABALI_MODULES+x}" ]]; then
+    printf 'JABALI_MODULES: (unset) → ALL modules enabled (default install)\n'
+  elif [[ -z "${JABALI_MODULES}" ]]; then
+    printf 'JABALI_MODULES: (empty) → minimal — no optional modules\n'
+  else
+    printf 'JABALI_MODULES: %s\n' "${JABALI_MODULES}"
+  fi
+  printf '\nCore (always installed): nginx + PHP-FPM, MariaDB, panel-api, agent, Kratos\n'
+  printf '\nOptional modules:\n'
+  local key label
+  for pair in "dns:PowerDNS (DNS server)" \
+              "mail:Stalwart + Bulwark (mail)" \
+              "security:CrowdSec + malware/ClamAV + AppArmor" \
+              "python_apps:Python app runtime" \
+              "quota:Filesystem quota" \
+              "api:REST API (API keys)"; do
+    key="${pair%%:*}"; label="${pair#*:}"
+    if is_module_enabled "$key"; then
+      printf '  [x] %-10s %s\n' "$key" "$label"
+    else
+      printf '  [ ] %-10s %s (skipped)\n' "$key" "$label"
+    fi
+  done
+  printf '\nserver_settings flags that would be seeded:\n'
+  local flag k
+  for pair in "dns_enabled:dns" "mail_enabled:mail" "security_enabled:security" \
+              "quota_enabled:quota" "api_enabled:api"; do
+    flag="${pair%%:*}"; k="${pair##*:}"
+    if is_module_enabled "$k"; then printf '  %-18s = 1\n' "$flag"; else printf '  %-18s = 0\n' "$flag"; fi
+  done
+  printf '\nNo changes made. Re-run without --dry-run to install.\n\n'
+}
 
 # is_container returns 0 inside LXC/Docker/Podman/systemd-nspawn etc.
 # Gates kernel-LSM-touching steps (auditd, AppArmor) and host-kernel-
@@ -708,8 +809,14 @@ prompt_server_settings() {
   # controlling terminal). So we don't pre-test — we try the exec
   # directly inside an `if`, which neutralises errexit and lets us
   # fall through to the stdin-TTY branch on failure.
+  # JABALI_NONINTERACTIVE=1 (set by the TUI installer, which owns the terminal
+  # and streams our output) forces the defaults/env path so we never open
+  # /dev/tty — a raw read there would block behind the TUI's screen. All values
+  # come from env (JABALI_HOSTNAME/NS1/NS2) or auto-detected defaults.
   local input_fd
-  if exec 3</dev/tty 2>/dev/null; then
+  if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+    input_fd=""
+  elif exec 3</dev/tty 2>/dev/null; then
     input_fd=3
   elif [[ -t 0 ]]; then
     input_fd=0
@@ -999,32 +1106,47 @@ POLICYEOF
   # One big install. Downstream functions (install_nginx, _install_php_version,
   # install_node, install_powerdns, setup_certbot) short-circuit on
   # `command -v` / package-present checks now that the packages land here.
-  _spin "apt install system packages (this is the long one)" \
-    apt-get install -y -qq --no-install-recommends \
-      git curl ca-certificates build-essential tar bzip2 unzip openssl gnupg sudo \
-      mariadb-server mariadb-client \
-      rsync acl \
-      systemd-resolved \
-      quota quotatool xfsprogs \
-      nginx \
-      certbot python3-certbot-nginx \
-      nodejs \
-      pdns-server pdns-backend-mysql pdns-recursor \
-      bind9-dnsutils \
-      ufw yq \
-      whois \
-      redis-server redis-tools \
-      dbus dbus-user-session \
-      bubblewrap debootstrap systemd-container \
-      yara \
-      ed inotify-tools \
-      logrotate \
-      acl \
-      unattended-upgrades \
-      restic zstd \
-      sshpass \
-      "${php_extensions[@]}" \
-      "${optional_pkgs[@]}"
+  local -a _base_pkgs=(
+    git curl ca-certificates build-essential tar bzip2 unzip openssl gnupg sudo
+    mariadb-server mariadb-client
+    rsync acl
+    systemd-resolved
+    quota quotatool xfsprogs
+    nginx
+    certbot python3-certbot-nginx
+    nodejs
+    pdns-server pdns-backend-mysql pdns-recursor
+    bind9-dnsutils
+    ufw yq
+    whois
+    redis-server redis-tools
+    dbus dbus-user-session
+    bubblewrap debootstrap systemd-container
+    yara
+    ed inotify-tools
+    logrotate
+    acl
+    unattended-upgrades
+    restic zstd
+    sshpass
+    "${php_extensions[@]}"
+    "${optional_pkgs[@]}"
+  )
+  if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+    # TUI install: emit apt's machine-readable progress (dlstatus/pmstatus lines)
+    # on stdout via APT::Status-Fd=1 so the installer can drive its progress bar
+    # with the real download/unpack percentage. The TUI parses + hides these
+    # lines. _spin would swallow all output into a temp file, so bypass it here.
+    _log "apt install system packages (this is the long one)…"
+    local _aptrc=0
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o APT::Status-Fd=1 \
+      --no-install-recommends "${_base_pkgs[@]}" || _aptrc=$?
+    [[ $_aptrc -eq 0 ]] || _die "apt install system packages FAILED (exit $_aptrc)"
+    _ok "apt install system packages (this is the long one)"
+  else
+    _spin "apt install system packages (this is the long one)" \
+      apt-get install -y -qq --no-install-recommends "${_base_pkgs[@]}"
+  fi
 
   # Undo the policy-rc.d trap regardless of exit path above (set -e would
   # have left the trap in place — restore is best-effort but ordered so
@@ -2649,16 +2771,21 @@ install_redis() {
   fi
 
   # Ping via the socket; fail loud if Redis didn't actually come up on
-  # the expected path (wrong config, SELinux, etc.).
-  local i
+  # the expected path (wrong config, SELinux, etc.). A locked `default` user
+  # (install_redis_acl, #406, runs on the NEXT step and on every re-run) makes
+  # a bare PING answer NOAUTH/NOPERM instead of PONG — that still proves the
+  # server is up and listening on the socket, which is all this check needs, so
+  # accept those replies too (otherwise `jabali update` false-fails here).
+  local i _reply
   for i in 1 2 3 4 5 6 7 8 9 10; do
-    if redis-cli -s /run/redis/redis.sock ping 2>/dev/null | grep -q PONG; then
+    _reply="$(redis-cli -s /run/redis/redis.sock ping 2>&1)"
+    if printf '%s' "$_reply" | grep -qE 'PONG|NOAUTH|NOPERM|WRONGPASS'; then
       break
     fi
     sleep 1
   done
-  if ! redis-cli -s /run/redis/redis.sock ping 2>/dev/null | grep -q PONG; then
-    _die "Redis did not respond to PING on /run/redis/redis.sock — check 'journalctl -u redis-server'"
+  if ! printf '%s' "$_reply" | grep -qE 'PONG|NOAUTH|NOPERM|WRONGPASS'; then
+    _die "Redis did not respond on /run/redis/redis.sock (last reply: ${_reply:-none}) — check 'journalctl -u redis-server'"
   fi
 
   # Verify no TCP listener. Same invariant check as MariaDB's
@@ -4915,6 +5042,14 @@ prompt_admin_account() {
   local _def_host _def_email _ans _email_re='^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
   _def_host="${JABALI_HOSTNAME:-$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo localhost)}"
   _def_email="admin@${_def_host}"
+  # Non-interactive (TUI installer owns the terminal): use the default email
+  # instead of opening /dev/tty, which would block behind the TUI screen.
+  if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+    JABALI_ADMIN_EMAIL="$_def_email"
+    export JABALI_ADMIN_EMAIL
+    _log "panel admin login email set to $JABALI_ADMIN_EMAIL (non-interactive default)"
+    return 0
+  fi
   if exec 3</dev/tty 2>/dev/null; then
     {
       printf '\n'
@@ -4966,7 +5101,9 @@ seed_admin_env() {
   admin_email="${JABALI_BOOTSTRAP_ADMIN_EMAIL:-${JABALI_ADMIN_EMAIL:-}}"
   if [[ -z "$admin_email" ]]; then
     local _def_email="admin@${_def_host}"
-    if exec 3</dev/tty 2>/dev/null; then
+    if [[ -n "${JABALI_NONINTERACTIVE:-}" ]]; then
+      admin_email="$_def_email"
+    elif exec 3</dev/tty 2>/dev/null; then
       local _ans
       # Unambiguous wording + a visually separated banner so this is
       # never mistaken for the SSL/ACME contact email that the cert
@@ -5847,7 +5984,7 @@ install_adminer() {
   # Upstream single-file Adminer build. Pin v4.8.1 for reproducibility.
   if [[ ! -f "${adminer_dir}/adminer.php" ]]; then
     _log "downloading adminer.php"
-    if ! curl -fsSL -o "${adminer_dir}/adminer.php" "${adminer_url}"; then
+    if ! curl -fsSL --retry 4 --retry-delay 2 --retry-connrefused -o "${adminer_dir}/adminer.php" "${adminer_url}"; then
       _err "failed to download adminer from ${adminer_url}"
       return 1
     fi
@@ -5858,9 +5995,12 @@ install_adminer() {
   # Adminer's plugin loader (separate from the main file).
   if [[ ! -f "${adminer_dir}/plugin.php" ]]; then
     _log "downloading Adminer plugin loader"
-    if ! curl -fsSL -o "${adminer_dir}/plugin.php" "${adminer_plugin_url}"; then
-      _err "failed to download adminer plugin loader"
-      return 1
+    if ! curl -fsSL --retry 4 --retry-delay 2 --retry-connrefused -o "${adminer_dir}/plugin.php" "${adminer_plugin_url}"; then
+      # Non-fatal: the plugin loader only enhances Adminer (jabali-sso plugin).
+      # A transient GitHub-raw hiccup shouldn't brick the whole install; the DB
+      # admin tool still works, and `jabali update` / repair can refetch it.
+      _warn "failed to download adminer plugin loader (non-fatal) — Adminer SSO plugin disabled until next update"
+      rm -f "${adminer_dir}/plugin.php"
     fi
   else
     _ok "adminer plugin loader already present"
@@ -12583,6 +12723,12 @@ check_ptr_rdns() {
 
 main() {
   print_banner
+  # --dry-run: print the module plan (which optional modules install vs skip for
+  # the current JABALI_MODULES) and exit before any system change. M353 GH #353.
+  if [[ -n "${_cli_dry_run:-}${JABALI_DRY_RUN:-}" ]]; then
+    print_module_plan
+    exit 0
+  fi
   # Set the system hostname up front so every downstream step (certs, mail,
   # DNS, panel identity) uses it.
   apply_system_hostname
@@ -12614,7 +12760,7 @@ main() {
   # DNS is deliberately left alone at install time (see the block
   # following install_base_packages for rationale).
   configure_cgroups_v2
-  configure_disk_quota
+  run_if_module quota configure_disk_quota
   configure_tmp_tmpfs
   install_nginx
   install_php
@@ -12646,14 +12792,14 @@ main() {
   # fresh install. Operator flips server_settings.postgres_enabled in
   # the Databases tab; panel-api dispatches db.postgres.install which
   # sources install.sh and runs install_postgres on demand.
-  install_powerdns
-  bootstrap_pdns_self_zone
+  run_if_module dns install_powerdns
+  run_if_module dns bootstrap_pdns_self_zone
   # M6.3: recursor owns loopback :53 and forwards panel-authoritative zones
   # into pdns-server at :5300. Must run AFTER bootstrap_pdns_self_zone (the
   # self-zone has to exist in pdns before the recursor's post-install probe
   # tries to resolve it) and BEFORE setup_certbot (certbot's HTTP-01 flow
   # needs the panel's own hostname to resolve locally).
-  install_pdns_recursor
+  run_if_module dns install_pdns_recursor
   setup_certbot
   # M26 Step 1 — security foundation. Wired here (after pdns/certbot,
   # before clone_or_update_repo and the long build_frontend / npm steps)
@@ -12669,18 +12815,21 @@ main() {
   #     doesn't strand the host without a firewall).
   #   - cleanup_modsecurity removes the M26 ModSecurity stack on existing
   #     hosts that ran an earlier install (ADR-0055 superseded 2026-04-26).
-  install_crowdsec
-  configure_crowdsec_mariadb
-  install_crowdsec_appsec
-  install_crowdsec_nginx_bouncer
-  install_crowdsec_profiles
-  install_login_allowlist_default_conf
-  install_crowdsec_jabali_scenarios
-  install_crowdsec_jabali_stalwart_scenarios
-  install_crowdsec_blocklists
+  run_if_module security install_crowdsec
+  run_if_module security configure_crowdsec_mariadb
+  run_if_module security install_crowdsec_appsec
+  run_if_module security install_crowdsec_nginx_bouncer
+  run_if_module security install_crowdsec_profiles
+  run_if_module security install_login_allowlist_default_conf
+  run_if_module security install_crowdsec_jabali_scenarios
+  run_if_module security install_crowdsec_jabali_stalwart_scenarios
+  run_if_module security install_crowdsec_blocklists
   cleanup_modsecurity
-  install_malware_stack
-  install_ufw
+  run_if_module security install_malware_stack
+  # UFW is part of the security suite (it fronts the CrowdSec firewall bouncer).
+  # A Minimal install opted out of security, so don't enable an unprompted
+  # default-deny firewall — gate it on the security module.
+  run_if_module security install_ufw
   install_per_user_egress
   install_goaccess
   install_restart_drop_ins
@@ -12690,8 +12839,8 @@ main() {
   # install_apparmor and install_aide run AFTER clone_or_update_repo because
   # both functions source profile/unit files from $REPO_DIR/install/; on a
   # fresh install that directory does not exist until the repo is cloned.
-  install_apparmor
-  install_aide
+  run_if_module security install_apparmor
+  run_if_module security install_aide
   install_snuffleupagus
   protect_panel_docs
   # M25: source the socket-helper definitions now that the repo's install/
@@ -12709,7 +12858,7 @@ main() {
   install_jabali_slices
   install_kratos
   install_php_pool_template
-  install_python_apps_runtime
+  run_if_module python_apps install_python_apps_runtime
   build_frontend
   build_backend
   # Re-run AppSec wiring now that build_backend produced
@@ -12719,7 +12868,7 @@ main() {
   # This second call renders the config + writes the acquis + reloads
   # crowdsec with AppSec live. Idempotent (write-on-diff) so on a
   # re-install where AppSec is already wired it's a cheap no-op.
-  install_crowdsec_appsec
+  run_if_module security install_crowdsec_appsec
   write_config_file
   provision_tls_cert
   bootstrap_panel_acme_webroot
@@ -12763,29 +12912,36 @@ main() {
   write_systemd_unit
   start_and_verify_agent
   start_and_verify
+  # M353 (GH #353): seed the per-module server_settings flags from the install
+  # selection, so the panel hides the pages + 409s the endpoints for whatever
+  # wasn't installed. Runs AFTER start_and_verify (first boot migrated the schema
+  # + seeded the server_settings row). Only acts when JABALI_MODULES is set; a
+  # plain install leaves every flag default-on, so existing flows are unchanged.
+  seed_module_flags
   # First-phase Stalwart bootstrap (binary download, service user,
   # stalwart-cli, admin token, MariaDB password file, apply plan render,
   # unit file install). Safe to run after start_and_verify — doesn't
   # depend on the panel being up, just on the repo being cloned.
-  install_stalwart
+  run_if_module mail install_stalwart
   # Second-phase Stalwart bootstrap: needs jabali_panel.{mailboxes,domains}
   # to exist, which the panel service creates via migration 000054 on its
   # first start (inside start_and_verify). Must run after, never before.
-  install_stalwart_apply
+  run_if_module mail install_stalwart_apply
   # GH #233 / ADR-0143: loopback MTA-hook that appends disclaimers by
   # rewriting the MIME body. Needs the stalwart-ro DB creds + jabali_panel
   # schema (install_stalwart_apply) to be in place first.
-  install_jabali_mailhook
+  run_if_module mail install_jabali_mailhook
   # M6.4 (ADR-0048): auto-register the panel hostname as an email-enabled
   # domain. Ordering: after start_and_verify (admin user exists via
   # BootstrapAdmin) AND after bootstrap_pdns_self_zone (pdns zone row
   # exists — FK-asserted inside install_panel_primary_domain) AND after
   # install_stalwart_apply (Stalwart ready to accept the domain-add
   # command the reconciler will fire).
-  install_panel_primary_domain
-  # Bulwark webmail. Depends on Stalwart being live (JMAP backend) so it
-  # runs after install_stalwart_apply.
-  install_bulwark
+  run_if_module dns install_panel_primary_domain
+  # Bulwark webmail. Part of the mail stack (JMAP client to Stalwart) — needs
+  # the Stalwart admin token + a live JMAP backend, so gate it on the mail
+  # module. Without mail there's no webmail to install.
+  run_if_module mail install_bulwark
   # M25: jabali-webmail user now exists; second pass over the socket group
   # picks it up. Idempotent for SERVICE_USER + www-data which were added
   # earlier (post clone_or_update_repo).

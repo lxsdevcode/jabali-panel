@@ -80,6 +80,10 @@ echo "==> go build jabali-mailhook"
 $GO_BIN build -trimpath -ldflags "$LDFLAGS_AGENT" \
   -o "$STAGE/bin/jabali-mailhook" ./panel-agent/cmd/jabali-mailhook
 
+echo "==> go build jabali-installer"
+$GO_BIN build -trimpath -ldflags "-s -w" \
+  -o "$STAGE/bin/jabali-installer" ./installer/cmd/jabali-installer
+
 chmod 0755 "$STAGE"/bin/*
 
 # 2b. Bundle the jabali-cache WordPress plugin (GH #406). The agent installs
