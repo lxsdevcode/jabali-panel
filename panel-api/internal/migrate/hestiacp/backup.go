@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -83,4 +84,23 @@ func truncForLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "...[truncated]"
+}
+
+// RemoveRemote deletes the source-side Hestia backup after it's pulled (JAB-50).
+// Allowlist: only /backup/<account>.*.tar[.gz] with no .. traversal — a full
+// account archive must not linger on the source. The caller passes the validated
+// account so a manipulated find result can't target another path.
+func (d *Discoverer) RemoveRemote(ctx context.Context, raw interface{}, account, path string) error {
+	s, ok := raw.(*session)
+	if !ok || s == nil {
+		return errors.New("RemoveRemote: bad session")
+	}
+	base := filepath.Base(path)
+	if !strings.HasPrefix(path, "/backup/") || strings.Contains(path, "..") ||
+		!strings.HasPrefix(base, account+".") {
+		return fmt.Errorf("RemoveRemote: refuses path %q (not /backup/%s.*)", path, account)
+	}
+	qpath := strings.ReplaceAll(path, "'", `'\''`)
+	_, err := s.run(ctx, 30*time.Second, fmt.Sprintf("rm -f '%s'", qpath))
+	return err
 }

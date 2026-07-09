@@ -532,6 +532,10 @@ func pullDirectAdmin(ctx context.Context, sshUser string, job *models.MigrationJ
 	if _, err := d.PullFile(ctx, s, remoteTar, localTar); err != nil {
 		return "", fmt.Errorf("PullFile: %w", err)
 	}
+	// JAB-50: don't leave the full account backup on the source server.
+	if rmErr := d.RemoveRemote(ctx, s, remoteTar); rmErr != nil {
+		fmt.Printf("  (warning: source-side rm %s failed: %v)\n", remoteTar, rmErr)
+	}
 	return localTar, nil
 }
 
@@ -555,6 +559,10 @@ func pullHestia(ctx context.Context, sshUser string, job *models.MigrationJob, s
 	localTar := filepath.Join(localDir, base)
 	if _, err := d.PullFile(ctx, s, remoteTar, localTar); err != nil {
 		return "", fmt.Errorf("PullFile: %w", err)
+	}
+	// JAB-50: remove the source-side backup (validated against the account).
+	if rmErr := d.RemoveRemote(ctx, s, job.SourceUser, remoteTar); rmErr != nil {
+		fmt.Printf("  (warning: source-side rm %s failed: %v)\n", remoteTar, rmErr)
 	}
 	return localTar, nil
 }
