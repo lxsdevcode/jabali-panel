@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -1173,8 +1174,9 @@ var allowedNginxDirectives = map[string]struct{}{
 	"if":         {},
 	"break":      {},
 	"error_page": {},
-	// Proxy
-	"proxy_pass":              {},
+	// Proxy — proxy_pass removed (JAB-66): the structured Rule Builder is the
+	// only path for proxy_pass, and it SSRF-validates the target (JAB-65). A raw
+	// proxy_pass directive had no host guard at all.
 	"proxy_set_header":        {},
 	"proxy_hide_header":       {},
 	"proxy_pass_header":       {},
@@ -1209,9 +1211,8 @@ var allowedNginxDirectives = map[string]struct{}{
 	"autoindex":            {},
 	"autoindex_exact_size": {},
 	"autoindex_localtime":  {},
-	"sub_filter":           {},
-	"sub_filter_once":      {},
-	"sub_filter_types":     {},
+	// sub_filter{,_once,_types} removed (JAB-66): arbitrary content injection /
+	// response splitting into proxied responses.
 	"charset":              {},
 	"default_type":         {},
 	"types":                {},
@@ -1220,8 +1221,9 @@ var allowedNginxDirectives = map[string]struct{}{
 	"allow":                {},
 	"deny":                 {},
 	"satisfy":              {},
-	"auth_basic":           {},
-	"auth_basic_user_file": {},
+	// auth_basic{,_user_file} removed (JAB-66): auth_basic_user_file is an
+	// arbitrary-file read / existence oracle (point it at /etc/shadow). Use the
+	// structured Directory Privacy feature, which manages the htpasswd file.
 	"limit_except":         {},
 	"limit_req":            {},
 	"limit_req_zone":       {},
@@ -1476,6 +1478,9 @@ func validateNginxRules(rules models.NginxRules) error {
 			if !strings.HasPrefix(r.Target, "http://") && !strings.HasPrefix(r.Target, "https://") {
 				return fmt.Errorf("rule %d: target must be an http(s) URL", i)
 			}
+			if err := validateProxyPassTarget(r.Target); err != nil {
+				return fmt.Errorf("rule %d: %v", i, err)
+			}
 			if r.ReadTimeout != "" && !isNginxDuration(r.ReadTimeout) {
 				return fmt.Errorf("rule %d: read_timeout must be an nginx duration (e.g. \"60s\", \"24h\")", i)
 			}
@@ -1513,6 +1518,39 @@ func validateNginxRules(rules models.NginxRules) error {
 			if strings.ContainsAny(ip, " \t\n\r") {
 				return fmt.Errorf("rule %d: invalid chars in IP %q", i, ip)
 			}
+		}
+	}
+	return nil
+}
+
+// validateProxyPassTarget blocks SSRF via the proxy_pass rule type (JAB-65).
+// proxy_pass is admin-only, but a compromised admin session could otherwise
+// point a public domain at an internal service (MariaDB/Redis/panel-api socket)
+// and read its responses through the vhost. Reject unix-socket upstreams and
+// literal loopback / private / link-local / unspecified targets; external
+// hostnames and public IPs still work. Hostnames are NOT DNS-resolved here
+// (resolution is TOCTOU vs DNS-rebind) — the literal-address classes are the
+// ones the acceptance criteria enumerate.
+func validateProxyPassTarget(target string) error {
+	// nginx's unix upstream form is `http://unix:/path:/`; url.Parse mangles it,
+	// so match the scheme token directly before parsing.
+	if strings.Contains(strings.ToLower(target), "unix:") {
+		return fmt.Errorf("target may not be a unix socket")
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return fmt.Errorf("target is not a valid URL: %v", err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("target has no host")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return fmt.Errorf("target may not be localhost")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("target may not point at an internal address (%s)", host)
 		}
 	}
 	return nil

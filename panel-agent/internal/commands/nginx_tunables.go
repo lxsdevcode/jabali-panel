@@ -129,10 +129,7 @@ func nginxTunablesApplyHandler(ctx context.Context, params json.RawMessage) (any
 	testCmd.Stderr = &testOut
 	if err := testCmd.Run(); err != nil {
 		restore()
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("nginx -t failed after tunables update, rolled back: %s", testOut.String()),
-		}
+		return nil, nginxTestFailure("nginx.tunables (rolled back)", testOut.String())
 	}
 
 	reloadCmd := exec.CommandContext(ctx, "systemctl", "reload", "nginx")

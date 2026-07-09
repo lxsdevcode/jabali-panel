@@ -390,10 +390,7 @@ func defaultNginxTestAndReload(ctx context.Context) error {
 	test.Stdout = &out
 	test.Stderr = &out
 	if err := test.Run(); err != nil {
-		return &agentwire.AgentError{
-			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("nginx test failed: %s", out.String()),
-		}
+		return nginxTestFailure("webmail.vhost", out.String())
 	}
 	out.Reset()
 	reload := exec.CommandContext(ctx, "systemctl", "reload", "nginx")
