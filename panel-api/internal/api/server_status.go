@@ -20,6 +20,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 )
@@ -27,6 +29,11 @@ import (
 // AdminServerStatusHandlerConfig holds dependencies.
 type AdminServerStatusHandlerConfig struct {
 	Agent agent.AgentInterface
+	// ServerSettings gates which optional-module services appear in the
+	// Services card: a disabled module's units (mail → jabali-stalwart/
+	// jabali-webmail, dns → pdns) are dropped so operators don't see inactive
+	// noise for features they turned off. Nil ⇒ no filtering (show all).
+	ServerSettings repository.ServerSettingsRepository
 	// Redis is optional; when supplied the envelope includes the M14
 	// notification dispatcher queue depths (main stream, DLQ, pending
 	// consumer-group count). Nil ⇒ Queues is omitted.
@@ -203,7 +210,7 @@ func (h *adminServerStatusHandler) get(c *gin.Context) {
 		env.Processes = &raw
 	}
 	if v, ok := results["services"]; ok {
-		raw := v
+		raw := h.filterModuleServices(ctx, v)
 		env.Services = &raw
 	}
 	if v, ok := results["user_slices"]; ok {
@@ -389,4 +396,47 @@ func unitShouldBeRunning(unitFileState string) bool {
 		return true
 	}
 	return false
+}
+
+
+// moduleGatedUnits maps an optional-module systemd unit to the ServerSettings
+// flag that must be ON for it to appear in the Services card (JAB request: hide
+// disabled modules' services). Everything not listed here is core → always shown.
+var moduleGatedUnits = map[string]func(*models.ServerSettings) bool{
+	"jabali-stalwart.service": func(s *models.ServerSettings) bool { return s.MailEnabled },
+	"jabali-webmail.service":  func(s *models.ServerSettings) bool { return s.MailEnabled },
+	"pdns.service":            func(s *models.ServerSettings) bool { return s.DNSEnabled },
+}
+
+// filterModuleServices drops services whose owning module is disabled. Relays
+// the raw payload unchanged when settings can't be loaded or nothing is gated,
+// so a settings hiccup never blanks the Services card.
+func (h *adminServerStatusHandler) filterModuleServices(ctx context.Context, raw json.RawMessage) json.RawMessage {
+	if h.cfg.ServerSettings == nil {
+		return raw
+	}
+	settings, err := h.cfg.ServerSettings.Get(ctx)
+	if err != nil || settings == nil {
+		return raw
+	}
+	var payload struct {
+		Services []map[string]any `json:"services"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return raw
+	}
+	kept := payload.Services[:0]
+	for _, svc := range payload.Services {
+		unit, _ := svc["unit"].(string)
+		if gate, ok := moduleGatedUnits[unit]; ok && !gate(settings) {
+			continue // owning module is off — hide it
+		}
+		kept = append(kept, svc)
+	}
+	payload.Services = kept
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return raw
+	}
+	return out
 }
