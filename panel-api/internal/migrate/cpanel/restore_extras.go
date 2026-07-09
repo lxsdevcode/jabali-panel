@@ -64,6 +64,7 @@ func ImportExtras(
 	agentCli agent.AgentInterface,
 	parsed *ParsedTarball,
 	targetUserID, targetUsername string,
+	preserveMailRouting bool,
 ) (*ExtrasResult, error) {
 	if parsed == nil {
 		return nil, fmt.Errorf("ImportExtras: parsed nil")
@@ -139,6 +140,12 @@ func ImportExtras(
 					dom, err := domainsRepo.FindByName(ctx, domName)
 					if err != nil {
 						res.Skipped = append(res.Skipped, fmt.Sprintf("catchall_skip:domain_missing:%s", domName))
+					} else if !preserveMailRouting {
+						// JAB-46: don't auto-route unknown-address mail to an
+						// imported catch-all (attacker-controllable if the source
+						// was compromised). Quarantine — leave the catch-all unset;
+						// the operator re-applies it in the Mail tab if trusted.
+						res.Skipped = append(res.Skipped, fmt.Sprintf("catchall_quarantined:%s→%s", domName, ct))
 					} else if uErr := domainsRepo.UpdateCatchallTarget(ctx, dom.ID, &ct); uErr != nil {
 						res.Skipped = append(res.Skipped, fmt.Sprintf("catchall_skip:db_update:%s:%v", domName, uErr))
 					} else {
@@ -174,7 +181,7 @@ func ImportExtras(
 						Type:      "external",
 						LocalPart: &local,
 						Target:    target,
-						Enabled:   true,
+						Enabled:   preserveMailRouting, // JAB-46: inert unless opted in
 						ManagedBy: "m35",
 					}
 					if cErr := forwardersRepo.Create(ctx, fwd); cErr != nil {
@@ -363,7 +370,7 @@ func ImportExtras(
 						MailboxID: mb.ID,
 						Name:      "cpanel-import",
 						CpanelRaw: &raw,
-						Enabled:   true,
+						Enabled:   preserveMailRouting, // JAB-46: inert unless opted in
 						ManagedBy: "m35",
 					}
 					if cErr := filtersRepo.Create(ctx, f); cErr != nil {
@@ -402,6 +409,7 @@ func ImportExtras(
 					res.Skipped = append(res.Skipped, fmt.Sprintf("autoresponder_skip:%s parse failed", addr))
 					continue
 				}
+				ar.Enabled = preserveMailRouting // JAB-46: inert unless opted in
 				if uErr := autoRespondersRepo.Update(ctx, ar); uErr != nil {
 					res.Skipped = append(res.Skipped, fmt.Sprintf("autoresponder_skip:db:%s:%v", addr, uErr))
 					continue

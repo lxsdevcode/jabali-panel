@@ -53,6 +53,7 @@ func ImportForwarders(
 	domRepo repository.DomainRepository,
 	extractDir string,
 	sourceUser string,
+	preserveMailRouting bool,
 ) (*ForwardersResult, error) {
 	res := &ForwardersResult{}
 	// BackupUser wraps in cpmove-<user>/etc/<dom>/; also try unwrapped.
@@ -133,7 +134,7 @@ func ImportForwarders(
 					Type:      "external",
 					LocalPart: &lp,
 					Target:    target,
-					Enabled:   true,
+					Enabled:   preserveMailRouting, // JAB-46: inert unless opted in
 					ManagedBy: "m35-da-import",
 				}
 				if cErr := fwdRepo.Create(ctx, f); cErr != nil {
