@@ -208,6 +208,13 @@ live source SSH. Use scp directly for that kind.`,
 			if err := os.MkdirAll(extractDir, 0o750); err != nil {
 				return markPullFailed(fmt.Errorf("mkdir extract dir: %w", err))
 			}
+			// JAB-44: disk preflight BEFORE extract (the offline path got this in
+			// JAB-41 but the live pull-source path skipped it) — a large/highly
+			// compressible backup could fill the staging filesystem and leave a
+			// partial tree. Fails with required vs available bytes before any write.
+			if derr := migrate.CheckExtractDiskSpace(localTar, extractDir); derr != nil {
+				return markPullFailed(fmt.Errorf("disk preflight before extract: %w", derr))
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "extracting to %s...\n", extractDir)
 			if err := migrate.ExtractTarGz(localTar, extractDir); err != nil {
 				return markPullFailed(fmt.Errorf("extract: %w", err))
