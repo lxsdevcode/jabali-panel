@@ -461,10 +461,10 @@ func (m Model) View() string {
 		b.WriteString("\n\nCore: web (nginx + PHP-FPM), database (MariaDB), panel + auth\n\nOptional modules to install:\n")
 		keys := m.SelectedKeys()
 		if len(keys) == 0 {
-			b.WriteString(helpStyle.Render("  (none — minimal install)\n"))
+			b.WriteString(helpStyle.Render("  (none — minimal install)") + "\n")
 		}
 		for _, k := range keys {
-			b.WriteString(onStyle.Render("  + " + k + "\n"))
+			b.WriteString(onStyle.Render("  + "+k) + "\n")
 		}
 		b.WriteString("\n" + helpStyle.Render("JABALI_MODULES=") + onStyle.Render(strings.Join(keys, ",")) + "\n")
 		b.WriteString("\nConfiguration:\n")
@@ -477,7 +477,7 @@ func (m Model) View() string {
 			b.WriteString(helpStyle.Render("  "+f.label+": ") + v + "\n")
 		}
 		if m.dryRun {
-			b.WriteString("\n" + helpStyle.Render("(dry run — will preview the plan, not install)\n"))
+			b.WriteString("\n" + helpStyle.Render("(dry run — will preview the plan, not install)") + "\n")
 		}
 		b.WriteString("\n" + helpStyle.Render("enter/y: install   b: back   q: quit"))
 	case screenInstalling:
