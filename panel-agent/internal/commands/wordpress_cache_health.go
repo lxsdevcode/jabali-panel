@@ -66,6 +66,32 @@ func wordpressCacheStatsHandler(ctx context.Context, params json.RawMessage) (an
 	return stats, nil
 }
 
+// wordpressCacheTrimHandler (JAB-59) enforces the per-install Redis object-cache
+// budget by running `wp jabali-cache trim` as the tenant — the plugin holds the
+// ACL creds and trims ONLY its own prefixed keyspace to max_keys derived from
+// JABALI_CACHE_MAXMEMORY_MB. Without this handler the panel's post-warmup budget
+// call was an unregistered no-op, so a busy install could fill shared Redis and
+// evict other tenants (allkeys-lru). Returns {trimmed, budget_mb, max_keys}.
+func wordpressCacheTrimHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p cacheHealthParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("parse params: %v", err)}
+	}
+	if p.OSUser == "" || p.InstallPath == "" {
+		return nil, csInvalidArg("os_user and install_path are required")
+	}
+	out, err := runWPAsTenantOut(ctx, p.OSUser, p.InstallPath, "jabali-cache", "trim")
+	if err != nil {
+		return map[string]any{"ok": false, "trimmed": 0, "detail": strings.TrimSpace(out)}, nil
+	}
+	var res map[string]any
+	if jErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &res); jErr != nil {
+		return map[string]any{"ok": false, "trimmed": 0, "detail": "unparseable trim output"}, nil
+	}
+	res["ok"] = true
+	return res, nil
+}
+
 // wordpressCacheProbeHandler (GH #620) returns the site's active plugins + WP
 // version so the panel advisor can recommend a cache profile + settings.
 func wordpressCacheProbeHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -123,4 +149,5 @@ func init() {
 	Default.Register("wordpress.cache_health", wordpressCacheHealthHandler)
 	Default.Register("wordpress.cache_probe", wordpressCacheProbeHandler)
 	Default.Register("wordpress.cache_stats", wordpressCacheStatsHandler)
+	Default.Register("wordpress.cache_trim", wordpressCacheTrimHandler)
 }

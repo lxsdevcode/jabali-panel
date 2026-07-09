@@ -7,17 +7,17 @@
 package api
 
 import (
-	"strings"
-	"regexp"
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
-	"sync"
+	"path"
+	"regexp"
 	"sort"
 	"strconv"
-	"math"
-	"path"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -153,7 +153,6 @@ func validRuleList(list []string) bool {
 	return true
 }
 
-
 // cacheWarmup (GH #615) crawls the install's site (sitemap + homepage) to
 // pre-populate the nginx page cache, so operators don't wait for organic
 // traffic. Fire-and-forget with a detached context; returns 202 immediately.
@@ -196,7 +195,11 @@ func (h *wordPressHandler) cacheWarmup(c *gin.Context) {
 		res, err := agent.Call(wctx, "nginx.cache_warmup", map[string]any{"host": host, "max_urls": 100})
 		// GH #612: enforce the object-cache budget after warmup (which adds keys).
 		if osUser != "" {
-			_, _ = agent.Call(wctx, "wordpress.cache_trim", map[string]any{"os_user": osUser, "install_path": trimPath})
+			// JAB-59: surface trim failures instead of swallowing them — the
+			// budget is only actually enforced if this succeeds.
+			if _, terr := agent.Call(wctx, "wordpress.cache_trim", map[string]any{"os_user": osUser, "install_path": trimPath}); terr != nil {
+				slog.WarnContext(wctx, "cache: post-warmup redis budget trim failed", "err", terr, "os_user", osUser, "install", trimPath)
+			}
 		}
 		// GH #615: record a lightweight last-warmup status on the install.
 		rec := models.WarmupRecord{At: time.Now().UTC().Format(time.RFC3339)}
