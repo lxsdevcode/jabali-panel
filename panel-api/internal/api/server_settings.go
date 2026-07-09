@@ -238,6 +238,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	prevHostname := current.Hostname
 	prevPostgresEnabled := current.PostgresEnabled
 	prevDNSEnabled := current.DNSEnabled
+	prevMailEnabled := current.MailEnabled
 	prevQuotaEnabled := current.QuotaEnabled
 	prevPanelBrandText := current.PanelBrandText
 	prevDockerEnabled := current.DockerMarketplaceEnabled
@@ -653,7 +654,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	// its packages if they're missing (not just flip the DB flag). Mirrors the
 	// postgres pattern: background dispatch of system.module.install so the PATCH
 	// doesn't block on apt. Wired only for modules install.sh supports at runtime
-	// today (dns, quota); mail/security stay flag-only until their install.sh
+	// today (dns, mail, quota); security stays flag-only until its install.sh
 	// env-reconstruction lands. Off-flip is intentionally flag-only for now
 	// (services keep running; a future system.module.disable would stop them).
 	if h.cfg.Agent != nil {
@@ -662,6 +663,7 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			prev, current bool
 		}{
 			{"dns", prevDNSEnabled, current.DNSEnabled},
+			{"mail", prevMailEnabled, current.MailEnabled},
 			{"quota", prevQuotaEnabled, current.QuotaEnabled},
 		} {
 			if m.current && !m.prev {
