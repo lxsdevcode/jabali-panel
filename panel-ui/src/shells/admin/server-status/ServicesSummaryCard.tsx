@@ -112,7 +112,7 @@ export function ServicesSummaryCard({ services }: Props) {
               title: "Status",
               dataIndex: "active",
               width: 120,
-              render: (s: string) => statusIcon(s),
+              render: (_: string, r: ServiceDetail) => statusTag(r),
             },
             {
               title: "Actions",
@@ -156,11 +156,7 @@ function ServiceActions({ service, onAction }: ServiceActionsProps) {
   const isDown = service.active === "inactive" || service.active === "failed";
   const isReload = reloadCapable.has(service.unit);
   const isSelfDestruct = selfDestructUnits.has(service.unit);
-  const isEnabled =
-    service.unit_file_state === "enabled" ||
-    service.unit_file_state === "enabled-runtime" ||
-    service.unit_file_state === "static" ||
-    service.unit_file_state === "alias";
+  const isEnabled = isRunConfigured(service.unit_file_state);
 
   return (
     <RowActions
@@ -179,6 +175,33 @@ function ServiceActions({ service, onAction }: ServiceActionsProps) {
 function prettyName(unit: string): string {
   const base = unit.replace(/\.service$/, "");
   return base.replace(/^jabali-/, "");
+}
+
+// isRunConfigured reports whether a unit's systemd UnitFileState means the
+// operator expects it to be running (mirrors the backend's unitShouldBeRunning).
+// disabled / indirect / masked / "" are intentionally-idle / on-demand units.
+function isRunConfigured(state?: string): boolean {
+  return (
+    state === "enabled" ||
+    state === "enabled-runtime" ||
+    state === "static" ||
+    state === "alias"
+  );
+}
+
+// statusTag renders the status cell. An inactive unit that isn't run-configured
+// (disabled / on-demand — e.g. jabali-webmail, which the reconciler starts only
+// once a domain enables email) is idle BY DESIGN, so show it neutral rather than
+// as a red failure that reads like something broke.
+function statusTag(service: ServiceDetail) {
+  if (service.active === "inactive" && !isRunConfigured(service.unit_file_state)) {
+    return (
+      <Tag color="default" icon={<PauseCircleOutlined />} bordered={false}>
+        idle
+      </Tag>
+    );
+  }
+  return statusIcon(service.active);
 }
 
 function statusIcon(state: string) {
