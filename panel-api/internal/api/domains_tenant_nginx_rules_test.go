@@ -72,7 +72,7 @@ func TestDomainPatch_TenantNginxRules(t *testing.T) {
 	t.Run("admin: proxy_pass applied regardless of toggle", func(t *testing.T) {
 		dom := &models.Domain{ID: "d1", UserID: "u1", Name: "x.com"}
 		r, repo := buildSafeOptionsRouter(&auth.AccessClaims{UserID: "admin", IsAdmin: true}, false, dom)
-		body := `{"nginx_rules":[{"type":"proxy_pass","path":"/","target":"http://127.0.0.1:9000"}]}`
+		body := `{"nginx_rules":[{"type":"proxy_pass","path":"/","target":"http://backend.example.com:9000"}]}`
 		if code := patchNginxRules(t, r, body); code != http.StatusOK {
 			t.Fatalf("admin proxy_pass status %d", code)
 		}
