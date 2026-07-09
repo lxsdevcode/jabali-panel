@@ -7,17 +7,32 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
+// JAB-67: bound the full-domain purge walk. Without per-tenant cache
+// partitioning (a documented follow-up), a full purge must scan the shared
+// cache to host-match entries — but a tenant spamming full purges could
+// otherwise pin the root agent doing I/O across every OTHER tenant's cache
+// files. Cap both the wall-clock and the file count so the walk always returns
+// promptly; anything beyond the cap is left for nginx's own inactive-eviction.
+const cachePurgeWalkDeadline = 10 * time.Second
+
+// cachePurgeMaxFiles is a var (not const) so tests can lower the cap without
+// fabricating 250k files.
+var cachePurgeMaxFiles = 250000
+
 // fastcgiCacheRoot is the shared keyzone storage written by
 // install.sh's install_nginx_fastcgi_cache (ADR-0108). Kept in lockstep
 // with /etc/nginx/conf.d/jabali-fastcgi-cache.conf's fastcgi_cache_path.
-const fastcgiCacheRoot = "/var/cache/nginx/jabali"
+// fastcgiCacheRoot is a var (not const) so tests can point the purge at a temp dir.
+var fastcgiCacheRoot = "/var/cache/nginx/jabali"
 
 type nginxCachePurgeParams struct {
 	Domain string `json:"domain"`
@@ -100,13 +115,27 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 	needle := []byte("KEY: ")
 	host := p.Domain
 	purged := 0
+
+	// Bound the walk (JAB-67): a dedicated deadline + a scanned-file cap so this
+	// full purge can never block the agent proportional to total cross-tenant
+	// cache size.
+	walkCtx, cancel := context.WithTimeout(ctx, cachePurgeWalkDeadline)
+	defer cancel()
+	scanned := 0
+	truncated := false
+
 	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
+		scanned++
+		if scanned > cachePurgeMaxFiles {
+			truncated = true
+			return filepath.SkipAll
+		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-walkCtx.Done():
+			return walkCtx.Err()
 		default:
 		}
 		// Cache files are small headers + body; read a bounded prefix
@@ -135,7 +164,14 @@ func nginxCachePurgeHandler(ctx context.Context, params json.RawMessage) (any, e
 	if walkErr != nil && walkErr != context.Canceled && walkErr != context.DeadlineExceeded {
 		return nil, csInternal("walk cache dir", walkErr)
 	}
-	return map[string]any{"ok": true, "purged": purged, "domain": p.Domain}, nil
+	if walkErr == context.DeadlineExceeded || walkCtx.Err() == context.DeadlineExceeded {
+		truncated = true
+	}
+	if truncated {
+		slog.Warn("nginx cache full-purge hit a bound; some entries left for nginx inactive-eviction",
+			"domain", host, "scanned", scanned, "purged", purged)
+	}
+	return map[string]any{"ok": true, "purged": purged, "domain": p.Domain, "truncated": truncated}, nil
 }
 
 // keyLineHost extracts the $host field from an nginx cache KEY line of the form
