@@ -140,7 +140,9 @@ daily cadence; operator can also invoke directly.`,
 
 func isTerminal(state string) bool {
 	switch state {
-	case models.MigrationStateDone, models.MigrationStateFailed, models.MigrationStateCancelled:
+	// JAB-49: degraded is terminal (ended_at stamped) — its SSH secret + staging
+	// must be reaped like done/failed/cancelled.
+	case models.MigrationStateDone, models.MigrationStateDegraded, models.MigrationStateFailed, models.MigrationStateCancelled:
 		return true
 	}
 	return false

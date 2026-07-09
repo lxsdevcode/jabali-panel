@@ -829,6 +829,14 @@ func cpanelRestoreCallback(
 			daHomeHandled := false
 			if len(rsyncRows) > 0 {
 				secretPath := fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)
+				// JAB-52: reuse the operator's pull-source SSH login (job.SourceUser,
+				// possibly DA-pivoted) instead of hardcoding root; legacy jobs fall back
+				// to root with a warning.
+				remoteSSHUser := job.SourceUser
+				if remoteSSHUser == "" {
+					remoteSSHUser = "root"
+					warnings = append(warnings, "home_rsync_remote: job has no source_user — defaulting to root")
+				}
 				totalBytes := int64(0)
 				domCount := 0
 				for _, r := range rsyncRows {
@@ -836,7 +844,7 @@ func cpanelRestoreCallback(
 					rawResp, rerr := restoreAgent.Call(ctx, "migration.rsync_remote_home", map[string]any{
 						"job_id":      job.ID,
 						"host":        job.SourceHost,
-						"ssh_user":    "root",
+						"ssh_user":    remoteSSHUser,
 						"secret_path": secretPath,
 						"src_path":    r.SrcPath,
 						"dest_path":   destPath,
