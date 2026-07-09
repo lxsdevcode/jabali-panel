@@ -535,7 +535,7 @@ func (m Model) View() string {
 	return lipgloss.NewStyle().
 		Width(m.width).Height(m.height).
 		Background(bgWhite).Foreground(fgDark).
-		Align(lipgloss.Center, lipgloss.Center).
+		Align(lipgloss.Left, lipgloss.Center).
 		Render(content)
 }
 
@@ -742,7 +742,10 @@ func humanRate(bps float64) string {
 		bps /= 1024
 		i++
 	}
-	return fmt.Sprintf("%.1f%s/s", bps, units[i])
+	// Fixed-width field (%6.1f → max "1023.9") so the footer's total width never
+	// changes tick-to-tick. A variable width made the centered block re-center
+	// every frame, jittering the whole UI left↔right.
+	return fmt.Sprintf("%6.1f%s/s", bps, units[i])
 }
 
 // statsFooter is the live system-metrics line shown while installing.
