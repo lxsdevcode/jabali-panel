@@ -43,7 +43,8 @@ var (
 	offStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	errStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Foreground(lipgloss.Color("245"))
-	appStyle    = lipgloss.NewStyle().Padding(1, 2)
+	bgBlack     = lipgloss.Color("0")
+	appStyle    = lipgloss.NewStyle().Padding(1, 2).Background(bgBlack)
 	logoStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
 	tagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
@@ -100,6 +101,8 @@ type Model struct {
 	Confirmed bool
 	Aborted   bool
 	ExitCode  int
+	width     int // terminal size (WindowSizeMsg) for full-screen centering
+	height    int
 }
 
 // New builds the model. installSh is the path to install.sh; dryRun passes
@@ -216,6 +219,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ExitCode = 1
 		}
 		m.screen = screenResult
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -513,7 +519,13 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n" + helpStyle.Render("enter/q: exit"))
 	}
-	return appStyle.Render(bannerView() + b.String())
+	content := appStyle.Render(bannerView() + b.String())
+	if m.width <= 0 || m.height <= 0 {
+		return content // no size yet (pre first WindowSizeMsg)
+	}
+	// Center the whole block on a black screen filling the terminal.
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content,
+		lipgloss.WithWhitespaceBackground(bgBlack))
 }
 
 // tailLog returns the last logTail streamed lines, ANSI-stripped, for the box.
@@ -736,3 +748,8 @@ func statsFooter(s sysStats) string {
 	}
 	return strings.Join(parts, statLabel.Render("   "))
 }
+
+// SummaryLines returns the captured "JABALI PANEL — installed" block (URL /
+// Username / Password + advisory) so main can re-print it after the alt-screen
+// is torn down on exit.
+func (m Model) SummaryLines() []string { return m.summary }

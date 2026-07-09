@@ -47,7 +47,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "install.sh not found (pass --install-sh <path> or run from the repo root)")
 		os.Exit(1)
 	}
-	final, err := tea.NewProgram(tui.New(installSh, dryRun), tea.WithInput(tty), tea.WithOutput(tty)).Run()
+	final, err := tea.NewProgram(tui.New(installSh, dryRun),
+		tea.WithInput(tty), tea.WithOutput(tty), tea.WithAltScreen()).Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "installer TUI error: %v\n", err)
 		os.Exit(1)
@@ -55,6 +56,17 @@ func main() {
 	fm := final.(tui.Model)
 	if fm.Aborted {
 		fmt.Fprintln(os.Stderr, "install cancelled.")
+	} else if fm.ExitCode == 0 {
+		// Alt-screen is restored on exit, so re-print the panel URL + admin
+		// credentials to the scrollback where the operator can copy them.
+		if lines := fm.SummaryLines(); len(lines) > 0 {
+			fmt.Println()
+			fmt.Println("  Jabali Panel installed:")
+			for _, l := range lines {
+				fmt.Println("  " + l)
+			}
+			fmt.Println()
+		}
 	}
 	os.Exit(fm.ExitCode)
 }
