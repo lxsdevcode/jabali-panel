@@ -28,13 +28,19 @@ import (
 
 // wpPurgeSpoolDir is created by install.sh (tmpfs, mode 1777 sticky so any
 // tenant can drop a request but only its owner — or root — can remove it).
-const wpPurgeSpoolDir = "/run/jabali-wp-purge"
+// wpPurgeSpoolDir is a var (not const) so tests can point the watcher at a temp
+// dir instead of the real /run path.
+var wpPurgeSpoolDir = "/run/jabali-wp-purge"
 
 const (
 	wpPurgePollInterval = 2 * time.Second
 	wpPurgeMaxFileBytes = 8 * 1024 // a purge request is tiny; ignore anything larger.
 	wpPurgeMaxPaths     = 64       // cap paths per request.
-	wpPurgeMaxPerTick   = 500      // bound work per poll so a flood can't wedge the loop.
+	wpPurgeMaxPerTick   = 500      // bound total work per poll so a flood can't wedge the loop.
+	// JAB-63: fairness + flood containment on the shared 1777 spool.
+	wpPurgeMaxPerUIDTick = 50               // one tenant may consume at most this many of the per-tick budget.
+	wpPurgeMaxScan       = 5000             // cap files stat'd per tick so a huge flood can't pin the loop scanning.
+	wpPurgeStaleAfter    = 5 * time.Minute  // a legit purge is handled within a poll; older files are flood/failed leftovers — reap them so the spool can't fill /run.
 )
 
 type wpPurgeRequest struct {
@@ -73,17 +79,57 @@ func runWpPurgeTick(ctx context.Context, log *slog.Logger) {
 	if err != nil {
 		return // dir absent until install.sh creates it / first request; not an error.
 	}
-	n := 0
+	// JAB-63: the spool is a shared 1777 dir any tenant can write. Process it
+	// with a per-UID fair share so one tenant flooding .json files can't consume
+	// the whole per-tick budget and starve everyone else's post-save purge. Also
+	// reject non-regular files, reap stale leftovers so a flood can't fill /run,
+	// and bound the scan so a huge backlog can't pin the loop.
+	perUID := map[uint64]int{}
+	deferred := map[uint64]int{}
+	now := time.Now()
+	processed, scanned := 0, 0
 	for _, e := range entries {
-		if n >= wpPurgeMaxPerTick {
-			return
+		if processed >= wpPurgeMaxPerTick || scanned >= wpPurgeMaxScan {
+			break
 		}
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		n++
 		path := filepath.Join(wpPurgeSpoolDir, e.Name())
+		// Lstat (not Stat): reject symlinks/fifos/etc. explicitly instead of
+		// following them, and get the owner UID + mtime for fairness/staleness.
+		fi, lerr := os.Lstat(path)
+		if lerr != nil {
+			continue
+		}
+		scanned++
+		if !fi.Mode().IsRegular() {
+			_ = os.Remove(path) // non-regular file in the spool — never trust it.
+			continue
+		}
+		if now.Sub(fi.ModTime()) > wpPurgeStaleAfter {
+			_ = os.Remove(path) // stale: a real purge is handled within a poll.
+			continue
+		}
+		st, ok := fi.Sys().(*syscall.Stat_t)
+		if !ok {
+			continue
+		}
+		uid := uint64(st.Uid)
+		if perUID[uid] >= wpPurgeMaxPerUIDTick {
+			deferred[uid]++ // this tenant already got its fair share this tick.
+			continue
+		}
+		perUID[uid]++
+		processed++
 		handleWpPurgeFile(ctx, path, log)
+	}
+	for uid, d := range deferred {
+		log.WarnContext(ctx, "wp-purge: per-UID tick cap exceeded (possible flood)",
+			"uid", uid, "deferred", d, "cap", wpPurgeMaxPerUIDTick)
+	}
+	if scanned >= wpPurgeMaxScan {
+		log.WarnContext(ctx, "wp-purge: scan cap hit; spool backlog deferred to next tick", "scanned", scanned)
 	}
 }
 
@@ -106,7 +152,7 @@ var nginxRootRE = regexp.MustCompile(`(?m)^\s*root\s+([^;]+);`)
 
 // handleWpPurgeFile validates and processes one spool request, then removes it.
 // Every exit path removes the file so a bad/forged request can't accumulate.
-func handleWpPurgeFile(ctx context.Context, path string, log *slog.Logger) {
+var handleWpPurgeFile = func(ctx context.Context, path string, log *slog.Logger) {
 	defer func() { _ = os.Remove(path) }()
 
 	fi, err := os.Stat(path)
