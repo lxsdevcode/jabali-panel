@@ -85,6 +85,11 @@ jobs:
       # GITHUB_TOKEN here is Gitea's auto-injected actions token; on
       # Gitea it carries write:repository scope by default.
       - name: Publish release
+        # Don't let a spurious failure in this step (or a runner cleanup hiccup)
+        # paint the whole release red when the tarball + checksum actually landed.
+        # The authoritative pass/fail is the strict "Confirm assets" gate below,
+        # which fails ONLY if an asset is genuinely missing.
+        continue-on-error: true
         env:
           API_BASE: ${{ github.api_url }}
           REPO: ${{ github.repository }}
@@ -93,7 +98,7 @@ jobs:
           SHORT_SHA: ${{ steps.build.outputs.short_sha }}
           FULL_SHA: ${{ steps.build.outputs.full_sha }}
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           TARBALL="dist/jabali-release-${SHORT_SHA}.tar.gz"
           CHECKSUM="${TARBALL}.sha256"
           BODY="Auto-built release for commit \`${FULL_SHA}\`."
@@ -206,3 +211,26 @@ jobs:
           done <<< "$prune_targets"
           echo "  pruned ${pruned} old release assets"
           exit 0
+
+      # Authoritative job result: the release is GOOD iff both assets are fetchable
+      # for this commit's tag. Runs even if Publish reported failure (it's
+      # continue-on-error) so a spurious step/cleanup red can't mask a real problem
+      # — and can't invent one either.
+      - name: Confirm assets published
+        if: always()
+        env:
+          API_BASE: ${{ github.api_url }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.build.outputs.tag }}
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          assets_json="$(curl -sS -H "Authorization: token ${TOKEN}" \
+            "${API_BASE}/repos/${REPO}/releases/tags/${TAG}" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(a["name"] for a in d.get("assets",[])))')"
+          echo "assets for ${TAG}:"; echo "${assets_json}"
+          for name in "jabali-release-${SHORT_SHA}.tar.gz" "jabali-release-${SHORT_SHA}.tar.gz.sha256"; do
+            echo "${assets_json}" | grep -qx "${name}" || { echo "MISSING asset: ${name}"; exit 1; }
+          done
+          echo "==> both assets confirmed for ${TAG}"
