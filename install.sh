@@ -3215,7 +3215,13 @@ install_powerdns() {
   # backend + our dedicated database.
   local conf_d="/etc/powerdns/pdns.d"
   mkdir -p "$conf_d"
-  find "$conf_d" -maxdepth 1 -type f -name '*.conf' -delete
+  # Delete the Debian package's default backend configs, but PRESERVE our own
+  # 01-jabali-mysql.conf — deleting it here would defeat the byte-identical
+  # cmp guard below (the file would always be absent at the `[[ -f ]]` check),
+  # forcing a pdns.conf rewrite + service restart on EVERY install.sh run
+  # (every `jabali update`, every `--install-module dns`). Keeping it lets the
+  # guard skip the restart when nothing changed. (M353 idempotency fix.)
+  find "$conf_d" -maxdepth 1 -type f -name '*.conf' ! -name '01-jabali-mysql.conf' -delete
 
   # Credentials for the pdns DB user. Generated once, stored in
   # /etc/jabali-panel/pdns.env so the panel-api can read the same
