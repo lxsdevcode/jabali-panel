@@ -306,3 +306,19 @@ func truncForLog(s string, n int) string {
 	}
 	return s[:n] + "...[truncated]"
 }
+
+// RemoveRemote deletes the source-side backup archive after it's been pulled
+// (JAB-50). Allowlist: only /tmp/cpmove-* (what BackupUser writes) with no ..
+// traversal — a full account backup (files, mail, DB dumps, SSL keys) must not
+// linger on a possibly-compromised source server.
+func (d *Discoverer) RemoveRemote(ctx context.Context, raw interface{}, path string) error {
+	s, ok := raw.(*session)
+	if !ok || s == nil {
+		return errors.New("RemoveRemote: bad session")
+	}
+	if !strings.HasPrefix(path, "/tmp/cpmove-") || strings.Contains(path, "..") {
+		return fmt.Errorf("RemoveRemote: refuses non-cpmove path %q", path)
+	}
+	_, err := s.run(ctx, 30*time.Second, fmt.Sprintf("rm -f '%s'", shellQuote(path)))
+	return err
+}
