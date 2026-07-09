@@ -162,11 +162,40 @@ jobs:
 
           # JAB: verify BOTH assets actually landed — a partial/failed upload used
           # to leave an asset-less orphan release (red X, but the tag existed so
-          # nobody noticed the bootstrap/update had nothing to fetch). Fail loud.
-          assets_json="$(curl -sS -H "Authorization: token ${TOKEN}" \
-            "${API_BASE}/repos/${REPO}/releases/${release_id}/assets")"
-          for name in "jabali-release-${SHORT_SHA}.tar.gz" "jabali-release-${SHORT_SHA}.tar.gz.sha256"; do
-            echo "$assets_json" | python3 -c "import json,sys,os; n=os.environ['N']; d=json.load(sys.stdin); sys.exit(0 if any(a.get('name')==n for a in d) else 1)" N="$name" \
-              || { echo "ASSET MISSING after upload: $name"; exit 1; }
+          # nobody noticed the bootstrap/update had nothing to fetch). Retry a few
+          # times before failing: the assets list can lag a beat behind upload
+          # (eventual consistency) and was tripping a false "missing".
+          verify_ok=""
+          for attempt in 1 2 3 4 5; do
+            assets_json="$(curl -sS -H "Authorization: token ${TOKEN}" \
+              "${API_BASE}/repos/${REPO}/releases/${release_id}/assets")"
+            missing=""
+            for name in "jabali-release-${SHORT_SHA}.tar.gz" "jabali-release-${SHORT_SHA}.tar.gz.sha256"; do
+              echo "$assets_json" | python3 -c "import json,sys,os; n=os.environ['N']; d=json.load(sys.stdin); sys.exit(0 if any(a.get('name')==n for a in d) else 1)" N="$name" \
+                || missing="$name"
+            done
+            if [[ -z "$missing" ]]; then verify_ok=1; break; fi
+            echo "verify attempt ${attempt}: ${missing} not visible yet, retrying"
+            sleep 3
           done
+          [[ -n "$verify_ok" ]] || { echo "ASSET MISSING after upload (both retries exhausted)"; exit 1; }
           echo "==> release ${TAG} published with both assets"
+
+          # JAB: prune old release ASSETS so the codeberg storage quota can't fill
+          # up and start 413-ing new uploads (which silently broke every release +
+          # the bootstrap). Keep the newest KEEP releases' tarballs; strip assets
+          # from everything older. Release records (tags) stay; only the heavy
+          # .tar.gz/.sha256 are removed — jabali update falls back to source-build
+          # for those old commits, which nobody targets anyway.
+          KEEP=6
+          echo "==> pruning release assets older than the newest ${KEEP}"
+          prune_targets="$(curl -sS -H "Authorization: token ${TOKEN}" \
+            "${API_BASE}/repos/${REPO}/releases?limit=50" \
+            | KEEP="$KEEP" python3 -c 'import json,sys,os; r=json.load(sys.stdin); k=int(os.environ["KEEP"]); print("\n".join("%s %s"%(rel["id"],a["id"]) for rel in r[k:] for a in rel.get("assets",[])))')"
+          pruned=0
+          while read -r rid aid; do
+            [[ -n "$aid" ]] || continue
+            curl -sS -o /dev/null -X DELETE -H "Authorization: token ${TOKEN}" \
+              "${API_BASE}/repos/${REPO}/releases/${rid}/assets/${aid}" && pruned=$((pruned+1))
+          done <<< "$prune_targets"
+          echo "  pruned ${pruned} old release assets"
