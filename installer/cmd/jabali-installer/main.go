@@ -25,20 +25,29 @@ func main() {
 	dryRun := hasFlag("--dry-run")
 	unattended := hasFlag("--unattended") || hasFlag("-y")
 	_, modulesPreset := os.LookupEnv("JABALI_MODULES")
-	interactive := term.IsTerminal(int(os.Stdin.Fd())) && !unattended && !modulesPreset
+
+	// Interactivity is decided by /dev/tty, NOT os.Stdin — so `curl … | sudo bash`
+	// (where stdin is the pipe carrying the bootstrap script) still runs the TUI.
+	// The TUI reads keys + draws on the controlling terminal directly.
+	tty, ttyErr := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	interactive := ttyErr == nil && term.IsTerminal(int(tty.Fd())) && !unattended && !modulesPreset
 
 	if !interactive {
 		// Headless / preset / unattended: run install.sh directly with the
 		// current environment (JABALI_MODULES passes through), inherited stdio.
+		if tty != nil {
+			tty.Close()
+		}
 		runDirect(installSh, dryRun)
 		return
 	}
+	defer tty.Close()
 
 	if installSh == "" {
 		fmt.Fprintln(os.Stderr, "install.sh not found (pass --install-sh <path> or run from the repo root)")
 		os.Exit(1)
 	}
-	final, err := tea.NewProgram(tui.New(installSh, dryRun)).Run()
+	final, err := tea.NewProgram(tui.New(installSh, dryRun), tea.WithInput(tty), tea.WithOutput(tty)).Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "installer TUI error: %v\n", err)
 		os.Exit(1)

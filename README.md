@@ -77,22 +77,30 @@ are picked up on the next rebase.
 
 ## Installation
 
-One-line install on a fresh Debian 13 box:
+One-line install on a fresh Debian 13 box — launches the **TUI installer** by
+default (pick a deploy profile + optional modules, then watch a live progress
+pane):
 
 ```
 curl -fsSL https://get.jabali-panel.com | sudo bash
 ```
 
-Direct URL (fallback, always works):
+`get.jabali-panel.com` serves [`bootstrap.sh`](bootstrap.sh): it downloads the
+latest sha256-verified release tarball, extracts the prebuilt `jabali-installer`
+binary + `install.sh`, and runs the installer against the real terminal (works
+even piped through `curl | bash`). Add args after `-s --`, e.g. `--dry-run`.
+
+Classic / scripted install (no TUI — the proven bash installer directly):
 
 ```
 curl -fsSL https://raw.githubusercontent.com/shukiv/jabali-panel/main/install.sh | sudo bash
 ```
 
-The installer fetches Go 1.25, builds the panel + agent binaries, builds the
-SPA with Vite, writes systemd units, provisions MariaDB + Redis + PowerDNS +
-Stalwart + Bulwark + CrowdSec, and smoke-tests `/health`. Idempotent — re-run
-to upgrade.
+Both run the same engine. `install.sh` fetches Go 1.25, builds the panel + agent
+binaries, builds the SPA with Vite, writes systemd units, provisions MariaDB +
+Redis + PowerDNS + Stalwart + Bulwark + CrowdSec (per the selected modules), and
+smoke-tests `/health`. Idempotent — re-run to upgrade. Set `JABALI_MODULES=…`
+(comma list) or leave the TUI to build it for a minimal / modular install.
 
 Optional flags:
 

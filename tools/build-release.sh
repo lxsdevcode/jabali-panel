@@ -108,6 +108,11 @@ if [[ -d "${REPO_ROOT}/install/docker-apps" ]]; then
   echo "==> staged docker-apps catalog"
 fi
 
+# 2d. Bundle install.sh so the TUI bootstrap (curl|bash) can extract + run it
+#     from the ONE sha-verified release tarball (installer binary lives in bin/).
+cp -a "${REPO_ROOT}/install.sh" "$STAGE/install.sh"
+echo "==> staged install.sh"
+
 # 3. MANIFEST: machine-readable, single line per key. update.go parses
 #    this to print "Updating to release <short_sha> (built <build_time>)".
 cat > "$STAGE/MANIFEST" <<MANIFEST
@@ -122,7 +127,7 @@ MANIFEST
 # 4. Tar + sha256.
 TAR_NAME="jabali-release-${SHORT_SHA}.tar.gz"
 echo "==> packing $TAR_NAME"
-tar -C "$STAGE" -czf "$DIST_DIR/$TAR_NAME" bin MANIFEST $([[ -d "$STAGE/wp-plugins" ]] && echo wp-plugins) $([[ -d "$STAGE/docker-apps" ]] && echo docker-apps)
+tar -C "$STAGE" -czf "$DIST_DIR/$TAR_NAME" bin MANIFEST install.sh $([[ -d "$STAGE/wp-plugins" ]] && echo wp-plugins) $([[ -d "$STAGE/docker-apps" ]] && echo docker-apps)
 
 (cd "$DIST_DIR" && sha256sum "$TAR_NAME" > "${TAR_NAME}.sha256")
 SIZE_MB=$(du -m "$DIST_DIR/$TAR_NAME" | awk '{print $1}')
