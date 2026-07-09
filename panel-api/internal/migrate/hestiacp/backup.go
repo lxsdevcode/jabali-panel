@@ -40,29 +40,41 @@ func (d *Discoverer) BackupUser(ctx context.Context, raw interface{}, account st
 	subctx, cancel := context.WithTimeout(ctx, BackupUserTimeout)
 	defer cancel()
 
-	cmd := fmt.Sprintf("v-backup-user '%s' 2>&1",
-		strings.ReplaceAll(account, "'", `'\''`))
+	qacct := strings.ReplaceAll(account, "'", `'\''`)
+
+	// JAB-51: record the SOURCE clock before v-backup-user so we can reject any
+	// archive that predates this run — v-backup-user can succeed without writing a
+	// new tar, and a bare `ls -t | head -1` would then pull a STALE backup (silent
+	// data loss at cutover). Use the source's own epoch (clock skew safe).
+	startOut, sErr := s.run(subctx, d.CommandTimeout, "date +%s")
+	if sErr != nil {
+		return "", fmt.Errorf("read source clock: %w", sErr)
+	}
+	startEpoch := strings.TrimSpace(string(startOut))
+	if startEpoch == "" {
+		return "", errors.New("BackupUser: empty source epoch")
+	}
+
+	cmd := fmt.Sprintf("v-backup-user '%s' 2>&1", qacct)
 	out, err := s.run(subctx, BackupUserTimeout, cmd)
 	if err != nil {
 		return "", fmt.Errorf("v-backup-user: %w (stdout=%q)", err, truncForLog(string(out), 1024))
 	}
 
-	// Find newest backup tar for this user. Hestia BACKUP_PATH
-	// defaults to /backup; some operator overrides set it
-	// elsewhere via /usr/local/hestia/conf/hestia.conf. v-backup-user
-	// itself prints the path when verbose; for v1 we trust the
-	// canonical /backup/ location.
+	// Only accept an archive created AFTER startEpoch (mtime), newest first.
+	// -newermt @<epoch> is GNU find (Debian/Hestia). Empty result => v-backup-user
+	// produced no fresh tar → fail loudly instead of using an old one.
 	findCmd := fmt.Sprintf(
-		"ls -t /backup/'%s'.*.tar /backup/'%s'.*.tar.gz 2>/dev/null | head -1",
-		strings.ReplaceAll(account, "'", `'\''`),
-		strings.ReplaceAll(account, "'", `'\''`))
+		"find /backup -maxdepth 1 -name '%s.*.tar*' -newermt @%s "+
+			"-printf '%%T@ %%p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}'",
+		qacct, startEpoch)
 	tout, terr := s.run(subctx, d.CommandTimeout, findCmd)
 	if terr != nil {
-		return "", fmt.Errorf("locate hestia tar: %w", terr)
+		return "", fmt.Errorf("locate fresh hestia tar: %w", terr)
 	}
 	path := strings.TrimSpace(string(tout))
 	if path == "" {
-		return "", fmt.Errorf("v-backup-user produced no tar under /backup/%s.*.{tar,tar.gz}", account)
+		return "", fmt.Errorf("v-backup-user produced no FRESH tar for %s under /backup/ (newer than this run) — refusing to pull a stale backup", account)
 	}
 	return path, nil
 }
