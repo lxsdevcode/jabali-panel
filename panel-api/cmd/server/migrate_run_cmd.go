@@ -609,6 +609,37 @@ func validateStageCallback(users repository.UserRepository, domains repository.D
 				User: job.SourceUser,
 			},
 		}
+		// JAB-55: populate the manifest from the parsed backup so Validate can
+		// actually catch domain/DB conflicts before any destructive restore stage
+		// runs — it used to validate an empty manifest (zero projections, no
+		// blockers). Domains come from ZoneFiles (cPanel BIND) or DomainNames
+		// (DA/Hestia fallback); databases from the per-DB SQL dumps.
+		if p != nil && p.parsed != nil {
+			seenDom := map[string]bool{}
+			addDom := func(name string) {
+				name = strings.TrimSpace(name)
+				if name == "" || seenDom[name] {
+					return
+				}
+				seenDom[name] = true
+				mf.Domains = append(mf.Domains, migrate.DomainSpec{Name: name, DocRoot: p.parsed.DocRoots[name]})
+			}
+			for _, zf := range p.parsed.ZoneFiles {
+				addDom(strings.TrimSuffix(filepath.Base(zf), ".db"))
+			}
+			for _, name := range p.parsed.DomainNames {
+				addDom(name)
+			}
+			seenDB := map[string]bool{}
+			for _, dump := range p.parsed.MySQLDumps {
+				name := strings.TrimSuffix(filepath.Base(dump), ".sql")
+				if name == "" || seenDB[name] {
+					continue
+				}
+				seenDB[name] = true
+				mf.Databases = append(mf.Databases, migrate.DatabaseSpec{Engine: "mysql", Name: name})
+			}
+		}
 		// Target-user-exists conflict suppressed when
 		// migration_jobs.target_user_id is set — auto-create flow
 		// ('jabali migrate import --target-email + --target-
