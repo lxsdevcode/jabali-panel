@@ -732,8 +732,9 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		})
 		// Admin: Server Status aggregator (M31, ADR-0065).
 		api.RegisterAdminServerStatusRoutes(v1, api.AdminServerStatusHandlerConfig{
-			Agent: deps.Agent,
-			Redis: deps.Redis,
+			Agent:          deps.Agent,
+			Redis:          deps.Redis,
+			ServerSettings: deps.ServerSettings,
 		})
 		// Admin: connection Speed Test endpoints backing the Server Status
 		// card (GH #252). No deps — pure HTTP, RequireAdmin-gated.
