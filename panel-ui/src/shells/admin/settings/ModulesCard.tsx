@@ -148,8 +148,8 @@ export const ModulesCard = () => {
     if (!statusKey || !state[m.key]) return null; // api-only, or module off
     if (installing[statusKey]) {
       return (
-        <Tag color="processing" icon={<Spin size="small" />} style={{ marginInlineEnd: 0 }}>
-          installing…
+        <Tag color="processing" style={{ marginInlineEnd: 0 }}>
+          installing… <Spin size="small" style={{ marginInlineStart: 6 }} />
         </Tag>
       );
     }
