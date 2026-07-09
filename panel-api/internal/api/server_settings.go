@@ -237,6 +237,8 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 
 	prevHostname := current.Hostname
 	prevPostgresEnabled := current.PostgresEnabled
+	prevDNSEnabled := current.DNSEnabled
+	prevQuotaEnabled := current.QuotaEnabled
 	prevPanelBrandText := current.PanelBrandText
 	prevDockerEnabled := current.DockerMarketplaceEnabled
 	prevDockerForUsers := current.DockerAppsForUsersEnabled
@@ -645,6 +647,27 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 					"method", method, "err", err)
 			}
 		}(current.PostgresEnabled)
+	}
+
+	// M353 module install-on-enable. Flipping an optional module On must INSTALL
+	// its packages if they're missing (not just flip the DB flag). Mirrors the
+	// postgres pattern: background dispatch of system.module.install so the PATCH
+	// doesn't block on apt. Wired only for modules install.sh supports at runtime
+	// today (dns, quota); mail/security stay flag-only until their install.sh
+	// env-reconstruction lands. Off-flip is intentionally flag-only for now
+	// (services keep running; a future system.module.disable would stop them).
+	if h.cfg.Agent != nil {
+		for _, m := range []struct {
+			key           string
+			prev, current bool
+		}{
+			{"dns", prevDNSEnabled, current.DNSEnabled},
+			{"quota", prevQuotaEnabled, current.QuotaEnabled},
+		} {
+			if m.current && !m.prev {
+				h.dispatchModuleInstall(m.key)
+			}
+		}
 	}
 
 	// GH #200: brand text drives Bulwark webmail branding (app name +
@@ -1177,3 +1200,20 @@ func splitCIDRList(in string) []string {
 var hexColorRE = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 
 func isValidHexColor(v string) bool { return v == "" || hexColorRE.MatchString(v) }
+
+// dispatchModuleInstall runs system.module.install for a module key in the
+// background. apt can take minutes, so the PATCH must not block on it. The DB
+// flag is already persisted (operator intent recorded), so a failed install
+// surfaces via the module status endpoint and is retryable from the UI; we
+// deliberately never roll the flag back here (that would reproduce the exact
+// "flag On / service down" state the operator can't escape). Serialization
+// against concurrent installs is enforced agent-side behind aptMu.
+func (h *serverSettingsHandler) dispatchModuleInstall(key string) {
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if _, err := h.cfg.Agent.Call(bgCtx, "system.module.install", map[string]any{"key": key}); err != nil {
+			h.cfg.Log.Error("agent module install failed", "key", key, "err", err)
+		}
+	}()
+}

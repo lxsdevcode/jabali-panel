@@ -46,6 +46,10 @@ type Reconciler struct {
 	dbAdmin        repository.DBAdminRepository
 	log            *slog.Logger
 	interval       time.Duration
+	// moduleInstall* back the M353 module-install convergence backoff so a
+	// persistently-failing install is not re-dispatched every reconcile tick.
+	moduleInstallMu      sync.Mutex
+	moduleInstallAttempt map[string]time.Time
 	// queue holds domain IDs to reconcile out-of-band (non-blocking enqueue)
 	queue chan string
 	// socketReady is a function that checks if a Unix socket is ready. Mockable for testing.
@@ -467,6 +471,12 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	r.reconcilePanelCertificate(ctx)
 	r.reconcileUpdateRuns(ctx)
 	r.reconcileAutoupdate(ctx)
+
+	// M353: install optional modules whose flag reads On but whose packages/
+	// services aren't actually present (the reported --minimal "DNS On / pdns
+	// inactive" state). Quick status probe per enabled module; a detached,
+	// backoff-gated install for any that isn't installed+active.
+	r.reconcileModuleInstalls(ctx)
 	r.reconcileUpdatePoll(ctx)
 
 	// Converge the shared branded error pages (404/403/500) from the
