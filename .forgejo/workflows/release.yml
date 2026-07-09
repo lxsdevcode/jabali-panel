@@ -187,6 +187,12 @@ jobs:
           # from everything older. Release records (tags) stay; only the heavy
           # .tar.gz/.sha256 are removed — jabali update falls back to source-build
           # for those old commits, which nobody targets anyway.
+          #
+          # Best-effort ONLY: by this point the release is published + verified, so a
+          # prune hiccup (a DELETE 404 on an already-gone asset, a SIGPIPE'd python,
+          # a transient API blip) must NOT fail the job and paint the release red.
+          # Drop set -e for the cleanup and always exit 0.
+          set +e
           KEEP=6
           echo "==> pruning release assets older than the newest ${KEEP}"
           prune_targets="$(curl -sS -H "Authorization: token ${TOKEN}" \
@@ -199,3 +205,4 @@ jobs:
               "${API_BASE}/repos/${REPO}/releases/${rid}/assets/${aid}" && pruned=$((pruned+1))
           done <<< "$prune_targets"
           echo "  pruned ${pruned} old release assets"
+          exit 0
