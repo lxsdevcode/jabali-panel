@@ -104,14 +104,45 @@ func validateServiceAction(ctx context.Context, params json.RawMessage, rejectMa
 	return name, nil
 }
 
-// runServiceAction applies the systemctl verb and returns the post-state.
-// The verb must be a literal string the caller controls — not user input.
+// companionUnits maps an allow-listed service to sibling systemd units that
+// must move with it. A socket-activated service silently restarts on the next
+// connection to its .socket unless the socket is stopped/disabled too —
+// disabling Docker from the panel stopped docker.service but left docker.socket
+// active, which re-triggered dockerd on the next API call, so the panel showed
+// it "off" while it kept running (GH #370). Companions are full unit names
+// (with suffix); the keyed service is already allow-listed, so a companion
+// needs no separate allow-list entry.
+//
+// pdns is deliberately NOT listed: its companion pdns-recursor owns
+// 127.0.0.1:53 and /etc/resolv.conf (the host's own resolver), so stopping it
+// alongside the authoritative pdns server would break host DNS resolution.
+// Recursor stays up by design — same rule as moduleDisableUnits (NEVER stop
+// pdns-recursor from a UI toggle).
+var companionUnits = map[string][]string{
+	"docker": {"docker.socket"},
+}
+
+// runServiceAction applies the systemctl verb to the service and any companion
+// units that exist on the host, in a single transaction, and returns the
+// post-state. The verb must be a literal string the caller controls — not user
+// input.
 func runServiceAction(ctx context.Context, verb, name string) (any, error) {
-	unit := fmt.Sprintf("%s.service", name)
-	if out, err := systemctlRunner(ctx, verb, unit); err != nil {
+	units := []string{fmt.Sprintf("%s.service", name)}
+	// Move socket/companion units with the primary service so a stopped
+	// socket-activated service can't silently re-trigger (GH #370). Skip
+	// companions that aren't installed on this host. LoadState is probed via
+	// systemctlRunner (the file's mockable seam), not exec, so this stays
+	// consistent with the rest of the lifecycle handlers.
+	for _, c := range companionUnits[name] {
+		if ls, _ := systemctlRunner(ctx, "show", "-p", "LoadState", "--value", c); strings.TrimSpace(ls) == "loaded" {
+			units = append(units, c)
+		}
+	}
+	args := append([]string{verb}, units...)
+	if out, err := systemctlRunner(ctx, args...); err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
-			Message: fmt.Sprintf("systemctl %s %s failed: %s", verb, unit, strings.TrimSpace(out)),
+			Message: fmt.Sprintf("systemctl %s %s failed: %s", verb, strings.Join(units, " "), strings.TrimSpace(out)),
 		}
 	}
 	post := probeService(ctx, name)
