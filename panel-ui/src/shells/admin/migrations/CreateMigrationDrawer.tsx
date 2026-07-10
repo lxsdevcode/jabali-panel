@@ -518,9 +518,9 @@ export const CreateMigrationDrawer = ({
     onClose();
   };
 
-  // GH #327: DirectAdmin + HestiaCP are driven by the standard flow now
-  // (pull-source + import dispatch by kind); nothing is scaffold-only.
-  const isScaffoldOnly = false;
+  // GH #327: every source kind (cPanel, WHM, DirectAdmin, HestiaCP, WordPress
+  // SSH/plugin) is driven end-to-end by the standard secrets → pull → import
+  // flow — there is no scaffold-only "contact support" path any more.
 
   return (
     <Drawer
@@ -605,44 +605,6 @@ export const CreateMigrationDrawer = ({
             <Button onClick={handleDone}>Cancel</Button>
           </Space>
         </Form>
-      ) : isScaffoldOnly ? (
-        // ── Scaffold-only: no UI drive steps yet ─────────────────────────────
-        <Space direction="vertical" size="large" style={{ width: "100%" }}>
-          <Alert
-            type="success"
-            showIcon
-            message={`Job created: ${created.id}`}
-          />
-          <Alert
-            type="warning"
-            showIcon
-            message={
-              created.source_kind === "wordpress_ssh"
-                ? "WordPress SSH migration job created"
-                : created.source_kind === "wordpress_plugin"
-                  ? "WordPress plugin migration job created"
-                  : "UI-driven import not yet available for this source type"
-            }
-            description={
-              created.source_kind === "wordpress_plugin"
-                ? "The job is created. On the source site, install the jabali-migrator plugin and generate a token. Upload it to this job's secrets (PLUGIN_TOKEN), then run `jabali migrate pull-source --job-id " +
-                  created.id +
-                  "` (Jabali PULLS the DB + files over the plugin's token-authed REST API), then `jabali migrate import-wp --job-id " +
-                  created.id +
-                  " --dest-user <user> --dest-domain <domain>`."
-                : created.source_kind === "wordpress_ssh"
-                ? "The job is created. Complete it on the server: `jabali migrate pull-source --job-id " +
-                  created.id +
-                  "` (SSH-discovers the WordPress site, exports its DB, stages the files), then `jabali migrate import-wp --job-id " +
-                  created.id +
-                  " --dest-user <user> --dest-domain <domain>` (provisions the DB, imports, moves files, rewrites wp-config). Upload SSH credentials first via the job's secrets endpoint."
-                : "DirectAdmin, HestiaCP, and IMAP-only migrations are not yet fully supported in the UI. The job record has been created. Please contact support to complete the import."
-            }
-          />
-          <Button type="primary" onClick={handleDone}>
-            Done
-          </Button>
-        </Space>
       ) : (
         // ── Drive wizard: secrets → pull → import (cPanel)
         //                  tarball → import (WHM) ────────────────────────────
