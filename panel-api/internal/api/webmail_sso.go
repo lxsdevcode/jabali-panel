@@ -40,6 +40,9 @@ type WebmailSSOHandlerConfig struct {
 	Domains   repository.DomainRepository
 	SSOKey    *ssokey.Key
 	SSOTokens repository.MailboxSSOTokenRepository
+	// Users resolves the mailbox owner so the landing gate can enforce
+	// current suspend / webmail-disable policy at redemption time (JAB-9).
+	Users repository.UserRepository
 	// Minter signs the impersonation JWT. Required; the handler
 	// surfaces 503 when nil so misconfigured panels fail loud instead
 	// of redirecting users to a guaranteed-401.
@@ -95,7 +98,7 @@ func (h *webmailSSOHandler) land(c *gin.Context) {
 		c.String(http.StatusBadRequest, "missing token")
 		return
 	}
-	if h.cfg.SSOKey == nil || h.cfg.SSOTokens == nil || h.cfg.Minter == nil {
+	if h.cfg.SSOKey == nil || h.cfg.SSOTokens == nil || h.cfg.Minter == nil || h.cfg.Users == nil {
 		c.String(http.StatusServiceUnavailable, "webmail sso is not configured on this panel")
 		return
 	}
@@ -111,15 +114,22 @@ func (h *webmailSSOHandler) land(c *gin.Context) {
 	hash := sha256.Sum256(raw)
 	hashHex := hex.EncodeToString(hash[:])
 
-	tok, err := h.cfg.SSOTokens.PeekByHash(ctx, hashHex)
+	// JAB-9: consume the token ATOMICALLY (row-lock SELECT + DELETE) BEFORE
+	// minting any JWT. PeekByHash + a later DeleteByHash let two concurrent
+	// requests both pass the peek and both mint a valid Bulwark JWT. With
+	// ConsumeByHash only one request wins the row; the loser gets ErrNotFound.
+	// The token is now burned even if a policy check below refuses redemption —
+	// exactly the "stays burned on refusal" oracle/retry protection the issue
+	// requires.
+	tok, err := h.cfg.SSOTokens.ConsumeByHash(ctx, hashHex)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			// Unknown / expired / already-consumed — collapse to one
-			// response so an attacker can't tell them apart.
+			// Unknown / expired / already-consumed / lost the race — collapse to
+			// one response so an attacker can't tell them apart.
 			c.Data(http.StatusForbidden, "text/html; charset=utf-8", []byte(webmailExpiredHTML))
 			return
 		}
-		h.logErr("webmail sso: peek token", err)
+		h.logErr("webmail sso: consume token", err)
 		c.String(http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -138,6 +148,27 @@ func (h *webmailSSOHandler) land(c *gin.Context) {
 		return
 	}
 
+	// The mailbox owner is the domain owner. Load them so we can enforce
+	// current account policy (a token minted seconds before suspension /
+	// webmail-disable must NOT become a live session).
+	usr, err := h.cfg.Users.FindByID(ctx, dom.UserID)
+	if err != nil {
+		h.logErr("webmail sso: find owner user", err)
+		c.String(http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// JAB-9 policy-freshness gate: re-check the CURRENT state after the token
+	// is already burned. Any of these disables webmail access; refuse with the
+	// SAME generic expired page (no oracle: the browser can't tell expired /
+	// used / policy-blocked apart) while the audit log records the exact cause.
+	if reason := webmailBlockReason(mb.IsDisabled, dom.WebmailEnabled, usr.WebmailEnabled, usr.Suspended); reason != "" {
+		h.cfgLog().Warn("webmail sso: redemption refused by current policy",
+			"reason", reason, "mailbox_id", mb.ID, "domain", dom.Name, "user_id", usr.ID)
+		c.Data(http.StatusForbidden, "text/html; charset=utf-8", []byte(webmailExpiredHTML))
+		return
+	}
+
 	lifetime := h.cfg.TokenLifetime
 	if lifetime <= 0 {
 		lifetime = 60 * time.Second
@@ -153,18 +184,7 @@ func (h *webmailSSOHandler) land(c *gin.Context) {
 		return
 	}
 
-	// Burn the SSO token BEFORE redirecting. Bulwark's
-	// /api/auth/impersonate is the only validator now and it never
-	// calls back to us — once we 303, the panel-side gate is
-	// effectively over. Idempotent on the repo side so a concurrent
-	// prefetch race doesn't 500.
-	if err := h.cfg.SSOTokens.DeleteByHash(ctx, hashHex); err != nil {
-		h.logErr("webmail sso: delete token", err)
-		// Soft-fail: the JWT itself is timestamp-bounded (60s), so a
-		// failed cleanup doesn't compromise security. PurgeExpired
-		// sweeps the orphan row eventually.
-	}
-
+	// (Token was already consumed atomically above.)
 	// 303 (See Other) so the browser swaps GET for GET and drops any
 	// Authorization headers from this hop. The impersonate endpoint
 	// is on the per-tenant mail vhost (mail.<dom.Name>), which sets
@@ -201,4 +221,29 @@ func (h *webmailSSOHandler) logErr(msg string, err error) {
 		return
 	}
 	log.Error(msg, "err", err)
+}
+
+// webmailBlockReason returns a non-empty, log-only reason string when current
+// policy forbids the webmail session, or "" when redemption may proceed. The
+// reason is for audit logs — it is never shown to the browser.
+func webmailBlockReason(mailboxDisabled, domainWebmail, userWebmail, userSuspended bool) string {
+	switch {
+	case mailboxDisabled:
+		return "mailbox_disabled"
+	case !domainWebmail:
+		return "domain_webmail_disabled"
+	case !userWebmail:
+		return "user_webmail_disabled"
+	case userSuspended:
+		return "user_suspended"
+	default:
+		return ""
+	}
+}
+
+func (h *webmailSSOHandler) cfgLog() *slog.Logger {
+	if h.cfg.Log != nil {
+		return h.cfg.Log
+	}
+	return slog.Default()
 }
