@@ -226,6 +226,13 @@ const (
 	rateStrictPerSec = 5.0 / 60.0
 	rateStrictBurst  = 5
 
+	// Kratos credential-flow tier: /.ory self-service login + recovery POSTs.
+	// 15 req/min sustained with a burst of 10 leaves ample room for a real
+	// login (init + submit, optional 2FA + typo retries) while throttling
+	// single-IP online guessing / recovery enumeration below Kratos defaults.
+	rateKratosPerSec = 15.0 / 60.0
+	rateKratosBurst  = 10
+
 	rateLimiterIdleCleanup = 10 * time.Minute
 	rateLimiterSweepEvery  = 5 * time.Minute
 )
@@ -277,6 +284,8 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		DefaultBurst: rateDefaultBurst,
 		StrictRate:   rate.Limit(rateStrictPerSec),
 		StrictBurst:  rateStrictBurst,
+		KratosRate:   rate.Limit(rateKratosPerSec),
+		KratosBurst:  rateKratosBurst,
 	})
 	startRateLimiterSweeper(rl)
 	r.Use(rl.Default())
@@ -356,7 +365,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 	if cfg.Auth.Kratos.PublicURL != "" {
 		deps.KratosClient = kratosclient.NewClient(cfg.Auth.Kratos.PublicURL, cfg.Auth.Kratos.AdminURL)
 
-		if err := RegisterKratosProxy(r, cfg.Auth.Kratos.PublicURL); err != nil {
+		if err := RegisterKratosProxy(r, cfg.Auth.Kratos.PublicURL, rl, deps.Log); err != nil {
 			deps.Log.Error("registering Kratos reverse proxy failed; login will be broken",
 				"err", err, "public_url", cfg.Auth.Kratos.PublicURL)
 		}

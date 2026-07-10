@@ -1,6 +1,7 @@
 package app
 
 import (
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"io"
 	"net"
 	"net/http"
@@ -31,7 +32,7 @@ func TestRegisterKratosProxy_StripsPrefixAndForwards(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	if err := RegisterKratosProxy(r, upstream.URL); err != nil {
+	if err := RegisterKratosProxy(r, upstream.URL, testKratosRL(), nil); err != nil {
 		t.Fatalf("RegisterKratosProxy: %v", err)
 	}
 
@@ -86,7 +87,7 @@ func TestRegisterKratosProxy_RejectsBadURL(t *testing.T) {
 	r := gin.New()
 	// url.Parse is lenient — truly malformed URLs (control chars in host)
 	// trip it. Use that to confirm the error path returns rather than panics.
-	err := RegisterKratosProxy(r, "http://\x00bad")
+	err := RegisterKratosProxy(r, "http://\x00bad", testKratosRL(), nil)
 	if err == nil {
 		t.Fatal("expected error for malformed upstream URL, got nil")
 	}
@@ -120,7 +121,7 @@ func TestRegisterKratosProxy_UnixSocketUpstream(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	if err := RegisterKratosProxy(r, "unix:"+sockPath); err != nil {
+	if err := RegisterKratosProxy(r, "unix:"+sockPath, testKratosRL(), nil); err != nil {
 		t.Fatalf("RegisterKratosProxy: %v", err)
 	}
 
@@ -139,4 +140,10 @@ func TestRegisterKratosProxy_UnixSocketUpstream(t *testing.T) {
 	if gotPath != "/self-service/login/browser" {
 		t.Errorf("upstream path=%q, want /self-service/login/browser (prefix must be stripped)", gotPath)
 	}
+}
+
+// testKratosRL returns a permissive limiter so existing GET-based proxy tests
+// pass through KratosFlows (which only gates POST login/recovery).
+func testKratosRL() *middleware.RateLimiter {
+	return middleware.NewRateLimiter(middleware.RateLimiterConfig{KratosRate: 1000, KratosBurst: 1000})
 }

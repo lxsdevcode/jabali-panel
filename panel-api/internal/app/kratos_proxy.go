@@ -6,9 +6,12 @@ import (
 	"net/url"
 	"strings"
 
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 )
 
 // RegisterKratosProxy wires a same-origin reverse proxy at /.ory/* that
@@ -36,7 +39,7 @@ import (
 // dials the configured socket. For HTTP/HTTPS URLs it returns the input
 // unchanged plus a fresh default transport. Returns an error only if
 // upstream is unparseable — panics stay out of the web request path.
-func RegisterKratosProxy(r *gin.Engine, upstream string) error {
+func RegisterKratosProxy(r *gin.Engine, upstream string, rl *middleware.RateLimiter, log *slog.Logger) error {
 	rewritten, transport, err := kratosclient.NewReverseProxyTransport(upstream)
 	if err != nil {
 		return err
@@ -70,7 +73,9 @@ func RegisterKratosProxy(r *gin.Engine, upstream string) error {
 
 	// Any method; Kratos endpoints include GET (flow init), POST (submit),
 	// and DELETE (logout). Gin's Any() is the idiomatic wildcard.
-	r.Any("/.ory/*proxyPath", func(c *gin.Context) {
+	// JAB-4: rate-limit the credential POSTs (login/recovery) per client IP
+	// BEFORE the proxy forwards to Kratos. Flow-init GETs + CSRF pass through.
+	r.Any("/.ory/*proxyPath", rl.KratosFlows(log), func(c *gin.Context) {
 		proxy.ServeHTTP(c.Writer, c.Request)
 	})
 	return nil

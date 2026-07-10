@@ -102,3 +102,76 @@ func TestRateLimit_StrictBucketIsIndependent(t *testing.T) {
 	// /default still works — separate bucket.
 	assert.Equal(t, http.StatusOK, hit(http.MethodGet, "/default"))
 }
+
+// KratosFlows gates POST submissions to /.ory self-service login + recovery per
+// IP, but passes flow-init GETs, CSRF fetches, and non-credential POSTs (JAB-4).
+func TestKratosFlows_GatesCredentialPostsOnly(t *testing.T) {
+	rl := middleware.NewRateLimiter(middleware.RateLimiterConfig{
+		DefaultRate: 1000, DefaultBurst: 1000,
+		KratosRate: 0, KratosBurst: 3, // 3 immediate, no refill in-test
+	})
+	mw := rl.KratosFlows(nil)
+
+	run := func(method, path, ip string) int {
+		gin.SetMode(gin.TestMode)
+		r := gin.New()
+		r.Use(func(c *gin.Context) { c.Request.Header.Set("X-Forwarded-For", ip); c.Next() })
+		r.Any("/*any", mw, func(c *gin.Context) { c.Status(http.StatusOK) })
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("X-Forwarded-For", ip)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// POST login: first 3 (burst) pass, 4th throttled.
+	for i := 0; i < 3; i++ {
+		if code := run(http.MethodPost, "/.ory/self-service/login?flow=x", "10.0.0.1"); code != http.StatusOK {
+			t.Fatalf("login POST #%d = %d; want 200 within burst", i+1, code)
+		}
+	}
+	if code := run(http.MethodPost, "/.ory/self-service/login?flow=x", "10.0.0.1"); code != http.StatusTooManyRequests {
+		t.Errorf("login POST over burst = %d; want 429", code)
+	}
+
+	// A different IP has its own bucket.
+	if code := run(http.MethodPost, "/.ory/self-service/login?flow=x", "10.0.0.2"); code != http.StatusOK {
+		t.Errorf("login POST from fresh IP = %d; want 200", code)
+	}
+
+	// Flow-init GET is never gated (login must still work).
+	for i := 0; i < 10; i++ {
+		if code := run(http.MethodGet, "/.ory/self-service/login/browser", "10.0.0.1"); code != http.StatusOK {
+			t.Fatalf("login init GET = %d; want 200 (never gated)", code)
+		}
+	}
+
+	// Non-credential POST (e.g. logout) passes.
+	for i := 0; i < 10; i++ {
+		if code := run(http.MethodPost, "/.ory/self-service/logout", "10.0.0.1"); code != http.StatusOK {
+			t.Fatalf("logout POST = %d; want 200 (not a gated flow)", code)
+		}
+	}
+}
+
+// Recovery POSTs are gated too (enumeration protection), sharing the tier.
+func TestKratosFlows_GatesRecovery(t *testing.T) {
+	rl := middleware.NewRateLimiter(middleware.RateLimiterConfig{DefaultRate: 1000, DefaultBurst: 1000, KratosRate: 0, KratosBurst: 2})
+	mw := rl.KratosFlows(nil)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Any("/*any", mw, func(c *gin.Context) { c.Status(http.StatusOK) })
+	call := func() int {
+		req := httptest.NewRequest(http.MethodPost, "/.ory/self-service/recovery?flow=y", nil)
+		req.Header.Set("X-Forwarded-For", "10.0.0.9")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	if call() != http.StatusOK || call() != http.StatusOK {
+		t.Fatal("first 2 recovery POSTs should pass")
+	}
+	if call() != http.StatusTooManyRequests {
+		t.Error("3rd recovery POST should be 429")
+	}
+}
