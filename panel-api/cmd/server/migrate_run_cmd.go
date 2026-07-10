@@ -535,6 +535,21 @@ failed stage. Already-done stages are skipped.`,
 					runErr = fmt.Errorf("migration degraded — %s (re-run after fixing, or pass --allow-degraded to accept)", msg)
 				}
 			}
+			// JAB-88: surface the restore stage summary (mailboxes, dbs, domains,
+			// ssl, …) on the operator's terminal. The runner only folds these into
+			// manifest_json (DB), so `jabali migrate restore` printed NOTHING about
+			// mail — an operator couldn't see that a migrated mailbox got a fresh
+			// password (silent lockout). Print them so the notice is actually read.
+			if j, lerr := jobsRepo.FindByID(ctx, job.ID); lerr == nil && j != nil && j.ManifestJSON != nil {
+				var stageMsgs []string
+				if json.Unmarshal([]byte(*j.ManifestJSON), &stageMsgs) == nil && len(stageMsgs) > 0 {
+					fmt.Fprintln(cmd.OutOrStdout(), "  restore summary:")
+					for _, msg := range stageMsgs {
+						fmt.Fprintf(cmd.OutOrStdout(), "    - %s\n", msg)
+					}
+				}
+			}
+
 			// JAB-87: record where an offline restore landed (dest_user +
 			// dest_domain) so the admin Migrations list/detail shows the
 			// destination — only the SSH pull path set these before. Best-effort:
@@ -1061,7 +1076,7 @@ func cpanelRestoreCallback(
 		}
 
 		if plan.Mailboxes {
-			mailRes, err := cpanel.ImportMailboxes(ctx, p.parsed, restoreAgent, job.ID, mbRepo, domainsRepo)
+			mailRes, err := cpanel.ImportMailboxes(ctx, p.parsed, restoreAgent, job.ID, mbRepo, domainsRepo, preserve.Credentials)
 			if err != nil {
 				return bytes, warnings, fmt.Errorf("mailboxes: %w", err)
 			}

@@ -3149,6 +3149,7 @@ jabali migrate restore [flags]
 - `--fresh` — alias of --retry-from-scratch
 - `--hestiacp` — source is a HestiaCP v-backup-user tarball (<user>.<YYYY-MM-DD_HH-MM-SS>.tar[.gz])
 - `--keep-staging` — keep /var/lib/jabali-migrations/<job-id>/ after the run (debug)
+- `--preserve-source-state` — keep imported source state ACTIVE + carry source credentials where safe: preserves the mailbox password (Stalwart-verifiable bcrypt only), keeps mail forwarders/catchalls/filters/autoresponders active, restores DB user creds + source SSL. Default OFF (secure): mail gets a fresh password (tenant must reset), routing artifacts land inert. Parity with `jabali migrate import`. Only use for a trusted same-owner migration.
 - `--restore-file` — alias of --file
 - `--retry-from-scratch` — reuse the source + options but wipe the existing job's stages and re-run the whole pipeline from analyze (recreates the target user, replaces stale manifest); default is a gentle resume
 - `--source-host` — informational source host (offline restore leaves this empty)
