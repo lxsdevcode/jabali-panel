@@ -50,6 +50,9 @@ export type NavItem = {
   label: string;
   icon: ReactNode;
   path: string;
+  // description is the hover tooltip shown beside the sidebar item
+  // (right-placed) explaining what the tab does.
+  description?: string;
   // matchPatterns lets an item claim deeper sub-paths it doesn't own
   // by `path` startsWith. Regex tested against the full pathname; if
   // any matches, the item is selected even when another item's path
@@ -79,96 +82,112 @@ export const adminNav: NavItem[] = [
   {
     key: "dashboard",
     label: "Dashboard",
+    description: "Server overview and quick stats",
     icon: navIcon(HomeOutlined),
     path: "/jabali-admin/dashboard",
   },
   {
     key: "users",
     label: "Users",
+    description: "Manage panel users and impersonation",
     icon: navIcon(TeamOutlined),
     path: "/jabali-admin/users",
   },
   {
     key: "sessions",
     label: "Sessions",
+    description: "Active login sessions",
     icon: navIcon(KeyOutlined),
     path: "/jabali-admin/sessions",
   },
   {
     key: "domains",
     label: "Domains",
+    description: "All domains across every user",
     icon: navIcon(GlobalOutlined),
     path: "/jabali-admin/domains",
   },
   {
     key: "mail",
     label: "Mail",
+    description: "Mailboxes, forwarders, and webmail",
     icon: navIcon(MailOutlined),
     path: "/jabali-admin/mail",
   },
   {
     key: "packages",
     label: "Hosting Packages",
+    description: "Hosting package plans and limits",
     icon: navIcon(PackageOpenOutlined),
     path: "/jabali-admin/packages",
   },
   {
     key: "ssl",
     label: "SSL Manager",
+    description: "SSL certificates and issuance",
     icon: navIcon(ShieldCheckOutlined),
     path: "/jabali-admin/ssl",
   },
   {
     key: "applications",
     label: "Applications",
+    description: "One-click app installs (WordPress and more)",
     icon: navIcon(AppstoreOutlined),
     path: "/jabali-admin/applications",
   },
   {
     key: "docker-apps",
     label: "Docker Apps",
+    description: "Docker app marketplace",
     icon: navIcon(ContainerOutlined),
     path: "/jabali-admin/docker-apps",
   },
   {
     key: "settings",
     label: "Server Settings",
+    description: "Server-wide settings and optional modules",
     icon: navIcon(SettingOutlined),
     path: "/jabali-admin/settings",
   },
   {
     key: "server-status",
     label: "Server Status",
+    description: "Live services, resources, and health",
     icon: navIcon(ChartBarOutlined),
     path: "/jabali-admin/server-status",
   },
   {
     key: "cache",
     label: "Cache",
+    description: "Redis and WordPress cache tools",
     icon: navIcon(ThunderboltOutlined),
     path: "/jabali-admin/cache",
   },
   {
     key: "security",
     label: "Security",
+    description: "CrowdSec, malware scanning, and firewall",
     icon: navIcon(SafetyOutlined),
     path: "/jabali-admin/security",
   },
   {
     key: "backups",
     label: "Backups",
+    description: "Backup destinations and schedules",
     icon: navIcon(SaveOutlined),
     path: "/jabali-admin/backups",
   },
   {
     key: "php-pools",
     label: "PHP Manager",
+    description: "PHP versions and FPM pools",
     icon: navIcon(CodeOutlined),
     path: "/jabali-admin/php-pools",
   },
   {
     key: "dns",
     label: "DNS Zones",
+    description: "Authoritative DNS zones and records",
     icon: navIcon(ServerOutlined),
     path: "/jabali-admin/dns",
     matchPatterns: [/^\/jabali-admin\/domains\/[^/]+\/dns(?:\/|$)/],
@@ -176,62 +195,72 @@ export const adminNav: NavItem[] = [
   {
     key: "ips",
     label: "IP Addresses",
+    description: "Managed server IP addresses",
     icon: navIcon(EthernetPortOutlined),
     path: "/jabali-admin/ips",
   },
   {
     key: "notifications",
     label: "Notifications",
+    description: "Alerts and notification channels",
     icon: navIcon(BellOutlined),
     path: "/jabali-admin/notifications/channels",
   },
   {
     key: "updates",
     label: "Updates",
+    description: "Panel and system package updates",
     icon: navIcon(DownloadOutlined),
     path: "/jabali-admin/updates",
   },
   {
-    key: "support",
-    label: "Support",
-    icon: navIcon(LifeBuoyOutlined),
-    path: "/jabali-admin/support",
-  },
-  {
     key: "automation",
     label: "Automation API",
+    description: "Automation API tokens and scopes",
     icon: navIcon(KeyOutlined),
     path: "/jabali-admin/automation",
   },
   {
     key: "api-tokens",
     label: "API Tokens",
+    description: "REST API keys",
     icon: navIcon(ApiOutlined),
     path: "/jabali-admin/api-tokens",
   },
   {
     key: "migrations",
     label: "Migrations",
+    description: "Import accounts from cPanel, HestiaCP, or DirectAdmin",
     icon: navIcon(SwapOutlined),
     path: "/jabali-admin/migrations",
   },
   {
     key: "terminal",
     label: "Terminal",
+    description: "Web shell to the server",
     icon: navIcon(SquareTerminalOutlined),
     path: "/jabali-admin/terminal",
   },
   {
     key: "logs",
     label: "Logs & Statistics",
+    description: "Access and error logs plus statistics",
     icon: navIcon(FileTextOutlined),
     path: "/jabali-admin/logs",
   },
   {
     key: "cron",
     label: "Cron",
+    description: "Scheduled cron jobs",
     icon: navIcon(CalendarCheckOutlined),
     path: "/jabali-admin/cron",
+  },
+  {
+    key: "support",
+    label: "Support",
+    description: "Diagnostics and contact support",
+    icon: navIcon(LifeBuoyOutlined),
+    path: "/jabali-admin/support",
   },
 ];
 

@@ -5,7 +5,7 @@
 // that the header's hamburger button opens. See ADR-0046.
 import { useEffect, useState } from "react";
 import { LeftOutlined, RightOutlined } from "@icons";
-import { Drawer, Grid, Layout, Menu, theme } from "antd";
+import { Drawer, Grid, Layout, Menu, Tooltip, theme } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { useServerCapabilities } from "../hooks/useServerCapabilities";
@@ -69,7 +69,16 @@ export function AdminLayout() {
       items={visibleNav.map((n) => ({
         key: n.key,
         icon: n.icon,
-        label: n.label,
+        // Right-placed hover tooltip explaining the tab (mouseEnterDelay keeps it
+        // from flashing while scanning the list). Falls back to the plain label
+        // when an item has no description.
+        label: n.description ? (
+          <Tooltip title={n.description} placement="right" mouseEnterDelay={0.4}>
+            <span>{n.label}</span>
+          </Tooltip>
+        ) : (
+          n.label
+        ),
         onClick: () => {
           navigate(n.path);
           setDrawerOpen(false);
