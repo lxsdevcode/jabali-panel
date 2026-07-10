@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,25 @@ type moduleProbe struct {
 	bins    []string // LookPath: any present → installed
 	binGlob []string // filepath.Glob: any match → installed
 	service string   // systemctl is-active → active ("" → active mirrors installed)
+}
+
+// moduleDisableUnits lists the systemd units to stop+disable when a module is
+// turned OFF. It stops the daemon that IS the feature — never baseline plumbing
+// or network-exposure guardrails:
+//   - dns keeps pdns-recursor (it owns 127.0.0.1:53 + /etc/resolv.conf — stopping
+//     it would kill the host's own DNS resolution). Only the authoritative
+//     pdns server stops.
+//   - security keeps ufw (dropping the firewall on a toggle is fail-open),
+//     AppArmor and AIDE (unloading live MAC confinement / integrity monitoring
+//     from a UI switch is a posture regression with no availability benefit).
+//
+// Disable never purges packages or data (mailbox rows, zones, DBs are kept);
+// re-enabling the module re-starts these units via the idempotent install path.
+var moduleDisableUnits = map[string][]string{
+	"mail":     {"jabali-stalwart", "jabali-webmail", "jabali-mailhook"},
+	"security": {"crowdsec", "crowdsec-firewall-bouncer"},
+	"dns":      {"pdns"}, // NEVER pdns-recursor
+	"quota":    {},       // filesystem feature — no service to stop
 }
 
 var moduleProbes = map[string]moduleProbe{
@@ -155,7 +175,51 @@ func systemModuleInstallHandler(ctx context.Context, raw json.RawMessage) (any, 
 	return probeModule(ctx, req.Key), nil
 }
 
+// systemModuleDisableHandler stops + disables a module's services when the
+// operator turns the module OFF (data preserved — never purged). Best-effort per
+// unit: a missing/absent unit is not an error (the module may be partially
+// installed). Idempotent — disabling an already-stopped unit is a no-op. Does NOT
+// touch baseline plumbing (pdns-recursor) or security guardrails (ufw/apparmor/
+// aide) — see moduleDisableUnits.
+func systemModuleDisableHandler(ctx context.Context, raw json.RawMessage) (any, error) {
+	var req moduleStatusRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "bad payload: " + err.Error()}
+	}
+	if !moduleInstallKeys[req.Key] {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: fmt.Sprintf("unknown module key %q (want: dns|mail|security|quota)", req.Key),
+		}
+	}
+	for _, unit := range moduleDisableUnits[req.Key] {
+		// Skip units that don't exist on this host (partial install). `systemctl
+		// disable --now` on a missing unit errors; a LoadState probe avoids noise.
+		if !unitExists(ctx, unit) {
+			continue
+		}
+		if out, err := exec.CommandContext(ctx, "systemctl", "disable", "--now", unit).CombinedOutput(); err != nil {
+			// Fail-soft: log-worthy but don't abort the rest. Return a generic
+			// error only if EVERY unit failed would be over-engineering — a
+			// single stubborn unit shouldn't strand the others already stopped.
+			slog.Warn("system.module.disable: unit stop failed",
+				"module", req.Key, "unit", unit, "err", err, "output", strings.TrimSpace(string(out)))
+		}
+	}
+	return probeModule(ctx, req.Key), nil
+}
+
+// unitExists reports whether systemd knows the unit (LoadState != not-found).
+func unitExists(ctx context.Context, unit string) bool {
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "LoadState", "--value", unit).Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "loaded"
+}
+
 func init() {
 	Default.Register("system.module.status", systemModuleStatusHandler)
 	Default.Register("system.module.install", systemModuleInstallHandler)
+	Default.Register("system.module.disable", systemModuleDisableHandler)
 }
