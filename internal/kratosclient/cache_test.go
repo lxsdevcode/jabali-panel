@@ -105,3 +105,35 @@ func TestCache_Clear(t *testing.T) {
 	assert.False(t, ok1)
 	assert.False(t, ok2)
 }
+
+// DeleteByIdentity removes only the entries whose identity matches, leaving
+// other identities' cached sessions intact (JAB-3).
+func TestCache_DeleteByIdentity(t *testing.T) {
+	t.Parallel()
+	cache := kratosclient.NewCache(10, 10*time.Second)
+	// Two sessions (cookies) for identity A, one for identity B.
+	cache.Set("cookieA1", &kratosclient.Identity{ID: "idA"})
+	cache.Set("cookieA2", &kratosclient.Identity{ID: "idA"})
+	cache.Set("cookieB1", &kratosclient.Identity{ID: "idB"})
+
+	removed := cache.DeleteByIdentity("idA")
+	if removed != 2 {
+		t.Errorf("removed = %d, want 2", removed)
+	}
+	if _, ok := cache.Get("cookieA1"); ok {
+		t.Error("idA session cookieA1 still cached after invalidation")
+	}
+	if _, ok := cache.Get("cookieA2"); ok {
+		t.Error("idA session cookieA2 still cached after invalidation")
+	}
+	if _, ok := cache.Get("cookieB1"); !ok {
+		t.Error("idB session must survive idA invalidation")
+	}
+	// Empty identity is a no-op, never a full clear.
+	if n := cache.DeleteByIdentity(""); n != 0 {
+		t.Errorf("empty identity removed %d entries; want 0", n)
+	}
+	if _, ok := cache.Get("cookieB1"); !ok {
+		t.Error("empty-identity invalidation must not touch other entries")
+	}
+}

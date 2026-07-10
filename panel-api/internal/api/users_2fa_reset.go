@@ -62,5 +62,9 @@ func (h *userHandler) reset2FA(c *gin.Context) {
 		return
 	}
 
+	// JAB-3: a 2FA reset changes the identity's auth state; drop any cached
+	// positive whoami for it so pre-reset sessions aren't accepted for the TTL.
+	h.cfg.KratosClient.InvalidateIdentity(*user.KratosIdentityID)
+
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

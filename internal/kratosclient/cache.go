@@ -91,6 +91,28 @@ func (c *Cache) Set(cookieValue string, identity *Identity) {
 	c.entries[key] = entry
 }
 
+// DeleteByIdentity removes every cached whoami entry whose identity matches the
+// given Kratos identity ID. Used by admin actions that materially change an
+// identity's auth state (revoke targets a specific user, suspend, password
+// reset, 2FA reset) so a stale positive cache can't keep accepting the session
+// for the rest of the TTL. Returns the number of entries removed.
+func (c *Cache) DeleteByIdentity(identityID string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if identityID == "" {
+		return 0
+	}
+	removed := 0
+	for key, entry := range c.entries {
+		if entry.identity != nil && entry.identity.ID == identityID {
+			c.lru.Remove(entry.elem)
+			delete(c.entries, key)
+			removed++
+		}
+	}
+	return removed
+}
+
 // Clear empties the cache.
 func (c *Cache) Clear() {
 	c.mu.Lock()

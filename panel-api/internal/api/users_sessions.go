@@ -117,5 +117,11 @@ func (h *userHandler) revokeSession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "revoke_failed", "detail": err.Error()})
 		return
 	}
+	// JAB-3: the revoked session is now dead in Kratos, but panel-api caches
+	// positive whoami results (TTL ~10s). The DELETE carries only a session ID,
+	// which we can't map to a cache entry (keyed by cookie hash), so flush the
+	// whole positive cache — a rare, admin-only emergency action — to make the
+	// revocation effective immediately instead of lingering for the TTL.
+	h.cfg.KratosClient.ClearCache()
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
