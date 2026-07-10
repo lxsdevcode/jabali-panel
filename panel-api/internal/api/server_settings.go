@@ -659,9 +659,12 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 	// its packages if they're missing (not just flip the DB flag). Mirrors the
 	// postgres pattern: background dispatch of system.module.install so the PATCH
 	// doesn't block on apt. Wired only for modules install.sh supports at runtime
-	// today (dns, mail, quota); security stays flag-only until its install.sh
-	// env-reconstruction lands. Off-flip is intentionally flag-only for now
-	// (services keep running; a future system.module.disable would stop them).
+	// today. On flip false→true install the module; on flip true→false stop +
+	// disable its services (system.module.disable — data preserved, guardrails
+	// like ufw/pdns-recursor left running). Transition-dispatch only: there is
+	// deliberately NO auto disable-convergence (stopping a "disabled" service
+	// every tick would fight an operator troubleshooting a manual start, and is
+	// destructive when a status read is wrong — unlike install-convergence).
 	if h.cfg.Agent != nil {
 		for _, m := range []struct {
 			key           string
@@ -672,8 +675,11 @@ func (h *serverSettingsHandler) update(c *gin.Context) {
 			{"quota", prevQuotaEnabled, current.QuotaEnabled},
 			{"security", prevSecurityEnabled, current.SecurityEnabled},
 		} {
-			if m.current && !m.prev {
+			switch {
+			case m.current && !m.prev:
 				h.dispatchModuleInstall(m.key)
+			case !m.current && m.prev:
+				h.dispatchModuleDisable(m.key)
 			}
 		}
 	}
@@ -1222,6 +1228,20 @@ func (h *serverSettingsHandler) dispatchModuleInstall(key string) {
 		defer cancel()
 		if _, err := h.cfg.Agent.Call(bgCtx, "system.module.install", map[string]any{"key": key}); err != nil {
 			h.cfg.Log.Error("agent module install failed", "key", key, "err", err)
+		}
+	}()
+}
+
+// dispatchModuleDisable stops + disables a module's services in the background
+// when the module is turned OFF. Data is preserved (never purged), so
+// re-enabling restarts the services via the idempotent install path. Detached
+// so the PATCH returns immediately.
+func (h *serverSettingsHandler) dispatchModuleDisable(key string) {
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if _, err := h.cfg.Agent.Call(bgCtx, "system.module.disable", map[string]any{"key": key}); err != nil {
+			h.cfg.Log.Error("agent module disable failed", "key", key, "err", err)
 		}
 	}()
 }

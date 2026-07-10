@@ -63,3 +63,43 @@ func isInvalidArg(err error) bool {
 	var ae *agentwire.AgentError
 	return errors.As(err, &ae) && ae.Code == agentwire.CodeInvalidArgument
 }
+
+// Disable must reject unknown keys before touching systemd.
+func TestSystemModuleDisableKeyAllowlist(t *testing.T) {
+	ctx := context.Background()
+	for _, bad := range []string{"", "core", "nginx", "dns; rm -rf /"} {
+		raw, _ := json.Marshal(moduleStatusRequest{Key: bad})
+		if _, err := systemModuleDisableHandler(ctx, raw); !isInvalidArg(err) {
+			t.Errorf("disable key %q: want CodeInvalidArgument, got %v", bad, err)
+		}
+	}
+}
+
+// The disable unit lists must never contain baseline plumbing or security
+// guardrails — stopping these from a UI toggle breaks the host (DNS resolution)
+// or is fail-open (firewall) / a posture regression (MAC, integrity).
+func TestModuleDisableUnitsExcludeGuardrails(t *testing.T) {
+	forbidden := map[string]bool{
+		"pdns-recursor": true, // owns 127.0.0.1:53 — host DNS resolution
+		"ufw":           true, // firewall — dropping it is fail-open
+		"apparmor":      true, // live MAC confinement
+		"aide":          true, // integrity monitoring
+	}
+	for key, units := range moduleDisableUnits {
+		for _, u := range units {
+			if forbidden[u] {
+				t.Errorf("module %q disable list must NOT stop guardrail unit %q", key, u)
+			}
+		}
+	}
+	// dns disables only the authoritative server, never the recursor.
+	if len(moduleDisableUnits["dns"]) != 1 || moduleDisableUnits["dns"][0] != "pdns" {
+		t.Errorf("dns disable units = %v, want [pdns] only", moduleDisableUnits["dns"])
+	}
+	// Every disable key must be a known module key.
+	for key := range moduleDisableUnits {
+		if !moduleInstallKeys[key] {
+			t.Errorf("moduleDisableUnits has non-module key %q", key)
+		}
+	}
+}
