@@ -1,6 +1,7 @@
 package cpanel
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -63,7 +64,7 @@ type agentImportMailboxesResult struct {
 // agentCli nil → observation-only behaviour (legacy stub —
 // per-mailbox 'pending_manual' warnings recorded; no JMAP push).
 // Useful for tests + dry-run paths where Stalwart isn't reachable.
-func ImportMailboxes(ctx context.Context, parsed *ParsedTarball, agentCli agent.AgentInterface, jobID string, mbRepo repository.MailboxRepository, domainsRepo repository.DomainRepository) (*MailImportResult, error) {
+func ImportMailboxes(ctx context.Context, parsed *ParsedTarball, agentCli agent.AgentInterface, jobID string, mbRepo repository.MailboxRepository, domainsRepo repository.DomainRepository, preserveCreds bool) (*MailImportResult, error) {
 	if parsed == nil {
 		return nil, fmt.Errorf("ImportMailboxes: parsed nil")
 	}
@@ -192,7 +193,7 @@ func ImportMailboxes(ctx context.Context, parsed *ParsedTarball, agentCli agent.
 	// Without these rows the UI and API are blind to the mailboxes even
 	// though Stalwart holds the actual data.
 	if mbRepo != nil && domainsRepo != nil {
-		res.Skipped = append(res.Skipped, insertMailboxPanelRows(ctx, mailRoot, parsed.OwnerEmail, mbRepo, domainsRepo, res)...)
+		res.Skipped = append(res.Skipped, insertMailboxPanelRows(ctx, mailRoot, parsed.OwnerEmail, preserveCreds, mbRepo, domainsRepo, res)...)
 	}
 
 	return res, nil
@@ -206,6 +207,7 @@ func insertMailboxPanelRows(
 	ctx context.Context,
 	mailRoot string,
 	ownerEmail string,
+	preserveCreds bool,
 	mbRepo repository.MailboxRepository,
 	domainsRepo repository.DomainRepository,
 	res *MailImportResult,
@@ -220,7 +222,8 @@ func insertMailboxPanelRows(
 		if _, ok := looksLikeMaildir(mailRoot); ok {
 			if at := strings.LastIndex(ownerEmail, "@"); at > 0 {
 				lp, dn := ownerEmail[:at], ownerEmail[at+1:]
-				msgs = append(msgs, insertOneMailboxRow(ctx, lp, dn, mbRepo, domainsRepo, res)...)
+				srcHash := loadSourceMailPasswords(filepath.Join(mailRoot, dn))[lp]
+				msgs = append(msgs, insertOneMailboxRow(ctx, lp, dn, srcHash, preserveCreds, mbRepo, domainsRepo, res)...)
 			}
 		}
 	}
@@ -247,6 +250,11 @@ func insertMailboxPanelRows(
 			continue
 		}
 		usersDir := filepath.Join(mailRoot, dom.Name())
+		// HestiaCP ships the source mailbox password hashes in
+		// mail/<domain>/conf/passwd (dovecot passwd-file). Load them once per
+		// domain; insertOneMailboxRow uses the hash when --preserve-source-state
+		// is set and it's a Stalwart-verifiable bcrypt.
+		srcPwds := loadSourceMailPasswords(usersDir)
 		users, uErr := os.ReadDir(usersDir)
 		if uErr != nil {
 			msgs = append(msgs, fmt.Sprintf("mailbox_rows: readdir %s: %v", usersDir, uErr))
@@ -260,7 +268,7 @@ func insertMailboxPanelRows(
 			if _, ok := looksLikeMaildir(filepath.Join(usersDir, localPart)); !ok {
 				continue
 			}
-			msgs = append(msgs, insertOneMailboxRow(ctx, localPart, name, mbRepo, domainsRepo, res)...)
+			msgs = append(msgs, insertOneMailboxRow(ctx, localPart, name, srcPwds[localPart], preserveCreds, mbRepo, domainsRepo, res)...)
 		}
 	}
 	return msgs
@@ -274,6 +282,8 @@ func insertMailboxPanelRows(
 func insertOneMailboxRow(
 	ctx context.Context,
 	localPart, domainName string,
+	srcHash string,
+	preserveCreds bool,
 	mbRepo repository.MailboxRepository,
 	domainsRepo repository.DomainRepository,
 	res *MailImportResult,
@@ -289,16 +299,27 @@ func insertOneMailboxRow(
 	if exists {
 		return []string{fmt.Sprintf("mailbox_rows: %s@%s already exists", localPart, domainName)}
 	}
-	tempPwd := ids.NewULID()
-	hash, hErr := bcrypt.GenerateFromPassword([]byte(tempPwd), bcrypt.DefaultCost)
-	if hErr != nil {
-		return []string{fmt.Sprintf("mailbox_rows: bcrypt %s@%s: %v", localPart, domainName, hErr)}
+	// JAB-88: preserve the source mailbox password when the operator opted in
+	// (--preserve-source-state) AND the source carries a Stalwart-verifiable
+	// bcrypt hash (Hestia stores {BLF-CRYPT}$2y$… — Stalwart's SQL directory
+	// authenticates $2a/$2b/$2y bcrypt, live-verified). Otherwise set a fresh
+	// random password and warn LOUDLY: the tenant is locked out until reset, and
+	// silent lockout was the reported bug.
+	passwordHash := srcHash
+	preserved := preserveCreds && srcHash != ""
+	if !preserved {
+		tempPwd := ids.NewULID()
+		hash, hErr := bcrypt.GenerateFromPassword([]byte(tempPwd), bcrypt.DefaultCost)
+		if hErr != nil {
+			return []string{fmt.Sprintf("mailbox_rows: bcrypt %s@%s: %v", localPart, domainName, hErr)}
+		}
+		passwordHash = string(hash)
 	}
 	mb := &models.Mailbox{
 		ID:           ids.NewULID(),
 		DomainID:     domain.ID,
 		LocalPart:    localPart,
-		PasswordHash: string(hash),
+		PasswordHash: passwordHash,
 		QuotaBytes:   1073741824,
 		CreatedAt:    time.Now().UTC(),
 		UpdatedAt:    time.Now().UTC(),
@@ -307,13 +328,66 @@ func insertOneMailboxRow(
 		return []string{fmt.Sprintf("mailbox_rows: create %s@%s: %v", localPart, domainName, cErr)}
 	}
 	res.MaildirsFound++
-	// Don't write the plaintext temp password into the manifest —
-	// manifest_json is persisted + queryable in the panel DB, so it
-	// would be a secret at rest. The mail password is reset via panel
-	// anyway (source Dovecot hashes aren't portable to Stalwart).
+	if preserved {
+		return []string{fmt.Sprintf(
+			"mailbox_rows: created %s@%s — SOURCE password preserved (--preserve-source-state); the tenant's original mail password works",
+			localPart, domainName)}
+	}
+	// Loud, explicit notice — a plain "temp password set" read as harmless and
+	// the operator handed a locked-out mailbox to the tenant.
 	return []string{fmt.Sprintf(
-		"mailbox_rows: created %s@%s (temp password set — reset via panel) — change via panel",
+		"mailbox_rows: created %s@%s with a NEW password — the ORIGINAL mail password was NOT migrated; the mailbox owner is locked out until you reset it in the panel (use --preserve-source-state on a trusted same-owner migration to carry the source password)",
 		localPart, domainName)}
+}
+
+// loadSourceMailPasswords reads a HestiaCP dovecot passwd-file at
+// <domainDir>/conf/passwd and returns local_part → bcrypt hash (with any
+// {SCHEME} tag stripped). Only bcrypt variants Stalwart's SQL directory can
+// verify ($2a/$2b/$2y) are returned; SHA-CRYPT / plaintext / unknown schemes are
+// dropped so the caller falls back to a fresh password + the lockout notice.
+// Missing or unreadable file → empty map (cPanel, which has no such file, and
+// any source without per-mailbox hashes simply get fresh passwords). Line
+// format: <local>:{BLF-CRYPT}$2y$05$…:<uid>:<gid>:…
+func loadSourceMailPasswords(domainDir string) map[string]string {
+	out := map[string]string{}
+	f, err := os.Open(filepath.Join(domainDir, "conf", "passwd"))
+	if err != nil {
+		return out
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 2 || parts[0] == "" {
+			continue
+		}
+		if h := normalizeBcryptHash(parts[1]); h != "" {
+			out[parts[0]] = h
+		}
+	}
+	return out
+}
+
+// normalizeBcryptHash strips a leading {SCHEME} tag and returns the hash only if
+// it is a bcrypt variant Stalwart verifies ($2a/$2b/$2y). Empty otherwise — a
+// non-bcrypt source hash must not be stored (it would never authenticate, re-
+// creating the silent-lockout bug with a different value).
+func normalizeBcryptHash(field string) string {
+	h := field
+	if strings.HasPrefix(h, "{") {
+		if i := strings.IndexByte(h, '}'); i >= 0 {
+			h = h[i+1:]
+		}
+	}
+	if strings.HasPrefix(h, "$2a$") || strings.HasPrefix(h, "$2b$") || strings.HasPrefix(h, "$2y$") {
+		return h
+	}
+	return ""
 }
 
 // looksLikeMaildir checks for the Maildir-spec directory markers.

@@ -86,6 +86,7 @@ func newMigrateRestoreCmd() *cobra.Command {
 	var file, restoreFile, sourceUser, sourceHost string
 	var targetUser, targetEmail, targetPassword, targetPackageID string
 	var keepStaging bool
+	var preserveSourceState bool
 	var retryFromScratch bool
 
 	cmd := &cobra.Command{
@@ -244,6 +245,9 @@ same command to resume a failed job.`,
 			if keepStaging {
 				impArgs = append(impArgs, "--keep-staging")
 			}
+			if preserveSourceState {
+				impArgs = append(impArgs, "--preserve-source-state")
+			}
 			imp.SetArgs(impArgs)
 			imp.SetContext(ctx)
 			fmt.Printf("  → running import pipeline (job %s)\n", jobID)
@@ -264,5 +268,6 @@ same command to resume a failed job.`,
 	cmd.Flags().BoolVar(&keepStaging, "keep-staging", false, "keep /var/lib/jabali-migrations/<job-id>/ after the run (debug)")
 	cmd.Flags().BoolVar(&retryFromScratch, "retry-from-scratch", false, "reuse the source + options but wipe the existing job's stages and re-run the whole pipeline from analyze (recreates the target user, replaces stale manifest); default is a gentle resume")
 	cmd.Flags().BoolVar(&retryFromScratch, "fresh", false, "alias of --retry-from-scratch")
+	cmd.Flags().BoolVar(&preserveSourceState, "preserve-source-state", false, "keep imported source state ACTIVE + carry source credentials where safe: preserves the mailbox password (Stalwart-verifiable bcrypt only), keeps mail forwarders/catchalls/filters/autoresponders active, restores DB user creds + source SSL. Default OFF (secure): mail gets a fresh password (tenant must reset), routing artifacts land inert. Parity with `jabali migrate import`. Only use for a trusted same-owner migration.")
 	return cmd
 }
