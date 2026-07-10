@@ -25,11 +25,11 @@ type suspendRequest struct {
 // Three-step cascade — best-effort with rollback on the first hard
 // failure so a partial suspend doesn't leave the panel in a half-
 // off state:
-//   1. flip users.suspended = 1 + stamp suspended_at + suspend_reason
-//   2. PATCH Kratos identity state = inactive (blocks panel + webmail
-//      + every Kratos-fronted UI on next request)
-//   3. bulk-flip every owned domains.is_enabled = 0 (reconciler picks
-//      up next tick + removes the nginx sites-enabled symlinks)
+//  1. flip users.suspended = 1 + stamp suspended_at + suspend_reason
+//  2. PATCH Kratos identity state = inactive (blocks panel + webmail
+//     + every Kratos-fronted UI on next request)
+//  3. bulk-flip every owned domains.is_enabled = 0 (reconciler picks
+//     up next tick + removes the nginx sites-enabled symlinks)
 //
 // Suspending an admin user is refused — admins are the only path to
 // un-suspend, refusing here prevents an accidental org-wide lockout.
@@ -92,6 +92,13 @@ func (h *userHandler) suspend(c *gin.Context) {
 				kratosWarn = "kratos_state_patch_failed: " + err.Error()
 			}
 		}
+		// JAB-3: requests are already denied immediately via the panel DB
+		// suspended flag; drop any cached positive whoami for this identity too
+		// so the Kratos-cache layer can't accept the session during the TTL
+		// window (defense in depth). Runs even if the state patch warned.
+		if h.cfg.KratosClient != nil {
+			h.cfg.KratosClient.InvalidateIdentity(*user.KratosIdentityID)
+		}
 	}
 
 	// Step 3 — disable every owned domain.
@@ -149,10 +156,10 @@ func (h *userHandler) suspend(c *gin.Context) {
 
 // unsuspend handles POST /admin/users/:id/unsuspend. Reverses the
 // three-step suspend cascade:
-//   1. flip users.suspended = 0 + clear suspended_at + reason
-//   2. PATCH Kratos identity state = active
-//   3. bulk-flip every owned domains.is_enabled = 1 (reconciler
-//      re-creates the nginx symlinks on next tick)
+//  1. flip users.suspended = 0 + clear suspended_at + reason
+//  2. PATCH Kratos identity state = active
+//  3. bulk-flip every owned domains.is_enabled = 1 (reconciler
+//     re-creates the nginx symlinks on next tick)
 //
 // Returns 200 with domains_enabled count + optional Kratos / domain
 // warnings same as suspend. 404 on missing user, 200 idempotent on

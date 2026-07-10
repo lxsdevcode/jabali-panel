@@ -87,6 +87,30 @@ func (c *Client) AdminReady(ctx context.Context) error {
 	return nil
 }
 
+// InvalidateIdentity drops any cached positive whoami results for the given
+// Kratos identity ID. Call it after an admin action that revokes or materially
+// changes an identity's auth state (session revoke targeting the user, suspend,
+// password reset, 2FA reset) so revocation is effective immediately instead of
+// lingering until the whoami cache TTL expires. No-op when the client has no
+// cache configured.
+func (c *Client) InvalidateIdentity(identityID string) {
+	if c == nil || c.cache == nil {
+		return
+	}
+	c.cache.DeleteByIdentity(identityID)
+}
+
+// ClearCache flushes the entire positive whoami cache. Used for emergency admin
+// actions where the affected identity can't be resolved from the inputs (e.g.
+// a session revoke that only carries a session ID). Rare + admin-only, so the
+// cost of forcing every live session to re-validate once is acceptable.
+func (c *Client) ClearCache() {
+	if c == nil || c.cache == nil {
+		return
+	}
+	c.cache.Clear()
+}
+
 // Whoami validates a Kratos session cookie and returns the authenticated identity.
 // The cookie is expected to be the raw cookie value (not the "ory_kratos_session=" prefix).
 // Results are cached by cookie hash; cache misses round-trip to the Kratos public endpoint.
