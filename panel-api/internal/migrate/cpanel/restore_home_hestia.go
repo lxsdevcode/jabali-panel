@@ -19,7 +19,7 @@ type HestiaHomeResult struct {
 }
 
 // ImportHomeHestia copies each Hestia `web/<domain>/public_html` into the Jabali
-// docroot `/home/<user>/web/<domain>/public_html` — the same path stored in
+// docroot `/home/<user>/domains/<domain>/public_html` (GH 327) — the same path stored in
 // domains.doc_root by the adapter (JAB-26).
 //
 // The generic legacy home rsync (ImportHome) copies the WebRoot's children into
@@ -61,7 +61,7 @@ func ImportHomeHestia(
 			"job_id":       jobID,
 			"src_dir":      src,
 			"dest_user":    destUser,
-			"dest_subpath": filepath.Join("web", dom, "public_html"),
+			"dest_subpath": filepath.Join("domains", dom, "public_html"),
 		})
 		if err != nil {
 			res.Skipped = append(res.Skipped, fmt.Sprintf("hestia_home_skip:%s rsync:%v", dom, err))

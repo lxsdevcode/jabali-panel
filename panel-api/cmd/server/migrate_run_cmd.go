@@ -455,7 +455,7 @@ failed stage. Already-done stages are skipped.`,
 						for name := range h.DomainDirs {
 							parsed.DomainNames = append(parsed.DomainNames, name)
 							parsed.DocRoots[name] = filepath.Join(
-								"/home", *user.Username, "web", name, "public_html")
+								"/home", *user.Username, "domains", name, "public_html")
 						}
 					}
 				} else if _, statErr := os.Stat(hTarPath); statErr == nil {
