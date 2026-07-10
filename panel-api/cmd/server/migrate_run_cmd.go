@@ -952,12 +952,13 @@ func cpanelRestoreCallback(
 			}
 			if len(rsyncRows) > 0 {
 				secretPath := fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)
-				// JAB-52: reuse the operator's pull-source SSH login (job.SourceUser,
-				// possibly DA-pivoted) instead of hardcoding root; legacy jobs fall back
-				// to root with a warning.
-				remoteSSHUser := job.SourceUser
-				if remoteSSHUser == "" {
-					remoteSSHUser = "root"
+				// JAB-52: reuse the operator's pull-source SSH login instead of
+				// hardcoding root. migrationSSHUser resolves it per source kind —
+				// cPanel/DA use SourceUser (the SSH login), HestiaCP forces root
+				// since its accounts have no SSH shell (GH #327). Legacy jobs with
+				// no source_user fall back to root with a warning.
+				remoteSSHUser := migrationSSHUser(job)
+				if job.SourceUser == "" {
 					warnings = append(warnings, "home_rsync_remote: job has no source_user — defaulting to root")
 				}
 				totalBytes := int64(0)
@@ -1275,7 +1276,25 @@ func cpanelRestoreCallback(
 // pivot, pull, home rsync) — the operator-supplied job.SourceUser (JAB-58/52),
 // falling back to root for legacy jobs that never persisted one.
 func migrationSSHUser(job *models.MigrationJob) string {
-	if job != nil && job.SourceUser != "" {
+	if job == nil {
+		return "root"
+	}
+	// HestiaCP has no per-account SSH shell, and its provisioning commands
+	// (v-list-web-domains, v-backup-user, …) require a root login. Here
+	// SourceUser is the account being migrated (e.g. "itflowapp"), NOT an SSH
+	// login — dialing as it fails auth with "[none password]" (GH #327). The
+	// discovery/pull paths already force root; the import's remote analyze
+	// stage went through this helper and inherited the account, so the online
+	// Hestia flow broke at `stage analyze: connect:` even though discovery
+	// (which runs as root) succeeded.
+	//
+	// cPanel accounts DO have SSH shells (SourceUser == login), and DirectAdmin
+	// pivots SourceUser to its admin login upstream, so only Hestia needs the
+	// override.
+	if job.SourceKind == models.MigrationSourceHestia {
+		return "root"
+	}
+	if job.SourceUser != "" {
 		return job.SourceUser
 	}
 	return "root"
