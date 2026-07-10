@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,10 +24,13 @@ import (
 // --- fakes (M6.6 SSO landing) ---
 
 type ssoFakeTokenRepo struct {
+	mu     sync.Mutex
 	tokens map[string]*models.MailboxSSOToken
 }
 
 func (f *ssoFakeTokenRepo) Create(ctx context.Context, t *models.MailboxSSOToken) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.tokens == nil {
 		f.tokens = map[string]*models.MailboxSSOToken{}
 	}
@@ -34,6 +38,8 @@ func (f *ssoFakeTokenRepo) Create(ctx context.Context, t *models.MailboxSSOToken
 	return nil
 }
 func (f *ssoFakeTokenRepo) PeekByHash(ctx context.Context, hash string) (*models.MailboxSSOToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	t, ok := f.tokens[hash]
 	if !ok {
 		return nil, repository.ErrNotFound
@@ -41,6 +47,8 @@ func (f *ssoFakeTokenRepo) PeekByHash(ctx context.Context, hash string) (*models
 	return t, nil
 }
 func (f *ssoFakeTokenRepo) ConsumeByHash(ctx context.Context, hash string) (*models.MailboxSSOToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	t, ok := f.tokens[hash]
 	if !ok {
 		return nil, repository.ErrNotFound
@@ -49,10 +57,14 @@ func (f *ssoFakeTokenRepo) ConsumeByHash(ctx context.Context, hash string) (*mod
 	return t, nil
 }
 func (f *ssoFakeTokenRepo) DeleteByHash(ctx context.Context, hash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	delete(f.tokens, hash)
 	return nil
 }
 func (f *ssoFakeTokenRepo) PurgeExpired(ctx context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	n := int64(0)
 	now := time.Now()
 	for h, t := range f.tokens {
@@ -118,6 +130,26 @@ func (r *ssoFakeMailboxRepo) ListByDomainIDs(ctx context.Context, domainIDs []st
 	return nil, nil
 }
 
+
+type ssoFakeUserRepo struct {
+	repository.UserRepository
+	users map[string]*models.User
+}
+
+func (r *ssoFakeUserRepo) FindByID(_ context.Context, id string) (*models.User, error) {
+	if u, ok := r.users[id]; ok {
+		return u, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
+// ssoOKUsers returns a user repo with one active, webmail-enabled owner.
+func ssoOKUsers(userID string) *ssoFakeUserRepo {
+	return &ssoFakeUserRepo{users: map[string]*models.User{
+		userID: {ID: userID, WebmailEnabled: true, Suspended: false},
+	}}
+}
+
 // --- helpers ---
 
 func ssoNewTestMinter(t *testing.T) *webmailsso.Minter {
@@ -171,7 +203,7 @@ func TestWebmailSSO_RedirectsToImpersonate(t *testing.T) {
 		DomainID:    "dom-1",
 		EmailCached: "alice@example.com",
 	}
-	dom := &models.Domain{ID: "dom-1", Name: "example.com"}
+	dom := &models.Domain{ID: "dom-1", Name: "example.com", UserID: "usr-1", WebmailEnabled: true}
 	mboxRepo := &ssoFakeMailboxRepo{mbs: map[string]*models.Mailbox{mb.ID: mb}}
 	domRepo := newMockDomainRepo()
 	domRepo.domains[dom.ID] = dom
@@ -184,6 +216,7 @@ func TestWebmailSSO_RedirectsToImpersonate(t *testing.T) {
 		Domains:   domRepo,
 		SSOKey:    ssoFakeSSOKey(t),
 		SSOTokens: tokRepo,
+		Users:     ssoOKUsers("usr-1"),
 		Minter:    ssoNewTestMinter(t),
 	})
 
@@ -231,6 +264,7 @@ func TestWebmailSSO_MissingToken(t *testing.T) {
 		Domains:   newMockDomainRepo(),
 		SSOKey:    ssoFakeSSOKey(t),
 		SSOTokens: &ssoFakeTokenRepo{},
+		Users:     ssoOKUsers("x"),
 		Minter:    ssoNewTestMinter(t),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/sso/webmail", nil)
@@ -249,6 +283,7 @@ func TestWebmailSSO_InvalidToken(t *testing.T) {
 		Domains:   newMockDomainRepo(),
 		SSOKey:    ssoFakeSSOKey(t),
 		SSOTokens: &ssoFakeTokenRepo{},
+		Users:     ssoOKUsers("x"),
 		Minter:    ssoNewTestMinter(t),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token=!!!not-base64!!!", nil)
@@ -267,6 +302,7 @@ func TestWebmailSSO_UnknownToken(t *testing.T) {
 		Domains:   newMockDomainRepo(),
 		SSOKey:    ssoFakeSSOKey(t),
 		SSOTokens: &ssoFakeTokenRepo{},
+		Users:     ssoOKUsers("x"),
 		Minter:    ssoNewTestMinter(t),
 	})
 	bogus := base64.RawURLEncoding.EncodeToString([]byte("garbage-but-base64-decodes-fine"))
@@ -325,5 +361,125 @@ func TestWebmailSSO_PrefetchRequestDoesNotConsumeToken(t *testing.T) {
 	}
 	if _, ok := tokRepo.tokens[ssoHashHexOfToken(token)]; !ok {
 		t.Error("token was consumed on prefetch — should be preserved")
+	}
+}
+
+// buildWebmailSSO wires a handler + a freshly-minted token for the given
+// mailbox/domain/user state. Returns the router and the token string.
+func buildWebmailSSO(t *testing.T, mb *models.Mailbox, dom *models.Domain, usr *models.User) (*gin.Engine, string, *ssoFakeTokenRepo) {
+	t.Helper()
+	tokRepo := &ssoFakeTokenRepo{}
+	domRepo := newMockDomainRepo()
+	domRepo.domains[dom.ID] = dom
+	token := ssoMintTestToken(t, tokRepo, mb.ID, time.Now().Add(time.Minute))
+	r := gin.New()
+	RegisterWebmailSSORoutes(r, WebmailSSOHandlerConfig{
+		Mailboxes: &ssoFakeMailboxRepo{mbs: map[string]*models.Mailbox{mb.ID: mb}},
+		Domains:   domRepo,
+		SSOKey:    ssoFakeSSOKey(t),
+		SSOTokens: tokRepo,
+		Users:     &ssoFakeUserRepo{users: map[string]*models.User{usr.ID: usr}},
+		Minter:    ssoNewTestMinter(t),
+	})
+	return r, token, tokRepo
+}
+
+// JAB-9: concurrent redemption of one token must mint at most one JWT.
+func TestWebmailSSO_ConcurrentRedemptionMintsOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mb := &models.Mailbox{ID: "mb-1", DomainID: "dom-1", EmailCached: "alice@example.com"}
+	dom := &models.Domain{ID: "dom-1", Name: "example.com", UserID: "usr-1", WebmailEnabled: true}
+	usr := &models.User{ID: "usr-1", WebmailEnabled: true}
+	r, token, _ := buildWebmailSSO(t, mb, dom, usr)
+
+	const n = 12
+	var wg sync.WaitGroup
+	codes := make([]int, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+token, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			codes[i] = w.Code
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	redirects := 0
+	for _, c := range codes {
+		if c == http.StatusSeeOther {
+			redirects++
+		}
+	}
+	if redirects != 1 {
+		t.Errorf("concurrent redemption minted %d JWTs; want exactly 1 (codes=%v)", redirects, codes)
+	}
+}
+
+// JAB-9: current policy blocks redemption even for a valid, unexpired token —
+// with a generic 403 (no oracle) and the token stays burned.
+func TestWebmailSSO_PolicyFreshnessBlocks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name string
+		mb   *models.Mailbox
+		dom  *models.Domain
+		usr  *models.User
+	}{
+		{"mailbox disabled",
+			&models.Mailbox{ID: "mb-1", DomainID: "dom-1", EmailCached: "a@example.com", IsDisabled: true},
+			&models.Domain{ID: "dom-1", Name: "example.com", UserID: "usr-1", WebmailEnabled: true},
+			&models.User{ID: "usr-1", WebmailEnabled: true}},
+		{"domain webmail disabled",
+			&models.Mailbox{ID: "mb-1", DomainID: "dom-1", EmailCached: "a@example.com"},
+			&models.Domain{ID: "dom-1", Name: "example.com", UserID: "usr-1", WebmailEnabled: false},
+			&models.User{ID: "usr-1", WebmailEnabled: true}},
+		{"user webmail disabled",
+			&models.Mailbox{ID: "mb-1", DomainID: "dom-1", EmailCached: "a@example.com"},
+			&models.Domain{ID: "dom-1", Name: "example.com", UserID: "usr-1", WebmailEnabled: true},
+			&models.User{ID: "usr-1", WebmailEnabled: false}},
+		{"user suspended",
+			&models.Mailbox{ID: "mb-1", DomainID: "dom-1", EmailCached: "a@example.com"},
+			&models.Domain{ID: "dom-1", Name: "example.com", UserID: "usr-1", WebmailEnabled: true},
+			&models.User{ID: "usr-1", WebmailEnabled: true, Suspended: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, token, tokRepo := buildWebmailSSO(t, tc.mb, tc.dom, tc.usr)
+			req := httptest.NewRequest(http.MethodGet, "/sso/webmail?token="+token, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden {
+				t.Errorf("code = %d; want 403 (generic expired page)", w.Code)
+			}
+			// Token must stay burned (consumed before the policy check).
+			if _, ok := tokRepo.tokens[ssoHashHexOfToken(token)]; ok {
+				t.Error("token not burned on policy refusal — enables retry/oracle")
+			}
+		})
+	}
+}
+
+// webmailBlockReason maps each disabling condition to a distinct audit reason.
+func TestWebmailBlockReason(t *testing.T) {
+	if webmailBlockReason(false, true, true, false) != "" {
+		t.Error("all-clear should return empty reason")
+	}
+	if webmailBlockReason(true, true, true, false) != "mailbox_disabled" {
+		t.Error("mailbox_disabled")
+	}
+	if webmailBlockReason(false, false, true, false) != "domain_webmail_disabled" {
+		t.Error("domain_webmail_disabled")
+	}
+	if webmailBlockReason(false, true, false, false) != "user_webmail_disabled" {
+		t.Error("user_webmail_disabled")
+	}
+	if webmailBlockReason(false, true, true, true) != "user_suspended" {
+		t.Error("user_suspended")
 	}
 }

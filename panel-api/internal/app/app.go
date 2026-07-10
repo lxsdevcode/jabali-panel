@@ -343,6 +343,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Domains:   deps.Domains,
 			SSOKey:    deps.SSOKey,
 			SSOTokens: deps.MailboxSSOTokens,
+			Users:     deps.Users,
 			Minter:    deps.WebmailSSOMinter,
 			Log:       deps.Log,
 		})
