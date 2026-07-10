@@ -65,9 +65,11 @@ func ImportSSL(ctx context.Context, agentCli agent.AgentInterface, parsed *Parse
 		}
 	}
 	if apacheTLS == "" {
-		// No installed certs on source — fall through silently. The
-		// reconciler's auto-LE path picks up the (domain, vhost)
-		// rows ImportDomains created.
+		// GH #327: HestiaCP has no cpanel apache_tls/ dir — it stores the
+		// installed LE certs flat under hestia/ssl/<domain>.{crt,key,ca}.
+		// Scan that layout; if neither exists, the reconciler's auto-LE path
+		// issues fresh certs for the migrated (domain, vhost) rows.
+		scanHestiaSSL(ctx, agentCli, parsed, res)
 		return res, nil
 	}
 
@@ -100,6 +102,43 @@ func ImportSSL(ctx context.Context, agentCli agent.AgentInterface, parsed *Parse
 		res.Skipped = append(res.Skipped, sk...)
 	}
 	return res, nil
+}
+
+// scanHestiaSSL imports HestiaCP's per-web-domain installed certificates. Hestia
+// stores them FLAT under <extractDir>/hestia/ssl/<domain>.crt (leaf), .key
+// (private key), .ca (chain) — not cpanel's apache_tls/<domain>/ directory
+// (GH #327). For each web domain in parsed.DomainNames that has a .crt + .key,
+// it pushes cert(+chain) + key via ssl.install_custom so HTTPS carries over
+// instead of degrading to a fresh Let's Encrypt cert. The mail cert
+// (mail/<domain>/hestia/<domain>.pem) is a separate stage and not handled here.
+func scanHestiaSSL(ctx context.Context, agentCli agent.AgentInterface, parsed *ParsedTarball, res *SSLResult) {
+	sslDir := filepath.Join(parsed.ExtractDir, "hestia", "ssl")
+	if info, err := os.Stat(sslDir); err != nil || !info.IsDir() {
+		return
+	}
+	for _, domain := range parsed.DomainNames {
+		crt, cerr := os.ReadFile(filepath.Join(sslDir, domain+".crt"))
+		key, kerr := os.ReadFile(filepath.Join(sslDir, domain+".key"))
+		if cerr != nil || kerr != nil || len(crt) == 0 || len(key) == 0 {
+			// No installed cert for this domain (e.g. LE not enabled) — the
+			// reconciler's auto-LE path handles it. Not an error.
+			continue
+		}
+		// Append the CA chain (if present) so nginx serves a full chain.
+		certPEM := strings.TrimSpace(string(crt))
+		if ca, err := os.ReadFile(filepath.Join(sslDir, domain+".ca")); err == nil && len(ca) > 0 {
+			certPEM = certPEM + "\n" + strings.TrimSpace(string(ca))
+		}
+		if _, callErr := agentCli.Call(ctx, "ssl.install_custom", map[string]any{
+			"domain":   domain,
+			"cert_pem": certPEM,
+			"key_pem":  strings.TrimSpace(string(key)),
+		}); callErr != nil {
+			res.Skipped = append(res.Skipped, fmt.Sprintf("ssl_skip:%s:hestia_agent:%v", domain, callErr))
+			continue
+		}
+		res.Installed++
+	}
 }
 
 // readDomainSSL returns (certPEM, keyPEM, warnings) for one
