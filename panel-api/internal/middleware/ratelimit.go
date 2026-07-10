@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +24,11 @@ type RateLimiterConfig struct {
 	DefaultBurst int
 	StrictRate   rate.Limit
 	StrictBurst  int
+	// KratosRate/KratosBurst gate the /.ory self-service credential POSTs
+	// (login, recovery). Separate from Strict so a burst of authenticated
+	// /auth/* strict-tier traffic can't starve the login bucket and vice versa.
+	KratosRate  rate.Limit
+	KratosBurst int
 }
 
 // RateLimiter holds per-IP, per-tier token buckets and returns middleware
@@ -44,6 +51,7 @@ type tier int
 const (
 	tierDefault tier = iota
 	tierStrict
+	tierKratos
 )
 
 type entry struct {
@@ -65,6 +73,47 @@ func (l *RateLimiter) Default() gin.HandlerFunc { return l.handler(tierDefault) 
 // bound replay or burst-retry patterns. Kratos owns its own credential-endpoint
 // rate limiting; /.ory/* is not fronted by this middleware.
 func (l *RateLimiter) Strict() gin.HandlerFunc { return l.handler(tierStrict) }
+
+// KratosFlows rate-limits the unauthenticated credential POSTs proxied at
+// /.ory (self-service login + recovery) per client IP, BEFORE they reach Kratos.
+// Only POST submissions to those two flows are gated — flow-init GETs, CSRF
+// token fetches, settings, and logout pass through untouched so legitimate
+// login/recovery still works. Login and recovery share the tierKratos bucket
+// but are logged distinctly. On a limit hit it emits a distinctive WARN line
+// (marker=kratos_flow_rate_limited) carrying the same clientIP() the audit log
+// + CrowdSec use, so a journalctl-sourced CrowdSec scenario can surface the
+// attack in Security → CrowdSec.
+func (l *RateLimiter) KratosFlows(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodPost {
+			c.Next()
+			return
+		}
+		p := c.Request.URL.Path
+		var flow string
+		switch {
+		case strings.Contains(p, "/self-service/login"):
+			flow = "login"
+		case strings.Contains(p, "/self-service/recovery"):
+			flow = "recovery"
+		default:
+			c.Next()
+			return
+		}
+		ip := clientIP(c)
+		if !l.limiterFor(ip, tierKratos).Allow() {
+			c.Header("Retry-After", "60")
+			if log != nil {
+				log.Warn("kratos flow rate limited",
+					"marker", "kratos_flow_rate_limited",
+					"flow", flow, "client_ip", ip, "path", p)
+			}
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate_limited"})
+			return
+		}
+		c.Next()
+	}
+}
 
 func (l *RateLimiter) handler(t tier) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -111,6 +160,9 @@ func (l *RateLimiter) limiterFor(ip string, t tier) *rate.Limiter {
 func (l *RateLimiter) tierSettings(t tier) (rate.Limit, int) {
 	if t == tierStrict && l.cfg.StrictBurst > 0 {
 		return l.cfg.StrictRate, l.cfg.StrictBurst
+	}
+	if t == tierKratos && l.cfg.KratosBurst > 0 {
+		return l.cfg.KratosRate, l.cfg.KratosBurst
 	}
 	return l.cfg.DefaultRate, l.cfg.DefaultBurst
 }
