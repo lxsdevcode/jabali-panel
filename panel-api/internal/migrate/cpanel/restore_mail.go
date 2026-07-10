@@ -260,6 +260,7 @@ func insertMailboxPanelRows(
 			msgs = append(msgs, fmt.Sprintf("mailbox_rows: readdir %s: %v", usersDir, uErr))
 			continue
 		}
+		seen := map[string]bool{}
 		for _, u := range users {
 			if !u.IsDir() {
 				continue
@@ -268,6 +269,21 @@ func insertMailboxPanelRows(
 			if _, ok := looksLikeMaildir(filepath.Join(usersDir, localPart)); !ok {
 				continue
 			}
+			seen[localPart] = true
+			msgs = append(msgs, insertOneMailboxRow(ctx, localPart, name, srcPwds[localPart], preserveCreds, mbRepo, domainsRepo, res)...)
+		}
+		// GH #327: HestiaCP creates a mail account with `mkdir mail/<dom>/<acct>`
+		// but dovecot only materializes cur/new/tmp on first delivery/login — so a
+		// freshly-created account is a BARE dir that looksLikeMaildir rejects, and
+		// it never imported (reporter saw "1 of 3": only the account that had
+		// received mail carried over). conf/passwd is the authoritative account
+		// list — create a row for every account the Maildir walk missed. An empty
+		// inbox is fine: Stalwart provisions its own store on first login.
+		for _, localPart := range listSourceMailAccounts(usersDir) {
+			if seen[localPart] {
+				continue
+			}
+			seen[localPart] = true
 			msgs = append(msgs, insertOneMailboxRow(ctx, localPart, name, srcPwds[localPart], preserveCreds, mbRepo, domainsRepo, res)...)
 		}
 	}
@@ -369,6 +385,39 @@ func loadSourceMailPasswords(domainDir string) map[string]string {
 		if h := normalizeBcryptHash(parts[1]); h != "" {
 			out[parts[0]] = h
 		}
+	}
+	return out
+}
+
+// listSourceMailAccounts returns EVERY local_part in a HestiaCP dovecot
+// passwd-file at <domainDir>/conf/passwd, regardless of hash scheme. Unlike
+// loadSourceMailPasswords (which drops non-bcrypt hashes it can't preserve),
+// this is the authoritative ACCOUNT LIST: a mailbox row must exist for every
+// source account even when its Maildir hasn't materialized yet (GH #327) or its
+// password can't be carried. Missing/unreadable file → nil (cPanel has no such
+// file and keeps using the Maildir walk). Line format: <local>:<hash>:<uid>:…
+func listSourceMailAccounts(domainDir string) []string {
+	f, err := os.Open(filepath.Join(domainDir, "conf", "passwd"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var out []string
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		local := line
+		if i := strings.IndexByte(line, ':'); i > 0 {
+			local = line[:i]
+		}
+		if local == "" || strings.ContainsAny(local, ":") {
+			continue
+		}
+		out = append(out, local)
 	}
 	return out
 }

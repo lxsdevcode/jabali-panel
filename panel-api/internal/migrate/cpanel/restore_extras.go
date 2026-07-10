@@ -419,7 +419,100 @@ func ImportExtras(
 		}
 	}
 
+	// GH #327: HestiaCP e-mail aliases live at mail/<domain>/conf/aliases, NOT
+	// cpanel's <home>/etc/<dom>/aliases — so they never imported. Scan + attach
+	// each alias to its target mailbox.
+	scanHestiaAliases(ctx, forwardersRepo, mailboxesRepo, domainsRepo, parsed, preserveMailRouting, res)
+
 	return res, nil
+}
+
+// scanHestiaAliases imports HestiaCP e-mail aliases. Hestia writes them to
+// mail/<domain>/conf/aliases as `alias@domain:account@domain` lines (one per
+// alias), coupling an alias address to a real local account. jabali models an
+// alias as a type='alias' EmailForwarder OWNED BY the target mailbox — the alias
+// is an extra local_part that delivers to that mailbox. Mirroring the panel's
+// create path (GH #280), Target stores the alias's OWN address so one mailbox
+// can hold many aliases without colliding on uq_external_forward(mailbox_id,
+// type,target). No-op for cpanel/DA (no mail/<dom>/conf/aliases). Idempotent: a
+// unique-index conflict on re-run is counted as skipped, not fatal.
+func scanHestiaAliases(
+	ctx context.Context,
+	forwardersRepo repository.EmailForwarderRepository,
+	mailboxesRepo repository.MailboxRepository,
+	domainsRepo repository.DomainRepository,
+	parsed *ParsedTarball,
+	preserveMailRouting bool,
+	res *ExtrasResult,
+) {
+	if forwardersRepo == nil || mailboxesRepo == nil {
+		return
+	}
+	mailRoot := filepath.Join(parsed.ExtractDir, "mail")
+	doms, err := os.ReadDir(mailRoot)
+	if err != nil {
+		return
+	}
+	for _, d := range doms {
+		if !d.IsDir() {
+			continue
+		}
+		domName := d.Name()
+		body, rErr := os.ReadFile(filepath.Join(mailRoot, domName, "conf", "aliases"))
+		if rErr != nil {
+			continue // no aliases file for this domain — not an error
+		}
+		dom, dErr := domainsRepo.FindByName(ctx, domName)
+		if dErr != nil || dom == nil {
+			res.Skipped = append(res.Skipped, "hestia_alias_skip:domain_missing:"+domName)
+			continue
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// `alias@domain:account@domain`
+			colon := strings.Index(line, ":")
+			if colon < 1 {
+				res.Skipped = append(res.Skipped, "hestia_alias_malformed:"+line)
+				continue
+			}
+			aliasAddr := strings.TrimSpace(line[:colon])
+			acctAddr := strings.TrimSpace(line[colon+1:])
+			aliasLocal := aliasAddr
+			if at := strings.LastIndex(aliasAddr, "@"); at > 0 {
+				aliasLocal = aliasAddr[:at]
+			}
+			if aliasLocal == "" || acctAddr == "" {
+				continue
+			}
+			// The alias delivers to the target account: attach it to that
+			// mailbox. If the account isn't a panel mailbox, it's orphaned.
+			mb, mErr := mailboxesRepo.FindByEmail(ctx, acctAddr)
+			if mErr != nil || mb == nil {
+				res.ForwardersOrphaned++
+				res.Skipped = append(res.Skipped, fmt.Sprintf("hestia_alias_orphan:%s→%s (no local mailbox)", aliasAddr, acctAddr))
+				continue
+			}
+			lp := aliasLocal
+			f := &models.EmailForwarder{
+				ID:        ids.NewULID(),
+				MailboxID: &mb.ID,
+				DomainID:  dom.ID,
+				Type:      "alias",
+				LocalPart: &lp,
+				Target:    aliasLocal + "@" + domName, // alias's own address (GH #280 uniqueness)
+				Enabled:   preserveMailRouting,        // JAB-46: inert unless opted in
+				ManagedBy: "gh327-hestia",
+			}
+			if cErr := forwardersRepo.Create(ctx, f); cErr != nil {
+				res.Skipped = append(res.Skipped, fmt.Sprintf("hestia_alias_skip:%s:%v", aliasAddr, cErr))
+				continue
+			}
+			res.ForwardersCreated++
+		}
+	}
 }
 
 // parseAutoresponder reads a cpanel .autorespond/<addr>.{conf,yaml}
