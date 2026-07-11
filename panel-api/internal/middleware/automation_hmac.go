@@ -128,7 +128,7 @@ func RequireAutomationHMAC(repo repository.AutomationTokenRepository, key *ssoke
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
-		if len(tok.IPAllowlist) > 0 && !ipInAllowlist(c.ClientIP(), tok.IPAllowlist) {
+		if len(tok.IPAllowlist) > 0 && !ipInAllowlist(clientIP(c), tok.IPAllowlist) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
@@ -221,7 +221,7 @@ func RequireAutomationHMAC(repo repository.AutomationTokenRepository, key *ssoke
 			bgCtx, bgCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer bgCancel()
 			_ = repo.BumpLastUsed(bgCtx, id, ip)
-		}(tok.ID, c.ClientIP())
+		}(tok.ID, clientIP(c))
 
 		c.Set(autoCtxTokenKey, tok)
 		c.Next()

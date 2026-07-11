@@ -125,6 +125,10 @@ func AuditRecord(rec audit.Recorder) gin.HandlerFunc {
 // to $remote_addr — the actual TCP peer, proxy-authoritative and NOT
 // client-spoofable given the socket-only bind. Prefer it, then the
 // first X-Forwarded-For hop, then gin's value as a last resort.
+// RealClientIP is the exported form of clientIP for callers in other packages
+// (e.g. the automation write audit). Same proxy-authoritative resolution.
+func RealClientIP(c *gin.Context) string { return clientIP(c) }
+
 func clientIP(c *gin.Context) string {
 	if xr := strings.TrimSpace(c.GetHeader("X-Real-IP")); xr != "" {
 		return xr

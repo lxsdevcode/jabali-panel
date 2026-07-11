@@ -76,9 +76,15 @@ func registerAutomationWrites(g *gin.RouterGroup, cfg AutomationConfig) {
 // unsupported; anything else is internal.
 func mapAgentErr(c *gin.Context, err error) {
 	var ae *agent.AgentError
-	if errors.As(err, &ae) && (ae.Code == agent.CodeNotFound || ae.Code == agent.CodeInvalidArgument) {
-		autoErr(c, http.StatusBadRequest, "unsupported", ae.Message)
-		return
+	if errors.As(err, &ae) {
+		switch ae.Code {
+		// not_found / invalid_argument (bad or masked name) and permission_denied
+		// (service not in the agent's restartable allow-list) are all caller-fixable
+		// "this action isn't available", not a server fault.
+		case agent.CodeNotFound, agent.CodeInvalidArgument, agent.CodePermissionDenied:
+			autoErr(c, http.StatusBadRequest, "unsupported", ae.Message)
+			return
+		}
 	}
 	autoErr(c, http.StatusBadGateway, "internal", "agent error")
 }

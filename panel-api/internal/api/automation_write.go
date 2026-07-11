@@ -84,7 +84,7 @@ func auditWrite(c *gin.Context, audits repository.AuditEventRepository, tok *mod
 	if audits == nil || tok == nil {
 		return
 	}
-	ip := c.ClientIP()
+	ip := middleware.RealClientIP(c)
 	meta, _ := json.Marshal(map[string]string{"token_id": tok.ID})
 	ev := &models.AuditEvent{
 		ID:         ids.NewULID(),
