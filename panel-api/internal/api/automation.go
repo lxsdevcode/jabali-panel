@@ -64,6 +64,9 @@ type AutomationConfig struct {
 	// nil the async backup still enqueues but resolves to an error op (no dest).
 	BackupJobs  repository.BackupJobRepository
 	BackupDests repository.BackupDestinationRepository
+	// Notify (JAB-140) publishes M14 notifications for high-impact writes
+	// (suspend/disable). Nil → notifications skipped (audit still records).
+	Notify AutomationNotifier
 }
 
 func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {

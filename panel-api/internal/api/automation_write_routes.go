@@ -138,6 +138,10 @@ func userSuspendHandler(cfg AutomationConfig, suspend bool) gin.HandlerFunc {
 			return
 		}
 		auditWrite(c, cfg.Audits, tok, action, "user", id, models.AuditResultOK)
+		notifyWrite(cfg, "automation.user."+verbDone(suspend, "disabled", "enabled"),
+			"warning", "Automation "+verbDone(suspend, "disabled", "enabled")+" a user",
+			"User "+u.Email+" was "+verbDone(suspend, "disabled", "enabled")+" via the automation API.",
+			"/jabali-admin/users")
 		autoOK(c, "user "+id+" "+verbDone(suspend, "disabled", "enabled"))
 	}
 }
@@ -173,6 +177,10 @@ func domainSuspendHandler(cfg AutomationConfig, suspend bool) gin.HandlerFunc {
 			return
 		}
 		auditWrite(c, cfg.Audits, tok, action, "domain", id, models.AuditResultOK)
+		notifyWrite(cfg, "automation.domain."+verbDone(suspend, "suspended", "unsuspended"),
+			"warning", "Automation "+verbDone(suspend, "suspended", "unsuspended")+" a domain",
+			"Domain "+d.Name+" was "+verbDone(suspend, "suspended", "unsuspended")+" via the automation API.",
+			"/jabali-admin/domains")
 		autoOK(c, "domain "+d.Name+" "+verbDone(suspend, "suspended", "unsuspended"))
 	}
 }

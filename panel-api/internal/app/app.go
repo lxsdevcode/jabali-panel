@@ -403,6 +403,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Audits:      automationAudits(deps.DB),
 				BackupJobs:  automationBackupJobs(deps.DB),
 				BackupDests: automationBackupDests(deps.DB),
+				Notify:      automationNotifier(deps.NotificationQueue),
 			})
 		}
 
@@ -1350,4 +1351,14 @@ func automationBackupDests(db *gorm.DB) repository.BackupDestinationRepository {
 		return nil
 	}
 	return repository.NewBackupDestinationRepository(db)
+}
+
+// automationNotifier returns the M14 publisher for the automation write layer, or
+// a genuine nil interface when the queue is absent (a typed-nil *Queue would make
+// the interface non-nil and defeat the nil-check in notifyWrite).
+func automationNotifier(q *notifications.Queue) api.AutomationNotifier {
+	if q == nil {
+		return nil
+	}
+	return q
 }

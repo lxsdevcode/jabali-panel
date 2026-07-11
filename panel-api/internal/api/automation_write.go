@@ -20,6 +20,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
@@ -149,4 +150,28 @@ func (l *writeRateLimiter) middleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// AutomationNotifier is the narrow M14 publish surface the automation write layer
+// needs (satisfied by *notifications.Queue). Nil → notifications are skipped.
+type AutomationNotifier interface {
+	Publish(ctx context.Context, env notifications.Envelope) (string, error)
+}
+
+// notifyWrite broadcasts a high-impact automation write to admins via M14: empty
+// UserID makes the dispatcher bell every admin and fan out to enabled channels.
+// Best-effort — the audit row remains the authoritative record.
+func notifyWrite(cfg AutomationConfig, kind, severity, title, body, deeplink string) {
+	if cfg.Notify == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = cfg.Notify.Publish(ctx, notifications.Envelope{
+		EventKind: kind,
+		Severity:  severity,
+		Title:     title,
+		Body:      body,
+		Deeplink:  deeplink,
+	})
 }

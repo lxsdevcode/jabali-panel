@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
@@ -227,5 +228,35 @@ func TestCapabilities_ReflectsMounted(t *testing.T) {
 	}
 	if has["users.disable"] || has["backups.create"] {
 		t.Fatal("unmounted actions must not appear in capabilities")
+	}
+}
+
+type awNotifier struct{ kinds []string }
+
+func (n *awNotifier) Publish(_ context.Context, env notifications.Envelope) (string, error) {
+	n.kinds = append(n.kinds, env.EventKind)
+	return "sid", nil
+}
+
+func TestDomainSuspend_Notifies(t *testing.T) {
+	dom := &awDomains{d: &models.Domain{ID: "d1", Name: "x.test", IsEnabled: true}}
+	nf := &awNotifier{}
+	r := awRouter(AutomationConfig{Domains: dom, Audits: &awAudit{}, Notify: nf}, writeTok())
+	if code := awPost(r, "/domains/d1/suspend").Code; code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	if len(nf.kinds) != 1 || nf.kinds[0] != "automation.domain.suspended" {
+		t.Fatalf("expected an automation.domain.suspended M14 event, got %v", nf.kinds)
+	}
+}
+
+func TestDomainSuspend_IdempotentNoop_NoNotify(t *testing.T) {
+	// Already suspended → no-op → must NOT re-notify.
+	dom := &awDomains{d: &models.Domain{ID: "d1", Name: "x.test", IsEnabled: false}}
+	nf := &awNotifier{}
+	r := awRouter(AutomationConfig{Domains: dom, Audits: &awAudit{}, Notify: nf}, writeTok())
+	awPost(r, "/domains/d1/suspend")
+	if len(nf.kinds) != 0 {
+		t.Fatalf("idempotent no-op must not notify, got %v", nf.kinds)
 	}
 }
