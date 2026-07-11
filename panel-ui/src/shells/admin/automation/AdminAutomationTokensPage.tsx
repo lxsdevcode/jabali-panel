@@ -22,6 +22,7 @@ import {
   Modal,
   Popconfirm,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -51,7 +52,20 @@ const SCOPE_OPTIONS = [
   { value: "read:users", label: "read:users" },
   { value: "read:applications", label: "read:applications" },
   { value: "read:status", label: "read:status" },
+  // JAB-140 write scopes. A write token acts on ANY tenant — grant sparingly.
+  { value: "write:*", label: "write:* (all write actions)" },
+  { value: "write:services", label: "write:services (restart)" },
+  { value: "write:users", label: "write:users (disable/enable)" },
+  { value: "write:domains", label: "write:domains (suspend/unsuspend)" },
+  { value: "write:cache", label: "write:cache (purge)" },
+  { value: "write:backups", label: "write:backups (trigger backup)" },
 ];
+
+// Wildcard families that are mutually exclusive with their own explicit children.
+const SCOPE_WILDCARDS = ["read:*", "write:*"] as const;
+function famPrefix(wildcard: string): string {
+  return wildcard.slice(0, wildcard.length - 1); // "read:*" -> "read:"
+}
 
 function fmt(iso?: string | null): string {
   if (!iso) return "—";
@@ -65,24 +79,32 @@ export const AdminAutomationTokensPage = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [revealSecret, setRevealSecret] = useState<string | null>(null);
   const [revealName, setRevealName] = useState<string | null>(null);
-  const [form] = Form.useForm<{ name: string; scopes: string[] }>();
+  const [form] = Form.useForm<{ name: string; scopes: string[]; writes_enabled: boolean }>();
   const scopeVals = (Form.useWatch("scopes", form) as string[] | undefined) ?? [];
-  const wildcardSelected = scopeVals.includes("read:*");
-  // JAB-84: read:* is mutually exclusive with individual read scopes. Use the
-  // previous value to detect intent: picking read:* collapses to just the
-  // wildcard; picking any child clears the wildcard.
+  const hasWriteScope = scopeVals.some((s) => s.startsWith("write:"));
+  // JAB-84 + JAB-140: within each family (read:*, write:*) the wildcard is
+  // mutually exclusive with its explicit children. Picking a wildcard collapses
+  // to just it; picking a child in that family clears the wildcard.
   const normalizeScopes = (checked: string[]): string[] => {
     const prev = (form.getFieldValue("scopes") as string[] | undefined) ?? [];
-    if (checked.includes("read:*") && !prev.includes("read:*")) return ["read:*"];
-    const addedChild = checked.some(
-      (x) => x !== "read:*" && x.startsWith("read:") && !prev.includes(x),
-    );
-    if (addedChild) return checked.filter((x) => x !== "read:*");
-    return checked;
+    let out = checked;
+    for (const w of SCOPE_WILDCARDS) {
+      const pfx = famPrefix(w);
+      if (out.includes(w) && !prev.includes(w)) {
+        // Just picked this wildcard → drop the family's explicit children.
+        out = out.filter((x) => x === w || !x.startsWith(pfx));
+      } else if (out.some((x) => x !== w && x.startsWith(pfx) && !prev.includes(x))) {
+        // Just picked a child in this family → drop the wildcard.
+        out = out.filter((x) => x !== w);
+      }
+    }
+    return out;
   };
-  const scopeOptions = SCOPE_OPTIONS.map((o) =>
-    o.value === "read:*" ? o : { ...o, disabled: wildcardSelected },
-  );
+  const scopeOptions = SCOPE_OPTIONS.map((o) => {
+    if (o.value.endsWith(":*")) return o;
+    const wildcard = SCOPE_WILDCARDS.find((w) => o.value.startsWith(famPrefix(w)));
+    return { ...o, disabled: wildcard ? scopeVals.includes(wildcard) : false };
+  });
 
   const list = useQuery<ListResp>({
     queryKey: ["list", "admin/automation/tokens"],
@@ -92,7 +114,7 @@ export const AdminAutomationTokensPage = () => {
     },
   });
 
-  const mint = useMutation<MintResp, unknown, { name: string; scopes: string[] }>({
+  const mint = useMutation<MintResp, unknown, { name: string; scopes: string[]; writes_enabled?: boolean }>({
     mutationFn: async (input) => {
       const { data } = await apiClient.post<MintResp>("/admin/automation/tokens", input);
       return data;
@@ -115,7 +137,7 @@ export const AdminAutomationTokensPage = () => {
     },
   });
 
-  const handleMint = async (values: { name: string; scopes: string[] }) => {
+  const handleMint = async (values: { name: string; scopes: string[]; writes_enabled?: boolean }) => {
     try {
       await mint.mutateAsync(values);
     } catch (err) {
@@ -283,6 +305,17 @@ export const AdminAutomationTokensPage = () => {
             <Checkbox.Group options={scopeOptions} style={{ display: "flex", flexDirection: "column", gap: 8 }} />
           </Form.Item>
 
+          {hasWriteScope ? (
+            <Form.Item
+              name="writes_enabled"
+              label="Writes enabled"
+              valuePropName="checked"
+              initialValue={true}
+              extra="Master switch. Turn off to mint a write-scoped token with writes paused — it can be enabled later without re-issuing the secret. A write token acts on any tenant; grant sparingly."
+            >
+              <Switch />
+            </Form.Item>
+          ) : null}
         </Form>
       </Drawer>
 

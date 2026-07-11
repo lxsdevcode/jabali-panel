@@ -45,6 +45,9 @@ func (f *fakeAutoTokenRepo) FindByID(_ context.Context, id string) (*models.Auto
 }
 func (f *fakeAutoTokenRepo) Revoke(_ context.Context, _ string) error            { return nil }
 func (f *fakeAutoTokenRepo) BumpLastUsed(_ context.Context, _, _ string) error    { return nil }
+func (f *fakeAutoTokenRepo) SetWritesEnabled(_ context.Context, _ string, _ bool) error {
+	return nil
+}
 
 func newTestKey(t *testing.T) *ssokey.Key {
 	t.Helper()

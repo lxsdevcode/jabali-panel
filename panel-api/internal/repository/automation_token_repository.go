@@ -20,6 +20,9 @@ type AutomationTokenRepository interface {
 	FindByID(ctx context.Context, id string) (*models.AutomationToken, error)
 	Revoke(ctx context.Context, id string) error
 	BumpLastUsed(ctx context.Context, id, ip string) error
+	// SetWritesEnabled flips the write master switch (JAB-140). An explicit
+	// column update because GORM omits a zero-value writes_enabled on Create.
+	SetWritesEnabled(ctx context.Context, id string, enabled bool) error
 }
 
 type automationTokenRepo struct{ db *gorm.DB }
@@ -67,6 +70,13 @@ func (r *automationTokenRepo) Revoke(ctx context.Context, id string) error {
 		Model(&models.AutomationToken{}).
 		Where("id = ? AND revoked_at IS NULL", id).
 		Update("revoked_at", now).Error
+}
+
+func (r *automationTokenRepo) SetWritesEnabled(ctx context.Context, id string, enabled bool) error {
+	return r.db.WithContext(ctx).
+		Model(&models.AutomationToken{}).
+		Where("id = ?", id).
+		Update("writes_enabled", enabled).Error
 }
 
 // BumpLastUsed updates last_used_at + last_used_ip best-effort. Errors

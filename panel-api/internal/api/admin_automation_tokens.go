@@ -58,6 +58,9 @@ type adminAutoTokensHandler struct{ cfg AdminAutomationTokensConfig }
 type createAutoTokenRequest struct {
 	Name   string   `json:"name" binding:"required"`
 	Scopes []string `json:"scopes" binding:"required"`
+	// JAB-140: optional master switch for write-scoped tokens. nil / true =
+	// writes enabled (the default); false mints the token with writes paused.
+	WritesEnabled *bool `json:"writes_enabled,omitempty"`
 }
 
 func (h *adminAutoTokensHandler) create(c *gin.Context) {
@@ -123,6 +126,14 @@ func (h *adminAutoTokensHandler) create(c *gin.Context) {
 	if err := h.cfg.Repo.Create(ctx, tok); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create token: " + err.Error()})
 		return
+	}
+	// GORM omits the zero-value writes_enabled (it has a DB default of 1), so a
+	// requested "writes paused" mint needs an explicit follow-up update (JAB-140).
+	if req.WritesEnabled != nil && !*req.WritesEnabled {
+		if err := h.cfg.Repo.SetWritesEnabled(ctx, tok.ID, false); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "set writes_enabled: " + err.Error()})
+			return
+		}
 	}
 	if h.cfg.Audit != nil {
 		actor := ""
