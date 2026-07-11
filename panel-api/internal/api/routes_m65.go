@@ -17,6 +17,7 @@ type M65RouteDeps struct {
 	Forwarders     repository.EmailForwarderRepository
 	MailboxShares  repository.MailboxShareRepository
 	SharedResources repository.SharedResourceRepository
+	SendDelegations repository.MailboxSendDelegationRepository
 }
 
 // RegisterM65Routes registers all M6.5 email feature routes.
@@ -30,6 +31,17 @@ func RegisterM65Routes(g *gin.RouterGroup, deps M65RouteDeps) {
 	registerSharedFolderRoutes(g, deps)
 	registerMailLogRoutes(g, deps)
 	registerSharedResourceRoutes(g, deps)
+	registerSendAsRoutes(g, deps)
+}
+
+// GH #347: send-as delegation.
+func registerSendAsRoutes(g *gin.RouterGroup, deps M65RouteDeps) {
+	RegisterMailboxSendAsRoutes(g, MailboxSendAsHandlerConfig{
+		Mailboxes:       deps.Mailboxes,
+		Domains:         deps.Domains,
+		SendDelegations: deps.SendDelegations,
+		Agent:           deps.Agent,
+	})
 }
 
 // Wave B: forwarders.

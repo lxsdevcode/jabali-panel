@@ -682,6 +682,10 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 		if deps.DB != nil {
 			srRepo = repository.NewSharedResourceRepository(deps.DB)
 		}
+		var sendDelegRepo repository.MailboxSendDelegationRepository
+		if deps.DB != nil {
+			sendDelegRepo = repository.NewMailboxSendDelegationRepository(deps.DB)
+		}
 		api.RegisterM65Routes(mailGroup, api.M65RouteDeps{
 			Agent:           deps.Agent,
 			Domains:         deps.Domains,
@@ -690,6 +694,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 			Forwarders:      deps.Forwarders,
 			MailboxShares:   deps.MailboxShares,
 			SharedResources: srRepo,
+			SendDelegations: sendDelegRepo,
 		})
 		// DNSSEC per-domain (ADR-0076). Standalone mount; not part of M6.5.
 		api.RegisterDomainDNSSECRoutes(v1, api.DomainDNSSECHandlerConfig{

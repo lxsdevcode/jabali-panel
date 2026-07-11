@@ -439,6 +439,26 @@ func runServe(cmd *cobra.Command, args []string) error {
 				log.Warn("snuffleupagus boot-reconcile failed", "err", err)
 			}
 		}(deps.SnuffleupagusReconciler)
+		// GH #347: boot-time send-as reconcile. panel-api reconciles on every
+		// delegation change, but a fresh install / DB restore / stalwart reset can
+		// leave Stalwart's mustMatchSender expression out of sync with the
+		// mailbox_send_delegations table. Re-derive it once at startup so the
+		// expression always matches the DB (0 pairs -> stock "true"; this is the
+		// install/update-safe path — it runs on every boot, install_sh_is_truth).
+		if sharedDB != nil && sharedAgent != nil {
+			go func() {
+				rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer rcancel()
+				pairs, err := repository.NewMailboxSendDelegationRepository(sharedDB).ListAllPairs(rctx)
+				if err != nil {
+					log.Warn("sendas boot-reconcile: list pairs failed", "err", err)
+					return
+				}
+				if _, err := sharedAgent.Call(rctx, "mail.sendas.reconcile", map[string]any{"pairs": pairs}); err != nil {
+					log.Warn("sendas boot-reconcile: agent push failed", "err", err)
+				}
+			}()
+		}
 		// Bundle dir resolution: prefer the on-disk install path
 		// (set by `make install` / install.sh); fall back to the source
 		// tree for dev. The route handler also defaults to the same
