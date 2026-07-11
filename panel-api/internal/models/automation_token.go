@@ -23,6 +23,46 @@ type AutomationToken struct {
 	LastUsedAt *time.Time       `gorm:"column:last_used_at;type:datetime(6)" json:"last_used_at,omitempty"`
 	LastUsedIP *string          `gorm:"column:last_used_ip;type:varchar(45)" json:"last_used_ip,omitempty"`
 	RevokedAt  *time.Time       `gorm:"column:revoked_at;type:datetime(6)" json:"revoked_at,omitempty"`
+	// JAB-140: write-token safety. A write token is a headless, server-wide
+	// admin key, so it carries extra guards independent of its scopes:
+	//   WritesEnabled — master switch; false pauses ALL writes (reads unaffected).
+	//   ExpiresAt     — optional short expiry; past → 401 (nil = no expiry).
+	//   IPAllowlist   — optional CIDR set; client IP must match (empty/nil = any).
+	WritesEnabled bool       `gorm:"column:writes_enabled;type:tinyint(1);not null;default:1" json:"writes_enabled"`
+	ExpiresAt     *time.Time `gorm:"column:expires_at;type:datetime(6)" json:"expires_at,omitempty"`
+	IPAllowlist   CIDRList   `gorm:"column:ip_allowlist_json;type:json" json:"ip_allowlist,omitempty"`
+}
+
+// CIDRList is a JSON-serialised []string of CIDR / IP entries for a token's IP
+// allowlist (JAB-140). nil / empty = no restriction.
+type CIDRList []string
+
+func (c *CIDRList) Scan(src any) error {
+	if src == nil {
+		*c = nil
+		return nil
+	}
+	var b []byte
+	switch v := src.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return errors.New("cidr_list: unsupported scan type")
+	}
+	if len(b) == 0 {
+		*c = nil
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}
+
+func (c CIDRList) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	return json.Marshal(c)
 }
 
 func (AutomationToken) TableName() string { return "automation_tokens" }
@@ -93,6 +133,20 @@ var AllowedAutomationScopes = []string{
 	"read:applications",
 	"read:status",
 	"read:mail",
+	// JAB-140 write scopes — least-privilege, independent of read. read:* does
+	// NOT imply any write scope (Has() wildcard is prefix-scoped).
+	"write:*",
+	"write:services",
+	"write:users",
+	"write:domains",
+	"write:cache",
+	"write:backups",
+	// JAB-140 delete scopes — RESERVED (no destructive endpoint ships in M2).
+	// Kept distinct from write:* so a create-capable token can never
+	// cascade-delete; a future destructive verb must demand delete:<resource>.
+	"delete:*",
+	"delete:users",
+	"delete:domains",
 }
 
 // IsAllowedAutomationScope reports whether s is a recognised automation scope.
@@ -105,33 +159,70 @@ func IsAllowedAutomationScope(s string) bool {
 	return false
 }
 
-// HasReadWildcardConflict reports whether a scope list contains BOTH read:* and
-// an individual read:<resource> scope — a redundant/confusing combination the
-// mint flow rejects (JAB-84): a token is either wildcard or explicit, not both.
-func HasReadWildcardConflict(scopes []string) bool {
+// scopeFamilies are the wildcard prefixes checked for the "both wildcard and an
+// explicit child" conflict + dedup. JAB-140 extends the JAB-84 read-only logic
+// symmetrically to write:* and delete:*.
+var scopeFamilies = []string{"read:", "write:", "delete:"}
+
+// hasWildcardConflictFamily reports whether the list holds BOTH "<fam>*" and an
+// explicit "<fam><resource>" (fam includes the trailing colon, e.g. "read:").
+func hasWildcardConflictFamily(scopes []string, fam string) bool {
+	wildcard := fam + "*"
 	var wild, child bool
 	for _, s := range scopes {
-		if s == "read:*" {
+		if s == wildcard {
 			wild = true
-		} else if strings.HasPrefix(s, "read:") {
+		} else if strings.HasPrefix(s, fam) {
 			child = true
 		}
 	}
 	return wild && child
 }
 
-// NormalizeScopes drops redundant individual read:<resource> scopes when read:*
-// is present, so existing mixed tokens display cleanly (JAB-84). Order preserved.
+// HasWildcardConflict reports whether ANY scope family (read/write/delete) has a
+// wildcard + explicit-child conflict — a redundant combination the mint flow
+// rejects: within a family a token is either wildcard or explicit, not both.
+func HasWildcardConflict(scopes []string) bool {
+	for _, fam := range scopeFamilies {
+		if hasWildcardConflictFamily(scopes, fam) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasReadWildcardConflict is retained for callers that predate JAB-140; it now
+// covers every scope family via HasWildcardConflict.
+func HasReadWildcardConflict(scopes []string) bool { return HasWildcardConflict(scopes) }
+
+// NormalizeScopes drops redundant explicit "<fam><resource>" scopes when the
+// family wildcard "<fam>*" is present, per family (JAB-84 + JAB-140). Order
+// preserved.
 func NormalizeScopes(scopes []string) []string {
-	if !HasReadWildcardConflict(scopes) {
+	if !HasWildcardConflict(scopes) {
 		return scopes
+	}
+	// A family is deduped only when its own wildcard is present.
+	wildFam := map[string]bool{}
+	for _, s := range scopes {
+		for _, fam := range scopeFamilies {
+			if s == fam+"*" {
+				wildFam[fam] = true
+			}
+		}
 	}
 	out := make([]string, 0, len(scopes))
 	for _, s := range scopes {
-		if s != "read:*" && strings.HasPrefix(s, "read:") {
-			continue // covered by read:*
+		drop := false
+		for _, fam := range scopeFamilies {
+			if wildFam[fam] && s != fam+"*" && strings.HasPrefix(s, fam) {
+				drop = true
+				break
+			}
 		}
-		out = append(out, s)
+		if !drop {
+			out = append(out, s)
+		}
 	}
 	return out
 }

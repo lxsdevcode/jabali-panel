@@ -398,6 +398,11 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Mailboxes:  deps.Mailboxes,
 				MailGroups: deps.MailGroups,
 				Forwarders: deps.Forwarders,
+				// JAB-140 write layer: async-op tracker + write audit + M30 backup path.
+				Operations:  automationOps(deps.DB),
+				Audits:      automationAudits(deps.DB),
+				BackupJobs:  automationBackupJobs(deps.DB),
+				BackupDests: automationBackupDests(deps.DB),
 			})
 		}
 
@@ -1313,4 +1318,36 @@ func cacheHMACSecret() string {
 		return s
 	}
 	return ""
+}
+
+// automationOps builds the JAB-140 async-operation repo (nil when no DB).
+func automationOps(db *gorm.DB) repository.AutomationOperationRepository {
+	if db == nil {
+		return nil
+	}
+	return repository.NewAutomationOperationRepository(db)
+}
+
+// automationAudits builds the write-audit repo for the automation write layer.
+func automationAudits(db *gorm.DB) repository.AuditEventRepository {
+	if db == nil {
+		return nil
+	}
+	return repository.NewAuditEventRepository(db)
+}
+
+// automationBackupJobs / automationBackupDests wire the M30 system-backup path
+// into the automation write layer (JAB-140).
+func automationBackupJobs(db *gorm.DB) repository.BackupJobRepository {
+	if db == nil {
+		return nil
+	}
+	return repository.NewBackupJobRepository(db)
+}
+
+func automationBackupDests(db *gorm.DB) repository.BackupDestinationRepository {
+	if db == nil {
+		return nil
+	}
+	return repository.NewBackupDestinationRepository(db)
 }

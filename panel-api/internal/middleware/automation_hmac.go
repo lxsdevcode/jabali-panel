@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,15 +39,19 @@ import (
 
 const (
 	autoCtxTokenKey = "jabali_automation_token"
+	autoCtxBodyKey  = "jabali_automation_signed_body" // the exact bytes the sig covers
 	autoMaxSkew     = 5 * time.Minute
-	autoMaxBody     = 1 << 20 // 1 MiB cap on signed body — read-only API doesn't take bigger
-	// autoReplayTTL covers the skew window + 1-min grace so a sig
-	// arriving at the trailing edge can't be replayed mid-tick.
-	// Replay key shape: "automation:replay:<kid>:<sig>" — per-token
-	// scoping prevents one token's collision space from leaking
-	// across tenants. sig is already a 64-byte HMAC hex; no
-	// further hashing needed.
-	autoReplayTTL = autoMaxSkew + time.Minute
+	// autoFutureSkew bounds how far ahead of the server clock a timestamp may be
+	// (JAB-140). A well-behaved client is never >30s ahead; rejecting further-
+	// future timestamps shrinks the replay-acceptance window for write requests.
+	autoFutureSkew = 30 * time.Second
+	autoMaxBody    = 1 << 20 // 1 MiB cap on signed body
+	// autoReplayTTL MUST outlive the entire acceptance window, else a signature
+	// used at the leading edge can be replayed after its nonce expires but while
+	// its timestamp is still valid (JAB-140 fix — the old maxSkew+1min was
+	// shorter than the ~2×maxSkew acceptance span, a replay hole). Key shape:
+	// "automation:replay:<kid>:<sig>" — per-token scoped; sig is 64-byte hex.
+	autoReplayTTL = 2 * autoMaxSkew
 )
 
 // AutomationToken returns the verified token from the context, or nil
@@ -101,7 +106,9 @@ func RequireAutomationHMAC(repo repository.AutomationTokenRepository, key *ssoke
 			return
 		}
 		ts := time.Unix(tsInt, 0)
-		if d := time.Since(ts); d > autoMaxSkew || d < -autoMaxSkew {
+		// d>0 = timestamp in the past, d<0 = in the future. Allow up to
+		// autoMaxSkew in the past but only autoFutureSkew in the future (JAB-140).
+		if d := time.Since(ts); d > autoMaxSkew || d < -autoFutureSkew {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "timestamp outside window"})
 			return
 		}
@@ -111,6 +118,17 @@ func RequireAutomationHMAC(repo repository.AutomationTokenRepository, key *ssoke
 		defer cancel()
 		tok, err := repo.FindByID(ctx, kid)
 		if err != nil || tok == nil || tok.RevokedAt != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+
+		// JAB-140 token guards, enforced on every request (read or write) — they
+		// are no-ops for legacy read tokens (ExpiresAt nil, IPAllowlist empty).
+		if tok.ExpiresAt != nil && time.Now().After(*tok.ExpiresAt) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+		if len(tok.IPAllowlist) > 0 && !ipInAllowlist(c.ClientIP(), tok.IPAllowlist) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
@@ -138,6 +156,10 @@ func RequireAutomationHMAC(repo repository.AutomationTokenRepository, key *ssoke
 			// Restore for downstream handler via a fresh reader.
 			c.Request.Body = io.NopCloser(strings.NewReader(string(body)))
 		}
+		// Stash the EXACT signed bytes so write handlers can parse them via
+		// bindSigned instead of re-reading the request stream — what's validated
+		// is then guaranteed to be what was signed (JAB-140).
+		c.Set(autoCtxBodyKey, body)
 
 		// Recompute signature.
 		bodyHash := sha256.Sum256(body)
@@ -231,6 +253,41 @@ func parseAutoAuthParams(s string) map[string]string {
 // also faster.
 func fmtReplayKey(kid, sig string) string {
 	return "automation:replay:" + kid + ":" + sig
+}
+
+// SignedBody returns the exact request body bytes the HMAC signature covered,
+// stashed by RequireAutomationHMAC. Write handlers parse THESE (via bindSigned)
+// so what's validated equals what was signed. nil when there was no body.
+func SignedBody(c *gin.Context) []byte {
+	v, ok := c.Get(autoCtxBodyKey)
+	if !ok {
+		return nil
+	}
+	b, _ := v.([]byte)
+	return b
+}
+
+// ipInAllowlist reports whether ip is covered by any entry in list. Entries may
+// be a plain IP ("203.0.113.4") or a CIDR ("203.0.113.0/24"). An unparseable
+// client IP or malformed entry never matches (fail-closed).
+func ipInAllowlist(ip string, list []string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, entry := range list {
+		entry = strings.TrimSpace(entry)
+		if strings.Contains(entry, "/") {
+			if _, cidr, err := net.ParseCIDR(entry); err == nil && cidr.Contains(parsed) {
+				return true
+			}
+			continue
+		}
+		if e := net.ParseIP(entry); e != nil && e.Equal(parsed) {
+			return true
+		}
+	}
+	return false
 }
 
 // RequireScope returns a middleware that 403s when the verified

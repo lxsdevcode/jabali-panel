@@ -53,6 +53,17 @@ type AutomationConfig struct {
 	Mailboxes  repository.MailboxRepository
 	MailGroups repository.MailGroupRepository
 	Forwarders repository.EmailForwarderRepository
+	// JAB-140 write layer. Operations powers async backups + the idempotency
+	// ledger; Audits records every write (M49). Backups drives POST /backups.
+	// All optional — a nil repo/agent drops the matching write route (mirrors
+	// the read routes' feature-off behaviour).
+	Operations repository.AutomationOperationRepository
+	Audits     repository.AuditEventRepository
+	// Backup wiring (JAB-140): reuse the M30 system-backup path so automation
+	// goes through the same job model + destination the GUI uses. When either is
+	// nil the async backup still enqueues but resolves to an error op (no dest).
+	BackupJobs  repository.BackupJobRepository
+	BackupDests repository.BackupDestinationRepository
 }
 
 func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
@@ -231,6 +242,10 @@ func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
 			})
 		})
 	}
+
+	// JAB-140 write layer + capabilities (additive; each route self-guards on
+	// its repo/agent being present, mirroring the read routes).
+	registerAutomationWrites(g, cfg)
 }
 
 // automationMetrics caches the aggregated server metrics for a short TTL so a
