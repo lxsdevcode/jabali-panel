@@ -28,6 +28,8 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { RequireAdmin } from "./auth/RequireAdmin";
 import { RequireUser } from "./auth/RequireUser";
 import useMuiTheme from "./muiTheme";
+import { useTranslation } from "react-i18next";
+import { antdLocale, isRTL } from "./i18n";
 import { queryClient } from "./query";
 import { AdminLayout } from "./shells/AdminLayout";
 import { UserLayout } from "./shells/UserLayout";
@@ -146,6 +148,10 @@ const PANEL_FONT_PX: Record<string, number> = { small: 13, medium: 15, large: 17
 
 const ThemedApp = () => {
   const { mode } = useThemeMode();
+  // Re-render the ConfigProvider when the language changes so AntD picks up
+  // the new locale strings + text direction (RTL for he/ar).
+  const { i18n } = useTranslation();
+  const lng = i18n.resolvedLanguage ?? "en";
   const { fontSize, colors, chrome } = useBranding();
   // Branding "Look and feel": font size + operator colors feed the antd
   // ConfigProvider seed tokens so the whole panel scales/recolors for everyone.
@@ -176,6 +182,8 @@ const ThemedApp = () => {
     <BrowserRouter>
       <ConfigProvider
         {...muiConfig}
+        locale={antdLocale(lng)}
+        direction={isRTL(lng) ? "rtl" : "ltr"}
         renderEmpty={() => <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
       >
         <AntdApp>

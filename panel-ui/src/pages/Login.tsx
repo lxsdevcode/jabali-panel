@@ -30,6 +30,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { clearIdentity, getIdentity } from "../identity";
 import type { MeUser } from "../auth/AuthContext";
 import { useThemeMode } from "../theme/ThemeModeContext";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 
 // Post-M21 inline: authProvider.ts used to export this. It's a
 // trivial two-branch map, not worth its own module now that no
@@ -51,6 +53,7 @@ import {
 } from "../kratos";
 
 export const LoginPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { token } = theme.useToken();
@@ -91,9 +94,7 @@ export const LoginPage = () => {
       })
       .catch(() => {
         if (cancelled) return;
-        setInitError(
-          "Could not start the sign-in flow. Check that the identity service is running and refresh the page.",
-        );
+        setInitError(t("login.flowError"));
       })
       .finally(() => {
         if (!cancelled) setLoadingFlow(false);
@@ -225,8 +226,8 @@ export const LoginPage = () => {
             <Alert
               type="warning"
               showIcon
-              message="Log in using your hostname, not the IP"
-              description="The identity provider is bound to the panel hostname, so signing in over the server IP address won't work. Open the panel by its hostname (the URL shown after install) and try again."
+              message={t("login.hostnameWarningTitle")}
+              description={t("login.hostnameWarningDescription")}
             />
           )}
 
@@ -261,13 +262,14 @@ type FlowFormProps = {
  * hidden inputs on submission.
  */
 function FlowForm({ flow, onFinish }: FlowFormProps) {
+  const { t } = useTranslation();
   const topErrors = flowMessages(flow);
   const activeGroup = pickActiveGroup(flow);
 
   if (!activeGroup) {
     return (
       <Alert
-        message="No credential method is currently configured for your account. Contact an administrator."
+        message={t("login.noCredentialMethod")}
         type="warning"
         showIcon
       />
@@ -384,13 +386,13 @@ function renderField(f: RenderableField) {
       key={f.name}
       name={f.name}
       label={f.label ?? humanizeName(f.name)}
-      rules={[{ required: f.required, message: "Required" }]}
+      rules={[{ required: f.required, message: i18n.t("login.fieldRequired") }]}
       help={f.errors.length ? f.errors.join("; ") : undefined}
       validateStatus={f.errors.length ? "error" : undefined}
       // GH #545: operators keep entering their email here and get "invalid
       // credentials" — login is by username (the email is contact-only in the
       // identity schema). Nudge them on the identifier field.
-      extra={f.name === "identifier" ? "Use your username, not your email." : undefined}
+      extra={f.name === "identifier" ? i18n.t("login.identifierHint") : undefined}
     >
       {Control}
     </Form.Item>
@@ -408,13 +410,13 @@ function humanizeName(name: string): string {
 function groupTitle(group: string): string | null {
   switch (group) {
     case "totp":
-      return "Enter the 6-digit code from your authenticator app.";
+      return i18n.t("login.totpHint");
     case "lookup_secret":
-      return "Enter one of your backup codes.";
+      return i18n.t("login.backupCodeHint");
     case "password":
       return null; // Email + Password labels are self-explanatory.
     case "webauthn":
-      return "Use your security key to sign in.";
+      return i18n.t("login.webauthnHint");
     default:
       return null;
   }
@@ -424,8 +426,8 @@ function submitLabel(group: string): string {
   switch (group) {
     case "totp":
     case "lookup_secret":
-      return "Verify";
+      return i18n.t("login.submitVerify");
     default:
-      return "Sign in";
+      return i18n.t("login.submitSignIn");
   }
 }

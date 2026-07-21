@@ -12,6 +12,8 @@ import { JabaliFooter } from "../components/JabaliFooter";
 import { ImpersonationBanner } from "../components/ImpersonationBanner";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { JabaliTitle } from "../components/JabaliTitle";
+import { useTranslation } from "react-i18next";
+
 import { selectedNavKey, userNav } from "../nav";
 import { BreadcrumbProvider } from "../components/admin/BreadcrumbContext";
 import { RouteBreadcrumb } from "../components/admin/RouteBreadcrumb";
@@ -38,6 +40,8 @@ export function UserLayout() {
   // hide its sidebar entry until an admin enables it (GH #229). The same
   // cached capability gates the route itself (CapabilityRoute, gap-audit #1).
   const { data: caps } = useServerCapabilities();
+  // nav.label holds an i18n key (see src/locales/en/common.json).
+  const { t } = useTranslation();
   const visibleNav = userNav.filter((n) => {
     if (n.key === "python-apps") return !!caps?.python_apps_enabled;
     if (n.key === "docker-apps") return !!caps?.docker_apps_user_enabled;
@@ -88,7 +92,7 @@ export function UserLayout() {
         items={visibleNav.map((n) => ({
           key: n.key,
           icon: n.icon,
-          label: n.label,
+          label: t(n.label),
           onClick: () => {
             navigate(n.path);
             setDrawerOpen(false);

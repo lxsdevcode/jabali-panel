@@ -12,6 +12,8 @@ import { useServerCapabilities } from "../hooks/useServerCapabilities";
 import { JabaliFooter } from "../components/JabaliFooter";
 import { JabaliHeader } from "../components/JabaliHeader";
 import { JabaliTitle } from "../components/JabaliTitle";
+import { useTranslation } from "react-i18next";
+
 import { adminNav, selectedNavKey } from "../nav";
 import { BreadcrumbProvider } from "../components/admin/BreadcrumbContext";
 import { RouteBreadcrumb } from "../components/admin/RouteBreadcrumb";
@@ -61,6 +63,8 @@ export function AdminLayout() {
   // siderBg follows colorBgLayout in both modes so the operator page/sidebar
   // chrome color (GH #435) applies; muiTheme sets the light default + override.
   const siderBg = token.colorBgLayout;
+  // nav.label / nav.description hold i18n keys (see src/locales/en/common.json).
+  const { t } = useTranslation();
 
   // Single source of truth for the menu items — used by both <Sider>
   // and <Drawer> so the two shell variants stay in lock-step.
@@ -77,11 +81,11 @@ export function AdminLayout() {
         // from flashing while scanning the list). Falls back to the plain label
         // when an item has no description.
         label: n.description ? (
-          <Tooltip title={n.description} placement="right" mouseEnterDelay={0.4}>
-            <span>{n.label}</span>
+          <Tooltip title={t(n.description)} placement="right" mouseEnterDelay={0.4}>
+            <span>{t(n.label)}</span>
           </Tooltip>
         ) : (
-          n.label
+          t(n.label)
         ),
         onClick: () => {
           navigate(n.path);

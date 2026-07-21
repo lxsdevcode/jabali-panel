@@ -7,6 +7,7 @@ import "@fontsource/inter/700.css";
 import "antd/dist/reset.css";
 import "./global.css";
 
+import "./i18n";
 import App from "./App";
 import { registerServiceWorker } from "./lib/registerServiceWorker";
 
