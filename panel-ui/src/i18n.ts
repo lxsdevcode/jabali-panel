@@ -7,39 +7,105 @@
 //   1. add `src/locales/<lng>/common.json` (Weblate creates it)
 //   2. import it below + add it to `resources` and `SUPPORTED`
 //   3. map its AntD + dayjs locale in `ANTD_LOCALES` / `DAYJS_LOCALES`
+//
+// Locale codes match the directory names, which are also what Weblate uses as
+// the language code (filemask `panel-ui/src/locales/*/common.json`).
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import type { Locale as AntdLocale } from "antd/es/locale";
 import enUS from "antd/locale/en_US";
 import heIL from "antd/locale/he_IL";
+import deDE from "antd/locale/de_DE";
+import esES from "antd/locale/es_ES";
+import frFR from "antd/locale/fr_FR";
+import itIT from "antd/locale/it_IT";
+import jaJP from "antd/locale/ja_JP";
+import ukUA from "antd/locale/uk_UA";
+import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";
 import "dayjs/locale/he";
+import "dayjs/locale/de";
+import "dayjs/locale/es";
+import "dayjs/locale/fr";
+import "dayjs/locale/it";
+import "dayjs/locale/ja";
+import "dayjs/locale/uk";
+import "dayjs/locale/zh-cn";
 
 import enCommon from "./locales/en/common.json";
 import heCommon from "./locales/he/common.json";
+import deCommon from "./locales/de/common.json";
+import esCommon from "./locales/es/common.json";
+import frCommon from "./locales/fr/common.json";
+import itCommon from "./locales/it/common.json";
+import jaCommon from "./locales/ja/common.json";
+import ukCommon from "./locales/uk/common.json";
+import zhHansCommon from "./locales/zh_Hans/common.json";
 
 export const DEFAULT_LNG = "en";
 
 /** Locales the panel ships. Keep in sync with src/locales/*. */
-export const SUPPORTED = ["en", "he"] as const;
+export const SUPPORTED = [
+  "en",
+  "he",
+  "de",
+  "es",
+  "fr",
+  "it",
+  "ja",
+  "uk",
+  "zh_Hans",
+] as const;
 export type SupportedLng = (typeof SUPPORTED)[number];
 
 /** Right-to-left scripts. Drives AntD's `direction` + the <html dir> attribute. */
 const RTL = new Set<string>(["he", "ar", "fa", "ur"]);
 
-const ANTD_LOCALES: Record<string, AntdLocale> = { en: enUS, he: heIL };
+const ANTD_LOCALES: Record<SupportedLng, AntdLocale> = {
+  en: enUS,
+  he: heIL,
+  de: deDE,
+  es: esES,
+  fr: frFR,
+  it: itIT,
+  ja: jaJP,
+  uk: ukUA,
+  zh_Hans: zhCN,
+};
+
 // dayjs ships "en" built in; every other locale must be imported above.
-const DAYJS_LOCALES: Record<string, string> = { en: "en", he: "he" };
+const DAYJS_LOCALES: Record<SupportedLng, string> = {
+  en: "en",
+  he: "he",
+  de: "de",
+  es: "es",
+  fr: "fr",
+  it: "it",
+  ja: "ja",
+  uk: "uk",
+  zh_Hans: "zh-cn",
+};
 
 const STORAGE_KEY = "jabali-lng";
 
-/** Normalise "he-IL" / "en-GB" down to a locale we actually ship. */
+/**
+ * Map anything the browser (or a stored preference) hands us onto a locale we
+ * actually ship. Handles both separators and script/region variants, so
+ * "zh-CN", "zh_Hans", "zh-Hant" and bare "zh" all resolve to `zh_Hans`, and
+ * "pt-PT" would resolve to a shipped "pt-*" if we add one.
+ */
 function normalise(raw: string | null | undefined): SupportedLng {
   if (!raw) return DEFAULT_LNG;
-  const base = raw.toLowerCase().split(/[-_]/)[0];
-  return (SUPPORTED as readonly string[]).includes(base)
-    ? (base as SupportedLng)
-    : DEFAULT_LNG;
+  const lower = raw.replace(/_/g, "-").toLowerCase();
+  const exact = SUPPORTED.find(
+    (l) => l.replace(/_/g, "-").toLowerCase() === lower,
+  );
+  if (exact) return exact;
+  const base = lower.split("-")[0];
+  const byBase = SUPPORTED.find(
+    (l) => l.replace(/_/g, "-").toLowerCase().split("-")[0] === base,
+  );
+  return byBase ?? DEFAULT_LNG;
 }
 
 /**
@@ -70,7 +136,8 @@ function applyDocumentLocale(lng: string): void {
   const l = normalise(lng);
   dayjs.locale(DAYJS_LOCALES[l] ?? "en");
   if (typeof document !== "undefined") {
-    document.documentElement.setAttribute("lang", l);
+    // BCP-47 in the DOM: zh_Hans -> zh-Hans
+    document.documentElement.setAttribute("lang", l.replace(/_/g, "-"));
     document.documentElement.setAttribute("dir", isRTL(l) ? "rtl" : "ltr");
   }
 }
@@ -97,6 +164,13 @@ void i18n.use(initReactI18next).init({
   resources: {
     en: { common: enCommon },
     he: { common: heCommon },
+    de: { common: deCommon },
+    es: { common: esCommon },
+    fr: { common: frCommon },
+    it: { common: itCommon },
+    ja: { common: jaCommon },
+    uk: { common: ukCommon },
+    zh_Hans: { common: zhHansCommon },
   },
   interpolation: {
     // React already escapes interpolated values.
