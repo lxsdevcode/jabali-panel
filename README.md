@@ -414,6 +414,48 @@ it reads `VERSION` to display the installed version. Always bump `VERSION`
 in the same commit as the corresponding `install.sh` changes — drift
 shows up as a mismatched footer and installer banner.
 
+## Translations
+
+[![Translation status](https://translate.jabali-panel.com/widget/jabali-panel/panel-ui/svg-badge.svg)](https://translate.jabali-panel.com/engage/jabali-panel/)
+
+The panel UI is translated on our self-hosted Weblate at
+**<https://translate.jabali-panel.com/>**. English is the source language; every
+other locale is written by translators there and merged back into this repo.
+
+Shipping locales: English (source), Hebrew, German, Spanish, French, Italian,
+Japanese, Ukrainian and Simplified Chinese.
+
+### For translators
+
+Sign up at [translate.jabali-panel.com](https://translate.jabali-panel.com/engage/jabali-panel/)
+and start translating — no coding, no git, no local setup. Read the project's
+translation instructions there first; the short version:
+
+- Do not translate product or protocol names (`nginx`, `MariaDB`, `Stalwart`,
+  `PHP-FPM`, `DNS`, `SSL`, ...) or anything in `backticks`.
+- Keep placeholders such as `{{count}}` exactly as they appear. You may move
+  one to fit your word order, but never rename or drop it.
+- Keep strings short. Most are buttons, menu items, table headers and form
+  labels, and a long translation breaks the layout.
+- Hebrew and Arabic render right-to-left. If a screen looks broken, report it
+  rather than shortening the text to work around it.
+- If an English string is ambiguous or wrong, comment on it instead of
+  guessing — it gets fixed at the source, once, for every language.
+
+Missing your language? Open an issue and we will add it.
+
+### For developers
+
+- **`panel-ui/src/locales/en/common.json` is the only catalog edited by hand.**
+  Weblate owns every other locale file; hand edits there will be overwritten.
+- User-facing text goes through `t("some.key")` (`react-i18next`), never a
+  hardcoded literal. Add the key and its English text to `en/common.json` in the
+  same commit that introduces it.
+- `panel-ui/src/i18n.ts` holds the locale list plus the AntD and dayjs locale
+  maps and the RTL set. Adding a locale means touching all three.
+- A key with no translation yet falls back to the English source, so a partially
+  translated locale never renders blank labels.
+
 ## Repository Layout
 
 ```
@@ -471,4 +513,6 @@ See the [`docs/`](docs/) directory for detailed guides:
   M22 SSO rework, M27 CrowdSec extensions, M30/M30.1 backups
 - [Known Issues](docs/KNOWN_ISSUES.md) — caveats + workarounds
 - [Contributing](docs/CONTRIBUTING.md) — feature development workflow
+- [Translations](https://translate.jabali-panel.com/) — Weblate instance; English
+  is the source catalog (`panel-ui/src/locales/en/common.json`)
 - [Environment](docs/ENV.md) — full env-var reference
