@@ -89,5 +89,53 @@
     "profile": "Perfil",
     "language": "Idioma",
     "sign_out": "Cerrar sesión"
+  },
+  "dashboard": {
+    "stats": {
+      "users": "Usuarios totales",
+      "domains": "Dominios activos",
+      "mailboxes": "Buzones"
+    },
+    "health": {
+      "healthy": "Correcto",
+      "critical": "{{count}} críticas",
+      "warning_one": "{{count}} aviso",
+      "warning_other": "{{count}} avisos"
+    },
+    "server_ip": "IP del servidor:",
+    "summary": "Resumen general. Para métricas en vivo, servicios, red y procesos, consulta Estado del servidor.",
+    "view_server_status": "Ver estado del servidor →",
+    "view_all": "Ver todo",
+    "recent_users": "Usuarios recientes",
+    "recent_domains": "Dominios recientes",
+    "recent_apps": "Aplicaciones recientes",
+    "packages": "Paquetes de alojamiento",
+    "empty": {
+      "users": "Aún no hay usuarios",
+      "domains": "Aún no hay dominios",
+      "apps": "Aún no hay aplicaciones",
+      "packages": "Aún no hay paquetes"
+    },
+    "col": {
+      "username": "Usuario",
+      "role": "Rol",
+      "domain": "Dominio",
+      "name": "Nombre",
+      "type": "Tipo",
+      "ssh": "SSH"
+    },
+    "role": {
+      "admin": "Administrador",
+      "user": "Usuario"
+    },
+    "ssh": {
+      "on": "activado",
+      "off": "desactivado"
+    },
+    "alert": {
+      "title_one": "{{count}} problema crítico en el host",
+      "title_other": "{{count}} problemas críticos en el host",
+      "action": "Abrir Estado del servidor para investigar →"
+    }
   }
 }

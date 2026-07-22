@@ -89,5 +89,57 @@
     "profile": "פרופיל",
     "language": "שפה",
     "sign_out": "התנתקות"
+  },
+  "dashboard": {
+    "stats": {
+      "users": "סך המשתמשים",
+      "domains": "דומיינים פעילים",
+      "mailboxes": "תיבות דואר"
+    },
+    "health": {
+      "healthy": "תקין",
+      "critical": "{{count}} קריטיות",
+      "warning_one": "אזהרה אחת",
+      "warning_two": "שתי אזהרות",
+      "warning_many": "{{count}} אזהרות",
+      "warning_other": "{{count}} אזהרות"
+    },
+    "server_ip": "כתובת IP של השרת:",
+    "summary": "סיכום כללי. למדדים חיים, שירותים, רשת ותהליכים ראו מצב השרת.",
+    "view_server_status": "הצגת מצב השרת ←",
+    "view_all": "הצג הכול",
+    "recent_users": "משתמשים אחרונים",
+    "recent_domains": "דומיינים אחרונים",
+    "recent_apps": "אפליקציות אחרונות",
+    "packages": "חבילות אחסון",
+    "empty": {
+      "users": "אין עדיין משתמשים",
+      "domains": "אין עדיין דומיינים",
+      "apps": "אין עדיין אפליקציות",
+      "packages": "אין עדיין חבילות"
+    },
+    "col": {
+      "username": "שם משתמש",
+      "role": "תפקיד",
+      "domain": "דומיין",
+      "name": "שם",
+      "type": "סוג",
+      "ssh": "SSH"
+    },
+    "role": {
+      "admin": "מנהל",
+      "user": "משתמש"
+    },
+    "ssh": {
+      "on": "פעיל",
+      "off": "כבוי"
+    },
+    "alert": {
+      "title_one": "בעיה קריטית אחת בשרת",
+      "title_two": "שתי בעיות קריטיות בשרת",
+      "title_many": "{{count}} בעיות קריטיות בשרת",
+      "title_other": "{{count}} בעיות קריטיות בשרת",
+      "action": "פתחו את מצב השרת לבדיקה ←"
+    }
   }
 }

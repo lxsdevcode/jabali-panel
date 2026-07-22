@@ -5,6 +5,7 @@
 // Server Status page.
 import { Alert, Button, Card, Col, Masonry, Row, Space, Table, Tag, Typography , Avatar} from "antd";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 
 import { ServerOutlined, TeamOutlined, GlobalOutlined, MailOutlined } from "@icons";
@@ -56,6 +57,7 @@ const formatCount = (n: number | undefined) =>
   n == null ? "—" : n.toLocaleString();
 
 export const Dashboard = () => {
+  const { t } = useTranslation();
   const status = useServerStatus();
   const env = status.data;
   const { data: caps } = useServerCapabilities();
@@ -96,16 +98,18 @@ export const Dashboard = () => {
   const critical = alerts.filter((a) => a.level === "critical").length;
   const warnings = alerts.filter((a) => a.level === "warning").length;
 
-  let healthTag = <Tag color="green">Healthy</Tag>;
-  if (critical > 0) healthTag = <Tag color="red">{critical} critical</Tag>;
-  else if (warnings > 0) healthTag = <Tag color="orange">{warnings} warning{warnings === 1 ? "" : "s"}</Tag>;
+  let healthTag = <Tag color="green">{t("dashboard.health.healthy")}</Tag>;
+  if (critical > 0)
+    healthTag = <Tag color="red">{t("dashboard.health.critical", { count: critical })}</Tag>;
+  else if (warnings > 0)
+    healthTag = <Tag color="orange">{t("dashboard.health.warning", { count: warnings })}</Tag>;
 
   return (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={8}>
           <StatCard
-            label="Total Users"
+            label={t("dashboard.stats.users")}
             value={formatCount(users.data)}
             icon={<TeamOutlined />}
             iconBg="rgba(22, 119, 255, 0.12)"
@@ -115,7 +119,7 @@ export const Dashboard = () => {
         </Col>
         <Col xs={24} sm={8}>
           <StatCard
-            label="Active Domains"
+            label={t("dashboard.stats.domains")}
             value={formatCount(domains.data)}
             icon={<GlobalOutlined />}
             iconBg="rgba(146, 84, 222, 0.14)"
@@ -125,7 +129,7 @@ export const Dashboard = () => {
         </Col>
         <Col xs={24} sm={8}>
           <StatCard
-            label="Mailboxes"
+            label={t("dashboard.stats.mailboxes")}
             value={formatCount(mailboxes.data)}
             icon={<MailOutlined />}
             iconBg="rgba(250, 140, 22, 0.14)"
@@ -153,7 +157,7 @@ export const Dashboard = () => {
                   </Space>
                   {caps?.public_ipv4 || caps?.public_ipv6 ? (
                     <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                      Server IP:{" "}
+                      {t("dashboard.server_ip")}{" "}
                       {caps?.public_ipv4 ? (
                         <Typography.Text copyable code style={{ fontSize: 13 }}>
                           {caps.public_ipv4}
@@ -171,12 +175,11 @@ export const Dashboard = () => {
                     </Typography.Text>
                   ) : null}
                   <Typography.Text type="secondary">
-                    Top-level summary. For live metrics, services, network, and processes,
-                    see Server Status.
+                    {t("dashboard.summary")}
                   </Typography.Text>
                   <Link to="/jabali-admin/server-status">
                     <Button type="primary" icon={<ServerOutlined />}>
-                      View server status →
+                      {t("dashboard.view_server_status")}
                     </Button>
                   </Link>
                 </Space>
@@ -188,9 +191,9 @@ export const Dashboard = () => {
             data: null,
             children: (
               <Card
-                title="Recent Users"
+                title={t("dashboard.recent_users")}
                 size="small"
-                extra={<Link to="/jabali-admin/users"><Button type="primary" size="small">View all</Button></Link>}
+                extra={<Link to="/jabali-admin/users"><Button type="primary" size="small">{t("dashboard.view_all")}</Button></Link>}
               >
                 <Table<UserRow>
                   size="small"
@@ -198,10 +201,10 @@ export const Dashboard = () => {
                   pagination={false}
                   loading={recentUsers.isLoading}
                   dataSource={recentUsers.items}
-                  locale={{ emptyText: "No users yet" }}
+                  locale={{ emptyText: t("dashboard.empty.users") }}
                   columns={[
                     {
-                      title: "Username",
+                      title: t("dashboard.col.username"),
                       key: "username",
                       ellipsis: true,
                       render: (_: unknown, r: UserRow) => {
@@ -240,11 +243,11 @@ export const Dashboard = () => {
                       },
                     },
                     {
-                      title: "Role",
+                      title: t("dashboard.col.role"),
                       dataIndex: "is_admin",
                       width: 90,
                       render: (v: boolean) =>
-                        v ? <Tag color="blue">Admin</Tag> : <Tag>User</Tag>,
+                        v ? <Tag color="blue">{t("dashboard.role.admin")}</Tag> : <Tag>{t("dashboard.role.user")}</Tag>,
                     },
                   ]}
                 />
@@ -256,9 +259,9 @@ export const Dashboard = () => {
             data: null,
             children: (
               <Card
-                title="Recent Domains"
+                title={t("dashboard.recent_domains")}
                 size="small"
-                extra={<Link to="/jabali-admin/domains"><Button type="primary" size="small">View all</Button></Link>}
+                extra={<Link to="/jabali-admin/domains"><Button type="primary" size="small">{t("dashboard.view_all")}</Button></Link>}
               >
                 <Table<DomainRow>
                   size="small"
@@ -266,10 +269,10 @@ export const Dashboard = () => {
                   pagination={false}
                   loading={recentDomains.isLoading}
                   dataSource={recentDomains.items}
-                  locale={{ emptyText: "No domains yet" }}
+                  locale={{ emptyText: t("dashboard.empty.domains") }}
                   columns={[
                     {
-                      title: "Domain",
+                      title: t("dashboard.col.domain"),
                       dataIndex: "name",
                       ellipsis: true,
                       render: (v: string) => (
@@ -289,9 +292,9 @@ export const Dashboard = () => {
             data: null,
             children: (
               <Card
-                title="Recent Applications"
+                title={t("dashboard.recent_apps")}
                 size="small"
-                extra={<Link to="/jabali-admin/applications"><Button type="primary" size="small">View all</Button></Link>}
+                extra={<Link to="/jabali-admin/applications"><Button type="primary" size="small">{t("dashboard.view_all")}</Button></Link>}
               >
                 <Table<ApplicationRow>
                   size="small"
@@ -299,17 +302,17 @@ export const Dashboard = () => {
                   pagination={false}
                   loading={recentApps.isLoading}
                   dataSource={recentApps.items}
-                  locale={{ emptyText: "No applications yet" }}
+                  locale={{ emptyText: t("dashboard.empty.apps") }}
                   columns={[
                     {
-                      title: "Name",
+                      title: t("dashboard.col.name"),
                       dataIndex: "name",
                       ellipsis: true,
                       render: (v: string | undefined, r) =>
                         v ?? r.domain_name ?? r.domain ?? "—",
                     },
                     {
-                      title: "Type",
+                      title: t("dashboard.col.type"),
                       dataIndex: "type",
                       width: 110,
                       render: (v: string | undefined, r) => v ?? r.app_type ?? "—",
@@ -324,9 +327,9 @@ export const Dashboard = () => {
             data: null,
             children: (
               <Card
-                title="Hosting Packages"
+                title={t("dashboard.packages")}
                 size="small"
-                extra={<Link to="/jabali-admin/packages"><Button type="primary" size="small">View all</Button></Link>}
+                extra={<Link to="/jabali-admin/packages"><Button type="primary" size="small">{t("dashboard.view_all")}</Button></Link>}
               >
                 <Table<PackageRow>
                   size="small"
@@ -334,15 +337,15 @@ export const Dashboard = () => {
                   pagination={false}
                   loading={allPackages.isLoading}
                   dataSource={allPackages.items}
-                  locale={{ emptyText: "No packages yet" }}
+                  locale={{ emptyText: t("dashboard.empty.packages") }}
                   columns={[
-                    { title: "Name", dataIndex: "name", ellipsis: true },
+                    { title: t("dashboard.col.name"), dataIndex: "name", ellipsis: true },
                     {
-                      title: "SSH",
+                      title: t("dashboard.col.ssh"),
                       dataIndex: "ssh_enabled",
                       width: 80,
                       render: (v: boolean) =>
-                        v ? <Tag color="green">on</Tag> : <Tag>off</Tag>,
+                        v ? <Tag color="green">{t("dashboard.ssh.on")}</Tag> : <Tag>{t("dashboard.ssh.off")}</Tag>,
                     },
                   ]}
                 />
@@ -358,10 +361,10 @@ export const Dashboard = () => {
                     <Alert
                       type="error"
                       showIcon
-                      message={`${critical} critical issue${critical === 1 ? "" : "s"} on host`}
+                      message={t("dashboard.alert.title", { count: critical })}
                       description={
                         <Link to="/jabali-admin/server-status">
-                          Open Server Status to investigate →
+                          {t("dashboard.alert.action")}
                         </Link>
                       }
                     />

@@ -89,5 +89,53 @@
     "profile": "Profile",
     "language": "Language",
     "sign_out": "Sign out"
+  },
+  "dashboard": {
+    "stats": {
+      "users": "Total Users",
+      "domains": "Active Domains",
+      "mailboxes": "Mailboxes"
+    },
+    "health": {
+      "healthy": "Healthy",
+      "critical": "{{count}} critical",
+      "warning_one": "{{count}} warning",
+      "warning_other": "{{count}} warnings"
+    },
+    "server_ip": "Server IP:",
+    "summary": "Top-level summary. For live metrics, services, network, and processes, see Server Status.",
+    "view_server_status": "View server status →",
+    "view_all": "View all",
+    "recent_users": "Recent Users",
+    "recent_domains": "Recent Domains",
+    "recent_apps": "Recent Applications",
+    "packages": "Hosting Packages",
+    "empty": {
+      "users": "No users yet",
+      "domains": "No domains yet",
+      "apps": "No applications yet",
+      "packages": "No packages yet"
+    },
+    "col": {
+      "username": "Username",
+      "role": "Role",
+      "domain": "Domain",
+      "name": "Name",
+      "type": "Type",
+      "ssh": "SSH"
+    },
+    "role": {
+      "admin": "Admin",
+      "user": "User"
+    },
+    "ssh": {
+      "on": "on",
+      "off": "off"
+    },
+    "alert": {
+      "title_one": "{{count}} critical issue on host",
+      "title_other": "{{count}} critical issues on host",
+      "action": "Open Server Status to investigate →"
+    }
   }
 }
