@@ -84,5 +84,10 @@
     "webauthnHint": "Use your security key to sign in.",
     "submitVerify": "Verify",
     "submitSignIn": "Sign in"
+  },
+  "menu": {
+    "profile": "Profile",
+    "language": "Language",
+    "sign_out": "Sign out"
   }
 }

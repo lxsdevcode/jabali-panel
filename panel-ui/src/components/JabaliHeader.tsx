@@ -12,6 +12,8 @@
 // search box is still useful when the right row isn't in the top-5.
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CheckOutlined,
+  GlobalOutlined,
   LogoutOutlined,
   MenuOutlined,
   SearchOutlined,
@@ -32,9 +34,11 @@ import {
 import type { MenuProps } from "antd";
 import type { BaseSelectRef } from "@rc-component/select";
 import { useLocation, useNavigate } from "react-router";
+import { useTranslation } from "react-i18next";
 
 import { apiClient } from "../apiClient";
 import { useAuth } from "../auth/AuthContext";
+import { LANGUAGE_LABELS, SUPPORTED, setLanguage } from "../i18n";
 import { adminNav, userNav } from "../nav";
 import { JabaliTitle } from "./JabaliTitle";
 import { InstallAppButton } from "./InstallAppButton";
@@ -74,6 +78,7 @@ type JabaliHeaderProps = {
 
 export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHeaderProps = {}) {
   const { user, logout } = useAuth();
+  const { t, i18n } = useTranslation();
   const { token } = theme.useToken();
   const [query, setQuery] = useState("");
   const [groups, setGroups] = useState<OptionGroup[]>([]);
@@ -269,7 +274,7 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
     {
       key: "profile",
       icon: <UserOutlined />,
-      label: "Profile",
+      label: t("menu.profile"),
       onClick: () => {
         // Each shell has its own /profile route mounted on the same
         // MyProfile component. RequireUser bounces admins out of the
@@ -277,11 +282,33 @@ export function JabaliHeader({ showMenuButton = false, onMenuClick }: JabaliHead
         navigate(isAdminShell ? "/jabali-admin/profile" : "/jabali-panel/profile");
       },
     },
+    {
+      key: "language",
+      icon: <GlobalOutlined />,
+      label: t("menu.language"),
+      // Each entry is named in its own language so it stays recognisable to
+      // someone who cannot read the language the panel is currently in. The
+      // checkmark marks the active one; the others get an equal-width spacer
+      // so the labels stay on a single left edge.
+      children: SUPPORTED.map((lng) => ({
+        key: `lang:${lng}`,
+        label: LANGUAGE_LABELS[lng],
+        icon:
+          lng === i18n.resolvedLanguage ? (
+            <CheckOutlined />
+          ) : (
+            <span style={{ display: "inline-block", width: "1em" }} />
+          ),
+        onClick: () => {
+          void setLanguage(lng);
+        },
+      })),
+    },
     { type: "divider" },
     {
       key: "logout",
       icon: <LogoutOutlined />,
-      label: "Sign out",
+      label: t("menu.sign_out"),
       onClick: handleLogout,
     },
   ];

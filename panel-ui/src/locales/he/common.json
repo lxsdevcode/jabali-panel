@@ -84,5 +84,10 @@
     "webauthnHint": "השתמשו במפתח האבטחה כדי להתחבר.",
     "submitVerify": "אימות",
     "submitSignIn": "התחברות"
+  },
+  "menu": {
+    "profile": "פרופיל",
+    "language": "שפה",
+    "sign_out": "התנתקות"
   }
 }

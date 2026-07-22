@@ -84,5 +84,10 @@
     "webauthnHint": "Usa tu llave de seguridad para acceder.",
     "submitVerify": "Verificar",
     "submitSignIn": "Iniciar sesión"
+  },
+  "menu": {
+    "profile": "Perfil",
+    "language": "Idioma",
+    "sign_out": "Cerrar sesión"
   }
 }

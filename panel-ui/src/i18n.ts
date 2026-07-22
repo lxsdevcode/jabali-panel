@@ -74,6 +74,29 @@ export const SUPPORTED = [
 ] as const;
 export type SupportedLng = (typeof SUPPORTED)[number];
 
+/**
+ * Language names written in the language itself, which is what a switcher
+ * needs: someone who cannot read the current UI language still recognises
+ * their own. Intl.DisplayNames would compute these, but it renders them in
+ * the *active* locale, so a Hebrew UI would list "גרמנית" instead of
+ * "Deutsch" and the entry stops being self-identifying.
+ */
+export const LANGUAGE_LABELS: Record<SupportedLng, string> = {
+  en: "English",
+  he: "עברית",
+  de: "Deutsch",
+  es: "Español",
+  fr: "Français",
+  it: "Italiano",
+  ja: "日本語",
+  uk: "Українська",
+  zh_Hans: "中文（简体）",
+  pt_BR: "Português (Brasil)",
+  ru: "Русский",
+  tr: "Türkçe",
+  ar: "العربية",
+};
+
 /** Right-to-left scripts. Drives AntD's `direction` + the <html dir> attribute. */
 const RTL = new Set<string>(["he", "ar", "fa", "ur"]);
 
