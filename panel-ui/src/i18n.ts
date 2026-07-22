@@ -22,6 +22,10 @@ import itIT from "antd/locale/it_IT";
 import jaJP from "antd/locale/ja_JP";
 import ukUA from "antd/locale/uk_UA";
 import zhCN from "antd/locale/zh_CN";
+import ptBR from "antd/locale/pt_BR";
+import ruRU from "antd/locale/ru_RU";
+import trTR from "antd/locale/tr_TR";
+import arEG from "antd/locale/ar_EG";
 import dayjs from "dayjs";
 import "dayjs/locale/he";
 import "dayjs/locale/de";
@@ -31,6 +35,10 @@ import "dayjs/locale/it";
 import "dayjs/locale/ja";
 import "dayjs/locale/uk";
 import "dayjs/locale/zh-cn";
+import "dayjs/locale/pt-br";
+import "dayjs/locale/ru";
+import "dayjs/locale/tr";
+import "dayjs/locale/ar";
 
 import enCommon from "./locales/en/common.json";
 import heCommon from "./locales/he/common.json";
@@ -41,6 +49,10 @@ import itCommon from "./locales/it/common.json";
 import jaCommon from "./locales/ja/common.json";
 import ukCommon from "./locales/uk/common.json";
 import zhHansCommon from "./locales/zh_Hans/common.json";
+import ptBRCommon from "./locales/pt_BR/common.json";
+import ruCommon from "./locales/ru/common.json";
+import trCommon from "./locales/tr/common.json";
+import arCommon from "./locales/ar/common.json";
 
 export const DEFAULT_LNG = "en";
 
@@ -55,6 +67,10 @@ export const SUPPORTED = [
   "ja",
   "uk",
   "zh_Hans",
+  "pt_BR",
+  "ru",
+  "tr",
+  "ar",
 ] as const;
 export type SupportedLng = (typeof SUPPORTED)[number];
 
@@ -71,6 +87,10 @@ const ANTD_LOCALES: Record<SupportedLng, AntdLocale> = {
   ja: jaJP,
   uk: ukUA,
   zh_Hans: zhCN,
+  pt_BR: ptBR,
+  ru: ruRU,
+  tr: trTR,
+  ar: arEG,
 };
 
 // dayjs ships "en" built in; every other locale must be imported above.
@@ -84,6 +104,10 @@ const DAYJS_LOCALES: Record<SupportedLng, string> = {
   ja: "ja",
   uk: "uk",
   zh_Hans: "zh-cn",
+  pt_BR: "pt-br",
+  ru: "ru",
+  tr: "tr",
+  ar: "ar",
 };
 
 const STORAGE_KEY = "jabali-lng";
@@ -171,6 +195,10 @@ void i18n.use(initReactI18next).init({
     ja: { common: jaCommon },
     uk: { common: ukCommon },
     zh_Hans: { common: zhHansCommon },
+    pt_BR: { common: ptBRCommon },
+    ru: { common: ruCommon },
+    tr: { common: trCommon },
+    ar: { common: arCommon },
   },
   interpolation: {
     // React already escapes interpolated values.
