@@ -78,6 +78,12 @@ func dbRestoreHandler(ctx context.Context, params json.RawMessage) (any, error) 
 	if scErr != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("scope: %v", scErr)}
 	}
+	// GH #530: rewrite ONLY the /var/lib/jabali-migrations compat-symlink root
+	// prefix (GH #327) so filesafe's openat2 RESOLVE_BENEATH — which won't
+	// traverse a symlink — doesn't ENOTDIR on the .sql open (which would
+	// silently restore nothing). The tenant-extractable remainder is left
+	// verbatim, so RESOLVE_BENEATH still rejects any symlink planted in it.
+	p.Path = canonicalizeStagingRootPrefix(p.Path)
 	f, err := restoreScope.Open(p.Path, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, &agentwire.AgentError{
