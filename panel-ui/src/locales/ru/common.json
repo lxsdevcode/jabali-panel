@@ -137,5 +137,520 @@
       "title_other": "{{count}} критических проблем на хосте",
       "action": "Откройте «Состояние сервера» для анализа →"
     }
+  },
+  "users": {
+    "actions": {
+      "login_as": "Войти как пользователь",
+      "edit": "Изменить",
+      "reset_password": "Сбросить пароль",
+      "suspend": "Приостановить",
+      "unsuspend": "Возобновить",
+      "delete": "Удалить"
+    },
+    "filter": {
+      "active": "Активно",
+      "suspended": "Приостановлено"
+    },
+    "empty": {
+      "users": "Пока нет пользователей"
+    },
+    "cta": {
+      "create_user": "Создать пользователя"
+    },
+    "col": {
+      "username": "Имя пользователя",
+      "name": "Имя",
+      "package": "Пакет",
+      "created": "Создано",
+      "disk_usage": "Использование диска",
+      "actions": "Действия"
+    },
+    "suspended": "Приостановлено",
+    "tab": {
+      "users": "Пользователи",
+      "admins": "Администраторы",
+      "sessions": "Сеансы"
+    }
+  },
+  "adminapplicationlist": {
+    "actions": "Действия",
+    "created": "Создано",
+    "domain": "Домен",
+    "owner": "Владелец",
+    "status": "Статус",
+    "version": "Версия"
+  },
+  "adminauditlist": {
+    "action": "Действие",
+    "result": "Результат",
+    "target": "Цель"
+  },
+  "adminautomationtokenspage": {
+    "actions": "Действия",
+    "created": "Создано",
+    "last_used": "Последнее использование",
+    "name": "Имя",
+    "status": "Статус"
+  },
+  "backuplogstab": {
+    "status": "Статус",
+    "user_id": "ID пользователя"
+  },
+  "createbackupdrawer": {
+    "content": "Содержимое",
+    "create_backup": "Создать резервную копию",
+    "destination": "Назначение",
+    "type": "Тип",
+    "user": "Пользователь"
+  },
+  "destinationstab": {
+    "actions": "Действия",
+    "enabled": "Включено",
+    "name": "Имя"
+  },
+  "schedulestab": {
+    "actions": "Действия",
+    "enabled": "Включено",
+    "last_run": "Последний запуск",
+    "next_run": "Следующий запуск",
+    "users": "Пользователи"
+  },
+  "fleetcachedoctor": {
+    "refresh": "Обновить",
+    "repair": "Восстановить"
+  },
+  "admincreatecronmodal": {
+    "name": "Имя",
+    "schedule": "Расписание"
+  },
+  "admincronlist": {
+    "no_cron_jobs_yet": "Пока нет задач cron"
+  },
+  "databaseuserdrawer": {
+    "username": "Имя пользователя"
+  },
+  "databaseuserslist": {
+    "actions": "Действия",
+    "created": "Создано",
+    "user": "Пользователь"
+  },
+  "databasecreate": {
+    "name": "Имя"
+  },
+  "databaselist": {
+    "actions": "Действия",
+    "created": "Создано",
+    "database": "База данных",
+    "no_databases_yet": "Пока нет баз данных",
+    "user_id": "ID пользователя"
+  },
+  "dnszonesoverviewpage": {
+    "actions": "Действия",
+    "domain_name": "Имя домена",
+    "expiration": "Срок действия",
+    "owner": "Владелец"
+  },
+  "admindockerappspage": {
+    "running": "Выполняется",
+    "stopped": "Остановлено"
+  },
+  "backupsdrawer": {
+    "backups": "Резервные копии",
+    "restore": "Восстановить"
+  },
+  "editdrawer": {
+    "domain": "Домен",
+    "memory": "Память",
+    "select_a_domain": "Выберите домен"
+  },
+  "envsection": {
+    "copy": "Копировать",
+    "regenerate": "Перегенерировать"
+  },
+  "installdrawer": {
+    "domain": "Домен",
+    "memory": "Память",
+    "select_a_domain": "Выберите домен"
+  },
+  "maintenancetab": {
+    "containers": "Контейнеры",
+    "disk_usage": "Использование диска",
+    "images": "Образы",
+    "volumes": "Тома"
+  },
+  "domaincreate": {
+    "name": "Имя",
+    "select_a_user": "Выберите пользователя",
+    "user": "Пользователь"
+  },
+  "domaindirectoryprivacysection": {
+    "delete": "Удалить",
+    "password": "Пароль",
+    "path": "Путь",
+    "user": "Пользователь",
+    "username": "Имя пользователя"
+  },
+  "domainedit": {
+    "name": "Имя"
+  },
+  "domainemailsection": {
+    "copy_value": "Копировать значение"
+  },
+  "domainipaclsection": {
+    "action": "Действие",
+    "comment": "Комментарий",
+    "delete": "Удалить",
+    "priority": "Приоритет"
+  },
+  "domainlist": {
+    "actions": "Действия",
+    "domain": "Домен",
+    "no_domains_yet": "Пока нет доменов",
+    "status": "Статус",
+    "user": "Пользователь"
+  },
+  "domainmailboxessection": {
+    "create": "Создать",
+    "create_mailbox": "Создать почтовый ящик",
+    "domain": "Домен",
+    "password": "Пароль"
+  },
+  "domainsslsection": {
+    "install": "Установить"
+  },
+  "adminiplist": {
+    "actions": "Действия",
+    "address": "Адрес",
+    "default": "По умолчанию",
+    "label": "Метка",
+    "status": "Статус"
+  },
+  "adminmailpage": {
+    "new_password": "Новый пароль",
+    "set_password": "Задать пароль"
+  },
+  "mailthrottlespage": {
+    "enabled": "Включено",
+    "scope": "Область"
+  },
+  "adminmigrationdetailpage": {
+    "ended": "Завершено",
+    "error": "Ошибка",
+    "last_error": "Последняя ошибка",
+    "started": "Начато"
+  },
+  "adminmigrationspage": {
+    "ended": "Завершено",
+    "source": "Источник",
+    "started": "Начато",
+    "state": "Состояние"
+  },
+  "createmigrationwizard": {
+    "review": "Просмотреть"
+  },
+  "channelstab": {
+    "actions": "Действия",
+    "enabled": "Включено",
+    "kind": "Вид",
+    "name": "Имя"
+  },
+  "dlqtab": {
+    "clear": "Очистить"
+  },
+  "eventstab": {
+    "description": "Описание",
+    "enabled": "Включено",
+    "event": "Событие",
+    "severity": "Серьёзность"
+  },
+  "historytab": {
+    "clear": "Очистить",
+    "event": "Событие",
+    "read": "Чтение",
+    "severity": "Серьёзность",
+    "show_details": "Показать детали",
+    "time": "Время",
+    "title": "Заголовок"
+  },
+  "packagecreate": {
+    "name": "Имя"
+  },
+  "packageedit": {
+    "name": "Имя"
+  },
+  "packagelist": {
+    "actions": "Действия",
+    "created": "Создано",
+    "domains": "Домены",
+    "email": "Электронная почта",
+    "name": "Имя"
+  },
+  "phpextensionstab": {
+    "action": "Действие",
+    "installed": "Установлено",
+    "status": "Статус"
+  },
+  "versionstab": {
+    "actions": "Действия",
+    "default": "По умолчанию",
+    "status": "Статус"
+  },
+  "phppooledit": {
+    "kind": "Вид",
+    "value": "Значение"
+  },
+  "adminsecurityaide": {
+    "category": "Категория",
+    "last_check": "Последняя проверка",
+    "rebuild": "Пересобрать"
+  },
+  "adminsecurityapparmor": {
+    "flip": "Переключить",
+    "mode": "Режим"
+  },
+  "adminsecuritycrowdsec": {
+    "apply": "Применить",
+    "cancel": "Отмена",
+    "description": "Описание",
+    "duration": "Длительность",
+    "enabled": "Включено",
+    "events": "События",
+    "provider": "Провайдер",
+    "reason": "Причина",
+    "remove": "Удалить",
+    "scope": "Область",
+    "source": "Источник",
+    "started": "Начато",
+    "type": "Тип",
+    "value": "Значение"
+  },
+  "adminsecurityegress": {
+    "actions": "Действия",
+    "comment": "Комментарий",
+    "port": "Порт",
+    "reason": "Причина",
+    "state": "Состояние",
+    "user": "Пользователь"
+  },
+  "adminsecuritymalware": {
+    "filename": "Имя файла",
+    "settings": "Настройки"
+  },
+  "adminsecuritysnuffleupagus": {
+    "action": "Действие",
+    "disable": "Отключить"
+  },
+  "adminsecurityufw": {
+    "action": "Действие",
+    "cancel": "Отмена",
+    "continue": "Продолжить",
+    "delete": "Удалить",
+    "port": "Порт",
+    "status": "Статус"
+  },
+  "crowdsectestipcard": {
+    "unban": "Разблокировать"
+  },
+  "egressmaturepromotion": {
+    "promote": "Повысить"
+  },
+  "accountskeletoncard": {
+    "add": "Добавить",
+    "path": "Путь"
+  },
+  "databaseadminsections": {
+    "actions": "Действия",
+    "apply": "Применить",
+    "host": "Хост",
+    "kill": "Завершить",
+    "state": "Состояние",
+    "time": "Время",
+    "user": "Пользователь"
+  },
+  "nspawnimagescard": {
+    "version": "Версия"
+  },
+  "pagetemplatescard": {
+    "cancel": "Отмена",
+    "save": "Сохранить"
+  },
+  "panelsslcard": {
+    "hostname": "Имя хоста"
+  },
+  "stalwartwebadmincard": {
+    "done": "Готово"
+  },
+  "webmailtogglecard": {
+    "webmail": "Веб-почта"
+  },
+  "domainrepaircard": {
+    "cancel": "Отмена",
+    "select_a_user": "Выберите пользователя"
+  },
+  "repaircard": {
+    "cancel": "Отмена",
+    "run": "Запустить"
+  },
+  "userreset2faaction": {
+    "reset": "Сбросить"
+  },
+  "userresetpasswordaction": {
+    "done": "Готово",
+    "reset": "Сбросить"
+  },
+  "myprofile": {
+    "email": "Электронная почта",
+    "full_name": "Полное имя",
+    "member_since": "Участник с",
+    "role": "Роль",
+    "security": "Безопасность",
+    "user_id": "ID пользователя",
+    "username": "Имя пользователя"
+  },
+  "myprofilebackupcard": {
+    "destination": "Назначение"
+  },
+  "myprofileschedulecard": {
+    "destination": "Назначение"
+  },
+  "userdashboard": {
+    "databases": "Базы данных",
+    "domains": "Домены",
+    "mailboxes": "Почтовые ящики"
+  },
+  "accountactivity": {
+    "result": "Результат",
+    "target": "Цель"
+  },
+  "userapitokenspage": {
+    "create": "Создать",
+    "name": "Имя"
+  },
+  "cloneapplicationmodal": {
+    "select_a_domain": "Выберите домен"
+  },
+  "installapplicationmodal": {
+    "copy": "Копировать",
+    "domain": "Домен",
+    "no_domains_yet": "Пока нет доменов",
+    "select_a_domain": "Выберите домен"
+  },
+  "userapplicationlist": {
+    "actions": "Действия",
+    "created": "Создано",
+    "domain": "Домен",
+    "failed": "Не удалось",
+    "in_progress": "В процессе",
+    "ready": "Готово"
+  },
+  "createcronmodal": {
+    "name": "Имя",
+    "schedule": "Расписание"
+  },
+  "quicksetupmodal": {
+    "copy": "Копировать"
+  },
+  "userdatabasedrawer": {
+    "create_database": "Создать базу данных",
+    "name": "Имя"
+  },
+  "userdatabaselist": {
+    "actions": "Действия",
+    "created": "Создано",
+    "database": "База данных",
+    "size": "Размер"
+  },
+  "userdnszonesoverviewpage": {
+    "actions": "Действия",
+    "domain_name": "Имя домена",
+    "expiration": "Срок действия"
+  },
+  "userdockerappspage": {
+    "running": "Выполняется",
+    "stopped": "Остановлено"
+  },
+  "userdomaindrawer": {
+    "add_domain": "Добавить домен",
+    "domain_name": "Имя домена"
+  },
+  "userdomainlist": {
+    "actions": "Действия",
+    "domain": "Домен",
+    "status": "Статус"
+  },
+  "filemanagerpage": {
+    "apply": "Применить",
+    "create": "Создать",
+    "move": "Переместить",
+    "rename": "Переименовать",
+    "save": "Сохранить"
+  },
+  "autoreplymodal": {
+    "save": "Сохранить"
+  },
+  "createmailboxwizardmodal": {
+    "create_mailbox": "Создать почтовый ящик",
+    "display_name": "Отображаемое имя",
+    "domain": "Домен",
+    "email_address": "Адрес электронной почты",
+    "password": "Пароль",
+    "select_a_domain": "Выберите домен"
+  },
+  "catchalltab": {
+    "domain": "Домен",
+    "save": "Сохранить"
+  },
+  "disclaimertab": {
+    "edit": "Изменить",
+    "save": "Сохранить"
+  },
+  "forwarderstab": {
+    "add_forwarder": "Добавить пересылку",
+    "create": "Создать",
+    "remove": "Удалить",
+    "type": "Тип"
+  },
+  "mailboxestab": {
+    "new_password": "Новый пароль",
+    "no_mailboxes_yet": "Пока нет почтовых ящиков",
+    "set_password": "Задать пароль"
+  },
+  "sharedfolderstab": {
+    "remove": "Удалить",
+    "share": "Поделиться"
+  },
+  "userphpsettingspage": {
+    "domain": "Домен",
+    "select_a_domain": "Выберите домен"
+  },
+  "pythonappspage": {
+    "create": "Создать",
+    "domain": "Домен",
+    "name": "Имя",
+    "select_a_domain": "Выберите домен",
+    "status": "Статус",
+    "type": "Тип"
+  },
+  "usersshkeyspage": {
+    "add_ssh_key": "Добавить ключ SSH",
+    "name": "Имя",
+    "public_key": "Открытый ключ",
+    "yes": "Да"
+  },
+  "domainnginxoptionsmodal": {
+    "save": "Сохранить"
+  },
+  "notificationbell": {
+    "clear": "Очистить",
+    "notifications": "Уведомления"
+  },
+  "sslmanagertable": {
+    "status": "Статус",
+    "yes": "Да"
+  },
+  "settings": {
+    "hostname": "Имя хоста",
+    "select_timezone": "Выберите часовой пояс",
+    "timezone": "Часовой пояс"
   }
 }

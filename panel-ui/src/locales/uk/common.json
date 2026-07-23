@@ -137,5 +137,520 @@
       "title_other": "{{count}} критичних проблем на хості",
       "action": "Відкрийте «Стан сервера» для аналізу →"
     }
+  },
+  "users": {
+    "actions": {
+      "login_as": "Увійти як користувач",
+      "edit": "Редагувати",
+      "reset_password": "Скинути пароль",
+      "suspend": "Призупинити",
+      "unsuspend": "Відновити",
+      "delete": "Видалити"
+    },
+    "filter": {
+      "active": "Активний",
+      "suspended": "Призупинено"
+    },
+    "empty": {
+      "users": "Ще немає користувачів"
+    },
+    "cta": {
+      "create_user": "Створити користувача"
+    },
+    "col": {
+      "username": "Ім'я користувача",
+      "name": "Ім'я",
+      "package": "Пакет",
+      "created": "Створено",
+      "disk_usage": "Використання диска",
+      "actions": "Дії"
+    },
+    "suspended": "Призупинено",
+    "tab": {
+      "users": "Користувачі",
+      "admins": "Адміністратори",
+      "sessions": "Сеанси"
+    }
+  },
+  "adminapplicationlist": {
+    "actions": "Дії",
+    "created": "Створено",
+    "domain": "Домен",
+    "owner": "Власник",
+    "status": "Статус",
+    "version": "Версія"
+  },
+  "adminauditlist": {
+    "action": "Дія",
+    "result": "Результат",
+    "target": "Ціль"
+  },
+  "adminautomationtokenspage": {
+    "actions": "Дії",
+    "created": "Створено",
+    "last_used": "Останнє використання",
+    "name": "Ім'я",
+    "status": "Статус"
+  },
+  "backuplogstab": {
+    "status": "Статус",
+    "user_id": "ID користувача"
+  },
+  "createbackupdrawer": {
+    "content": "Вміст",
+    "create_backup": "Створити резервну копію",
+    "destination": "Призначення",
+    "type": "Тип",
+    "user": "Користувач"
+  },
+  "destinationstab": {
+    "actions": "Дії",
+    "enabled": "Увімкнено",
+    "name": "Ім'я"
+  },
+  "schedulestab": {
+    "actions": "Дії",
+    "enabled": "Увімкнено",
+    "last_run": "Останній запуск",
+    "next_run": "Наступний запуск",
+    "users": "Користувачі"
+  },
+  "fleetcachedoctor": {
+    "refresh": "Оновити",
+    "repair": "Відновити"
+  },
+  "admincreatecronmodal": {
+    "name": "Ім'я",
+    "schedule": "Розклад"
+  },
+  "admincronlist": {
+    "no_cron_jobs_yet": "Ще немає завдань cron"
+  },
+  "databaseuserdrawer": {
+    "username": "Ім'я користувача"
+  },
+  "databaseuserslist": {
+    "actions": "Дії",
+    "created": "Створено",
+    "user": "Користувач"
+  },
+  "databasecreate": {
+    "name": "Ім'я"
+  },
+  "databaselist": {
+    "actions": "Дії",
+    "created": "Створено",
+    "database": "База даних",
+    "no_databases_yet": "Ще немає баз даних",
+    "user_id": "ID користувача"
+  },
+  "dnszonesoverviewpage": {
+    "actions": "Дії",
+    "domain_name": "Ім'я домену",
+    "expiration": "Термін дії",
+    "owner": "Власник"
+  },
+  "admindockerappspage": {
+    "running": "Виконується",
+    "stopped": "Зупинено"
+  },
+  "backupsdrawer": {
+    "backups": "Резервні копії",
+    "restore": "Відновити"
+  },
+  "editdrawer": {
+    "domain": "Домен",
+    "memory": "Пам'ять",
+    "select_a_domain": "Виберіть домен"
+  },
+  "envsection": {
+    "copy": "Копіювати",
+    "regenerate": "Перегенерувати"
+  },
+  "installdrawer": {
+    "domain": "Домен",
+    "memory": "Пам'ять",
+    "select_a_domain": "Виберіть домен"
+  },
+  "maintenancetab": {
+    "containers": "Контейнери",
+    "disk_usage": "Використання диска",
+    "images": "Образи",
+    "volumes": "Томи"
+  },
+  "domaincreate": {
+    "name": "Ім'я",
+    "select_a_user": "Виберіть користувача",
+    "user": "Користувач"
+  },
+  "domaindirectoryprivacysection": {
+    "delete": "Видалити",
+    "password": "Пароль",
+    "path": "Шлях",
+    "user": "Користувач",
+    "username": "Ім'я користувача"
+  },
+  "domainedit": {
+    "name": "Ім'я"
+  },
+  "domainemailsection": {
+    "copy_value": "Копіювати значення"
+  },
+  "domainipaclsection": {
+    "action": "Дія",
+    "comment": "Коментар",
+    "delete": "Видалити",
+    "priority": "Пріоритет"
+  },
+  "domainlist": {
+    "actions": "Дії",
+    "domain": "Домен",
+    "no_domains_yet": "Ще немає доменів",
+    "status": "Статус",
+    "user": "Користувач"
+  },
+  "domainmailboxessection": {
+    "create": "Створити",
+    "create_mailbox": "Створити поштову скриньку",
+    "domain": "Домен",
+    "password": "Пароль"
+  },
+  "domainsslsection": {
+    "install": "Встановити"
+  },
+  "adminiplist": {
+    "actions": "Дії",
+    "address": "Адреса",
+    "default": "За замовчуванням",
+    "label": "Мітка",
+    "status": "Статус"
+  },
+  "adminmailpage": {
+    "new_password": "Новий пароль",
+    "set_password": "Встановити пароль"
+  },
+  "mailthrottlespage": {
+    "enabled": "Увімкнено",
+    "scope": "Область"
+  },
+  "adminmigrationdetailpage": {
+    "ended": "Завершено",
+    "error": "Помилка",
+    "last_error": "Остання помилка",
+    "started": "Розпочато"
+  },
+  "adminmigrationspage": {
+    "ended": "Завершено",
+    "source": "Джерело",
+    "started": "Розпочато",
+    "state": "Стан"
+  },
+  "createmigrationwizard": {
+    "review": "Переглянути"
+  },
+  "channelstab": {
+    "actions": "Дії",
+    "enabled": "Увімкнено",
+    "kind": "Вид",
+    "name": "Ім'я"
+  },
+  "dlqtab": {
+    "clear": "Очистити"
+  },
+  "eventstab": {
+    "description": "Опис",
+    "enabled": "Увімкнено",
+    "event": "Подія",
+    "severity": "Серйозність"
+  },
+  "historytab": {
+    "clear": "Очистити",
+    "event": "Подія",
+    "read": "Читання",
+    "severity": "Серйозність",
+    "show_details": "Показати деталі",
+    "time": "Час",
+    "title": "Заголовок"
+  },
+  "packagecreate": {
+    "name": "Ім'я"
+  },
+  "packageedit": {
+    "name": "Ім'я"
+  },
+  "packagelist": {
+    "actions": "Дії",
+    "created": "Створено",
+    "domains": "Домени",
+    "email": "Електронна пошта",
+    "name": "Ім'я"
+  },
+  "phpextensionstab": {
+    "action": "Дія",
+    "installed": "Встановлено",
+    "status": "Статус"
+  },
+  "versionstab": {
+    "actions": "Дії",
+    "default": "За замовчуванням",
+    "status": "Статус"
+  },
+  "phppooledit": {
+    "kind": "Вид",
+    "value": "Значення"
+  },
+  "adminsecurityaide": {
+    "category": "Категорія",
+    "last_check": "Остання перевірка",
+    "rebuild": "Перебудувати"
+  },
+  "adminsecurityapparmor": {
+    "flip": "Перевернути",
+    "mode": "Режим"
+  },
+  "adminsecuritycrowdsec": {
+    "apply": "Застосувати",
+    "cancel": "Скасувати",
+    "description": "Опис",
+    "duration": "Тривалість",
+    "enabled": "Увімкнено",
+    "events": "Події",
+    "provider": "Постачальник",
+    "reason": "Причина",
+    "remove": "Вилучити",
+    "scope": "Область",
+    "source": "Джерело",
+    "started": "Розпочато",
+    "type": "Тип",
+    "value": "Значення"
+  },
+  "adminsecurityegress": {
+    "actions": "Дії",
+    "comment": "Коментар",
+    "port": "Порт",
+    "reason": "Причина",
+    "state": "Стан",
+    "user": "Користувач"
+  },
+  "adminsecuritymalware": {
+    "filename": "Ім'я файлу",
+    "settings": "Налаштування"
+  },
+  "adminsecuritysnuffleupagus": {
+    "action": "Дія",
+    "disable": "Вимкнути"
+  },
+  "adminsecurityufw": {
+    "action": "Дія",
+    "cancel": "Скасувати",
+    "continue": "Продовжити",
+    "delete": "Видалити",
+    "port": "Порт",
+    "status": "Статус"
+  },
+  "crowdsectestipcard": {
+    "unban": "Розблокувати"
+  },
+  "egressmaturepromotion": {
+    "promote": "Підвищити"
+  },
+  "accountskeletoncard": {
+    "add": "Додати",
+    "path": "Шлях"
+  },
+  "databaseadminsections": {
+    "actions": "Дії",
+    "apply": "Застосувати",
+    "host": "Хост",
+    "kill": "Завершити",
+    "state": "Стан",
+    "time": "Час",
+    "user": "Користувач"
+  },
+  "nspawnimagescard": {
+    "version": "Версія"
+  },
+  "pagetemplatescard": {
+    "cancel": "Скасувати",
+    "save": "Зберегти"
+  },
+  "panelsslcard": {
+    "hostname": "Ім'я хоста"
+  },
+  "stalwartwebadmincard": {
+    "done": "Готово"
+  },
+  "webmailtogglecard": {
+    "webmail": "Вебпошта"
+  },
+  "domainrepaircard": {
+    "cancel": "Скасувати",
+    "select_a_user": "Виберіть користувача"
+  },
+  "repaircard": {
+    "cancel": "Скасувати",
+    "run": "Запустити"
+  },
+  "userreset2faaction": {
+    "reset": "Скинути"
+  },
+  "userresetpasswordaction": {
+    "done": "Готово",
+    "reset": "Скинути"
+  },
+  "myprofile": {
+    "email": "Електронна пошта",
+    "full_name": "Повне ім'я",
+    "member_since": "Учасник з",
+    "role": "Роль",
+    "security": "Безпека",
+    "user_id": "ID користувача",
+    "username": "Ім'я користувача"
+  },
+  "myprofilebackupcard": {
+    "destination": "Призначення"
+  },
+  "myprofileschedulecard": {
+    "destination": "Призначення"
+  },
+  "userdashboard": {
+    "databases": "Бази даних",
+    "domains": "Домени",
+    "mailboxes": "Поштові скриньки"
+  },
+  "accountactivity": {
+    "result": "Результат",
+    "target": "Ціль"
+  },
+  "userapitokenspage": {
+    "create": "Створити",
+    "name": "Ім'я"
+  },
+  "cloneapplicationmodal": {
+    "select_a_domain": "Виберіть домен"
+  },
+  "installapplicationmodal": {
+    "copy": "Копіювати",
+    "domain": "Домен",
+    "no_domains_yet": "Ще немає доменів",
+    "select_a_domain": "Виберіть домен"
+  },
+  "userapplicationlist": {
+    "actions": "Дії",
+    "created": "Створено",
+    "domain": "Домен",
+    "failed": "Не вдалося",
+    "in_progress": "У процесі",
+    "ready": "Готово"
+  },
+  "createcronmodal": {
+    "name": "Ім'я",
+    "schedule": "Розклад"
+  },
+  "quicksetupmodal": {
+    "copy": "Копіювати"
+  },
+  "userdatabasedrawer": {
+    "create_database": "Створити базу даних",
+    "name": "Ім'я"
+  },
+  "userdatabaselist": {
+    "actions": "Дії",
+    "created": "Створено",
+    "database": "База даних",
+    "size": "Розмір"
+  },
+  "userdnszonesoverviewpage": {
+    "actions": "Дії",
+    "domain_name": "Ім'я домену",
+    "expiration": "Термін дії"
+  },
+  "userdockerappspage": {
+    "running": "Виконується",
+    "stopped": "Зупинено"
+  },
+  "userdomaindrawer": {
+    "add_domain": "Додати домен",
+    "domain_name": "Ім'я домену"
+  },
+  "userdomainlist": {
+    "actions": "Дії",
+    "domain": "Домен",
+    "status": "Статус"
+  },
+  "filemanagerpage": {
+    "apply": "Застосувати",
+    "create": "Створити",
+    "move": "Перемістити",
+    "rename": "Перейменувати",
+    "save": "Зберегти"
+  },
+  "autoreplymodal": {
+    "save": "Зберегти"
+  },
+  "createmailboxwizardmodal": {
+    "create_mailbox": "Створити поштову скриньку",
+    "display_name": "Відображуване ім'я",
+    "domain": "Домен",
+    "email_address": "Адреса електронної пошти",
+    "password": "Пароль",
+    "select_a_domain": "Виберіть домен"
+  },
+  "catchalltab": {
+    "domain": "Домен",
+    "save": "Зберегти"
+  },
+  "disclaimertab": {
+    "edit": "Редагувати",
+    "save": "Зберегти"
+  },
+  "forwarderstab": {
+    "add_forwarder": "Додати переадресацію",
+    "create": "Створити",
+    "remove": "Вилучити",
+    "type": "Тип"
+  },
+  "mailboxestab": {
+    "new_password": "Новий пароль",
+    "no_mailboxes_yet": "Ще немає поштових скриньок",
+    "set_password": "Встановити пароль"
+  },
+  "sharedfolderstab": {
+    "remove": "Вилучити",
+    "share": "Поділитися"
+  },
+  "userphpsettingspage": {
+    "domain": "Домен",
+    "select_a_domain": "Виберіть домен"
+  },
+  "pythonappspage": {
+    "create": "Створити",
+    "domain": "Домен",
+    "name": "Ім'я",
+    "select_a_domain": "Виберіть домен",
+    "status": "Статус",
+    "type": "Тип"
+  },
+  "usersshkeyspage": {
+    "add_ssh_key": "Додати ключ SSH",
+    "name": "Ім'я",
+    "public_key": "Відкритий ключ",
+    "yes": "Так"
+  },
+  "domainnginxoptionsmodal": {
+    "save": "Зберегти"
+  },
+  "notificationbell": {
+    "clear": "Очистити",
+    "notifications": "Сповіщення"
+  },
+  "sslmanagertable": {
+    "status": "Статус",
+    "yes": "Так"
+  },
+  "settings": {
+    "hostname": "Ім'я хоста",
+    "select_timezone": "Виберіть часовий пояс",
+    "timezone": "Часовий пояс"
   }
 }

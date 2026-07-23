@@ -137,5 +137,520 @@
       "title_other": "ホストに {{count}} 件の重大な問題",
       "action": "サーバーステータスを開いて調査 →"
     }
+  },
+  "users": {
+    "actions": {
+      "login_as": "ユーザーとしてログイン",
+      "edit": "編集",
+      "reset_password": "パスワードをリセット",
+      "suspend": "停止",
+      "unsuspend": "再開",
+      "delete": "削除"
+    },
+    "filter": {
+      "active": "アクティブ",
+      "suspended": "停止中"
+    },
+    "empty": {
+      "users": "ユーザーはまだいません"
+    },
+    "cta": {
+      "create_user": "ユーザーを作成"
+    },
+    "col": {
+      "username": "ユーザー名",
+      "name": "名前",
+      "package": "パッケージ",
+      "created": "作成日",
+      "disk_usage": "ディスク使用量",
+      "actions": "操作"
+    },
+    "suspended": "停止中",
+    "tab": {
+      "users": "ユーザー",
+      "admins": "管理者",
+      "sessions": "セッション"
+    }
+  },
+  "adminapplicationlist": {
+    "actions": "操作",
+    "created": "作成日",
+    "domain": "ドメイン",
+    "owner": "所有者",
+    "status": "ステータス",
+    "version": "バージョン"
+  },
+  "adminauditlist": {
+    "action": "操作",
+    "result": "結果",
+    "target": "ターゲット"
+  },
+  "adminautomationtokenspage": {
+    "actions": "操作",
+    "created": "作成日",
+    "last_used": "最終使用",
+    "name": "名前",
+    "status": "ステータス"
+  },
+  "backuplogstab": {
+    "status": "ステータス",
+    "user_id": "ユーザーID"
+  },
+  "createbackupdrawer": {
+    "content": "コンテンツ",
+    "create_backup": "バックアップを作成",
+    "destination": "宛先",
+    "type": "タイプ",
+    "user": "ユーザー"
+  },
+  "destinationstab": {
+    "actions": "操作",
+    "enabled": "有効",
+    "name": "名前"
+  },
+  "schedulestab": {
+    "actions": "操作",
+    "enabled": "有効",
+    "last_run": "最終実行",
+    "next_run": "次回実行",
+    "users": "ユーザー"
+  },
+  "fleetcachedoctor": {
+    "refresh": "更新",
+    "repair": "修復"
+  },
+  "admincreatecronmodal": {
+    "name": "名前",
+    "schedule": "スケジュール"
+  },
+  "admincronlist": {
+    "no_cron_jobs_yet": "cronジョブはまだありません"
+  },
+  "databaseuserdrawer": {
+    "username": "ユーザー名"
+  },
+  "databaseuserslist": {
+    "actions": "操作",
+    "created": "作成日",
+    "user": "ユーザー"
+  },
+  "databasecreate": {
+    "name": "名前"
+  },
+  "databaselist": {
+    "actions": "操作",
+    "created": "作成日",
+    "database": "データベース",
+    "no_databases_yet": "データベースはまだありません",
+    "user_id": "ユーザーID"
+  },
+  "dnszonesoverviewpage": {
+    "actions": "操作",
+    "domain_name": "ドメイン名",
+    "expiration": "有効期限",
+    "owner": "所有者"
+  },
+  "admindockerappspage": {
+    "running": "実行中",
+    "stopped": "停止"
+  },
+  "backupsdrawer": {
+    "backups": "バックアップ",
+    "restore": "復元"
+  },
+  "editdrawer": {
+    "domain": "ドメイン",
+    "memory": "メモリ",
+    "select_a_domain": "ドメインを選択"
+  },
+  "envsection": {
+    "copy": "コピー",
+    "regenerate": "再生成"
+  },
+  "installdrawer": {
+    "domain": "ドメイン",
+    "memory": "メモリ",
+    "select_a_domain": "ドメインを選択"
+  },
+  "maintenancetab": {
+    "containers": "コンテナ",
+    "disk_usage": "ディスク使用量",
+    "images": "イメージ",
+    "volumes": "ボリューム"
+  },
+  "domaincreate": {
+    "name": "名前",
+    "select_a_user": "ユーザーを選択",
+    "user": "ユーザー"
+  },
+  "domaindirectoryprivacysection": {
+    "delete": "削除",
+    "password": "パスワード",
+    "path": "パス",
+    "user": "ユーザー",
+    "username": "ユーザー名"
+  },
+  "domainedit": {
+    "name": "名前"
+  },
+  "domainemailsection": {
+    "copy_value": "値をコピー"
+  },
+  "domainipaclsection": {
+    "action": "操作",
+    "comment": "コメント",
+    "delete": "削除",
+    "priority": "優先度"
+  },
+  "domainlist": {
+    "actions": "操作",
+    "domain": "ドメイン",
+    "no_domains_yet": "ドメインはまだありません",
+    "status": "ステータス",
+    "user": "ユーザー"
+  },
+  "domainmailboxessection": {
+    "create": "作成",
+    "create_mailbox": "メールボックスを作成",
+    "domain": "ドメイン",
+    "password": "パスワード"
+  },
+  "domainsslsection": {
+    "install": "インストール"
+  },
+  "adminiplist": {
+    "actions": "操作",
+    "address": "アドレス",
+    "default": "デフォルト",
+    "label": "ラベル",
+    "status": "ステータス"
+  },
+  "adminmailpage": {
+    "new_password": "新しいパスワード",
+    "set_password": "パスワードを設定"
+  },
+  "mailthrottlespage": {
+    "enabled": "有効",
+    "scope": "範囲"
+  },
+  "adminmigrationdetailpage": {
+    "ended": "終了",
+    "error": "エラー",
+    "last_error": "最終エラー",
+    "started": "開始"
+  },
+  "adminmigrationspage": {
+    "ended": "終了",
+    "source": "ソース",
+    "started": "開始",
+    "state": "状態"
+  },
+  "createmigrationwizard": {
+    "review": "確認"
+  },
+  "channelstab": {
+    "actions": "操作",
+    "enabled": "有効",
+    "kind": "種類",
+    "name": "名前"
+  },
+  "dlqtab": {
+    "clear": "クリア"
+  },
+  "eventstab": {
+    "description": "説明",
+    "enabled": "有効",
+    "event": "イベント",
+    "severity": "重大度"
+  },
+  "historytab": {
+    "clear": "クリア",
+    "event": "イベント",
+    "read": "読み取り",
+    "severity": "重大度",
+    "show_details": "詳細を表示",
+    "time": "時刻",
+    "title": "タイトル"
+  },
+  "packagecreate": {
+    "name": "名前"
+  },
+  "packageedit": {
+    "name": "名前"
+  },
+  "packagelist": {
+    "actions": "操作",
+    "created": "作成日",
+    "domains": "ドメイン",
+    "email": "メール",
+    "name": "名前"
+  },
+  "phpextensionstab": {
+    "action": "操作",
+    "installed": "インストール済み",
+    "status": "ステータス"
+  },
+  "versionstab": {
+    "actions": "操作",
+    "default": "デフォルト",
+    "status": "ステータス"
+  },
+  "phppooledit": {
+    "kind": "種類",
+    "value": "値"
+  },
+  "adminsecurityaide": {
+    "category": "カテゴリ",
+    "last_check": "最終チェック",
+    "rebuild": "再構築"
+  },
+  "adminsecurityapparmor": {
+    "flip": "反転",
+    "mode": "モード"
+  },
+  "adminsecuritycrowdsec": {
+    "apply": "適用",
+    "cancel": "キャンセル",
+    "description": "説明",
+    "duration": "期間",
+    "enabled": "有効",
+    "events": "イベント",
+    "provider": "プロバイダー",
+    "reason": "理由",
+    "remove": "削除",
+    "scope": "範囲",
+    "source": "ソース",
+    "started": "開始",
+    "type": "タイプ",
+    "value": "値"
+  },
+  "adminsecurityegress": {
+    "actions": "操作",
+    "comment": "コメント",
+    "port": "ポート",
+    "reason": "理由",
+    "state": "状態",
+    "user": "ユーザー"
+  },
+  "adminsecuritymalware": {
+    "filename": "ファイル名",
+    "settings": "設定"
+  },
+  "adminsecuritysnuffleupagus": {
+    "action": "操作",
+    "disable": "無効化"
+  },
+  "adminsecurityufw": {
+    "action": "操作",
+    "cancel": "キャンセル",
+    "continue": "続行",
+    "delete": "削除",
+    "port": "ポート",
+    "status": "ステータス"
+  },
+  "crowdsectestipcard": {
+    "unban": "禁止解除"
+  },
+  "egressmaturepromotion": {
+    "promote": "昇格"
+  },
+  "accountskeletoncard": {
+    "add": "追加",
+    "path": "パス"
+  },
+  "databaseadminsections": {
+    "actions": "操作",
+    "apply": "適用",
+    "host": "ホスト",
+    "kill": "強制終了",
+    "state": "状態",
+    "time": "時刻",
+    "user": "ユーザー"
+  },
+  "nspawnimagescard": {
+    "version": "バージョン"
+  },
+  "pagetemplatescard": {
+    "cancel": "キャンセル",
+    "save": "保存"
+  },
+  "panelsslcard": {
+    "hostname": "ホスト名"
+  },
+  "stalwartwebadmincard": {
+    "done": "完了"
+  },
+  "webmailtogglecard": {
+    "webmail": "ウェブメール"
+  },
+  "domainrepaircard": {
+    "cancel": "キャンセル",
+    "select_a_user": "ユーザーを選択"
+  },
+  "repaircard": {
+    "cancel": "キャンセル",
+    "run": "実行"
+  },
+  "userreset2faaction": {
+    "reset": "リセット"
+  },
+  "userresetpasswordaction": {
+    "done": "完了",
+    "reset": "リセット"
+  },
+  "myprofile": {
+    "email": "メール",
+    "full_name": "氏名",
+    "member_since": "登録日",
+    "role": "ロール",
+    "security": "セキュリティ",
+    "user_id": "ユーザーID",
+    "username": "ユーザー名"
+  },
+  "myprofilebackupcard": {
+    "destination": "宛先"
+  },
+  "myprofileschedulecard": {
+    "destination": "宛先"
+  },
+  "userdashboard": {
+    "databases": "データベース",
+    "domains": "ドメイン",
+    "mailboxes": "メールボックス"
+  },
+  "accountactivity": {
+    "result": "結果",
+    "target": "ターゲット"
+  },
+  "userapitokenspage": {
+    "create": "作成",
+    "name": "名前"
+  },
+  "cloneapplicationmodal": {
+    "select_a_domain": "ドメインを選択"
+  },
+  "installapplicationmodal": {
+    "copy": "コピー",
+    "domain": "ドメイン",
+    "no_domains_yet": "ドメインはまだありません",
+    "select_a_domain": "ドメインを選択"
+  },
+  "userapplicationlist": {
+    "actions": "操作",
+    "created": "作成日",
+    "domain": "ドメイン",
+    "failed": "失敗",
+    "in_progress": "進行中",
+    "ready": "準備完了"
+  },
+  "createcronmodal": {
+    "name": "名前",
+    "schedule": "スケジュール"
+  },
+  "quicksetupmodal": {
+    "copy": "コピー"
+  },
+  "userdatabasedrawer": {
+    "create_database": "データベースを作成",
+    "name": "名前"
+  },
+  "userdatabaselist": {
+    "actions": "操作",
+    "created": "作成日",
+    "database": "データベース",
+    "size": "サイズ"
+  },
+  "userdnszonesoverviewpage": {
+    "actions": "操作",
+    "domain_name": "ドメイン名",
+    "expiration": "有効期限"
+  },
+  "userdockerappspage": {
+    "running": "実行中",
+    "stopped": "停止"
+  },
+  "userdomaindrawer": {
+    "add_domain": "ドメインを追加",
+    "domain_name": "ドメイン名"
+  },
+  "userdomainlist": {
+    "actions": "操作",
+    "domain": "ドメイン",
+    "status": "ステータス"
+  },
+  "filemanagerpage": {
+    "apply": "適用",
+    "create": "作成",
+    "move": "移動",
+    "rename": "名前変更",
+    "save": "保存"
+  },
+  "autoreplymodal": {
+    "save": "保存"
+  },
+  "createmailboxwizardmodal": {
+    "create_mailbox": "メールボックスを作成",
+    "display_name": "表示名",
+    "domain": "ドメイン",
+    "email_address": "メールアドレス",
+    "password": "パスワード",
+    "select_a_domain": "ドメインを選択"
+  },
+  "catchalltab": {
+    "domain": "ドメイン",
+    "save": "保存"
+  },
+  "disclaimertab": {
+    "edit": "編集",
+    "save": "保存"
+  },
+  "forwarderstab": {
+    "add_forwarder": "転送を追加",
+    "create": "作成",
+    "remove": "削除",
+    "type": "タイプ"
+  },
+  "mailboxestab": {
+    "new_password": "新しいパスワード",
+    "no_mailboxes_yet": "メールボックスはまだありません",
+    "set_password": "パスワードを設定"
+  },
+  "sharedfolderstab": {
+    "remove": "削除",
+    "share": "共有"
+  },
+  "userphpsettingspage": {
+    "domain": "ドメイン",
+    "select_a_domain": "ドメインを選択"
+  },
+  "pythonappspage": {
+    "create": "作成",
+    "domain": "ドメイン",
+    "name": "名前",
+    "select_a_domain": "ドメインを選択",
+    "status": "ステータス",
+    "type": "タイプ"
+  },
+  "usersshkeyspage": {
+    "add_ssh_key": "SSH鍵を追加",
+    "name": "名前",
+    "public_key": "公開鍵",
+    "yes": "はい"
+  },
+  "domainnginxoptionsmodal": {
+    "save": "保存"
+  },
+  "notificationbell": {
+    "clear": "クリア",
+    "notifications": "通知"
+  },
+  "sslmanagertable": {
+    "status": "ステータス",
+    "yes": "はい"
+  },
+  "settings": {
+    "hostname": "ホスト名",
+    "select_timezone": "タイムゾーンを選択",
+    "timezone": "タイムゾーン"
   }
 }

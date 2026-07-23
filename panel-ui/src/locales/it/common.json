@@ -137,5 +137,520 @@
       "title_other": "{{count}} problemi critici sull'host",
       "action": "Apri Stato del server per approfondire →"
     }
+  },
+  "users": {
+    "actions": {
+      "login_as": "Accedi come utente",
+      "edit": "Modifica",
+      "reset_password": "Reimposta password",
+      "suspend": "Sospendi",
+      "unsuspend": "Riattiva",
+      "delete": "Elimina"
+    },
+    "filter": {
+      "active": "Attivo",
+      "suspended": "Sospeso"
+    },
+    "empty": {
+      "users": "Ancora nessun utente"
+    },
+    "cta": {
+      "create_user": "Crea utente"
+    },
+    "col": {
+      "username": "Nome utente",
+      "name": "Nome",
+      "package": "Pacchetto",
+      "created": "Creato",
+      "disk_usage": "Utilizzo disco",
+      "actions": "Azioni"
+    },
+    "suspended": "Sospeso",
+    "tab": {
+      "users": "Utenti",
+      "admins": "Amministratori",
+      "sessions": "Sessioni"
+    }
+  },
+  "adminapplicationlist": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "domain": "Dominio",
+    "owner": "Proprietario",
+    "status": "Stato",
+    "version": "Versione"
+  },
+  "adminauditlist": {
+    "action": "Azione",
+    "result": "Risultato",
+    "target": "Destinazione"
+  },
+  "adminautomationtokenspage": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "last_used": "Ultimo utilizzo",
+    "name": "Nome",
+    "status": "Stato"
+  },
+  "backuplogstab": {
+    "status": "Stato",
+    "user_id": "ID utente"
+  },
+  "createbackupdrawer": {
+    "content": "Contenuto",
+    "create_backup": "Crea backup",
+    "destination": "Destinazione",
+    "type": "Tipo",
+    "user": "Utente"
+  },
+  "destinationstab": {
+    "actions": "Azioni",
+    "enabled": "Abilitato",
+    "name": "Nome"
+  },
+  "schedulestab": {
+    "actions": "Azioni",
+    "enabled": "Abilitato",
+    "last_run": "Ultima esecuzione",
+    "next_run": "Prossima esecuzione",
+    "users": "Utenti"
+  },
+  "fleetcachedoctor": {
+    "refresh": "Aggiorna",
+    "repair": "Ripara"
+  },
+  "admincreatecronmodal": {
+    "name": "Nome",
+    "schedule": "Pianificazione"
+  },
+  "admincronlist": {
+    "no_cron_jobs_yet": "Ancora nessun cron job"
+  },
+  "databaseuserdrawer": {
+    "username": "Nome utente"
+  },
+  "databaseuserslist": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "user": "Utente"
+  },
+  "databasecreate": {
+    "name": "Nome"
+  },
+  "databaselist": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "database": "Database",
+    "no_databases_yet": "Ancora nessun database",
+    "user_id": "ID utente"
+  },
+  "dnszonesoverviewpage": {
+    "actions": "Azioni",
+    "domain_name": "Nome dominio",
+    "expiration": "Scadenza",
+    "owner": "Proprietario"
+  },
+  "admindockerappspage": {
+    "running": "In esecuzione",
+    "stopped": "Arrestato"
+  },
+  "backupsdrawer": {
+    "backups": "Backup",
+    "restore": "Ripristina"
+  },
+  "editdrawer": {
+    "domain": "Dominio",
+    "memory": "Memoria",
+    "select_a_domain": "Seleziona un dominio"
+  },
+  "envsection": {
+    "copy": "Copia",
+    "regenerate": "Rigenera"
+  },
+  "installdrawer": {
+    "domain": "Dominio",
+    "memory": "Memoria",
+    "select_a_domain": "Seleziona un dominio"
+  },
+  "maintenancetab": {
+    "containers": "Container",
+    "disk_usage": "Utilizzo disco",
+    "images": "Immagini",
+    "volumes": "Volumi"
+  },
+  "domaincreate": {
+    "name": "Nome",
+    "select_a_user": "Seleziona un utente",
+    "user": "Utente"
+  },
+  "domaindirectoryprivacysection": {
+    "delete": "Elimina",
+    "password": "Password",
+    "path": "Percorso",
+    "user": "Utente",
+    "username": "Nome utente"
+  },
+  "domainedit": {
+    "name": "Nome"
+  },
+  "domainemailsection": {
+    "copy_value": "Copia valore"
+  },
+  "domainipaclsection": {
+    "action": "Azione",
+    "comment": "Commento",
+    "delete": "Elimina",
+    "priority": "Priorità"
+  },
+  "domainlist": {
+    "actions": "Azioni",
+    "domain": "Dominio",
+    "no_domains_yet": "Ancora nessun dominio",
+    "status": "Stato",
+    "user": "Utente"
+  },
+  "domainmailboxessection": {
+    "create": "Crea",
+    "create_mailbox": "Crea casella di posta",
+    "domain": "Dominio",
+    "password": "Password"
+  },
+  "domainsslsection": {
+    "install": "Installa"
+  },
+  "adminiplist": {
+    "actions": "Azioni",
+    "address": "Indirizzo",
+    "default": "Predefinito",
+    "label": "Etichetta",
+    "status": "Stato"
+  },
+  "adminmailpage": {
+    "new_password": "Nuova password",
+    "set_password": "Imposta password"
+  },
+  "mailthrottlespage": {
+    "enabled": "Abilitato",
+    "scope": "Ambito"
+  },
+  "adminmigrationdetailpage": {
+    "ended": "Terminato",
+    "error": "Errore",
+    "last_error": "Ultimo errore",
+    "started": "Avviato"
+  },
+  "adminmigrationspage": {
+    "ended": "Terminato",
+    "source": "Origine",
+    "started": "Avviato",
+    "state": "Stato"
+  },
+  "createmigrationwizard": {
+    "review": "Rivedi"
+  },
+  "channelstab": {
+    "actions": "Azioni",
+    "enabled": "Abilitato",
+    "kind": "Tipo",
+    "name": "Nome"
+  },
+  "dlqtab": {
+    "clear": "Svuota"
+  },
+  "eventstab": {
+    "description": "Descrizione",
+    "enabled": "Abilitato",
+    "event": "Evento",
+    "severity": "Gravità"
+  },
+  "historytab": {
+    "clear": "Svuota",
+    "event": "Evento",
+    "read": "Leggi",
+    "severity": "Gravità",
+    "show_details": "Mostra dettagli",
+    "time": "Ora",
+    "title": "Titolo"
+  },
+  "packagecreate": {
+    "name": "Nome"
+  },
+  "packageedit": {
+    "name": "Nome"
+  },
+  "packagelist": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "domains": "Domini",
+    "email": "Email",
+    "name": "Nome"
+  },
+  "phpextensionstab": {
+    "action": "Azione",
+    "installed": "Installato",
+    "status": "Stato"
+  },
+  "versionstab": {
+    "actions": "Azioni",
+    "default": "Predefinito",
+    "status": "Stato"
+  },
+  "phppooledit": {
+    "kind": "Tipo",
+    "value": "Valore"
+  },
+  "adminsecurityaide": {
+    "category": "Categoria",
+    "last_check": "Ultimo controllo",
+    "rebuild": "Ricostruisci"
+  },
+  "adminsecurityapparmor": {
+    "flip": "Inverti",
+    "mode": "Modalità"
+  },
+  "adminsecuritycrowdsec": {
+    "apply": "Applica",
+    "cancel": "Annulla",
+    "description": "Descrizione",
+    "duration": "Durata",
+    "enabled": "Abilitato",
+    "events": "Eventi",
+    "provider": "Provider",
+    "reason": "Motivo",
+    "remove": "Rimuovi",
+    "scope": "Ambito",
+    "source": "Origine",
+    "started": "Avviato",
+    "type": "Tipo",
+    "value": "Valore"
+  },
+  "adminsecurityegress": {
+    "actions": "Azioni",
+    "comment": "Commento",
+    "port": "Porta",
+    "reason": "Motivo",
+    "state": "Stato",
+    "user": "Utente"
+  },
+  "adminsecuritymalware": {
+    "filename": "Nome file",
+    "settings": "Impostazioni"
+  },
+  "adminsecuritysnuffleupagus": {
+    "action": "Azione",
+    "disable": "Disabilita"
+  },
+  "adminsecurityufw": {
+    "action": "Azione",
+    "cancel": "Annulla",
+    "continue": "Continua",
+    "delete": "Elimina",
+    "port": "Porta",
+    "status": "Stato"
+  },
+  "crowdsectestipcard": {
+    "unban": "Sblocca"
+  },
+  "egressmaturepromotion": {
+    "promote": "Promuovi"
+  },
+  "accountskeletoncard": {
+    "add": "Aggiungi",
+    "path": "Percorso"
+  },
+  "databaseadminsections": {
+    "actions": "Azioni",
+    "apply": "Applica",
+    "host": "Host",
+    "kill": "Termina",
+    "state": "Stato",
+    "time": "Ora",
+    "user": "Utente"
+  },
+  "nspawnimagescard": {
+    "version": "Versione"
+  },
+  "pagetemplatescard": {
+    "cancel": "Annulla",
+    "save": "Salva"
+  },
+  "panelsslcard": {
+    "hostname": "Nome host"
+  },
+  "stalwartwebadmincard": {
+    "done": "Fatto"
+  },
+  "webmailtogglecard": {
+    "webmail": "Webmail"
+  },
+  "domainrepaircard": {
+    "cancel": "Annulla",
+    "select_a_user": "Seleziona un utente"
+  },
+  "repaircard": {
+    "cancel": "Annulla",
+    "run": "Esegui"
+  },
+  "userreset2faaction": {
+    "reset": "Reimposta"
+  },
+  "userresetpasswordaction": {
+    "done": "Fatto",
+    "reset": "Reimposta"
+  },
+  "myprofile": {
+    "email": "Email",
+    "full_name": "Nome completo",
+    "member_since": "Membro dal",
+    "role": "Ruolo",
+    "security": "Sicurezza",
+    "user_id": "ID utente",
+    "username": "Nome utente"
+  },
+  "myprofilebackupcard": {
+    "destination": "Destinazione"
+  },
+  "myprofileschedulecard": {
+    "destination": "Destinazione"
+  },
+  "userdashboard": {
+    "databases": "Database",
+    "domains": "Domini",
+    "mailboxes": "Caselle di posta"
+  },
+  "accountactivity": {
+    "result": "Risultato",
+    "target": "Destinazione"
+  },
+  "userapitokenspage": {
+    "create": "Crea",
+    "name": "Nome"
+  },
+  "cloneapplicationmodal": {
+    "select_a_domain": "Seleziona un dominio"
+  },
+  "installapplicationmodal": {
+    "copy": "Copia",
+    "domain": "Dominio",
+    "no_domains_yet": "Ancora nessun dominio",
+    "select_a_domain": "Seleziona un dominio"
+  },
+  "userapplicationlist": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "domain": "Dominio",
+    "failed": "Non riuscito",
+    "in_progress": "In corso",
+    "ready": "Pronto"
+  },
+  "createcronmodal": {
+    "name": "Nome",
+    "schedule": "Pianificazione"
+  },
+  "quicksetupmodal": {
+    "copy": "Copia"
+  },
+  "userdatabasedrawer": {
+    "create_database": "Crea database",
+    "name": "Nome"
+  },
+  "userdatabaselist": {
+    "actions": "Azioni",
+    "created": "Creato",
+    "database": "Database",
+    "size": "Dimensione"
+  },
+  "userdnszonesoverviewpage": {
+    "actions": "Azioni",
+    "domain_name": "Nome dominio",
+    "expiration": "Scadenza"
+  },
+  "userdockerappspage": {
+    "running": "In esecuzione",
+    "stopped": "Arrestato"
+  },
+  "userdomaindrawer": {
+    "add_domain": "Aggiungi dominio",
+    "domain_name": "Nome dominio"
+  },
+  "userdomainlist": {
+    "actions": "Azioni",
+    "domain": "Dominio",
+    "status": "Stato"
+  },
+  "filemanagerpage": {
+    "apply": "Applica",
+    "create": "Crea",
+    "move": "Sposta",
+    "rename": "Rinomina",
+    "save": "Salva"
+  },
+  "autoreplymodal": {
+    "save": "Salva"
+  },
+  "createmailboxwizardmodal": {
+    "create_mailbox": "Crea casella di posta",
+    "display_name": "Nome visualizzato",
+    "domain": "Dominio",
+    "email_address": "Indirizzo email",
+    "password": "Password",
+    "select_a_domain": "Seleziona un dominio"
+  },
+  "catchalltab": {
+    "domain": "Dominio",
+    "save": "Salva"
+  },
+  "disclaimertab": {
+    "edit": "Modifica",
+    "save": "Salva"
+  },
+  "forwarderstab": {
+    "add_forwarder": "Aggiungi inoltro",
+    "create": "Crea",
+    "remove": "Rimuovi",
+    "type": "Tipo"
+  },
+  "mailboxestab": {
+    "new_password": "Nuova password",
+    "no_mailboxes_yet": "Ancora nessuna casella",
+    "set_password": "Imposta password"
+  },
+  "sharedfolderstab": {
+    "remove": "Rimuovi",
+    "share": "Condividi"
+  },
+  "userphpsettingspage": {
+    "domain": "Dominio",
+    "select_a_domain": "Seleziona un dominio"
+  },
+  "pythonappspage": {
+    "create": "Crea",
+    "domain": "Dominio",
+    "name": "Nome",
+    "select_a_domain": "Seleziona un dominio",
+    "status": "Stato",
+    "type": "Tipo"
+  },
+  "usersshkeyspage": {
+    "add_ssh_key": "Aggiungi chiave SSH",
+    "name": "Nome",
+    "public_key": "Chiave pubblica",
+    "yes": "Sì"
+  },
+  "domainnginxoptionsmodal": {
+    "save": "Salva"
+  },
+  "notificationbell": {
+    "clear": "Svuota",
+    "notifications": "Notifiche"
+  },
+  "sslmanagertable": {
+    "status": "Stato",
+    "yes": "Sì"
+  },
+  "settings": {
+    "hostname": "Nome host",
+    "select_timezone": "Seleziona fuso orario",
+    "timezone": "Fuso orario"
   }
 }

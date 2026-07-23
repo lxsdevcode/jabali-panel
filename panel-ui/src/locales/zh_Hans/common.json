@@ -137,5 +137,520 @@
       "title_other": "主机上有 {{count}} 个严重问题",
       "action": "打开服务器状态进行排查 →"
     }
+  },
+  "users": {
+    "actions": {
+      "login_as": "以用户身份登录",
+      "edit": "编辑",
+      "reset_password": "重置密码",
+      "suspend": "暂停",
+      "unsuspend": "取消暂停",
+      "delete": "删除"
+    },
+    "filter": {
+      "active": "活动",
+      "suspended": "已暂停"
+    },
+    "empty": {
+      "users": "暂无用户"
+    },
+    "cta": {
+      "create_user": "创建用户"
+    },
+    "col": {
+      "username": "用户名",
+      "name": "名称",
+      "package": "套餐",
+      "created": "创建时间",
+      "disk_usage": "磁盘使用量",
+      "actions": "操作"
+    },
+    "suspended": "已暂停",
+    "tab": {
+      "users": "用户",
+      "admins": "管理员",
+      "sessions": "会话"
+    }
+  },
+  "adminapplicationlist": {
+    "actions": "操作",
+    "created": "创建时间",
+    "domain": "域名",
+    "owner": "所有者",
+    "status": "状态",
+    "version": "版本"
+  },
+  "adminauditlist": {
+    "action": "操作",
+    "result": "结果",
+    "target": "目标"
+  },
+  "adminautomationtokenspage": {
+    "actions": "操作",
+    "created": "创建时间",
+    "last_used": "上次使用",
+    "name": "名称",
+    "status": "状态"
+  },
+  "backuplogstab": {
+    "status": "状态",
+    "user_id": "用户 ID"
+  },
+  "createbackupdrawer": {
+    "content": "内容",
+    "create_backup": "创建备份",
+    "destination": "目标",
+    "type": "类型",
+    "user": "用户"
+  },
+  "destinationstab": {
+    "actions": "操作",
+    "enabled": "已启用",
+    "name": "名称"
+  },
+  "schedulestab": {
+    "actions": "操作",
+    "enabled": "已启用",
+    "last_run": "上次运行",
+    "next_run": "下次运行",
+    "users": "用户"
+  },
+  "fleetcachedoctor": {
+    "refresh": "刷新",
+    "repair": "修复"
+  },
+  "admincreatecronmodal": {
+    "name": "名称",
+    "schedule": "计划"
+  },
+  "admincronlist": {
+    "no_cron_jobs_yet": "暂无 cron 任务"
+  },
+  "databaseuserdrawer": {
+    "username": "用户名"
+  },
+  "databaseuserslist": {
+    "actions": "操作",
+    "created": "创建时间",
+    "user": "用户"
+  },
+  "databasecreate": {
+    "name": "名称"
+  },
+  "databaselist": {
+    "actions": "操作",
+    "created": "创建时间",
+    "database": "数据库",
+    "no_databases_yet": "暂无数据库",
+    "user_id": "用户 ID"
+  },
+  "dnszonesoverviewpage": {
+    "actions": "操作",
+    "domain_name": "域名",
+    "expiration": "到期",
+    "owner": "所有者"
+  },
+  "admindockerappspage": {
+    "running": "运行中",
+    "stopped": "已停止"
+  },
+  "backupsdrawer": {
+    "backups": "备份",
+    "restore": "恢复"
+  },
+  "editdrawer": {
+    "domain": "域名",
+    "memory": "内存",
+    "select_a_domain": "选择域名"
+  },
+  "envsection": {
+    "copy": "复制",
+    "regenerate": "重新生成"
+  },
+  "installdrawer": {
+    "domain": "域名",
+    "memory": "内存",
+    "select_a_domain": "选择域名"
+  },
+  "maintenancetab": {
+    "containers": "容器",
+    "disk_usage": "磁盘使用量",
+    "images": "镜像",
+    "volumes": "卷"
+  },
+  "domaincreate": {
+    "name": "名称",
+    "select_a_user": "选择用户",
+    "user": "用户"
+  },
+  "domaindirectoryprivacysection": {
+    "delete": "删除",
+    "password": "密码",
+    "path": "路径",
+    "user": "用户",
+    "username": "用户名"
+  },
+  "domainedit": {
+    "name": "名称"
+  },
+  "domainemailsection": {
+    "copy_value": "复制值"
+  },
+  "domainipaclsection": {
+    "action": "操作",
+    "comment": "注释",
+    "delete": "删除",
+    "priority": "优先级"
+  },
+  "domainlist": {
+    "actions": "操作",
+    "domain": "域名",
+    "no_domains_yet": "暂无域名",
+    "status": "状态",
+    "user": "用户"
+  },
+  "domainmailboxessection": {
+    "create": "创建",
+    "create_mailbox": "创建邮箱",
+    "domain": "域名",
+    "password": "密码"
+  },
+  "domainsslsection": {
+    "install": "安装"
+  },
+  "adminiplist": {
+    "actions": "操作",
+    "address": "地址",
+    "default": "默认",
+    "label": "标签",
+    "status": "状态"
+  },
+  "adminmailpage": {
+    "new_password": "新密码",
+    "set_password": "设置密码"
+  },
+  "mailthrottlespage": {
+    "enabled": "已启用",
+    "scope": "范围"
+  },
+  "adminmigrationdetailpage": {
+    "ended": "已结束",
+    "error": "错误",
+    "last_error": "上次错误",
+    "started": "已开始"
+  },
+  "adminmigrationspage": {
+    "ended": "已结束",
+    "source": "来源",
+    "started": "已开始",
+    "state": "状态"
+  },
+  "createmigrationwizard": {
+    "review": "审查"
+  },
+  "channelstab": {
+    "actions": "操作",
+    "enabled": "已启用",
+    "kind": "种类",
+    "name": "名称"
+  },
+  "dlqtab": {
+    "clear": "清除"
+  },
+  "eventstab": {
+    "description": "描述",
+    "enabled": "已启用",
+    "event": "事件",
+    "severity": "严重程度"
+  },
+  "historytab": {
+    "clear": "清除",
+    "event": "事件",
+    "read": "读取",
+    "severity": "严重程度",
+    "show_details": "显示详情",
+    "time": "时间",
+    "title": "标题"
+  },
+  "packagecreate": {
+    "name": "名称"
+  },
+  "packageedit": {
+    "name": "名称"
+  },
+  "packagelist": {
+    "actions": "操作",
+    "created": "创建时间",
+    "domains": "域名",
+    "email": "电子邮件",
+    "name": "名称"
+  },
+  "phpextensionstab": {
+    "action": "操作",
+    "installed": "已安装",
+    "status": "状态"
+  },
+  "versionstab": {
+    "actions": "操作",
+    "default": "默认",
+    "status": "状态"
+  },
+  "phppooledit": {
+    "kind": "种类",
+    "value": "值"
+  },
+  "adminsecurityaide": {
+    "category": "类别",
+    "last_check": "上次检查",
+    "rebuild": "重建"
+  },
+  "adminsecurityapparmor": {
+    "flip": "翻转",
+    "mode": "模式"
+  },
+  "adminsecuritycrowdsec": {
+    "apply": "应用",
+    "cancel": "取消",
+    "description": "描述",
+    "duration": "时长",
+    "enabled": "已启用",
+    "events": "事件",
+    "provider": "提供商",
+    "reason": "原因",
+    "remove": "移除",
+    "scope": "范围",
+    "source": "来源",
+    "started": "已开始",
+    "type": "类型",
+    "value": "值"
+  },
+  "adminsecurityegress": {
+    "actions": "操作",
+    "comment": "注释",
+    "port": "端口",
+    "reason": "原因",
+    "state": "状态",
+    "user": "用户"
+  },
+  "adminsecuritymalware": {
+    "filename": "文件名",
+    "settings": "设置"
+  },
+  "adminsecuritysnuffleupagus": {
+    "action": "操作",
+    "disable": "禁用"
+  },
+  "adminsecurityufw": {
+    "action": "操作",
+    "cancel": "取消",
+    "continue": "继续",
+    "delete": "删除",
+    "port": "端口",
+    "status": "状态"
+  },
+  "crowdsectestipcard": {
+    "unban": "解除封禁"
+  },
+  "egressmaturepromotion": {
+    "promote": "提升"
+  },
+  "accountskeletoncard": {
+    "add": "添加",
+    "path": "路径"
+  },
+  "databaseadminsections": {
+    "actions": "操作",
+    "apply": "应用",
+    "host": "主机",
+    "kill": "终止",
+    "state": "状态",
+    "time": "时间",
+    "user": "用户"
+  },
+  "nspawnimagescard": {
+    "version": "版本"
+  },
+  "pagetemplatescard": {
+    "cancel": "取消",
+    "save": "保存"
+  },
+  "panelsslcard": {
+    "hostname": "主机名"
+  },
+  "stalwartwebadmincard": {
+    "done": "完成"
+  },
+  "webmailtogglecard": {
+    "webmail": "网页邮箱"
+  },
+  "domainrepaircard": {
+    "cancel": "取消",
+    "select_a_user": "选择用户"
+  },
+  "repaircard": {
+    "cancel": "取消",
+    "run": "运行"
+  },
+  "userreset2faaction": {
+    "reset": "重置"
+  },
+  "userresetpasswordaction": {
+    "done": "完成",
+    "reset": "重置"
+  },
+  "myprofile": {
+    "email": "电子邮件",
+    "full_name": "全名",
+    "member_since": "注册于",
+    "role": "角色",
+    "security": "安全",
+    "user_id": "用户 ID",
+    "username": "用户名"
+  },
+  "myprofilebackupcard": {
+    "destination": "目标"
+  },
+  "myprofileschedulecard": {
+    "destination": "目标"
+  },
+  "userdashboard": {
+    "databases": "数据库",
+    "domains": "域名",
+    "mailboxes": "邮箱"
+  },
+  "accountactivity": {
+    "result": "结果",
+    "target": "目标"
+  },
+  "userapitokenspage": {
+    "create": "创建",
+    "name": "名称"
+  },
+  "cloneapplicationmodal": {
+    "select_a_domain": "选择域名"
+  },
+  "installapplicationmodal": {
+    "copy": "复制",
+    "domain": "域名",
+    "no_domains_yet": "暂无域名",
+    "select_a_domain": "选择域名"
+  },
+  "userapplicationlist": {
+    "actions": "操作",
+    "created": "创建时间",
+    "domain": "域名",
+    "failed": "失败",
+    "in_progress": "进行中",
+    "ready": "就绪"
+  },
+  "createcronmodal": {
+    "name": "名称",
+    "schedule": "计划"
+  },
+  "quicksetupmodal": {
+    "copy": "复制"
+  },
+  "userdatabasedrawer": {
+    "create_database": "创建数据库",
+    "name": "名称"
+  },
+  "userdatabaselist": {
+    "actions": "操作",
+    "created": "创建时间",
+    "database": "数据库",
+    "size": "大小"
+  },
+  "userdnszonesoverviewpage": {
+    "actions": "操作",
+    "domain_name": "域名",
+    "expiration": "到期"
+  },
+  "userdockerappspage": {
+    "running": "运行中",
+    "stopped": "已停止"
+  },
+  "userdomaindrawer": {
+    "add_domain": "添加域名",
+    "domain_name": "域名"
+  },
+  "userdomainlist": {
+    "actions": "操作",
+    "domain": "域名",
+    "status": "状态"
+  },
+  "filemanagerpage": {
+    "apply": "应用",
+    "create": "创建",
+    "move": "移动",
+    "rename": "重命名",
+    "save": "保存"
+  },
+  "autoreplymodal": {
+    "save": "保存"
+  },
+  "createmailboxwizardmodal": {
+    "create_mailbox": "创建邮箱",
+    "display_name": "显示名称",
+    "domain": "域名",
+    "email_address": "电子邮件地址",
+    "password": "密码",
+    "select_a_domain": "选择域名"
+  },
+  "catchalltab": {
+    "domain": "域名",
+    "save": "保存"
+  },
+  "disclaimertab": {
+    "edit": "编辑",
+    "save": "保存"
+  },
+  "forwarderstab": {
+    "add_forwarder": "添加转发",
+    "create": "创建",
+    "remove": "移除",
+    "type": "类型"
+  },
+  "mailboxestab": {
+    "new_password": "新密码",
+    "no_mailboxes_yet": "暂无邮箱",
+    "set_password": "设置密码"
+  },
+  "sharedfolderstab": {
+    "remove": "移除",
+    "share": "共享"
+  },
+  "userphpsettingspage": {
+    "domain": "域名",
+    "select_a_domain": "选择域名"
+  },
+  "pythonappspage": {
+    "create": "创建",
+    "domain": "域名",
+    "name": "名称",
+    "select_a_domain": "选择域名",
+    "status": "状态",
+    "type": "类型"
+  },
+  "usersshkeyspage": {
+    "add_ssh_key": "添加 SSH 密钥",
+    "name": "名称",
+    "public_key": "公钥",
+    "yes": "是"
+  },
+  "domainnginxoptionsmodal": {
+    "save": "保存"
+  },
+  "notificationbell": {
+    "clear": "清除",
+    "notifications": "通知"
+  },
+  "sslmanagertable": {
+    "status": "状态",
+    "yes": "是"
+  },
+  "settings": {
+    "hostname": "主机名",
+    "select_timezone": "选择时区",
+    "timezone": "时区"
   }
 }

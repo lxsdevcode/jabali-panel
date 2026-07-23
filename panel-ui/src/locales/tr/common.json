@@ -137,5 +137,520 @@
       "title_other": "Ana bilgisayarda {{count}} kritik sorun",
       "action": "İncelemek için Sunucu durumu bölümünü açın →"
     }
+  },
+  "users": {
+    "actions": {
+      "login_as": "Kullanıcı olarak giriş yap",
+      "edit": "Düzenle",
+      "reset_password": "Parolayı sıfırla",
+      "suspend": "Askıya al",
+      "unsuspend": "Askıyı kaldır",
+      "delete": "Sil"
+    },
+    "filter": {
+      "active": "Etkin",
+      "suspended": "Askıya alındı"
+    },
+    "empty": {
+      "users": "Henüz kullanıcı yok"
+    },
+    "cta": {
+      "create_user": "Kullanıcı oluştur"
+    },
+    "col": {
+      "username": "Kullanıcı adı",
+      "name": "Ad",
+      "package": "Paket",
+      "created": "Oluşturuldu",
+      "disk_usage": "Disk kullanımı",
+      "actions": "İşlemler"
+    },
+    "suspended": "Askıya alındı",
+    "tab": {
+      "users": "Kullanıcılar",
+      "admins": "Yöneticiler",
+      "sessions": "Oturumlar"
+    }
+  },
+  "adminapplicationlist": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "domain": "Alan adı",
+    "owner": "Sahip",
+    "status": "Durum",
+    "version": "Sürüm"
+  },
+  "adminauditlist": {
+    "action": "İşlem",
+    "result": "Sonuç",
+    "target": "Hedef"
+  },
+  "adminautomationtokenspage": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "last_used": "Son kullanım",
+    "name": "Ad",
+    "status": "Durum"
+  },
+  "backuplogstab": {
+    "status": "Durum",
+    "user_id": "Kullanıcı kimliği"
+  },
+  "createbackupdrawer": {
+    "content": "İçerik",
+    "create_backup": "Yedek oluştur",
+    "destination": "Hedef",
+    "type": "Tür",
+    "user": "Kullanıcı"
+  },
+  "destinationstab": {
+    "actions": "İşlemler",
+    "enabled": "Etkin",
+    "name": "Ad"
+  },
+  "schedulestab": {
+    "actions": "İşlemler",
+    "enabled": "Etkin",
+    "last_run": "Son çalıştırma",
+    "next_run": "Sonraki çalıştırma",
+    "users": "Kullanıcılar"
+  },
+  "fleetcachedoctor": {
+    "refresh": "Yenile",
+    "repair": "Onar"
+  },
+  "admincreatecronmodal": {
+    "name": "Ad",
+    "schedule": "Zamanlama"
+  },
+  "admincronlist": {
+    "no_cron_jobs_yet": "Henüz cron görevi yok"
+  },
+  "databaseuserdrawer": {
+    "username": "Kullanıcı adı"
+  },
+  "databaseuserslist": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "user": "Kullanıcı"
+  },
+  "databasecreate": {
+    "name": "Ad"
+  },
+  "databaselist": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "database": "Veritabanı",
+    "no_databases_yet": "Henüz veritabanı yok",
+    "user_id": "Kullanıcı kimliği"
+  },
+  "dnszonesoverviewpage": {
+    "actions": "İşlemler",
+    "domain_name": "Alan adı",
+    "expiration": "Son kullanma",
+    "owner": "Sahip"
+  },
+  "admindockerappspage": {
+    "running": "Çalışıyor",
+    "stopped": "Durduruldu"
+  },
+  "backupsdrawer": {
+    "backups": "Yedekler",
+    "restore": "Geri yükle"
+  },
+  "editdrawer": {
+    "domain": "Alan adı",
+    "memory": "Bellek",
+    "select_a_domain": "Bir alan adı seçin"
+  },
+  "envsection": {
+    "copy": "Kopyala",
+    "regenerate": "Yeniden oluştur"
+  },
+  "installdrawer": {
+    "domain": "Alan adı",
+    "memory": "Bellek",
+    "select_a_domain": "Bir alan adı seçin"
+  },
+  "maintenancetab": {
+    "containers": "Konteynerler",
+    "disk_usage": "Disk kullanımı",
+    "images": "İmajlar",
+    "volumes": "Birimler"
+  },
+  "domaincreate": {
+    "name": "Ad",
+    "select_a_user": "Bir kullanıcı seçin",
+    "user": "Kullanıcı"
+  },
+  "domaindirectoryprivacysection": {
+    "delete": "Sil",
+    "password": "Parola",
+    "path": "Yol",
+    "user": "Kullanıcı",
+    "username": "Kullanıcı adı"
+  },
+  "domainedit": {
+    "name": "Ad"
+  },
+  "domainemailsection": {
+    "copy_value": "Değeri kopyala"
+  },
+  "domainipaclsection": {
+    "action": "İşlem",
+    "comment": "Yorum",
+    "delete": "Sil",
+    "priority": "Öncelik"
+  },
+  "domainlist": {
+    "actions": "İşlemler",
+    "domain": "Alan adı",
+    "no_domains_yet": "Henüz alan adı yok",
+    "status": "Durum",
+    "user": "Kullanıcı"
+  },
+  "domainmailboxessection": {
+    "create": "Oluştur",
+    "create_mailbox": "Posta kutusu oluştur",
+    "domain": "Alan adı",
+    "password": "Parola"
+  },
+  "domainsslsection": {
+    "install": "Yükle"
+  },
+  "adminiplist": {
+    "actions": "İşlemler",
+    "address": "Adres",
+    "default": "Varsayılan",
+    "label": "Etiket",
+    "status": "Durum"
+  },
+  "adminmailpage": {
+    "new_password": "Yeni parola",
+    "set_password": "Parola belirle"
+  },
+  "mailthrottlespage": {
+    "enabled": "Etkin",
+    "scope": "Kapsam"
+  },
+  "adminmigrationdetailpage": {
+    "ended": "Bitti",
+    "error": "Hata",
+    "last_error": "Son hata",
+    "started": "Başladı"
+  },
+  "adminmigrationspage": {
+    "ended": "Bitti",
+    "source": "Kaynak",
+    "started": "Başladı",
+    "state": "Durum"
+  },
+  "createmigrationwizard": {
+    "review": "İncele"
+  },
+  "channelstab": {
+    "actions": "İşlemler",
+    "enabled": "Etkin",
+    "kind": "Tür",
+    "name": "Ad"
+  },
+  "dlqtab": {
+    "clear": "Temizle"
+  },
+  "eventstab": {
+    "description": "Açıklama",
+    "enabled": "Etkin",
+    "event": "Olay",
+    "severity": "Önem düzeyi"
+  },
+  "historytab": {
+    "clear": "Temizle",
+    "event": "Olay",
+    "read": "Oku",
+    "severity": "Önem düzeyi",
+    "show_details": "Ayrıntıları göster",
+    "time": "Saat",
+    "title": "Başlık"
+  },
+  "packagecreate": {
+    "name": "Ad"
+  },
+  "packageedit": {
+    "name": "Ad"
+  },
+  "packagelist": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "domains": "Alan adları",
+    "email": "E-posta",
+    "name": "Ad"
+  },
+  "phpextensionstab": {
+    "action": "İşlem",
+    "installed": "Yüklü",
+    "status": "Durum"
+  },
+  "versionstab": {
+    "actions": "İşlemler",
+    "default": "Varsayılan",
+    "status": "Durum"
+  },
+  "phppooledit": {
+    "kind": "Tür",
+    "value": "Değer"
+  },
+  "adminsecurityaide": {
+    "category": "Kategori",
+    "last_check": "Son kontrol",
+    "rebuild": "Yeniden oluştur"
+  },
+  "adminsecurityapparmor": {
+    "flip": "Ters çevir",
+    "mode": "Mod"
+  },
+  "adminsecuritycrowdsec": {
+    "apply": "Uygula",
+    "cancel": "İptal",
+    "description": "Açıklama",
+    "duration": "Süre",
+    "enabled": "Etkin",
+    "events": "Olaylar",
+    "provider": "Sağlayıcı",
+    "reason": "Neden",
+    "remove": "Kaldır",
+    "scope": "Kapsam",
+    "source": "Kaynak",
+    "started": "Başladı",
+    "type": "Tür",
+    "value": "Değer"
+  },
+  "adminsecurityegress": {
+    "actions": "İşlemler",
+    "comment": "Yorum",
+    "port": "Bağlantı noktası",
+    "reason": "Neden",
+    "state": "Durum",
+    "user": "Kullanıcı"
+  },
+  "adminsecuritymalware": {
+    "filename": "Dosya adı",
+    "settings": "Ayarlar"
+  },
+  "adminsecuritysnuffleupagus": {
+    "action": "İşlem",
+    "disable": "Devre dışı bırak"
+  },
+  "adminsecurityufw": {
+    "action": "İşlem",
+    "cancel": "İptal",
+    "continue": "Devam et",
+    "delete": "Sil",
+    "port": "Bağlantı noktası",
+    "status": "Durum"
+  },
+  "crowdsectestipcard": {
+    "unban": "Yasağı kaldır"
+  },
+  "egressmaturepromotion": {
+    "promote": "Yükselt"
+  },
+  "accountskeletoncard": {
+    "add": "Ekle",
+    "path": "Yol"
+  },
+  "databaseadminsections": {
+    "actions": "İşlemler",
+    "apply": "Uygula",
+    "host": "Ana bilgisayar",
+    "kill": "Sonlandır",
+    "state": "Durum",
+    "time": "Saat",
+    "user": "Kullanıcı"
+  },
+  "nspawnimagescard": {
+    "version": "Sürüm"
+  },
+  "pagetemplatescard": {
+    "cancel": "İptal",
+    "save": "Kaydet"
+  },
+  "panelsslcard": {
+    "hostname": "Ana bilgisayar adı"
+  },
+  "stalwartwebadmincard": {
+    "done": "Tamam"
+  },
+  "webmailtogglecard": {
+    "webmail": "Web posta"
+  },
+  "domainrepaircard": {
+    "cancel": "İptal",
+    "select_a_user": "Bir kullanıcı seçin"
+  },
+  "repaircard": {
+    "cancel": "İptal",
+    "run": "Çalıştır"
+  },
+  "userreset2faaction": {
+    "reset": "Sıfırla"
+  },
+  "userresetpasswordaction": {
+    "done": "Tamam",
+    "reset": "Sıfırla"
+  },
+  "myprofile": {
+    "email": "E-posta",
+    "full_name": "Tam ad",
+    "member_since": "Üyelik tarihi",
+    "role": "Rol",
+    "security": "Güvenlik",
+    "user_id": "Kullanıcı kimliği",
+    "username": "Kullanıcı adı"
+  },
+  "myprofilebackupcard": {
+    "destination": "Hedef"
+  },
+  "myprofileschedulecard": {
+    "destination": "Hedef"
+  },
+  "userdashboard": {
+    "databases": "Veritabanları",
+    "domains": "Alan adları",
+    "mailboxes": "Posta kutuları"
+  },
+  "accountactivity": {
+    "result": "Sonuç",
+    "target": "Hedef"
+  },
+  "userapitokenspage": {
+    "create": "Oluştur",
+    "name": "Ad"
+  },
+  "cloneapplicationmodal": {
+    "select_a_domain": "Bir alan adı seçin"
+  },
+  "installapplicationmodal": {
+    "copy": "Kopyala",
+    "domain": "Alan adı",
+    "no_domains_yet": "Henüz alan adı yok",
+    "select_a_domain": "Bir alan adı seçin"
+  },
+  "userapplicationlist": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "domain": "Alan adı",
+    "failed": "Başarısız",
+    "in_progress": "Devam ediyor",
+    "ready": "Hazır"
+  },
+  "createcronmodal": {
+    "name": "Ad",
+    "schedule": "Zamanlama"
+  },
+  "quicksetupmodal": {
+    "copy": "Kopyala"
+  },
+  "userdatabasedrawer": {
+    "create_database": "Veritabanı oluştur",
+    "name": "Ad"
+  },
+  "userdatabaselist": {
+    "actions": "İşlemler",
+    "created": "Oluşturuldu",
+    "database": "Veritabanı",
+    "size": "Boyut"
+  },
+  "userdnszonesoverviewpage": {
+    "actions": "İşlemler",
+    "domain_name": "Alan adı",
+    "expiration": "Son kullanma"
+  },
+  "userdockerappspage": {
+    "running": "Çalışıyor",
+    "stopped": "Durduruldu"
+  },
+  "userdomaindrawer": {
+    "add_domain": "Alan adı ekle",
+    "domain_name": "Alan adı"
+  },
+  "userdomainlist": {
+    "actions": "İşlemler",
+    "domain": "Alan adı",
+    "status": "Durum"
+  },
+  "filemanagerpage": {
+    "apply": "Uygula",
+    "create": "Oluştur",
+    "move": "Taşı",
+    "rename": "Yeniden adlandır",
+    "save": "Kaydet"
+  },
+  "autoreplymodal": {
+    "save": "Kaydet"
+  },
+  "createmailboxwizardmodal": {
+    "create_mailbox": "Posta kutusu oluştur",
+    "display_name": "Görünen ad",
+    "domain": "Alan adı",
+    "email_address": "E-posta adresi",
+    "password": "Parola",
+    "select_a_domain": "Bir alan adı seçin"
+  },
+  "catchalltab": {
+    "domain": "Alan adı",
+    "save": "Kaydet"
+  },
+  "disclaimertab": {
+    "edit": "Düzenle",
+    "save": "Kaydet"
+  },
+  "forwarderstab": {
+    "add_forwarder": "Yönlendirme ekle",
+    "create": "Oluştur",
+    "remove": "Kaldır",
+    "type": "Tür"
+  },
+  "mailboxestab": {
+    "new_password": "Yeni parola",
+    "no_mailboxes_yet": "Henüz posta kutusu yok",
+    "set_password": "Parola belirle"
+  },
+  "sharedfolderstab": {
+    "remove": "Kaldır",
+    "share": "Paylaş"
+  },
+  "userphpsettingspage": {
+    "domain": "Alan adı",
+    "select_a_domain": "Bir alan adı seçin"
+  },
+  "pythonappspage": {
+    "create": "Oluştur",
+    "domain": "Alan adı",
+    "name": "Ad",
+    "select_a_domain": "Bir alan adı seçin",
+    "status": "Durum",
+    "type": "Tür"
+  },
+  "usersshkeyspage": {
+    "add_ssh_key": "SSH anahtarı ekle",
+    "name": "Ad",
+    "public_key": "Genel anahtar",
+    "yes": "Evet"
+  },
+  "domainnginxoptionsmodal": {
+    "save": "Kaydet"
+  },
+  "notificationbell": {
+    "clear": "Temizle",
+    "notifications": "Bildirimler"
+  },
+  "sslmanagertable": {
+    "status": "Durum",
+    "yes": "Evet"
+  },
+  "settings": {
+    "hostname": "Ana bilgisayar adı",
+    "select_timezone": "Saat dilimi seçin",
+    "timezone": "Saat dilimi"
   }
 }
