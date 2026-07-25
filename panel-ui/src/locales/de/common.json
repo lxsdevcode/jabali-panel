@@ -145,7 +145,8 @@
       "reset_password": "Passwort zurücksetzen",
       "suspend": "Sperren",
       "unsuspend": "Entsperren",
-      "delete": "Löschen"
+      "delete": "Löschen",
+      "reset_2fa": "2FA zurücksetzen"
     },
     "filter": {
       "active": "Aktiv",
