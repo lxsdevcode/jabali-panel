@@ -191,23 +191,41 @@
     "domain": "Dominio",
     "owner": "Propietario",
     "status": "Estado",
-    "version": "Versión"
+    "version": "Versión",
+    "search_by_domain_or_user": "Buscar por dominio o usuario"
   },
   "adminauditlist": {
     "action": "Acción",
     "result": "Resultado",
-    "target": "Destino"
+    "target": "Destino",
+    "actor": "Actor",
+    "chain_broken_tamper_detected": "Cadena ROTA -- intervención externa detectada",
+    "integrity_retention": "Integridad y retención",
+    "prune": "Purgar",
+    "this_permanently_deletes_old_audit_records_t": "Esto eliminará antiguos registros de auditoría. El borrado se guarda como un evento de auditoría (ADR-0106)."
   },
   "adminautomationtokenspage": {
     "actions": "Acciones",
     "created": "Creado",
     "last_used": "Último uso",
     "name": "Nombre",
-    "status": "Estado"
+    "status": "Estado",
+    "copy_it_now_and_store_it_in_your_automation": "Copialo ahora y guardalo en el administrador de secretos de tus automatizaciones. El servidor solo mantiene una copia encriptada. Si la pierdes, revoca esta clave y genera una nueva.",
+    "revoke": "Revocar",
+    "this_is_the_only_time_the_secret_will_be_sho": "Esta es la única ocasión en que se mostrará el secreto.",
+    "token_id": "ID de la clave",
+    "writes_enabled": "Escritura habilitada",
+    "external_callers_using_this_token_will_start": "Aplicaciones externas que utilizan esta clave comenzarán a fallar inmediatamente. La revocación es ligera (auditable); la fila se mantiene en la lista con una etiqueta de 'revocado'.",
+    "mint_server_api_token": "Obtener Clave API del servidor",
+    "scopes": "Alcances"
   },
   "backuplogstab": {
     "status": "Estado",
-    "user_id": "ID de usuario"
+    "user_id": "ID de usuario",
+    "from": "Desde",
+    "the_backup_service_isn_t_responding_try_agai": "El servicio de respaldo no responde. Intenta de nuevo en un momento.",
+    "backup_logs_unavailable": "Registros de respaldo no disponibles",
+    "kind_contains": "Kind contiene"
   },
   "createbackupdrawer": {
     "content": "Contenido",
@@ -665,5 +683,8 @@
     "hostname": "Nombre de host",
     "select_timezone": "Seleccionar zona horaria",
     "timezone": "Zona horaria"
+  },
+  "backupsettingstab": {
+    "max_concurrent_backup_jobs": "Máximo número de tareas de respaldo concurrentes"
   }
 }
