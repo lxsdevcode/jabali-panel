@@ -26,6 +26,7 @@ import ptBR from "antd/locale/pt_BR";
 import ruRU from "antd/locale/ru_RU";
 import trTR from "antd/locale/tr_TR";
 import arEG from "antd/locale/ar_EG";
+import roRO from "antd/locale/ro_RO";
 import dayjs from "dayjs";
 import "dayjs/locale/he";
 import "dayjs/locale/de";
@@ -39,6 +40,7 @@ import "dayjs/locale/pt-br";
 import "dayjs/locale/ru";
 import "dayjs/locale/tr";
 import "dayjs/locale/ar";
+import "dayjs/locale/ro";
 
 import enCommon from "./locales/en/common.json";
 import heCommon from "./locales/he/common.json";
@@ -53,6 +55,7 @@ import ptBRCommon from "./locales/pt_BR/common.json";
 import ruCommon from "./locales/ru/common.json";
 import trCommon from "./locales/tr/common.json";
 import arCommon from "./locales/ar/common.json";
+import roCommon from "./locales/ro/common.json";
 
 export const DEFAULT_LNG = "en";
 
@@ -70,6 +73,7 @@ export const SUPPORTED = [
   "pt_BR",
   "ru",
   "tr",
+  "ro",
   "ar",
 ] as const;
 export type SupportedLng = (typeof SUPPORTED)[number];
@@ -94,6 +98,7 @@ export const LANGUAGE_LABELS: Record<SupportedLng, string> = {
   pt_BR: "Português (Brasil)",
   ru: "Русский",
   tr: "Türkçe",
+  ro: "Română",
   ar: "العربية",
 };
 
@@ -127,6 +132,7 @@ const ANTD_LOCALES: Record<SupportedLng, AntdLocale> = {
   pt_BR: ptBR,
   ru: ruRU,
   tr: trTR,
+  ro: roRO,
   ar: arEG,
 };
 
@@ -144,6 +150,7 @@ const DAYJS_LOCALES: Record<SupportedLng, string> = {
   pt_BR: "pt-br",
   ru: "ru",
   tr: "tr",
+  ro: "ro",
   ar: "ar",
 };
 
@@ -235,6 +242,7 @@ void i18n.use(initReactI18next).init({
     pt_BR: { common: ptBRCommon },
     ru: { common: ruCommon },
     tr: { common: trCommon },
+    ro: { common: roCommon },
     ar: { common: arCommon },
   },
   interpolation: {
