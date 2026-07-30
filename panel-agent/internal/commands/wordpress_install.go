@@ -70,6 +70,15 @@ type wordpressInstallResp struct {
 // can't smuggle extra wp-cli args or shell metacharacters into the download.
 var wordpressVersionRe = regexp.MustCompile(`^(latest|[0-9]+(\.[0-9]+){0,2})$`)
 
+// wordpressLocaleRe validates a WordPress locale before it is passed to wp-cli
+// (as a positional arg to `wp language core install` / `wp site
+// switch-language`). It MUST start with a letter — so a value can never begin
+// with "-" and smuggle a wp-cli flag (e.g. --require=<php>) — and allows only
+// letters, digits and underscores, which covers every real WP locale shape
+// (en_US, he_IL, pt_BR, es_419, de_DE_formal, ckb, …) without permitting
+// spaces, "=", or shell metacharacters.
+var wordpressLocaleRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{1,31}$`)
+
 func validateDocrootPath(osUser, docroot string) error {
 	allowedPrefix := filepath.Join("/home", osUser, "domains")
 	absDocroot, err := filepath.Abs(docroot)
@@ -300,6 +309,14 @@ func wordpressInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 	if req.Locale == "" {
 		req.Locale = "en_US"
 	}
+	// Validate before the locale reaches wp-cli as a positional arg (Step 3c),
+	// so a crafted value can't smuggle a flag / metacharacters.
+	if !wordpressLocaleRe.MatchString(req.Locale) {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: fmt.Sprintf("invalid locale %q (want a code like en_US or he_IL)", req.Locale),
+		}
+	}
 
 	// Default to latest stable (JAB-180); validate before it reaches wp-cli.
 	if req.Version == "" {
@@ -359,7 +376,12 @@ func wordpressInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 		req.OSUser,
 		"wp", "core", "download",
 		"--path="+installPath,
-		"--locale="+req.Locale,
+		// Always fetch the en_US core. Many locales (e.g. he_IL) have a
+		// translation but NO downloadable localized core ZIP, so
+		// `wp core download --locale=<that>` fails "Release not found". The
+		// requested language is applied post-install via a language pack
+		// (Step 3c), which works for every translated locale.
+		"--locale=en_US",
 		"--version="+req.Version,
 	)
 	var dlStdout, dlStderr bytes.Buffer
@@ -404,10 +426,11 @@ func wordpressInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 		// No --version: verify against whatever version wp-cli actually
 		// downloaded (req.Version may be "latest"). verify-checksums uses the
 		// installed core version by default, so integrity is still enforced
-		// (a tampered mirror/CDN or corrupted download fails closed).
+		// (a tampered mirror/CDN or corrupted download fails closed). The core
+		// is always en_US (see Step 1), so verify against en_US.
 		"wp", "core", "verify-checksums",
 		"--path="+installPath,
-		"--locale="+req.Locale,
+		"--locale=en_US",
 	)
 	var vfStdout, vfStderr bytes.Buffer
 	verifyCmd.Stdout = &vfStdout
@@ -556,6 +579,48 @@ func wordpressInstallHandler(ctx context.Context, params json.RawMessage) (any, 
 				truncateStr(permalinkStderr.String(), 400),
 				truncateStr(permalinkStdout.String(), 200),
 			),
+		}
+	}
+
+	// Step 3c: apply the requested language. The core is en_US; for any other
+	// locale, install its language pack and switch the site to it. This is how
+	// languages like he_IL (which have no localized core ZIP) get installed —
+	// the reason a plain `wp core download --locale=he_IL` fails. en_US is a
+	// no-op. Fatal on error: the tenant explicitly chose this language, so
+	// silently leaving an English site would be the wrong result.
+	if req.Locale != "" && req.Locale != "en_US" {
+		langCmd := buildSystemdRunCmd(ctx, req.OSUser,
+			"wp", "language", "core", "install", req.Locale, "--path="+installPath)
+		var langStdout, langStderr bytes.Buffer
+		langCmd.Stdout = &langStdout
+		langCmd.Stderr = &langStderr
+		if err := langCmd.Run(); err != nil {
+			_ = cleanupWordPressFiles(ctx, installPath)
+			return nil, &agentwire.AgentError{
+				Code: agentwire.CodeInternal,
+				Message: fmt.Sprintf("wp language core install %s failed: %v; stderr=%q; stdout=%q",
+					req.Locale, err,
+					truncateStr(langStderr.String(), 400),
+					truncateStr(langStdout.String(), 200),
+				),
+			}
+		}
+		// Set the site language (WPLANG) to the installed pack.
+		switchCmd := buildSystemdRunCmd(ctx, req.OSUser,
+			"wp", "site", "switch-language", req.Locale, "--path="+installPath)
+		var swStdout, swStderr bytes.Buffer
+		switchCmd.Stdout = &swStdout
+		switchCmd.Stderr = &swStderr
+		if err := switchCmd.Run(); err != nil {
+			_ = cleanupWordPressFiles(ctx, installPath)
+			return nil, &agentwire.AgentError{
+				Code: agentwire.CodeInternal,
+				Message: fmt.Sprintf("wp site switch-language %s failed: %v; stderr=%q; stdout=%q",
+					req.Locale, err,
+					truncateStr(swStderr.String(), 400),
+					truncateStr(swStdout.String(), 200),
+				),
+			}
 		}
 	}
 
