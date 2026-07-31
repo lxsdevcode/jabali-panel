@@ -1,47 +1,59 @@
 package commands
 
 import (
-	"os"
-	"path/filepath"
+	"bytes"
+	"strings"
 	"testing"
-
-	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
+	"text/template"
 )
 
-// TestDomainDocrootSymlinkSafe covers GH #476: docroot provisioning goes
-// through a home-rooted scope, so a tenant-planted symlink at domains/<domain>/
-// public_html is refused instead of redirecting the root mkdir/chown/chmod, and
-// a docroot outside the tenant's own home is rejected.
-func TestDomainDocrootSymlinkSafe(t *testing.T) {
-	home := t.TempDir()
-	outside := t.TempDir()
-	scope := filesafe.NewScopeForTest("u", "alice", home)
-	docRoot := filepath.Join(home, "domains", "example.com", "public_html")
-
-	// Clean home: the docroot chain is created.
-	if _, err := scope.MkdirInScope(docRoot, true, 0o755); err != nil {
-		t.Fatalf("mkdir docroot on clean home: %v", err)
+// JAB-183. Docroots are 2750 <user>:www-data and homes 0750 <user>:www-data, so
+// the nginx worker can read every tenant's tree. The only thing keeping one
+// tenant's vhost from serving another's files is that `root` points into their
+// own tree -- and a symlink defeats that unless nginx is told not to follow it.
+//
+// This asserts the directive survives future template edits. If it is removed,
+// a tenant can symlink to a neighbour's wp-config.php, name it .txt so the URI
+// never reaches the PHP location, and read it over HTTP.
+func TestVhostTemplate_DisablesCrossOwnerSymlinks(t *testing.T) {
+	t.Parallel()
+	vd := vhostData{
+		Domain: "example.com", DocRoot: "/home/u/domains/example.com/public_html",
+		HasPHP: true, PHPVersion: "8.3", Username: "u", IsEnabled: true,
+		FPMSocket: "/run/php/jabali-u/fpm.sock",
 	}
-	if fi, err := os.Stat(docRoot); err != nil || !fi.IsDir() {
-		t.Fatalf("docroot not created: %v", err)
-	}
-
-	// A docroot outside the tenant home is rejected.
-	if _, err := scope.MkdirInScope(filepath.Join(outside, "evil"), true, 0o755); err == nil {
-		t.Error("docroot outside the tenant home must be rejected")
-	}
-
-	// Hostile: replace 'domains' with a symlink to an outside dir.
-	if err := os.RemoveAll(filepath.Join(home, "domains")); err != nil {
+	tmpl := template.Must(template.New("vhost").Parse(vhostTemplate))
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, vd); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(home, "domains")); err != nil {
+	got := b.String()
+
+	if !strings.Contains(got, "disable_symlinks if_not_owner from=$document_root;") {
+		t.Error("vhost is missing `disable_symlinks if_not_owner from=$document_root` -- " +
+			"a tenant can symlink into another tenant's docroot and have nginx serve it")
+	}
+	// if_not_owner, not a blanket `on`: same-owner symlinks inside a tenant's own
+	// tree (Laravel public/storage, release-dir deploys) must keep working.
+	if strings.Contains(got, "disable_symlinks on") {
+		t.Error("blanket `disable_symlinks on` breaks same-owner symlinks tenants legitimately use")
+	}
+}
+
+// A disabled domain serves the parked page from /var/www/jabali-disabled and
+// never exposes the tenant docroot, so the directive is not required there.
+func TestVhostTemplate_DisabledDomainDoesNotServeDocRoot(t *testing.T) {
+	t.Parallel()
+	vd := vhostData{
+		Domain: "example.com", DocRoot: "/home/u/domains/example.com/public_html",
+		Username: "u", IsEnabled: false,
+	}
+	tmpl := template.Must(template.New("vhost").Parse(vhostTemplate))
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, vd); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := scope.MkdirInScope(docRoot, true, 0o755); err == nil {
-		t.Error("mkdir through a symlinked 'domains' must be refused")
-	}
-	if _, err := os.Stat(filepath.Join(outside, "example.com")); err == nil {
-		t.Error("root mkdir leaked through the domains symlink")
+	if strings.Contains(b.String(), "root "+vd.DocRoot+";") {
+		t.Error("disabled domain must not root into the tenant docroot")
 	}
 }

@@ -205,6 +205,22 @@ server {
 {{ end }}
 {{ if .IsEnabled }}
     root {{.DocRoot}};
+    # JAB-183: refuse to follow a symlink whose owner differs from the owner of
+    # the thing it points at. Docroots are 2750 <user>:www-data and homes are
+    # 0750 <user>:www-data, so the nginx worker (www-data) can traverse and read
+    # EVERY tenant's tree. Without this a tenant could symlink from their own
+    # docroot into another tenant's, name it .txt so the URI never matches the
+    # PHP location, and have nginx serve the target verbatim -- wp-config.php
+    # included. The PHP path is already confined by open_basedir; this is the
+    # matching confinement for nginx's own static serving.
+    #
+    # if_not_owner (rather than a blanket 'on') is deliberate: a tenant symlinking
+    # inside their own tree -- Laravel's public/storage, release-directory
+    # deploys -- has matching owner on both ends and keeps working. Everything the
+    # agent writes into a docroot is chowned to the tenant, so same-owner is the
+    # norm for legitimate content. from=$document_root skips checks above the
+    # docroot.
+    disable_symlinks if_not_owner from=$document_root;
     {{.IndexDirective}}
 
     {{.IPACLDirectives}}
