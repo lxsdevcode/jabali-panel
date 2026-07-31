@@ -131,11 +131,27 @@ func migrationRsyncRemoteHomeHandler(ctx context.Context, raw json.RawMessage) (
 			Message: fmt.Sprintf("dest_path %q must resolve under %s: %v", p.DestPath, homeRoot, rsErr)}
 	}
 	p.DestPath = resolvedDest
-	// Secret path must live in the panel's migration-secrets dir.
-	if !strings.HasPrefix(p.SecretPath, "/etc/jabali-panel/migration-secrets/") {
+	// Secret path must resolve to exactly <secrets-dir>/<job-ulid>.env.
+	//
+	// A bare strings.HasPrefix is not enough: it happily accepts
+	// "/etc/jabali-panel/migration-secrets/../../shadow", and the file is read
+	// below with os.ReadFile as root. Clean the path first, then require the
+	// directory to match exactly and the basename to be a validated job id --
+	// the same shape migration_admin_run.go already enforces, which takes a
+	// job_id and builds the path itself rather than trusting one.
+	//
+	// Not reachable today: every caller builds this from a server-generated
+	// genULID() job id. This is the boundary check CONVENTIONS.md asks for
+	// regardless of who the caller is, on a root-side arbitrary-file read.
+	cleanSecret := filepath.Clean(p.SecretPath)
+	secretBase := strings.TrimSuffix(filepath.Base(cleanSecret), ".env")
+	if filepath.Dir(cleanSecret) != migrationSecretsBaseDir ||
+		!strings.HasSuffix(cleanSecret, ".env") ||
+		!migrationJobIDRe.MatchString(secretBase) {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument,
-			Message: "secret_path must live under /etc/jabali-panel/migration-secrets/"}
+			Message: "secret_path must be <job-id>.env directly under " + migrationSecretsBaseDir}
 	}
+	p.SecretPath = cleanSecret
 
 	subctx, cancel := context.WithTimeout(ctx, 4*time.Hour)
 	defer cancel()
