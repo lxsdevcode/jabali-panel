@@ -4928,7 +4928,15 @@ build_backend() {
   for _bakbase in jabali-panel jabali-agent; do
     while IFS= read -r _old; do
       [[ -n "$_old" ]] && rm -f "$_old" && _pruned=$((_pruned + 1))
-    done < <(ls -1t "/usr/local/bin/${_bakbase}".bak.* 2>/dev/null | tail -n +4)
+    # `|| true`: with no .bak.* files the glob stays literal and ls exits 2.
+    # Under `set -o pipefail` (line 58) that becomes the pipeline's status, and
+    # `set -E` propagates ERR into this process substitution — so __on_err fired
+    # and printed a full "install.sh died" report on every host that had no old
+    # backups to prune, which is most of them (the install above uses `install`,
+    # which leaves none). The install then carried on and succeeded, so the
+    # message was pure noise — and noise on the one line operators are supposed
+    # to trust when something really does fail.
+    done < <({ ls -1t "/usr/local/bin/${_bakbase}".bak.* 2>/dev/null || true; } | tail -n +4)
   done
   (( _pruned > 0 )) && _ok "pruned $_pruned old binary backup(s) from /usr/local/bin"
   # M13 Step 1: jabali-ssh-shell ships at 0755 root:root. The wrapper
