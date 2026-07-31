@@ -334,6 +334,19 @@ CrowdSec AppSec config operator subcommands
 jabali appsec
 ```
 
+#### `jabali appsec explain`
+
+Show which CRS rules recently blocked requests (AppSec FP triage)
+
+```
+jabali appsec explain [flags]
+```
+
+**Flags:**
+
+- `--json` — emit raw JSON instead of the grouped report
+- `--limit` — how many recent AppSec alerts to inspect (max 200) (default `25`)
+
 #### `jabali appsec render-config`
 
 Write /etc/crowdsec/appsec-configs/jabali-appsec.yaml from internal/appseccfg.Render
