@@ -83,7 +83,13 @@ func SFTPCommandFlag(in SFTPInputs) string {
 	if in.Port > 0 && in.Port != 22 {
 		parts = append(parts, "-p", fmt.Sprintf("%d", in.Port))
 	}
-	parts = append(parts, fmt.Sprintf("%s@%s", in.User, in.Host), "-s", "sftp")
+	// Quote user@host like KeyPath above. restic tokenizes sftp.command on
+	// whitespace and then EXECUTES it, so an unquoted value containing spaces
+	// splits into extra argv entries -- a user of
+	// `u -o ProxyCommand=<cmd>` would hand ssh its own options, and
+	// ProxyCommand runs through a shell. KeyPath was already quoted here; user
+	// and host were the gap.
+	parts = append(parts, shellQuote(fmt.Sprintf("%s@%s", in.User, in.Host)), "-s", "sftp")
 	return "sftp.command=" + strings.Join(parts, " ")
 }
 
