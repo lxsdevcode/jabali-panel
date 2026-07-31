@@ -49,6 +49,16 @@ func RequireLocalhost() gin.HandlerFunc {
 			}
 		}
 
+		// Ask the kernel who actually opened this socket. SO_PEERCRED is set
+		// at connect time and cannot be forged or proxied, so this is the
+		// structural answer to "is this really the agent?" -- nginx runs as
+		// www-data and can never satisfy it. Falls through when the peer is
+		// unknown (loopback TCP, or ConnContext unwired), leaving the checks
+		// below to decide.
+		if !requirePeerRoot(c) {
+			return
+		}
+
 		remote := c.Request.RemoteAddr
 		// Unix-socket accept: RemoteAddr is "@" or "" (see net/http
 		// httputil docs). Accept — the connection is by definition

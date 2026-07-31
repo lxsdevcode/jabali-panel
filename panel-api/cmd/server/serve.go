@@ -30,6 +30,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/eventsources"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/mailscan"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/notifications/senders"
@@ -836,6 +837,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
+		// Hands each request its own net.Conn so middleware.RequireLocalhost
+		// can read SO_PEERCRED. Without this the internal routes can only see
+		// RemoteAddr, which is the useless "@" sentinel for every unix-socket
+		// peer -- agent and nginx alike -- which is what let proxied requests
+		// through to them.
+		ConnContext: middleware.ConnContext,
 	}
 
 	// Start reconciler background loop if it's configured.
