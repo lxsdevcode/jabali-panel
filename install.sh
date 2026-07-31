@@ -5540,8 +5540,8 @@ write_systemd_unit() {
   cat >"/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
 Description=Jabali Panel API
-After=network-online.target ${AGENT_SERVICE_NAME}.service redis-server.service
-Wants=network-online.target
+After=network-online.target ${AGENT_SERVICE_NAME}.service redis-server.service mariadb.service
+Wants=network-online.target mariadb.service
 # Panel hard-requires the agent at boot; without the socket we can't do
 # privileged ops. If the agent crashes post-boot the panel stays up —
 # individual handlers will return 503 with agent:unavailable.
@@ -5549,6 +5549,19 @@ Wants=network-online.target
 # Redis is a hard dep too (M14 / ADR-0056): the notification dispatcher
 # can't run without its stream. systemd will restart panel-api if
 # redis-server stops, so the ordering is symmetric with mariadb's.
+#
+# mariadb is in After=/Wants= but deliberately NOT in Requires=. The
+# first thing main() does is ping the DB and exit(1) if it fails, so
+# without the ordering panel-api reliably loses the race on a slow or
+# small host: measured on a 2 GB / 2 vCPU box, panel-api started 44s
+# before mariadb was ready and died with
+#
+#   Error: ping: dial unix /var/run/mysqld/mysqld.sock: no such file
+#
+# every single boot, recovering only via Restart=on-failure. Requires=
+# is the wrong tool for that — it would also stop the panel whenever
+# mariadb restarts, which is a worse outcome than handlers returning
+# errors for a few seconds. Ordering is the actual bug; coupling isn't.
 Requires=${AGENT_SERVICE_NAME}.service redis-server.service
 
 [Service]

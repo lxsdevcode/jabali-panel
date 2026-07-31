@@ -1,7 +1,12 @@
 [Unit]
 Description=Jabali retention sweep (prune expired log/report table rows)
 Documentation=https://github.com/shukiv/jabali-panel/blob/main/panel-api/cmd/server/retention_sweep_cmd.go
-After=jabali-panel.service
+After=jabali-panel.service mariadb.service
+# mariadb.service is explicit, not inherited via jabali-panel.service:
+# this unit's CLI opens its own DB connection, so panel-api having
+# started proves nothing about socket readiness. Persistent=true means
+# it can fire at boot, which is exactly when mariadb may still be
+# starting (measured: 44s on a 2 GB / 2 vCPU host).
 # No Requires=: the sweep talks to the panel DB directly; a transient failure
 # during boot/restart is tolerated (next daily firing retries).
 
