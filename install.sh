@@ -6264,7 +6264,10 @@ server {
     ssl_certificate     ${tls_cert};
     ssl_certificate_key ${tls_key};
     ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
+    # JAB-69: Mozilla-intermediate ciphers (no 3DES/Sweet32, no weak CBC).
+    # Kept in sync with install/nginx/jabali-panel-vhost.conf.tmpl and the
+    # per-domain vhost template in panel-agent/internal/commands/domain_create.go.
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers on;
 
     access_log /var/log/nginx/default.access.log;
@@ -6317,7 +6320,10 @@ server {
     ssl_certificate     ${tls_cert};
     ssl_certificate_key ${tls_key};
     ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
+    # JAB-69: Mozilla-intermediate ciphers (no 3DES/Sweet32, no weak CBC).
+    # Kept in sync with install/nginx/jabali-panel-vhost.conf.tmpl and the
+    # per-domain vhost template in panel-agent/internal/commands/domain_create.go.
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers on;
 
     root  /var/www/${JABALI_SRV_HOSTNAME};
