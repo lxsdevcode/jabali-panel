@@ -68,13 +68,31 @@ set -Eeuo pipefail
 __on_err() {
   local rc=$?
   local cmd="$BASH_COMMAND"
-  local line="$LINENO"
+  # BASH_LINENO[0], not LINENO. Inside a trap handler $LINENO is the handler's
+  # OWN line, so this always reported a line inside __on_err rather than the
+  # failing one -- every "install.sh died" diagnostic pointed at the same dead
+  # spot. BASH_LINENO[0] is the line of the caller frame, i.e. where the failure
+  # actually happened. (Cost real time chasing a phantom "line 71" during the
+  # GH #731 work; install.sh is ~13k lines, so a wrong line number is worse than
+  # none.) FUNCNAME[1] was already correct -- FUNCNAME[0] is __on_err itself.
+  local line="${BASH_LINENO[0]:-0}"
   local func="${FUNCNAME[1]:-main}"
   printf "\033[1;31m[jabali-install]\033[0m install.sh died:\n" >&2
   printf "    exit_code : %d\n" "$rc" >&2
   printf "    function  : %s\n" "$func" >&2
   printf "    line      : %d\n" "$line" >&2
   printf "    command   : %s\n" "$cmd" >&2
+  # Call trace. The handler exists to make an operator's bug report actionable,
+  # and in a file this size one frame rarely is: the same helper gets called
+  # from a dozen places and the interesting question is which caller. Frame 0 is
+  # __on_err, so start at 1.
+  if (( ${#FUNCNAME[@]} > 2 )); then
+    printf "    trace     :\n" >&2
+    local _i
+    for (( _i = 1; _i < ${#FUNCNAME[@]} - 1 && _i <= 8; _i++ )); do
+      printf "        %s() at line %s\n" "${FUNCNAME[$_i]}" "${BASH_LINENO[$((_i - 1))]}" >&2
+    done
+  fi
   # When the failing command was a systemctl reload/restart/start,
   # dump journalctl + status for the unit so the operator sees the
   # real reason without having to ask for log files.
