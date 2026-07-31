@@ -18,9 +18,12 @@
 package commands
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -51,8 +54,32 @@ type AppsecEvent struct {
 	ASNOrg     string   `json:"asn_org"`
 }
 
+// InlineBlock is a WAF denial that returned 403 but never became a ban, so it
+// produces NO cscli alert. JAB-193 hit exactly this: `cscli decisions list` and
+// `cscli alerts list` both showed nothing for a blocked editor, which is what
+// made the incident hard to diagnose.
+//
+// crowdsec.log records these, but with less detail than an alert — score
+// families and source IP, no rule id and no URI:
+//
+//	WAF block: anomaly score block: lfi: 5, anomaly: 8,  from 1.2.3.4 (127.0.0.1)
+//
+// Partial is still the difference between "invisible" and "correlate this IP
+// and timestamp against the vhost access log", which is how JAB-193 was
+// actually diagnosed by hand.
+type InlineBlock struct {
+	Timestamp string `json:"timestamp"`
+	SourceIP  string `json:"source_ip"`
+	// Scores is the raw family list, e.g. "lfi: 5, anomaly: 8".
+	Scores string `json:"scores"`
+}
+
 type appsecEventsResponse struct {
 	Events []AppsecEvent `json:"events"`
+	// InlineBlocks are 403s that never produced an alert. Reported separately
+	// because they carry no rule id — presenting them alongside alert-backed
+	// events would imply a precision they do not have.
+	InlineBlocks []InlineBlock `json:"inline_blocks"`
 	// AlertsScanned is how many alerts were inspected, so the caller can say
 	// "nothing found in the last N" rather than implying the box is clean.
 	AlertsScanned int `json:"alerts_scanned"`
@@ -98,7 +125,49 @@ func appsecEventsHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 		out = append(out, evs...)
 	}
-	return appsecEventsResponse{Events: out, AlertsScanned: len(alerts)}, nil
+	return appsecEventsResponse{
+		Events:        out,
+		InlineBlocks:  readInlineBlocks(crowdsecLogPath, limit),
+		AlertsScanned: len(alerts),
+	}, nil
+}
+
+const crowdsecLogPath = "/var/log/crowdsec.log"
+
+// inlineBlockRe pulls the score list and source IP out of the WAF block line.
+// Anchored on "WAF block:" so it never matches the `module=db` alert echo of
+// the same event, which would double-count.
+var inlineBlockRe = regexp.MustCompile(
+	`time="([^"]+)".*WAF block: anomaly score block: (.*?),\s+from ([0-9a-fA-F.:]+)`)
+
+// readInlineBlocks scans the tail of crowdsec.log for inline denials. Reads the
+// whole file and keeps the last n matches: the log is rotated, and a bounded
+// tail is simpler to get right than seeking backwards for an arbitrary count.
+func readInlineBlocks(path string, n int) []InlineBlock {
+	f, err := os.Open(path)
+	if err != nil {
+		return []InlineBlock{}
+	}
+	defer f.Close()
+
+	out := make([]InlineBlock, 0, n)
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		m := inlineBlockRe.FindStringSubmatch(sc.Text())
+		if m == nil {
+			continue
+		}
+		out = append(out, InlineBlock{
+			Timestamp: m[1],
+			Scores:    strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(m[2]), ",")),
+			SourceIP:  m[3],
+		})
+		if len(out) > n {
+			out = out[1:]
+		}
+	}
+	return out
 }
 
 // inspectAppsecAlert flattens one alert's events into AppsecEvent rows.

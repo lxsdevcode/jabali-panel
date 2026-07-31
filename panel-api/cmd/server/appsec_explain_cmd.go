@@ -55,6 +55,44 @@ func annotateRules(ids []string) (detections []string, infra []string) {
 	return detections, infra
 }
 
+// printInlineBlocks reports 403s that never became a ban.
+//
+// These are the ones that made JAB-193 hard: an inline denial creates no
+// decision and no alert, so `cscli decisions list` and `cscli alerts list` are
+// both empty for the affected IP and the operator concludes CrowdSec was not
+// involved. crowdsec.log is the only record, and it carries less than an alert
+// does — score families and source IP, no rule id and no URI.
+//
+// Kept in its own section, deliberately: presenting these next to the
+// alert-backed rows above would imply a precision they do not have.
+func printInlineBlocks(blocks []struct {
+	Timestamp string `json:"timestamp"`
+	SourceIP  string `json:"source_ip"`
+	Scores    string `json:"scores"`
+}) {
+	if len(blocks) == 0 {
+		return
+	}
+	byIP := map[string][]string{}
+	order := []string{}
+	for _, b := range blocks {
+		if _, seen := byIP[b.SourceIP]; !seen {
+			order = append(order, b.SourceIP)
+		}
+		byIP[b.SourceIP] = append(byIP[b.SourceIP], b.Scores)
+	}
+
+	fmt.Printf("\nInline 403s with no alert (%d): these never became a ban, so cscli\n", len(blocks))
+	fmt.Println("shows nothing for them. crowdsec.log records no rule id and no URI.")
+	for _, ip := range order {
+		scores := byIP[ip]
+		fmt.Printf("  %-42s %d block(s)   last: %s\n", ip, len(scores), scores[len(scores)-1])
+	}
+	fmt.Println("\nTo get the URI for these, correlate the IP and timestamp against the")
+	fmt.Println("tenant's nginx access log (403 responses). The score family above tells")
+	fmt.Println("you which CRS group to look in — sql_injection, rce, php_injection, lfi.")
+}
+
 func newAppSecExplainCmd() *cobra.Command {
 	var limit int
 	var jsonOut bool
@@ -96,6 +134,11 @@ usually another entry in the rule id list.`,
 					Country    string   `json:"country"`
 					ASNOrg     string   `json:"asn_org"`
 				} `json:"events"`
+				InlineBlocks []struct {
+					Timestamp string `json:"timestamp"`
+					SourceIP  string `json:"source_ip"`
+					Scores    string `json:"scores"`
+				} `json:"inline_blocks"`
 				AlertsScanned int `json:"alerts_scanned"`
 			}
 			if err := json.Unmarshal(raw, &resp); err != nil {
@@ -108,7 +151,7 @@ usually another entry in the rule id list.`,
 				return nil
 			}
 
-			if len(resp.Events) == 0 {
+			if len(resp.Events) == 0 && len(resp.InlineBlocks) == 0 {
 				fmt.Printf("No AppSec blocks found in the last %d alert(s).\n", resp.AlertsScanned)
 				fmt.Println("If a user is reporting a 403, confirm AppSec is in block mode and that the")
 				fmt.Println("request actually reached it — an nginx-level deny never becomes an alert.")
@@ -170,6 +213,7 @@ usually another entry in the rule id list.`,
 			fmt.Println("    reproduces — internal/appseccfg/appseccfg.go holds the jabali-before rules.")
 			fmt.Println("  - Many distinct source IPs on one URI reads as a false positive.")
 			fmt.Println("    One IP across many URIs usually reads as an actual attacker.")
+			printInlineBlocks(resp.InlineBlocks)
 			return nil
 		},
 	}
