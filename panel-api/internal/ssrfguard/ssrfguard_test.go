@@ -29,12 +29,25 @@ func TestValidateHost_BlocksDangerousRanges(t *testing.T) {
 func TestValidateHost_PrivateGatedByAllowFlag(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	for _, ip := range []string{"10.0.0.1", "172.16.0.1", "192.168.1.1"} {
+	// 100.64.x and 100.127.x are CGNAT (RFC 6598) — net.IP.IsPrivate does not
+	// cover that range, so they are gated by the explicit cgnatNet check.
+	for _, ip := range []string{"10.0.0.1", "172.16.0.1", "192.168.1.1", "100.64.0.1", "100.127.255.254"} {
 		_, err := ValidateHost(ctx, ip, false)
 		require.Error(t, err, "%s must be blocked when allowPrivate=false", ip)
 
 		_, err = ValidateHost(ctx, ip, true)
 		require.NoError(t, err, "%s must be allowed when allowPrivate=true", ip)
+	}
+}
+
+func TestValidateHost_CGNATBoundaries(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// Just outside 100.64.0.0/10 on both sides — must NOT be caught by the
+	// CGNAT check, or we would blackhole legitimate public space.
+	for _, ip := range []string{"100.63.255.255", "100.128.0.0"} {
+		_, err := ValidateHost(ctx, ip, false)
+		require.NoError(t, err, "%s is outside CGNAT and must remain allowed", ip)
 	}
 }
 

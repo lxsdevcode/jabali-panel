@@ -37,7 +37,7 @@ import (
 type Discoverer struct {
 	// AllowPrivate — ADR-0095 decision 8. When true, SSRF
 	// guard permits RFC1918 / ULA targets. Default false.
-	AllowPrivate bool
+	AllowPrivate   bool
 	Port           int
 	CommandTimeout time.Duration
 }
@@ -98,7 +98,7 @@ func (d *Discoverer) Connect(ctx context.Context, host, user string, secret migr
 	if err != nil {
 		conn.Close()
 		if strings.Contains(err.Error(), "unable to authenticate") || strings.Contains(err.Error(), "no supported methods remain") {
-			return nil, fmt.Errorf("hestiacp.Connect: source SSH server rejected the supplied auth method (likely PasswordAuthentication=no — upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", err)
+			return nil, fmt.Errorf("hestiacp.Connect: source SSH server rejected the credentials for user %q — check the password or key is correct for that user, that the user exists on the source, and note the server may have PasswordAuthentication=no (upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", user, err)
 		}
 		return nil, fmt.Errorf("hestiacp.Connect: ssh handshake: %w", err)
 	}
@@ -214,9 +214,9 @@ func (s *session) run(ctx context.Context, timeout time.Duration, cmd string) ([
 
 // hestiaUser is the v-list-users JSON shape:
 //
-//   { "<username>": { "FNAME": "...", "EMAIL": "...", "U_DISK": "1.5",
-//                     "U_BANDWIDTH": "...", "PACKAGE": "default",
-//                     "SUSPENDED": "no", ... } }
+//	{ "<username>": { "FNAME": "...", "EMAIL": "...", "U_DISK": "1.5",
+//	                  "U_BANDWIDTH": "...", "PACKAGE": "default",
+//	                  "SUSPENDED": "no", ... } }
 //
 // One top-level key per user, value = string-keyed map of attrs.
 type hestiaUser struct {

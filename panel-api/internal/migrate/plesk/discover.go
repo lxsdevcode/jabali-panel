@@ -110,7 +110,7 @@ func (d *Discoverer) Connect(ctx context.Context, host, user string, secret migr
 	if err != nil {
 		conn.Close()
 		if strings.Contains(err.Error(), "unable to authenticate") || strings.Contains(err.Error(), "no supported methods remain") {
-			return nil, fmt.Errorf("plesk.Connect: source SSH server rejected the supplied auth method (likely PasswordAuthentication=no — upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", err)
+			return nil, fmt.Errorf("plesk.Connect: source SSH server rejected the credentials for user %q — check the password or key is correct for that user, that the user exists on the source, and note the server may have PasswordAuthentication=no (upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", user, err)
 		}
 		return nil, fmt.Errorf("plesk.Connect: ssh handshake: %w", err)
 	}

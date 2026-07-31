@@ -1,14 +1,15 @@
 package api
 
 import (
-	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"encoding/json"
 	"errors"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,9 +30,9 @@ const maxAllowedExtras = 50
 // endpoints. All four repos are required; if any are nil the routes
 // stay unmounted (matches the conditional pattern from M18).
 type UserEgressHandlerConfig struct {
-	Users       repository.UserRepository
-	Policies    repository.UserEgressPolicyRepository
-	Requests    repository.UserEgressRequestRepository
+	Users    repository.UserRepository
+	Policies repository.UserEgressPolicyRepository
+	Requests repository.UserEgressRequestRepository
 	// DropSamples backs GET /admin/users/:id/egress/drops-24h —
 	// the M34 deep-stats sparkline. Optional; nil → endpoint
 	// returns 503.
@@ -244,9 +245,9 @@ func (h *userEgressHandler) summary(c *gin.Context) {
 		totalDrops += p.DropCount24h
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"state_counts":  counts,
-		"total_drops":   totalDrops,
-		"policy_total":  len(policies),
+		"state_counts": counts,
+		"total_drops":  totalDrops,
+		"policy_total": len(policies),
 	})
 }
 
@@ -407,6 +408,17 @@ func validateExtra(e *egressDestinationInput) error {
 	if len(e.Comment) > 200 {
 		return errors.New("comment too long")
 	}
+	// The comment is rendered into /etc/nftables.d/jabali-per-user-egress.nft,
+	// which is loaded by `nft -f` as root. A newline would inject arbitrary
+	// nftables lines; a control character can make the file unparseable, which
+	// fails the whole ruleset closed-to-absent (the egress policy silently stops
+	// applying box-wide). The agent sanitises again at render time — this is the
+	// boundary half of that pair.
+	if i := strings.IndexFunc(e.Comment, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == 0 || unicode.IsControl(r)
+	}); i >= 0 {
+		return errors.New("comment must not contain newlines or control characters")
+	}
 	return nil
 }
 
@@ -492,7 +504,6 @@ func (h *userEgressHandler) adminDropEvents(c *gin.Context) {
 	}
 	c.Data(http.StatusOK, "application/json", raw)
 }
-
 
 // pinPath resolves the operator-pin file, defaulting to the shared constant.
 func (h *userEgressHandler) pinPath() string {

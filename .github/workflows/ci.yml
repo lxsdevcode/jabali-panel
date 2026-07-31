@@ -40,6 +40,44 @@ jobs:
       - name: go test -race
         run: make test
 
+  govulncheck:
+    name: govulncheck (Go stdlib + deps)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      # JAB-185. Nothing in CI reported the dependency surface before this, so a
+      # stale toolchain or a vulnerable module could ship unnoticed -- the manual
+      # 2026-07-31 run found 32 reachable advisories against the go.mod floor,
+      # including archive/tar reachable from migration restore and encoding/pem
+      # reachable from SSL cert upload.
+      #
+      # continue-on-error while the backlog is worked down: the report is the
+      # point, and a red build on day one just trains people to ignore it. Flip
+      # this to a hard gate once the run is clean (tracked in JAB-185).
+      - name: govulncheck
+        continue-on-error: true
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./... 2>&1 | tee govulncheck.txt
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### govulncheck'
+            echo
+            if grep -q 'No vulnerabilities found' govulncheck.txt 2>/dev/null; then
+              echo 'No known vulnerabilities.'
+            else
+              echo '```'
+              grep -E '^Vulnerability #|^    [A-Z]|Found in:|Fixed in:' govulncheck.txt 2>/dev/null \
+                | grep -vE 'Example traces|More info' | head -100
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   install-sh-lint:
     name: install.sh phantom-function lint
     runs-on: self-hosted

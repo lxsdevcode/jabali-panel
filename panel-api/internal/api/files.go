@@ -642,11 +642,16 @@ func (h *filesHandler) preview(c *gin.Context) {
 	}
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Disposition", "inline")
+	// JAB-191: is_binary now also covers "text that is not valid UTF-8" (latin1
+	// PHP/HTML and friends). Content is empty for those -- the bytes came back
+	// base64 -- so the editor MUST refuse rather than open a blank buffer and
+	// write that blank back over the user's file on Save.
 	c.JSON(http.StatusOK, gin.H{
 		"path":      result.Path,
 		"size":      result.Size,
 		"content":   result.Content,
 		"mime_type": result.MimeType,
+		"is_binary": result.IsBinary,
 	})
 }
 

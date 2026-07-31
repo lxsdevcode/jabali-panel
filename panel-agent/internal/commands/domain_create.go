@@ -205,6 +205,29 @@ server {
 {{ end }}
 {{ if .IsEnabled }}
     root {{.DocRoot}};
+    # JAB-183: refuse to follow a symlink whose owner differs from the owner of
+    # the thing it points at. Docroots are 2750 <user>:www-data and homes are
+    # 0750 <user>:www-data, so the nginx worker (www-data) can traverse and read
+    # EVERY tenant's tree. Without this a tenant could symlink from their own
+    # docroot into another tenant's, name it .txt so the URI never matches the
+    # PHP location, and have nginx serve the target verbatim -- wp-config.php
+    # included. The PHP path is already confined by open_basedir; this is the
+    # matching confinement for nginx's own static serving.
+    #
+    # if_not_owner (rather than a blanket 'on') is deliberate: a tenant symlinking
+    # inside their own tree -- Laravel's public/storage, release-directory
+    # deploys -- has matching owner on both ends and keeps working. Everything the
+    # agent writes into a docroot is chowned to the tenant, so same-owner is the
+    # norm for legitimate content. from=$document_root skips checks above the
+    # docroot.
+    #
+    # Operator note: a rejection surfaces in the domain error log as
+    #   openat() "..." failed (40: Too many levels of symbolic links)
+    # at [crit]. That message is ELOOP from the kernel and does NOT mean a
+    # symlink loop -- it is this directive refusing a cross-owner link. If a
+    # legitimate app trips it, chown the link and its target to the same user
+    # rather than removing this line.
+    disable_symlinks if_not_owner from=$document_root;
     {{.IndexDirective}}
 
     {{.IPACLDirectives}}
@@ -353,6 +376,13 @@ server {
 {{ end }}
     }
     location ~ \.php$ {
+        # Existence guard (JAB-187). Without it a request for
+        # /upload.jpg/x.php matches this location on the URI suffix, and PHP's
+        # cgi.fix_pathinfo walk-back would execute the uploaded .jpg. php-fpm's
+        # security.limit_extensions = .php (install/php/jabali-php-pool.conf.tmpl)
+        # already rejects that, so this is the second lock on the same door --
+        # it must not be removed on the assumption the pool setting is enough.
+        try_files $uri =404;
         fastcgi_pass unix:{{.FPMSocket}};
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // EgressUser is one user-policy snapshot consumed by the renderer.
@@ -16,8 +17,8 @@ import (
 // emit them verbatim into the chain. The agent does not re-validate
 // CIDRs or ports here — defence-in-depth lives in the API handler.
 type EgressUser struct {
-	Username     string
-	State        string // "off" | "learning" | "enforced"
+	Username string
+	State    string // "off" | "learning" | "enforced"
 	// UID (GH #708) is the OS uid, used for a `meta skuid` egress-enforcement
 	// fallback when the user's cgroup slice is missing (so an enforced tenant
 	// can't fail open). 0 = unknown (fallback unavailable).
@@ -291,10 +292,45 @@ func writeExtra(b *strings.Builder, ex EgressExtra) {
 	} else {
 		rule = fmt.Sprintf("    %s daddr %s accept", family, ex.CIDR)
 	}
-	if ex.Comment != "" {
-		rule += fmt.Sprintf(" comment \"%s\"", strings.ReplaceAll(ex.Comment, "\"", "'"))
+	if c := sanitiseEgressComment(ex.Comment); c != "" {
+		rule += fmt.Sprintf(" comment \"%s\"", c)
 	}
 	b.WriteString(rule + "\n")
+}
+
+// sanitiseEgressComment makes a panel-supplied comment safe to embed in the
+// nftables file this package renders. panel-api rejects newlines and control
+// characters at its own boundary, but the agent writes a file that `nft -f`
+// loads as root, so it does not take that on trust (the same mirror-the-
+// validation rule CONVENTIONS.md sets out for M14).
+//
+// A newline here would inject arbitrary nftables lines; any unparseable byte
+// fails the whole ruleset to load, which silently drops per-user egress
+// enforcement box-wide. Quotes become apostrophes (they would close the comment
+// string), newlines and control characters become spaces, and the result is
+// capped at the same 200 chars the API enforces.
+func sanitiseEgressComment(in string) string {
+	if in == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range in {
+		switch {
+		case r == '"':
+			b.WriteRune('\'')
+		case r == '\\':
+			b.WriteRune('/')
+		case r == '\n' || r == '\r' || r == '\t' || unicode.IsControl(r):
+			b.WriteRune(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if len(out) > 200 {
+		out = out[:200]
+	}
+	return out
 }
 
 func joinInts(in []int, sep string) string {

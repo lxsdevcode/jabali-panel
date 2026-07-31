@@ -88,7 +88,7 @@ import {
   filesWrite,
   filesDu,
 } from "./filesApi";
-import { isTextEditable } from "./editability";
+import { isPreviewEditable, isTextEditable } from "./editability";
 import { UploadDrawer } from "./UploadDrawer";
 import type { UploadDrawerHandle } from "./UploadDrawer";
 // Monaco is ~500KB gzipped of the bundle; lazy-load it so the initial
@@ -639,21 +639,10 @@ export const FileManagerPage = () => {
       setEditOriginal("");
       try {
         const resp = await filesPreview(path);
-        // Refuse to open binaries. Two signals, either one is enough:
-        //   1. Server-sniffed mime_type says non-text (image, octet-stream, ...)
-        //   2. Content contains NUL bytes (classic binary smell; text never has
-        //      them, and JSON preserves \u0000 literally so we actually see it)
-        const mime = (resp.mime_type || "").toLowerCase();
-        const mimeIsText =
-          mime.startsWith("text/") ||
-          mime.startsWith("application/json") ||
-          mime.startsWith("application/xml") ||
-          mime.startsWith("application/x-sh") ||
-          mime.startsWith("application/javascript") ||
-          mime === "";
-        const hasNul = resp.content.includes("\u0000");
-        if (!mimeIsText || hasNul) {
-          message.error("Cannot edit: file looks binary");
+        // Refuse anything that is not editable text. See isPreviewEditable --
+        // extracted so the rule is unit-tested rather than buried in a callback.
+        if (!isPreviewEditable(resp)) {
+          message.error("Cannot edit: file is not editable text (binary or non-UTF-8 encoding)");
           setEditTarget(null);
           return;
         }
