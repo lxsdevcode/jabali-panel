@@ -28,6 +28,12 @@ export type FilePreviewResponse = {
   // Used by the editor to refuse binary files before they land in Monaco —
   // loading a 1 MiB JPEG into a text editor is a mess the user shouldn't see.
   mime_type?: string;
+  // JAB-191: true when the bytes are not editable text -- either sniffed binary,
+  // or text that is not valid UTF-8 (latin1/windows-1252 PHP and HTML, common on
+  // legacy sites). Those come back with an EMPTY content field because the bytes
+  // travelled as base64, so the editor must refuse rather than open a blank
+  // buffer and save that blank over the user's file.
+  is_binary?: boolean;
 };
 
 export async function filesHome(): Promise<{ path: string }> {

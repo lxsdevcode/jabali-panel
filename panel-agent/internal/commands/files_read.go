@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 	"git.jabali-panel.com/shukivaknin/jabali2/internal/filesafe"
@@ -33,6 +34,31 @@ type filesReadResponse struct {
 	IsBinary   bool   `json:"is_binary,omitempty"`
 	Truncated  bool   `json:"truncated,omitempty"`
 	MimeType   string `json:"mime_type,omitempty"`
+}
+
+// validUTF8Body reports whether content is valid UTF-8. A truncated read can
+// slice the final rune mid-sequence, which is a cut, not corruption -- so when
+// the read was truncated an incomplete trailing rune is ignored.
+func validUTF8Body(content []byte, truncated bool) bool {
+	if utf8.Valid(content) {
+		return true
+	}
+	if !truncated {
+		return false
+	}
+	// Tolerate ONLY a final rune the limit sliced in half -- nothing else. Walk
+	// back to the last rune-start byte: everything before it must be valid, and
+	// the bytes from it must be a genuine incomplete sequence (DecodeRune gives
+	// RuneError with size 1). Blindly trimming trailing bytes instead would
+	// accept truly corrupt content whose bad byte merely sits near the end.
+	for i := len(content) - 1; i >= 0 && i > len(content)-utf8.UTFMax; i-- {
+		if !utf8.RuneStart(content[i]) {
+			continue
+		}
+		r, size := utf8.DecodeRune(content[i:])
+		return r == utf8.RuneError && size == 1 && utf8.Valid(content[:i])
+	}
+	return false
 }
 
 func filesReadHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -131,6 +157,16 @@ func filesReadHandler(ctx context.Context, params json.RawMessage) (any, error) 
 		!strings.Contains(mimeType, "json") &&
 		!strings.Contains(mimeType, "xml") &&
 		!strings.Contains(mimeType, "javascript")
+
+	// JAB-191: anything that is not valid UTF-8 MUST travel as base64. The
+	// non-binary branch below hands the bytes back in a JSON string, and
+	// encoding/json substitutes U+FFFD for every invalid byte -- so the caller
+	// silently receives a corrupted file with no error. MIME sniffing alone does
+	// not catch this: a latin1 / windows-1252 PHP or HTML file (very common on
+	// legacy sites) sniffs as text/plain and takes the lossy path.
+	if !isBinary && !validUTF8Body(content, truncated) {
+		isBinary = true
+	}
 
 	resp := &filesReadResponse{
 		Path:      cleanPath,
