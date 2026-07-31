@@ -10830,7 +10830,7 @@ install_notify_template() {
 # STALWART_VERSION is the single pin for the Stalwart Mail server binary,
 # consumed by both install_stalwart (fresh install) and upgrade_stalwart_binary
 # (the jabali update path). Bump here + install/stalwart.sha256 together.
-STALWART_VERSION="0.16.14"
+STALWART_VERSION="0.16.15"
 
 # upgrade_stalwart_binary is the jabali-update entry point for the Stalwart
 # server binary (GH #525). install.sh's full install_stalwart runs on fresh
