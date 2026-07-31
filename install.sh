@@ -4753,7 +4753,47 @@ _deploy_profile() {
   [ -r "$f" ] && tr -d "[:space:]" < "$f" 2>/dev/null || true
 }
 
+# GH #731: the release tarball already ships compiled linux/amd64 binaries, and
+# jabali-panel embeds the built SPA (//go:embed all:dist in panel-ui/embed.go).
+# bootstrap.sh hands us their directory in JABALI_PREBUILT_BIN. Using them lets a
+# small host skip `npm ci` + `vite build` + four `go build`s entirely — the vite
+# step alone is what OOM-kills 2 GB VPSes (see ensure_swap's own warning), and
+# ensure_swap soft-returns 0 on containerized hosts where swapon is blocked, so
+# on those there is no swap to save it.
+#
+# Fail-SAFE by design: any doubt returns non-zero and we build from source, which
+# is exactly what every existing host already does. The smoke test runs the real
+# binary, because a truncated download or corrupt tarball would otherwise only
+# surface at first boot.
+_prebuilt_ready() {
+  local d="${JABALI_PREBUILT_BIN:-}"
+  [[ -n "$d" && -d "$d" ]] || return 1
+  local b
+  for b in jabali-panel jabali-agent jabali-ssh-shell jabali-mailhook; do
+    [[ -s "$d/$b" && -x "$d/$b" ]] || return 1
+  done
+  "$d/jabali-panel" version >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# _prebuilt_version reads the release short SHA from the tarball MANIFEST, so the
+# installed binary reports the commit it was actually built from. The git clone
+# can sit on a newer commit than the release, so rev-parse would lie here.
+_prebuilt_version() {
+  local mf="${JABALI_RELEASE_MANIFEST:-}"
+  if [[ -n "$mf" && -r "$mf" ]]; then
+    local v
+    v="$(awk -F= '/^short_sha=/{print $2; exit}' "$mf" 2>/dev/null)"
+    [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
+  fi
+  printf 'prebuilt'
+}
+
 build_frontend() {
+  if _prebuilt_ready; then
+    _ok "prebuilt release binaries present — skipping npm ci + vite build (the SPA is already embedded in jabali-panel)"
+    return 0
+  fi
   ensure_swap
   _log "building panel-ui (npm ci + npm run build)"
   # npm ci needs lock + no partial node_modules. Run as the service user so
@@ -4850,6 +4890,14 @@ build_backend() {
   local version full_sha btime
   version="$(sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" rev-parse --short HEAD)"
   full_sha="$(sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" rev-parse HEAD)"
+  # GH #731: with prebuilt binaries the version must come from the release, not
+  # from the clone -- the clone tracks the branch and can already be ahead of the
+  # tarball, which would make `jabali version` report a commit the running binary
+  # was never built from.
+  if _prebuilt_ready; then
+    version="$(_prebuilt_version)"
+    full_sha="$version"
+  fi
   btime="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$REPO_DIR/bin"
@@ -4886,18 +4934,29 @@ build_backend() {
     fi
     _log "build-backend: low-RAM host (${mem_mb_be}MB) → serialize go build ($go_lowmem)"
   fi
-  # One invocation of go, three binaries — shared module, shared build cache.
-  sudo -u "$SERVICE_USER" -H env \
-    PATH="$GO_ROOT/bin:/usr/bin:/bin" \
-    HOME="$REPO_DIR" \
-    GOCACHE="$REPO_DIR/.cache/go-build" \
-    GOMODCACHE="$REPO_DIR/.cache/go-mod" \
-    $go_lowmem \
-    bash -c "cd '$REPO_DIR' && \
-      go build -trimpath $panel_tags -ldflags '$panel_ld' -o '$tmp_panel' ./panel-api/cmd/server && \
-      go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_agent' ./panel-agent/cmd/jabali-agent && \
-      go build -trimpath -ldflags '-s -w' -o '$tmp_sshshell' ./panel-agent/cmd/jabali-ssh-shell && \
-      go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_mailhook' ./panel-agent/cmd/jabali-mailhook"
+  if _prebuilt_ready; then
+    # GH #731: copy the release binaries into the same .new paths the source
+    # build would have produced, so every step below -- install, backup pruning,
+    # catalog sync, wp-plugin bundling, the `jabali` symlink -- runs unchanged.
+    _log "installing prebuilt release binaries (version=$version) — no on-box compile"
+    install -m 0755 "$JABALI_PREBUILT_BIN/jabali-panel"     "$tmp_panel"
+    install -m 0755 "$JABALI_PREBUILT_BIN/jabali-agent"     "$tmp_agent"
+    install -m 0755 "$JABALI_PREBUILT_BIN/jabali-ssh-shell" "$tmp_sshshell"
+    install -m 0755 "$JABALI_PREBUILT_BIN/jabali-mailhook"  "$tmp_mailhook"
+  else
+    # One invocation of go, three binaries — shared module, shared build cache.
+    sudo -u "$SERVICE_USER" -H env \
+      PATH="$GO_ROOT/bin:/usr/bin:/bin" \
+      HOME="$REPO_DIR" \
+      GOCACHE="$REPO_DIR/.cache/go-build" \
+      GOMODCACHE="$REPO_DIR/.cache/go-mod" \
+      $go_lowmem \
+      bash -c "cd '$REPO_DIR' && \
+        go build -trimpath $panel_tags -ldflags '$panel_ld' -o '$tmp_panel' ./panel-api/cmd/server && \
+        go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_agent' ./panel-agent/cmd/jabali-agent && \
+        go build -trimpath -ldflags '-s -w' -o '$tmp_sshshell' ./panel-agent/cmd/jabali-ssh-shell && \
+        go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_mailhook' ./panel-agent/cmd/jabali-mailhook"
+  fi
 
   install -m 0755 "$tmp_panel" "$BIN_PATH"
   install -m 0755 "$tmp_agent" "$AGENT_BIN_PATH"
