@@ -87,7 +87,16 @@ func (s *session) Kind() string { return models.MigrationSourcePlesk }
 // probe. A principal without `plesk` in PATH / without privileges
 // fails here so the operator sees the auth problem early.
 func (d *Discoverer) Connect(ctx context.Context, host, user string, secret migrate.SecretRef) (migrate.Session, error) {
+	// Start with the configured port but allow the caller to embed a
+	// host:port in the host string (e.g. "example.com:2222"). If a
+	// port is present we override the Discoverer's configured port.
 	port := d.Port
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		host = h
+		if pi, perr := strconv.Atoi(p); perr == nil && pi >= 1 && pi <= 65535 {
+			port = pi
+		}
+	}
 	if port == 0 {
 		port = 22
 	}
@@ -110,7 +119,7 @@ func (d *Discoverer) Connect(ctx context.Context, host, user string, secret migr
 	if err != nil {
 		conn.Close()
 		if strings.Contains(err.Error(), "unable to authenticate") || strings.Contains(err.Error(), "no supported methods remain") {
-			return nil, fmt.Errorf("plesk.Connect: source SSH server rejected the supplied auth method (likely PasswordAuthentication=no — upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", err)
+			return nil, fmt.Errorf("plesk.Connect: source SSH server rejected the supplied auth method (likely PasswordAuthentication=no — upload an SSH PRIVATE KEY in the wizard's Connection step instead): the server rejected the provided credentials: %w", err)
 		}
 		return nil, fmt.Errorf("plesk.Connect: ssh handshake: %w", err)
 	}
