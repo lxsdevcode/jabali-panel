@@ -40,7 +40,7 @@ import (
 type Discoverer struct {
 	// AllowPrivate — ADR-0095 decision 8. When true, SSRF
 	// guard permits RFC1918 / ULA targets. Default false.
-	AllowPrivate bool
+	AllowPrivate   bool
 	Port           int
 	CommandTimeout time.Duration
 }
@@ -113,10 +113,14 @@ func (d *Discoverer) Connect(ctx context.Context, host, user string, secret migr
 		// Go ssh client filters our offered methods against the
 		// server's advertised list. "attempted methods [none]"
 		// means we offered something (e.g. password) but the
-		// server didn't accept that method — usually source has
-		// PasswordAuthentication=no. Surface a concrete hint.
+		// server didn't accept that method. Common causes, in rough
+		// order: wrong password/key, wrong SSH user, or the source has
+		// PasswordAuthentication=no. The message names all three rather
+		// than asserting one — the old wording blamed server config and
+		// sent operators looking in the wrong place when the credential
+		// was simply wrong.
 		if strings.Contains(err.Error(), "unable to authenticate") || strings.Contains(err.Error(), "no supported methods remain") {
-			return nil, fmt.Errorf("directadmin.Connect: source SSH server rejected the supplied auth method (likely PasswordAuthentication=no — upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", err)
+			return nil, fmt.Errorf("directadmin.Connect: source SSH server rejected the credentials for user %q — check the password or key is correct for that user, that the user exists on the source, and note the server may have PasswordAuthentication=no (upload an SSH PRIVATE KEY in the wizard's Connection step instead): %w", user, err)
 		}
 		return nil, fmt.Errorf("directadmin.Connect: ssh handshake: %w", err)
 	}
