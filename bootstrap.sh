@@ -104,10 +104,28 @@ actual="$(sha256sum "$tmp/release.tar.gz" | awk '{print $1}')"
 [[ "$expected" == "$actual" ]] || die "checksum mismatch (expected $expected, got $actual)"
 log "checksum verified"
 
-# Extract only what the bootstrap needs.
-tar -C "$tmp" -xzf "$tmp/release.tar.gz" bin/jabali-installer install.sh \
-  || die "release tarball is missing bin/jabali-installer or install.sh (rebuild the release)"
-chmod +x "$tmp/bin/jabali-installer"
+# Extract the whole bin/ — not just the installer. GH #731: the tarball already
+# contains compiled jabali-panel / jabali-agent / jabali-ssh-shell /
+# jabali-mailhook, and jabali-panel has the built SPA embedded. Handing those to
+# install.sh lets it skip `npm ci` + `vite build` + four `go build`s, which is
+# what OOM-kills a 2 GB VPS. We used to extract two files and then recompile
+# everything we had just downloaded.
+tar -C "$tmp" -xzf "$tmp/release.tar.gz" bin install.sh \
+  || die "release tarball is missing bin/ or install.sh (rebuild the release)"
+[[ -x "$tmp/bin/jabali-installer" ]] || chmod +x "$tmp/bin/jabali-installer" 2>/dev/null || true
+[[ -f "$tmp/bin/jabali-installer" ]] \
+  || die "release tarball is missing bin/jabali-installer (rebuild the release)"
+chmod +x "$tmp/bin"/* 2>/dev/null || true
+
+# MANIFEST carries the release short_sha so the installed binary reports the
+# commit it was actually built from. Optional: older tarballs predate it, and
+# install.sh falls back to a source build if anything here is missing.
+manifest=""
+tar -C "$tmp" -xzf "$tmp/release.tar.gz" MANIFEST 2>/dev/null && manifest="$tmp/MANIFEST"
 
 log "launching installer"
-exec env JABALI_INSTALL_SH="$tmp/install.sh" "$tmp/bin/jabali-installer" "$@"
+exec env \
+  JABALI_INSTALL_SH="$tmp/install.sh" \
+  JABALI_PREBUILT_BIN="$tmp/bin" \
+  JABALI_RELEASE_MANIFEST="$manifest" \
+  "$tmp/bin/jabali-installer" "$@"
