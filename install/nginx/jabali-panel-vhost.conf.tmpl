@@ -102,6 +102,28 @@ server {
   # Sandboxed inside the panel iframe (sandbox="allow-scripts
   # allow-same-origin"), CSP frame-ancestors 'self' limits embedding
   # to the panel itself.
+  # Internal-only API surface. These routes are called by jabali-agent dialling
+  # /run/jabali-panel/api.sock DIRECTLY; their only in-app gate is
+  # middleware.RequireLocalhost. That gate could not see the difference between
+  # the agent and a proxied request, because nginx reaches panel-api over the
+  # same socket, so every proxied request looks local (RemoteAddr "@").
+  #
+  # Result before this: /api/v1/internal/notifications/enqueue and the malware
+  # ingest were reachable UNAUTHENTICATED from the internet. Verified against a
+  # live panel -- the enqueue handler answered a public POST with a body
+  # validation error rather than 403, and an attacker controls the
+  # notification's title, body, deeplink, target user and channels.
+  #
+  # Nothing legitimate reaches these through nginx, so refuse at the edge.
+  # RequireLocalhost now also rejects requests carrying proxy headers, so the
+  # fix does not depend on this block alone.
+  location ^~ /api/v1/internal/ {
+    return 404;
+  }
+  location = /api/v1/admin/security/malware/event {
+    return 404;
+  }
+
   location ^~ /api/v1/logs/stream/ {
     proxy_pass http://jabali_panel_api;
     proxy_set_header Host $http_host;

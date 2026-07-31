@@ -27,6 +27,28 @@ import (
 //     any non-unix peer through an HTTP server will have a RemoteAddr.
 func RequireLocalhost() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// A request that arrived through nginx is NOT a local caller, even
+		// though it reaches us over the same unix socket the agent uses.
+		//
+		// This was exploitable: panel-api is fronted by nginx over
+		// /run/jabali-panel/api.sock (ADR-0050), so EVERY proxied request has
+		// RemoteAddr "@" and the unix-socket branch below accepted it
+		// unconditionally. The /api/v1/internal/* and malware-ingest routes,
+		// whose only gate is this middleware, were therefore reachable
+		// unauthenticated from the public internet.
+		//
+		// nginx always sets these on proxied requests; the agent dialling the
+		// socket directly never does. Their presence is positive proof the
+		// request came through the proxy, so reject rather than trust the
+		// socket. install/nginx also denies these paths outright -- this is the
+		// half that does not depend on the vhost staying correct.
+		for _, h := range []string{"X-Forwarded-For", "X-Real-IP", "X-Forwarded-Proto", "X-Forwarded-Host"} {
+			if c.GetHeader(h) != "" {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "localhost_only"})
+				return
+			}
+		}
+
 		remote := c.Request.RemoteAddr
 		// Unix-socket accept: RemoteAddr is "@" or "" (see net/http
 		// httputil docs). Accept — the connection is by definition
