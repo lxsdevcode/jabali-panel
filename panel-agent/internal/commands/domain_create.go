@@ -220,6 +220,13 @@ server {
     # agent writes into a docroot is chowned to the tenant, so same-owner is the
     # norm for legitimate content. from=$document_root skips checks above the
     # docroot.
+    #
+    # Operator note: a rejection surfaces in the domain error log as
+    #   openat() "..." failed (40: Too many levels of symbolic links)
+    # at [crit]. That message is ELOOP from the kernel and does NOT mean a
+    # symlink loop -- it is this directive refusing a cross-owner link. If a
+    # legitimate app trips it, chown the link and its target to the same user
+    # rather than removing this line.
     disable_symlinks if_not_owner from=$document_root;
     {{.IndexDirective}}
 
