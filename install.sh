@@ -12205,6 +12205,17 @@ _install_bulwark_impersonate_secrets() {
   local tmp
   tmp=$(mktemp)
   grep -v -E '^(BULWARK_JWT_AUTH_SECRET|BULWARK_STALWART_MASTER_USER|BULWARK_STALWART_MASTER_PASSWORD|BULWARK_JWT_AUTH_ISSUER)=' "$bulwark_env" > "$tmp" || true
+  # Trim trailing blank lines off the PRESERVED portion before appending. The
+  # heredoc below opens with a blank separator and `grep -v` strips only the
+  # managed KEYS, never blanks -- so every run left one more blank line sitting
+  # between the operator's own keys and our block. The sha therefore never
+  # matched, the "already in sync" fast path below never fired, and bulwark.env
+  # was rewritten (and grew a byte) on every install.sh / jabali update.
+  # $(< file) drops trailing newlines; printf puts exactly one back. Guarded so
+  # an empty preserved portion stays empty rather than becoming a blank line.
+  if [[ -s "$tmp" ]]; then
+    printf '%s\n' "$(< "$tmp")" > "${tmp}.norm" && mv "${tmp}.norm" "$tmp"
+  fi
   cat >> "$tmp" <<EOF
 
 # M6.6 — webmail SSO via GET /api/auth/impersonate (Bulwark 1.7.1+).
@@ -12218,6 +12229,32 @@ BULWARK_STALWART_MASTER_USER=admin
 BULWARK_STALWART_MASTER_PASSWORD=${master_pw}
 BULWARK_JWT_AUTH_ISSUER=jabali-panel/webmail-sso
 EOF
+
+  # Login-form flags (Bulwark >=1.7.8, bulwarkmail/webmail#520). Unlike the
+  # secrets above these are DEFAULTS, not managed values: seeded only when
+  # absent, so an operator who deliberately sets either one keeps their choice
+  # across install.sh and every jabali update.
+  #
+  # LOGIN_SHOW_TOTP — GH #316. Jabali runs Stalwart against an EXTERNAL SQL
+  # directory (accounts live in the panel DB, read-only), and Stalwart only
+  # enforces MFA for INTERNAL-directory accounts:
+  # crates/common/src/auth/authentication.rs calls verify_mfa_secret_hash() on
+  # that path alone. Our mailboxes therefore have no per-account TOTP and the
+  # manual toggle can never succeed -- it offers a 2FA flow that silently does
+  # nothing, which is worse than offering none. Server-REQUIRED TOTP is
+  # unaffected: the field still auto-shows when the server returns
+  # totp_required. Revisit if Stalwart gains external-directory MFA:
+  # https://support.stalw.art/t/enforce-totp-2fa-for-external-directory-sql-ldap-accounts/1003
+  #
+  # LOGIN_SHOW_VERSION — the footer prints the exact Bulwark build version to
+  # UNAUTHENTICATED visitors, handing a scanner the version to match CVEs
+  # against.
+  if ! grep -q '^LOGIN_SHOW_TOTP=' "$tmp"; then
+    printf 'LOGIN_SHOW_TOTP=false\n' >> "$tmp"
+  fi
+  if ! grep -q '^LOGIN_SHOW_VERSION=' "$tmp"; then
+    printf 'LOGIN_SHOW_VERSION=false\n' >> "$tmp"
+  fi
 
   local new_sha old_sha
   new_sha=$(sha256sum "$tmp" | awk '{print $1}')
