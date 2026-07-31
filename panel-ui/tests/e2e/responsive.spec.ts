@@ -43,6 +43,33 @@ test.describe("M23 responsive — chrome + navigation", () => {
     }
   });
 
+  // GH #688 follow-up. The left tab rail added for Server Settings ate most of
+  // the width below lg, so wide sections (Databases especially) overflowed the
+  // viewport horizontally — the exact symptom reported. Below lg the rail is
+  // replaced by a full-width section Select above the content.
+  test("server settings fits the viewport + uses the section dropdown below lg", async ({
+    page,
+    viewport,
+  }) => {
+    if (!isBelowLg(viewport)) {
+      test.skip(true, "the dropdown swap only applies below lg");
+    }
+    await mockApi(page, { me: admin });
+    await signIn(page, admin);
+    await page.goto("/jabali-admin/settings");
+
+    await expect(page.getByRole("heading", { name: /server settings/i })).toBeVisible();
+
+    // The reported bug: content pushed past the right edge.
+    await expectNoHorizontalOverflow(page);
+
+    // The rail must be gone — its tabs are what consumed the width.
+    await expect(page.getByRole("tab", { name: /databases/i })).toHaveCount(0);
+
+    // ...replaced by a combobox listing the sections.
+    await expect(page.getByRole("combobox").first()).toBeVisible();
+  });
+
   test("drawer opens, navigates, and closes on route change", async ({ page, viewport }) => {
     if (!isBelowLg(viewport)) {
       test.skip(true, "drawer pattern only applies below lg");

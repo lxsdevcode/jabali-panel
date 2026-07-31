@@ -28,6 +28,7 @@ import {
   InputNumber,
   Modal,
   Row,
+  Grid,
   Select,
   Space,
   Switch,
@@ -963,6 +964,14 @@ const tabLabel = (icon: React.ReactNode, text: string) => (
 export const ServerSettingsPage = () => {
   const [activeTab, setActiveTab] = useTabParam<SettingsTabKey>("general");
 
+  // GH #688 follow-up: below lg the left tab rail ate most of the width, so
+  // long-labelled content (Databases especially) overflowed the viewport.
+  // Collapse the rail into a Select above the content on small screens —
+  // same breakpoint helper AdminLayout uses for its Sider→Drawer swap
+  // (ADR-0046).
+  const screens = Grid.useBreakpoint();
+  const isDesktop = screens.lg !== false;
+
   // GH #688: left-positioned card Tabs instead of the old horizontal tab strip
   // that overflowed into a scrollbar. Each tab still owns an independent form;
   // destroyInactiveTabPane unmounts the inactive one so unsaved edits are
@@ -1034,26 +1043,46 @@ export const ServerSettingsPage = () => {
         <SettingOutlined /> Server Settings
       </Typography.Title>
 
-      {/* Tabs sit directly on the page — the left tab bar is NOT wrapped in a
-          Card (the individual card-style tabs are the only card chrome). */}
-      <Tabs
-        type="card"
-        tabPosition="left"
-        activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as SettingsTabKey)}
-        destroyInactiveTabPane
-        items={items}
-        // GH #688: keep the left tab bar in view while a long tab's content
-        // scrolls. Sticky to the top of the scroll container; a very long
-        // tab list scrolls on its own via maxHeight/overflow.
-        tabBarStyle={{
-          position: "sticky",
-          top: 16,
-          alignSelf: "flex-start",
-          maxHeight: "calc(100vh - 32px)",
-          overflowY: "auto",
-        }}
-      />
+      {isDesktop ? (
+        /* Tabs sit directly on the page — the left tab bar is NOT wrapped in a
+           Card (the individual card-style tabs are the only card chrome). */
+        <Tabs
+          type="card"
+          tabPosition="left"
+          activeKey={activeTab}
+          onChange={(k) => setActiveTab(k as SettingsTabKey)}
+          destroyInactiveTabPane
+          items={items}
+          // GH #688: keep the left tab bar in view while a long tab's content
+          // scrolls. Sticky to the top of the scroll container; a very long
+          // tab list scrolls on its own via maxHeight/overflow.
+          tabBarStyle={{
+            position: "sticky",
+            top: 16,
+            alignSelf: "flex-start",
+            maxHeight: "calc(100vh - 32px)",
+            overflowY: "auto",
+          }}
+        />
+      ) : (
+        /* GH #688 follow-up: on phones the left rail left too little room and
+           wide content (Databases) overflowed the viewport. A full-width
+           Select gives the section list back every pixel of width, and only
+           the active section is rendered — matching destroyInactiveTabPane
+           above, so an inactive form's unsaved edits are dropped on switch
+           exactly as on desktop. */
+        <>
+          <Select<SettingsTabKey>
+            value={activeTab}
+            onChange={(k) => setActiveTab(k)}
+            options={items.map((i) => ({ value: i.key as SettingsTabKey, label: i.label }))}
+            style={{ width: "100%", marginBottom: 16 }}
+            size="large"
+            aria-label="Settings section"
+          />
+          {items.find((i) => i.key === activeTab)?.children}
+        </>
+      )}
     </div>
   );
 };
