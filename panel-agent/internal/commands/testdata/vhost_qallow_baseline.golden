@@ -153,6 +153,13 @@ server {
 
     }
     location ~ \.php$ {
+        # Existence guard (JAB-187). Without it a request for
+        # /upload.jpg/x.php matches this location on the URI suffix, and PHP's
+        # cgi.fix_pathinfo walk-back would execute the uploaded .jpg. php-fpm's
+        # security.limit_extensions = .php (install/php/jabali-php-pool.conf.tmpl)
+        # already rejects that, so this is the second lock on the same door --
+        # it must not be removed on the assumption the pool setting is enough.
+        try_files $uri =404;
         fastcgi_pass unix:/run/php/jabali-u/fpm.sock;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
