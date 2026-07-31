@@ -587,6 +587,9 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// M34: per-user PHP-FPM egress firewall. Cheap noop when the repo
 	// isn't wired (test fixtures) or when there are zero policies.
 	r.reconcileUserEgress(ctx)
+	// JAB-195: keep this host's own public IPs allowlisted so AppSec never
+	// scores WordPress loopback traffic (WooCommerce Action Scheduler et al).
+	r.reconcileSelfAllowlist(ctx)
 
 	// PHP pool reconciliation first, so domain regens see latest pool state.
 	r.ReconcilePHPPools(ctx)
