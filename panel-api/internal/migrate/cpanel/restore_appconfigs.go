@@ -12,6 +12,7 @@
 //   configuration.php    — Joomla public $db, $user, $password
 //   sites/default/settings.php — Drupal databases array
 //   app/etc/env.php      — Magento 2 'db' => ['connection' => ...]
+//   config.php           — ITFlow $dbhost / $dbusername / $dbpassword / $database
 //
 // Strategy: read file content, regex-replace the value (preserving
 // surrounding syntax), write back. If a single file matches more
@@ -40,6 +41,7 @@ type AppConfigsResult struct {
 	Joomla        int      // configuration.php files rewritten
 	Drupal        int      // settings.php files rewritten
 	Magento       int      // app/etc/env.php files rewritten
+	ITFlow        int      // config.php files rewritten
 	CachesCleared int      // cache directories wiped (WP Rocket / LiteSpeed / W3TC / Joomla / Drupal etc.)
 	PhpIniFixed   int      // php.ini/.user.ini files whose out-of-jail path directives were neutralized
 	Skipped       []string // human-readable reasons (file unreadable, no match, etc.)
@@ -113,6 +115,16 @@ func ImportAppConfigs(
 		magento := filepath.Join(docroot, "app", "etc", "env.php")
 		if n, sk := rewriteOne(ctx, agentCli, targetUserID, targetUsername, magento, creds, rewriteMagento); n > 0 {
 			res.Magento += n
+		} else if sk != "" {
+			res.Skipped = append(res.Skipped, sk)
+		}
+
+		// ITFlow (GH #723). config.php is a very common filename, so
+		// rewriteITFlow refuses anything without ITFlow's own signature —
+		// see the guard there.
+		itflow := filepath.Join(docroot, "config.php")
+		if n, sk := rewriteOne(ctx, agentCli, targetUserID, targetUsername, itflow, creds, rewriteITFlow); n > 0 {
+			res.ITFlow += n
 		} else if sk != "" {
 			res.Skipped = append(res.Skipped, sk)
 		}
@@ -367,6 +379,70 @@ func rewriteJoomla(text string, creds map[string]DBCredential) (string, bool) {
 			return fmt.Sprintf("public $password = '%s';", phpEscape(cred.Password))
 		case "host":
 			return "public $host = 'localhost';"
+		}
+		return line
+	})
+	return out, out != text
+}
+
+var (
+	// itflowAssignRe matches ITFlow's config.php lines. Its setup writes them
+	// with var_export(), i.e. single-quoted, but accept double quotes too since
+	// operators hand-edit this file.
+	itflowAssignRe = regexp.MustCompile(`(?m)^\s*\$(dbhost|dbusername|dbpassword|database)\s*=\s*['"]([^'"]*)['"]\s*;`)
+
+	// itflowSignatureRe is the guard. "config.php" is one of the most common
+	// filenames in PHP hosting, and a false positive here would corrupt an
+	// unrelated app's config. ITFlow's setup always emits this connect line
+	// verbatim right after the four assignments, so requiring it means we only
+	// touch files ITFlow itself wrote.
+	itflowSignatureRe = regexp.MustCompile(`mysqli_connect\s*\(\s*\$dbhost\s*,\s*\$dbusername\s*,\s*\$dbpassword\s*,\s*\$database\s*\)`)
+)
+
+// rewriteITFlow points an ITFlow config.php at the destination credentials
+// (GH #723). Jabali ships an ITFlow installer, so a migrated ITFlow site left
+// on the source's DB name — which no longer exists once jabali namespaces it —
+// is a site that simply doesn't load.
+//
+// Mirrors rewriteJoomla: match the source DB name to pick the right credential
+// on a multi-database account, falling back to the sole credential when there
+// is exactly one.
+func rewriteITFlow(text string, creds map[string]DBCredential) (string, bool) {
+	// Guard first: never rewrite a config.php that isn't ITFlow's.
+	if !itflowSignatureRe.MatchString(text) {
+		return text, false
+	}
+	if !itflowAssignRe.MatchString(text) {
+		return text, false
+	}
+	var sourceDB string
+	for _, m := range itflowAssignRe.FindAllStringSubmatch(text, -1) {
+		if m[1] == "database" {
+			sourceDB = m[2]
+			break
+		}
+	}
+	cred, ok := creds[sourceDB]
+	if !ok && len(creds) == 1 {
+		for _, c := range creds {
+			cred = c
+			ok = true
+		}
+	}
+	if !ok {
+		return text, false
+	}
+	out := itflowAssignRe.ReplaceAllStringFunc(text, func(line string) string {
+		m := itflowAssignRe.FindStringSubmatch(line)
+		switch m[1] {
+		case "database":
+			return fmt.Sprintf("$database = '%s';", phpEscape(cred.DBName))
+		case "dbusername":
+			return fmt.Sprintf("$dbusername = '%s';", phpEscape(cred.DBUser))
+		case "dbpassword":
+			return fmt.Sprintf("$dbpassword = '%s';", phpEscape(cred.Password))
+		case "dbhost":
+			return "$dbhost = 'localhost';"
 		}
 		return line
 	})
