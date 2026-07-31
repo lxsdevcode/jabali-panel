@@ -10861,6 +10861,76 @@ install_logrotate() {
   find /tmp -maxdepth 1 -name 'jabali_install-*.log' -type f -mtime +14 -delete 2>/dev/null || true
 }
 
+install_pdns_local_address_helper() {
+  # PowerDNS treats a bind failure as fatal, and install.sh bakes the host's
+  # addresses into local-address= at install time. When the address later
+  # changes — DHCP lease, restore onto a new host, cloud reassignment,
+  # failover — pdns dies on every start:
+  #
+  #   Fatal error: Unable to bind to UDP socket
+  #   pdns.service: Start request repeated too quickly.
+  #
+  # and authoritative DNS stays down until an operator re-runs install.sh.
+  # Seen on a host restored from an image onto a new address: 27 restarts,
+  # then the start limit, then silence.
+  #
+  # ExecStartPre re-derives the list in the one moment it matters, with no
+  # dependency on the database or the panel (both of which start after pdns).
+  #
+  # Reads $REPO_DIR/install/systemd/, so this must stay after
+  # clone_or_update_repo — TestNoRepoDirReadsBeforeClone enforces that.
+  local src="${REPO_DIR}/install/systemd/pdns-local-address"
+  local dst=/usr/local/libexec/jabali/pdns-local-address
+  local dropin_dir=/etc/systemd/system/pdns.service.d
+  local dropin="${dropin_dir}/20-jabali-local-address.conf"
+
+  if [[ ! -f "$src" ]]; then
+    _warn "pdns-local-address helper missing at $src — skipping"
+    return 0
+  fi
+  # No jabali pdns config means this host does not run our PowerDNS layout.
+  if [[ ! -f /etc/powerdns/pdns.d/01-jabali-mysql.conf ]]; then
+    return 0
+  fi
+
+  local changed=0
+  install -d -m 0755 /usr/local/libexec/jabali
+  if [[ ! -f "$dst" ]] || ! cmp -s "$src" "$dst"; then
+    install -m 0755 -o root -g root "$src" "$dst"
+    changed=1
+  fi
+
+  install -d -m 0755 "$dropin_dir"
+  local want
+  want="$(cat <<DROPIN
+# Managed by jabali-panel install.sh. Hand edits will be overwritten.
+#
+# Re-point local-address= at the addresses this host currently has, before
+# pdns binds them. Without this, any address change makes pdns fatal on
+# start and takes authoritative DNS down until install.sh is re-run.
+#
+# The leading '+' is load-bearing. Debian's pdns.service runs User=pdns with
+# ProtectSystem=full, so a plain ExecStartPre would run unprivileged with
+# /etc read-only and exit 1 — and a failed ExecStartPre keeps the service
+# down even when the config is fine, turning a self-heal into a second way
+# to break DNS. '+' runs the helper as root outside the sandbox.
+[Service]
+ExecStartPre=+${dst}
+DROPIN
+)"
+  if [[ ! -f "$dropin" ]] || [[ "$(cat "$dropin")" != "$want" ]]; then
+    printf '%s\n' "$want" > "$dropin"
+    chmod 0644 "$dropin"
+    changed=1
+  fi
+
+  if (( changed )); then
+    systemctl daemon-reload
+    _log "pdns local-address self-heal installed"
+  fi
+  _ok "pdns local-address helper ready"
+}
+
 install_notify_template() {
   _log "installing OnFailure notifier (M14)"
 
@@ -13939,6 +14009,7 @@ main() {
   run_if_module security install_aide
   install_logrotate
   install_notify_template
+  run_if_module dns install_pdns_local_address_helper
   run_if_module security install_crowdsec_jabali_stalwart_scenarios
   run_if_module security install_crowdsec_jabali_kratos_scenarios
   install_snuffleupagus

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# pdns-local-address — re-point PowerDNS at the addresses this host actually
+# has, immediately before pdns binds them.
+#
+# Why this exists
+# ---------------
+# install.sh enumerates every global-scope address once, at install time, and
+# writes them into local-address= in 01-jabali-mysql.conf. PowerDNS treats a
+# bind failure as fatal, so the moment the host's address changes, pdns dies:
+#
+#   Fatal error: Unable to bind to UDP socket
+#   pdns.service: Start request repeated too quickly.
+#
+# and authoritative DNS stays down until an operator notices and re-runs
+# install.sh. Observed on a host whose address moved from 192.168.100.86 to
+# .165 after being restored from an image: 27 restart attempts, then the start
+# limit, then nothing.
+#
+# The address changing is not an exotic event — a DHCP lease change, a restore
+# onto a new host, a cloud reassignment or a failover all do it, and all of
+# them are exactly when DNS most needs to come back up unattended.
+#
+# Running as ExecStartPre on pdns.service means the file is corrected in the
+# one moment it matters and without needing the database or the panel, both of
+# which come up later than pdns.
+#
+# Interface skipping matches install.sh: LXC's lxcbr0, libvirt's virbr0 and
+# Docker's bridges all carry their own resolver on :53, and binding pdns there
+# collides with it.
+
+set -Eeuo pipefail
+
+CONF="${JABALI_PDNS_CONF:-/etc/powerdns/pdns.d/01-jabali-mysql.conf}"
+
+# No jabali-managed pdns config means this host does not run our PowerDNS
+# layout at all. Leave it completely alone.
+[[ -f "$CONF" ]] || exit 0
+
+skip_iface_re='^(lxcbr[0-9]+|virbr[0-9]+|docker[0-9]+|br-[0-9a-f]+|cni[0-9]+|veth.*|tailscale.*|wg[0-9]+)$'
+
+# Loopback:5300 is always emitted — it is the port pdns-recursor forwards
+# local queries into (ADR-0047), and it does not depend on any interface.
+addrs="$({
+  ip -4 -o addr show scope global 2>/dev/null \
+    | awk -v re="$skip_iface_re" '$2 !~ re { split($4,a,"/"); print a[1] ":53" }'
+  ip -6 -o addr show scope global 2>/dev/null \
+    | awk -v re="$skip_iface_re" '$2 !~ re { split($4,a,"/"); print "[" a[1] "]:53" }'
+  printf '127.0.0.1:5300\n[::1]:5300\n'
+} | sort -u | paste -sd ',' -)"
+
+# Defensive: the loopback entries above are unconditional, so this cannot
+# normally be empty. If it somehow is, changing nothing is strictly safer than
+# writing a local-address= line pdns will reject.
+if [[ -z "$addrs" ]]; then
+  echo "pdns-local-address: enumeration produced nothing; leaving $CONF unchanged" >&2
+  exit 0
+fi
+
+current="$(awk -F= '/^local-address=/{print $2; exit}' "$CONF")"
+if [[ "$current" == "$addrs" ]]; then
+  exit 0
+fi
+
+echo "pdns-local-address: ${current:-<unset>} -> ${addrs}" >&2
+
+# Rewrite via a temp file in the same directory so the replacement is atomic
+# and a crash mid-write cannot leave pdns with a truncated config.
+tmp="$(mktemp "${CONF}.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+cat "$CONF" > "$tmp"
+if grep -q '^local-address=' "$tmp"; then
+  # The value can contain '&' and '/', neither of which survives a bare sed
+  # replacement, so match the line and print the new one instead.
+  awk -v new="local-address=${addrs}" \
+    '/^local-address=/ && !done { print new; done=1; next } { print }' \
+    "$CONF" > "$tmp"
+else
+  printf 'local-address=%s\n' "$addrs" >> "$tmp"
+fi
+
+chmod --reference="$CONF" "$tmp" 2>/dev/null || chmod 0640 "$tmp"
+chown --reference="$CONF" "$tmp" 2>/dev/null || chown root:pdns "$tmp" 2>/dev/null || true
+mv -f "$tmp" "$CONF"
+trap - EXIT
