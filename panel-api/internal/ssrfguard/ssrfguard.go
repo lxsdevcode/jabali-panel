@@ -29,6 +29,14 @@ import (
 // DefaultDialTimeout bounds one guarded dial (DNS + handshake).
 const DefaultDialTimeout = 10 * time.Second
 
+// cgnatNet is carrier-grade NAT space (RFC 6598). Go's net.IP.IsPrivate covers
+// RFC1918 and ULA but NOT 100.64.0.0/10, and some VPS/cloud providers put
+// internal service endpoints there — so without this a tenant-supplied channel
+// URL could still reach infrastructure the guard exists to exclude. Gated on the
+// same allowPrivate flag as RFC1918 so the admin-controlled
+// migration_allow_private_hosts override keeps working for a CGNAT-hosted source.
+var cgnatNet = net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
 // Validator captures the AllowPrivate toggle and the resolved IPs for one host.
 type Validator struct {
 	Hostname     string
@@ -136,6 +144,9 @@ func checkIP(ip net.IP, allowPrivate bool) error {
 	}
 	if !allowPrivate && ip.IsPrivate() {
 		return errors.New("private (RFC1918 / ULA) address rejected")
+	}
+	if !allowPrivate && cgnatNet.Contains(ip) {
+		return errors.New("CGNAT (RFC 6598) address rejected")
 	}
 	return nil
 }
