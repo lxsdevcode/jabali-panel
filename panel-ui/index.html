@@ -7,6 +7,12 @@
     <title>Jabali Panel</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#1677ff" />
+    <!-- Browsers request /favicon.ico unprompted when no icon is declared, so
+         without these every page load logged two 404s in the console — the
+         first thing an operator sees on a brand-new panel. Point at the PWA
+         icons that already ship rather than adding another asset. -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/pwa-512.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <style>
       html, body { margin: 0; padding: 0; }
