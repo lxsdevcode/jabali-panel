@@ -69,7 +69,24 @@
     missingok
     notifempty
     copytruncate
-    su www-data www-data
+    # su root root, NOT www-data. This glob covers per-tenant pool logs, and
+    # each is owned <tenant>:<tenant> mode 0640 — www-data is neither the
+    # owner nor in the group, so dropping to it means logrotate cannot open
+    # any of them:
+    #
+    #   error: error opening /var/log/php-fpm-cybe2e.log: Permission denied
+    #
+    # Every per-tenant log therefore never rotated (maxsize 50M never
+    # applied) and logrotate.service exited 1 on every daily run, which also
+    # masked any other rotation problem behind a permanently-failed unit.
+    # Only php-fpm-pma.log, which happens to be www-data-owned, worked.
+    #
+    # su exists to protect against a log DIRECTORY writable by a non-root
+    # user; /var/log is root:root 0755, so root here is both correct and no
+    # weaker. copytruncate means no new file is created in place, so the live
+    # log keeps its tenant ownership and php-fpm keeps writing — verified on
+    # a host: after rotation the original was still <tenant>:<tenant>.
+    su root root
     postrotate
         # PHP-FPM reopens its log on SIGUSR1 — sends to every running
         # version on the host. copytruncate already keeps the writes
