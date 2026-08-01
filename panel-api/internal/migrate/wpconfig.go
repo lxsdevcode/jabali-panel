@@ -26,7 +26,21 @@ func phpSingleQuoteEscape(s string) string {
 // the file and writes it back (via the agent), exactly like the cPanel restore.
 // Shared by the cPanel restore and the wordpress_ssh import so both apply the
 // identical, proven rewrite. Values are PHP single-quote escaped.
+// RewriteWPConfigDB rewrites all four DB constants.
 func RewriteWPConfigDB(text, dbName, dbUser, dbPass, dbHost string) (string, bool) {
+	return RewriteWPConfigDBFields(text, dbName, dbUser, &dbPass, dbHost)
+}
+
+// RewriteWPConfigDBFields rewrites the DB constants, leaving DB_PASSWORD alone
+// when dbPass is nil.
+//
+// Needed because a migrated site can legitimately have to KEEP the password
+// already in its config: under --preserve-source-state a compat user restores
+// the source password hash onto the very account the restore also manages, so
+// the original password is the one that authenticates and any value written in
+// its place would break the site (JAB-207). Writing a password that does not
+// work is strictly worse than writing none.
+func RewriteWPConfigDBFields(text, dbName, dbUser string, dbPass *string, dbHost string) (string, bool) {
 	if !strings.Contains(text, "DB_NAME") {
 		return text, false
 	}
@@ -38,7 +52,10 @@ func RewriteWPConfigDB(text, dbName, dbUser, dbPass, dbHost string) (string, boo
 		case "DB_USER":
 			return fmt.Sprintf("define('DB_USER', '%s');", phpSingleQuoteEscape(dbUser))
 		case "DB_PASSWORD":
-			return fmt.Sprintf("define('DB_PASSWORD', '%s');", phpSingleQuoteEscape(dbPass))
+			if dbPass == nil {
+				return line // keep whatever the source config had
+			}
+			return fmt.Sprintf("define('DB_PASSWORD', '%s');", phpSingleQuoteEscape(*dbPass))
 		case "DB_HOST":
 			return fmt.Sprintf("define('DB_HOST', '%s');", phpSingleQuoteEscape(dbHost))
 		}
