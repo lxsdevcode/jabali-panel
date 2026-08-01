@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/db"
 	"os"
 	"os/exec"
 	"os/user"
@@ -214,6 +215,14 @@ func runRepair(cmd *cobra.Command, args []string) error {
 			}
 		}
 		fmt.Printf("\n→ [%s] %s\n", s.id, s.label)
+		if s.fix == nil {
+			// Detect-only step: the condition is real but clearing it needs a
+			// judgement call this command must not make on the operator's
+			// behalf (see dirty-migration). Report and move on rather than
+			// pretending it was repaired.
+			fmt.Printf("  ! %s needs a manual decision — see the detail above\n", s.id)
+			continue
+		}
 		if err := s.fix(ctx); err != nil {
 			return fmt.Errorf("repair %s: %w", s.id, err)
 		}
@@ -250,6 +259,16 @@ func confirm(prompt string) (bool, error) {
 // fixes come before any check that would itself fail without ownership.
 func repairSteps() []repairStep {
 	return []repairStep{
+		{
+			// First: a dirty schema means the panel is already down, which
+			// makes every other finding secondary.
+			id:     "dirty-migration",
+			label:  "database schema is dirty — panel-api cannot start",
+			detect: detectDirtyMigration,
+			// No fix: see detectDirtyMigration. Forcing the wrong direction
+			// silently skips schema changes, so this stays operator-driven.
+			fix: nil,
+		},
 		{
 			id:          "git-pointer",
 			label:       "/opt/jabali-panel/.git is a corrupted worktree pointer",
@@ -1442,4 +1461,39 @@ func fixEtcJabaliPerms(_ repairCtx) error {
 		}
 	}
 	return nil
+}
+
+// detectDirtyMigration reports a schema golang-migrate considers mid-flight.
+//
+// This is the highest-impact thing repair can find: panel-api runs migrations
+// at startup and refuses to boot while the schema is dirty, so the panel is
+// DOWN and systemd is restart-looping it. Before this detector existed,
+// `jabali repair --diagnose` — the tool whose whole purpose is "a host in a
+// state that would block the next update" — reported all-green on exactly that
+// host, because nothing looked at the migration table.
+//
+// Deliberately has no fix. Clearing the flag means asserting whether the
+// migration completed, and forcing the wrong way silently leaves the schema
+// missing changes. The detector points at `jabali migrate status`, which
+// explains how to tell the two cases apart.
+func detectDirtyMigration(_ repairCtx) (bool, string, error) {
+	if err := initConfig(); err != nil {
+		return false, "", nil // config unreadable — other detectors report that
+	}
+	cfg := sharedCfg
+	if cfg.Database.URL == "" || cfg.Database.URL == "placeholder-until-phase-3" {
+		return false, "", nil
+	}
+	st, err := db.State(cfg.Database.URL)
+	if err != nil {
+		// A DB we cannot reach is its own problem, and one the operator will
+		// already be seeing; do not report it as a dirty migration.
+		return false, "", nil
+	}
+	if !st.Dirty {
+		return false, "", nil
+	}
+	return true, fmt.Sprintf(
+		"schema dirty at version %d — panel-api cannot start; run `jabali migrate status` for how to clear it",
+		st.Version), nil
 }

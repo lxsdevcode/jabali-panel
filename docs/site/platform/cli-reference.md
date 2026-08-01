@@ -3287,6 +3287,14 @@ Database migration commands
 jabali migrate
 ```
 
+#### `jabali migrate force`
+
+Clear the dirty flag by asserting the schema is at <version> (runs no SQL)
+
+```
+jabali migrate force <version>
+```
+
 #### `jabali migrate imap`
 
 Migrate a remote IMAP mailbox into a jabali mailbox (GH #390/#374)
@@ -3411,6 +3419,14 @@ jabali migrate restore [flags]
 - `--target-package-id` — hosting package ULID (auto-create only)
 - `--target-password` — destination password (auto-create only; ≥10 chars)
 - `--target-user` — destination jabali username (default: the source account)
+
+#### `jabali migrate status`
+
+Show the schema version and whether it is dirty
+
+```
+jabali migrate status
+```
 
 #### `jabali migrate up`
 
@@ -4446,6 +4462,7 @@ jabali repair [flags]
 - `--crowdsec-bouncer-key` — Fix only: crowdsec-firewall-bouncer crash-loops with stale LAPI key
 - `--daemon-reload` — Fix only: systemd has unloaded unit-file changes on disk
 - `--diagnose` — Report broken conditions without fixing
+- `--dirty-migration` — Fix only: database schema is dirty — panel-api cannot start
 - `--docroot-www-data-group` — Fix only: web docroot files not group www-data / dirs not setgid (nginx 403 on newly uploaded media)
 - `--etc-jabali-perms` — Fix only: /etc/jabali not traversable by hosting users (SSH/SFTP locked out — sandbox-mode unreadable)
 - `--git-ownership` — Fix only: /opt/jabali-panel/.git owned by wrong user

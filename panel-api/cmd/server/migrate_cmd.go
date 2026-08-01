@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +15,8 @@ func newMigrateCmd() *cobra.Command {
 		Short: "Database migration commands",
 	}
 	cmd.AddCommand(newMigrateUpCmd())
+	cmd.AddCommand(newMigrateStatusCmd())
+	cmd.AddCommand(newMigrateForceCmd())
 	// M35 account-import subcommand. Namespaced under `migrate` so
 	// the parent `jabali migrate` reads as 'migration verbs' (one
 	// schema, one account-import). Different scope from `up` which
@@ -50,6 +53,91 @@ func newMigrateUpCmd() *cobra.Command {
 			}
 
 			fmt.Println("Migrations up-to-date.")
+			return nil
+		},
+	}
+}
+
+// newMigrateStatusCmd reports the schema version and, crucially, whether
+// golang-migrate thinks a migration is still mid-flight.
+//
+// Worth its own subcommand because the dirty state takes the panel DOWN:
+// panel-api runs migrations at startup, refuses to boot on a dirty schema, and
+// systemd restart-loops it. The operator sees a crash loop and an error telling
+// them to "Fix and force version" — golang-migrate's phrasing for something the
+// CLI previously offered no way to inspect or clear.
+func newMigrateStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show the schema version and whether it is dirty",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return initConfig()
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := sharedCfg
+			if cfg.Database.URL == "" || cfg.Database.URL == "placeholder-until-phase-3" {
+				return fmt.Errorf("DATABASE_URL not configured")
+			}
+			st, err := db.State(cfg.Database.URL)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("version: %d\n", st.Version)
+			fmt.Printf("dirty:   %v\n", st.Dirty)
+			if st.Dirty {
+				fmt.Printf(`
+Migration %d started and never recorded completion — the process was killed
+part-way (an interrupted 'jabali update' is the usual cause). panel-api runs
+migrations at startup and refuses to boot while the schema is dirty, so it is
+restart-looping right now.
+
+Before clearing this, check whether migration %d actually applied — read
+panel-api/internal/db/migrations/%06d_*.up.sql and verify its columns/tables
+are present:
+
+  mysql jabali_panel -e 'SHOW COLUMNS FROM <table>'
+
+  applied in full  ->  jabali migrate force %d      (then restart jabali-panel)
+  applied partly   ->  undo its effects by hand first, then force %d
+
+Forcing forward on a half-applied migration skips the rest permanently.
+`, st.Version, st.Version, st.Version, st.Version, st.Version-1)
+			}
+			return nil
+		},
+	}
+}
+
+// newMigrateForceCmd rewrites golang-migrate's bookkeeping to assert the schema
+// is at a given version. It runs no SQL of its own.
+//
+// The version is a required argument rather than inferred from the dirty state
+// on purpose: whether to force FORWARD (migration completed) or BACK (it did
+// not) is a judgement only someone who has looked at the schema can make, and
+// guessing wrong silently leaves the database missing changes.
+func newMigrateForceCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "force <version>",
+		Short: "Clear the dirty flag by asserting the schema is at <version> (runs no SQL)",
+		Args:  cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return initConfig()
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := sharedCfg
+			if cfg.Database.URL == "" || cfg.Database.URL == "placeholder-until-phase-3" {
+				return fmt.Errorf("DATABASE_URL not configured")
+			}
+			v, err := strconv.Atoi(args[0])
+			if err != nil || v < 0 {
+				return fmt.Errorf("version must be a non-negative integer, got %q", args[0])
+			}
+			if err := db.ForceVersion(cfg.Database.URL, v); err != nil {
+				return err
+			}
+			fmt.Printf("Schema forced to version %d (dirty flag cleared).\n", v)
+			fmt.Println("Restart the panel so it can run any remaining migrations:")
+			fmt.Println("  systemctl restart jabali-panel")
 			return nil
 		},
 	}
