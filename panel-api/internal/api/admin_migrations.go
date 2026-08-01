@@ -963,21 +963,19 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	//
 	// Inheriting from the draft rather than requiring the caller to send it
 	// keeps existing clients working — the wizard never sent a port here.
-	var draftPlan *string
-	var draftHostKey string
+	// The discovery draft is the template every child is built from — the plan,
+	// the host-key pin, the mode and the port all live on it. newBulkChildJob
+	// copies it wholesale so a field added later is inherited by default rather
+	// than silently dropped; only the port needs resolving here, because the
+	// request may supply one when there is no draft to inherit from.
+	var draftJob *models.MigrationJob
 	sourcePort := normalizeSourcePort(req.SourcePort)
 	if req.SourceJobID != "" {
 		if draft, derr := h.cfg.Jobs.FindByID(c.Request.Context(), req.SourceJobID); derr == nil {
-			draftPlan = draft.PlanJSON
+			draftJob = draft
 			if draft.SourcePort >= 1 && draft.SourcePort <= 65535 {
 				sourcePort = draft.SourcePort
 			}
-			// The host-key pin has to travel too, for the same reason as the
-			// port: children are what the pull actually runs against, and an
-			// empty pin means PinningHostKeyCallback accepts ANY host key.
-			// Without this the operator's fingerprint is enforced on
-			// discovery and quietly dropped for the transfer.
-			draftHostKey = draft.ExpectedHostKey
 		}
 	}
 
@@ -988,22 +986,19 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	cloneCtx, cancelClone := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancelClone()
 	for _, acct := range req.Accounts {
-		row := &models.MigrationJob{
-			ID:              genULID(),
-			BatchID:         &batchID,
-			SourceKind:      req.SourceKind,
-			SourceHost:      req.SourceHost,
-			SourceUser:      acct,
-			SourcePort:      sourcePort,   // GH #429: inherit the draft's SSH port
-			ExpectedHostKey: draftHostKey, // inherit the draft's host-key pin
-			State:           finalState,
-			PlanJSON:        draftPlan, // GH #633/#634: inherit the wizard's preserve plan
-		}
-		if req.AccountTargets != nil {
-			if t := strings.TrimSpace(req.AccountTargets[acct]); t != "" {
-				row.TargetUserID = &t // map to existing user; else auto-create
-			}
-		}
+		// Inheritance is the default here on purpose — see the comment on
+		// newBulkChildJob. Four fields have been lost by writing this as a
+		// struct literal that opted each one in by hand.
+		row := newBulkChildJob(draftJob, childJobInputs{
+			ID:         genULID(),
+			BatchID:    &batchID,
+			Account:    acct,
+			State:      finalState,
+			TargetID:   resolveChildTarget(req.AccountTargets, acct),
+			SourceKind: req.SourceKind,
+			SourceHost: req.SourceHost,
+			SourcePort: sourcePort,
+		})
 		if err := h.cfg.Jobs.Create(c.Request.Context(), row); err != nil {
 			// Skip dupes silently — operator re-selected an account
 			// that already has an existing job under this host.
