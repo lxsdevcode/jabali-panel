@@ -59,10 +59,10 @@ type dnsHandler struct {
 }
 
 type updateZoneRequest struct {
-	RefreshSeconds *int `json:"refresh_seconds,omitempty"`
-	RetrySeconds   *int `json:"retry_seconds,omitempty"`
-	ExpireSeconds  *int `json:"expire_seconds,omitempty"`
-	MinimumTTL     *int `json:"minimum_ttl,omitempty"`
+	RefreshSeconds *int  `json:"refresh_seconds,omitempty"`
+	RetrySeconds   *int  `json:"retry_seconds,omitempty"`
+	ExpireSeconds  *int  `json:"expire_seconds,omitempty"`
+	MinimumTTL     *int  `json:"minimum_ttl,omitempty"`
 	IsEnabled      *bool `json:"is_enabled,omitempty"`
 }
 
@@ -124,7 +124,7 @@ func (h *dnsHandler) getZone(c *gin.Context) {
 	if err != nil {
 		if isNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "zone_not_provisioned",
+				"error":  "zone_not_provisioned",
 				"detail": "DNS zone not yet provisioned. The reconciler will create it on next sync.",
 			})
 			return
@@ -174,7 +174,7 @@ func (h *dnsHandler) updateZone(c *gin.Context) {
 	if err != nil {
 		if isNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "zone_not_provisioned",
+				"error":  "zone_not_provisioned",
 				"detail": "DNS zone not yet provisioned. The reconciler will create it on next sync.",
 			})
 			return
@@ -257,7 +257,7 @@ func (h *dnsHandler) listRecords(c *gin.Context) {
 	if err != nil {
 		if isNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "zone_not_provisioned",
+				"error":  "zone_not_provisioned",
 				"detail": "DNS zone not yet provisioned. The reconciler will create it on next sync.",
 			})
 			return
@@ -353,7 +353,7 @@ func (h *dnsHandler) createRecord(c *gin.Context) {
 	if err != nil {
 		if isNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "zone_not_provisioned",
+				"error":  "zone_not_provisioned",
 				"detail": "DNS zone not yet provisioned. The reconciler will create it on next sync.",
 			})
 			return
@@ -364,14 +364,14 @@ func (h *dnsHandler) createRecord(c *gin.Context) {
 
 	// Build record from request
 	record := &models.DNSRecord{
-		ID:     ids.NewULID(),
-		ZoneID: zone.ID,
-		Name:   req.Name,
-		Type:   req.Type,
-		Content: req.Content,
-		TTL:    h.defaultRecordTTL(c.Request.Context()),
-		Priority: 0,
-		Managed: false,
+		ID:        ids.NewULID(),
+		ZoneID:    zone.ID,
+		Name:      req.Name,
+		Type:      req.Type,
+		Content:   req.Content,
+		TTL:       h.defaultRecordTTL(c.Request.Context()),
+		Priority:  0,
+		Managed:   false,
 		IsEnabled: true,
 	}
 
@@ -385,6 +385,8 @@ func (h *dnsHandler) createRecord(c *gin.Context) {
 	if req.IsEnabled != nil {
 		record.IsEnabled = *req.IsEnabled
 	}
+
+	normaliseSRVRecord(record, req.Priority)
 
 	// Validate record
 	if err := ValidateDNSRecord(record); err != nil {
@@ -508,6 +510,8 @@ func (h *dnsHandler) updateRecord(c *gin.Context) {
 	if req.IsEnabled != nil {
 		record.IsEnabled = *req.IsEnabled
 	}
+
+	normaliseSRVRecord(record, req.Priority)
 
 	// Per-type permission gate for non-admin tenants (GH #466): editing the
 	// record needs the edit right on its current type, and changing its type
@@ -659,6 +663,38 @@ func IsValidDNSType(t string) bool {
 	return false
 }
 
+// normaliseSRVRecord moves an inline SRV priority into the priority column.
+//
+// PowerDNS's gmysql backend prepends the prio column to SRV content, so a
+// record carrying the priority in BOTH places assembles into a five-field
+// value that pdns refuses to serve — the record silently does not resolve at
+// all. JAB-28 fixed exactly this in the cPanel BIND importer; the panel's own
+// create/update path still accepted, and in fact required, the doubled form.
+//
+// Every DNS tutorial and every zone file writes SRV as the full RFC 2782
+// "priority weight port target", so rejecting that would be user-hostile.
+// Accept it, split the priority out, and leave the already-correct
+// three-field form untouched. An explicit priority in the request wins, since
+// that is the caller being unambiguous.
+func normaliseSRVRecord(r *models.DNSRecord, explicitPriority *int) {
+	if r.Type != "SRV" {
+		return
+	}
+	fields := strings.Fields(r.Content)
+	if len(fields) != 4 {
+		return
+	}
+	prio, err := strconv.Atoi(fields[0])
+	if err != nil || prio < 0 || prio > 65535 {
+		// Leave it alone; ValidateDNSRecord reports the real problem.
+		return
+	}
+	r.Content = fields[1] + " " + fields[2] + " " + fields[3]
+	if explicitPriority == nil {
+		r.Priority = prio
+	}
+}
+
 func ValidateDNSRecord(r *models.DNSRecord) error {
 	r.Type = strings.ToUpper(strings.TrimSpace(r.Type))
 	r.Name = strings.TrimSpace(r.Name)
@@ -707,14 +743,30 @@ func ValidateDNSRecord(r *models.DNSRecord) error {
 			return fmt.Errorf("TXT content exceeds 4000 chars")
 		}
 	case "SRV":
-		// content format: "priority weight port target"
+		// Stored content is "weight port target"; the priority lives in the
+		// priority column, exactly as MX stores its hostname. PowerDNS
+		// prepends the column when assembling the record, so a priority left
+		// in content produces a five-field value the server will not serve at
+		// all (JAB-28).
+		//
+		// This used to require the four-field form, which meant every SRV
+		// created through the panel was unresolvable and a caller supplying
+		// the correct three fields was rejected. normaliseSRVRecord now
+		// splits a pasted RFC 2782 string before validation, so both shapes
+		// reach here as three fields.
 		fields := strings.Fields(r.Content)
-		if len(fields) != 4 {
-			return fmt.Errorf("SRV content must be \"priority weight port target\"")
+		if len(fields) != 3 {
+			return fmt.Errorf("SRV content must be \"weight port target\" with the priority in the priority field (a full \"priority weight port target\" string is also accepted and split automatically)")
 		}
-		port, err := strconv.Atoi(fields[2])
+		if _, err := strconv.Atoi(fields[0]); err != nil {
+			return fmt.Errorf("SRV weight must be a number")
+		}
+		port, err := strconv.Atoi(fields[1])
 		if err != nil || port < 1 || port > 65535 {
 			return fmt.Errorf("SRV port must be 1-65535")
+		}
+		if r.Priority < 0 || r.Priority > 65535 {
+			return fmt.Errorf("SRV priority must be 0-65535")
 		}
 	case "CAA":
 		// content format: "<flags> <tag> \"<value>\"" per RFC 8659,
@@ -738,18 +790,17 @@ func ValidateDNSRecord(r *models.DNSRecord) error {
 	return nil
 }
 
-
 // CheckDNSRecordConflict enforces RFC 1034 §3.6.2 (CNAME exclusivity)
 // and prevents exact-duplicate rows.
 //
 // Rules:
-//   1. Exact duplicate (same zone+name+type+content) → rejected.
-//   2. CNAME at a name MUST be the only record at that name.
-//      - Adding CNAME when ANY other record (A/AAAA/MX/TXT/SRV/CNAME)
-//        already exists at the same name → rejected.
-//      - Adding A/AAAA/MX/TXT/SRV when a CNAME already exists at the
-//        same name → rejected.
-//   3. Multiple CNAMEs at the same name → rejected (only one allowed).
+//  1. Exact duplicate (same zone+name+type+content) → rejected.
+//  2. CNAME at a name MUST be the only record at that name.
+//     - Adding CNAME when ANY other record (A/AAAA/MX/TXT/SRV/CNAME)
+//     already exists at the same name → rejected.
+//     - Adding A/AAAA/MX/TXT/SRV when a CNAME already exists at the
+//     same name → rejected.
+//  3. Multiple CNAMEs at the same name → rejected (only one allowed).
 //
 // excludeID is the record being updated (skip self-conflict on edit);
 // pass "" on create.
