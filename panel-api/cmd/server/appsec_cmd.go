@@ -20,6 +20,7 @@ func newAppSecCmd() *cobra.Command {
 		Short: "CrowdSec AppSec config operator subcommands",
 	}
 	cmd.AddCommand(newAppSecRenderConfigCmd())
+	cmd.AddCommand(newAppSecExplainCmd())
 	return cmd
 }
 
@@ -93,11 +94,11 @@ gate a 'systemctl reload crowdsec' on real diffs.`,
 			}
 
 			body := appseccfg.Render(appseccfg.Opts{
-				Mode:               mode,
-				Countries:          countries,
-				Inband:             inband,
-				AdminAllowlist:     true,
-				WebmailHosts:       webmailHosts,
+				Mode:           mode,
+				Countries:      countries,
+				Inband:         inband,
+				AdminAllowlist: true,
+				WebmailHosts:   webmailHosts,
 			})
 
 			// Write-on-diff: cheap before any nginx/crowdsec reload
