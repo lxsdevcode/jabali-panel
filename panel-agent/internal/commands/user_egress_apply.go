@@ -24,6 +24,12 @@ import (
 // reload nftables` which would flush other tables we do not own
 // (CrowdSec blocklists, UFW chain).
 const nftEgressFilePath = "/etc/nftables.d/jabali-per-user-egress.nft"
+
+// nftEgressBootFilePath holds the uid-dispatched variant that
+// jabali-per-user-egress-load.service loads at boot. Separate file rather than
+// a flag on the main one because the boot unit runs long before panel-api and
+// has to be able to load something valid with zero knowledge of host state.
+const nftEgressBootFilePath = "/etc/nftables.d/jabali-per-user-egress-boot.nft"
 const nftEgressTableName = "jabali_per_user"
 const cgroupRoot = "/sys/fs/cgroup"
 
@@ -181,6 +187,32 @@ func userEgressApplyHandler(ctx context.Context, params json.RawMessage) (any, e
 	content := RenderEgressNFT(users, defs, defaultSliceExists)
 	sum := sha256.Sum256([]byte(content))
 	version := hex.EncodeToString(sum[:])[:16]
+
+	// Boot-time copy: same policy, dispatched by uid so it holds no cgroupv2
+	// paths and can load before any tenant process exists. Written but
+	// deliberately NOT applied — the cgroup ruleset is the better one and is
+	// what should be live right now.
+	//
+	// This sits ABOVE the no-change return on purpose. Keying it off whether
+	// the MAIN file changed would mean a converged host never gets one: the
+	// first tick after an upgrade finds the main file already current, returns
+	// early, and the boot file stays missing forever — which is precisely the
+	// state this is meant to fix.
+	//
+	// A failure here is logged, not fatal. The live ruleset is what protects
+	// the host today; the boot file only matters at the next reboot.
+	if bootContent := RenderEgressBootNFT(users, defs); bootContent != "" {
+		if existingBoot, _ := os.ReadFile(nftEgressBootFilePath); string(existingBoot) != bootContent {
+			if err := os.MkdirAll(filepath.Dir(nftEgressBootFilePath), 0755); err != nil {
+				slog.WarnContext(ctx, "egress: could not create boot ruleset dir",
+					"path", nftEgressBootFilePath, "error", err)
+			} else if err := writeFileAtomically(nftEgressBootFilePath, []byte(bootContent), 0644); err != nil {
+				slog.WarnContext(ctx, "egress: could not write boot ruleset",
+					"path", nftEgressBootFilePath, "error", err,
+					"detail", "per-user egress will not be enforced between boot and the first reconciler tick")
+			}
+		}
+	}
 
 	// Idempotent write.
 	existing, _ := os.ReadFile(nftEgressFilePath)
