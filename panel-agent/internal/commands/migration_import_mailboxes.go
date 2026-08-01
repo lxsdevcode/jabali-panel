@@ -338,6 +338,13 @@ func importOneMailbox(ctx context.Context, destEmail, maildir string, allowedRoo
 func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string, _ *[]string, allowedRoots []string) (int64, int64, []string) {
 	var imported, bytes int64
 	var skipped []string
+	// JAB-209: every message that does NOT get imported has to be accounted
+	// for. Silent drops here are indistinguishable from mail loss, which is
+	// the one failure hosting customers cannot forgive — a 74k-message
+	// mailbox reported messages_found=74168 / messages_pushed=74167 with no
+	// error anywhere in the log, and the staging tree was deleted before
+	// anyone could ask which message it was.
+	var deduped int64
 	// Idempotency: Stalwart's Email/import does NOT dedup on Message-ID
 	// (a re-run would duplicate every message), so we skip any message
 	// whose Message-ID is already present in the target mailbox. The set
@@ -366,7 +373,12 @@ func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string,
 			}
 			if mid := messageIDFromFile(path, allowedRoots); mid != "" {
 				if seen[mid] {
-					continue // already in mailbox → idempotent skip
+					// Deliberate: Stalwart's Email/import does not dedup, so a
+					// re-run would duplicate every message. But this is a
+					// message counted as FOUND that will never be PUSHED, so it
+					// must be counted — not dropped on the floor.
+					deduped++
+					continue
 				}
 				seen[mid] = true
 			}
@@ -391,6 +403,14 @@ func pushMaildirSlots(ctx context.Context, accountID, mailboxID, maildir string,
 			imported++
 			bytes += n
 		}
+	}
+	if deduped > 0 {
+		// One line per mailbox rather than per message: a mailbox re-imported
+		// after a partial run legitimately dedups thousands, and that must not
+		// bury the genuine failures in the same list.
+		skipped = append(skipped, fmt.Sprintf(
+			"deduped:%d:%s — message(s) already present with the same Message-ID; not an error, but they are counted in messages_found",
+			deduped, maildir))
 	}
 	return imported, bytes, skipped
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -207,6 +208,7 @@ func ImportMailboxes(ctx context.Context, parsed *ParsedTarball, agentCli agent.
 	if len(ag.Skipped) > 0 {
 		res.Skipped = append(res.Skipped, ag.Skipped...)
 	}
+	res.Skipped = append(res.Skipped, reconcileMailCounts(res.MessagesFound, res.MessagesPushed, ag.Skipped)...)
 
 	return res, nil
 }
@@ -531,7 +533,26 @@ func looksLikeMaildir(path string) (string, bool) {
 // countMaildirMessages walks cur/, new/, tmp/ inside a Maildir +
 // sums file count + bytes. Skips directories silently — Maildir's
 // spec says cur/new/tmp contain only regular files.
+// countMaildirMessages counts deliverable messages in a Maildir.
+//
+// JAB-209: this deliberately does NOT count tmp/. Per the Maildir spec tmp/
+// holds messages mid-delivery, and the importer only ever walks cur/ and new/ —
+// so counting tmp/ here made messages_found exceed messages_pushed by the
+// number of stale tmp/ files, with nothing logged, presenting exactly like
+// silent mail loss. A 74k-message mailbox reported 74168 found / 74167 pushed
+// and no error anywhere.
+//
+// A stale tmp/ file is an interrupted delivery, not a message the user has;
+// reporting it as findable-but-unpushed accused the importer of losing mail it
+// was never supposed to move. tmpFound is returned separately so the caller can
+// mention it without inflating the headline count.
 func countMaildirMessages(maildir string) (count int, bytes int64) {
+	c, b, _ := countMaildirMessagesDetailed(maildir)
+	return c, b
+}
+
+// countMaildirMessagesDetailed additionally reports how many files sit in tmp/.
+func countMaildirMessagesDetailed(maildir string) (count int, bytes int64, tmpFound int) {
 	for _, sub := range []string{"cur", "new", "tmp"} {
 		dir := filepath.Join(maildir, sub)
 		entries, err := os.ReadDir(dir)
@@ -551,11 +572,61 @@ func countMaildirMessages(maildir string) (count int, bytes int64) {
 			// any regular file rather than over-filter, since
 			// some clients store quirky names.
 			_ = strings.Contains(e.Name(), ":")
+			if sub == "tmp" {
+				tmpFound++
+				continue
+			}
 			count++
 			bytes += info.Size()
 		}
 	}
-	return count, bytes
+	return count, bytes, tmpFound
+}
+
+// reconcileMailCounts turns a found/pushed gap into a statement the operator
+// can act on, instead of two numbers in a stats line.
+//
+// JAB-209: a mailbox reported messages_found=74168 / messages_pushed=74167 with
+// zero occurrences of "error" or "fail" in the whole restore log, exit 0, and
+// no degraded flag — then staging was deleted, so the message could not even be
+// identified afterwards. One in 74k is survivable; a silent, unlogged gap means
+// a LARGER loss would present identically, and no operator can honestly tell a
+// customer their mail migrated.
+//
+// Most gaps are benign — a deduplicated duplicate, an oversized message we
+// declined — and those now report themselves from the agent. What must never
+// happen again is a gap nobody can explain, so anything left over after the
+// explained skips are subtracted is called out as unexplained.
+func reconcileMailCounts(found int, pushed int64, agentSkipped []string) []string {
+	gap := int64(found) - pushed
+	if gap <= 0 {
+		return nil
+	}
+	explained := int64(0)
+	for _, s := range agentSkipped {
+		switch {
+		case strings.HasPrefix(s, "deduped:"):
+			// "deduped:<n>:<maildir> — ...". The count is the SECOND field on
+			// purpose: a maildir path can itself contain a colon, so anything
+			// positioned after it cannot be parsed reliably.
+			parts := strings.SplitN(s, ":", 3)
+			if len(parts) >= 2 {
+				if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+					explained += n
+				}
+			}
+		case strings.HasPrefix(s, "oversized:"):
+			explained++
+		}
+	}
+	if explained >= gap {
+		return []string{fmt.Sprintf(
+			"mail: %d message(s) found but not imported — all accounted for (deduplicated or oversized; see the lines above)",
+			gap)}
+	}
+	return []string{fmt.Sprintf(
+		"WARNING mail: %d of %d message(s) were NOT imported and %d of those are UNEXPLAINED — do not report this mailbox as fully migrated. Re-run the mail import for this account before deleting the source; the staging tree is removed when the job completes.",
+		gap, found, gap-explained)}
 }
 
 // mailboxLockoutNotice builds the "password not carried" summary line.
