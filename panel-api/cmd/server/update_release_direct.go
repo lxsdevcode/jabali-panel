@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
 )
@@ -65,4 +66,54 @@ func localHeadSHA(ctx context.Context, repoDir string) (string, error) {
 		return "", fmt.Errorf("git rev-parse returned an implausible HEAD %q", sha)
 	}
 	return sha, nil
+}
+
+// byCommitDownloadURLs resolves the release built for one specific commit,
+// still without touching the API.
+//
+// Needed because "latest" is only the right answer for hosts that follow main.
+// A host on the `stable` channel resets its checkout to the promoted tag, so
+// the newest release will never match it — while the release it actually wants
+// (release-7085d502f for that tag, say) sits published and reachable. Resolving
+// only by "latest" would send every channel host into a full source build
+// forever.
+//
+// The tag is release-<short_sha>, but the short length is whatever
+// build-release.sh produced and git's own --short drifts as the repo grows, so
+// it cannot be derived. Probe a small range instead, cheapest-first: a HEAD on
+// the tiny .sha256 sidecar costs nothing and the first hit wins. Observed
+// length today is 9; the range covers drift in either direction.
+func byCommitDownloadURLs(ctx context.Context, webBase, fullSHA string, head func(context.Context, string) bool) (tarURL, sumURL, tag string, ok bool) {
+	base := strings.TrimSuffix(webBase, "/") + "/releases/download/"
+	for _, n := range []int{9, 8, 10, 7, 11, 12} {
+		if n > len(fullSHA) {
+			continue
+		}
+		short := fullSHA[:n]
+		t := "release-" + short
+		asset := "jabali-release-" + short + ".tar.gz"
+		sum := base + t + "/" + asset + ".sha256"
+		if head(ctx, sum) {
+			return base + t + "/" + asset, sum, t, true
+		}
+	}
+	return "", "", "", false
+}
+
+// urlExists is the probe byCommitDownloadURLs uses. A HEAD on the sidecar is a
+// few hundred bytes of headers, so trying a handful of tag lengths is far
+// cheaper than either an API call or a wrong-guess full download.
+func urlExists(ctx context.Context, url string) bool {
+	cctx, cancel := context.WithTimeout(ctx, releaseAPITimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodHead, url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
