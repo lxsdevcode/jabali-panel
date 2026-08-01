@@ -964,6 +964,7 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	// Inheriting from the draft rather than requiring the caller to send it
 	// keeps existing clients working — the wizard never sent a port here.
 	var draftPlan *string
+	var draftHostKey string
 	sourcePort := normalizeSourcePort(req.SourcePort)
 	if req.SourceJobID != "" {
 		if draft, derr := h.cfg.Jobs.FindByID(c.Request.Context(), req.SourceJobID); derr == nil {
@@ -971,6 +972,12 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 			if draft.SourcePort >= 1 && draft.SourcePort <= 65535 {
 				sourcePort = draft.SourcePort
 			}
+			// The host-key pin has to travel too, for the same reason as the
+			// port: children are what the pull actually runs against, and an
+			// empty pin means PinningHostKeyCallback accepts ANY host key.
+			// Without this the operator's fingerprint is enforced on
+			// discovery and quietly dropped for the transfer.
+			draftHostKey = draft.ExpectedHostKey
 		}
 	}
 
@@ -982,14 +989,15 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	defer cancelClone()
 	for _, acct := range req.Accounts {
 		row := &models.MigrationJob{
-			ID:         genULID(),
-			BatchID:    &batchID,
-			SourceKind: req.SourceKind,
-			SourceHost: req.SourceHost,
-			SourceUser: acct,
-			SourcePort: sourcePort, // GH #429: inherit the draft's SSH port
-			State:      finalState,
-			PlanJSON:   draftPlan, // GH #633/#634: inherit the wizard's preserve plan
+			ID:              genULID(),
+			BatchID:         &batchID,
+			SourceKind:      req.SourceKind,
+			SourceHost:      req.SourceHost,
+			SourceUser:      acct,
+			SourcePort:      sourcePort,   // GH #429: inherit the draft's SSH port
+			ExpectedHostKey: draftHostKey, // inherit the draft's host-key pin
+			State:           finalState,
+			PlanJSON:        draftPlan, // GH #633/#634: inherit the wizard's preserve plan
 		}
 		if req.AccountTargets != nil {
 			if t := strings.TrimSpace(req.AccountTargets[acct]); t != "" {

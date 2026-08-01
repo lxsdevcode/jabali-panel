@@ -143,3 +143,40 @@ func TestBulkCreate_DraftPortWinsOverExplicit(t *testing.T) {
 		}
 	}
 }
+
+// TestBulkCreate_ChildrenInheritHostKeyPin covers the security half of the
+// same omission. An empty ExpectedHostKey makes PinningHostKeyCallback accept
+// ANY host key, so a child created without the draft's pin runs the credential-
+// carrying pull under trust-on-first-use even though the operator supplied a
+// fingerprint in the wizard.
+func TestBulkCreate_ChildrenInheritHostKeyPin(t *testing.T) {
+	h, jobs := newIMAPHandler(nil)
+
+	const fp = "SHA256:AbCdEf0123456789AbCdEf0123456789AbCdEf01234"
+	draft := &models.MigrationJob{
+		ID: "DRAFT01", SourceKind: "plesk", SourceHost: "plesk01",
+		SourceUser: "__discovery__", SourcePort: 8404, ExpectedHostKey: fp,
+	}
+	if err := jobs.Create(context.Background(), draft); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"source_kind":"plesk","source_host":"plesk01",` +
+		`"accounts":["shop.example.com"],"source_job_id":"DRAFT01"}`
+	if w := postJSON(h.bulkCreate, body); w.Code != http.StatusCreated {
+		t.Fatalf("bulkCreate status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	jobs.mu.Lock()
+	defer jobs.mu.Unlock()
+	for id, j := range jobs.byID {
+		if id == "DRAFT01" {
+			continue
+		}
+		if j.ExpectedHostKey != fp {
+			t.Errorf("child %s has ExpectedHostKey=%q, want the draft's pin — "+
+				"an empty pin accepts any host key on the connection that "+
+				"carries the SSH credentials", id, j.ExpectedHostKey)
+		}
+	}
+}

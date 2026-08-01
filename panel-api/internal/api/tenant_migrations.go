@@ -307,7 +307,7 @@ func (h *tenantMigrationsHandler) scanWP(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
 	defer cancel()
-	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env")}
+	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env"), ExpectedHostKey: job.ExpectedHostKey}
 	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, secret, allowPrivate)
 	if err != nil {
 		respondMigrateConnectErr(c, err)
@@ -404,7 +404,7 @@ func (h *tenantMigrationsHandler) verify(c *gin.Context) {
 	if sshUser == "" || sshUser == "wp" {
 		sshUser = "root"
 	}
-	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, migrate.SecretRef{Path: secretPath}, allowPrivate)
+	sess, err := wordpressssh.Connect(ctx, job.SourceHost, 0, sshUser, migrate.SecretRef{Path: secretPath, ExpectedHostKey: job.ExpectedHostKey}, allowPrivate)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "connect_failed", "detail": "SSH connect failed — check host + credentials: " + err.Error()})
 		return
