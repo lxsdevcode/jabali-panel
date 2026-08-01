@@ -94,3 +94,78 @@ func TestLocalHeadSHA_NotARepo(t *testing.T) {
 		t.Errorf("expected an error outside a git repo, got sha=%q", sha)
 	}
 }
+
+// TestByCommitDownloadURLs covers the resolver that keeps channel hosts off the
+// source-build path.
+//
+// "latest" is only correct for a host following main. A host on the `stable`
+// channel resets its checkout to the promoted tag, so the newest release never
+// matches its HEAD — while release-<that commit> is usually published and
+// perfectly reachable. Resolving only by "latest" would send every stable host
+// into a full source build forever, which on a small box means an update that
+// takes hours or does not finish at all.
+//
+// The tag's short-SHA length is whatever build-release.sh produced and git's
+// own --short drifts as the repo grows, so it cannot be derived — hence the
+// probe. The order matters: the observed length is tried first so the common
+// case costs one HEAD.
+func TestByCommitDownloadURLs(t *testing.T) {
+	t.Parallel()
+
+	const full = "7085d502f2a5cfe2a7e07bd1958ddeac4675b880"
+	const web = "https://github.com/shukiv/jabali-panel"
+
+	t.Run("finds the 9-char tag on the first probe", func(t *testing.T) {
+		var probes []string
+		head := func(_ context.Context, url string) bool {
+			probes = append(probes, url)
+			return strings.Contains(url, "release-7085d502f/")
+		}
+		tar, sum, tag, ok := byCommitDownloadURLs(context.Background(), web, full, head)
+		if !ok {
+			t.Fatalf("expected a hit; probed %v", probes)
+		}
+		if tag != "release-7085d502f" {
+			t.Errorf("tag = %q, want release-7085d502f", tag)
+		}
+		if len(probes) != 1 {
+			t.Errorf("expected the observed length to be probed first, got %d probes: %v", len(probes), probes)
+		}
+		wantTar := web + "/releases/download/release-7085d502f/jabali-release-7085d502f.tar.gz"
+		if tar != wantTar {
+			t.Errorf("tar = %q, want %q", tar, wantTar)
+		}
+		if sum != wantTar+".sha256" {
+			t.Errorf("sum = %q, want the tarball plus .sha256", sum)
+		}
+		if strings.Contains(tar, "api.github.com") {
+			t.Error("by-commit resolution must not use the rate-limited API host")
+		}
+	})
+
+	t.Run("falls through to another length when the tag is shorter", func(t *testing.T) {
+		head := func(_ context.Context, url string) bool {
+			return strings.Contains(url, "release-7085d50/")
+		}
+		_, _, tag, ok := byCommitDownloadURLs(context.Background(), web, full, head)
+		if !ok || tag != "release-7085d50" {
+			t.Errorf("expected the 7-char tag to be found, got ok=%v tag=%q", ok, tag)
+		}
+	})
+
+	t.Run("reports not-found rather than guessing", func(t *testing.T) {
+		head := func(_ context.Context, _ string) bool { return false }
+		_, _, _, ok := byCommitDownloadURLs(context.Background(), web, full, head)
+		if ok {
+			t.Error("no published release must report not-found so the caller falls back to source")
+		}
+	})
+
+	t.Run("a short SHA never slices out of range", func(t *testing.T) {
+		head := func(_ context.Context, _ string) bool { return false }
+		// Must not panic on a SHA shorter than the probe lengths.
+		if _, _, _, ok := byCommitDownloadURLs(context.Background(), web, "abc123", head); ok {
+			t.Error("unexpected hit")
+		}
+	})
+}

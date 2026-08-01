@@ -106,6 +106,10 @@ func installFromRelease(ctx context.Context, repoDir string, log func(string, ..
 	//    update_release_direct.go for the full rationale.
 	var fullSHA string
 	var tarName, sumName, tarURL, sumURL string
+	// usedDirect: URLs came from the "latest" CDN shortcut, which is only
+	// correct for a host following main. On a MANIFEST mismatch we re-resolve
+	// by commit rather than giving up.
+	usedDirect := false
 
 	fullSHA, err = localHeadSHA(ctx, repoDir)
 	if err == nil {
@@ -119,6 +123,7 @@ func installFromRelease(ctx context.Context, repoDir string, log func(string, ..
 		tarName = "jabali-release.tar.gz"
 		sumName = tarName + ".sha256"
 		tarURL, sumURL = latestDownloadURLs(webBase)
+		usedDirect = true
 	} else {
 		// No usable local checkout (bare install, relocated repo). Fall
 		// back to the API path, which still works when the quota allows.
@@ -151,56 +156,88 @@ func installFromRelease(ctx context.Context, repoDir string, log func(string, ..
 		}
 	}
 
-	// 3. Download tarball + sha256 sidecar into a staging tmpdir.
+	// 3. Download + verify + extract one candidate, and report whether its
+	//    MANIFEST is the build for the commit this host is on.
 	stage, err := os.MkdirTemp("/var/lib/jabali-panel", "release-stage-*")
 	if err != nil {
 		return false, "", fmt.Errorf("release: mkdir staging: %w", err)
 	}
 	defer os.RemoveAll(stage) // success path also cleans up
 
-	tarPath := filepath.Join(stage, tarName)
-	if err := downloadTo(ctx, tarURL, tarPath, releaseDownloadTimeout); err != nil {
-		return false, "", fmt.Errorf("release: download tarball: %w", err)
-	}
-	sumPath := filepath.Join(stage, sumName)
-	if err := downloadTo(ctx, sumURL, sumPath, releaseAPITimeout); err != nil {
-		return false, "", fmt.Errorf("release: download checksum: %w", err)
+	attempt := 0
+	stageAndCheck := func(tarURL, sumURL, tarName, sumName string) (string, bool, error) {
+		attempt++
+		dir := filepath.Join(stage, fmt.Sprintf("try%d", attempt))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", false, fmt.Errorf("release: mkdir staging: %w", err)
+		}
+		tarPath := filepath.Join(dir, tarName)
+		if err := downloadTo(ctx, tarURL, tarPath, releaseDownloadTimeout); err != nil {
+			return "", false, fmt.Errorf("release: download tarball: %w", err)
+		}
+		sumPath := filepath.Join(dir, sumName)
+		if err := downloadTo(ctx, sumURL, sumPath, releaseAPITimeout); err != nil {
+			return "", false, fmt.Errorf("release: download checksum: %w", err)
+		}
+		// Verify sha256. Hard-fail on mismatch — the caller MUST NOT fall
+		// back to source for a corrupted tarball.
+		if err := verifyTarballChecksum(tarPath, sumPath); err != nil {
+			return "", false, fmt.Errorf("release: checksum verification failed: %w", err)
+		}
+		log("release: sha256 verified")
+
+		extractDir := filepath.Join(dir, "extracted")
+		if err := os.Mkdir(extractDir, 0o755); err != nil {
+			return "", false, fmt.Errorf("release: mkdir extract: %w", err)
+		}
+		if err := extractTarball(ctx, tarPath, extractDir); err != nil {
+			return "", false, fmt.Errorf("release: extract: %w", err)
+		}
+		manifest, err := parseManifest(filepath.Join(extractDir, "MANIFEST"))
+		if err != nil {
+			return "", false, fmt.Errorf("release: parse MANIFEST: %w", err)
+		}
+		if manifest["full_sha"] != fullSHA {
+			log("release: this tarball is for %s but the host is on %s",
+				manifest["full_sha"], fullSHA)
+			return extractDir, false, nil
+		}
+		log("release: tarball MANIFEST: short=%s build_time=%s go=%s",
+			manifest["short_sha"], manifest["build_time"], manifest["go_version"])
+		return extractDir, true, nil
 	}
 
-	// 4. Verify sha256. Hard-fail on mismatch — caller MUST NOT fall
-	//    back to source for a corrupted tarball.
-	if err := verifyTarballChecksum(tarPath, sumPath); err != nil {
-		return false, "", fmt.Errorf("release: checksum verification failed: %w", err)
-	}
-	log("release: sha256 verified")
-
-	// 5. Extract into the staging dir and install binaries atomically.
-	extractDir := filepath.Join(stage, "extracted")
-	if err := os.Mkdir(extractDir, 0o755); err != nil {
-		return false, "", fmt.Errorf("release: mkdir extract: %w", err)
-	}
-	if err := extractTarball(ctx, tarPath, extractDir); err != nil {
-		return false, "", fmt.Errorf("release: extract: %w", err)
-	}
-
-	manifestPath := filepath.Join(extractDir, "MANIFEST")
-	manifest, err := parseManifest(manifestPath)
+	extractDir, matched, err := stageAndCheck(tarURL, sumURL, tarName, sumName)
 	if err != nil {
-		return false, "", fmt.Errorf("release: parse MANIFEST: %w", err)
+		return false, "", err
 	}
-	if manifest["full_sha"] != fullSHA {
-		// The newest published release is for a different commit than the
-		// one this host is on. That is ordinary right after a push — the
-		// release build has not finished yet — so fall back to a source
-		// build rather than installing binaries that do not match the
-		// checked-out tree. Not an error: the tarball is intact, it is
-		// simply not ours.
-		log("release: newest release is for %s but this host is on %s — falling back",
-			manifest["full_sha"], fullSHA)
-		return false, "", nil
+	if !matched {
+		// "latest" is only the right answer for a host following main. A host
+		// on a channel tag (stable) resets its checkout to the promoted commit,
+		// so latest will never match it — while the release it actually wants
+		// is usually published and reachable. Re-resolve BY COMMIT rather than
+		// giving up, or every channel host rebuilds from source forever.
+		if !usedDirect {
+			// Already resolved by commit and it still disagrees: that is a
+			// publisher bug, not a channel mismatch.
+			return false, "", fmt.Errorf("release: MANIFEST does not match HEAD %s — tag/build mismatch", fullSHA)
+		}
+		cTar, cSum, cTag, found := byCommitDownloadURLs(ctx, webBase, fullSHA, urlExists)
+		if !found {
+			log("release: no release published for %s yet — falling back to source", fullSHA[:7])
+			return false, "", nil
+		}
+		log("release: found %s for this commit", cTag)
+		asset := "jabali-release-" + strings.TrimPrefix(cTag, "release-") + ".tar.gz"
+		extractDir, matched, err = stageAndCheck(cTar, cSum, asset, asset+".sha256")
+		if err != nil {
+			return false, "", err
+		}
+		if !matched {
+			log("release: by-commit tarball still disagrees — falling back to source")
+			return false, "", nil
+		}
 	}
-	log("release: tarball MANIFEST: short=%s build_time=%s go=%s",
-		manifest["short_sha"], manifest["build_time"], manifest["go_version"])
 
 	// 6. Install binaries via the same path the source-build flow
 	//    uses (atomic rename, mode 0755, owner root). Caller is
