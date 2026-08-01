@@ -113,7 +113,19 @@ live source SSH. Use scp directly for that kind.`,
 			if _, err := os.Stat(secretPath); err != nil {
 				return markPullFailed(fmt.Errorf("secrets file %s missing: %w (drop SSH_PASSWORD or SSH_PRIVATE_KEY there first)", secretPath, err))
 			}
-			secret := migrate.SecretRef{Path: secretPath}
+			// ExpectedHostKey is load-bearing and was missing here. An empty
+			// pin makes PinningHostKeyCallback return nil for ANY host key —
+			// deliberate TOFU for the first discover connection, but it was
+			// also what every pull and import connection got, because they
+			// built the SecretRef without the field.
+			//
+			// So an operator who supplied a fingerprint in the wizard had it
+			// enforced on the cheap discovery probe and silently ignored on
+			// the connection that carries the SSH credentials and pulls the
+			// databases, mail and site files. Six of the eight SecretRef
+			// construction sites were unpinned; the two that were not are the
+			// discovery paths in admin_migrations.go.
+			secret := migrate.SecretRef{Path: secretPath, ExpectedHostKey: job.ExpectedHostKey}
 
 			// Local destination paths
 			localDir := filepath.Join("/var/lib/jabali-migrations", jobID)

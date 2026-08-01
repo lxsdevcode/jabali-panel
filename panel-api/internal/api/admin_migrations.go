@@ -891,6 +891,10 @@ type bulkCreateRequest struct {
 	// them so the operator doesn't re-upload N times. Without this,
 	// jobs land as drafts the operator must resume one-by-one.
 	SourceJobID string `json:"source_job_id"`
+	// SourcePort (GH #429) — optional. Children normally inherit the port
+	// from the discovery draft named by SourceJobID; this is the fallback
+	// for a caller that has no draft to inherit from.
+	SourcePort int `json:"source_port,omitempty"`
 }
 
 type bulkCreateResponse struct {
@@ -944,10 +948,34 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	// migrationPlanPreserve returns zero and source mailbox + MySQL-user
 	// passwords are silently reset. secrets_clone already carried the SSH creds
 	// across; the plan was the missing half.
-	var draftPlan *string
+	// GH #429: the SSH port is the third thing children have to inherit
+	// explicitly, after the secrets and the plan above. Discovery runs against
+	// the draft, so a custom port works there and every operator reasonably
+	// concludes the connection is configured — then bulkCreate builds children
+	// without SourcePort, the `default:22` column tag turns that zero value
+	// into 22, and the auto-kicked pull-source dials 22:
+	//
+	//	pull-source: plesk.Connect: tcp dial <host>:22: i/o timeout
+	//
+	// It only bites the multi-account sources (Plesk subscriptions, WHM),
+	// because submitDraft reuses the discovery job rather than making a child,
+	// so single-account cPanel migrations on a custom port were unaffected.
+	//
+	// Inheriting from the draft rather than requiring the caller to send it
+	// keeps existing clients working — the wizard never sent a port here.
+	// The discovery draft is the template every child is built from — the plan,
+	// the host-key pin, the mode and the port all live on it. newBulkChildJob
+	// copies it wholesale so a field added later is inherited by default rather
+	// than silently dropped; only the port needs resolving here, because the
+	// request may supply one when there is no draft to inherit from.
+	var draftJob *models.MigrationJob
+	sourcePort := normalizeSourcePort(req.SourcePort)
 	if req.SourceJobID != "" {
 		if draft, derr := h.cfg.Jobs.FindByID(c.Request.Context(), req.SourceJobID); derr == nil {
-			draftPlan = draft.PlanJSON
+			draftJob = draft
+			if draft.SourcePort >= 1 && draft.SourcePort <= 65535 {
+				sourcePort = draft.SourcePort
+			}
 		}
 	}
 
@@ -958,20 +986,19 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	cloneCtx, cancelClone := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancelClone()
 	for _, acct := range req.Accounts {
-		row := &models.MigrationJob{
+		// Inheritance is the default here on purpose — see the comment on
+		// newBulkChildJob. Four fields have been lost by writing this as a
+		// struct literal that opted each one in by hand.
+		row := newBulkChildJob(draftJob, childJobInputs{
 			ID:         genULID(),
 			BatchID:    &batchID,
+			Account:    acct,
+			State:      finalState,
+			TargetID:   resolveChildTarget(req.AccountTargets, acct),
 			SourceKind: req.SourceKind,
 			SourceHost: req.SourceHost,
-			SourceUser: acct,
-			State:      finalState,
-			PlanJSON:   draftPlan, // GH #633/#634: inherit the wizard's preserve plan
-		}
-		if req.AccountTargets != nil {
-			if t := strings.TrimSpace(req.AccountTargets[acct]); t != "" {
-				row.TargetUserID = &t // map to existing user; else auto-create
-			}
-		}
+			SourcePort: sourcePort,
+		})
 		if err := h.cfg.Jobs.Create(c.Request.Context(), row); err != nil {
 			// Skip dupes silently — operator re-selected an account
 			// that already has an existing job under this host.

@@ -1634,7 +1634,7 @@ func cpanelAnalyzeCallback(jobsRepo repository.MigrationJobRepository) migrate.S
 		// stage dialed the default 22 regardless (lxsdevcode: "stage
 		// analyze: connect: plesk.Connect: tcp dial remote_ip:22").
 		migrate.ApplyPort(disc, job.SourcePort)
-		s, err := disc.Connect(ctx, job.SourceHost, migrationSSHUser(job), migrate.SecretRef{Path: secretPath})
+		s, err := disc.Connect(ctx, job.SourceHost, migrationSSHUser(job), migrate.SecretRef{Path: secretPath, ExpectedHostKey: job.ExpectedHostKey})
 		if err != nil {
 			return 0, nil, fmt.Errorf("connect: %w", err)
 		}
@@ -1750,7 +1750,7 @@ func preflightDAPivot(ctx context.Context, job *models.MigrationJob) (string, er
 	migrate.ApplyPort(disc, job.SourcePort)
 	subctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	s, err := disc.Connect(subctx, job.SourceHost, migrationSSHUser(job), migrate.SecretRef{Path: secretPath})
+	s, err := disc.Connect(subctx, job.SourceHost, migrationSSHUser(job), migrate.SecretRef{Path: secretPath, ExpectedHostKey: job.ExpectedHostKey})
 	if err != nil {
 		return "", nil
 	}
@@ -1872,7 +1872,7 @@ func pleskAuthorizedDocroots(ctx context.Context, job *models.MigrationJob, db *
 	d := plesk.New()
 	d.AllowPrivate = allowPrivate
 	d.Port = srcSSHPort(job)
-	secret := migrate.SecretRef{Path: fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID)}
+	secret := migrate.SecretRef{Path: fmt.Sprintf("/etc/jabali-panel/migration-secrets/%s.env", job.ID), ExpectedHostKey: job.ExpectedHostKey}
 	sess, err := d.Connect(ctx, job.SourceHost, migrationSSHUser(job), secret)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)

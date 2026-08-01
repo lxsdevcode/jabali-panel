@@ -69,7 +69,7 @@ func (h *adminMigrationsHandler) testConnection(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
 	defer cancel()
-	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env")}
+	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env"), ExpectedHostKey: job.ExpectedHostKey}
 
 	switch job.SourceKind {
 	case models.MigrationSourceWordPressPlugin:
@@ -197,7 +197,7 @@ func (h *adminMigrationsHandler) describeAccount(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
 	defer cancel()
-	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env")}
+	secret := migrate.SecretRef{Path: filepath.Join(migrate.SecretsDir, job.ID+".env"), ExpectedHostKey: job.ExpectedHostKey}
 	migrate.ApplyPort(d, job.SourcePort) // GH #429: test/describe previously ignored the custom SSH port (only the run path applied it)
 	sess, err := d.Connect(ctx, job.SourceHost, sshUserOrRoot(job.SourceUser), secret)
 	if err != nil {
