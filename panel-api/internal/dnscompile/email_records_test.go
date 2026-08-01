@@ -49,22 +49,22 @@ func TestBuildEmailRecords_ShapeAndContent(t *testing.T) {
 	// the same reason as the CNAME above.
 	require.Equal(t, "_autodiscover._tcp", recs[2].Name)
 	require.Equal(t, "SRV", recs[2].Type)
-	require.Equal(t, "0 0 443 mail.example.com", recs[2].Content)
+	require.Equal(t, "0 443 mail.example.com", recs[2].Content)
 
 	// Records 3-6 — CalDAV/CardDAV SRV for RFC 6764 (HTTPS on 443,
 	// plain HTTP on 80 as fallback).
 	require.Equal(t, "_caldavs._tcp", recs[3].Name)
 	require.Equal(t, "SRV", recs[3].Type)
-	require.Equal(t, "0 1 443 mail.example.com", recs[3].Content)
+	require.Equal(t, "1 443 mail.example.com", recs[3].Content)
 	require.Equal(t, "_carddavs._tcp", recs[4].Name)
 	require.Equal(t, "SRV", recs[4].Type)
-	require.Equal(t, "0 1 443 mail.example.com", recs[4].Content)
+	require.Equal(t, "1 443 mail.example.com", recs[4].Content)
 	require.Equal(t, "_caldav._tcp", recs[5].Name)
 	require.Equal(t, "SRV", recs[5].Type)
-	require.Equal(t, "0 1 80 mail.example.com", recs[5].Content)
+	require.Equal(t, "1 80 mail.example.com", recs[5].Content)
 	require.Equal(t, "_carddav._tcp", recs[6].Name)
 	require.Equal(t, "SRV", recs[6].Type)
-	require.Equal(t, "0 1 80 mail.example.com", recs[6].Content)
+	require.Equal(t, "1 80 mail.example.com", recs[6].Content)
 
 	// GH #134 additions (appended after the existing set).
 	require.Equal(t, "autodiscover", recs[7].Name)
@@ -72,13 +72,13 @@ func TestBuildEmailRecords_ShapeAndContent(t *testing.T) {
 	require.Equal(t, "mail.example.com", recs[7].Content)
 
 	require.Equal(t, "_imap._tcp", recs[8].Name)
-	require.Equal(t, "0 1 143 mail.example.com", recs[8].Content)
+	require.Equal(t, "1 143 mail.example.com", recs[8].Content)
 	require.Equal(t, "_imaps._tcp", recs[9].Name)
-	require.Equal(t, "0 1 993 mail.example.com", recs[9].Content)
+	require.Equal(t, "1 993 mail.example.com", recs[9].Content)
 	require.Equal(t, "_submission._tcp", recs[10].Name)
-	require.Equal(t, "0 1 587 mail.example.com", recs[10].Content)
+	require.Equal(t, "1 587 mail.example.com", recs[10].Content)
 	require.Equal(t, "_submissions._tcp", recs[11].Name)
-	require.Equal(t, "0 1 465 mail.example.com", recs[11].Content)
+	require.Equal(t, "1 465 mail.example.com", recs[11].Content)
 
 	require.Equal(t, "_smtp._tls", recs[12].Name)
 	require.Equal(t, "TXT", recs[12].Type)

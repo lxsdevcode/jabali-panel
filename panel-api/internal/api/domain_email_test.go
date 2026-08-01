@@ -283,9 +283,9 @@ func TestDomainEmail_Enable_InsertsM6DNSRecords(t *testing.T) {
 	require.Len(t, got, 14, "expected 14 M6 record keys, got %v", got)
 	require.Equal(t, `"v=DKIM1;k=ed25519;p=AAAA"`, got["TXT:jabali._domainkey"])
 	require.Equal(t, "mail.example.com", got["CNAME:autoconfig"])
-	require.Equal(t, "0 0 443 mail.example.com", got["SRV:_autodiscover._tcp"])
-	require.Equal(t, "0 1 443 mail.example.com", got["SRV:_caldavs._tcp"])
-	require.Equal(t, "0 1 443 mail.example.com", got["SRV:_carddavs._tcp"])
+	require.Equal(t, "0 443 mail.example.com", got["SRV:_autodiscover._tcp"])
+	require.Equal(t, "1 443 mail.example.com", got["SRV:_caldavs._tcp"])
+	require.Equal(t, "1 443 mail.example.com", got["SRV:_carddavs._tcp"])
 }
 
 // Disable must remove every ManagedBy="m6" row — and nothing else. We
