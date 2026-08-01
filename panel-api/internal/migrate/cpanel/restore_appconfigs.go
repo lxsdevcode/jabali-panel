@@ -340,7 +340,14 @@ func rewriteWordPress(text string, creds map[string]DBCredential) (string, bool)
 	// so the cPanel restore and the wordpress_ssh import apply one identical,
 	// proven rewriter (no drift). Behavior-preserving (same regex + php-escape,
 	// DB_HOST -> localhost).
-	return migrate.RewriteWPConfigDB(text, cred.DBName, cred.DBUser, cred.Password, "localhost")
+	// JAB-207: when a preserved compat user owns this MySQL account, the
+	// original password in the config is the one that authenticates — pass nil
+	// so DB_PASSWORD is left exactly as the source wrote it.
+	pass := &cred.Password
+	if cred.KeepSourcePassword {
+		pass = nil
+	}
+	return migrate.RewriteWPConfigDBFields(text, cred.DBName, cred.DBUser, pass, "localhost")
 }
 
 var (
@@ -376,6 +383,9 @@ func rewriteJoomla(text string, creds map[string]DBCredential) (string, bool) {
 		case "user":
 			return fmt.Sprintf("public $user = '%s';", phpEscape(cred.DBUser))
 		case "password":
+			if cred.KeepSourcePassword {
+				return m[0] // JAB-207: preserved compat hash owns this account
+			}
 			return fmt.Sprintf("public $password = '%s';", phpEscape(cred.Password))
 		case "host":
 			return "public $host = 'localhost';"

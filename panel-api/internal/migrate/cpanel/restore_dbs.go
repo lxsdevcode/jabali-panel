@@ -36,6 +36,21 @@ type DBCredential struct {
 	DBName   string
 	DBUser   string
 	Password string // plaintext temp_pwd printed in the manifest line
+
+	// KeepSourcePassword suppresses the password rewrite in app configs.
+	//
+	// Set when a --preserve-source-state compat user takes over the MySQL
+	// account this credential names, which happens whenever the source DB
+	// user is spelled the same as the panel-managed one (JAB-207). The
+	// agent's db_user.create runs an unconditional ALTER USER for the hash
+	// path — deliberately, so the preserved hash wins (GH #633) — so the
+	// account ends up authenticating with the ORIGINAL password while
+	// Password here holds a temp one that now matches nothing.
+	//
+	// The source config already carries the original password and it matched
+	// that hash on the source, so the correct move is to leave it alone:
+	// rewrite DB name/user/host, do not touch the password.
+	KeepSourcePassword bool
 }
 
 // dbRestoreNameRe mirrors the agent's db.restore validation
@@ -108,6 +123,10 @@ func ImportDatabases(
 	// compat-user path, fix for the "migrated app sees Access denied"
 	// scar).
 	sourceToFinalDB := map[string]string{}
+	// managedUserToSourceDB maps a panel-managed MySQL user we create in this
+	// run back to the SOURCE db name its credential is keyed by. Used below to
+	// detect a compat user about to take over the same account (JAB-207).
+	managedUserToSourceDB := map[string]string{}
 	for _, dumpPath := range parsed.MySQLDumps {
 		finalName, base, ok := deriveDestDBName(dumpPath, targetUsername)
 		if !ok {
@@ -304,6 +323,10 @@ func ImportDatabases(
 									DBUser:   finalName,
 									Password: plainPwd,
 								}
+								// Remember which MySQL account this credential
+								// owns, so the compat pass below can tell when
+								// it is about to take that same account over.
+								managedUserToSourceDB[finalName] = base
 							}
 						}
 					}
@@ -362,6 +385,28 @@ func ImportDatabases(
 			if ucErr != nil {
 				res.Skipped = append(res.Skipped, fmt.Sprintf("compat_user %s: db_user.create: %v", u.Name, ucErr))
 				continue
+			}
+			// JAB-207. When the source MySQL user is spelled the same as the
+			// panel-managed one — the norm when the destination account keeps
+			// the source's name — the call above did not create a second
+			// account. It ALTERed the one the dump loop just made, replacing
+			// the temp password with the source hash. That is intended (GH
+			// #633: the preserved hash must win), but it silently invalidates
+			// the temp password the app-config rewriter is about to publish,
+			// and the migrated site then fails to connect while the summary
+			// reports success.
+			//
+			// The source config still holds the original password, which
+			// matched this hash on the source. So keep it: rewrite the DB
+			// name/user/host and leave the password alone.
+			if srcDB, collides := managedUserToSourceDB[u.Name]; collides {
+				if cred, have := res.Credentials[srcDB]; have {
+					cred.KeepSourcePassword = true
+					res.Credentials[srcDB] = cred
+				}
+				res.Skipped = append(res.Skipped, fmt.Sprintf(
+					"compat_user %s: shares the panel-managed user name — the source password hash is now authoritative for this account, so %s keeps its ORIGINAL password in app configs (the temp password reported above no longer applies)",
+					u.Name, u.Name))
 			}
 			grantedDBs := 0
 			for _, g := range u.Grant {

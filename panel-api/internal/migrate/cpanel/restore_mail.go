@@ -388,9 +388,20 @@ func insertOneMailboxRow(
 	}
 	// Loud, explicit notice — a plain "temp password set" read as harmless and
 	// the operator handed a locked-out mailbox to the tenant.
-	return []string{fmt.Sprintf(
-		"mailbox_rows: created %s@%s with a NEW password — the ORIGINAL mail password was NOT migrated; the mailbox owner is locked out until you reset it in the panel (use --preserve-source-state on a trusted same-owner migration to carry the source password)",
-		localPart, domainName)}
+	//
+	// JAB-208: the reason matters. Telling an operator who ALREADY passed
+	// --preserve-source-state to pass it reads as a plumbing failure and costs
+	// them a re-run of the whole restore to find out nothing changed. There are
+	// two distinct causes and only one of them is actionable:
+	//
+	//   flag off        -> preservation was never attempted; the hint is right.
+	//   flag on, no hash -> nothing portable existed to carry. A cPanel
+	//                       system-account mailbox authenticates against
+	//                       /etc/shadow, so ~/etc/<domain>/shadow holds no
+	//                       entry for it; non-bcrypt schemes are dropped for
+	//                       the same reason (Stalwart cannot verify them).
+	//                       Re-running changes nothing.
+	return []string{mailboxLockoutNotice(localPart, domainName, preserveCreds)}
 }
 
 // loadSourceMailPasswords reads a HestiaCP dovecot passwd-file at
@@ -545,4 +556,21 @@ func countMaildirMessages(maildir string) (count int, bytes int64) {
 		}
 	}
 	return count, bytes
+}
+
+// mailboxLockoutNotice builds the "password not carried" summary line.
+//
+// preserveActive distinguishes the two causes: with the flag off the operator
+// can act on the hint, with it on there was simply no portable hash and saying
+// otherwise sends them to re-run a restore that cannot behave differently
+// (JAB-208).
+func mailboxLockoutNotice(localPart, domainName string, preserveActive bool) string {
+	if preserveActive {
+		return fmt.Sprintf(
+			"mailbox_rows: created %s@%s with a NEW password — the source had no portable password hash for this mailbox (a cPanel system-account mailbox authenticates against the system password, not a mail hash), so --preserve-source-state had nothing to carry; the mailbox owner is locked out until you reset it in the panel. Re-running the restore will not change this.",
+			localPart, domainName)
+	}
+	return fmt.Sprintf(
+		"mailbox_rows: created %s@%s with a NEW password — the ORIGINAL mail password was NOT migrated; the mailbox owner is locked out until you reset it in the panel (use --preserve-source-state on a trusted same-owner migration to carry the source password)",
+		localPart, domainName)
 }
