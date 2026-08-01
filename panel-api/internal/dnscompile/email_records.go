@@ -37,7 +37,7 @@ const EmailRecordsSelector = "jabali"
 //	jabali._domainkey  TXT    "v=DKIM1; k=ed25519; p=<pubkey>"
 //	autoconfig         CNAME  mail
 //	autodiscover       CNAME  mail
-//	_autodiscover._tcp SRV    0 0 443 mail
+//	_autodiscover._tcp SRV    0 0 443 mail   (priority in the column, see below)
 //	_caldav(s)/_carddav(s)._tcp SRV ...
 //	_imap/_imaps/_submission/_submissions._tcp SRV ...  (RFC 6186)
 //	_smtp._tls         TXT    "v=TLSRPTv1; rua=mailto:postmaster@<zone>"
@@ -86,14 +86,34 @@ func BuildEmailRecords(
 		}
 	}
 	mailTarget := "mail." + zoneName
+	// SRV content is "weight port target" — the PRIORITY belongs in the
+	// priority column, never in the content string, exactly as MX is written
+	// (`mk("@", "MX", "mail."+zone, 10)`).
+	//
+	// These carried the priority in BOTH places. PowerDNS's gmysql backend on
+	// this schema prepends the prio column to the content for MX and SRV, so
+	// "0 1 465 mail.example.com" became a five-field record:
+	//
+	//	pdnsutil check-zone:
+	//	  Error was: When parsing SRV trailing data was not parsed: ' mail...'
+	//
+	// and pdns refused to serve it. Every one of these nine records returned
+	// an EMPTY answer — verified with dig against the authoritative server —
+	// which silently disables SRV-based mail client autoconfiguration
+	// (Thunderbird, Outlook, iOS) and CalDAV/CardDAV discovery on every
+	// email-enabled domain. MX was unaffected because it was already written
+	// the correct way.
+	//
+	// No migration needed: the agent's pdns client DELETEs and reinserts the
+	// whole zone on each push, so hosts converge on the next reconcile.
 	return []models.DNSRecord{
 		mk(selector+"._domainkey", "TXT", `"`+dkimPublicKey+`"`, 0),
 		mk("autoconfig", "CNAME", mailTarget, 0),
-		mk("_autodiscover._tcp", "SRV", "0 0 443 "+mailTarget, 0),
-		mk("_caldavs._tcp", "SRV", "0 1 443 "+mailTarget, 0),
-		mk("_carddavs._tcp", "SRV", "0 1 443 "+mailTarget, 0),
-		mk("_caldav._tcp", "SRV", "0 1 80 "+mailTarget, 0),
-		mk("_carddav._tcp", "SRV", "0 1 80 "+mailTarget, 0),
+		mk("_autodiscover._tcp", "SRV", "0 443 "+mailTarget, 0),
+		mk("_caldavs._tcp", "SRV", "1 443 "+mailTarget, 0),
+		mk("_carddavs._tcp", "SRV", "1 443 "+mailTarget, 0),
+		mk("_caldav._tcp", "SRV", "1 80 "+mailTarget, 0),
+		mk("_carddav._tcp", "SRV", "1 80 "+mailTarget, 0),
 		// --- GH #134: full Stalwart-recommended mail record set ---
 		// autodiscover CNAME — the Outlook/Exchange autodiscovery
 		// flavour, alongside the _autodiscover._tcp SRV above.
@@ -101,10 +121,10 @@ func BuildEmailRecords(
 		// Client-service SRV records (RFC 6186) — let MUAs auto-discover
 		// the IMAP + submission ports Stalwart listens on. weight 1 so a
 		// resolver picks them deterministically.
-		mk("_imap._tcp", "SRV", "0 1 143 "+mailTarget, 0),
-		mk("_imaps._tcp", "SRV", "0 1 993 "+mailTarget, 0),
-		mk("_submission._tcp", "SRV", "0 1 587 "+mailTarget, 0),
-		mk("_submissions._tcp", "SRV", "0 1 465 "+mailTarget, 0),
+		mk("_imap._tcp", "SRV", "1 143 "+mailTarget, 0),
+		mk("_imaps._tcp", "SRV", "1 993 "+mailTarget, 0),
+		mk("_submission._tcp", "SRV", "1 587 "+mailTarget, 0),
+		mk("_submissions._tcp", "SRV", "1 465 "+mailTarget, 0),
 		// TLS-RPT (RFC 8460) — where receivers send aggregate reports of
 		// TLS negotiation failures delivering to this domain.
 		mk("_smtp._tls", "TXT", `"v=TLSRPTv1; rua=mailto:postmaster@`+zoneName+`"`, 0),
