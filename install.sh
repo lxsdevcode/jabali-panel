@@ -13925,8 +13925,10 @@ main() {
   run_if_module security install_crowdsec_profiles
   run_if_module security install_login_allowlist_default_conf
   run_if_module security install_crowdsec_jabali_scenarios
-  run_if_module security install_crowdsec_jabali_stalwart_scenarios
-  run_if_module security install_crowdsec_jabali_kratos_scenarios
+  # The stalwart + kratos scenario installers are NOT here with their sibling:
+  # unlike install_crowdsec_jabali_scenarios, which carries its YAML inline,
+  # both copy from $REPO_DIR/install/crowdsec/, so they have to wait for
+  # clone_or_update_repo. They run just after it.
   run_if_module security install_crowdsec_blocklists
   cleanup_modsecurity
   run_if_module security install_malware_stack
@@ -13937,14 +13939,21 @@ main() {
   install_per_user_egress
   install_goaccess
   install_restart_drop_ins
-  install_logrotate
-  install_notify_template
   clone_or_update_repo
   # install_apparmor and install_aide run AFTER clone_or_update_repo because
   # both functions source profile/unit files from $REPO_DIR/install/; on a
   # fresh install that directory does not exist until the repo is cloned.
+  #
+  # install_logrotate and install_notify_template belong to that same group and
+  # used to run just above the clone, where $REPO_DIR/install/ cannot exist yet
+  # on a fresh host. Both source-check and return 0 with only a _warn, so the
+  # install stayed green while silently shipping neither file.
   run_if_module security install_apparmor
   run_if_module security install_aide
+  install_logrotate
+  install_notify_template
+  run_if_module security install_crowdsec_jabali_stalwart_scenarios
+  run_if_module security install_crowdsec_jabali_kratos_scenarios
   install_snuffleupagus
   protect_panel_docs
   # M25: source the socket-helper definitions now that the repo's install/
