@@ -891,6 +891,10 @@ type bulkCreateRequest struct {
 	// them so the operator doesn't re-upload N times. Without this,
 	// jobs land as drafts the operator must resume one-by-one.
 	SourceJobID string `json:"source_job_id"`
+	// SourcePort (GH #429) — optional. Children normally inherit the port
+	// from the discovery draft named by SourceJobID; this is the fallback
+	// for a caller that has no draft to inherit from.
+	SourcePort int `json:"source_port,omitempty"`
 }
 
 type bulkCreateResponse struct {
@@ -944,10 +948,29 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 	// migrationPlanPreserve returns zero and source mailbox + MySQL-user
 	// passwords are silently reset. secrets_clone already carried the SSH creds
 	// across; the plan was the missing half.
+	// GH #429: the SSH port is the third thing children have to inherit
+	// explicitly, after the secrets and the plan above. Discovery runs against
+	// the draft, so a custom port works there and every operator reasonably
+	// concludes the connection is configured — then bulkCreate builds children
+	// without SourcePort, the `default:22` column tag turns that zero value
+	// into 22, and the auto-kicked pull-source dials 22:
+	//
+	//	pull-source: plesk.Connect: tcp dial <host>:22: i/o timeout
+	//
+	// It only bites the multi-account sources (Plesk subscriptions, WHM),
+	// because submitDraft reuses the discovery job rather than making a child,
+	// so single-account cPanel migrations on a custom port were unaffected.
+	//
+	// Inheriting from the draft rather than requiring the caller to send it
+	// keeps existing clients working — the wizard never sent a port here.
 	var draftPlan *string
+	sourcePort := normalizeSourcePort(req.SourcePort)
 	if req.SourceJobID != "" {
 		if draft, derr := h.cfg.Jobs.FindByID(c.Request.Context(), req.SourceJobID); derr == nil {
 			draftPlan = draft.PlanJSON
+			if draft.SourcePort >= 1 && draft.SourcePort <= 65535 {
+				sourcePort = draft.SourcePort
+			}
 		}
 	}
 
@@ -964,6 +987,7 @@ func (h *adminMigrationsHandler) bulkCreate(c *gin.Context) {
 			SourceKind: req.SourceKind,
 			SourceHost: req.SourceHost,
 			SourceUser: acct,
+			SourcePort: sourcePort, // GH #429: inherit the draft's SSH port
 			State:      finalState,
 			PlanJSON:   draftPlan, // GH #633/#634: inherit the wizard's preserve plan
 		}
