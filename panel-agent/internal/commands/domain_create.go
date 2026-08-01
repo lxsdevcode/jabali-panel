@@ -62,6 +62,15 @@ type domainCreateParams struct {
 	// off). The agent RE-sanitizes before rendering (config-injection boundary,
 	// like CacheBypassPaths).
 	CacheQueryAllowlist []string `json:"cache_query_allowlist,omitempty"`
+
+	// Preview URL (temp URL): when set, the vhost gains an extra server
+	// block serving the same docroot under <slug>.preview.<hostname>.
+	// PreviewCertPath/KeyPath point at the shared *.preview.<hostname>
+	// wildcard pair; empty (or missing on disk) renders the preview block
+	// HTTP-only — same graceful degradation as the main vhost.
+	PreviewHost     string `json:"preview_host,omitempty"`
+	PreviewCertPath string `json:"preview_cert_path,omitempty"`
+	PreviewKeyPath  string `json:"preview_key_path,omitempty"`
 	SSLCertPath         string   `json:"ssl_cert_path"`
 	SSLKeyPath          string   `json:"ssl_key_path"`
 	// PHP INI overrides: omitted if not set on the domain.
@@ -493,10 +502,86 @@ server {
     error_log /var/log/nginx/{{.Domain}}-error.log;
     location / { try_files /index.html =503; }
 {{ end }}
-}`
+}
+{{- if .PreviewHost }}
+
+# Preview URL — reverse-proxies this domain's OWN vhost with the real
+# Host header, so canonical-URL apps (WordPress etc.) never see a host
+# mismatch and never redirect away. Location headers, cookie domains and
+# absolute URLs in bodies (including the JSON-escaped form Elementor
+# stores) are rewritten to the preview host. Pattern proven in
+# production on the hostsclick preview fleet; adapted here for the
+# local hairpin (SNI to our own vhost, self-signed backend tolerated —
+# proxy_ssl_verify defaults off). X-Robots-Tag keeps previews out of
+# search indexes.
+server {
+{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:80;
+{{ else }}    listen 80;
+{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:80;
+{{ else }}    listen [::]:80;
+{{ end }}    server_name {{.PreviewHost}};
+{{ if .PreviewCertPath }}
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+{{ if .ListenIPv4 }}    listen {{.ListenIPv4}}:443 ssl{{.HTTP2Param}};
+{{ else }}    listen 443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .ListenIPv6 }}    listen [{{.ListenIPv6}}]:443 ssl{{.HTTP2Param}};
+{{ else }}    listen [::]:443 ssl{{.HTTP2Param}};
+{{ end }}{{ if .HTTP2Directive }}    {{.HTTP2Directive}}
+{{ end }}    server_name {{.PreviewHost}};
+    ssl_certificate {{.PreviewCertPath}};
+    ssl_certificate_key {{.PreviewKeyPath}};
+    ssl_protocols TLSv1.2 TLSv1.3;
+{{ end }}
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    client_max_body_size 64m;
+    access_log /var/log/nginx/{{.Domain}}-preview-access.log;
+    error_log /var/log/nginx/{{.Domain}}-preview-error.log;
+
+    location / {
+        proxy_pass {{.PreviewUpstream}};
+        proxy_set_header Host {{.Domain}};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+{{ if .SSLCertPath }}        proxy_ssl_server_name on;
+        proxy_ssl_name {{.Domain}};
+{{ end }}        proxy_redirect http://www.{{.Domain}} http://$http_host;
+        proxy_redirect https://www.{{.Domain}} https://$http_host;
+        proxy_redirect http://{{.Domain}} http://$http_host;
+        proxy_redirect https://{{.Domain}} https://$http_host;
+        proxy_cookie_domain www.{{.Domain}} $host;
+        proxy_cookie_domain {{.Domain}} $host;
+
+        # Body rewrite: plain and JSON-escaped absolute URLs, apex + www.
+        # Upstream compression must be off for sub_filter to see the
+        # bytes; gunzip re-inflates anything that slips through.
+        sub_filter_types text/plain text/css text/xml application/javascript application/x-javascript text/javascript application/json application/ld+json image/svg+xml;
+        sub_filter 'http://www.{{.Domain}}' 'http://$http_host';
+        sub_filter 'https://www.{{.Domain}}' 'https://$http_host';
+        sub_filter 'http://{{.Domain}}' 'http://$http_host';
+        sub_filter 'https://{{.Domain}}' 'https://$http_host';
+        sub_filter 'http:\/\/www.{{.Domain}}' 'http:\/\/$http_host';
+        sub_filter 'https:\/\/www.{{.Domain}}' 'https:\/\/$http_host';
+        sub_filter 'http:\/\/{{.Domain}}' 'http:\/\/$http_host';
+        sub_filter 'https:\/\/{{.Domain}}' 'https:\/\/$http_host';
+        sub_filter_once off;
+        gunzip on;
+        proxy_set_header Accept-Encoding "";
+    }
+}
+{{ end }}`
 
 type vhostData struct {
 	Domain               string
+	PreviewHost          string
+	PreviewCertPath      string
+	PreviewKeyPath       string
+	PreviewUpstream      string
 	DocRoot              string
 	HasPHP               bool
 	PHPVersion           string
@@ -790,7 +875,7 @@ func buildCacheGate(paths []string, fallback string) string {
 	return "(" + strings.Join(valid, "|") + ")"
 }
 
-func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cachePaths []string, cacheBypassPaths []string, cacheTTLSeconds int, cacheQueryAllowlist []string, fpmSocket string) (string, error) {
+func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redirectDirectives, ruleDirectives, customDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, indexPriority string, isEnabled, hasPHP bool, sslCertPath, sslKeyPath, phpMemLimit, phpUploadMax, phpPostMax string, phpMaxInputVars, phpMaxExecTime, phpMaxInputTime int, listenIPv4, listenIPv6 string, cacheEnabled bool, cachePath string, cachePaths []string, cacheBypassPaths []string, cacheTTLSeconds int, cacheQueryAllowlist []string, fpmSocket string, previewHost, previewCertPath, previewKeyPath string) (string, error) {
 	cacheGate := buildCacheGate(cachePaths, cachePath)        // GH #601: multi-path gate body ("" = whole domain)
 	cacheExtraBypass := sanitizeBypassPaths(cacheBypassPaths) // GH #616: safe "|/path" suffix
 	cacheQAllowNames := sanitizeCacheQueryAllowlist(cacheQueryAllowlist)
@@ -818,6 +903,38 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 			sslKeyPath = ""
 		}
 	}
+	// Same missing-file fallback for the preview wildcard pair: the shared
+	// *.preview.<hostname> cert may not be issued yet when the first
+	// preview-enabled domain converges — serve the preview HTTP-only until
+	// the reconciler's ACME sweep lands it.
+	if previewCertPath != "" {
+		if _, statErr := os.Stat(previewCertPath); statErr != nil {
+			previewCertPath = ""
+			previewKeyPath = ""
+		}
+	}
+	// The preview block only renders for enabled domains — a disabled
+	// domain's preview must go dark with it.
+	if !isEnabled {
+		previewHost = ""
+	}
+	// Preview upstream: hairpin into this domain's own vhost. Prefer the
+	// domain's bound listen IP (an IP-scoped listen won't answer on
+	// loopback); https whenever the main vhost serves TLS (post
+	// stat-guard, so a self-signed fallback pair counts) — the backend
+	// then sees is_ssl() true and never protocol-redirects into a loop.
+	previewUpstream := ""
+	if previewHost != "" {
+		upstreamAddr := "127.0.0.1"
+		if listenIPv4 != "" {
+			upstreamAddr = listenIPv4
+		}
+		if sslCertPath != "" {
+			previewUpstream = "https://" + upstreamAddr + ":443"
+		} else {
+			previewUpstream = "http://" + upstreamAddr + ":80"
+		}
+	}
 
 	// Generate vhost configuration
 	tmpl, err := template.New("vhost").Parse(vhostTemplate)
@@ -828,6 +945,10 @@ func writeVhost(ctx context.Context, username, domain, docRoot, phpVersion, redi
 	h2 := nginxHTTP2()
 	vhostData := vhostData{
 		Domain:                     domain,
+		PreviewHost:                previewHost,
+		PreviewCertPath:            previewCertPath,
+		PreviewKeyPath:             previewKeyPath,
+		PreviewUpstream:            previewUpstream,
 		HTTP2Param:                 h2.Param,
 		HTTP2Directive:             h2.Directive,
 		DocRoot:                    docRoot,
@@ -967,6 +1088,16 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 
+	// Preview host is panel-derived (<slug>.preview.<hostname>) but
+	// validated like any hostname as defense in depth — it lands in a
+	// server_name directive.
+	if p.PreviewHost != "" && !domainRegex.MatchString(p.PreviewHost) {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodeInvalidArgument,
+			Message: fmt.Sprintf("invalid preview_host %q", p.PreviewHost),
+		}
+	}
+
 	// Validate username format
 	if !usernameRegex.MatchString(p.Username) {
 		return nil, &agentwire.AgentError{
@@ -1082,7 +1213,7 @@ func domainCreateHandler(ctx context.Context, params json.RawMessage) (any, erro
 		}
 	}
 	dirPrivacyDirectives := buildDirectoryPrivacyDirectives(p.DirectoryPrivacyRules)
-	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CachePaths, p.CacheBypassPaths, p.CacheTTLSeconds, p.CacheQueryAllowlist, p.FPMSocket)
+	configPath, err := writeVhost(ctx, p.Username, p.Domain, p.DocRoot, p.PHPVersion, p.RedirectDirectives, p.RuleDirectives, p.CustomDirectives, rateLimitDirectives, ipACLDirectives, dirPrivacyDirectives, p.IndexPriority, isEnabled, p.HasPHP, p.SSLCertPath, p.SSLKeyPath, p.PHPMemoryLimit, p.PHPUploadMaxFilesize, p.PHPPostMaxSize, p.PHPMaxInputVars, p.PHPMaxExecutionTime, p.PHPMaxInputTime, p.ListenIPv4, p.ListenIPv6, p.CacheEnabled, p.CachePath, p.CachePaths, p.CacheBypassPaths, p.CacheTTLSeconds, p.CacheQueryAllowlist, p.FPMSocket, p.PreviewHost, p.PreviewCertPath, p.PreviewKeyPath)
 	if err != nil {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodeInternal,
