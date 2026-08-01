@@ -96,31 +96,15 @@ import type { UploadDrawerHandle } from "./UploadDrawer";
 // user actually clicks Edit on a file. Suspense fallback below keeps
 // the modal from flashing an empty pane while the chunk is fetched.
 //
-// We MUST self-host monaco — the default @monaco-editor/react loader
-// fetches the AMD bundle from cdn.jsdelivr.net which is blocked by
-// the panel's strict CSP (script-src 'self' 'unsafe-inline'). Pass
-// the bundled monaco-editor module to loader.config so no network
-// fetch happens; the chunk lives inside our own vite-built bundle.
-const Editor = lazy(async () => {
-  const [{ loader }, monacoMod, EditorWorker] = await Promise.all([
-    import("@monaco-editor/react"),
-    // JAB-146: slim Monaco (editor core + basic-language grammars only) —
-    // drops the multi-MB ts.worker / css / html / json language services.
-    import("./monacoSlim"),
-    import("monaco-editor/esm/vs/editor/editor.worker?worker"),
-  ]);
-  const monaco = monacoMod.default;
-  // Monaco resolves language workers via self.MonacoEnvironment. We
-  // only need the base editor worker for plain-text editing of
-  // wp-config.php / .htaccess / etc.; JSON / CSS / HTML / TS
-  // language workers are deliberately not wired so the bundle stays
-  // small (~500KB instead of ~3MB).
-  (self as unknown as { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
-    getWorker: () => new EditorWorker.default(),
-  };
-  loader.config({ monaco });
-  return import("@monaco-editor/react");
-});
+// Everything is bundled by vite and served from our own origin, which the
+// panel's strict CSP (script-src 'self' 'unsafe-inline') requires — the old
+// Monaco integration needed an explicit loader.config to stop it fetching an
+// AMD bundle from cdn.jsdelivr.net; CodeMirror has no such loader.
+// The editor is CodeMirror 6 (was Monaco). Still lazy: the editor core and
+// its grammars only download when someone actually opens a file. No web
+// worker to wire — CodeMirror needs none, so the MonacoEnvironment shim and
+// the editor.worker import are gone with it.
+const Editor = lazy(() => import("../../../components/CodeEditor/CodeEditor"));
 
 const { Text } = Typography;
 
@@ -1835,20 +1819,12 @@ export const FileManagerPage = () => {
               <Editor
                 height="100%"
                 value={editContent}
-                onChange={(v) => setEditContent(v ?? "")}
+                onChange={(v) => setEditContent(v)}
                 language={editTarget ? languageFor(editTarget) : "plaintext"}
-                theme={
-                  // Pick vs-dark when the app is in dark mode, vs when light.
-                  // AntD's token exposes colorBgBase; a dark bg implies dark.
-                  token.colorBgBase && token.colorBgBase.startsWith("#0")
-                    ? "vs-dark"
-                    : "vs"
-                }
-                options={{
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize: 13,
-                }}
+                // Same dark-mode signal as before: AntD's token exposes
+                // colorBgBase, and a dark background implies dark theme.
+                dark={Boolean(token.colorBgBase && token.colorBgBase.startsWith("#0"))}
+                fontSize={13}
               />
             </Suspense>
           </div>
