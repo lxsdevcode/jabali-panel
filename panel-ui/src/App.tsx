@@ -23,6 +23,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { App as AntdApp, ConfigProvider, Empty, Spin } from "antd";
 import type { ReactNode } from "react";
 import { lazy, Suspense, useEffect } from "react";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { RequireAdmin } from "./auth/RequireAdmin";
@@ -207,6 +208,11 @@ const ThemedApp = () => {
           </Suspense>
         ) : null}
         <BrandingTitleApplier />
+        {/* Outside Suspense on purpose: Suspense handles a PENDING lazy
+            import, never a rejected one. A chunk that 404s across a deploy
+            throws past it, and without this boundary React unmounts the tree
+            and the user gets a blank screen. */}
+        <RouteErrorBoundary>
         <Suspense
           fallback={
             <div
@@ -447,6 +453,7 @@ const ThemedApp = () => {
           <Route path="*" element={<LandingRedirect />} />
         </Routes>
         </Suspense>
+        </RouteErrorBoundary>
         </AntdApp>
       </ConfigProvider>
     </BrowserRouter>
