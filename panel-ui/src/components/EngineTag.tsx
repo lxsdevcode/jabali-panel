@@ -1,7 +1,7 @@
 // EngineTag — shared visual badge for the database engine column.
 // Renders an AntD Tag with the engine's brand colour palette plus
-// the upstream brand icon (sourced via simple-icons through
-// react-icons/si). Used by both the user databases list and the
+// the upstream brand icon (simple-icons artwork, inlined in
+// ./brandIcons). Used by both the user databases list and the
 // admin database-users list so the two stay visually consistent.
 //
 // Design choices:
@@ -11,7 +11,7 @@
 // is handled by the design tokens automatically.
 
 import { Tag } from "antd";
-import { SiMariadb, SiPostgresql } from "react-icons/si";
+import { SiMariadb, SiPostgresql } from "./brandIcons";
 
 type EngineKey = "mariadb" | "postgres";
 
