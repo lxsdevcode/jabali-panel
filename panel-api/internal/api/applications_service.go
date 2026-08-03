@@ -456,6 +456,30 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			UseWWW:         k.UseWWW,
 		}, deps)
 		adminPassword = prestaPass
+	case "invoiceshelf":
+		invoicePass := paramOr(k.Params, "admin_password", "")
+		if invoicePass == "" {
+			// CSPRNG secret (192-bit), NOT a truncated ULID — ULID's leading
+			// chars are a millisecond timestamp, so ids.NewULID()[:16] would
+			// be mostly install-time-predictable. Satisfies InvoiceShelf's
+			// >= 8 char policy with mixed case + digits.
+			invoicePass = ids.NewSecret()
+		}
+		go createInvoiceShelfInstallAndKickAgent(ctx, invoiceShelfKickArgs{
+			InstallID:    k.InstallID,
+			OSUser:       k.OSUser,
+			DocRoot:      k.DocRoot,
+			Subdirectory: k.Subdirectory,
+			SiteURL:      k.SiteURL,
+			DBName:       k.Chain.DBName,
+			DBUser:       k.Chain.DBUsername,
+			DBPassword:   k.Chain.DBPassword,
+			SiteTitle:    paramOr(k.Params, "site_title", "InvoiceShelf"),
+			AdminEmail:   k.AdminEmail,
+			AdminPass:    invoicePass,
+			UseWWW:       k.UseWWW,
+		}, deps)
+		adminPassword = invoicePass
 	case "privatebin":
 		// No accounts, no DB — the smallest kick there is.
 		go createPrivateBinInstallAndKickAgent(ctx, privateBinKickArgs{
