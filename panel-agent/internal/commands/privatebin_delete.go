@@ -10,13 +10,12 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/agentwire"
 )
 
-// dokuwiki_delete.go — removes a DokuWiki install (GH #227: delete failed
-// with `unknown app_type "dokuwiki" for app.delete` because dokuwiki
-// registered an installer but never a deleter). DokuWiki is flat-file —
-// no database to drop and no per-install nginx snippet to remove — so the
-// deleter only has to clear the files the install laid down.
+// privatebin_delete.go — removes a PrivateBin install (GH #631). Flat-file
+// like DokuWiki, but with one extra: the paste store lives OUTSIDE the
+// docroot (privatebinDataDir), so the deleter must reap it too or every
+// deleted install leaks an orphan privatebin-data dir of encrypted pastes.
 
-type dokuwikiDeleteReq struct {
+type privatebinDeleteReq struct {
 	AppType      string `json:"app_type"` // present, ignored
 	OSUser       string `json:"os_user"`
 	Docroot      string `json:"docroot"`
@@ -24,39 +23,42 @@ type dokuwikiDeleteReq struct {
 	Domain       string `json:"domain,omitempty"`
 }
 
-type dokuwikiDeleteResp struct {
+type privatebinDeleteResp struct {
 	Status string `json:"status"`
 }
 
-// dokuwikiTopLevel lists every entry the upstream DokuWiki tarball lays
-// down at the install root after `tar --strip-components=1`. Same
-// rationale as mediawikiTopLevel: for docroot installs we enumerate
-// instead of `rm -rf <docroot>` so user-uploaded sibling files survive.
-// `conf/` covers the jabali-written local.php / users.auth.php /
-// acl.auth.php; `data/` covers the runtime wiki pages + media.
-//
-// Generated from DokuWiki 2024-02-06b; bump if a future release adds a
-// top-level entry. Entries that don't exist on disk are skipped silently.
-var dokuwikiTopLevel = []string{
-	".htaccess.dist",
-	"bin",
-	"conf",
-	"COPYING",
-	"data",
-	"doku.php",
-	"feed.php",
-	"inc",
-	"index.php",
-	"install.php",
-	"lib",
-	"README",
+// privatebinTopLevel lists every entry the upstream tarball lays down at
+// the install root after `tar --strip-components=1`, plus the
+// jabali-written cfg/conf.php (covered by cfg). For docroot installs we
+// enumerate instead of `rm -rf <docroot>` so user-uploaded sibling files
+// survive. Generated from PrivateBin 2.0.5; bump on release bumps.
+var privatebinTopLevel = []string{
+	".htaccess.disabled",
+	"CHANGELOG.md",
+	"CREDITS.md",
+	"LICENSE.md",
+	"Procfile",
+	"README.md",
 	"SECURITY.md",
+	"bin",
+	"cfg",
+	"composer.json",
+	"composer.lock",
+	"css",
+	"favicon.ico",
+	"i18n",
+	"img",
+	"index.php",
+	"js",
+	"lib",
+	"manifest.json",
+	"robots.txt",
+	"tpl",
 	"vendor",
-	"VERSION",
 }
 
-func dokuwikiDeleteHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	var req dokuwikiDeleteReq
+func privatebinDeleteHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var req privatebinDeleteReq
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: fmt.Sprintf("failed to parse params: %v", err)}
 	}
@@ -79,11 +81,16 @@ func dokuwikiDeleteHandler(ctx context.Context, params json.RawMessage) (any, er
 		cmd := buildSystemdRunCmd(ctx, req.OSUser, "rm", "-rf", installPath)
 		_ = cmd.Run()
 	} else {
-		for _, name := range dokuwikiTopLevel {
+		for _, name := range privatebinTopLevel {
 			cmd := buildSystemdRunCmd(ctx, req.OSUser, "rm", "-rf", filepath.Join(installPath, name))
 			_ = cmd.Run()
 		}
 	}
+
+	// The outside-docroot paste store — same derivation the installer used.
+	dataDir := privatebinDataDir(req.Docroot, req.Subdirectory)
+	rmData := buildSystemdRunCmd(ctx, req.OSUser, "rm", "-rf", dataDir)
+	_ = rmData.Run()
 
 	if req.Subdirectory == "" && req.Domain != "" {
 		indexPath := filepath.Join(req.Docroot, "index.html")
@@ -92,9 +99,9 @@ func dokuwikiDeleteHandler(ctx context.Context, params json.RawMessage) (any, er
 		}
 	}
 
-	return dokuwikiDeleteResp{Status: "deleted"}, nil
+	return privatebinDeleteResp{Status: "deleted"}, nil
 }
 
 func init() {
-	RegisterAppDeleter("dokuwiki", dokuwikiDeleteHandler)
+	RegisterAppDeleter("privatebin", privatebinDeleteHandler)
 }
