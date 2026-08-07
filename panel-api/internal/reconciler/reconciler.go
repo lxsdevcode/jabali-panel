@@ -30,6 +30,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/services"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/sso"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 // Reconciler syncs the database state with the filesystem (nginx configs, php-fpm pools).
@@ -83,6 +84,13 @@ type Reconciler struct {
 	standbyFetched time.Time
 	// ssoTokens holds reference to the SSO token repository for nightly prune
 	ssoTokens repository.PhpMyAdminSSOTokenRepository
+	// mailboxes + sendmailSSOKey back the JAB-230 relay-credential loop
+	// (sendmail_cred_reconcile.go). sendmailDone caches converged domains
+	// (domain ID → input fingerprint) so steady-state ticks are map lookups.
+	mailboxes      repository.MailboxRepository
+	sendmailSSOKey *ssokey.Key
+	sendmailMu     sync.Mutex
+	sendmailDone   map[string]string
 	// wordPressInstalls holds reference to the WordPress installs repository
 	wordPressInstalls repository.WordPressInstallRepository
 	// sshKeys holds reference to the SSH keys repository
@@ -679,6 +687,11 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 	// GH #648: converge DKIM2 signing across mail domains to the
 	// server_settings toggle. Applied-state-gated — noop steady state.
 	r.reconcileDKIM2(ctx)
+
+	// JAB-230: every domain gets a noreply@ SendOnly relay identity + a
+	// cred file for the jabali-sendmail shim. Fingerprint-gated noop in
+	// steady state; doubles as the fleet backfill after `jabali update`.
+	r.reconcileSendmailCreds(ctx)
 
 	tt.mark("certs_updates_modules")
 

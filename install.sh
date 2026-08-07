@@ -2364,6 +2364,10 @@ install_php_pool_template() {
   mkdir -p /etc/jabali-panel
   install -d -m 0755 -o root -g root /etc/jabali-panel/fpm
   install -d -m 0755 -o root -g root /etc/jabali-panel/user-phpver
+  # JAB-230: relay-credential tree for the jabali-sendmail shim. 0711 — tenant
+  # PHP must traverse into its own 0750 root:<usergroup> subdir but must not
+  # enumerate other users. Subdirs + creds are written by the agent.
+  install -d -m 0711 -o root -g root /etc/jabali-panel/sendmail
   local template_src="$REPO_DIR/install/php/jabali-php-pool.conf.tmpl"
   local template_dst="/etc/jabali-panel/php-pool.conf.tmpl"
   if [[ ! -f "$template_src" ]]; then
@@ -2641,6 +2645,33 @@ install_mariadb_skip_networking() {
   # Belt-and-braces ACL — grant jabali rwx on the socket dir + file
   # regardless of group membership state.
   ensure_mariadb_socket_acl_for_jabali
+}
+
+# install_php_cli_sendmail_path — JAB-230: point CLI PHP's mail() at the
+# jabali-sendmail shim. The FPM pools get sendmail_path from the pool template;
+# CLI php (cron jobs, wp-cli, artisan) reads its own per-version cli/conf.d, so
+# without this dropin every cron-driven mail() still dies on the purged
+# /usr/sbin/sendmail. Idempotent; loops every installed minor. Callers:
+# fresh install, every `jabali update` (self-heal), and php.version.install
+# (agent) for minors added after install day.
+install_php_cli_sendmail_path() {
+  local dir minor ini
+  for dir in /etc/php/*/; do
+    [[ -d "${dir}cli" ]] || continue
+    minor="$(basename "$dir")"
+    ini="/etc/php/${minor}/cli/conf.d/99-jabali-sendmail.ini"
+    install -d -m 0755 "/etc/php/${minor}/cli/conf.d"
+    if [[ ! -f "$ini" ]] || ! grep -q "jabali-sendmail" "$ini" 2>/dev/null; then
+      cat > "$ini" <<'SENDMAIL_EOF'
+; Managed by jabali-panel (JAB-230). CLI mail() submits via the jabali shim
+; (per-user relay credentials; Stalwart on 127.0.0.1:587).
+sendmail_path = /usr/local/libexec/jabali/jabali-sendmail -t -i
+SENDMAIL_EOF
+      chmod 0644 "$ini"
+      _log "php-cli sendmail_path: wrote $ini"
+    fi
+  done
+  _ok "CLI PHP mail() routed through jabali-sendmail (JAB-230)"
 }
 
 # install_php_opcache_tuning — multi-tenant WordPress opcache defaults (#597).
@@ -4993,7 +5024,7 @@ _prebuilt_ready() {
   local d="${JABALI_PREBUILT_BIN:-}"
   [[ -n "$d" && -d "$d" ]] || return 1
   local b
-  for b in jabali-panel jabali-agent jabali-ssh-shell jabali-mailhook; do
+  for b in jabali-panel jabali-agent jabali-ssh-shell jabali-mailhook jabali-sendmail; do
     [[ -s "$d/$b" && -x "$d/$b" ]] || return 1
   done
   "$d/jabali-panel" version >/dev/null 2>&1 || return 1
@@ -5129,6 +5160,7 @@ build_backend() {
   local tmp_agent="$REPO_DIR/bin/jabali-agent.new"
   local tmp_sshshell="$REPO_DIR/bin/jabali-ssh-shell.new"
   local tmp_mailhook="$REPO_DIR/bin/jabali-mailhook.new"
+  local tmp_sendmail="$REPO_DIR/bin/jabali-sendmail.new"
 
   # Build-info ldflags: panel-api exposes api.Version (short SHA),
   # api.Commit (full SHA) and api.BuildTime (RFC3339) through
@@ -5167,6 +5199,7 @@ build_backend() {
     install -m 0755 "$JABALI_PREBUILT_BIN/jabali-agent"     "$tmp_agent"
     install -m 0755 "$JABALI_PREBUILT_BIN/jabali-ssh-shell" "$tmp_sshshell"
     install -m 0755 "$JABALI_PREBUILT_BIN/jabali-mailhook"  "$tmp_mailhook"
+    install -m 0755 "$JABALI_PREBUILT_BIN/jabali-sendmail"  "$tmp_sendmail"
   else
     # One invocation of go, three binaries — shared module, shared build cache.
     sudo -u "$SERVICE_USER" -H env \
@@ -5179,7 +5212,8 @@ build_backend() {
         go build -trimpath $panel_tags -ldflags '$panel_ld' -o '$tmp_panel' ./panel-api/cmd/server && \
         go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_agent' ./panel-agent/cmd/jabali-agent && \
         go build -trimpath -ldflags '-s -w' -o '$tmp_sshshell' ./panel-agent/cmd/jabali-ssh-shell && \
-        go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_mailhook' ./panel-agent/cmd/jabali-mailhook"
+        go build -trimpath -ldflags '-s -w -X main.version=$version' -o '$tmp_mailhook' ./panel-agent/cmd/jabali-mailhook && \
+        go build -trimpath -ldflags '-s -w' -o '$tmp_sendmail' ./panel-agent/cmd/jabali-sendmail"
   fi
 
   install -m 0755 "$tmp_panel" "$BIN_PATH"
@@ -5209,7 +5243,11 @@ build_backend() {
   # wired (Step 1 = skeleton; Step 2 + 3 wire bwrap + nspawn argv).
   install -m 0755 "$tmp_sshshell" /usr/local/bin/jabali-ssh-shell
   install -m 0755 "$tmp_mailhook" /usr/local/bin/jabali-mailhook
-  rm -f "$tmp_panel" "$tmp_agent" "$tmp_sshshell" "$tmp_mailhook"
+  # JAB-230: the PHP mail() submission shim lives in libexec (exec'd by FPM
+  # workers via sendmail_path, never on an operator's PATH).
+  install -d -m 0755 /usr/local/libexec/jabali
+  install -m 0755 -o root -g root "$tmp_sendmail" /usr/local/libexec/jabali/jabali-sendmail
+  rm -f "$tmp_panel" "$tmp_agent" "$tmp_sshshell" "$tmp_mailhook" "$tmp_sendmail"
 
   # Sync the docker-app + py-framework catalogs into the production paths the
   # panel reads at startup, then reload it. Also runs from provision_new_software
@@ -14323,6 +14361,12 @@ EOF
     install_php_opcache_tuning
   fi
 
+  # JAB-230 — CLI mail() shim routing; self-heal on every update so existing
+  # hosts' cron/wp-cli mail() converges alongside the fleet backfill.
+  if declare -f install_php_cli_sendmail_path >/dev/null 2>&1; then
+    install_php_cli_sendmail_path
+  fi
+
   # MariaDB buffer-pool sizing (#597) — reconcile the RAM-scaled drop-in on every
   # update so existing hosts pick up the raised brackets. Idempotent + restart-
   # on-change; guarded on mariadb being installed.
@@ -14491,6 +14535,7 @@ main() {
   install_mariadb_skip_networking
   tune_mariadb_for_ram
   install_php_opcache_tuning   # #597: opcache defaults for multi-tenant WP
+  install_php_cli_sendmail_path  # JAB-230: CLI mail() through the shim
   # M48 Phase 8 (opt-in): install_docker_engine no longer runs on
   # fresh install. Operator flips server_settings.docker_marketplace_enabled
   # in Server Settings; panel-api dispatches docker.install which

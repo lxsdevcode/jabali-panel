@@ -371,6 +371,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// per-collection shareWith). Grant grantees resolve via the mailbox +
 		// mail-group repos.
 		rec.WithSharedResources(repository.NewSharedResourceRepository(sharedDB), mailboxRepo, mailGroupRepo)
+		// JAB-230 — noreply@ relay identities + shim cred files. Needs the
+		// sso.key to seal/unseal the relay passwords; nil key (fresh install
+		// mid-bootstrap) just disables the loop until the key exists.
+		rec.WithSendmailCreds(mailboxRepo, ssoKeyPtr)
 		deps.ManagedIPs = managedIPRepo
 		deps.Reconciler = rec
 		deps.DNSZones = dnsZoneRepo
