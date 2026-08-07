@@ -2647,6 +2647,42 @@ install_mariadb_skip_networking() {
   ensure_mariadb_socket_acl_for_jabali
 }
 
+# ensure_jabali_sendmail_binary — JAB-230 two-hop-update closer. The shim
+# binary is normally installed by build_backend / update.go, but the FIRST
+# `jabali update` onto a JAB-230 build runs the PREVIOUS binary's update
+# code, which knows nothing about the shim — the new pool template lands
+# (sendmail_path set) while /usr/local/libexec/jabali/jabali-sendmail is
+# still absent, and mail() stays broken until some later release touches
+# panel-agent again. Seen live on the .165 stable box. This runs from the
+# NEW repo's install.sh self-heal block on every update, so the gap closes
+# in the same run. SHA-marker-gated: a no-op when the installed shim was
+# built from the current checkout.
+ensure_jabali_sendmail_binary() {
+  local dst=/usr/local/libexec/jabali/jabali-sendmail
+  local marker=/usr/local/libexec/jabali/.jabali-sendmail.sha
+  local src_pkg="$REPO_DIR/panel-agent/cmd/jabali-sendmail"
+  [[ -d "$src_pkg" ]] || return 0   # pre-JAB-230 checkout — nothing to build
+  local want
+  want="$(sudo -u "$SERVICE_USER" git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+  if [[ -x "$dst" && -f "$marker" && "$(cat "$marker" 2>/dev/null)" == "$want" ]]; then
+    return 0
+  fi
+  local gobin="${GO_ROOT:-/usr/local/go}/bin"
+  [[ -x "$gobin/go" ]] || gobin="$(dirname "$(command -v go 2>/dev/null || echo /usr/local/go/bin/go)")"
+  if sudo -u "$SERVICE_USER" -H env \
+      PATH="$gobin:/usr/bin:/bin" HOME="$REPO_DIR" \
+      GOCACHE="$REPO_DIR/.cache/go-build" GOMODCACHE="$REPO_DIR/.cache/go-mod" \
+      bash -c "cd '$REPO_DIR' && go build -trimpath -ldflags '-s -w' -o bin/jabali-sendmail.new ./panel-agent/cmd/jabali-sendmail"; then
+    install -d -m 0755 /usr/local/libexec/jabali
+    install -m 0755 -o root -g root "$REPO_DIR/bin/jabali-sendmail.new" "$dst"
+    rm -f "$REPO_DIR/bin/jabali-sendmail.new"
+    printf '%s\n' "$want" > "$marker"
+    _ok "jabali-sendmail shim installed at $dst (JAB-230)"
+  else
+    _warn "jabali-sendmail build failed — PHP mail() stays broken until the next update (non-fatal)"
+  fi
+}
+
 # install_php_cli_sendmail_path — JAB-230: point CLI PHP's mail() at the
 # jabali-sendmail shim. The FPM pools get sendmail_path from the pool template;
 # CLI php (cron jobs, wp-cli, artisan) reads its own per-version cli/conf.d, so
@@ -14365,6 +14401,12 @@ EOF
   # hosts' cron/wp-cli mail() converges alongside the fleet backfill.
   if declare -f install_php_cli_sendmail_path >/dev/null 2>&1; then
     install_php_cli_sendmail_path
+  fi
+  # JAB-230 — the shim binary itself. Closes the two-hop trap where the
+  # previous panel binary's update code installs everything EXCEPT the new
+  # binary it doesn't know about.
+  if declare -f ensure_jabali_sendmail_binary >/dev/null 2>&1; then
+    ensure_jabali_sendmail_binary
   fi
 
   # MariaDB buffer-pool sizing (#597) — reconcile the RAM-scaled drop-in on every
