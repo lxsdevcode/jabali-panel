@@ -5,14 +5,21 @@
 // Configuration comes from the environment (systemd EnvironmentFile,
 // /etc/jabalihosted/svc.env, 0600 root:root):
 //
-//	LISTEN         loopback bind, default 127.0.0.1:8470 (nginx terminates TLS)
-//	DB_PATH        default /var/lib/jabalihosted/svc.db
-//	PDNS_URL       default http://127.0.0.1:8081
-//	PDNS_API_KEY   required
-//	SMTP_ADDR      submission relay, e.g. mail.reeva.me:587
-//	SMTP_HOST      TLS certificate name of the relay
-//	SMTP_FROM      authenticated mailbox (MAIL FROM == auth identity — 501 otherwise)
-//	SMTP_PASSWORD  relay password
+//	LISTEN            loopback bind, default 127.0.0.1:8470 (nginx terminates TLS)
+//	DB_PATH           default /var/lib/jabalihosted/svc.db
+//	DNS_BACKEND       "cloudflare" (default) or "pdns"
+//	  cloudflare:  CF_API_TOKEN (Zone:DNS:Edit, this zone only) + CF_ZONE_ID
+//	  pdns:        PDNS_URL (default http://127.0.0.1:8081) + PDNS_API_KEY
+//	SMTP_ADDR         submission relay, e.g. mail.reeva.me:587
+//	SMTP_HOST         TLS certificate name of the relay
+//	SMTP_FROM         authenticated mailbox (MAIL FROM == auth identity — 501 otherwise)
+//	SMTP_PASSWORD     relay password
+//
+// Source-IP trust: the service trusts X-Real-IP only from its loopback nginx
+// (hostedsvc/realip.go). When Cloudflare fronts the API, nginx's real_ip
+// module unwraps CF-Connecting-IP from Cloudflare ranges FIRST and passes the
+// true client IP on as X-Real-IP — so this binary needs no CF awareness and
+// the "TCP handshake proves IP control" model is preserved at the edge.
 //
 // Subcommands:
 //
@@ -41,6 +48,28 @@ func env(key, def string) string {
 	return def
 }
 
+// buildDNS selects the DNS backend. Cloudflare is the default (anycast HA,
+// no self-hosted DNS box to keep alive); pdns stays available for a
+// fully self-hosted deployment.
+func buildDNS() (hostedsvc.DNSBackend, error) {
+	switch env("DNS_BACKEND", "cloudflare") {
+	case "cloudflare":
+		tok, zone := os.Getenv("CF_API_TOKEN"), os.Getenv("CF_ZONE_ID")
+		if tok == "" || zone == "" {
+			return nil, fmt.Errorf("cloudflare backend needs CF_API_TOKEN + CF_ZONE_ID")
+		}
+		return hostedsvc.NewCloudflareDNS(tok, zone), nil
+	case "pdns":
+		key := os.Getenv("PDNS_API_KEY")
+		if key == "" {
+			return nil, fmt.Errorf("pdns backend needs PDNS_API_KEY")
+		}
+		return hostedsvc.NewPDNS(env("PDNS_URL", "http://127.0.0.1:8081"), key), nil
+	default:
+		return nil, fmt.Errorf("unknown DNS_BACKEND %q (want cloudflare|pdns)", os.Getenv("DNS_BACKEND"))
+	}
+}
+
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(log); err != nil {
@@ -61,11 +90,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	apiKey := os.Getenv("PDNS_API_KEY")
-	if apiKey == "" {
-		return fmt.Errorf("PDNS_API_KEY not configured")
+	dns, err := buildDNS()
+	if err != nil {
+		return err
 	}
-	dns := hostedsvc.NewPDNS(env("PDNS_URL", "http://127.0.0.1:8081"), apiKey)
 
 	if len(os.Args) > 1 && os.Args[1] == "revoke" {
 		if len(os.Args) != 3 {

@@ -141,6 +141,42 @@ public `_psl` verify → LE cert for api vhost → service live. Nightly SQLite
 dump off-box from day one (lost DB = every token unrecoverable = every fleet
 cert dies at next renewal).
 
+## DNS/edge architecture (decided 2026-08-08 — Cloudflare)
+
+User chose CF for DNS HA + API DDoS/hide-origin + free TLS. The DNS layer is
+behind the `DNSBackend` interface, so this is a config swap, not a rewrite.
+Two backends exist: `cloudflare` (default, `cfdns.go`) and `pdns`
+(self-hosted alternative, `pdns.go`).
+
+- **DNS**: zone `jabalihosted.com` hosted at **Cloudflare** (anycast — kills
+  the single-box DNS failure domain). Registrar NS → CF's assigned pair.
+  Service writes A + `_acme-challenge` TXT via the CF API
+  (`CF_API_TOKEN` scoped Zone:DNS:Edit on this zone only, `CF_ZONE_ID`).
+  Every label record is **proxied=false (DNS-only / grey)** — a label's A
+  must resolve to the CUSTOMER's real box; proxying breaks their panel/mail
+  ports and hides the IP the label encodes. Enforced + tested in `cfdns.go`.
+- **API edge**: `api.jabalihosted.com` **proxied (orange)** → hostsclick.
+  CF edge cert (free public TLS) + **CF Origin CA** cert on nginx (free,
+  15-year) with zone SSL = Full (strict). No certbot on the box.
+- **Source-IP invariant preserved at the edge** (supersedes trap 2's "never
+  behind a CDN"): origin nginx's `real_ip` module unwraps `CF-Connecting-IP`
+  from CF ranges → `$remote_addr` becomes the true client IP → passed as
+  `X-Real-IP` to the loopback service, which is UNCHANGED (still loopback-
+  trust). CF overwrites any client-supplied `CF-Connecting-IP`, so with the
+  origin firewall locked to CF ranges it is unforgeable. Config +
+  requirements in `deploy/nginx-api.conf`. Trust root moves from raw TCP
+  handshake to "CF edge + CF-only firewall + fresh CF ranges" — accepted.
+- **`_psl` + SPF `-all` + DMARC reject** live as records in the CF zone
+  (trap 1 + 3 unchanged; just authored at CF instead of pdns).
+
+**CF go-live ordering**: create CF zone + import all records (`_psl`, SPF,
+DMARC, api A proxied) → registrar NS → CF assigned pair → verify
+`dig TXT _psl.jabalihosted.com @8.8.8.8` = PR URL → issue CF Origin CA cert,
+drop on hostsclick → lock host firewall :443 to CF ranges → nginx vhost +
+service (`DNS_BACKEND=cloudflare`) → E2E a claim. Disk cleanup on hostsclick
+still gated (SQLite + logs). Nightly off-box SQLite dump unchanged.
+CF-ranges refresh cron on the origin (stale ranges silently break real-IP).
+
 ## Open decisions (operator)
 
 | # | Decision | Recommendation (from JAB-213) |
