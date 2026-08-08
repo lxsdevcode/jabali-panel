@@ -326,14 +326,24 @@ func (h *backupHandler) resolveDest(c *gin.Context, destID string) (*models.Back
 // Without this the download always opened the local repo and 404'd remote
 // backups with "no snapshots for job" (GH #462).
 func materializeDestParams(ctx context.Context, dests repository.BackupDestinationRepository, job *models.BackupJob) map[string]any {
+	_, params := materializeDest(ctx, dests, job)
+	return params
+}
+
+// materializeDest is materializeDestParams plus the destination row itself,
+// which the caller needs to bridge a per-destination restic password
+// (M30.2.x) into the download. Without that password the agent cannot open a
+// rotated destination's repo, so the download fails even though the backup
+// is fine.
+func materializeDest(ctx context.Context, dests repository.BackupDestinationRepository, job *models.BackupJob) (*models.BackupDestination, map[string]any) {
 	if dests == nil || job.DestinationID == nil || *job.DestinationID == "" {
-		return nil
+		return nil, nil
 	}
 	d, err := dests.Get(ctx, *job.DestinationID)
 	if err != nil || d == nil {
-		return nil
+		return nil, nil
 	}
-	return destWireParams(d)
+	return d, destWireParams(d)
 }
 
 // destWireParams projects a destination into the JSON keys the agent
@@ -743,7 +753,21 @@ func (h *backupHandler) download(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "no_completed_snapshot"})
 		return
 	}
-	streamBackupArtifact(c, h.cfg.Agent, job, materializeDestParams(c.Request.Context(), h.cfg.Destinations, job), h.cfg.logErr)
+	dest, destParams := materializeDest(c.Request.Context(), h.cfg.Destinations, job)
+	// Bridge the destination's own restic password (M30.2.x) for the
+	// materialize call; without it a rotated destination's snapshot cannot
+	// be opened and the download fails. No-op for legacy/local jobs.
+	_ = backupwrapperhelpers.WithOptionalDestPassword(c.Request.Context(), dest, h.cfg.Agent, h.cfg.SSOKey,
+		func(passwordFile string) error {
+			if passwordFile != "" {
+				if destParams == nil {
+					destParams = map[string]any{}
+				}
+				destParams["password_file"] = passwordFile
+			}
+			streamBackupArtifact(c, h.cfg.Agent, job, destParams, h.cfg.logErr)
+			return nil
+		})
 }
 
 // streamBackupArtifact materializes a SUCCEEDED backup job's restic snapshot
@@ -1199,6 +1223,11 @@ type MeBackupsHandlerConfig struct {
 	// are non-nil, so a deployment without them simply lacks tenant scheduling.
 	Schedules repository.BackupScheduleRepository
 	Settings  repository.ServerSettingsRepository
+
+	// SSOKey unseals a destination's per-row restic password (M30.2.x) so a
+	// tenant download can open a rotated destination's repo. Optional: nil
+	// falls back to the agent's shared password file.
+	SSOKey *ssokey.Key
 
 	Log *slog.Logger
 }
@@ -2602,5 +2631,19 @@ func (h *meBackupHandler) download(c *gin.Context) {
 	// returned job metadata as JSON, so the browser's <a href> download
 	// got a JSON blob, never a file). Same agent-materialize path as the
 	// admin handler, scoped to the caller's own job by the check above.
-	streamBackupArtifact(c, h.cfg.Agent, job, materializeDestParams(c.Request.Context(), h.cfg.Destinations, job), h.cfg.logErr)
+	dest, destParams := materializeDest(c.Request.Context(), h.cfg.Destinations, job)
+	// Bridge the destination's own restic password (M30.2.x) for the
+	// materialize call; without it a rotated destination's snapshot cannot
+	// be opened and the download fails. No-op for legacy/local jobs.
+	_ = backupwrapperhelpers.WithOptionalDestPassword(c.Request.Context(), dest, h.cfg.Agent, h.cfg.SSOKey,
+		func(passwordFile string) error {
+			if passwordFile != "" {
+				if destParams == nil {
+					destParams = map[string]any{}
+				}
+				destParams["password_file"] = passwordFile
+			}
+			streamBackupArtifact(c, h.cfg.Agent, job, destParams, h.cfg.logErr)
+			return nil
+		})
 }

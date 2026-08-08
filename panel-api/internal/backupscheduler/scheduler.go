@@ -585,7 +585,11 @@ func (s *Scheduler) dispatchAccount(ctx context.Context, j models.BackupJob) {
 	for k, v := range destWireParams(dest) {
 		params[k] = v
 	}
-	err = backupwrapperhelpers.WithDestPasswordFile(callCtx, dest, s.deps.Agent, s.deps.SSOKey,
+	// Async variant: backup.create returns as soon as the agent spawns its
+	// orchestrator, so the password tempfile must outlive this call — the
+	// agent unlinks it when the job ends. The synchronous helper unlinked it
+	// here, seconds into a job that needs it for up to 90 minutes.
+	err = backupwrapperhelpers.WithDestPasswordFileAsync(callCtx, dest, s.deps.Agent, s.deps.SSOKey,
 		func(passwordFile string) error {
 			if passwordFile != "" {
 				params["password_file"] = passwordFile
@@ -630,7 +634,18 @@ func (s *Scheduler) dispatchSystem(ctx context.Context, j models.BackupJob) {
 	for k, v := range destWireParams(dest) {
 		params[k] = v
 	}
-	if _, err := s.deps.Agent.Call(callCtx, "system.backup", params); err != nil {
+	// A system backup writes to the same destinations as account backups, so
+	// it needs the same per-destination password bridging — without it a
+	// rotated destination fails outright. Async, like backup.create: the
+	// agent owns the tempfile for the life of the job.
+	if err := backupwrapperhelpers.WithDestPasswordFileAsync(callCtx, dest, s.deps.Agent, s.deps.SSOKey,
+		func(passwordFile string) error {
+			if passwordFile != "" {
+				params["password_file"] = passwordFile
+			}
+			_, callErr := s.deps.Agent.Call(callCtx, "system.backup", params)
+			return callErr
+		}); err != nil {
 		if isAgentConflict(err) {
 			_ = s.deps.Jobs.MarkFinished(ctx, j.ID, models.BackupJobStatusCancelled,
 				"", "", 0, 0, nil, nil, "skipped: prior system backup still running")

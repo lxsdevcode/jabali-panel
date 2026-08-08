@@ -1048,6 +1048,7 @@ func NewWithDeps(cfg *config.Config, deps Deps) *gin.Engine {
 				Agent:          deps.Agent,
 				Jobs:           deps.BackupJobs,
 				Destinations:   deps.BackupDestinations,
+				SSOKey:         deps.SSOKey,
 				Users:          deps.Users,
 				Packages:       deps.Packages,
 				Databases:      deps.Databases,

@@ -25,12 +25,19 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/backupwrapperhelpers"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
 )
 
 const (
 	TickInterval   = 30 * time.Second
 	StallTimeout   = 4 * time.Hour
 	MaxJobsPerTick = 25
+	// statusCallTimeout must exceed a cold remote-repo probe: backup.status
+	// runs `restic snapshots` against the destination, which on SFTP/S3
+	// opens a fresh session and lists the index. At the old 10s the probe
+	// timed out and retried on the next tick, so a remote-destination job
+	// could never be sealed while doubling the repo churn.
+	statusCallTimeout = 30 * time.Second
 )
 
 type Deps struct {
@@ -38,10 +45,28 @@ type Deps struct {
 	Schedules    repository.BackupScheduleRepository
 	Destinations repository.BackupDestinationRepository
 	Agent        agent.AgentInterface
-	Log          *slog.Logger
+	// SSOKey unseals a destination's per-row restic password (M30.2.x).
+	// Without it backup.status cannot open a rotated destination's repo,
+	// so a finished backup is never sealed — it sits "running" until the
+	// stall timeout marks it failed.
+	SSOKey *ssokey.Key
+	Log    *slog.Logger
 }
 
 type Finalizer struct{ deps Deps }
+
+// withDestPassword bridges a destination's per-row restic password to the
+// agent for the duration of fn. Legacy rows (no destination, or no sealed
+// password) invoke fn("") and the agent falls back to the shared file.
+// Synchronous: backup.status returns before fn does, so the helper's
+// deferred tempfile cleanup is correct here.
+func (f *Finalizer) withDestPassword(
+	ctx context.Context,
+	dest *models.BackupDestination,
+	fn func(passwordFile string) error,
+) error {
+	return backupwrapperhelpers.WithOptionalDestPassword(ctx, dest, f.deps.Agent, f.deps.SSOKey, fn)
+}
 
 func New(deps Deps) *Finalizer {
 	if deps.Jobs == nil || deps.Destinations == nil ||
@@ -125,9 +150,11 @@ func (f *Finalizer) checkOne(ctx context.Context, j models.BackupJob) {
 	// against. Legacy rows (NULL destination_id) fall back to the
 	// agent's local default.
 	statusParams := map[string]any{"job_id": j.ID}
+	var dest *models.BackupDestination
 	if j.DestinationID != nil && *j.DestinationID != "" {
-		dest, err := f.deps.Destinations.Get(ctx, *j.DestinationID)
-		if err == nil && dest != nil {
+		d, err := f.deps.Destinations.Get(ctx, *j.DestinationID)
+		if err == nil && d != nil {
+			dest = d
 			statusParams["repo_url"] = dest.URL
 			statusParams["sftp"] = backupwrapperhelpers.SFTPWireParams(dest)
 			if dest.CredentialsRef != nil {
@@ -135,9 +162,21 @@ func (f *Finalizer) checkOne(ctx context.Context, j models.BackupJob) {
 			}
 		}
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	callCtx, cancel := context.WithTimeout(ctx, statusCallTimeout)
 	defer cancel()
-	raw, err := f.deps.Agent.Call(callCtx, "backup.status", statusParams)
+	// A destination with its own sealed password (M30.2.x) can only be
+	// probed with THAT password. Without this bridge the poll fails
+	// forever against a rotated destination, so a backup that actually
+	// succeeded is never sealed and eventually stall-fails.
+	var raw json.RawMessage
+	err := f.withDestPassword(callCtx, dest, func(passwordFile string) error {
+		if passwordFile != "" {
+			statusParams["password_file"] = passwordFile
+		}
+		out, callErr := f.deps.Agent.Call(callCtx, "backup.status", statusParams)
+		raw = out
+		return callErr
+	})
 	if err != nil {
 		logger.Debug("backup.status query failed; will retry", "err", err)
 		return
