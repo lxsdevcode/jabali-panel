@@ -14,11 +14,18 @@ import (
 type DNSBackend interface {
 	// EnsureA upserts `<label>.<base> A ip`.
 	EnsureA(ctx context.Context, label, ipv4 string) error
+	// EnsureWildcardA upserts `*.<label>.<base> A ip`. Written alongside the
+	// apex A at claim time so `mail.<label>`, `autoconfig.<label>`, and every
+	// preview subdomain resolve to the box — which lets the panel's EXISTING
+	// HTTP-01 cert machinery issue for those names with no DNS-01 broker in
+	// v1 (JAB-213 phase 3). A wildcard *certificate* still needs DNS-01;
+	// that's phase 3b, using SetChallenge below.
+	EnsureWildcardA(ctx context.Context, label, ipv4 string) error
 	// SetChallenge upserts `_acme-challenge.<label>.<base> TXT value`.
 	SetChallenge(ctx context.Context, label, value string) error
 	// ClearChallenge removes the challenge RRset for the label.
 	ClearChallenge(ctx context.Context, label string) error
-	// RemoveLabel deletes the label's A (and any challenge) records.
+	// RemoveLabel deletes the label's A, wildcard A, and any challenge.
 	RemoveLabel(ctx context.Context, label string) error
 }
 
@@ -85,6 +92,13 @@ func (p *PDNS) EnsureA(ctx context.Context, label, ipv4 string) error {
 	}})
 }
 
+func (p *PDNS) EnsureWildcardA(ctx context.Context, label, ipv4 string) error {
+	return p.patch(ctx, []rrset{{
+		Name: "*." + FQDN(label) + ".", Type: "A", TTL: 300, ChangeType: "REPLACE",
+		Records: []record{{Content: ipv4}},
+	}})
+}
+
 func (p *PDNS) SetChallenge(ctx context.Context, label, value string) error {
 	return p.patch(ctx, []rrset{{
 		Name: "_acme-challenge." + FQDN(label) + ".", Type: "TXT", TTL: 60, ChangeType: "REPLACE",
@@ -101,6 +115,7 @@ func (p *PDNS) ClearChallenge(ctx context.Context, label string) error {
 func (p *PDNS) RemoveLabel(ctx context.Context, label string) error {
 	return p.patch(ctx, []rrset{
 		{Name: FQDN(label) + ".", Type: "A", ChangeType: "DELETE"},
+		{Name: "*." + FQDN(label) + ".", Type: "A", ChangeType: "DELETE"},
 		{Name: "_acme-challenge." + FQDN(label) + ".", Type: "TXT", ChangeType: "DELETE"},
 	})
 }

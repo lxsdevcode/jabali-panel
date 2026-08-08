@@ -147,6 +147,10 @@ func (c *CloudflareDNS) EnsureA(ctx context.Context, label, ipv4 string) error {
 	return c.upsert(ctx, cfRecord{Type: "A", Name: FQDN(label), Content: ipv4, TTL: 300, Proxied: false})
 }
 
+func (c *CloudflareDNS) EnsureWildcardA(ctx context.Context, label, ipv4 string) error {
+	return c.upsert(ctx, cfRecord{Type: "A", Name: "*." + FQDN(label), Content: ipv4, TTL: 300, Proxied: false})
+}
+
 func (c *CloudflareDNS) SetChallenge(ctx context.Context, label, value string) error {
 	return c.upsert(ctx, cfRecord{Type: "TXT", Name: "_acme-challenge." + FQDN(label), Content: value, TTL: 60, Proxied: false})
 }
@@ -157,6 +161,9 @@ func (c *CloudflareDNS) ClearChallenge(ctx context.Context, label string) error 
 
 func (c *CloudflareDNS) RemoveLabel(ctx context.Context, label string) error {
 	if err := c.deleteRecord(ctx, FQDN(label), "A"); err != nil {
+		return err
+	}
+	if err := c.deleteRecord(ctx, "*."+FQDN(label), "A"); err != nil {
 		return err
 	}
 	return c.deleteRecord(ctx, "_acme-challenge."+FQDN(label), "TXT")

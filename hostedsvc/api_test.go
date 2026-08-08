@@ -20,16 +20,23 @@ import (
 type fakeDNS struct {
 	mu         sync.Mutex
 	a          map[string]string
+	wildcard   map[string]string
 	challenges map[string]string
 }
 
 func newFakeDNS() *fakeDNS {
-	return &fakeDNS{a: map[string]string{}, challenges: map[string]string{}}
+	return &fakeDNS{a: map[string]string{}, wildcard: map[string]string{}, challenges: map[string]string{}}
 }
 func (f *fakeDNS) EnsureA(_ context.Context, label, ip string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.a[label] = ip
+	return nil
+}
+func (f *fakeDNS) EnsureWildcardA(_ context.Context, label, ip string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.wildcard[label] = ip
 	return nil
 }
 func (f *fakeDNS) SetChallenge(_ context.Context, label, v string) error {
@@ -48,6 +55,7 @@ func (f *fakeDNS) RemoveLabel(_ context.Context, label string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.a, label)
+	delete(f.wildcard, label)
 	delete(f.challenges, label)
 	return nil
 }
@@ -125,6 +133,9 @@ func TestClaimFlow(t *testing.T) {
 	}
 	if dns.a[label] != "45.79.1.9" {
 		t.Errorf("A record = %q", dns.a[label])
+	}
+	if dns.wildcard[label] != "45.79.1.9" {
+		t.Errorf("wildcard A missing: %q (mail.<label>/previews need it)", dns.wildcard[label])
 	}
 	if len(token) != 64 {
 		t.Errorf("token length = %d", len(token))

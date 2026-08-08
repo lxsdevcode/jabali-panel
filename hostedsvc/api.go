@@ -173,6 +173,13 @@ func (a *API) claim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "dns_failed", "could not publish the record — try again")
 		return
 	}
+	// Wildcard A so mail.<label>/autoconfig.<label>/previews resolve to the
+	// box too — lets the panel's existing HTTP-01 cert flow cover them with
+	// no DNS-01 broker in v1. Best-effort: the apex hostname already works
+	// if this lags; the reconciler-style heartbeat is not blocked on it.
+	if err := a.DNS.EnsureWildcardA(ctx, label, ip.String()); err != nil {
+		a.Log.Warn("claim: wildcard dns (non-fatal)", "label", label, "err", err)
+	}
 	a.Log.Info("label claimed", "label", label, "ip", ip.String())
 	writeJSON(w, http.StatusOK, ClaimResponse{Label: label, FQDN: FQDN(label), Token: raw})
 }
