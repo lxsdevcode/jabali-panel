@@ -14519,6 +14519,26 @@ EOF
     ensure_jabali_sendmail_binary
   fi
 
+  # JAB-213 — free-hostname helper scripts + heartbeat units live under
+  # install_jabali_slices, which the trimmed update path does NOT call. Without
+  # this, Server-Settings activation on an UPDATED (vs freshly-installed) box
+  # would set the hostname + token but silently skip the heartbeat + wildcard
+  # cert. Self-heal on every update; idempotent installs.
+  if [[ -d "$REPO_DIR/install/hostname" ]]; then
+    install -d -m 0755 /usr/local/libexec/jabali
+    install -m 0755 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.sh" /usr/local/libexec/jabali/jabali-hostname-heartbeat.sh
+    install -m 0755 "$REPO_DIR/install/hostname/certbot-auth-hook.sh" /usr/local/libexec/jabali/certbot-auth-hook.sh
+    install -m 0755 "$REPO_DIR/install/hostname/certbot-cleanup-hook.sh" /usr/local/libexec/jabali/certbot-cleanup-hook.sh
+    install -m 0755 "$REPO_DIR/install/hostname/jabali-hostname-cert.sh" /usr/local/libexec/jabali/jabali-hostname-cert.sh
+    install -m 0644 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.service" /etc/systemd/system/jabali-hostname-heartbeat.service
+    install -m 0644 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.timer" /etc/systemd/system/jabali-hostname-heartbeat.timer
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    if [[ -r /etc/jabali-panel/hostname.env ]]; then
+      systemctl enable --now jabali-hostname-heartbeat.timer >/dev/null 2>&1 || true
+    fi
+    _ok "JAB-213 free-hostname helpers refreshed"
+  fi
+
   # MariaDB buffer-pool sizing (#597) — reconcile the RAM-scaled drop-in on every
   # update so existing hosts pick up the raised brackets. Idempotent + restart-
   # on-change; guarded on mariadb being installed.
