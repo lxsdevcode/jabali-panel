@@ -118,12 +118,12 @@ func registerAndClaim(t *testing.T, a *API, mailer *fakeMailer, email, ip string
 
 func TestClaimFlow(t *testing.T) {
 	a, dns, mailer := newTestAPI(t)
-	label, token := registerAndClaim(t, a, mailer, "op@example.com", "203.0.113.9")
+	label, token := registerAndClaim(t, a, mailer, "op@example.com", "45.79.1.9")
 
-	if label != "203-0-113-9" {
+	if label != "45-79-1-9" {
 		t.Errorf("label = %q", label)
 	}
-	if dns.a[label] != "203.0.113.9" {
+	if dns.a[label] != "45.79.1.9" {
 		t.Errorf("A record = %q", dns.a[label])
 	}
 	if len(token) != 64 {
@@ -131,7 +131,7 @@ func TestClaimFlow(t *testing.T) {
 	}
 
 	// Code is single-use.
-	w, _ := call(t, a.Routes(), "/v1/claim", "203.0.113.9", ClaimRequest{Email: "op@example.com", Code: mailer.codes["op@example.com"]})
+	w, _ := call(t, a.Routes(), "/v1/claim", "45.79.1.9", ClaimRequest{Email: "op@example.com", Code: mailer.codes["op@example.com"]})
 	if w.Code != http.StatusForbidden {
 		t.Errorf("code reuse: HTTP %d", w.Code)
 	}
@@ -139,12 +139,12 @@ func TestClaimFlow(t *testing.T) {
 
 func TestClaimCollisionSuffix(t *testing.T) {
 	a, dns, mailer := newTestAPI(t)
-	l1, _ := registerAndClaim(t, a, mailer, "one@example.com", "203.0.113.9")
-	l2, _ := registerAndClaim(t, a, mailer, "two@example.com", "203.0.113.9")
-	if l1 != "203-0-113-9" || l2 != "203-0-113-9-b" {
+	l1, _ := registerAndClaim(t, a, mailer, "one@example.com", "45.79.1.9")
+	l2, _ := registerAndClaim(t, a, mailer, "two@example.com", "45.79.1.9")
+	if l1 != "45-79-1-9" || l2 != "45-79-1-9-b" {
 		t.Errorf("labels = %q, %q", l1, l2)
 	}
-	if dns.a[l2] != "203.0.113.9" {
+	if dns.a[l2] != "45.79.1.9" {
 		t.Errorf("second A record missing")
 	}
 }
@@ -164,12 +164,12 @@ func TestClaimRefusesPrivateSource(t *testing.T) {
 // stays inert.
 func TestAcmeChallengeScopedToOwnLabel(t *testing.T) {
 	a, dns, mailer := newTestAPI(t)
-	labelA, tokenA := registerAndClaim(t, a, mailer, "a@example.com", "203.0.113.9")
-	labelB, _ := registerAndClaim(t, a, mailer, "b@example.com", "198.51.100.7")
+	labelA, tokenA := registerAndClaim(t, a, mailer, "a@example.com", "45.79.1.9")
+	labelB, _ := registerAndClaim(t, a, mailer, "b@example.com", "51.15.2.7")
 
 	h := a.Routes()
 	hostile := `x" 0 IN TXT "pwn._acme-challenge.` + labelB
-	w, _ := call(t, h, "/v1/acme/present", "203.0.113.9", AcmePresentRequest{Token: tokenA, TXT: hostile})
+	w, _ := call(t, h, "/v1/acme/present", "45.79.1.9", AcmePresentRequest{Token: tokenA, TXT: hostile})
 	if w.Code != 200 {
 		t.Fatalf("present: HTTP %d %s", w.Code, w.Body.String())
 	}
@@ -181,7 +181,7 @@ func TestAcmeChallengeScopedToOwnLabel(t *testing.T) {
 	}
 
 	// Cleanup also only touches the caller's label.
-	call(t, h, "/v1/acme/cleanup", "203.0.113.9", TokenRequest{Token: tokenA})
+	call(t, h, "/v1/acme/cleanup", "45.79.1.9", TokenRequest{Token: tokenA})
 	if _, ok := dns.challenges[labelA]; ok {
 		t.Fatal("cleanup left own challenge")
 	}
@@ -189,35 +189,35 @@ func TestAcmeChallengeScopedToOwnLabel(t *testing.T) {
 
 func TestReleaseRevokesAndBlocksToken(t *testing.T) {
 	a, dns, mailer := newTestAPI(t)
-	label, token := registerAndClaim(t, a, mailer, "rel@example.com", "203.0.113.9")
+	label, token := registerAndClaim(t, a, mailer, "rel@example.com", "45.79.1.9")
 
 	h := a.Routes()
-	if w, _ := call(t, h, "/v1/release", "203.0.113.9", TokenRequest{Token: token}); w.Code != 200 {
+	if w, _ := call(t, h, "/v1/release", "45.79.1.9", TokenRequest{Token: token}); w.Code != 200 {
 		t.Fatalf("release failed")
 	}
 	if _, ok := dns.a[label]; ok {
 		t.Error("A record survived release")
 	}
-	if w, _ := call(t, h, "/v1/heartbeat", "203.0.113.9", TokenRequest{Token: token}); w.Code != http.StatusForbidden {
+	if w, _ := call(t, h, "/v1/heartbeat", "45.79.1.9", TokenRequest{Token: token}); w.Code != http.StatusForbidden {
 		t.Errorf("revoked token still works: HTTP %d", w.Code)
 	}
 	// The label name is burned — a new claim from the same IP gets a suffix.
-	l2, _ := registerAndClaim(t, a, mailer, "rel2@example.com", "203.0.113.9")
-	if l2 != "203-0-113-9-b" {
+	l2, _ := registerAndClaim(t, a, mailer, "rel2@example.com", "45.79.1.9")
+	if l2 != "45-79-1-9-b" {
 		t.Errorf("burned label reissued: %q", l2)
 	}
 }
 
 func TestHeartbeatDetectsIPMove(t *testing.T) {
 	a, _, mailer := newTestAPI(t)
-	_, token := registerAndClaim(t, a, mailer, "mv@example.com", "203.0.113.9")
+	_, token := registerAndClaim(t, a, mailer, "mv@example.com", "45.79.1.9")
 
 	h := a.Routes()
-	_, out := call(t, h, "/v1/heartbeat", "203.0.113.9", TokenRequest{Token: token})
+	_, out := call(t, h, "/v1/heartbeat", "45.79.1.9", TokenRequest{Token: token})
 	if out["ip_moved"] == true {
 		t.Error("same IP flagged as moved")
 	}
-	_, out = call(t, h, "/v1/heartbeat", "198.51.100.7", TokenRequest{Token: token})
+	_, out = call(t, h, "/v1/heartbeat", "51.15.2.7", TokenRequest{Token: token})
 	if out["ip_moved"] != true {
 		t.Error("moved IP not flagged")
 	}
@@ -226,18 +226,18 @@ func TestHeartbeatDetectsIPMove(t *testing.T) {
 func TestCodeBruteForceCap(t *testing.T) {
 	a, _, mailer := newTestAPI(t)
 	h := a.Routes()
-	call(t, h, "/v1/register", "203.0.113.9", RegisterRequest{Email: "bf@example.com"})
+	call(t, h, "/v1/register", "45.79.1.9", RegisterRequest{Email: "bf@example.com"})
 
 	var last int
 	for i := 0; i < codeMaxAttempts+2; i++ {
-		w, _ := call(t, h, "/v1/claim", "203.0.113.9", ClaimRequest{Email: "bf@example.com", Code: "000000"})
+		w, _ := call(t, h, "/v1/claim", "45.79.1.9", ClaimRequest{Email: "bf@example.com", Code: "000000"})
 		last = w.Code
 	}
 	if last != http.StatusForbidden && last != http.StatusTooManyRequests {
 		t.Fatalf("cap not enforced, last = %d", last)
 	}
 	// Even the REAL code is dead after the attempt cap.
-	w, _ := call(t, h, "/v1/claim", "203.0.113.9", ClaimRequest{Email: "bf@example.com", Code: mailer.codes["bf@example.com"]})
+	w, _ := call(t, h, "/v1/claim", "45.79.1.9", ClaimRequest{Email: "bf@example.com", Code: mailer.codes["bf@example.com"]})
 	if w.Code == 200 {
 		t.Fatal("real code survived brute-force lockout")
 	}
@@ -246,10 +246,10 @@ func TestCodeBruteForceCap(t *testing.T) {
 func TestRegisterResendThrottle(t *testing.T) {
 	a, _, _ := newTestAPI(t)
 	h := a.Routes()
-	if w, _ := call(t, h, "/v1/register", "203.0.113.9", RegisterRequest{Email: "th@example.com"}); w.Code != 200 {
+	if w, _ := call(t, h, "/v1/register", "45.79.1.9", RegisterRequest{Email: "th@example.com"}); w.Code != 200 {
 		t.Fatal("first register failed")
 	}
-	if w, _ := call(t, h, "/v1/register", "203.0.113.9", RegisterRequest{Email: "th@example.com"}); w.Code != http.StatusTooManyRequests {
+	if w, _ := call(t, h, "/v1/register", "45.79.1.9", RegisterRequest{Email: "th@example.com"}); w.Code != http.StatusTooManyRequests {
 		t.Fatalf("resend not throttled: HTTP %d", w.Code)
 	}
 }
@@ -270,14 +270,14 @@ func TestEmailLabelCap(t *testing.T) {
 	}
 	for i := 0; i < emailLabelCap; i++ {
 		seed()
-		ip := fmt.Sprintf("203.0.113.%d", i+1)
+		ip := fmt.Sprintf("45.79.1.%d", i+1)
 		w, _ := call(t, h, "/v1/claim", ip, ClaimRequest{Email: "cap@example.com", Code: "111111"})
 		if w.Code != 200 {
 			t.Fatalf("claim %d: HTTP %d %s", i, w.Code, w.Body.String())
 		}
 	}
 	seed()
-	w, _ := call(t, h, "/v1/claim", "198.51.100.99", ClaimRequest{Email: "cap@example.com", Code: "111111"})
+	w, _ := call(t, h, "/v1/claim", "51.15.2.99", ClaimRequest{Email: "cap@example.com", Code: "111111"})
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("cap not enforced: HTTP %d", w.Code)
 	}

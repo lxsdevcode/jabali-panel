@@ -14,11 +14,36 @@ import (
 // BaseDomain is the PSL-submitted base under which every label lives.
 const BaseDomain = "jabalihosted.com"
 
+// bogonV4 are IPv4 ranges that must never become a label: they are not
+// publicly routable, so a hostname pointing into them is useless at best and
+// a DNS-rebinding lure at worst. Go's stdlib (IsPrivate/IsLoopback/
+// IsLinkLocalUnicast/IsGlobalUnicast) catches RFC1918, loopback, link-local,
+// multicast, and unspecified — but MISSES CGNAT (100.64/10), Class E (240/4),
+// "this network" (0/8), TEST-NET (RFC5737), benchmarking (198.18/15), and the
+// IETF protocol block (192.0.0/24). We refuse all of them explicitly.
+var bogonV4 = func() []*net.IPNet {
+	cidrs := []string{
+		"0.0.0.0/8",       // "this network" (RFC 1122)
+		"100.64.0.0/10",   // CGNAT / carrier-grade NAT (RFC 6598) — not internet-routable
+		"192.0.0.0/24",    // IETF protocol assignments (RFC 6890)
+		"192.0.2.0/24",    // TEST-NET-1 (RFC 5737)
+		"198.18.0.0/15",   // benchmarking (RFC 2544)
+		"198.51.100.0/24", // TEST-NET-2 (RFC 5737)
+		"203.0.113.0/24",  // TEST-NET-3 (RFC 5737)
+		"240.0.0.0/4",     // reserved / Class E (RFC 1112) — stdlib treats as global unicast
+	}
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, _ := net.ParseCIDR(c)
+		out = append(out, n)
+	}
+	return out
+}()
+
 // LabelFromIP derives the hostname label from the OBSERVED public source
-// address of the registering box — cPanel-cprapid style: 192.0.2.7 →
-// "192-0-2-7". Labels are never client-chosen (the completed TCP handshake is
-// the proof of IP control), and private/special ranges are refused outright:
-// an A record into RFC1918 space is a DNS-rebinding lure, not a hostname.
+// address of the registering box — cPanel-cprapid style: 45.79.1.2 →
+// "45-79-1-2". Labels are never client-chosen (the completed TCP handshake is
+// the proof of IP control), and any non-public / bogon range is refused.
 func LabelFromIP(ip net.IP) (string, error) {
 	v4 := ip.To4()
 	if v4 == nil {
@@ -26,6 +51,11 @@ func LabelFromIP(ip net.IP) (string, error) {
 	}
 	if !v4.IsGlobalUnicast() || v4.IsPrivate() || v4.IsLoopback() || v4.IsLinkLocalUnicast() {
 		return "", fmt.Errorf("refusing non-public source address %s", v4)
+	}
+	for _, n := range bogonV4 {
+		if n.Contains(v4) {
+			return "", fmt.Errorf("refusing bogon source address %s (%s)", v4, n)
+		}
 	}
 	return strings.ReplaceAll(v4.String(), ".", "-"), nil
 }

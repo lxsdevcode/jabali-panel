@@ -11,13 +11,23 @@ func TestLabelFromIP(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"192.0.2.7", "192-0-2-7", false},
-		{"182.54.236.100", "182-54-236-100", false},
-		{"192.168.100.165", "", true}, // RFC1918 — rebinding lure, refused
-		{"10.0.3.14", "", true},
-		{"127.0.0.1", "", true},
-		{"169.254.1.1", "", true},
-		{"2001:db8::1", "", true}, // v6 not in v1
+		{"45.79.1.2", "45-79-1-2", false},          // ordinary public v4
+		{"182.54.236.100", "182-54-236-100", false}, // the hostsclick box
+		{"192.168.100.165", "", true},               // RFC1918 — rebinding lure
+		{"10.0.3.14", "", true},                     // RFC1918
+		{"172.16.5.5", "", true},                    // RFC1918
+		{"127.0.0.1", "", true},                     // loopback
+		{"169.254.1.1", "", true},                   // link-local
+		{"100.64.0.1", "", true},                    // CGNAT — stdlib misses this
+		{"100.127.255.254", "", true},               // CGNAT upper edge
+		{"240.0.0.1", "", true},                     // Class E — stdlib misses this
+		{"0.1.2.3", "", true},                       // "this network"
+		{"192.0.2.7", "", true},                     // TEST-NET-1 (bogus)
+		{"198.51.100.9", "", true},                  // TEST-NET-2 (bogus)
+		{"203.0.113.9", "", true},                   // TEST-NET-3 (bogus)
+		{"198.18.0.1", "", true},                    // benchmarking
+		{"255.255.255.255", "", true},               // broadcast
+		{"2001:db8::1", "", true},                   // v6 not in v1
 	}
 	for _, tc := range tests {
 		got, err := LabelFromIP(net.ParseIP(tc.ip))
