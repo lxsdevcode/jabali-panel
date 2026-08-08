@@ -1145,7 +1145,29 @@ prompt_server_settings() {
   # env), skip the prompt entirely — even when a TTY is available. This
   # enables non-interactive provisioning (Ansible, CI images, etc.).
   local _hostname_regex='^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$'
-  if [[ -n "${JABALI_HOSTNAME:-}" ]]; then
+  # JAB-213: opt-in free jabalihosted.com hostname. Gated on the env flag AND
+  # an interactive TTY (the email+code dance is inherently interactive) AND no
+  # explicit --hostname. On success it sets inp_hostname to the claimed FQDN
+  # and skips the manual prompt; on any failure it falls through to the normal
+  # prompt with a reason printed. Never runs non-interactively.
+  if [[ "${JABALI_FREE_HOSTNAME:-}" == "1" && -z "${JABALI_HOSTNAME:-}" && -n "$input_fd" ]]; then
+    local _jh_helper="$REPO_DIR/install/hostname/jabali-hostname.sh"
+    if [[ -r "$_jh_helper" ]]; then
+      # shellcheck disable=SC1090
+      source "$_jh_helper"
+      local _jh_fqdn
+      if _jh_fqdn="$(jh_free_hostname_flow "$input_fd")" && [[ "$_jh_fqdn" =~ $_hostname_regex ]]; then
+        inp_hostname="$_jh_fqdn"
+        _ok "using free Jabali hostname: $inp_hostname"
+        JABALI_FREE_HOSTNAME_ACTIVE=1
+      else
+        _warn "free hostname not set up — continuing with a manual hostname"
+      fi
+    fi
+  fi
+  if [[ -n "${JABALI_FREE_HOSTNAME_ACTIVE:-}" ]]; then
+    : # hostname already resolved via the free-hostname flow; skip prompts below
+  elif [[ -n "${JABALI_HOSTNAME:-}" ]]; then
     if [[ ! "$JABALI_HOSTNAME" =~ $_hostname_regex ]]; then
       _die "invalid JABALI_HOSTNAME: '$JABALI_HOSTNAME' (use letters/digits/dots/hyphens)"
     fi
@@ -2342,6 +2364,9 @@ install_jabali_slices() {
   install -m 0755 "$REPO_DIR/install/systemd/fpm-pre-start" /usr/local/libexec/jabali/fpm-pre-start
   install -m 0755 "$REPO_DIR/install/systemd/fpm-exec" /usr/local/libexec/jabali/fpm-exec
   install -m 0755 "$REPO_DIR/install/systemd/fpm-post-start" /usr/local/libexec/jabali/fpm-post-start
+  # JAB-213: free-hostname heartbeat helper (always installed; the timer below
+  # is only enabled when the box actually uses a free jabalihosted.com name).
+  install -m 0755 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.sh" /usr/local/libexec/jabali/jabali-hostname-heartbeat.sh
   # cron-precheck is the ExecStartPre guard generated cron .service units
   # reference (panel-agent buildCronServiceContent). Without it the unit
   # dies 203/EXEC and scheduled crons never run.
@@ -2350,6 +2375,15 @@ install_jabali_slices() {
   install -m 0644 "$REPO_DIR/install/systemd/jabali.slice" /etc/systemd/system/jabali.slice
   install -m 0644 "$REPO_DIR/install/systemd/jabali-user.slice" /etc/systemd/system/jabali-user.slice
   install -m 0644 "$REPO_DIR/install/systemd/jabali-fpm@.service" /etc/systemd/system/jabali-fpm@.service
+  # JAB-213: heartbeat timer units (enabled conditionally below).
+  install -m 0644 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.service" /etc/systemd/system/jabali-hostname-heartbeat.service
+  install -m 0644 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.timer" /etc/systemd/system/jabali-hostname-heartbeat.timer
+  # Enable the daily heartbeat only when this box uses a free hostname.
+  if [[ -r /etc/jabali-panel/hostname.env ]]; then
+    systemctl enable --now jabali-hostname-heartbeat.timer >/dev/null 2>&1 \
+      && _ok "free-hostname heartbeat timer enabled" \
+      || _warn "could not enable free-hostname heartbeat timer (non-fatal)"
+  fi
 
   systemctl daemon-reload
   systemctl start jabali.slice jabali-user.slice

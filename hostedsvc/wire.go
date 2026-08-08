@@ -1,9 +1,11 @@
 package hostedsvc
 
-// Wire shapes for the v1 API. These are the cross-boundary contract with the
-// panel-side client (installer + certbot hook, phase 3) — pinned by the
-// fixtures in testdata/, same pattern as agentwire. Change a field here and
-// the round-trip tests on BOTH sides must be updated consciously.
+// Wire shapes for the v1 API. The fixtures in testdata/ pin these Go structs
+// so a server-side field change breaks a test, not a running installer. NOTE:
+// the phase-3 panel-side client is bash (install/hostname/jabali-hostname.sh),
+// so it does NOT consume these fixtures — the contract is enforced only on the
+// server side here. If a typed client is added later, embed the same fixtures
+// there to restore the bidirectional agentwire-style guarantee.
 
 type RegisterRequest struct {
 	Email string `json:"email"`

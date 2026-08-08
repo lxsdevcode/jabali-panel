@@ -70,12 +70,31 @@ Copy the cprapid model, never sslip.io:
      install prompt (one line, no marketing).
    - Installer UX: keep the "own domain" path zero-prompt; the free-hostname
      path adds exactly two fields (email, code).
-3. **Panel integration**: install.sh prompt + registration client + certbot
-   DNS-01 hook + `EffectivePreviewBase` default when a free hostname is active.
-4. **E2E**: fresh install on a blank VM → free hostname resolves, wildcard
-   cert issues, previews + mail TLS ride the same cert; cross-label
-   `_acme-challenge` write REFUSED (security invariant test).
-5. **Rollout**: default prompt in installer; JAB-213 comment; docs.
+3. **Panel integration (v1 — BUILT 2026-08-08)**: install.sh gated free-host
+   flow + client helper + heartbeat timer. **v1 cut (advisor):** claim writes
+   `<label>` + `*.<label>` A (both DNS-only → box IP), so `mail.<label>`,
+   `autoconfig.<label>`, previews resolve to the box and the panel's EXISTING
+   HTTP-01 cert machinery issues for them — **no DNS-01 hook, no wildcard cert
+   in v1.** `install/hostname/jabali-hostname.sh` (register→code→claim, token
+   at `/etc/jabali-panel/hostname.env` 0600, never logged), gated on
+   `JABALI_FREE_HOSTNAME=1` + TTY. Falls back to the manual prompt on any
+   failure (bad_source/rate_limited/etc handled distinctly).
+   - Deferred to **3b** (verify-first): wildcard *certificate* for previews on
+     one cert via DNS-01, using the already-built `/v1/acme/{present,cleanup}`
+     endpoints. Read `acme_shared_certs.go` + panel-cert issuance BEFORE
+     choosing certbot `--manual` hook vs reconciler-internal. `EffectivePreview
+     Base` default when a free hostname is active also lands in 3b.
+   - Known gap: server-side reclamation (`reclaimAfterMove` constant) has no
+     reaper yet — heartbeat reports `ip_moved`, nothing reclaims. Not a v1 blocker.
+4. **E2E (phase 4)**: GENUINELY FRESH VM running real `curl | bash` with
+   `JABALI_FREE_HOSTNAME=1` — testserver/.165 can't simulate the first-install
+   TTY flow. Assert: hostname resolves, panel + `mail.<label>` HTTP-01 certs
+   issue, cross-label `_acme-challenge` write REFUSED (invariant test).
+5. **Rollout — GATED ON PSL MERGE, not just E2E.** Until PR #3127 merges (+ the
+   weeks browsers/LE take to pick up the list), every `<label>` cert counts
+   against ONE registered-domain LE bucket (~50/wk = ~25 installs/wk ceiling)
+   and cookie isolation doesn't exist. So: default-on installer prompt waits
+   for the merge. Then JAB-213 comment; docs.
 
 ## Phase 2 concrete design (locked 2026-08-08)
 
