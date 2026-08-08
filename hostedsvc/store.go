@@ -233,6 +233,67 @@ func (s *Store) RevokeLabel(label, actor string) error {
 	return nil
 }
 
+// MarkMoved stamps moved_at the first time a heartbeat sees the box's source
+// IP stop matching its label. Idempotent by design: only the first detection
+// sets the clock (WHERE moved_at IS NULL), so a box that keeps heartbeating
+// the old token through a move does NOT reset the reclaim window every tick.
+// Revoked rows are skipped — a burned label has no clock to start.
+func (s *Store) MarkMoved(label string) error {
+	_, err := s.db.Exec(`UPDATE labels SET moved_at = ?
+		WHERE label = ? AND moved_at IS NULL AND revoked_at IS NULL`,
+		s.now().Unix(), label)
+	return err
+}
+
+// ClearMoved unstamps moved_at when the box's source IP matches its label
+// again. A transient egress change (flapping NAT, a brief re-IP that reverts)
+// must never lead to a reclaim, so any pending clock is cancelled the moment
+// the box is seen at its own address.
+func (s *Store) ClearMoved(label string) error {
+	_, err := s.db.Exec(`UPDATE labels SET moved_at = NULL
+		WHERE label = ? AND moved_at IS NOT NULL`, label)
+	return err
+}
+
+// MovedLabelsBefore returns the labels whose source IP stopped matching at or
+// before cutoff and are still live (not revoked) — the reaper's worklist,
+// oldest move first.
+func (s *Store) MovedLabelsBefore(cutoff time.Time) ([]string, error) {
+	rows, err := s.db.Query(`SELECT label FROM labels
+		WHERE moved_at IS NOT NULL AND moved_at <= ? AND revoked_at IS NULL
+		ORDER BY moved_at`, cutoff.Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var l string
+		if err := rows.Scan(&l); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// ReclaimLabel revokes a moved-out label on the reaper's behalf. Same effect
+// as RevokeLabel — the name is burned, never reissued — but audited as
+// "label.reclaim" so the abuse desk can tell an automatic move-reclaim apart
+// from a punitive revoke.
+func (s *Store) ReclaimLabel(label string) error {
+	res, err := s.db.Exec(`UPDATE labels SET revoked_at = ? WHERE label = ? AND revoked_at IS NULL`,
+		s.now().Unix(), label)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	s.Audit("reaper", "label.reclaim", label)
+	return nil
+}
+
 // Audit best-effort appends an audit row; the service never fails an
 // operation because the audit insert did.
 func (s *Store) Audit(actor, action, detail string) {

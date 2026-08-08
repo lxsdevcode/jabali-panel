@@ -219,10 +219,24 @@ func (a *API) heartbeat(w http.ResponseWriter, r *http.Request) {
 	_ = a.Store.TouchLabel(l.Label)
 	resp := HeartbeatResponse{Ok: true}
 	if ip := ClientIP(r); ip != nil {
-		if cur, err := LabelFromIP(ip); err == nil && cur != l.IPv4Label() {
-			// The box moved. It should re-claim from the new address; the old
-			// label lives for reclaimAfterMove so certs don't die mid-move.
-			resp.IPMoved = true
+		if cur, err := LabelFromIP(ip); err == nil {
+			if cur != l.IPv4Label() {
+				// The box moved. It should re-claim from the new address; the
+				// old label lives for reclaimAfterMove so certs don't die
+				// mid-move. Stamp moved_at now (once) to start that clock —
+				// the reaper reclaims the orphaned record once it elapses.
+				resp.IPMoved = true
+				if err := a.Store.MarkMoved(l.Label); err != nil {
+					// Not best-effort like TouchLabel: a silent failure here
+					// means the clock never starts and the record never gets
+					// reclaimed — surface it.
+					a.Log.Error("heartbeat: mark moved", "label", l.Label, "err", err)
+				}
+			} else if err := a.Store.ClearMoved(l.Label); err != nil {
+				// Source IP matches again — cancel any pending reclaim from a
+				// transient egress change.
+				a.Log.Error("heartbeat: clear moved", "label", l.Label, "err", err)
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

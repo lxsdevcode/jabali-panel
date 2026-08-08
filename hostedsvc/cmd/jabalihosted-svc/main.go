@@ -25,6 +25,8 @@
 //
 //	serve                     run the API (default)
 //	revoke <label>            abuse desk: revoke a label + delete its DNS
+//	reap [--dry-run]          reclaim labels whose box moved away > reclaimAfterMove
+//	                          ago (deletes their dangling DNS); daily root cron
 package main
 
 import (
@@ -112,6 +114,29 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		fmt.Printf("revoked %s\n", hostedsvc.FQDN(label))
+		return nil
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "reap" {
+		dry := false
+		for _, arg := range os.Args[2:] {
+			if arg == "--dry-run" || arg == "-n" {
+				dry = true
+				continue
+			}
+			return fmt.Errorf("usage: jabalihosted-svc reap [--dry-run]")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		n, err := hostedsvc.ReclaimMoved(ctx, store, dns, log, time.Now(), dry)
+		if err != nil {
+			return fmt.Errorf("reap: %w", err)
+		}
+		verb := "reclaimed"
+		if dry {
+			verb = "would reclaim"
+		}
+		fmt.Printf("%s %d moved-out label(s)\n", verb, n)
 		return nil
 	}
 

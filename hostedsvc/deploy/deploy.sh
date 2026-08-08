@@ -134,4 +134,8 @@ NEXT (in this order — do not reorder):
  5. Nightly off-box dump (add to root crontab):
       sqlite3 /var/lib/jabalihosted/svc.db ".backup /root/svc-db-backup/svc-\$(date +%u).db"
       + rsync that dir off-box. Lost DB = every issued token dead.
+ 6. Daily reap of moved-away labels (add to root crontab). Deletes the
+    dangling DNS a box leaves when it re-claims at a new IP. Dry-run once
+    first to see the worklist, then wire the real run:
+      17 4 * * *  /usr/local/bin/jabalihosted-svc reap >> /var/log/jabalihosted-reap.log 2>&1
 EOF
