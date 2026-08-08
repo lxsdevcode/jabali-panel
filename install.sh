@@ -1042,6 +1042,80 @@ _detect_public_ipv6() {
   ip -6 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
 }
 
+# ---- JAB-213 free-hostname install-time flow (inline; runs pre-clone) --------
+# Defined in install.sh itself, not sourced from $REPO_DIR/install/, because
+# prompt_server_settings runs BEFORE clone_or_update_repo (ordering guard in
+# install_repo_dir_ordering_test.go). The token is parsed out and written to
+# hostname.env directly — never echoed to the install log, which wraps output.
+JH_API="${JABALI_HOSTNAME_API:-https://api.jabalihosted.com}"
+JH_TOKEN_FILE=/etc/jabali-panel/hostname.env
+
+jh_post() {
+  local path="$1" body="$2"
+  curl -sS --max-time 30 -w $'\n%{http_code}' \
+    -H 'Content-Type: application/json' \
+    -d "$body" "${JH_API}${path}" 2>/dev/null || printf '\n000'
+}
+jh_field() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1],""))' "$2" 2>/dev/null; }
+
+jh_free_hostname_flow() {
+  local fd="$1" email code body fqdn label token
+  [[ -z "$fd" ]] && { echo "free hostname needs an interactive terminal" >&2; return 1; }
+  {
+    printf '\nFree Jabali hostname\n'
+    printf '  A public hostname like 203-0-113-7.jabalihosted.com with automatic\n'
+    printf '  DNS + TLS. We email a one-time code to verify the address (stored\n'
+    printf '  only to contact you about the hostname).\n\n'
+  } > /dev/tty 2>/dev/null || true
+  local email_re='^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+  while true; do
+    printf 'Email for verification: ' > /dev/tty 2>/dev/null || printf 'Email for verification: '
+    read -r -u "$fd" email || true
+    [[ "$email" =~ $email_re ]] && break
+    echo "  please enter a valid email address" > /dev/tty 2>/dev/null || true
+  done
+  local resp jcode attempt
+  for attempt in 1 2; do
+    resp="$(jh_post /v1/register "{\"email\":\"${email}\"}")"
+    jcode="${resp##*$'\n'}"; body="${resp%$'\n'*}"
+    case "$jcode" in
+      200) break ;;
+      429) echo "  a code was just sent — wait a minute and re-run" >&2; return 1 ;;
+      000|5*) [[ $attempt == 1 ]] && { sleep 3; continue; }
+             echo "  hostname service unreachable ($jcode) — using a manual hostname" >&2; return 1 ;;
+      *)   echo "  could not send a code ($(jh_field "$body" error)) — using a manual hostname" >&2; return 1 ;;
+    esac
+  done
+  printf '  code sent to %s\n' "$email" > /dev/tty 2>/dev/null || true
+  local tries
+  for tries in 1 2 3; do
+    printf 'Enter the 6-digit code: ' > /dev/tty 2>/dev/null || printf 'Enter the 6-digit code: '
+    read -r -u "$fd" code || true
+    code="${code//[^0-9]/}"
+    resp="$(jh_post /v1/claim "{\"email\":\"${email}\",\"code\":\"${code}\"}")"
+    jcode="${resp##*$'\n'}"; body="${resp%$'\n'*}"
+    case "$jcode" in
+      200) break ;;
+      403) echo "  wrong or expired code, try again" > /dev/tty 2>/dev/null || true
+           [[ $tries == 3 ]] && { echo "  no valid code entered — using a manual hostname" >&2; return 1; }
+           continue ;;
+      429) echo "  too many attempts — re-run the installer for a fresh code" >&2; return 1 ;;
+      422) echo "  this server's public IP can't take a free hostname ($(jh_field "$body" message))" >&2
+           echo "  falling back to a manual hostname" >&2; return 1 ;;
+      *)   echo "  claim failed ($jcode) — using a manual hostname" >&2; return 1 ;;
+    esac
+  done
+  fqdn="$(jh_field "$body" fqdn)"; label="$(jh_field "$body" label)"; token="$(jh_field "$body" token)"
+  [[ -z "$fqdn" || -z "$token" ]] && { echo "  malformed claim response — using a manual hostname" >&2; return 1; }
+  umask 077
+  {
+    printf 'LABEL=%s\nFQDN=%s\nEMAIL=%s\nTOKEN=%s\nAPI=%s\n' "$label" "$fqdn" "$email" "$token" "$JH_API"
+  } > "$JH_TOKEN_FILE"
+  chmod 0600 "$JH_TOKEN_FILE"
+  printf '%s' "$fqdn"   # only stdout — install.sh captures it
+  return 0
+}
+
 prompt_server_settings() {
   local config_file="/etc/jabali-panel/config.toml"
 
@@ -1151,18 +1225,16 @@ prompt_server_settings() {
   # and skips the manual prompt; on any failure it falls through to the normal
   # prompt with a reason printed. Never runs non-interactively.
   if [[ "${JABALI_FREE_HOSTNAME:-}" == "1" && -z "${JABALI_HOSTNAME:-}" && -n "$input_fd" ]]; then
-    local _jh_helper="$REPO_DIR/install/hostname/jabali-hostname.sh"
-    if [[ -r "$_jh_helper" ]]; then
-      # shellcheck disable=SC1090
-      source "$_jh_helper"
-      local _jh_fqdn
-      if _jh_fqdn="$(jh_free_hostname_flow "$input_fd")" && [[ "$_jh_fqdn" =~ $_hostname_regex ]]; then
-        inp_hostname="$_jh_fqdn"
-        _ok "using free Jabali hostname: $inp_hostname"
-        JABALI_FREE_HOSTNAME_ACTIVE=1
-      else
-        _warn "free hostname not set up — continuing with a manual hostname"
-      fi
+    local _jh_fqdn
+    # jh_free_hostname_flow is defined inline below (NOT sourced from $REPO_DIR
+    # — this runs before clone_or_update_repo, so the repo isn't on disk yet;
+    # the install-repo-dir-ordering guard enforces that).
+    if _jh_fqdn="$(jh_free_hostname_flow "$input_fd")" && [[ "$_jh_fqdn" =~ $_hostname_regex ]]; then
+      inp_hostname="$_jh_fqdn"
+      _ok "using free Jabali hostname: $inp_hostname"
+      JABALI_FREE_HOSTNAME_ACTIVE=1
+    else
+      _warn "free hostname not set up — continuing with a manual hostname"
     fi
   fi
   if [[ -n "${JABALI_FREE_HOSTNAME_ACTIVE:-}" ]]; then
