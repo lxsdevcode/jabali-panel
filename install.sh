@@ -5052,6 +5052,16 @@ clone_or_update_repo() {
     # other trees that may legitimately be group-owned differently
     # don't get clobbered.
     chown -R "$SERVICE_USER:$SERVICE_USER" "$REPO_DIR/.git"
+    # Self-heal a stale remote URL. Boxes provisioned before the codeberg→GitHub
+    # source-of-truth switch still have origin pointing at the DROPPED codeberg
+    # remote, which is frozen: `git fetch origin` there silently pulls
+    # long-obsolete code (e.g. missing install/hostname/* and other newer
+    # files), then a later install step hard-fails on a file the current
+    # install.sh references. Force origin to the canonical $REPO_URL before
+    # fetching so the pull always tracks the real source. Idempotent — a no-op
+    # when origin is already correct.
+    sudo -u "$SERVICE_USER" -H git -C "$REPO_DIR" remote set-url origin "$REPO_URL" 2>/dev/null \
+      || _warn "could not reset origin URL to $REPO_URL — continuing with the existing remote"
     # No --quiet: under `set -e` a failed fetch/clone aborts install.sh
     # without any output because --quiet suppresses git's stderr, leaving
     # the operator with a silent exit. Let git's error reach the trace.
