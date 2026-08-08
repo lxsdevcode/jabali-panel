@@ -1773,6 +1773,11 @@ func (r *Reconciler) createDomainOnAgent(ctx context.Context, domain *models.Dom
 	// Server-wide default with a per-domain tri-state override.
 	params["intercept_errors"] = r.effectiveInterceptErrors(ctx, domain)
 
+	// GH #962: PATH_INFO location for front-controller PHP apps (osTicket, …).
+	// Per-domain nginx_safe_options toggle; needs the FPM socket so it travels
+	// as its own param rather than via Render(). Default off ⇒ byte-identical.
+	params["path_info"] = domain.NginxSafeOptions.PathInfo
+
 	params["redirect_directives"] = redirects.Compile(domain)
 	params["rule_directives"] = nginxrules.Compile(domain)
 
