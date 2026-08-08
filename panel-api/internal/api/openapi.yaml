@@ -985,6 +985,49 @@ paths:
 
   # ----------------------------------------------- Admin: Server Settings ---
 
+  /admin/settings/free-hostname/register:
+    post:
+      tags: [Server Settings]
+      summary: Request a free jabalihosted.com hostname verification code (admin, JAB-213)
+      description: |
+        Proxies to the Jabali free-hostname service, which emails a 6-digit
+        code. The panel box's observed public IP becomes the hostname label
+        at claim time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200": { description: Code sent }
+        "422": { description: Invalid email }
+        "429": { description: Rate limited }
+        "502": { description: Hostname service unreachable }
+  /admin/settings/free-hostname/claim:
+    post:
+      tags: [Server Settings]
+      summary: Claim a free jabalihosted.com hostname with the emailed code (admin, JAB-213)
+      description: |
+        Verifies the code, persists the relay credential (agent), and switches
+        the panel hostname to <label>.jabalihosted.com.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string }
+                code:  { type: string }
+      responses:
+        "200": { description: "Claimed; body carries fqdn" }
+        "422": { description: "code_invalid / code_attempts / bad_source" }
+        "502": { description: Hostname service unreachable }
   /admin/settings:
     get:
       tags: [Server Settings]

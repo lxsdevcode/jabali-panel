@@ -44,6 +44,9 @@ func RegisterServerSettingsRoutes(g *gin.RouterGroup, cfg ServerSettingsHandlerC
 	// toggle installs, and re-dispatches an install as a retry affordance.
 	admin.GET("/modules/status", h.moduleStatus)
 	admin.POST("/modules/install", h.moduleInstall)
+	// JAB-213: activate a free jabalihosted.com hostname from Server Settings.
+	admin.POST("/free-hostname/register", h.freeHostnameRegister)
+	admin.POST("/free-hostname/claim", h.freeHostnameClaim)
 }
 
 type serverSettingsHandler struct{ cfg ServerSettingsHandlerConfig }
