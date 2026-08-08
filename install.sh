@@ -2367,6 +2367,10 @@ install_jabali_slices() {
   # JAB-213: free-hostname heartbeat helper (always installed; the timer below
   # is only enabled when the box actually uses a free jabalihosted.com name).
   install -m 0755 "$REPO_DIR/install/hostname/jabali-hostname-heartbeat.sh" /usr/local/libexec/jabali/jabali-hostname-heartbeat.sh
+  # JAB-213 phase 3b: wildcard-cert DNS-01 hooks + issuance wrapper.
+  install -m 0755 "$REPO_DIR/install/hostname/certbot-auth-hook.sh" /usr/local/libexec/jabali/certbot-auth-hook.sh
+  install -m 0755 "$REPO_DIR/install/hostname/certbot-cleanup-hook.sh" /usr/local/libexec/jabali/certbot-cleanup-hook.sh
+  install -m 0755 "$REPO_DIR/install/hostname/jabali-hostname-cert.sh" /usr/local/libexec/jabali/jabali-hostname-cert.sh
   # cron-precheck is the ExecStartPre guard generated cron .service units
   # reference (panel-agent buildCronServiceContent). Without it the unit
   # dies 203/EXEC and scheduled crons never run.

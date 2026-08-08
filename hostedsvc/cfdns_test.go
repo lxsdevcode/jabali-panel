@@ -142,6 +142,41 @@ func TestCloudflareDNS_ChallengeLifecycle(t *testing.T) {
 	}
 }
 
+// The wildcard-cert case: two challenge values must coexist at one name, and
+// cleanup must remove both. A replace-semantics present would clobber the
+// first and fail issuance.
+func TestCloudflareDNS_ChallengeMultiValue(t *testing.T) {
+	c, f := newTestCFDNS(t)
+	ctx := context.Background()
+	if err := c.SetChallenge(ctx, "192-0-2-7", "value-apex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetChallenge(ctx, "192-0-2-7", "value-wildcard"); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := c.listRecords(ctx, "_acme-challenge.192-0-2-7.jabalihosted.com", "TXT")
+	if len(recs) != 2 {
+		t.Fatalf("want 2 coexisting challenge values, got %d", len(recs))
+	}
+	// Idempotent: re-adding an existing value doesn't duplicate.
+	if err := c.SetChallenge(ctx, "192-0-2-7", "value-apex"); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ = c.listRecords(ctx, "_acme-challenge.192-0-2-7.jabalihosted.com", "TXT")
+	if len(recs) != 2 {
+		t.Fatalf("duplicate value added: %d records", len(recs))
+	}
+	// Cleanup removes ALL.
+	if err := c.ClearChallenge(ctx, "192-0-2-7"); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ = c.listRecords(ctx, "_acme-challenge.192-0-2-7.jabalihosted.com", "TXT")
+	if len(recs) != 0 {
+		t.Fatalf("cleanup left %d challenge records", len(recs))
+	}
+	_ = f
+}
+
 func TestCloudflareDNS_RemoveLabel(t *testing.T) {
 	c, f := newTestCFDNS(t)
 	ctx := context.Background()

@@ -78,25 +78,32 @@ func (c *CloudflareDNS) do(ctx context.Context, method, path string, body any) (
 	return c.HTTP.Do(req)
 }
 
-// findID returns the record id for name+type, or "" when absent.
-func (c *CloudflareDNS) findID(ctx context.Context, name, rtype string) (string, error) {
+// listRecords returns every record for name+type (a name can hold multiple
+// TXT records — needed for the dual-value wildcard challenge).
+func (c *CloudflareDNS) listRecords(ctx context.Context, name, rtype string) ([]cfRecord, error) {
 	q := url.Values{"name": {name}, "type": {rtype}}
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/zones/%s/dns_records?%s", c.ZoneID, q.Encode()), nil)
 	if err != nil {
-		return "", fmt.Errorf("cf list: %w", err)
+		return nil, fmt.Errorf("cf list: %w", err)
 	}
 	defer resp.Body.Close()
 	var lr cfListResp
 	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
-		return "", fmt.Errorf("cf list decode: %w", err)
+		return nil, fmt.Errorf("cf list decode: %w", err)
 	}
 	if !lr.Success {
-		return "", fmt.Errorf("cf list: %v", lr.Errors)
+		return nil, fmt.Errorf("cf list: %v", lr.Errors)
 	}
-	if len(lr.Result) == 0 {
-		return "", nil
+	return lr.Result, nil
+}
+
+// findID returns the record id for name+type, or "" when absent.
+func (c *CloudflareDNS) findID(ctx context.Context, name, rtype string) (string, error) {
+	recs, err := c.listRecords(ctx, name, rtype)
+	if err != nil || len(recs) == 0 {
+		return "", err
 	}
-	return lr.Result[0].ID, nil
+	return recs[0].ID, nil
 }
 
 // upsert creates or replaces the single record for name+type.
@@ -151,12 +158,53 @@ func (c *CloudflareDNS) EnsureWildcardA(ctx context.Context, label, ipv4 string)
 	return c.upsert(ctx, cfRecord{Type: "A", Name: "*." + FQDN(label), Content: ipv4, TTL: 300, Proxied: false})
 }
 
+// SetChallenge ADDS a challenge value (does not replace). A wildcard+apex
+// certificate produces TWO challenge values at the SAME
+// _acme-challenge.<label> name — Let's Encrypt requires both present at once —
+// so a replace would clobber the first. On CF, multiple values = multiple TXT
+// records at one name; we create one per value, skipping an exact duplicate.
 func (c *CloudflareDNS) SetChallenge(ctx context.Context, label, value string) error {
-	return c.upsert(ctx, cfRecord{Type: "TXT", Name: "_acme-challenge." + FQDN(label), Content: value, TTL: 60, Proxied: false})
+	name := "_acme-challenge." + FQDN(label)
+	existing, err := c.listRecords(ctx, name, "TXT")
+	if err != nil {
+		return err
+	}
+	for _, r := range existing {
+		if r.Content == value {
+			return nil // already present
+		}
+	}
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/zones/%s/dns_records", c.ZoneID),
+		cfRecord{Type: "TXT", Name: name, Content: value, TTL: 60, Proxied: false})
+	if err != nil {
+		return fmt.Errorf("cf add challenge: %w", err)
+	}
+	defer resp.Body.Close()
+	var wr cfWriteResp
+	if err := json.NewDecoder(resp.Body).Decode(&wr); err != nil {
+		return fmt.Errorf("cf add challenge decode: %w", err)
+	}
+	if !wr.Success {
+		return fmt.Errorf("cf add challenge %s: %v", name, wr.Errors)
+	}
+	return nil
 }
 
+// ClearChallenge removes ALL challenge TXT records at the label's name.
 func (c *CloudflareDNS) ClearChallenge(ctx context.Context, label string) error {
-	return c.deleteRecord(ctx, "_acme-challenge."+FQDN(label), "TXT")
+	name := "_acme-challenge." + FQDN(label)
+	recs, err := c.listRecords(ctx, name, "TXT")
+	if err != nil {
+		return err
+	}
+	for _, r := range recs {
+		resp, derr := c.do(ctx, http.MethodDelete, fmt.Sprintf("/zones/%s/dns_records/%s", c.ZoneID, r.ID), nil)
+		if derr != nil {
+			return fmt.Errorf("cf clear challenge: %w", derr)
+		}
+		resp.Body.Close()
+	}
+	return nil
 }
 
 func (c *CloudflareDNS) RemoveLabel(ctx context.Context, label string) error {
@@ -166,5 +214,5 @@ func (c *CloudflareDNS) RemoveLabel(ctx context.Context, label string) error {
 	if err := c.deleteRecord(ctx, "*."+FQDN(label), "A"); err != nil {
 		return err
 	}
-	return c.deleteRecord(ctx, "_acme-challenge."+FQDN(label), "TXT")
+	return c.ClearChallenge(ctx, label) // removes ALL challenge TXTs
 }

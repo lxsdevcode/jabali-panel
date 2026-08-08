@@ -99,10 +99,24 @@ func (p *PDNS) EnsureWildcardA(ctx context.Context, label, ipv4 string) error {
 	}})
 }
 
+// SetChallenge ADDS a value to the challenge rrset. A wildcard+apex cert needs
+// two values live at once at the same name, so we merge with any existing
+// records (a PowerDNS rrset holds multiple records) rather than replacing.
 func (p *PDNS) SetChallenge(ctx context.Context, label, value string) error {
+	name := "_acme-challenge." + FQDN(label) + "."
+	quoted := fmt.Sprintf("%q", value)
+	existing, err := p.getRRSet(ctx, name, "TXT")
+	if err != nil {
+		return err
+	}
+	recs := []record{{Content: quoted}}
+	for _, c := range existing {
+		if c != quoted {
+			recs = append(recs, record{Content: c})
+		}
+	}
 	return p.patch(ctx, []rrset{{
-		Name: "_acme-challenge." + FQDN(label) + ".", Type: "TXT", TTL: 60, ChangeType: "REPLACE",
-		Records: []record{{Content: fmt.Sprintf("%q", value)}},
+		Name: name, Type: "TXT", TTL: 60, ChangeType: "REPLACE", Records: recs,
 	}})
 }
 
@@ -110,6 +124,40 @@ func (p *PDNS) ClearChallenge(ctx context.Context, label string) error {
 	return p.patch(ctx, []rrset{{
 		Name: "_acme-challenge." + FQDN(label) + ".", Type: "TXT", ChangeType: "DELETE",
 	}})
+}
+
+// getRRSet returns the record contents currently in an rrset (empty if none).
+func (p *PDNS) getRRSet(ctx context.Context, name, rtype string) ([]string, error) {
+	url := fmt.Sprintf("%s/api/v1/servers/localhost/zones/%s", p.URL, p.Zone)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", p.APIKey)
+	resp, err := p.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("pdns get zone: %w", err)
+	}
+	defer resp.Body.Close()
+	var z struct {
+		RRSets []struct {
+			Name    string   `json:"name"`
+			Type    string   `json:"type"`
+			Records []record `json:"records"`
+		} `json:"rrsets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&z); err != nil {
+		return nil, fmt.Errorf("pdns get zone decode: %w", err)
+	}
+	var out []string
+	for _, rr := range z.RRSets {
+		if rr.Name == name && rr.Type == rtype {
+			for _, r := range rr.Records {
+				out = append(out, r.Content)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (p *PDNS) RemoveLabel(ctx context.Context, label string) error {
