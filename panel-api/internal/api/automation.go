@@ -14,18 +14,22 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/errgroup"
 
+	"git.jabali-panel.com/shukivaknin/jabali2/internal/kratosclient"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ssokey"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/userops"
 )
 
 // AutomationConfig wires read repos for the public automation API.
@@ -67,11 +71,49 @@ type AutomationConfig struct {
 	// Notify (JAB-140) publishes M14 notifications for high-impact writes
 	// (suspend/disable). Nil → notifications skipped (audit still records).
 	Notify AutomationNotifier
+
+	// ADR-0164 billing endpoints (JAB-190). All optional — nil drops the
+	// matching route, and GET /capabilities only advertises what mounted.
+	Packages      repository.PackageRepository
+	Databases     repository.DatabaseRepository
+	DatabaseUsers repository.DatabaseUserRepository
+	DockerApps    repository.DockerAppRepository
+	KratosClient  *kratosclient.Client
+	BcryptCost    int
+	// Narrow reconciler slices (typed-nil-safe: wire via the app's
+	// nil-guard, never a bare *reconciler.Reconciler that might be nil).
+	LimitsReconciler userops.LimitsReconciler
+	DomainReconciler userops.DomainReconciler
+	// Usage reads (bulk-safe: snapshots + one batched bw_daily query —
+	// the automation usage endpoints NEVER call the agent).
+	DiskSnapshots repository.DiskUsageSnapshotRepository
+	BWDaily       repository.BWDailyRepository
+	Log           *slog.Logger
 }
 
 func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
 	if cfg.AutomationTokens == nil || cfg.Key == nil {
 		return
+	}
+	// Same default the REST user routes apply (ADR-0164 billing writes
+	// hash passwords through userops).
+	if cfg.BcryptCost == 0 {
+		cfg.BcryptCost = bcrypt.DefaultCost
+	}
+	// LO-4 (security review 2026-08-08): with a nil Redis the SETNX replay
+	// gate is silently absent — a captured signed request replays freely
+	// inside the skew window. Now that destructive verbs mount here
+	// (ADR-0164 delete:users), make the downgraded mode loudly visible.
+	// Production always wires Redis (M14); this fires only on dev/test
+	// topologies.
+	if cfg.Redis == nil {
+		log := cfg.Log
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn("automation API mounted WITHOUT the Redis replay gate — " +
+			"signed requests are replayable within the clock-skew window; " +
+			"never run this topology in production")
 	}
 	g := rg.Group("/automation",
 		middleware.RequireAutomationHMAC(cfg.AutomationTokens, cfg.Key, cfg.Redis),
@@ -105,6 +147,19 @@ func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
 		g.GET("/users", middleware.RequireScope("read:users"), func(c *gin.Context) {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 			defer cancel()
+			// ADR-0164: exact-match lookup filters so billing panels can
+			// resolve one account without paging the full list. A filtered
+			// miss is data ({data:[], total:0}), not an error.
+			if email := c.Query("email"); email != "" {
+				u, err := cfg.Users.FindByEmail(ctx, email)
+				automationUserLookupResponse(c, u, err)
+				return
+			}
+			if username := c.Query("username"); username != "" {
+				u, err := cfg.Users.FindByUsername(ctx, username)
+				automationUserLookupResponse(c, u, err)
+				return
+			}
 			rows, _, err := cfg.Users.List(ctx, repository.ListOptions{
 				Limit: 200,
 			})
@@ -114,21 +169,7 @@ func RegisterAutomation(rg *gin.RouterGroup, cfg AutomationConfig) {
 			}
 			out := make([]map[string]any, 0, len(rows))
 			for _, u := range rows {
-				username := ""
-				if u.Username != nil {
-					username = *u.Username
-				}
-				pkg := ""
-				if u.PackageID != nil {
-					pkg = *u.PackageID
-				}
-				out = append(out, map[string]any{
-					"id":         u.ID,
-					"email":      u.Email,
-					"username":   username,
-					"package_id": pkg,
-					"is_admin":   u.IsAdmin,
-				})
+				out = append(out, automationUserRow(&u))
 			}
 			c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
 		})
