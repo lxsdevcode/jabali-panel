@@ -18,7 +18,7 @@ import { adminLinks } from "../../../components/admin/entityLinks";
 import { shortDateTime } from "../../../utils/datetime";
 
 import { startImpersonation } from "../../../impersonation";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
@@ -205,19 +205,12 @@ function UsersShellTable({
     _filters,
     sorter,
   ) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<User> | undefined)
-      : (sorter as SorterResult<User>);
+    const { sort, order } = sorterToParams<User>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -264,7 +257,7 @@ function UsersShellTable({
         title={t("users.col.username")}
         dataIndex="username"
         key="username"
-        sorter={{ multiple: 1 }}
+        sorter
         defaultSortOrder="ascend"
         render={(v: string | null | undefined, record: User) => (
           <Link to={adminLinks.user(record.id)} style={{ fontFamily: "monospace" }}>
@@ -275,7 +268,7 @@ function UsersShellTable({
       <Table.Column<User>
         title={t("users.col.name")}
         key="name_first"
-        sorter={{ multiple: 1 }}
+        sorter
         filterIcon={() => (
           <SearchOutlined
             style={{ color: query.params.q ? "#ef4444" : undefined }}
@@ -337,7 +330,7 @@ function UsersShellTable({
           title={t("users.col.package")}
           dataIndex="package_id"
           key="package_id"
-          sorter={{ multiple: 1 }}
+          sorter
           render={(pid: string | null | undefined) => {
             if (!pid) return <Typography.Text type="secondary">—</Typography.Text>;
             const name = packageNameById.get(pid);
@@ -355,7 +348,7 @@ function UsersShellTable({
         dataIndex="created_at"
         title={t("users.col.created")}
         key="created_at"
-        sorter={{ multiple: 1 }}
+        sorter
         render={renderCreated}
       />
       {showDiskUsageColumn && (
@@ -367,7 +360,7 @@ function UsersShellTable({
           // persists disk_used_kb, so the DB can ORDER BY it. Sorting the
           // per-row fetch was impossible — it only ever held the current
           // page's resolved rows.
-          sorter={{ multiple: 1 }}
+          sorter
           render={(_: unknown, r: User) =>
             r.disk_checked_at ? (
               <UserDiskUsageCell usedKB={r.disk_used_kb ?? 0} limitKB={r.disk_limit_kb ?? 0} />
