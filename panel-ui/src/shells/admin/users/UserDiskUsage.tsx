@@ -57,6 +57,21 @@ export function UserDiskUsage({ userId }: { userId: string }) {
         ? data.effective.DiskQuotaMB * 1024
         : 0;
 
+  return <UserDiskUsageCell usedKB={usedKB} limitKB={limitKB} />;
+}
+
+// UserDiskUsageCell is the presentation, split out so the sorted column
+// (which reads the sweeper's persisted snapshot off the row) and the
+// per-row fetch fallback render identically. Two copies of this markup
+// would drift, and the whole point of persisting the number was that the
+// list and the detail view agree.
+export function UserDiskUsageCell({
+  usedKB,
+  limitKB,
+}: {
+  usedKB: number;
+  limitKB: number;
+}) {
   if (limitKB > 0) {
     const pct = Math.min(100, Math.round((usedKB / limitKB) * 100));
     return (

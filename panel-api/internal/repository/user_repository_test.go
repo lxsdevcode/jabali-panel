@@ -32,10 +32,10 @@ func TestUserRepository_Create(t *testing.T) {
 		WithArgs(
 			u.ID,
 			u.Email,
-			nil,              // username
-			nil,              // cli_php_version (GH #256)
-			"",               // name_first default
-			"",               // name_last default
+			nil, // username
+			nil, // cli_php_version (GH #256)
+			"",  // name_first default
+			"",  // name_last default
 			u.PasswordHash,
 			false,            // is_admin
 			nil,              // package_id
@@ -51,6 +51,10 @@ func TestUserRepository_Create(t *testing.T) {
 			nil,              // suspended_at
 			"",               // suspend_reason
 			true,             // webmail_enabled (GORM default:1 promotes the zero-value bool)
+			uint64(0),        // disk_used_kb (migration 000257; sweeper fills it in)
+			uint64(0),        // disk_limit_kb
+			nil,              // disk_checked_at — NULL until the first sweep, which is
+			// what makes the UI fall back to the per-row fetch
 			sqlmock.AnyArg(), // created_at
 			sqlmock.AnyArg(), // updated_at
 		).
@@ -114,10 +118,10 @@ func TestUserRepository_SetSuspended_True(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE .users. SET`).
 		WithArgs(
-			"non-payment",      // suspend_reason
-			sqlmock.AnyArg(),    // suspended (true)
-			sqlmock.AnyArg(),    // suspended_at (ptr to now)
-			sqlmock.AnyArg(),    // updated_at
+			"non-payment",    // suspend_reason
+			sqlmock.AnyArg(), // suspended (true)
+			sqlmock.AnyArg(), // suspended_at (ptr to now)
+			sqlmock.AnyArg(), // updated_at
 			"01HRCWR7CKMCBEDF2PYQ7G0D2J",
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -138,9 +142,9 @@ func TestUserRepository_SetSuspended_False_ClearsFields(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE .users. SET`).
 		WithArgs(
-			sqlmock.AnyArg(),    // suspend_reason ('')
-			sqlmock.AnyArg(),    // suspended (false)
-			sqlmock.AnyArg(),    // updated_at — suspended_at = NULL renders inline
+			sqlmock.AnyArg(), // suspend_reason ('')
+			sqlmock.AnyArg(), // suspended (false)
+			sqlmock.AnyArg(), // updated_at — suspended_at = NULL renders inline
 			"01HRCWR7CKMCBEDF2PYQ7G0D2J",
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))

@@ -26,6 +26,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/backupfinalizer"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/backupscheduler"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/db"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/diskusagesweeper"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/drsync"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/eventsources"
@@ -933,6 +934,29 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// mailbox.usage probe + UpdateUsage existed but were never wired).
 	if sharedAgent != nil && deps.Mailboxes != nil {
 		go reconciler.StartMailboxUsageTicker(ctx, sharedAgent, deps.Mailboxes, log)
+	}
+
+	// Disk-usage sweeper: persists users.disk_used_kb so the admin Users
+	// list can sort by it. Optional — without it the column simply falls
+	// back to the per-row fetch and shows no sort control's worth of data.
+	//
+	// Type-asserted rather than passed directly: UpdateDiskUsage lives on
+	// the concrete repo, not on repository.UserRepository, so that adding
+	// this feature didn't force a new method onto nine hand-written test
+	// fakes across the codebase.
+	if store, ok := deps.Users.(diskusagesweeper.UserStore); ok {
+		if sw := diskusagesweeper.New(diskusagesweeper.Deps{
+			Users:      store,
+			Agent:      sharedAgent,
+			QuotaMount: deps.QuotaMount,
+			Log:        log,
+		}); sw != nil {
+			go sw.Start(ctx)
+		} else {
+			log.Info("disk usage sweeper not started (no agent configured)")
+		}
+	} else {
+		log.Info("disk usage sweeper not started (user repo lacks UpdateDiskUsage)")
 	}
 
 	// M30.2 (ADR-0080) backup scheduler + finalizer. Per-destination

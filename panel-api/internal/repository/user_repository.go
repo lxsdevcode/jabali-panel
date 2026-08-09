@@ -127,8 +127,11 @@ func repoErrNotFound() error { return ErrNotFound }
 // is deliberately absent; email/name/username are the obvious admin-search
 // targets. Sort allows flipping between recency and alphabetical.
 var userListCols = ListCols{
-	Search:      []string{"email", "username", "name_first", "name_last"},
-	Sort:        []string{"email", "username", "name_first", "package_id", "created_at", "is_admin"},
+	Search: []string{"email", "username", "name_first", "name_last"},
+	// disk_used_kb is sortable because the sweeper persists it on the row
+	// (migration 000257). A value that only exists behind a per-row API call
+	// cannot appear here — the whitelist is checked against real columns.
+	Sort:        []string{"email", "username", "name_first", "package_id", "created_at", "is_admin", "disk_used_kb"},
 	DefaultSort: "created_at",
 }
 
@@ -164,6 +167,23 @@ func (r *userRepo) List(ctx context.Context, opts ListOptions) ([]models.User, i
 func (r *userRepo) UpdateCLIPHPVersion(ctx context.Context, id string, version *string) error {
 	return translate(r.db.WithContext(ctx).Model(&models.User{}).
 		Where("id = ?", id).Update("cli_php_version", version).Error)
+}
+
+// UpdateDiskUsage writes the sweeper's snapshot. Dedicated method for the
+// same reason UpdateCLIPHPVersion is one: Update() carries a Select
+// allowlist, so these columns would be silently dropped by it.
+//
+// Deliberately does NOT touch updated_at — a background measurement is not
+// a change to the account, and bumping it would make every user row look
+// freshly edited every sweep.
+func (r *userRepo) UpdateDiskUsage(ctx context.Context, id string, usedKB, limitKB uint64, checkedAt time.Time) error {
+	return translate(r.db.WithContext(ctx).Model(&models.User{}).
+		Where("id = ?", id).
+		UpdateColumns(map[string]any{
+			"disk_used_kb":    usedKB,
+			"disk_limit_kb":   limitKB,
+			"disk_checked_at": checkedAt,
+		}).Error)
 }
 
 func (r *userRepo) Update(ctx context.Context, u *models.User) error {
