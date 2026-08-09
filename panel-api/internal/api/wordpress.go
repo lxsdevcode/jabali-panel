@@ -946,9 +946,24 @@ func (h *wordPressHandler) cloneCore(ctx context.Context, sourceInstallID, destD
 		// above had just created with nothing left to reference them — the
 		// same invisible orphan the delete path produced, made silently
 		// (it did not even log a drop attempt).
+		//
+		// Same rule as everywhere else: the rows only go once the host-side
+		// objects actually did.
 		if h.cfg.Agent != nil {
-			h.cfg.Agent.Call(ctx, "db_user.drop", map[string]any{"db_user_name": destDBUsername})
-			h.cfg.Agent.Call(ctx, "db.drop", map[string]any{"db_name": destDBName})
+			dropFailed := false
+			if _, dErr := h.cfg.Agent.Call(ctx, "db_user.drop", map[string]any{"db_user_name": destDBUsername}); dErr != nil {
+				dropFailed = true
+				slog.ErrorContext(ctx, "wordpress clone rollback: db_user.drop failed — keeping the panel rows so the account stays visible instead of becoming an orphan",
+					"err", dErr, "db_user", destDBUsername)
+			}
+			if _, dErr := h.cfg.Agent.Call(ctx, "db.drop", map[string]any{"db_name": destDBName}); dErr != nil {
+				dropFailed = true
+				slog.ErrorContext(ctx, "wordpress clone rollback: db.drop failed — keeping the panel rows so the database stays visible instead of becoming an orphan",
+					"err", dErr, "db_name", destDBName)
+			}
+			if dropFailed {
+				return nil, fmt.Errorf("create clone install: %w", err)
+			}
 		}
 		h.cfg.DatabaseGrants.Delete(ctx, destGrantID)
 		h.cfg.DatabaseUsers.Delete(ctx, destDBUserID)

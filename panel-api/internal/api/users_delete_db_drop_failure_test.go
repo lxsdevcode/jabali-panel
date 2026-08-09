@@ -127,6 +127,25 @@ func TestUserDelete_AbortsWhenDatabaseUserDropFails(t *testing.T) {
 	require.NotNil(t, got)
 }
 
+// The per-user shadow admin (<osuser>_mysqladmin) is not a database_users
+// row, so the loops above never see it. Leaving Databases/DatabaseUsers nil
+// isolates it: the only db_user.drop the handler issues is the shadow one.
+func TestUserDelete_AbortsWhenMysqladminShadowDropFails(t *testing.T) {
+	repo, admin, victim := seedAdminAndVictim(t)
+
+	code := runUserDelete(t, api.UserHandlerConfig{
+		Repo:  repo,
+		Agent: &cascadeDropAgent{failCmd: "db_user.drop"},
+	}, admin.ID, victim.ID)
+
+	require.Equal(t, http.StatusBadGateway, code,
+		"a failed <osuser>_mysqladmin drop must abort — that login has a valid password and no row would be left to find it")
+
+	got, err := repo.FindByID(context.Background(), victim.ID)
+	require.NoError(t, err, "the user row must survive")
+	require.NotNil(t, got)
+}
+
 func TestUserDelete_ProceedsWhenDropsSucceed(t *testing.T) {
 	repo, admin, victim := seedAdminAndVictim(t)
 

@@ -713,7 +713,12 @@ func (h *userHandler) delete(c *gin.Context) {
 		})
 		cancel()
 		if dropErr != nil {
-			slog.Warn("cascade delete: mysqladmin shadow drop failed",
+			// Counts toward the abort like any other login. This account has
+			// a valid password and is not a database_users row, so nothing
+			// downstream would ever find it again — it is the orphan class
+			// the comment above was written for.
+			undropped = append(undropped, shadowUser)
+			slog.Error("cascade delete: mysqladmin shadow drop failed — aborting the user delete so the login is not orphaned",
 				"user_id", id, "mysqladmin_user", shadowUser, "err", dropErr)
 		}
 	}

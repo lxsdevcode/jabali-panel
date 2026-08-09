@@ -245,6 +245,95 @@ func TestRollbackDBChain_KeepsPanelRowsWhenDropFails(t *testing.T) {
 	}
 }
 
+// --- clone rollback (cloneCore) ---
+//
+// The clone provisions the MariaDB database + user through the agent BEFORE
+// it writes the install row. When that write fails, the unwind has to take
+// the host side with it — and stop short of deleting the panel rows if it
+// couldn't.
+
+type cloneInstallRepo struct {
+	repository.ApplicationInstallRepository
+	source *models.WordPressInstall
+}
+
+func (r *cloneInstallRepo) FindByIDAndUserID(_ context.Context, _, _ string) (*models.WordPressInstall, error) {
+	return r.source, nil
+}
+
+func (r *cloneInstallRepo) FindByDomainAndSubdirectory(_ context.Context, _, _ string) (*models.WordPressInstall, error) {
+	return nil, repository.ErrNotFound
+}
+
+func (r *cloneInstallRepo) Create(_ context.Context, _ *models.WordPressInstall) error {
+	return errors.New("install row write failed")
+}
+
+type cloneDomainRepo struct {
+	repository.DomainRepository
+	userID string
+}
+
+func (r *cloneDomainRepo) FindByID(_ context.Context, id string) (*models.Domain, error) {
+	return &models.Domain{ID: id, UserID: r.userID, Name: "dest.example.com"}, nil
+}
+
+type cloneUserRepo struct {
+	repository.UserRepository
+}
+
+func (r *cloneUserRepo) FindByID(_ context.Context, id string) (*models.User, error) {
+	uname := "alice"
+	return &models.User{ID: id, Username: &uname}, nil
+}
+
+func (r *fakeDBRepo) Create(_ context.Context, _ *models.Database) error { return nil }
+
+func (r *fakeDBUserRepo) Create(_ context.Context, _ *models.DatabaseUser) error { return nil }
+
+func (r *fakeGrantRepo) Create(_ context.Context, _ *models.DatabaseUserGrant) error { return nil }
+
+func runCloneRollback(t *testing.T, ag *dropFailAgent) (*fakeDBRepo, *fakeDBUserRepo, *fakeGrantRepo) {
+	t.Helper()
+	dbs := &fakeDBRepo{}
+	dbUsers := &fakeDBUserRepo{}
+	grants := &fakeGrantRepo{}
+	h := &wordPressHandler{cfg: ApplicationHandlerConfig{
+		ApplicationInstalls: &cloneInstallRepo{source: &models.WordPressInstall{ID: "src-1", UserID: "user-1", DomainID: "dom-src"}},
+		Domains:             &cloneDomainRepo{userID: "user-1"},
+		Users:               &cloneUserRepo{},
+		Databases:           dbs,
+		DatabaseUsers:       dbUsers,
+		DatabaseGrants:      grants,
+		Agent:               ag,
+	}}
+	if _, err := h.cloneCore(context.Background(), "src-1", "dom-dest", false, "user-1", false); err == nil {
+		t.Fatal("expected the clone to fail on the install-row write")
+	}
+	return dbs, dbUsers, grants
+}
+
+func TestCloneRollback_KeepsPanelRowsWhenDropFails(t *testing.T) {
+	dbs, dbUsers, grants := runCloneRollback(t, &dropFailAgent{failCmds: map[string]bool{"db.drop": true}})
+
+	if dbs.deleteCount() != 0 || dbUsers.deleteCount() != 0 || grants.deleteCount() != 0 {
+		t.Errorf("clone rollback deleted panel rows after a failed drop; the database and login it just created are now unreferenced")
+	}
+}
+
+func TestCloneRollback_RemovesPanelRowsWhenDropsSucceed(t *testing.T) {
+	ag := &dropFailAgent{}
+	dbs, dbUsers, grants := runCloneRollback(t, ag)
+
+	if !ag.called("db.drop") || !ag.called("db_user.drop") {
+		t.Fatalf("clone rollback must unwind the MariaDB side; calls=%v", ag.calls)
+	}
+	if dbs.deleteCount() != 1 || dbUsers.deleteCount() != 1 || grants.deleteCount() != 1 {
+		t.Errorf("clone rollback must clear the panel rows once the host side is gone; db=%d user=%d grant=%d",
+			dbs.deleteCount(), dbUsers.deleteCount(), grants.deleteCount())
+	}
+}
+
 func TestRollbackDBChain_RemovesPanelRowsWhenDropsSucceed(t *testing.T) {
 	ag := &dropFailAgent{}
 	cfg, _, dbs, dbUsers, grants := newDeleteFixture(ag)
