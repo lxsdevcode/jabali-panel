@@ -61,6 +61,10 @@ type backupCreateParams struct {
 	IsAdmin   bool     `json:"is_admin"`
 	Databases []string `json:"databases,omitempty"`
 	Mailboxes []string `json:"mailboxes,omitempty"`
+	// DockerApps are the slugs of the account's docker apps. Their data
+	// trees live outside the home, so without this the account backs up
+	// without them (GH #954). Empty is normal — most accounts have none.
+	DockerApps []string `json:"docker_apps,omitempty"`
 	// Content selects which stages run (GH #294): "" / "full" = home + db
 	// + mail; "files" = home only; "database" = db only (home excluded);
 	// "folders" = a subset of home (see Folders). db/mail are additionally
@@ -231,6 +235,17 @@ func runBackupOrchestrator(ctx context.Context, req backupCreateParams) error {
 		mailStage.Status, mailStage.BytesAdded, mailStage.BytesTotal, mailStage.Warnings)
 	manifest.Stages = append(manifest.Stages, mailStage)
 
+	// Stage: docker apps. Their data trees sit outside the home, so the
+	// home stage never covered them; content=database excludes them for
+	// the same reason it excludes the home.
+	jl.Printf("stage=docker start apps=%v", req.DockerApps)
+	dockerStages := runDockerStage(ctx, req)
+	for _, s := range dockerStages {
+		jl.Printf("stage=docker done item=%v status=%s bytes_added=%d bytes_total=%d warnings=%v",
+			s.Items, s.Status, s.BytesAdded, s.BytesTotal, s.Warnings)
+	}
+	manifest.Stages = append(manifest.Stages, dockerStages...)
+
 	// Stage: metadata (DB users, app installs, …) — sidecar JSON
 	// produced by panel-api and shipped via the call params.
 	jl.Printf("stage=meta start")
@@ -300,6 +315,70 @@ func runHomeStage(ctx context.Context, req backupCreateParams) backup.ManifestSt
 	// were skipped so the tenant knows the backup is complete-but-partial.
 	st.Warnings = res.Warnings
 	return st
+}
+
+// runDockerStage snapshots each docker app's data tree into the account's
+// repo. It fans out ONE ManifestStage per app, exactly like the db stage:
+// a ManifestStage carries a single SnapshotID, so folding N apps into one
+// stage would leave restore able to materialize only the last of them.
+// Per-app stages also let one failed app show up without hiding the rest.
+func runDockerStage(ctx context.Context, req backupCreateParams) []backup.ManifestStage {
+	skip := func(reason string) []backup.ManifestStage {
+		return []backup.ManifestStage{{
+			Name: backup.StageDocker, Tag: "stage=docker",
+			Status: backup.StageStatusSkipped, Warnings: []string{reason},
+		}}
+	}
+	if len(req.DockerApps) == 0 {
+		return skip("no docker apps")
+	}
+	// content=database is a DB-only backup; app data is file data.
+	if req.Content == "database" {
+		return skip("content=database (docker apps excluded)")
+	}
+	body, _ := json.Marshal(backupDockerParams{
+		JobID: req.JobID, UserID: req.UserID, Username: req.Username,
+		DockerApps: req.DockerApps, ScheduleID: req.ScheduleID,
+		RepoURL: req.RepoURL, CredentialsRef: req.CredentialsRef,
+		SFTP: req.SFTP, Compression: req.Compression,
+		// Must be forwarded — see the note in runHomeStage.
+		PasswordFile: req.PasswordFile,
+	})
+	out, err := backupDockerHandler(ctx, body)
+	if err != nil {
+		return []backup.ManifestStage{{
+			Name: backup.StageDocker, Tag: "stage=docker",
+			Status: backup.StageStatusFailed, Warnings: []string{err.Error()},
+		}}
+	}
+	return dockerStagesFromResult(out.(backupDockerResult))
+}
+
+// dockerStagesFromResult turns per-app snapshot results into one
+// ManifestStage each. Split out from runDockerStage so the shape restore
+// depends on — one stage, one snapshot, one slug in Items — is testable
+// without a restic repo.
+func dockerStagesFromResult(res backupDockerResult) []backup.ManifestStage {
+	stages := make([]backup.ManifestStage, 0, len(res.Snapshots))
+	for _, s := range res.Snapshots {
+		st := backup.ManifestStage{
+			Name: backup.StageDocker, Tag: "stage=docker", Items: []string{s.App},
+		}
+		if s.Error != "" {
+			// Keep the slug on a failed stage too: it is how the operator
+			// (and the restore walk) knows which app is missing.
+			st.Status = backup.StageStatusFailed
+			st.Warnings = []string{s.Error}
+			stages = append(stages, st)
+			continue
+		}
+		st.Status = backup.StageStatusOK
+		st.SnapshotID = s.SnapshotID
+		st.BytesAdded = s.BytesAdded
+		st.BytesTotal = s.BytesTotal
+		stages = append(stages, st)
+	}
+	return stages
 }
 
 func runDatabaseStage(ctx context.Context, req backupCreateParams) []backup.ManifestStage {
