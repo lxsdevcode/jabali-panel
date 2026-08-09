@@ -46,6 +46,10 @@ type BackupHandlerConfig struct {
 	Domains        repository.DomainRepository
 	Mailboxes      repository.MailboxRepository
 	AppInstalls    repository.ApplicationInstallRepository
+	// DockerApps resolves the account's docker app slugs so the backup
+	// covers their data trees (GH #954). Optional: nil means no slugs and
+	// the docker stage records "no docker apps".
+	DockerApps repository.DockerAppRepository
 
 	// Schema-v2 metadata producers — every nullable repo here is queried
 	// when building the per-user metadata bundle so disaster recovery
@@ -478,6 +482,7 @@ func (h *backupHandler) createForUser(c *gin.Context) {
 			"databases":          dbs,
 			"databases_postgres": pgDbs,
 			"mailboxes":          mbs,
+			"docker_apps":        h.cfg.allUserDockerApps(c.Request.Context(), user.ID),
 			"content":            req.Content,
 			"folders":            req.Folders,
 			"compression":        req.Compression,
@@ -1142,6 +1147,33 @@ func (cfg BackupHandlerConfig) allUserDatabasesByEngine(ctx context.Context, use
 	return out
 }
 
+// allUserDockerApps returns the slugs of every docker app the user owns.
+// Their data trees live at /var/lib/jabali/docker-apps/<slug> — outside
+// the home — so the agent has to be told about them explicitly or the
+// backup silently omits the app (GH #954).
+//
+// Nil repo (older wiring, or a deployment without the docker surface)
+// yields no slugs and the stage records "no docker apps", which is the
+// same outcome as an account that has none.
+func (cfg BackupHandlerConfig) allUserDockerApps(ctx context.Context, userID string) []string {
+	if cfg.DockerApps == nil {
+		return nil
+	}
+	rows, err := cfg.DockerApps.ListByUserID(ctx, userID)
+	if err != nil {
+		cfg.logErr("list docker apps for backup", err, "user_id", userID)
+		return nil
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r == nil || r.Slug == "" {
+			continue
+		}
+		out = append(out, r.Slug)
+	}
+	return out
+}
+
 // allUserMailboxes returns every mailbox EmailCached for a user, by
 // joining domains.list_by_user → mailboxes.list_by_domain. Errors
 // per-domain are tolerated (warn + skip) so one bad domain doesn't
@@ -1192,6 +1224,10 @@ type MeBackupsHandlerConfig struct {
 	Domains        repository.DomainRepository
 	Mailboxes      repository.MailboxRepository
 	AppInstalls    repository.ApplicationInstallRepository
+	// DockerApps — see the note on BackupHandlerConfig.DockerApps. The
+	// tenant's own backup must cover their docker apps too, or a
+	// self-service restore comes back without them.
+	DockerApps repository.DockerAppRepository
 
 	SSLCerts       repository.SSLCertificateRepository
 	PHPPools       repository.PHPPoolRepository
@@ -1230,6 +1266,27 @@ type MeBackupsHandlerConfig struct {
 	SSOKey *ssokey.Key
 
 	Log *slog.Logger
+}
+
+// allUserDockerApps mirrors BackupHandlerConfig.allUserDockerApps for the
+// tenant's own backup path.
+func (cfg MeBackupsHandlerConfig) allUserDockerApps(ctx context.Context, userID string) []string {
+	if cfg.DockerApps == nil {
+		return nil
+	}
+	rows, err := cfg.DockerApps.ListByUserID(ctx, userID)
+	if err != nil {
+		cfg.logErr("list docker apps for backup", err, "user_id", userID)
+		return nil
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r == nil || r.Slug == "" {
+			continue
+		}
+		out = append(out, r.Slug)
+	}
+	return out
 }
 
 // buildAccountMetadata projects MeBackupsHandlerConfig into the shared
@@ -1664,6 +1721,7 @@ func (h *meBackupHandler) create(c *gin.Context) {
 			"databases":          dbs,
 			"databases_postgres": pgDbs,
 			"mailboxes":          mbs,
+			"docker_apps":        h.cfg.allUserDockerApps(c.Request.Context(), user.ID),
 			"content":            req.Content,
 			"folders":            req.Folders,
 			"compression":        req.Compression,

@@ -66,7 +66,12 @@ type Deps struct {
 	Domains        repository.DomainRepository
 	Mailboxes      repository.MailboxRepository
 	AppInstalls    repository.ApplicationInstallRepository
-	Settings       repository.ServerSettingsRepository
+	// DockerApps resolves the account's docker app slugs so SCHEDULED
+	// backups cover their data trees too (GH #954) — the nightly job is
+	// the one most accounts actually rely on. Optional; nil means the
+	// docker stage records "no docker apps".
+	DockerApps repository.DockerAppRepository
+	Settings   repository.ServerSettingsRepository
 	// Packages + Notify (GH #454) enforce the per-package retention cap on
 	// SCHEDULED backups too — the on-demand path already does. Both OPTIONAL:
 	// nil Packages skips the cap check entirely (pre-#454 behaviour); nil Notify
@@ -614,6 +619,7 @@ func (s *Scheduler) dispatchAccount(ctx context.Context, j models.BackupJob) {
 		"databases":          dbs,
 		"databases_postgres": pgDbs,
 		"mailboxes":          mbs,
+		"docker_apps":        userDockerApps(callCtx, s.deps, user.ID, logger),
 		"content":            content,
 		"metadata":           meta,
 		"schedule_id":        scheduleID,
@@ -775,6 +781,28 @@ func buildScheduleMetadata(ctx context.Context, deps Deps, user *models.User, lo
 // userMailboxes returns the email addresses of every mailbox under
 // every domain owned by the user. Two-step: domain.list_by_user →
 // mailbox.list_by_domain. Errors per-domain are tolerated.
+// userDockerApps returns the slugs of the account's docker apps. Their
+// data trees live outside the home, so the agent has to be told about
+// them explicitly or the scheduled backup omits the app (GH #954).
+func userDockerApps(ctx context.Context, deps Deps, userID string, logger *slog.Logger) []string {
+	if deps.DockerApps == nil {
+		return nil
+	}
+	rows, err := deps.DockerApps.ListByUserID(ctx, userID)
+	if err != nil {
+		logger.Warn("list docker apps for backup failed", "err", err)
+		return nil
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r == nil || r.Slug == "" {
+			continue
+		}
+		out = append(out, r.Slug)
+	}
+	return out
+}
+
 func userMailboxes(ctx context.Context, deps Deps, userID string, logger *slog.Logger) []string {
 	if deps.Domains == nil || deps.Mailboxes == nil {
 		return nil
