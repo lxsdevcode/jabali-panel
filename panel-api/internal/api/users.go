@@ -622,9 +622,18 @@ func (h *userHandler) delete(c *gin.Context) {
 	}
 
 	// Cascade-drop MariaDB schemas + grants on the data plane BEFORE the
-	// panel row goes (which CASCADEs the metadata rows). Best-effort: any
-	// per-DB failure is logged, never blocks the user delete. Operator
-	// chose destructive — every panel-managed artefact must follow.
+	// panel row goes (which CASCADEs the metadata rows). Operator chose
+	// destructive — every panel-managed artefact must follow.
+	//
+	// A failed drop is NOT best-effort any more. Deleting the users row
+	// cascades the databases/database_users rows away, so a drop that failed
+	// leaves the MariaDB schema and login on the host with nothing left to
+	// name them: invisible to `jabali db list`, excluded from every backup,
+	// grants still live. Collect the failures instead and abort before
+	// h.cfg.Repo.Delete below, which keeps those rows addressable. Retrying
+	// the delete is safe — the domain/docker/ACL steps above are idempotent
+	// and re-list empty on the second run.
+	var undropped []string
 	if h.cfg.Databases != nil && h.cfg.Agent != nil && username != "" {
 		const batchSize = 500
 		for {
@@ -645,7 +654,8 @@ func (h *userHandler) delete(c *gin.Context) {
 				})
 				cancel()
 				if dropErr != nil {
-					slog.Warn("cascade delete: db.drop failed",
+					undropped = append(undropped, dbName)
+					slog.Error("cascade delete: db.drop failed — aborting the user delete so the row stays addressable",
 						"user_id", id, "db_name", dbName, "err", dropErr)
 				}
 			}
@@ -674,7 +684,8 @@ func (h *userHandler) delete(c *gin.Context) {
 				})
 				cancel()
 				if dropErr != nil {
-					slog.Warn("cascade delete: db_user.drop failed",
+					undropped = append(undropped, duName)
+					slog.Error("cascade delete: db_user.drop failed — aborting the user delete so the row stays addressable",
 						"user_id", id, "db_user_name", duName, "err", dropErr)
 				}
 			}
@@ -702,7 +713,12 @@ func (h *userHandler) delete(c *gin.Context) {
 		})
 		cancel()
 		if dropErr != nil {
-			slog.Warn("cascade delete: mysqladmin shadow drop failed",
+			// Counts toward the abort like any other login. This account has
+			// a valid password and is not a database_users row, so nothing
+			// downstream would ever find it again — it is the orphan class
+			// the comment above was written for.
+			undropped = append(undropped, shadowUser)
+			slog.Error("cascade delete: mysqladmin shadow drop failed — aborting the user delete so the login is not orphaned",
 				"user_id", id, "mysqladmin_user", shadowUser, "err", dropErr)
 		}
 	}
@@ -772,6 +788,21 @@ func (h *userHandler) delete(c *gin.Context) {
 				"user_id", id, "username", username, "err", rErr)
 		}
 		rcancel()
+	}
+
+	// Point of no return: this CASCADEs databases/database_users away. If any
+	// host-side drop above failed, stop here — the panel rows are the only
+	// remaining handle on those MariaDB objects.
+	if len(undropped) > 0 {
+		slog.Error("cascade delete: aborted, host-side drops failed",
+			"user_id", id, "objects", undropped)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":   "db_cleanup_failed",
+			"objects": undropped,
+			"detail": "the MariaDB database(s)/user(s) listed could not be dropped, so the account was kept; " +
+				"deleting it now would leave them on the host with no panel row to reach them. Retry the delete once the agent is healthy.",
+		})
+		return
 	}
 
 	if err := h.cfg.Repo.Delete(c.Request.Context(), id); err != nil {

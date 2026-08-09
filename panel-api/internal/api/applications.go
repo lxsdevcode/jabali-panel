@@ -462,9 +462,26 @@ func rollbackDBChain(ctx context.Context, cfg ApplicationHandlerConfig, chain pr
 	if chain.DBID == "" {
 		return
 	}
+	// The agent calls were fire-and-forget: the rows went whether or not the
+	// host-side objects did, so a failed drop left an unreferenced MariaDB
+	// database and login behind. Keep the rows when a drop fails — an
+	// unattached database the owner can see and retry beats one nothing
+	// names.
 	if cfg.Agent != nil {
-		cfg.Agent.Call(ctx, "db_user.drop", map[string]any{"db_user_name": chain.DBUsername})
-		cfg.Agent.Call(ctx, "db.drop", map[string]any{"db_name": chain.DBName})
+		dropFailed := false
+		if _, err := cfg.Agent.Call(ctx, "db_user.drop", map[string]any{"db_user_name": chain.DBUsername}); err != nil {
+			dropFailed = true
+			slog.ErrorContext(ctx, "app install rollback: db_user.drop failed — keeping the panel rows so the account stays visible instead of becoming an orphan",
+				"err", err, "db_user", chain.DBUsername)
+		}
+		if _, err := cfg.Agent.Call(ctx, "db.drop", map[string]any{"db_name": chain.DBName}); err != nil {
+			dropFailed = true
+			slog.ErrorContext(ctx, "app install rollback: db.drop failed — keeping the panel rows so the database stays visible instead of becoming an orphan",
+				"err", err, "db_name", chain.DBName)
+		}
+		if dropFailed {
+			return
+		}
 	}
 	cfg.DatabaseGrants.Delete(ctx, chain.GrantID)
 	cfg.DatabaseUsers.Delete(ctx, chain.DBUserID)
