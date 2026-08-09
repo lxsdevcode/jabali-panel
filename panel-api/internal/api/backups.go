@@ -1166,10 +1166,19 @@ func (cfg BackupHandlerConfig) allUserDockerApps(ctx context.Context, userID str
 	}
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		if r == nil || r.Slug == "" {
+		if r == nil {
 			continue
 		}
-		out = append(out, r.Slug)
+		// EffectiveSlug, NOT Slug: the data tree is
+		// /var/lib/jabali/docker-apps/<effective-slug>, and a second
+		// instance of a catalog app carries an InstanceSlug that differs
+		// from the catalog slug. Using Slug backs up the wrong path (or
+		// the first instance twice).
+		slug := r.EffectiveSlug()
+		if slug == "" {
+			continue
+		}
+		out = append(out, slug)
 	}
 	return out
 }
@@ -1281,10 +1290,19 @@ func (cfg MeBackupsHandlerConfig) allUserDockerApps(ctx context.Context, userID 
 	}
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		if r == nil || r.Slug == "" {
+		if r == nil {
 			continue
 		}
-		out = append(out, r.Slug)
+		// EffectiveSlug, NOT Slug: the data tree is
+		// /var/lib/jabali/docker-apps/<effective-slug>, and a second
+		// instance of a catalog app carries an InstanceSlug that differs
+		// from the catalog slug. Using Slug backs up the wrong path (or
+		// the first instance twice).
+		slug := r.EffectiveSlug()
+		if slug == "" {
+			continue
+		}
+		out = append(out, slug)
 	}
 	return out
 }

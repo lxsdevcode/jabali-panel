@@ -51,6 +51,27 @@ func TestAllUserDockerApps_ErrorDoesNotPanic(t *testing.T) {
 	}
 }
 
+// The data tree is /var/lib/jabali/docker-apps/<EffectiveSlug>. A second
+// instance of a catalog app carries an InstanceSlug that differs from the
+// catalog Slug, so resolving on Slug backs up the wrong directory — or the
+// first instance twice, silently, while the second is never covered.
+//
+// Found on a real box: the installed app's row had slug=uptime-kuma and the
+// directory matched EffectiveSlug, not the install name.
+func TestAllUserDockerApps_UsesEffectiveSlug(t *testing.T) {
+	cfg := BackupHandlerConfig{DockerApps: &stubDockerAppRepo{rows: []*models.DockerApp{
+		{ID: "app-1", Slug: "uptime-kuma", InstanceSlug: "uptime-kuma-2"},
+		{ID: "app-2", Slug: "gitea"},
+	}}}
+	got := cfg.allUserDockerApps(context.Background(), "user-1")
+	if len(got) != 2 || got[0] != "uptime-kuma-2" {
+		t.Fatalf("second instance must resolve to its InstanceSlug, got %#v", got)
+	}
+	if got[1] != "gitea" {
+		t.Errorf("an app without an InstanceSlug should fall back to Slug, got %q", got[1])
+	}
+}
+
 // A row with an empty slug would become /var/lib/jabali/docker-apps/ —
 // the whole root — if it ever reached the agent's path join.
 func TestAllUserDockerApps_SkipsEmptySlug(t *testing.T) {
