@@ -420,8 +420,8 @@ The panel UI is translated on our self-hosted Weblate at
 other locale is written by translators there and merged back into this repo.
 
 Shipping locales: English (source), Arabic, Simplified Chinese, French, German,
-Hebrew, Italian, Japanese, Brazilian Portuguese, Russian, Spanish, Turkish and
-Ukrainian. Arabic and Hebrew render right-to-left.
+Hebrew, Italian, Japanese, Brazilian Portuguese, Romanian, Russian, Spanish,
+Turkish and Ukrainian. Arabic and Hebrew render right-to-left.
 
 ### For translators
 
