@@ -60,7 +60,14 @@ type backupCreateParams struct {
 	Email     string   `json:"email,omitempty"`
 	IsAdmin   bool     `json:"is_admin"`
 	Databases []string `json:"databases,omitempty"`
-	Mailboxes []string `json:"mailboxes,omitempty"`
+	// DatabasesPostgres is the parallel Postgres list. The panel has sent
+	// this field since M37 Phase 2 — but this struct never declared it, so
+	// encoding/json silently dropped the key and every account backup
+	// omitted its Postgres databases while reporting success (GH #1015).
+	// The sub-command (backup.databases) and the .pgdump restore path both
+	// existed the whole time; the orchestrator was the one broken link.
+	DatabasesPostgres []string `json:"databases_postgres,omitempty"`
+	Mailboxes         []string `json:"mailboxes,omitempty"`
 	// DockerApps are the slugs of the account's docker apps. Their data
 	// trees live outside the home, so without this the account backs up
 	// without them (GH #954). Empty is normal — most accounts have none.
@@ -184,8 +191,8 @@ func backupCreateHandler(ctx context.Context, raw json.RawMessage) (any, error) 
 func runBackupOrchestrator(ctx context.Context, req backupCreateParams) error {
 	jl := backup.NewJobLogger(req.JobID)
 	defer jl.Close()
-	jl.Printf("account_backup start user_id=%s username=%s databases=%d mailboxes=%d destination=%s",
-		req.UserID, req.Username, len(req.Databases), len(req.Mailboxes), req.RepoURL)
+	jl.Printf("account_backup start user_id=%s username=%s databases=%d pg_databases=%d mailboxes=%d destination=%s",
+		req.UserID, req.Username, len(req.Databases), len(req.DatabasesPostgres), len(req.Mailboxes), req.RepoURL)
 	if err := bkEnsureRepoReady(ctx, req.RepoURL, req.CredentialsRef, req.DestinationKind, req.PasswordFile, req.SFTP); err != nil {
 		jl.Printf("ensure_repo_failed=%v", err)
 		return fmt.Errorf("ensure repo: %w", err)
@@ -220,7 +227,7 @@ func runBackupOrchestrator(ctx context.Context, req backupCreateParams) error {
 	manifest.Stages = append(manifest.Stages, homeStage)
 
 	// Stage: databases
-	jl.Printf("stage=db start dbs=%v", req.Databases)
+	jl.Printf("stage=db start dbs=%v pg_dbs=%v", req.Databases, req.DatabasesPostgres)
 	dbStages := runDatabaseStage(ctx, req)
 	for _, s := range dbStages {
 		jl.Printf("stage=db done item=%v status=%s bytes_added=%d bytes_total=%d warnings=%v",
@@ -382,7 +389,7 @@ func dockerStagesFromResult(res backupDockerResult) []backup.ManifestStage {
 }
 
 func runDatabaseStage(ctx context.Context, req backupCreateParams) []backup.ManifestStage {
-	if len(req.Databases) == 0 {
+	if len(req.Databases) == 0 && len(req.DatabasesPostgres) == 0 {
 		return []backup.ManifestStage{{
 			Name: backup.StageDB, Tag: "stage=db", Status: backup.StageStatusSkipped,
 			Warnings: []string{"no databases"},
@@ -390,7 +397,8 @@ func runDatabaseStage(ctx context.Context, req backupCreateParams) []backup.Mani
 	}
 	body, _ := json.Marshal(backupDatabasesParams{
 		JobID: req.JobID, UserID: req.UserID, Username: req.Username,
-		Databases: req.Databases, ScheduleID: req.ScheduleID,
+		Databases: req.Databases, DatabasesPostgres: req.DatabasesPostgres,
+		ScheduleID: req.ScheduleID,
 		RepoURL: req.RepoURL, CredentialsRef: req.CredentialsRef,
 		SFTP: req.SFTP, Compression: req.Compression,
 		// See runHomeStage: a per-destination password must reach the

@@ -451,10 +451,28 @@ func applyAccountRestore(
 				}
 				// pg_restore --clean --if-exists drops then re-creates
 				// every object in the dump. Idempotent on re-runs.
+				//
+				// The dump is fed via STDIN, not as a filename: pg_restore
+				// runs as the postgres user, and the staging tree is
+				// root-owned 0750, so a path argument dies with EACCES
+				// every time (found live on GH #1015's round-trip — this
+				// branch had never actually restored anything). Root opens
+				// the file; the child just inherits the fd, and the staging
+				// tree stays root-only. Same trust shape as the MariaDB
+				// branch below, which pipes for the same reason.
+				pgFile, oErr := os.Open(pgPath)
+				if oErr != nil {
+					warnings = append(warnings,
+						fmt.Sprintf("db %s (postgres): open dump: %v", db, oErr))
+					continue
+				}
 				restoreCmd := exec.CommandContext(ctx, "sudo", "-u", "postgres",
 					"pg_restore", "--clean", "--if-exists", "--no-owner",
-					"--no-privileges", "-d", db, pgPath)
-				if rOut, rErr := restoreCmd.CombinedOutput(); rErr != nil {
+					"--no-privileges", "-d", db)
+				restoreCmd.Stdin = pgFile
+				rOut, rErr := restoreCmd.CombinedOutput()
+				pgFile.Close()
+				if rErr != nil {
 					warnings = append(warnings,
 						fmt.Sprintf("db %s (postgres): pg_restore: %v: %s",
 							db, rErr, strings.TrimSpace(string(rOut))))
