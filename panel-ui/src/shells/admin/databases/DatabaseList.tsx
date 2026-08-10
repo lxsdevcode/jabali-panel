@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Card, Space, Table, Tag, Typography } from "antd";
 import { shortDateTime } from "../../../utils/datetime";
 import { useNavigate } from "react-router";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { columnSearchProps } from "../../../components/columnSearch";
 import { RowDeleteButton } from "../../../components/RowDeleteButton";
@@ -43,19 +43,12 @@ export const DatabaseList = () => {
   const handleTableChange: React.ComponentProps<
     typeof Table<Database>
   >["onChange"] = (pagination, _filters, sorter) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<Database> | undefined)
-      : (sorter as SorterResult<Database>);
+    const { sort, order } = sorterToParams<Database>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -109,7 +102,7 @@ export const DatabaseList = () => {
             dataIndex="name"
             title={t("databaselist.database")}
             key="name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<Database>({
               placeholder: "Search by database name",
@@ -137,7 +130,7 @@ export const DatabaseList = () => {
             dataIndex="created_at"
             title={t("databaselist.created")}
             key="created_at"
-            sorter={{ multiple: 2 }}
+            sorter
             render={(date: string) => shortDateTime(date)}
           />
           <Table.Column<Database>

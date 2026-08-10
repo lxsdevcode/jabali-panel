@@ -36,6 +36,7 @@ import {
   useServerTz,
 } from "../../../components/AuditEventDetail";
 import { useTableURL } from "../../../hooks/useTableURL";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 // AuditMaintenanceCard — GH #571. Hash-chain integrity verification (read-only)
 // and retention pruning (destructive), surfaced from the Audit Log. Same core
@@ -142,12 +143,26 @@ export const AdminAuditList = () => {
     defaultOrder: "desc",
   });
 
+  // Project AntD's sorter into the URL params so the server does the
+  // ORDER BY. Without an onChange the sort arrows rendered but changed
+  // nothing at all — the columns declared a server-side sorter and no one
+  // was listening for it.
+  const handleTableChange: React.ComponentProps<typeof Table<AuditRow>>["onChange"] = (
+    _pagination,
+    _filters,
+    sorter,
+  ) => {
+    const { sort, order } = sorterToParams<AuditRow>(sorter);
+    query.setParams({ sort, order, page: 1 });
+  };
+
   return (
     <div>
       <AuditMaintenanceCard />
       <Card>
         <SearchableTableStringQ<AuditRow>
           rowKey="id"
+          onChange={handleTableChange}
           loading={query.isLoading}
           dataSource={query.items}
           initialSearch={query.params.q}
@@ -173,7 +188,7 @@ export const AdminAuditList = () => {
             dataIndex="ts"
             title={`When (${tz})`}
             key="ts"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="descend"
             render={(ts: string) => <code>{fmtTSInTz(ts, tz)}</code>}
           />
@@ -194,7 +209,7 @@ export const AdminAuditList = () => {
           <Table.Column
             title={t("adminauditlist.action")}
             key="action"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(_: unknown, r: AuditRow) => <AuditActionLabel row={r} />}
           />
           <Table.Column
@@ -214,7 +229,7 @@ export const AdminAuditList = () => {
             dataIndex="result"
             title={t("adminauditlist.result")}
             key="result"
-            sorter={{ multiple: 1 }}
+            sorter
             render={resultTag}
           />
         </SearchableTableStringQ>

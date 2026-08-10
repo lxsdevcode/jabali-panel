@@ -21,6 +21,7 @@ import { columnSearchProps } from "../../../components/columnSearch";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { useDeleteMutation } from "../../../hooks/useQueries";
 import { useTableURL } from "../../../hooks/useTableURL";
+import { sorterToParams } from "../../../utils/tableSorter";
 import { EngineTag } from "../../../components/EngineTag";
 import { DatabaseUserDrawer } from "./DatabaseUserDrawer";
 
@@ -136,6 +137,19 @@ export const DatabaseUsersList = () => {
     }
   };
 
+  // Project AntD's sorter into the URL params so the server does the
+  // ORDER BY. Without an onChange the sort arrows rendered but changed
+  // nothing — the columns declared a server-side sorter and nothing was
+  // listening for it.
+  const handleTableChange: React.ComponentProps<typeof Table<DatabaseUser>>["onChange"] = (
+    _pagination,
+    _filters,
+    sorter,
+  ) => {
+    const { sort, order } = sorterToParams<DatabaseUser>(sorter);
+    query.setParams({ sort, order, page: 1 });
+  };
+
   return (
     <div>
       <Space
@@ -161,6 +175,7 @@ export const DatabaseUsersList = () => {
 
       <Card>
         <SearchableTableStringQ<DatabaseUser>
+          onChange={handleTableChange}
           rowKey="id"
           loading={query.isLoading}
           dataSource={query.items}
@@ -180,7 +195,7 @@ export const DatabaseUsersList = () => {
           <Table.Column<DatabaseUser>
             dataIndex="username"
             title={t("databaseuserslist.user")}
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<DatabaseUser>({
               placeholder: "Search by database user",
@@ -199,7 +214,7 @@ export const DatabaseUsersList = () => {
             dataIndex="engine"
             title={t("databaseuserslist.engine")}
             key="engine"
-            sorter={{ multiple: 1 }}
+            sorter
             width={140}
             render={(engine: string | undefined) => (
               <EngineTag engine={engine} />
@@ -246,7 +261,7 @@ export const DatabaseUsersList = () => {
           <Table.Column<DatabaseUser>
             dataIndex="created_at"
             title={t("databaseuserslist.created")}
-            sorter={{ multiple: 2 }}
+            sorter
             render={(date: string) => shortDateTime(date)}
             width={120}
           />

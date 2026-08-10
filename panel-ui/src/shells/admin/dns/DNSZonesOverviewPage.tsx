@@ -16,6 +16,7 @@ import { DNSSECTable } from "../../../components/dnssec/DNSSECTable";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
 import { useTableURL } from "../../../hooks/useTableURL";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 interface Domain {
   id: string;
@@ -88,6 +89,19 @@ const ZonesTab = () => {
     );
   };
 
+  // Project AntD's sorter into the URL params so the server does the
+  // ORDER BY. Without an onChange the sort arrows rendered but changed
+  // nothing — the columns declared a server-side sorter and nothing was
+  // listening for it.
+  const handleTableChange: React.ComponentProps<typeof Table<Domain>>["onChange"] = (
+    _pagination,
+    _filters,
+    sorter,
+  ) => {
+    const { sort, order } = sorterToParams<Domain>(sorter);
+    query.setParams({ sort, order, page: 1 });
+  };
+
   return (
     <>
       <Alert
@@ -102,6 +116,7 @@ const ZonesTab = () => {
         <EmptyWithCTA description={t("dnszonesoverviewpage.no_dns_zones_yet_create_a_domain_to_manage_i")} ctaLabel="Create domain" onCta={() => navigate("/jabali-admin/domains/create")} />
       ) : (
         <SearchableTableStringQ<Domain>
+          onChange={handleTableChange}
           rowKey="id"
           loading={query.isLoading}
           dataSource={query.items}
@@ -119,7 +134,7 @@ const ZonesTab = () => {
             dataIndex="name"
             title={t("dnszonesoverviewpage.domain_name")}
             key="name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<Domain>({
               placeholder: "Search by domain name",
@@ -131,7 +146,7 @@ const ZonesTab = () => {
             dataIndex="username"
             title={t("dnszonesoverviewpage.owner")}
             key="username"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(username: string | null | undefined, record: Domain) =>
               username ?? record.user_id.substring(0, 8)
             }
