@@ -18,7 +18,7 @@ import { adminLinks } from "../../../components/admin/entityLinks";
 import { shortDateTime } from "../../../utils/datetime";
 
 import { startImpersonation } from "../../../impersonation";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
@@ -27,7 +27,7 @@ import { useSelectQuery } from "../../../hooks/useSelectQuery";
 import { useTableURL } from "../../../hooks/useTableURL";
 import { UserDeleteAction } from "./UserDeleteAction";
 import { UserDrawer } from "./UserDrawer";
-import { UserDiskUsage } from "./UserDiskUsage";
+import { UserDiskUsage, UserDiskUsageCell } from "./UserDiskUsage";
 import { UserReset2FAAction } from "./UserReset2FAAction";
 import { UserResetPasswordAction } from "./UserResetPasswordAction";
 import { UserSuspendAction } from "./UserSuspendAction";
@@ -46,6 +46,12 @@ type User = {
   suspend_reason?: string;
   // Hosting package the user is provisioned against; NULL for admins.
   package_id?: string | null;
+  // Disk-usage snapshot persisted by the sweeper so the column can be
+  // sorted server-side. disk_checked_at absent = never swept yet, in which
+  // case the cell falls back to its own /users/:id/usage fetch.
+  disk_used_kb?: number;
+  disk_limit_kb?: number;
+  disk_checked_at?: string | null;
   created_at: string;
 };
 
@@ -199,19 +205,12 @@ function UsersShellTable({
     _filters,
     sorter,
   ) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<User> | undefined)
-      : (sorter as SorterResult<User>);
+    const { sort, order } = sorterToParams<User>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -258,7 +257,7 @@ function UsersShellTable({
         title={t("users.col.username")}
         dataIndex="username"
         key="username"
-        sorter={{ multiple: 1 }}
+        sorter
         defaultSortOrder="ascend"
         render={(v: string | null | undefined, record: User) => (
           <Link to={adminLinks.user(record.id)} style={{ fontFamily: "monospace" }}>
@@ -269,7 +268,7 @@ function UsersShellTable({
       <Table.Column<User>
         title={t("users.col.name")}
         key="name_first"
-        sorter={{ multiple: 1 }}
+        sorter
         filterIcon={() => (
           <SearchOutlined
             style={{ color: query.params.q ? "#ef4444" : undefined }}
@@ -331,7 +330,7 @@ function UsersShellTable({
           title={t("users.col.package")}
           dataIndex="package_id"
           key="package_id"
-          sorter={{ multiple: 1 }}
+          sorter
           render={(pid: string | null | undefined) => {
             if (!pid) return <Typography.Text type="secondary">—</Typography.Text>;
             const name = packageNameById.get(pid);
@@ -349,13 +348,29 @@ function UsersShellTable({
         dataIndex="created_at"
         title={t("users.col.created")}
         key="created_at"
-        sorter={{ multiple: 1 }}
+        sorter
         render={renderCreated}
       />
       {showDiskUsageColumn && (
-        <Table.Column
+        <Table.Column<User>
           title={t("users.col.disk_usage")}
-          render={(_: unknown, r: User) => <UserDiskUsage userId={r.id} />}
+          dataIndex="disk_used_kb"
+          key="disk_used_kb"
+          // Server-side sort (same form as the other columns): the sweeper
+          // persists disk_used_kb, so the DB can ORDER BY it. Sorting the
+          // per-row fetch was impossible — it only ever held the current
+          // page's resolved rows.
+          sorter
+          render={(_: unknown, r: User) =>
+            r.disk_checked_at ? (
+              <UserDiskUsageCell usedKB={r.disk_used_kb ?? 0} limitKB={r.disk_limit_kb ?? 0} />
+            ) : (
+              // Never swept (fresh upgrade, or the sweeper has not reached
+              // this row yet) — fall back to the live per-row fetch so the
+              // column is never blank.
+              <UserDiskUsage userId={r.id} />
+            )
+          }
         />
       )}
       <Table.Column

@@ -90,6 +90,21 @@ type User struct {
 	// 1 = ON (migration 000203). Mail delivery (IMAP/SMTP/JMAP) is unaffected.
 	WebmailEnabled bool `gorm:"column:webmail_enabled;type:tinyint(1);not null;default:1" json:"webmail_enabled"`
 
+	// Disk-usage snapshot, written by the disk-usage sweeper
+	// (panel-api/internal/diskusagesweeper) from the same agent report the
+	// per-user /users/:id/usage endpoint calls.
+	//
+	// It lives on the row so the admin Users list can ORDER BY it: sorting
+	// is server-side against a column whitelist, and a value that only
+	// exists behind a per-row API call cannot be sorted at all.
+	//
+	// DiskCheckedAt NULL = never swept. The UI falls back to the per-row
+	// fetch for those rows, so a freshly-upgraded panel still shows numbers
+	// before the first sweep completes.
+	DiskUsedKB    uint64     `gorm:"column:disk_used_kb;type:bigint unsigned;not null;default:0"  json:"disk_used_kb"`
+	DiskLimitKB   uint64     `gorm:"column:disk_limit_kb;type:bigint unsigned;not null;default:0" json:"disk_limit_kb"`
+	DiskCheckedAt *time.Time `gorm:"column:disk_checked_at;type:datetime(6)"                      json:"disk_checked_at,omitempty"`
+
 	CreatedAt time.Time `gorm:"type:datetime(6);not null" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime(6);not null" json:"updated_at"`
 }
