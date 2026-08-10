@@ -31,6 +31,15 @@ type MailStats = {
     usage_bytes: number;
     quota_bytes: number;
   }[];
+  // GH #873 round 3: per-domain traffic totals over the selected range,
+  // busiest first. Empty until the per-domain sampler has collected a window.
+  traffic: {
+    domain: string;
+    sent: number;
+    received: number;
+    delivered: number;
+    failed: number;
+  }[];
 };
 
 const fmtBytes = (n: number): string => {
@@ -246,6 +255,55 @@ export const MailStatsTab = () => {
           />
         </Col>
       </Row>
+
+      <Card
+        size="small"
+        title={`Traffic by domain (${hours >= 168 ? `${hours / 24}d` : `${hours}h`})`}
+        style={{ marginBottom: 16 }}
+        loading={stats.isLoading}
+      >
+        {(s?.traffic?.length ?? 0) === 0 ? (
+          <Typography.Text type="secondary">
+            Collecting — per-domain counts appear after the first sample once
+            mail flows.
+          </Typography.Text>
+        ) : (
+          <>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, fontSize: 12 }}>
+            Counted from the delivery log by envelope sender/recipient, so totals
+            won't exactly match the server-wide tiles above.
+          </Typography.Paragraph>
+          <Table
+            size="small"
+            rowKey="domain"
+            pagination={false}
+            dataSource={s?.traffic ?? []}
+            columns={[
+              { title: "Domain", dataIndex: "domain" },
+              { title: "Sent", dataIndex: "sent", width: 100, align: "right" },
+              {
+                title: "Received",
+                dataIndex: "received",
+                width: 110,
+                align: "right",
+              },
+              {
+                title: "Delivered",
+                dataIndex: "delivered",
+                width: 110,
+                align: "right",
+              },
+              {
+                title: "Failed",
+                dataIndex: "failed",
+                width: 100,
+                align: "right",
+              },
+            ]}
+          />
+          </>
+        )}
+      </Card>
 
       <Card size="small" title="Storage drilldown" loading={stats.isLoading}>
         <Table
