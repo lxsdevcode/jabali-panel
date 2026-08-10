@@ -22,7 +22,7 @@ import { Button, Card, Dropdown, Space, Table, Tag, Tooltip, Typography } from "
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { DomainDocRootModal } from "./DomainDocRootModal";
@@ -200,19 +200,12 @@ export const UserDomainList = () => {
     _filters,
     sorter,
   ) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<Domain> | undefined)
-      : (sorter as SorterResult<Domain>);
+    const { sort, order } = sorterToParams<Domain>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -258,7 +251,7 @@ export const UserDomainList = () => {
             dataIndex="name"
             title={t("userdomainlist.domain")}
             key="name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<Domain>({
               placeholder: "Search by domain name",

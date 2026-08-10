@@ -37,7 +37,7 @@ import {
   SettingOutlined,
 } from "@icons";
 import { useQueryClient } from "@tanstack/react-query";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { columnSearchProps } from "../../../components/columnSearch";
 import { RowActions } from "../../../components/RowActions";
@@ -352,19 +352,12 @@ export const UserApplicationList = () => {
   const handleTableChange: React.ComponentProps<
     typeof Table<ApplicationInstall>
   >["onChange"] = (pagination, _filters, sorter) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<ApplicationInstall> | undefined)
-      : (sorter as SorterResult<ApplicationInstall>);
+    const { sort, order } = sorterToParams<ApplicationInstall>(sorter);
     tableQuery.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -534,7 +527,7 @@ export const UserApplicationList = () => {
             dataIndex="domain_name"
             title={t("userapplicationlist.domain")}
             key="domain_name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<ApplicationInstall>({
               placeholder: "Search by domain",
@@ -610,7 +603,7 @@ export const UserApplicationList = () => {
             title={t("userapplicationlist.created")}
             responsive={["lg"]}
             key="created_at"
-            sorter={{ multiple: 2 }}
+            sorter
             render={(date: string) => shortDateTime(date)}
           />
           <Table.Column<ApplicationInstall>

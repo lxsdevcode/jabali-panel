@@ -14,6 +14,7 @@ import { columnSearchProps } from "../../../components/columnSearch";
 import { DNSSECTable } from "../../../components/dnssec/DNSSECTable";
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { useTableURL } from "../../../hooks/useTableURL";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 interface Domain {
   id: string;
@@ -85,6 +86,19 @@ const ZonesTab = () => {
     );
   };
 
+  // Project AntD's sorter into the URL params so the server does the
+  // ORDER BY. Without an onChange the sort arrows rendered but changed
+  // nothing — the columns declared a server-side sorter and nothing was
+  // listening for it.
+  const handleTableChange: React.ComponentProps<typeof Table<Domain>>["onChange"] = (
+    _pagination,
+    _filters,
+    sorter,
+  ) => {
+    const { sort, order } = sorterToParams<Domain>(sorter);
+    query.setParams({ sort, order, page: 1 });
+  };
+
   return (
     <>
       <Alert
@@ -99,6 +113,7 @@ const ZonesTab = () => {
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("userdnszonesoverviewpage.no_domains_found")} />
       ) : (
         <SearchableTableStringQ<Domain>
+          onChange={handleTableChange}
           rowKey="id"
           loading={query.isLoading}
           dataSource={query.items}
@@ -116,7 +131,7 @@ const ZonesTab = () => {
             dataIndex="name"
             title={t("userdnszonesoverviewpage.domain_name")}
             key="name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<Domain>({
               placeholder: "Search by domain name",

@@ -21,7 +21,7 @@ import {
 } from "@icons";
 import { useNavigate, useSearchParams, Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { apiClient } from "../../../apiClient";
 import { columnSearchProps } from "../../../components/columnSearch";
@@ -227,19 +227,12 @@ export const DomainList = () => {
     _filters,
     sorter,
   ) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<Domain> | undefined)
-      : (sorter as SorterResult<Domain>);
+    const { sort, order } = sorterToParams<Domain>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -311,7 +304,7 @@ export const DomainList = () => {
             dataIndex="name"
             title={t("domainlist.domain")}
             key="name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             {...columnSearchProps<Domain>({
               placeholder: "Search by domain name",
@@ -341,7 +334,7 @@ export const DomainList = () => {
             dataIndex="username"
             title={t("domainlist.user")}
             key="username"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(username: string | null | undefined, record: Domain) => (
               <Link to={adminLinks.user(record.user_id)}>
                 {username ?? record.user_id.substring(0, 8)}
@@ -352,7 +345,7 @@ export const DomainList = () => {
             dataIndex="is_enabled"
             title={t("domainlist.status")}
             key="is_enabled"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(enabled: boolean) =>
               enabled ? (
                 <Tag color="green">active</Tag>

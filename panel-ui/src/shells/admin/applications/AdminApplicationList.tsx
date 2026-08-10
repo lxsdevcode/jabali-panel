@@ -29,7 +29,7 @@ import {
   SearchOutlined,
 } from "@icons";
 import { RowActions } from "../../../components/RowActions";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { useTableURL } from "../../../hooks/useTableURL";
@@ -168,19 +168,12 @@ export const AdminApplicationList = () => {
   const handleTableChange: React.ComponentProps<
     typeof Table<ApplicationInstall>
   >["onChange"] = (pagination, _filters, sorter) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<ApplicationInstall> | undefined)
-      : (sorter as SorterResult<ApplicationInstall>);
+    const { sort, order } = sorterToParams<ApplicationInstall>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -219,7 +212,7 @@ export const AdminApplicationList = () => {
             dataIndex="domain_name"
             title={t("adminapplicationlist.domain")}
             key="domain_name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             filterIcon={() => (
               <SearchOutlined
@@ -318,7 +311,7 @@ export const AdminApplicationList = () => {
             dataIndex="created_at"
             title={t("adminapplicationlist.created")}
             key="created_at"
-            sorter={{ multiple: 2 }}
+            sorter
             defaultSortOrder="descend"
             render={(date: string) => shortDateTime(date)}
           />

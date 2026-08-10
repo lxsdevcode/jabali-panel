@@ -8,7 +8,7 @@ import { EditOutlined, PackageOpenOutlined, SearchOutlined, DeleteOutlined } fro
 
 import { RowActions } from "../../../components/RowActions";
 import { useNavigate } from "react-router";
-import type { SorterResult } from "antd/es/table/interface";
+import { sorterToParams } from "../../../utils/tableSorter";
 
 import { SearchableTableStringQ } from "../../../components/SearchableTable";
 import { EmptyWithCTA } from "../../../components/EmptyWithCTA";
@@ -49,19 +49,12 @@ export const PackageList = () => {
     _filters,
     sorter,
   ) => {
-    const single = Array.isArray(sorter)
-      ? (sorter[0] as SorterResult<Package> | undefined)
-      : (sorter as SorterResult<Package>);
+    const { sort, order } = sorterToParams<Package>(sorter);
     query.setParams({
       page: pagination.current ?? 1,
       pageSize: pagination.pageSize ?? 20,
-      sort: single?.columnKey ? String(single.columnKey) : undefined,
-      order:
-        single?.order === "ascend"
-          ? "asc"
-          : single?.order === "descend"
-            ? "desc"
-            : undefined,
+      sort,
+      order,
     });
   };
 
@@ -115,7 +108,7 @@ export const PackageList = () => {
             dataIndex="name"
             title={t("packagelist.name")}
             key="name"
-            sorter={{ multiple: 1 }}
+            sorter
             defaultSortOrder="ascend"
             filterIcon={() => (
               <SearchOutlined
@@ -141,42 +134,42 @@ export const PackageList = () => {
             dataIndex="disk_quota_mb"
             title={t("packagelist.disk_mb")}
             key="disk_quota_mb"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="bandwidth_quota_mb"
             title={t("packagelist.bandwidth_mb")}
             key="bandwidth_quota_mb"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="max_domains"
             title={t("packagelist.domains")}
             key="max_domains"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="max_email_accounts"
             title={t("packagelist.email")}
             key="max_email_accounts"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="max_databases"
             title="DB"
             key="max_databases"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(value: number) => formatQuota(value)}
           />
           <Table.Column
             dataIndex="ssh_enabled"
             title={t("packagelist.ssh")}
             key="ssh_enabled"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(enabled: boolean) =>
               enabled ? <Tag color="green">yes</Tag> : <Tag>no</Tag>
             }
@@ -185,7 +178,7 @@ export const PackageList = () => {
             dataIndex="php_exec_enabled"
             title={t("packagelist.php_exec")}
             key="php_exec_enabled"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(enabled: boolean) =>
               enabled ? <Tag color="red">on</Tag> : <Tag>off</Tag>
             }
@@ -194,7 +187,7 @@ export const PackageList = () => {
             dataIndex="created_at"
             title={t("packagelist.created")}
             key="created_at"
-            sorter={{ multiple: 1 }}
+            sorter
             render={(ts: string) => shortDateTime(ts)}
           />
           <Table.Column
