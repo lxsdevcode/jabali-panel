@@ -259,6 +259,16 @@ func DeleteCascade(ctx context.Context, d Deps, dd DeleteDeps, target *models.Us
 		username = *target.Username
 	}
 
+	// dbUserDropCmd / dbUserDropParams mirror the canonical dispatch pair in
+	// api/database_users.go (dbUserCmd / dbUserDropParams), which is
+	// unexported and therefore unreachable from here. Two things differ per
+	// engine and BOTH matter: the command name, and the payload key.
+	//
+	// The MariaDB defaults were being used for every row, so a Postgres role
+	// survived the cascade — and because `db_user.drop` reaches MariaDB,
+	// whose DROP USER IF EXISTS succeeds on a name that was never there, the
+	// failure never surfaced (GH #1013).
+
 	// Cascade-drop MariaDB schemas + grants BEFORE the panel row goes
 	// (which CASCADEs the metadata rows). A failed drop is NOT best-effort:
 	// collect the failures and abort before the row delete below, so the panel
@@ -278,13 +288,22 @@ func DeleteCascade(ctx context.Context, d Deps, dd DeleteDeps, target *models.Us
 			}
 			for i := range dbs {
 				dbName := dbs[i].Name
+				// Dispatch on the engine the row was created with. Sending
+				// db.drop at a postgres row reaches MariaDB, whose
+				// `DROP DATABASE IF EXISTS` cheerfully succeeds on a name that
+				// was never there — so the abort below never fires and the real
+				// Postgres database is orphaned on the HAPPY path, with the
+				// panel row cascaded away behind it (GH #1013).
+				//
+				// databases.go's own delete already picks the command this way.
+				dropCmd := dbDropCmd(dbs[i].Engine)
 				agentCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				_, dropErr := d.Agent.Call(agentCtx, "db.drop", map[string]any{"db_name": dbName})
+				_, dropErr := d.Agent.Call(agentCtx, dropCmd, map[string]any{"db_name": dbName})
 				cancel()
 				if dropErr != nil {
 					undropped = append(undropped, dbName)
-					logError(d, "cascade delete: db.drop failed — aborting so the row stays addressable",
-						"user_id", id, "db_name", dbName, "err", dropErr)
+					logError(d, "cascade delete: database drop failed — aborting so the row stays addressable",
+						"user_id", id, "db_name", dbName, "engine", dbs[i].Engine, "cmd", dropCmd, "err", dropErr)
 				}
 			}
 			if len(dbs) < batchSize {
@@ -305,13 +324,16 @@ func DeleteCascade(ctx context.Context, d Deps, dd DeleteDeps, target *models.Us
 			}
 			for i := range dbus {
 				duName := dbus[i].Username
+				// A Postgres ROLE is not dropped by db_user.drop, and the
+				// payload key differs too — see dbUserDropCmd/Params below.
+				cmd, params := dbUserDropCmd(dbus[i].Engine), dbUserDropParams(dbus[i].Engine, duName)
 				agentCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				_, dropErr := d.Agent.Call(agentCtx, "db_user.drop", map[string]any{"db_user_name": duName})
+				_, dropErr := d.Agent.Call(agentCtx, cmd, params)
 				cancel()
 				if dropErr != nil {
 					undropped = append(undropped, duName)
-					logError(d, "cascade delete: db_user.drop failed — aborting so the row stays addressable",
-						"user_id", id, "db_user_name", duName, "err", dropErr)
+					logError(d, "cascade delete: database user drop failed — aborting so the row stays addressable",
+						"user_id", id, "db_user_name", duName, "engine", dbus[i].Engine, "cmd", cmd, "err", dropErr)
 				}
 			}
 			if len(dbus) < batchSize {
@@ -479,4 +501,33 @@ func logError(d Deps, msg string, args ...any) {
 	if d.Log != nil {
 		d.Log.Error(msg, args...)
 	}
+}
+
+// dbDropCmd returns the agent command that drops a DATABASE for the given
+// engine. Mirrors the dispatch in api/databases.go's delete handler.
+func dbDropCmd(engine string) string {
+	if engine == "postgres" {
+		return "db.postgres.drop_db"
+	}
+	return "db.drop"
+}
+
+// dbUserDropCmd returns the agent command that drops a database login for
+// the given engine. Mirrors api.dbUserCmd(engine, "drop").
+func dbUserDropCmd(engine string) string {
+	if engine == "postgres" {
+		return "db.postgres.drop_role"
+	}
+	return "db_user.drop"
+}
+
+// dbUserDropParams returns the payload shape that command expects. The key
+// differs by engine — a Postgres drop_role reads "role", not
+// "db_user_name", so sending the MariaDB shape is a silent no-op even when
+// the command name is right. Mirrors api.dbUserDropParams.
+func dbUserDropParams(engine, username string) map[string]any {
+	if engine == "postgres" {
+		return map[string]any{"role": username}
+	}
+	return map[string]any{"db_user_name": username}
 }
