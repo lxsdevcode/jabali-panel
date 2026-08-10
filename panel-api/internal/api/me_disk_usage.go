@@ -9,8 +9,10 @@
 //     no live agent call needed). Mail lives in Stalwart's store,
 //     NOT under /home, so it doesn't double-count files.
 //
-//   - Databases — per-database size via `db.size` (MariaDB). PostgreSQL has no
-//     size verb yet, so those report 0 for now.
+//   - Databases — per-database size via `db.size`, for both engines. The
+//     row's engine is forwarded so Postgres is sized with
+//     pg_database_size() rather than a MariaDB information_schema sum that
+//     has no row for it (GH #1005).
 //
 //     GET /api/v1/me/disk-usage -> { total_bytes, quota_bytes, files, email, databases }
 package api
@@ -183,12 +185,18 @@ func (h *meDiskUsageHandler) compute(ctx context.Context, userID string) (diskUs
 		}
 	}
 
-	// --- Databases: per-db size (MariaDB; PostgreSQL has no size verb yet) ---
+	// --- Databases: per-db size, both engines ---
+	//
+	// This used to gate on engine == "mariadb", so every Postgres database
+	// reported 0 B here even after #1012 taught db.size to read
+	// pg_database_size(). The Databases page was fixed; this page kept
+	// skipping them, which is exactly what the reporter saw under
+	// Disk Usage → Databases (GH #1005).
 	if dbs, _, derr := h.cfg.Databases.ListByUserID(ctx, userID, opts); derr == nil {
 		for i := range dbs {
 			var sz uint64
-			if dbs[i].Engine == "mariadb" && h.cfg.Agent != nil {
-				sz = h.dbSize(ctx, dbs[i].Name)
+			if h.cfg.Agent != nil {
+				sz = h.dbSize(ctx, dbs[i].Name, dbs[i].Engine)
 			}
 			resp.Databases.Bytes += sz
 			resp.Databases.Items = append(resp.Databases.Items, diskUsageItem{
@@ -276,11 +284,16 @@ func (h *meDiskUsageHandler) homeUsage(ctx context.Context, username string) (ui
 	return v.Disk.UsedKB * 1024, v.Disk.LimitKB * 1024
 }
 
-// dbSize returns a MariaDB database's size in bytes (0 on any error).
-func (h *meDiskUsageHandler) dbSize(ctx context.Context, name string) uint64 {
+// dbSize returns a database's size in bytes (0 on any error).
+//
+// engine MUST be forwarded: db.size picks pg_database_size() for postgres
+// and the MariaDB information_schema sum otherwise, and information_schema
+// has no row for a Postgres database — it sums to 0 with no error, so the
+// zero looks like an empty database rather than a wrong query (GH #1005).
+func (h *meDiskUsageHandler) dbSize(ctx context.Context, name, engine string) uint64 {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(cctx, "db.size", map[string]any{"db_name": name})
+	raw, err := h.cfg.Agent.Call(cctx, "db.size", map[string]any{"db_name": name, "engine": engine})
 	if err != nil {
 		return 0
 	}
