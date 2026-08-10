@@ -59,6 +59,10 @@ type Reconciler struct {
 	// JAB-235 DNS-01 routing state — see dns01_routing.go.
 	dns01State
 
+	// JAB-236 durable domain deletion — see domain_teardowns.go.
+	domainTeardowns repository.DomainTeardownRepository
+	lastOrphanKey   string
+
 	// sslIssueMu serialises certbot-touching work across the JAB-205
 	// domain worker pool AND the out-of-band ReconcileOne path: certbot
 	// holds a global /var/lib/letsencrypt lock, so two concurrent runs
@@ -915,7 +919,14 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 		"jabali-panel":    true,
 	}
 
-	// 3. Orphan in agent set (no DB row) -> log warning but don't auto-delete
+	// JAB-236: drive pending teardown tombstones FIRST — a site being torn
+	// down through its tombstone is handled, not orphaned, and must not
+	// show up in the orphan report below.
+	pendingTeardowns := r.processDomainTeardowns(ctx)
+
+	// 3. Orphan in agent set (no DB row) -> aggregate ONE warning (on set
+	// change only — see reportOrphanSites for the mandate), never auto-delete.
+	var orphanSites []string
 	for site := range agentSites {
 		if knownSystemSites[site] {
 			continue
@@ -929,8 +940,9 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 		}
 		if _, found := enabledDomains[site]; !found {
 			if _, found := disabledDomains[site]; !found {
-				r.log.Warn("reconcile: orphan site found in agent, no DB row", "site", site,
-					"detail", "manual cleanup may be needed")
+				if !pendingTeardowns[site] {
+					orphanSites = append(orphanSites, site)
+				}
 				// M6.3: also drop the recursor forwarder — idempotent, so
 				// safe even if it was never added. Keeps the forwards file
 				// from accumulating stale zones when a domain gets deleted
@@ -941,6 +953,7 @@ func (r *Reconciler) ReconcileAll(ctx context.Context) error {
 			}
 		}
 	}
+	r.reportOrphanSites(orphanSites)
 
 	tt.mark("disable_orphan_sweep")
 
@@ -2121,27 +2134,6 @@ func (r *Reconciler) resolveListenIPAddress(ctx context.Context, id *uint64, fam
 	return row.Address
 }
 
-// been removed. Called by the DELETE handler after it deletes the row,
-// because once the row is gone ReconcileOne(id) can no longer find it
-// and orphan detection in ReconcileAll is intentionally conservative
-// (log-only). This is the explicit "yes, actually tear this down" path.
-func (r *Reconciler) ReconcileDeleted(ctx context.Context, domainName string) {
-	if domainName == "" {
-		return
-	}
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	_, err := r.agent.Call(callCtx, "domain.delete", map[string]string{"domain": domainName})
-	if err != nil {
-		r.log.Warn("domain delete failed on agent",
-			"domain", domainName,
-			"err", err)
-	}
-
-	// Reconcile DNS zone deletion if DNS repos are wired
-	r.reconcileDNSZoneDeleted(ctx, domainName)
-}
-
 // reconcileDNSZone ensures a domain's DNS zone and records are provisioned
 // on the agent. Called during domain reconciliation to push the zone state
 // to PowerDNS via the agent.
@@ -2266,22 +2258,6 @@ func (r *Reconciler) reconcileDNSZone(ctx context.Context, domain *models.Domain
 		return
 	}
 	r.dnsZonePushed(zone.ID, hash, now)
-}
-
-// reconcileDNSZoneDeleted tears down a DNS zone on the agent after its DB row
-// has been deleted. Called by the domain deletion handler.
-func (r *Reconciler) reconcileDNSZoneDeleted(ctx context.Context, zoneName string) {
-	if r.dnsZones == nil {
-		return // DNS feature not wired — skip
-	}
-	if zoneName == "" {
-		return
-	}
-	pushCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if _, err := r.agent.Call(pushCtx, "dns.zone.delete", map[string]string{"zone": zoneName}); err != nil {
-		r.log.Warn("dns.zone.delete failed", "zone", zoneName, "err", err)
-	}
 }
 
 // linuxUserFromEmail derives the Linux username from an email address.

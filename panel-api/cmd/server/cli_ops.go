@@ -78,46 +78,37 @@ func deleteUserDirect(ctx context.Context, userID string, purgeHome bool) error 
 		}
 	}
 
-	// Cascade domains first. Best-effort per-row so one failure doesn't
-	// strand a half-deleted user — matches the HTTP handler.
+	// Cascade domains first, through the JAB-236 durable path: tombstone
+	// before the row, then the synchronous executor (Stalwart purge +
+	// nginx vhost + pdns zone — the old inline version skipped the zone,
+	// leaking it in the pdns backend). Best-effort per-row so one failure
+	// doesn't strand a half-deleted user; a failed teardown leaves its
+	// tombstone for the reconciler to retry.
 	domains := domainRepoFromDB()
 	if owned, _, err := domains.ListByUserID(ctx, userID, repository.ListOptions{Limit: 500}); err == nil {
+		// sharedAgent is *agent.Client (concrete); assign only when
+		// non-nil — a nil *agent.Client boxed into AgentCaller is a
+		// non-nil interface and would panic inside Call.
+		var caller userops.AgentCaller
+		if sharedAgent != nil {
+			caller = sharedAgent
+		}
+		cascadeDeps := userops.Deps{
+			Domains:         domains,
+			DomainTeardowns: repository.NewDomainTeardownRepository(sharedDB),
+			Agent:           caller,
+			Log:             slog.Default(),
+		}
 		for _, d := range owned {
-			// Purge the domain's Stalwart accounts BEFORE the row delete
-			// FK-cascades the mailbox rows away — same call the HTTP
-			// handler makes. Without this, jabali user delete left the
-			// Stalwart account behind -> re-migrating the same address hit
-			// {"type":"primaryKeyViolation","properties":["email"]}.
-			// sharedAgent is *agent.Client (concrete); nil-guard at the
-			// call site, not inside the helper (a nil *agent.Client boxed
-			// into AgentCaller is a non-nil interface and would panic).
-			if sharedAgent != nil {
-				if err := userops.PurgeDomainMail(ctx, sharedAgent, d.Name); err != nil {
-					slog.Warn("cli delete: stalwart domain purge failed",
-						"user_id", userID, "domain", d.Name, "err", err)
-				}
-			}
-			if err := domains.Delete(ctx, d.ID); err != nil {
+			pending, err := userops.DeleteDomain(ctx, cascadeDeps, d.ID, d.Name, false)
+			if err != nil {
 				slog.Warn("cli delete: cascade domain failed",
-					"user_id", userID, "domain_id", d.ID, "err", err)
+					"user_id", userID, "domain_id", d.ID, "domain", d.Name, "err", err)
 				continue
 			}
-			// Reap the nginx vhost now the row is gone: sites-enabled +
-			// sites-available <domain>.conf, reload, per-domain logs. The HTTP
-			// handler does this via Reconciler.ReconcileDeleted; the CLI has no
-			// reconciler, so it calls the agent's domain.delete RPC directly
-			// (same teardown the domain DELETE route drives). Without it,
-			// `jabali user delete` left orphan /etc/nginx/sites-*/<domain>.conf
-			// behind after the DB row + /home docroot were already gone — the
-			// vhost served a 404-docroot on the deleted domain's Host header.
-			// Best-effort: log + continue, matching the other agent cascades.
-			if sharedAgent != nil {
-				agentCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				if _, err := sharedAgent.Call(agentCtx, "domain.delete", map[string]any{"domain": d.Name}); err != nil {
-					slog.Warn("cli delete: nginx vhost teardown failed",
-						"user_id", userID, "domain", d.Name, "err", err)
-				}
-				cancel()
+			if pending {
+				slog.Warn("cli delete: domain host teardown pending — the reconciler retries it",
+					"user_id", userID, "domain", d.Name)
 			}
 		}
 	}
@@ -245,26 +236,42 @@ func setDomainEnabledDirect(ctx context.Context, domainID string, enabled bool) 
 	return d, nil
 }
 
-// deleteDomainDirect removes a domain row. The reconciler detects the
-// missing row on its next tick and tears down the nginx vhost + SSL cert
-// backlog. No inline nginx call — matches the HTTP handler.
-func deleteDomainDirect(ctx context.Context, domainID string) (*models.Domain, error) {
+// deleteDomainDirect deletes a domain durably (JAB-236): tombstone before
+// the row, then the SYNCHRONOUS host-side teardown (Stalwart purge, nginx
+// vhost, pdns zone) via the shared userops path. teardownPending=true means
+// the row is gone but the agent-side teardown failed — the tombstone stays
+// and the reconciler retries it until it succeeds. Before this, the CLI
+// deleted only the DB row and left the domain SERVING.
+func deleteDomainDirect(ctx context.Context, domainID string) (d *models.Domain, teardownPending bool, err error) {
 	if err := initConfig(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := initDB(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	domains := domainRepoFromDB()
-	d, err := domains.FindByID(ctx, domainID)
+	d, err = domains.FindByID(ctx, domainID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return nil, fmt.Errorf("domain %q not found", domainID)
+			return nil, false, fmt.Errorf("domain %q not found", domainID)
 		}
-		return nil, fmt.Errorf("lookup domain: %w", err)
+		return nil, false, fmt.Errorf("lookup domain: %w", err)
 	}
-	if err := domains.Delete(ctx, domainID); err != nil {
-		return nil, fmt.Errorf("delete domain row: %w", err)
+	// Agent is best-effort at init: without it the row still deletes and
+	// the tombstone carries the teardown to the reconciler.
+	var caller userops.AgentCaller
+	if err := initAgent(); err == nil && sharedAgent != nil {
+		caller = sharedAgent
 	}
-	return d, nil
+	deps := userops.Deps{
+		Domains:         domains,
+		DomainTeardowns: repository.NewDomainTeardownRepository(sharedDB),
+		Agent:           caller,
+		Log:             sharedLog,
+	}
+	teardownPending, err = userops.DeleteDomain(ctx, deps, domainID, d.Name, false)
+	if err != nil {
+		return nil, false, fmt.Errorf("delete domain: %w", err)
+	}
+	return d, teardownPending, nil
 }
