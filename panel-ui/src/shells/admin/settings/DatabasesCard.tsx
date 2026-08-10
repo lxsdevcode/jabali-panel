@@ -20,7 +20,7 @@ import {
   ExclamationCircleOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Skeleton, Space, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Skeleton, Space, Switch, Tag, Typography } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useEffect, useState } from "react";
 
@@ -55,7 +55,7 @@ export function DatabasesCard() {
       );
       setStatus(st.data);
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Could not load PostgreSQL status: ${
           err instanceof Error ? err.message : String(err)
         }`,
@@ -93,9 +93,9 @@ export function DatabasesCard() {
           // keep polling — install may still be running
         }
       }
-      message.success("PostgreSQL installed.");
+      feedback.message.success("PostgreSQL installed.");
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Install failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
@@ -116,13 +116,13 @@ export function DatabasesCard() {
       await persistFlag(next);
       await new Promise((r) => setTimeout(r, 2500));
       await refresh();
-      message.success(
+      feedback.message.success(
         next
           ? "PostgreSQL enabled."
           : "PostgreSQL disabled (data preserved).",
       );
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Toggle failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
@@ -146,10 +146,10 @@ export function DatabasesCard() {
         try {
           await apiClient.post("/admin/databases/postgres/uninstall", {});
           await persistFlag(false);
-          message.success("PostgreSQL uninstalled and data removed.");
+          feedback.message.success("PostgreSQL uninstalled and data removed.");
           await refresh();
         } catch (err) {
-          message.error(
+          feedback.message.error(
             `Uninstall failed: ${
               err instanceof Error ? err.message : String(err)
             }`,

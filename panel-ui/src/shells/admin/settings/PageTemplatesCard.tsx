@@ -3,20 +3,8 @@
 // edit in a Modal with a textarea.
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Button,
-  Card,
-  Input,
-  List,
-  Modal,
-  Popconfirm,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Input, List, Modal, Popconfirm, Space, Switch, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { EditOutlined, ReloadOutlined } from "@icons";
@@ -83,13 +71,13 @@ export const PageTemplatesCard = () => {
         unconfigured_page_enabled: checked,
       });
       qc.invalidateQueries({ queryKey: SETTINGS_KEY });
-      message.success(
+      feedback.message.success(
         checked
           ? "Unconfigured-domain page enabled — unknown hosts now get the branded page"
           : "Unconfigured-domain page disabled — unknown hosts are dropped without a response",
       );
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Toggle failed");
+      feedback.message.error(err instanceof Error ? err.message : "Toggle failed");
     } finally {
       setTogglingUnconfigured(false);
     }
@@ -104,13 +92,13 @@ export const PageTemplatesCard = () => {
         intercept_app_errors_default: checked,
       });
       qc.invalidateQueries({ queryKey: SETTINGS_KEY });
-      message.success(
+      feedback.message.success(
         checked
           ? "Branded page enabled for application errors on all domains (applies within a few minutes; domains can override under Domain → Options)"
           : "Application errors pass through again — apps serve their own 500s",
       );
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Toggle failed");
+      feedback.message.error(err instanceof Error ? err.message : "Toggle failed");
     } finally {
       setTogglingIntercept(false);
     }
@@ -129,7 +117,7 @@ export const PageTemplatesCard = () => {
   const save = async () => {
     if (!editing) return;
     if (new TextEncoder().encode(draft).length > MAX_BYTES) {
-      message.error(`Content exceeds ${Math.round(MAX_BYTES / 1024)} KB`);
+      feedback.message.error(`Content exceeds ${Math.round(MAX_BYTES / 1024)} KB`);
       return;
     }
     setSaving(true);
@@ -138,10 +126,10 @@ export const PageTemplatesCard = () => {
         content: draft,
       });
       qc.invalidateQueries({ queryKey: LIST_KEY });
-      message.success(`${editing.label} saved`);
+      feedback.message.success(`${editing.label} saved`);
       close();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Save failed");
+      feedback.message.error(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
     }
@@ -151,9 +139,9 @@ export const PageTemplatesCard = () => {
     try {
       await apiClient.post(`/admin/settings/page-templates/${row.key}/reset`);
       qc.invalidateQueries({ queryKey: LIST_KEY });
-      message.success(`${row.label} reset to default`);
+      feedback.message.success(`${row.label} reset to default`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Reset failed");
+      feedback.message.error(err instanceof Error ? err.message : "Reset failed");
     }
   };
 

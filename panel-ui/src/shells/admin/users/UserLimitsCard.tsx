@@ -12,20 +12,8 @@
 // cgroup/quota state on its next tick (DB is the source of truth), so there is
 // no separate "apply" button here — a saved override takes effect shortly after.
 import { useState } from "react";
-import {
-  Button,
-  Card,
-  Drawer,
-  Form,
-  InputNumber,
-  Popconfirm,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Drawer, Form, InputNumber, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import type { ColumnsType } from "antd/es/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -109,10 +97,10 @@ export function UserLimitsCard({ userId }: { userId: string }) {
       await apiClient.delete(`/users/${userId}/limit-overrides`);
     },
     onSuccess: async () => {
-      message.success("Overrides cleared — reconciler will apply shortly");
+      feedback.message.success("Overrides cleared — reconciler will apply shortly");
       await qc.invalidateQueries({ queryKey: ["user-usage", userId] });
     },
-    onError: () => message.error("Failed to clear overrides"),
+    onError: () => feedback.message.error("Failed to clear overrides"),
   });
 
   const rows: Row[] = FIELDS.map((f) => {
@@ -254,14 +242,14 @@ function EditOverridesDrawer({
       await apiClient.put(`/users/${userId}/limit-overrides`, payload);
     },
     onSuccess: () => {
-      message.success("Overrides saved — reconciler will apply shortly");
+      feedback.message.success("Overrides saved — reconciler will apply shortly");
       onSaved();
       onClose();
     },
     onError: (err: unknown) => {
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      message.error(detail ? `Validation failed: ${detail}` : "Failed to save overrides");
+      feedback.message.error(detail ? `Validation failed: ${detail}` : "Failed to save overrides");
     },
   });
 

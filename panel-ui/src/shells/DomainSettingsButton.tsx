@@ -16,22 +16,8 @@ import {
   MenuOutlined,
   UpOutlined,
 } from "@icons";
-import {
-  Button,
-  Modal,
-  Alert,
-  Tabs,
-  Input,
-  Typography,
-  Card,
-  Select,
-  Switch,
-  Row,
-  Col,
-  Dropdown,
-  Tag,
-  notification,
-} from "antd";
+import { Button, Modal, Alert, Tabs, Input, Typography, Card, Select, Switch, Row, Col, Dropdown, Tag } from "antd";
+import { feedback } from "../lib/feedback"; // GH #970: themed toasts
 import { useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -835,7 +821,7 @@ const HtaccessImport = ({
         response?: { data?: { error?: string } };
         message?: string;
       };
-      notification.error({
+      feedback.notification.error({
         message: "Could not convert .htaccess",
         description: e.response?.data?.error ?? e.message ?? "Unknown error",
       });
@@ -847,7 +833,7 @@ const HtaccessImport = ({
   const handleAdd = () => {
     if (!preview || preview.rules.length === 0) return;
     onRulesChange([...rules, ...preview.rules]);
-    notification.success({
+    feedback.notification.success({
       message: `Added ${preview.rules.length} rule(s) to the Rule Builder`,
       description: "Review them on the Rule Builder tab, then Save / Apply.",
     });
@@ -1030,7 +1016,7 @@ export const DomainSettingsButton = ({
         nginx_custom_directives: directivesValue,
         nginx_rules: rules,
       });
-      notification.success({ message: "Nginx config saved" });
+      feedback.notification.success({ message: "Nginx config saved" });
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       handleCloseModal();
@@ -1039,7 +1025,7 @@ export const DomainSettingsButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to save",
         description: e.response?.data?.detail ?? e.message ?? "Unknown error",
       });
@@ -1166,7 +1152,7 @@ export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget })
         nginx_custom_directives: directivesValue,
         nginx_rules: rules,
       });
-      notification.success({ message: "Nginx config saved" });
+      feedback.notification.success({ message: "Nginx config saved" });
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
     } catch (err) {
@@ -1174,7 +1160,7 @@ export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget })
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to save",
         description: e.response?.data?.detail ?? e.message ?? "Unknown error",
       });
@@ -1284,7 +1270,7 @@ export const TenantNginxRulesButton = ({
     try {
       // Send ONLY nginx_rules — never nginx_custom_directives (admin-only).
       await apiClient.patch(`/domains/${domain.id}`, { nginx_rules: rules });
-      notification.success({ message: "Rewrite rules saved — applied on the next reconcile" });
+      feedback.notification.success({ message: "Rewrite rules saved — applied on the next reconcile" });
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       close();
@@ -1293,7 +1279,7 @@ export const TenantNginxRulesButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to save rules",
         description: e.response?.data?.detail ?? e.message ?? "Unknown error",
       });

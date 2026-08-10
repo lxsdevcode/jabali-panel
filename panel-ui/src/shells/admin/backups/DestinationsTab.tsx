@@ -8,7 +8,7 @@
 // "Generate new key" inline action that calls the same endpoint with
 // POST.
 import { useTranslation } from "react-i18next";
-import { Alert, Button, Drawer, Form, Input, InputNumber, Modal, Radio, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Drawer, Form, Input, InputNumber, Modal, Radio, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { RowActions } from "../../../components/RowActions";
 import {
@@ -114,7 +114,7 @@ function DestinationDrawer({ open, editing, onClose, onSaved }: DestinationDrawe
       );
       setSshKeys(resp.data.data ?? []);
     } catch (err) {
-      message.error(extractApiError(err, "ssh-key list failed"));
+      feedback.message.error(extractApiError(err, "ssh-key list failed"));
     } finally {
       setKeysLoading(false);
     }
@@ -175,7 +175,7 @@ function DestinationDrawer({ open, editing, onClose, onSaved }: DestinationDrawe
         };
         if (values.sftp_auth === "password") {
           if (!values.sftp_password && !editing?.has_credentials) {
-            message.error("password is required for SFTP password auth");
+            feedback.message.error("password is required for SFTP password auth");
             setBusy(false);
             return;
           }
@@ -208,7 +208,7 @@ function DestinationDrawer({ open, editing, onClose, onSaved }: DestinationDrawe
             `/admin/backup-destinations/${savedID}/test`,
             {},
           );
-          message.success(
+          feedback.message.success(
             resp.data.detail ? `Saved + tested OK — ${resp.data.detail}` : "Saved + tested OK",
           );
         } catch (testErr) {
@@ -221,11 +221,11 @@ function DestinationDrawer({ open, editing, onClose, onSaved }: DestinationDrawe
           return;
         }
       } else {
-        message.success(editing ? "Destination updated" : "Destination created");
+        feedback.message.success(editing ? "Destination updated" : "Destination created");
       }
       onSaved();
     } catch (err) {
-      message.error(extractApiError(err, "Save failed"));
+      feedback.message.error(extractApiError(err, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -474,7 +474,7 @@ function GenerateKeyModal({ open, onClose, onGenerated }: GenerateKeyModalProps)
         has_passphrase: false,
       });
     } catch (err) {
-      message.error(extractApiError(err, "key generation failed"));
+      feedback.message.error(extractApiError(err, "key generation failed"));
     } finally {
       setBusy(false);
     }
@@ -579,7 +579,7 @@ export function DestinationsTab() {
       );
       setRows(resp.data.data ?? []);
     } catch (err) {
-      message.error(extractApiError(err, "Load failed"));
+      feedback.message.error(extractApiError(err, "Load failed"));
     } finally {
       setLoading(false);
     }
@@ -600,10 +600,10 @@ export function DestinationsTab() {
       onOk: async () => {
         try {
           await apiClient.delete(`/admin/backup-destinations/${row.id}`);
-          message.success(`Deleted ${row.name}`);
+          feedback.message.success(`Deleted ${row.name}`);
           void reload();
         } catch (err) {
-          message.error(extractApiError(err, "Delete failed"));
+          feedback.message.error(extractApiError(err, "Delete failed"));
         }
       },
     });
@@ -652,7 +652,7 @@ export function DestinationsTab() {
                   size="small"
                   onClick={() => {
                     void navigator.clipboard.writeText(resp.data.password);
-                    message.success("Copied to clipboard");
+                    feedback.message.success("Copied to clipboard");
                   }}
                 >
                   Copy
@@ -662,7 +662,7 @@ export function DestinationsTab() {
           });
           await reload();
         } catch (err) {
-          message.error(extractApiError(err, "Rotate failed"));
+          feedback.message.error(extractApiError(err, "Rotate failed"));
         } finally {
           setRotatingId(null);
         }
@@ -671,7 +671,7 @@ export function DestinationsTab() {
   };
 
   const handleTest = async (row: BackupDestination) => {
-    const hide = message.loading(`Testing ${row.name}…`, 0);
+    const hide = feedback.message.loading(`Testing ${row.name}…`, 0);
     try {
       const resp = await apiClient.post<{ status: string; detail?: string }>(
         `/admin/backup-destinations/${row.id}/test`,
@@ -679,10 +679,10 @@ export function DestinationsTab() {
       );
       hide();
       const detail = resp.data.detail;
-      message.success(detail ? `OK — ${detail}` : "Connection OK");
+      feedback.message.success(detail ? `OK — ${detail}` : "Connection OK");
     } catch (err) {
       hide();
-      message.error(extractApiError(err, "Test failed"));
+      feedback.message.error(extractApiError(err, "Test failed"));
     }
   };
 

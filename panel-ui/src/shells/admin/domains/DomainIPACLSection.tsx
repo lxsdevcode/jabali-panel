@@ -4,21 +4,8 @@
 // inside the server block; lower priority = higher precedence.
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  InputNumber,
-  Popconfirm,
-  Select,
-  Skeleton,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Form, Input, InputNumber, Popconfirm, Select, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { DeleteOutlined, PlusOutlined } from "@icons";
 
 import {
@@ -64,22 +51,22 @@ export const DomainIPACLSection = ({ domainId }: Props) => {
         priority: values.priority ?? 0,
         comment: values.comment ?? "",
       });
-      message.success("Rule added");
+      feedback.message.success("Rule added");
       form.resetFields();
       setAdding(false);
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string } } })
         ?.response?.data;
-      message.error(resp?.error ?? "Failed to add rule");
+      feedback.message.error(resp?.error ?? "Failed to add rule");
     }
   };
 
   const onDelete = async (aclID: string) => {
     try {
       await remove.mutateAsync({ aclID });
-      message.success("Rule deleted");
+      feedback.message.success("Rule deleted");
     } catch {
-      message.error("Failed to delete rule");
+      feedback.message.error("Failed to delete rule");
     }
   };
 

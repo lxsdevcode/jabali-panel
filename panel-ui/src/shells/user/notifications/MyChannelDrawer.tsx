@@ -4,18 +4,8 @@
 // tenant-creatable kinds. Secrets are write-only: an edit leaves a secret
 // field blank to keep the stored (sealed) value — the placeholder says so.
 import { useEffect, useMemo } from "react";
-import {
-  Alert,
-  Button,
-  Drawer,
-  Form,
-  Grid,
-  Input,
-  InputNumber,
-  Select,
-  Switch,
-  message,
-} from "antd";
+import { Alert, Button, Drawer, Form, Grid, Input, InputNumber, Select, Switch } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 
 import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
 import { apiClient } from "../../../apiClient";
@@ -91,14 +81,14 @@ export function MyChannelDrawer({ open, onClose, existing }: MyChannelDrawerProp
     try {
       if (isEdit && existing) {
         await update.mutateAsync({ id: existing.id, input: values });
-        message.success(`Channel "${values.name}" updated`);
+        feedback.message.success(`Channel "${values.name}" updated`);
       } else {
         await create.mutateAsync(values);
-        message.success(`Channel "${values.name}" created`);
+        feedback.message.success(`Channel "${values.name}" created`);
       }
       onClose();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Save failed");
+      feedback.message.error(err instanceof Error ? err.message : "Save failed");
     }
   };
 
@@ -106,9 +96,9 @@ export function MyChannelDrawer({ open, onClose, existing }: MyChannelDrawerProp
     if (!existing) return;
     try {
       await apiClient.post(`/${RESOURCE}/${existing.id}/test`);
-      message.success(`Test sent to "${existing.name}"`);
+      feedback.message.success(`Test sent to "${existing.name}"`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Test failed");
+      feedback.message.error(err instanceof Error ? err.message : "Test failed");
     }
   };
 

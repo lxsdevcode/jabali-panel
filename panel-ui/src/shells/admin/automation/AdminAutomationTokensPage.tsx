@@ -12,24 +12,8 @@ import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Drawer,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-  theme,
-} from "antd";
+import { Alert, Button, Card, Checkbox, Drawer, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, theme } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { KeyOutlined, PlusOutlined, DeleteOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
@@ -147,7 +131,7 @@ export const AdminAutomationTokensPage = () => {
     try {
       await mint.mutateAsync(values);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Mint failed");
+      feedback.message.error(err instanceof Error ? err.message : "Mint failed");
     }
   };
 
@@ -155,9 +139,9 @@ export const AdminAutomationTokensPage = () => {
     if (!revealSecret) return;
     try {
       await navigator.clipboard.writeText(revealSecret);
-      message.success("Secret copied to clipboard");
+      feedback.message.success("Secret copied to clipboard");
     } catch {
-      message.error("Clipboard access blocked — copy manually");
+      feedback.message.error("Clipboard access blocked — copy manually");
     }
   };
 

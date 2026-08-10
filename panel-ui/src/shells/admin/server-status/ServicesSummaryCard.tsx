@@ -6,13 +6,8 @@
 // those requests are 403'd at the API anyway. Destructive verbs
 // (stop/disable/restart) show a confirm Modal first.
 import { useState } from "react";
-import {
-  Card,
-  Modal,
-  Table,
-  Tag,
-  message,
-} from "antd";
+import { Card, Modal, Table, Tag } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -80,10 +75,10 @@ export function ServicesSummaryCard({ services }: Props) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "server-status"] });
-      message.success("Done");
+      feedback.message.success("Done");
     },
     onError: (e: unknown) => {
-      message.error(e instanceof Error ? e.message : "Service action failed");
+      feedback.message.error(e instanceof Error ? e.message : "Service action failed");
     },
   });
 

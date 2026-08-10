@@ -5,20 +5,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import {
-  Button,
-  
-  Empty,
-  Form,
-  message,
-  Modal,
-  Select,
-  Skeleton,
-  Space,
-  Table,
-  Tag,
-  Typography,
-} from "antd";
+import { Button, Empty, Form, Modal, Select, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../../lib/feedback"; // GH #970: themed toasts
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@icons";
 import { RowActions } from "../../../../components/RowActions";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -110,12 +98,12 @@ export const CatchAllTab = () => {
     const vals = await form.validateFields();
     try {
       await updateMut.mutateAsync({ domainID: vals.domain_id, target: vals.target });
-      message.success("Catch-all updated");
+      feedback.message.success("Catch-all updated");
       setEditOpen(false);
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Failed to update catch-all";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
@@ -202,11 +190,11 @@ export const CatchAllTab = () => {
                       onClick: async () => {
                         try {
                           await deleteMut.mutateAsync(row.domain_id);
-                          message.success("Catch-all cleared");
+                          feedback.message.success("Catch-all cleared");
                         } catch (err) {
                           const msg = (err as { response?: { data?: { error?: string } } })?.response
                             ?.data?.error ?? "Failed to clear";
-                          message.error(msg);
+                          feedback.message.error(msg);
                         }
                       },
                       confirm: { title: `Clear catch-all for ${row.domain_name}?`, okText: "Clear" },

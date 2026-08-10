@@ -1,7 +1,7 @@
 // M30.1 Schedules admin tab. Lists every backup_schedules row, drawer
 // for create/edit, multi-select destinations, "Run now" button.
 import { useTranslation } from "react-i18next";
-import { Alert, Button, Checkbox, Drawer, Form, InputNumber, Radio, Segmented, Select, Space, Switch, Table, Tag, TimePicker, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Drawer, Form, InputNumber, Radio, Segmented, Select, Space, Switch, Table, Tag, TimePicker, Tooltip, Typography } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { RowActions } from "../../../components/RowActions";
 import { shortDateTime } from "../../../utils/datetime";
@@ -242,14 +242,14 @@ function ScheduleDrawer({
         // subset, not both.
         userIDs = hasAll ? [] : selected.filter((u) => u !== ALL_USERS);
         if (!hasAll && userIDs.length === 0) {
-          message.error("Pick at least one user, or 'All users'");
+          feedback.message.error("Pick at least one user, or 'All users'");
           setBusy(false);
           return;
         }
         includeSystem = !!values.include_system_backup;
       }
       if (values.freq === "weekly" && (!values.weekdays || values.weekdays.length === 0)) {
-        message.error("Pick at least one weekday");
+        feedback.message.error("Pick at least one weekday");
         setBusy(false);
         return;
       }
@@ -276,14 +276,14 @@ function ScheduleDrawer({
 
       if (editing) {
         await apiClient.patch(`/admin/backup-schedules/${editing.id}`, body);
-        message.success("Schedule updated");
+        feedback.message.success("Schedule updated");
       } else {
         await apiClient.post("/admin/backup-schedules", body);
-        message.success("Schedule created");
+        feedback.message.success("Schedule created");
       }
       onSaved();
     } catch (err) {
-      message.error(extractApiError(err, "Save failed"));
+      feedback.message.error(extractApiError(err, "Save failed"));
     } finally {
       setBusy(false);
     }
@@ -473,7 +473,7 @@ export function SchedulesTab() {
       setDestinations(d.data.data ?? []);
       setUsers(u.data.data ?? []);
     } catch (err) {
-      message.error(extractApiError(err, "Load failed"));
+      feedback.message.error(extractApiError(err, "Load failed"));
     } finally {
       setLoading(false);
     }
@@ -491,10 +491,10 @@ export function SchedulesTab() {
       onOk: async () => {
         try {
           await apiClient.delete(`/admin/backup-schedules/${row.id}`);
-          message.success("Schedule deleted");
+          feedback.message.success("Schedule deleted");
           void reload();
         } catch (err) {
-          message.error(extractApiError(err, "Delete failed"));
+          feedback.message.error(extractApiError(err, "Delete failed"));
         }
       },
     });
@@ -503,10 +503,10 @@ export function SchedulesTab() {
   const handleRunNow = async (row: BackupSchedule) => {
     try {
       await apiClient.post(`/admin/backup-schedules/${row.id}/run-now`, {});
-      message.success("Schedule queued for the next tick (within 60s)");
+      feedback.message.success("Schedule queued for the next tick (within 60s)");
       void reload();
     } catch (err) {
-      message.error(extractApiError(err, "Run-now failed"));
+      feedback.message.error(extractApiError(err, "Run-now failed"));
     }
   };
 

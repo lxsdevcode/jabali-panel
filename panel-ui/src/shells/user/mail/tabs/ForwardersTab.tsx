@@ -2,24 +2,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import {
-  Button,
-  
-  Empty,
-  Form,
-  Input,
-  message,
-  Modal,
-  Popconfirm,
-  Radio,
-  Select,
-  Skeleton,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Button, Empty, Form, Input, Modal, Popconfirm, Radio, Select, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../../lib/feedback"; // GH #970: themed toasts
 import { DeleteOutlined, PlusOutlined } from "@icons";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
@@ -110,13 +94,13 @@ export const ForwardersTab = () => {
         localPart: vals.type === "alias" ? vals.local_part : undefined,
         target: vals.target,
       });
-      message.success("Forwarder created");
+      feedback.message.success("Forwarder created");
       setOpen(false);
       form.resetFields();
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Failed to create forwarder";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
@@ -184,11 +168,11 @@ export const ForwardersTab = () => {
                   onConfirm={async () => {
                     try {
                       await deleteMut.mutateAsync(row.id);
-                      message.success("Forwarder removed");
+                      feedback.message.success("Forwarder removed");
                     } catch (err) {
                       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
                         ?? "Failed to remove";
-                      message.error(msg);
+                      feedback.message.error(msg);
                     }
                   }}
                   okText={t("forwarderstab.remove")}

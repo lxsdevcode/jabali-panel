@@ -10,20 +10,8 @@
 // rendering the JSON ourselves.
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Anchor,
-  Card,
-  Collapse,
-  Layout,
-  Space,
-  Spin,
-  Tag,
-  Tooltip,
-  Typography,
-  Grid,
-  notification,
-} from "antd";
+import { Alert, Anchor, Card, Collapse, Layout, Space, Spin, Tag, Tooltip, Typography, Grid } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 import { LinkOutlined, DownloadOutlined, LockOutlined } from "@ant-design/icons";
 import { apiClient } from "../../apiClient";
 import { MiniMarkdown } from "../../components/MiniMarkdown";
@@ -88,7 +76,7 @@ export function APIDocsPage(): JSX.Element {
         setSpec(resp.data);
       } catch (err) {
         const e = err as { message?: string };
-        notification.error({
+        feedback.notification.error({
           message: "Failed to load API documentation",
           description: e.message ?? "Unknown error",
         });

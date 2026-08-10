@@ -3,18 +3,8 @@
 // new channel type is a single-file diff.
 import { useEffect, useMemo } from "react";
 import { StandardDrawerFooter } from "../../../components/StandardActionFooter";
-import {
-  Alert,
-  Button,
-  Drawer,
-  Form,
-  Grid,
-  Input,
-  InputNumber,
-  Select,
-  Switch,
-  message,
-} from "antd";
+import { Alert, Button, Drawer, Form, Grid, Input, InputNumber, Select, Switch } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 
 import { apiClient } from "../../../apiClient";
 import { useCreateMutation, useUpdateMutation } from "../../../hooks/useQueries";
@@ -92,15 +82,15 @@ export function AdminChannelDrawer({ open, onClose, existing }: AdminChannelDraw
     try {
       if (isEdit && existing) {
         await update.mutateAsync({ id: existing.id, input: values });
-        message.success(`Channel "${values.name}" updated`);
+        feedback.message.success(`Channel "${values.name}" updated`);
       } else {
         await create.mutateAsync(values);
-        message.success(`Channel "${values.name}" created`);
+        feedback.message.success(`Channel "${values.name}" created`);
       }
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
@@ -108,10 +98,10 @@ export function AdminChannelDrawer({ open, onClose, existing }: AdminChannelDraw
     if (!existing) return;
     try {
       await apiClient.post(`/${RESOURCE}/${existing.id}/test`);
-      message.success(`Test envelope fired for "${existing.name}"`);
+      feedback.message.success(`Test envelope fired for "${existing.name}"`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Test failed";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

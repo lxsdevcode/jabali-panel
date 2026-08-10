@@ -7,20 +7,8 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { shortDateTime } from "../../../utils/datetime";
 import { useTabParam } from "../../../hooks/useTabParam";
-import {
-  Button,
-  Tabs,
-  Col,
-  Empty,
-  Row,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-  Tooltip,
-} from "antd";
+import { Button, Tabs, Col, Empty, Row, Space, Switch, Table, Tag, Typography, Tooltip } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   AppstoreOutlined,
   PlusSquareOutlined,
@@ -125,9 +113,9 @@ const ActionsCell = ({
         "_blank",
         "noopener,noreferrer"
       );
-      message.success("Admin login link opened");
+      feedback.message.success("Admin login link opened");
     } catch {
-      message.error(magicLinkError || "Failed to generate admin login link");
+      feedback.message.error(magicLinkError || "Failed to generate admin login link");
     }
   };
 
@@ -137,14 +125,14 @@ const ActionsCell = ({
     setPurging(true);
     try {
       await apiClient.post(`/domains/${record.domain_id}/cache/purge`);
-      message.success("Page cache purged");
+      feedback.message.success("Page cache purged");
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data
           ?.error ??
         (err as { message?: string })?.message ??
         "Purge failed";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setPurging(false);
     }
@@ -155,14 +143,14 @@ const ActionsCell = ({
     setWarming(true);
     try {
       await apiClient.post(`/applications/${record.id}/cache-warmup`);
-      message.success("Cache warmup started — crawling the site in the background");
+      feedback.message.success("Cache warmup started — crawling the site in the background");
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data
           ?.error ??
         (err as { message?: string })?.message ??
         "Warmup failed";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setWarming(false);
     }
@@ -262,13 +250,13 @@ export const UserApplicationList = () => {
       }>("/applications/scan");
       const { scanned, added } = res.data;
       if (added > 0) {
-        message.success(
+        feedback.message.success(
           `Found ${scanned} app${scanned === 1 ? "" : "s"}, registered ${added} new.`,
         );
       } else if (scanned > 0) {
-        message.info(`Found ${scanned} app${scanned === 1 ? "" : "s"}, all already registered.`);
+        feedback.message.info(`Found ${scanned} app${scanned === 1 ? "" : "s"}, all already registered.`);
       } else {
-        message.info("No applications found on disk.");
+        feedback.message.info("No applications found on disk.");
       }
       qc.invalidateQueries({ queryKey: ["list", "applications"] });
       tableQuery.refetch();
@@ -280,7 +268,7 @@ export const UserApplicationList = () => {
           ?.error ??
         (err as { message?: string })?.message ??
         "Scan failed";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setScanning(false);
     }
@@ -306,7 +294,7 @@ export const UserApplicationList = () => {
     setDeletingId(row.id);
     try {
       await apiClient.delete(`/applications/${row.id}`);
-      message.success(`Deleting ${row.domain_name || row.domain_id}…`);
+      feedback.message.success(`Deleting ${row.domain_name || row.domain_id}…`);
       qc.invalidateQueries({ queryKey: ["list", "applications"] });
       qc.invalidateQueries({ queryKey: ["list", "databases"] });
     } catch (err) {
@@ -319,7 +307,7 @@ export const UserApplicationList = () => {
           ?.error ??
         (err as { message?: string })?.message ??
         "Delete failed";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setDeletingId(null);
     }
@@ -331,7 +319,7 @@ export const UserApplicationList = () => {
     setCachingId(row.id);
     try {
       await apiClient.put(`/applications/${row.id}/cache`, { enabled });
-      message.success(
+      feedback.message.success(
         enabled
           ? `Caching enabled for ${row.domain_name || row.domain_id}`
           : `Caching disabled for ${row.domain_name || row.domain_id}`,
@@ -343,7 +331,7 @@ export const UserApplicationList = () => {
           ?.error ??
         (err as { message?: string })?.message ??
         "Failed to toggle caching";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setCachingId(null);
     }

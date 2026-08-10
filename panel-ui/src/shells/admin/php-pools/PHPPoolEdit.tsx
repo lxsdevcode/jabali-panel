@@ -5,22 +5,8 @@
 // useListQuery + direct apiClient POST/DELETE calls.
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import {
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  message,
-  theme,
-} from "antd";
+import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Typography, theme } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useNavigate, useParams } from "react-router";
 
 import { DeleteOutlined } from "@icons";
@@ -99,12 +85,12 @@ export const PHPPoolEdit = () => {
     if (!id) return;
     try {
       await updateMutation.mutateAsync({ id, input: values });
-      message.success("Pool updated");
+      feedback.message.success("Pool updated");
       navigate("/jabali-admin/php-pools");
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to update pool";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
@@ -123,7 +109,7 @@ export const PHPPoolEdit = () => {
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to add override";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
@@ -137,7 +123,7 @@ export const PHPPoolEdit = () => {
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to delete override";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

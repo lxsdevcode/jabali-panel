@@ -13,18 +13,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import {
-  Modal,
-  Form,
-  Input,
-  Button,
-  Segmented,
-  Space,
-  Typography,
-  message,
-  Alert,
-  Tooltip,
-} from "antd";
+import { Modal, Form, Input, Button, Segmented, Space, Typography, Alert, Tooltip } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CopyOutlined, CheckCircleTwoTone } from "@icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
@@ -121,7 +111,7 @@ export const QuickSetupModal = ({ open, onClose, onSuccess }: Props) => {
         username = userResp.data.username;
         password = userResp.data.password;
       } catch (err) {
-        message.error(
+        feedback.message.error(
           `Database "${dbName}" was created, but user creation failed: ${extractError(err, "unknown")}. You can delete the database from the list.`,
         );
         refreshLists();
@@ -134,7 +124,7 @@ export const QuickSetupModal = ({ open, onClose, onSuccess }: Props) => {
           privileges: ["ALL"],
         });
       } catch (err) {
-        message.warning(
+        feedback.message.warning(
           `Database "${dbName}" and user "${username}" were created, but the grant failed: ${extractError(err, "unknown")}. You can add the grant manually.`,
         );
         setResult({ databaseName: dbName, username, password });
@@ -145,7 +135,7 @@ export const QuickSetupModal = ({ open, onClose, onSuccess }: Props) => {
       setResult({ databaseName: dbName, username, password });
       refreshLists();
     } catch (err) {
-      message.error(extractError(err, "Failed to create database"));
+      feedback.message.error(extractError(err, "Failed to create database"));
     } finally {
       setSubmitting(false);
     }
@@ -154,9 +144,9 @@ export const QuickSetupModal = ({ open, onClose, onSuccess }: Props) => {
   const copy = async (label: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      message.success(`${label} copied`);
+      feedback.message.success(`${label} copied`);
     } catch {
-      message.error(`Could not copy ${label.toLowerCase()}`);
+      feedback.message.error(`Could not copy ${label.toLowerCase()}`);
     }
   };
 

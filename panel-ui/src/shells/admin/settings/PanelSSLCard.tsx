@@ -11,17 +11,8 @@ import {
   ReloadOutlined,
   SafetyOutlined,
 } from "@icons";
-import {
-  Alert,
-  Button,
-  Card,
-  Popconfirm,
-  Space,
-  Switch,
-  Tag,
-  Typography,
-  notification,
-} from "antd";
+import { Alert, Button, Card, Popconfirm, Space, Switch, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   type PanelCertKind,
   type PanelCertificate,
@@ -157,9 +148,9 @@ export function PanelSSLCard() {
 
   const doIssue = (kind: PanelCertKind) =>
     issue.mutate(kind, {
-      onSuccess: () => notification.success({ message: `${kind} cert: issued` }),
+      onSuccess: () => feedback.notification.success({ message: `${kind} cert: issued` }),
       onError: (e) =>
-        notification.error({
+        feedback.notification.error({
           message: `${kind} cert: issue failed`,
           description: String((e as Error).message),
         }),
@@ -215,13 +206,13 @@ export function PanelSSLCard() {
                 { use_le: v },
                 {
                   onSuccess: () =>
-                    notification.success({
+                    feedback.notification.success({
                       message: v
                         ? "Let's Encrypt enabled — issuance runs on the next reconciler tick"
                         : "Let's Encrypt disabled — existing certs stay until expiry",
                     }),
                   onError: (e) =>
-                    notification.error({
+                    feedback.notification.error({
                       message: "Failed to update toggle",
                       description: String((e as Error).message),
                     }),

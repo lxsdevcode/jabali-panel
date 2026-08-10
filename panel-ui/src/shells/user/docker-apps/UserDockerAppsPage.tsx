@@ -7,26 +7,8 @@ import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
 import { RowActions } from "../../../components/RowActions";
 import { CatalogCard, CatalogGrid, CategoryFilter } from "../../../components/catalog";
-import {
-  Alert,
-  Avatar,
-  Button,
-  AutoComplete,
-  Col,
-  Descriptions,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Row,
-  Space,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-  Typography,
-  notification,
-} from "antd";
+import { Alert, Avatar, Button, AutoComplete, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   AppstoreOutlined,
   DeleteOutlined,
@@ -110,7 +92,7 @@ export const UserDockerAppsPage = () => {
       lifecycleAction(id, action),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user-docker-installed"] }),
     onError: (e: AxiosError<{ detail?: string }>) =>
-      notification.error({ message: "Action failed", description: e.response?.data?.detail }),
+      feedback.notification.error({ message: "Action failed", description: e.response?.data?.detail }),
   });
   const remove = useMutation({
     mutationFn: (id: string) => deleteApp(id),
@@ -452,12 +434,12 @@ const InstallModal = ({
     mutationFn: (v: { name: string; domain: string }) =>
       installApp({ slug: entry!.slug, name: v.name, domain: v.domain }),
     onSuccess: () => {
-      notification.success({ message: "Install started" });
+      feedback.notification.success({ message: "Install started" });
       form.resetFields();
       onInstalled();
     },
     onError: (e: AxiosError<{ detail?: string; error?: string }>) =>
-      notification.error({
+      feedback.notification.error({
         message: "Install failed",
         description: e.response?.data?.detail || e.response?.data?.error,
       }),

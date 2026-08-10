@@ -4,23 +4,8 @@
 //
 // Backed by panel-api/internal/api/user_egress.go.
 import { useTranslation } from "react-i18next";
-import {
-  App,
-  Alert,
-  Button,
-  Card,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Statistic,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Statistic, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CheckOutlined, CloseOutlined } from "@icons";
 import { shortDateTime } from "../../../utils/datetime";
 import { RowActions } from "../../../components/RowActions";
@@ -208,7 +193,6 @@ const DropEventsDrawer = ({
     enabled: open,
   });
   const qc = useQueryClient();
-  const { message } = App.useApp();
   // GH #713 Phase 2: one-click "allow this destination" — fetch the policy,
   // append to allowed_extra (preserving state), PUT it back.
   const allow = useMutation({
@@ -229,10 +213,10 @@ const DropEventsDrawer = ({
       });
     },
     onSuccess: () => {
-      message.success("Destination allowed — the reconciler applies it shortly");
+      feedback.message.success("Destination allowed — the reconciler applies it shortly");
       void qc.invalidateQueries({ queryKey: ["admin/users", userID, "egress/drop-events"] });
     },
-    onError: (e) => message.error(String((e as Error).message)),
+    onError: (e) => feedback.message.error(String((e as Error).message)),
   });
   // GH #713 Phase 2: client-side filters (dest substring + protocol).
   const [destFilter, setDestFilter] = useState("");
@@ -367,10 +351,10 @@ const UserEgressDrawer = ({ open, userID, onClose }: UserEgressDrawerProps) => {
           protocol: e.protocol ?? "tcp",
         })),
       });
-      message.success("Egress policy updated");
+      feedback.message.success("Egress policy updated");
       onClose();
     } catch (e) {
-      message.error("Failed to update policy");
+      feedback.message.error("Failed to update policy");
     }
   };
 
@@ -486,7 +470,7 @@ const PendingRequestsTable = ({ rows }: { rows: EgressRequest[] }) => {
                 onClick: () =>
                   decide.mutate(
                     { id: r.id, decision: "approve" },
-                    { onSuccess: () => message.success("Request approved") },
+                    { onSuccess: () => feedback.message.success("Request approved") },
                   ),
                 confirm: { title: "Approve and add to user's allowlist?", okText: "Approve" },
               },
@@ -498,7 +482,7 @@ const PendingRequestsTable = ({ rows }: { rows: EgressRequest[] }) => {
                 onClick: () =>
                   decide.mutate(
                     { id: r.id, decision: "deny" },
-                    { onSuccess: () => message.info("Request denied") },
+                    { onSuccess: () => feedback.message.info("Request denied") },
                   ),
                 confirm: { title: "Deny request?", okText: "Deny" },
               },

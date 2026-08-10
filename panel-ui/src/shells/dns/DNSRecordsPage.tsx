@@ -10,28 +10,8 @@ import {
   PlusOutlined,
 } from "@icons";
 import { RowActions } from "../../components/RowActions";
-import {
-  Button,
-  Drawer,
-  Flex,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  Card,
-  Input,
-  Select,
-  InputNumber,
-  Collapse,
-  Switch,
-  Row,
-  Col,
-  Spin,
-  Empty,
-  notification,
-  Tooltip,
-  Grid,
-} from "antd";
+import { Button, Drawer, Flex, Space, Table, Tag, Typography, Card, Input, Select, InputNumber, Collapse, Switch, Row, Col, Spin, Empty, Tooltip, Grid } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 import { useLocation, useNavigate, useParams } from "react-router";
 
 // Post-M21 notify shim — matches the Refine useNotification().open
@@ -50,7 +30,7 @@ type NotifyInput = {
   description?: React.ReactNode;
 };
 const stableNotifyOpen = (input: NotifyInput) => {
-  notification.open({
+  feedback.notification.open({
     message: input.message,
     description: input.description,
     type: input.type,

@@ -1,23 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Card,
-  Empty,
-  Input,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  Upload,
-  message,
-} from "antd";
+import { Alert, Button, Card, Empty, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography, Upload } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 import type { UploadFile } from "antd";
 import { DeleteOutlined, PlusOutlined, SafetyCertificateOutlined, UploadOutlined } from "@icons";
 
@@ -122,14 +107,14 @@ export const SharedCertificatesCard = () => {
       });
     },
     onSuccess: () => {
-      message.success("Wildcard certificate requested — issuance runs within a minute");
+      feedback.message.success("Wildcard certificate requested — issuance runs within a minute");
       setAcmeOpen(false);
       setAcmeDomainId(undefined);
       queryClient.invalidateQueries({ queryKey: ["shared-certificates"] });
     },
     onError: (err: unknown) => {
       const resp = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
-      message.error(resp?.detail ?? resp?.error ?? "Failed to request certificate");
+      feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to request certificate");
     },
   });
 
@@ -148,14 +133,14 @@ export const SharedCertificatesCard = () => {
       });
     },
     onSuccess: () => {
-      message.success("Shared certificate uploaded");
+      feedback.message.success("Shared certificate uploaded");
       setUploadOpen(false);
       resetForm();
       queryClient.invalidateQueries({ queryKey: ["shared-certificates"] });
     },
     onError: (err: unknown) => {
       const resp = (err as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
-      message.error(resp?.detail ?? resp?.error ?? "Failed to upload certificate");
+      feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to upload certificate");
     },
   });
 
@@ -164,26 +149,26 @@ export const SharedCertificatesCard = () => {
       await apiClient.delete(`/admin/certificates/shared/${id}`);
     },
     onSuccess: () => {
-      message.success("Shared certificate deleted");
+      feedback.message.success("Shared certificate deleted");
       queryClient.invalidateQueries({ queryKey: ["shared-certificates"] });
     },
     onError: (err: unknown) => {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 409) {
-        message.info("Detach every domain from this certificate first");
+        feedback.message.info("Detach every domain from this certificate first");
       } else {
-        message.error("Failed to delete certificate");
+        feedback.message.error("Failed to delete certificate");
       }
     },
   });
 
   const submitUpload = () => {
     if (!name.trim()) {
-      message.error("Give the certificate a name");
+      feedback.message.error("Give the certificate a name");
       return;
     }
     if (!certPem.trim() || !keyPem.trim()) {
-      message.error("Paste both the certificate and the private key");
+      feedback.message.error("Paste both the certificate and the private key");
       return;
     }
     uploadMutation.mutate();
@@ -384,7 +369,7 @@ export const SharedCertificatesCard = () => {
                 beforeUpload={(file: UploadFile & File) => {
                   readFileText(file)
                     .then((text) => setCertPem(text))
-                    .catch(() => message.error("Could not read the certificate file"));
+                    .catch(() => feedback.message.error("Could not read the certificate file"));
                   return false;
                 }}
               >
@@ -411,7 +396,7 @@ export const SharedCertificatesCard = () => {
                 beforeUpload={(file: UploadFile & File) => {
                   readFileText(file)
                     .then((text) => setKeyPem(text))
-                    .catch(() => message.error("Could not read the key file"));
+                    .catch(() => feedback.message.error("Could not read the key file"));
                   return false;
                 }}
               >

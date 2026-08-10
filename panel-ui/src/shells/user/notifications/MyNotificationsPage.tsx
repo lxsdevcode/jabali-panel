@@ -10,20 +10,8 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Card,
-  Empty,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Empty, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import type { AxiosError } from "axios";
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, SendOutlined } from "@icons";
@@ -119,26 +107,26 @@ export function MyNotificationsPage(): JSX.Element {
     try {
       await updateMutation.mutateAsync({ id: row.id, input: { enabled: next } });
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Toggle failed");
+      feedback.message.error(err instanceof Error ? err.message : "Toggle failed");
     }
   };
 
   const removeChannel = async (row: MyChannel) => {
     try {
       await deleteMutation.mutateAsync({ id: row.id });
-      message.success(`Deleted ${row.name}`);
+      feedback.message.success(`Deleted ${row.name}`);
       qc.invalidateQueries({ queryKey: ["list", RT_RESOURCE] });
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Delete failed");
+      feedback.message.error(err instanceof Error ? err.message : "Delete failed");
     }
   };
 
   const testChannel = async (row: MyChannel) => {
     try {
       await apiClient.post(`/${CH_RESOURCE}/${row.id}/test`);
-      message.success(`Test sent to ${row.name}`);
+      feedback.message.success(`Test sent to ${row.name}`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Test failed");
+      feedback.message.error(err instanceof Error ? err.message : "Test failed");
     }
   };
 
@@ -157,7 +145,7 @@ export function MyNotificationsPage(): JSX.Element {
         await apiClient.delete(`/${RT_RESOURCE}/${r.routeId}`);
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Routing update failed");
+      feedback.message.error(err instanceof Error ? err.message : "Routing update failed");
     } finally {
       routesQ.refetch();
     }

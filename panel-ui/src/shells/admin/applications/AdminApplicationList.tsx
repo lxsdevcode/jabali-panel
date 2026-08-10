@@ -9,16 +9,8 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { shortDateTime } from "../../../utils/datetime";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  Input,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Card, Input, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   AppstoreOutlined,
   LoadingOutlined,
@@ -98,13 +90,13 @@ const AdminActionsCell = ({
     setDeleting(true);
     try {
       await apiClient.delete(`/applications/${record.id}`);
-      message.success(
+      feedback.message.success(
         `Deleting ${record.domain_name || record.domain_id}\u2026`,
       );
       qc.invalidateQueries({ queryKey: ["list", "applications"] });
       qc.invalidateQueries({ queryKey: ["list", "databases"] });
     } catch (err) {
-      message.error(
+      feedback.message.error(
         (err as Error)?.message ?? "Failed to delete application",
       );
     } finally {
@@ -120,9 +112,9 @@ const AdminActionsCell = ({
         "_blank",
         "noopener,noreferrer"
       );
-      message.success("Admin login link opened");
+      feedback.message.success("Admin login link opened");
     } catch {
-      message.error(magicLinkError || "Failed to generate admin login link");
+      feedback.message.error(magicLinkError || "Failed to generate admin login link");
     }
   };
 

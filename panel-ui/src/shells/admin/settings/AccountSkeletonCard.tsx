@@ -4,19 +4,8 @@
 // (stored base64) at an operator-chosen relative path.
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Button,
-  Card,
-  Input,
-  List,
-  Modal,
-  Popconfirm,
-  Progress,
-  Space,
-  Typography,
-  Upload,
-  message,
-} from "antd";
+import { Button, Card, Input, List, Modal, Popconfirm, Progress, Space, Typography, Upload } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import type { UploadFile } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -74,7 +63,7 @@ export const AccountSkeletonCard = () => {
       await apiClient.put("/admin/settings/account-skeleton/file", { rel_path: path, content_base64 });
     },
     onSuccess: () => {
-      message.success("File added to the skeleton");
+      feedback.message.success("File added to the skeleton");
       setAdding(false);
       setRelPath("");
       setPending(null);
@@ -82,7 +71,7 @@ export const AccountSkeletonCard = () => {
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string; error?: string } } })?.response?.data;
-      message.error(detail?.detail ?? detail?.error ?? "Upload failed");
+      feedback.message.error(detail?.detail ?? detail?.error ?? "Upload failed");
     },
   });
 
@@ -90,10 +79,10 @@ export const AccountSkeletonCard = () => {
     mutationFn: async (p: string) =>
       apiClient.delete(`/admin/settings/account-skeleton/file`, { params: { path: p } }),
     onSuccess: () => {
-      message.success("Removed");
+      feedback.message.success("Removed");
       qc.invalidateQueries({ queryKey: LIST_KEY });
     },
-    onError: () => message.error("Delete failed"),
+    onError: () => feedback.message.error("Delete failed"),
   });
 
   const data = list.data;

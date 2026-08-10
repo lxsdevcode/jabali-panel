@@ -11,18 +11,8 @@ import {
   PlusOutlined,
   DragOutlined,
 } from "@icons";
-import {
-  Button,
-  Modal,
-  Switch,
-  Row,
-  Col,
-  Input,
-  Select,
-  Card,
-  Typography,
-  notification,
-} from "antd";
+import { Button, Modal, Switch, Row, Col, Input, Select, Card, Typography } from "antd";
+import { feedback } from "../lib/feedback"; // GH #970: themed toasts
 import { useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -296,7 +286,7 @@ export const DomainRedirectsButton = ({
       if (wholeToggle) {
         const url = wholeUrl.trim();
         if (!url) {
-          notification.error({ message: "Enter a redirect URL" });
+          feedback.notification.error({ message: "Enter a redirect URL" });
           setIsSaving(false);
           return;
         }
@@ -323,7 +313,7 @@ export const DomainRedirectsButton = ({
       body.page_redirects = clean.filter((pr) => pr.source && pr.destination);
 
       await apiClient.patch(`/domains/${domain.id}`, body);
-      notification.success({ message: "Redirects saved" });
+      feedback.notification.success({ message: "Redirects saved" });
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       handleCloseModal();
@@ -332,7 +322,7 @@ export const DomainRedirectsButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to save",
         description: e.response?.data?.detail ?? e.message ?? "Unknown error",
       });

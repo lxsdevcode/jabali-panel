@@ -14,20 +14,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useState, useEffect, useMemo } from "react";
-import {
-  Drawer,
-  Form,
-  Grid,
-  Input,
-  Button,
-  Select,
-  Space,
-  Typography,
-  message,
-  Alert,
-  Tooltip,
-  Switch,
-} from "antd";
+import { Drawer, Form, Grid, Input, Button, Select, Space, Typography, Alert, Tooltip, Switch } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { AppstoreOutlined, CheckCircleTwoTone, CheckOutlined, CloseOutlined, CopyOutlined } from "@icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
@@ -387,7 +375,7 @@ export const InstallApplicationModal = ({
       })
       .catch((err) => {
         if (!alive) return;
-        message.error(extractError(err, "Failed to load domains"));
+        feedback.message.error(extractError(err, "Failed to load domains"));
       })
       .finally(() => {
         if (alive) setLoadingDomains(false);
@@ -513,7 +501,7 @@ export const InstallApplicationModal = ({
           },
         ]);
       } else {
-        message.error(extractError(err, "Failed to install application"));
+        feedback.message.error(extractError(err, "Failed to install application"));
       }
     } finally {
       setSubmitting(false);
@@ -523,9 +511,9 @@ export const InstallApplicationModal = ({
   const copy = async (label: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      message.success(`${label} copied`);
+      feedback.message.success(`${label} copied`);
     } catch {
-      message.error(`Could not copy ${label.toLowerCase()}`);
+      feedback.message.error(`Could not copy ${label.toLowerCase()}`);
     }
   };
 

@@ -4,16 +4,8 @@
 // to match the Microsoft 365 wording.
 import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
-import {
-  Button,
-  DatePicker,
-  Form,
-  Input,
-  message,
-  Modal,
-  Popconfirm,
-  Switch,
-} from "antd";
+import { Button, DatePicker, Form, Input, Modal, Popconfirm, Switch } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import dayjs, { type Dayjs } from "dayjs";
 
 import {
@@ -80,26 +72,26 @@ export const AutoReplyModal = ({
           html_body: vals.html_body || null,
         },
       });
-      message.success("Automatic replies saved");
+      feedback.message.success("Automatic replies saved");
       onClose();
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data
           ?.error ?? "Failed to save automatic replies";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
   const turnOff = async () => {
     try {
       await deleteMut.mutateAsync(mailboxId);
-      message.success("Automatic replies turned off");
+      feedback.message.success("Automatic replies turned off");
       onClose();
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data
           ?.error ?? "Failed to turn off";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

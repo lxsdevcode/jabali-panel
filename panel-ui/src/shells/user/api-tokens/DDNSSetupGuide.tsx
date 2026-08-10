@@ -6,17 +6,8 @@
 // existing GET /nic/update shim (api/ddns.go).
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Input,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Input, Space, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { KeyOutlined, ThunderboltOutlined } from "@icons";
 
 const { Paragraph, Text } = Typography;
@@ -76,7 +67,7 @@ export function DDNSSetupGuide(): JSX.Element {
 
   const runTest = async () => {
     if (!token.trim()) {
-      message.warning("Paste a DDNS-scoped token to test");
+      feedback.message.warning("Paste a DDNS-scoped token to test");
       return;
     }
     setTesting(true);

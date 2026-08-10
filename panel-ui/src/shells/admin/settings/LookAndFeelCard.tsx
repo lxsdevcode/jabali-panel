@@ -4,20 +4,8 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 
-import {
-  Button,
-  Card,
-  Col,
-  ColorPicker,
-  Form,
-  Row,
-  Segmented,
-  Space,
-  Tooltip,
-  Typography,
-  Divider,
-  message,
-} from "antd";
+import { Button, Card, Col, ColorPicker, Form, Row, Segmented, Space, Tooltip, Typography, Divider } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useQueryClient } from "@tanstack/react-query";
 
 import { QuestionCircleOutlined, SaveOutlined } from "@icons";
@@ -77,7 +65,7 @@ export const LookAndFeelCard = () => {
         for (const f of COLOR_FIELDS) values[f] = resp.data[f] ?? "";
         form.setFieldsValue(values as Partial<FormShape>);
       } catch (err) {
-        message.error(err instanceof Error ? err.message : "Load failed");
+        feedback.message.error(err instanceof Error ? err.message : "Load failed");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -96,9 +84,9 @@ export const LookAndFeelCard = () => {
       for (const f of COLOR_FIELDS) payload[f] = toHex(values[f]);
       await apiClient.patch("/admin/settings", payload);
       qc.invalidateQueries({ queryKey: ["branding", "public"] });
-      message.success("Look and feel saved");
+      feedback.message.success("Look and feel saved");
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Save failed");
+      feedback.message.error(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
     }

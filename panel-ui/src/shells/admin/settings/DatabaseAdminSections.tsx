@@ -12,23 +12,8 @@ import {
   SettingOutlined,
   ToolOutlined,
 } from "@icons";
-import {
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Segmented,
-  Select,
-  Skeleton,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -62,7 +47,7 @@ function RootPasswordSection() {
       );
       setRevealed({ engine, password: res.data.password });
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Could not rotate ${ENGINE_LABEL[engine]} password: ${
           err instanceof Error ? err.message : String(err)
         }`,
@@ -173,7 +158,7 @@ function ConfigTunerSection() {
         Object.fromEntries(res.data.data.map((p) => [p.name, p.value])),
       );
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Could not load ${e} config: ${
           err instanceof Error ? err.message : String(err)
         }`,
@@ -200,10 +185,10 @@ function ConfigTunerSection() {
     setSaving(true);
     try {
       await apiClient.put("/admin/databases/config", { engine, settings });
-      message.success(`${engine} configuration applied.`);
+      feedback.message.success(`${engine} configuration applied.`);
       void load(engine);
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Apply failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
@@ -334,7 +319,7 @@ function AdminDbConsoleSection() {
       const res = await apiClient.post<{ redirect_url: string }>(path, {});
       window.open(res.data.redirect_url, "_blank", "noopener,noreferrer");
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Could not open ${label}: ${
           err instanceof Error ? err.message : String(err)
         }`,
@@ -428,11 +413,11 @@ function MaintenanceSection() {
         { engine, scope: "all" },
       );
       void poll(res.data.job_id);
-      message.success("Maintenance started.");
+      feedback.message.success("Maintenance started.");
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response
         ?.status;
-      message.error(
+      feedback.message.error(
         status === 409
           ? "A maintenance job is already running for this engine."
           : `Could not start maintenance: ${
@@ -549,10 +534,10 @@ function ProcessesSection() {
   const kill = async (id: string) => {
     try {
       await apiClient.post("/admin/databases/processes/kill", { engine, id });
-      message.success(`Signalled ${id}.`);
+      feedback.message.success(`Signalled ${id}.`);
       void refresh(engine);
     } catch (err) {
-      message.error(
+      feedback.message.error(
         `Kill failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }

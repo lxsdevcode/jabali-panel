@@ -5,7 +5,7 @@
 // client-side and provides password rotation, SSO mint, and delete actions.
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import { Button, Empty, Form, Modal, Progress, Skeleton, Space, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Empty, Form, Modal, Progress, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { feedback } from "../../../../lib/feedback"; // GH #970: themed toasts
 import { RowActions } from "../../../../components/RowActions";
 import { SearchableTableStringQ } from "../../../../components/SearchableTable";
@@ -195,13 +195,13 @@ export const MailboxesTab = () => {
           title: "New mailbox password (auto-generated)",
         });
       } else {
-        message.success("Password updated");
+        feedback.message.success("Password updated");
       }
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         "Failed to reset password";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setRotatingId(null);
     }
@@ -230,11 +230,11 @@ export const MailboxesTab = () => {
             ?.data?.error;
           popup?.close();
           if (code === "sso_unavailable_rotate_password") {
-            message.error(
+            feedback.message.error(
               "Rotate the mailbox password first — SSO material is populated on rotation.",
             );
           } else {
-            message.error("Failed to open webmail");
+            feedback.message.error("Failed to open webmail");
           }
         },
       },
@@ -459,12 +459,12 @@ export const MailboxesTab = () => {
                         onOk: async () => {
                           try {
                             await deleteMutation.mutateAsync({ id: row.id, domainId: row.domain_id });
-                            message.success("Mailbox deleted");
+                            feedback.message.success("Mailbox deleted");
                           } catch (err) {
                             const msg =
                               (err as { response?: { data?: { detail?: string } } })?.response?.data
                                 ?.detail ?? "Failed to delete";
-                            message.error(msg);
+                            feedback.message.error(msg);
                           }
                         },
                       });

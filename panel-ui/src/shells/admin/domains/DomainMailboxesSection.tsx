@@ -8,25 +8,8 @@
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { RowActions } from "../../../components/RowActions";
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Checkbox,
-  InputNumber,
-  Modal,
-  Progress,
-  Select,
-  Skeleton,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Form, Input, Checkbox, InputNumber, Modal, Progress, Select, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   DeleteOutlined,
   KeyOutlined,
@@ -148,11 +131,11 @@ export const DomainMailboxesSection = ({
     const onEnable = async () => {
       try {
         await enableMutation.mutateAsync({ domainId });
-        message.success("Email enabled");
+        feedback.message.success("Email enabled");
       } catch (err) {
         const resp = (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data;
-        message.error(resp?.detail ?? resp?.error ?? "Failed to enable email");
+        feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to enable email");
       }
     };
     return (
@@ -186,13 +169,13 @@ export const DomainMailboxesSection = ({
           title: "New mailbox password (rotation)",
         });
       } else {
-        message.success("Password rotated");
+        feedback.message.success("Password rotated");
       }
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         "Failed to rotate password";
-      message.error(msg);
+      feedback.message.error(msg);
     } finally {
       setRotatingId(null);
     }
@@ -206,7 +189,7 @@ export const DomainMailboxesSection = ({
   const openWebmail = (row: Mailbox) => {
     const popup = window.open("about:blank", "_blank");
     if (!popup) {
-      message.warning(
+      feedback.message.warning(
         "Browser blocked the webmail popup — allow popups for this site or click again.",
       );
       return;
@@ -225,13 +208,13 @@ export const DomainMailboxesSection = ({
           // pre-Step-8 mailboxes (password_enc is NULL) — surface the
           // remediation so the user knows what to do.
           if (resp?.error === "sso_unavailable_rotate_password") {
-            message.warning(
+            feedback.message.warning(
               resp.detail ??
                 "Rotate the mailbox password to enable webmail SSO.",
             );
             return;
           }
-          message.error(resp?.detail ?? resp?.error ?? "Failed to open webmail");
+          feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to open webmail");
         },
       },
     );
@@ -267,12 +250,12 @@ export const DomainMailboxesSection = ({
           title: "New mailbox password",
         });
       } else {
-        message.success(`Mailbox ${resp.email} created`);
+        feedback.message.success(`Mailbox ${resp.email} created`);
       }
     } catch (err) {
       const resp = (err as { response?: { data?: { error?: string; detail?: string } } })
         ?.response?.data;
-      message.error(resp?.detail ?? resp?.error ?? "Failed to create mailbox");
+      feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to create mailbox");
     }
   };
 
@@ -377,10 +360,10 @@ export const DomainMailboxesSection = ({
                       onClick: async () => {
                         try {
                           await deleteMutation.mutateAsync({ id: row.id, domainId });
-                          message.success("Mailbox deleted");
+                          feedback.message.success("Mailbox deleted");
                         } catch (err) {
                           const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Failed to delete";
-                          message.error(msg);
+                          feedback.message.error(msg);
                         }
                       },
                       confirm: { title: `Delete ${row.email}?`, description: "All mail in this mailbox will be removed. This cannot be undone.", okText: "Delete" },

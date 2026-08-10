@@ -8,17 +8,8 @@
 // client (mailto:) with a pre-filled subject + body containing the link
 // + password — the team gets it via inbox.
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  Input,
-  Modal,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Input, Modal, Space, Spin, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 
 import { CopyOutlined, ExportOutlined, MailOutlined } from "@icons";
 
@@ -48,9 +39,9 @@ export function DiagnosticReportModal({ open, onClose }: Props) {
   const copy = async (label: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      message.success(`${label} copied`);
+      feedback.message.success(`${label} copied`);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "copy failed");
+      feedback.message.error(e instanceof Error ? e.message : "copy failed");
     }
   };
 

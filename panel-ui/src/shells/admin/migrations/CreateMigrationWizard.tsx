@@ -20,7 +20,7 @@
 // migrating it into the wizard is M35.2 work.
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import { Alert, Button, Checkbox, Tag, Collapse, Select, Drawer, Form, Input, InputNumber, Radio, Card, Space, Spin, Steps, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Tag, Collapse, Select, Drawer, Form, Input, InputNumber, Radio, Card, Space, Spin, Steps, Typography } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -222,7 +222,7 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
       }
     },
     onError: (e: unknown) => {
-      message.error(
+      feedback.message.error(
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
           "Draft create failed",
       );
@@ -283,7 +283,7 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
         });
         return;
       }
-      message.error(resp?.detail ?? "Connection step failed");
+      feedback.message.error(resp?.detail ?? "Connection step failed");
     },
   });
 
@@ -328,12 +328,12 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
       return data;
     },
     onSuccess: (d) => {
-      message.success(`Batch ${d.batch_id.slice(-6)} queued`);
+      feedback.message.success(`Batch ${d.batch_id.slice(-6)} queued`);
       onCreated?.(d.batch_id);
       handleClose();
     },
     onError: (e: unknown) => {
-      message.error(
+      feedback.message.error(
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
           "Bulk create failed",
       );
@@ -379,15 +379,15 @@ export const CreateMigrationWizard = ({ open, onClose, onCreated }: Props) => {
           ),
         });
       } else if (data?.pull_started) {
-        message.success("Migration submitted — runner pulling now.");
+        feedback.message.success("Migration submitted — runner pulling now.");
       } else {
-        message.success("Migration submitted.");
+        feedback.message.success("Migration submitted.");
       }
       onCreated?.(null);
       handleClose();
     },
     onError: (e: unknown) => {
-      message.error(
+      feedback.message.error(
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
           "Submit failed",
       );

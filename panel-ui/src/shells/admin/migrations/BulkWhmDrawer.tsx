@@ -8,16 +8,8 @@
 // that returns the cPanel account list from a live WHM API session.
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Drawer,
-  Form,
-  Input,
-  Space,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Drawer, Form, Input, Space, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "../../../apiClient";
@@ -57,13 +49,13 @@ export const BulkWhmDrawer = ({ open, onClose, onCreated }: Props) => {
     },
     onSuccess: (data) => {
       setResult(data);
-      message.success(`Batch ${data.batch_id} — ${data.jobs.length} jobs queued`);
+      feedback.message.success(`Batch ${data.batch_id} — ${data.jobs.length} jobs queued`);
       onCreated?.(data.batch_id);
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response
         ?.data?.detail;
-      message.error(detail ?? "Bulk create failed");
+      feedback.message.error(detail ?? "Bulk create failed");
     },
   });
 

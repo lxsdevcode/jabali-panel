@@ -6,18 +6,8 @@
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  Popconfirm,
-  Skeleton,
-  Space,
-  Table,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Form, Input, Popconfirm, Skeleton, Space, Table, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { DeleteOutlined, FolderOpenOutlined, PlusOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
@@ -87,23 +77,23 @@ export const DomainDirectoryPrivacySection = ({
           rule.id,
         ],
       });
-      message.success("Protected directory created");
+      feedback.message.success("Protected directory created");
       form.resetFields();
       setAdding(false);
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string } } })
         ?.response?.data;
       const fallback = err instanceof Error ? err.message : "Failed to add rule";
-      message.error(resp?.error ?? fallback);
+      feedback.message.error(resp?.error ?? fallback);
     }
   };
 
   const onDeleteRule = async (ruleId: string) => {
     try {
       await deleteRule.mutateAsync({ ruleId });
-      message.success("Rule deleted");
+      feedback.message.success("Rule deleted");
     } catch {
-      message.error("Failed to delete rule");
+      feedback.message.error("Failed to delete rule");
     }
   };
 
@@ -286,22 +276,22 @@ const DirectoryPrivacyCredentialsTable = ({
   const onAdd = async (values: CreateCredentialInput) => {
     try {
       await create.mutateAsync(values);
-      message.success("User added");
+      feedback.message.success("User added");
       form.resetFields();
       setAdding(false);
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string } } })
         ?.response?.data;
-      message.error(resp?.error ?? "Failed to add user");
+      feedback.message.error(resp?.error ?? "Failed to add user");
     }
   };
 
   const onDelete = async (credId: string) => {
     try {
       await remove.mutateAsync({ credId });
-      message.success("User deleted");
+      feedback.message.success("User deleted");
     } catch {
-      message.error("Failed to delete user");
+      feedback.message.error("Failed to delete user");
     }
   };
 
