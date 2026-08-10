@@ -9,33 +9,8 @@
 // these endpoints are not the standard {data,total,page,page_size}
 // list shape; they're agent passthroughs.
 import { useTranslation } from "react-i18next";
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Descriptions,
-  Drawer,
-  Empty,
-  Form,
-  Grid,
-  Input,
-  InputNumber,
-  message,
-  Popconfirm,
-  Radio,
-  Segmented,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-  Typography,
-  Flex,
-} from "antd";
+import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Form, Grid, Input, InputNumber, Popconfirm, Radio, Segmented, Row, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography, Flex } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -141,20 +116,20 @@ export const AdminSecurityCrowdsec = () => {
   const submitAdd = async (values: AddDecisionFormValues) => {
     try {
       await addDecision.mutateAsync(values);
-      message.success(`Decision added: ${values.scope}=${values.value}`);
+      feedback.message.success(`Decision added: ${values.scope}=${values.value}`);
       setAddOpen(false);
       addForm.resetFields();
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to add decision");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to add decision");
     }
   };
 
   const onDeleteDecision = async (row: CrowdsecDecision) => {
     try {
       await deleteDecision.mutateAsync(row.id);
-      message.success(`Removed ban on ${row.ip}`);
+      feedback.message.success(`Removed ban on ${row.ip}`);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to remove decision");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to remove decision");
     }
   };
 
@@ -166,9 +141,9 @@ export const AdminSecurityCrowdsec = () => {
         reason: `Whitelisted from active decisions (${row.scenario})`.slice(0, 200),
       });
       await deleteDecision.mutateAsync(row.id);
-      message.success(`Whitelisted ${row.ip} and removed the ban`);
+      feedback.message.success(`Whitelisted ${row.ip} and removed the ban`);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to whitelist IP");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to whitelist IP");
     }
   };
 
@@ -518,9 +493,9 @@ const AppSecGeoblockCard = () => {
   const apply = async () => {
     try {
       await updateGeoblock.mutateAsync({ mode, countries });
-      message.success("AppSec geoblock updated and crowdsec reloaded");
+      feedback.message.success("AppSec geoblock updated and crowdsec reloaded");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to apply geoblock");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to apply geoblock");
     }
   };
 
@@ -717,20 +692,20 @@ const AllowlistsCard = () => {
   const onSubmit = async (values: AllowlistFormValues) => {
     try {
       await addEntry.mutateAsync(values);
-      message.success(`Allowlisted ${values.value}`);
+      feedback.message.success(`Allowlisted ${values.value}`);
       setAddOpen(false);
       form.resetFields();
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to allowlist");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to allowlist");
     }
   };
 
   const onRemove = async (row: CrowdsecAllowlistEntry) => {
     try {
       await removeEntry.mutateAsync(row.value);
-      message.success(`Removed ${row.value} from allowlist`);
+      feedback.message.success(`Removed ${row.value} from allowlist`);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to remove");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to remove");
     }
   };
 
@@ -1027,9 +1002,9 @@ const CaptchaRemediationCard = () => {
         secret_key: values.secret_key, // "" = keep existing
       });
       form.setFieldValue("secret_key", "");
-      message.success("Captcha settings saved");
+      feedback.message.success("Captcha settings saved");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Save failed");
+      feedback.message.error(e instanceof Error ? e.message : "Save failed");
     }
   };
 
@@ -1166,9 +1141,9 @@ const ProfilesCard = () => {
     try {
       await update.mutateAsync(overrides);
       setDraft({});
-      message.success("Profiles saved — crowdsec reloaded");
+      feedback.message.success("Profiles saved — crowdsec reloaded");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Save failed");
+      feedback.message.error(e instanceof Error ? e.message : "Save failed");
     }
   };
 
@@ -1362,9 +1337,9 @@ const RecommendedHubCard = ({
     setPending(`${item.type}:${item.name}`);
     try {
       await install.mutateAsync({ type: item.type, name: item.name });
-      message.success(`Installed ${item.name}`);
+      feedback.message.success(`Installed ${item.name}`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Install failed");
+      feedback.message.error(err instanceof Error ? err.message : "Install failed");
     } finally {
       setPending(null);
     }
@@ -1374,9 +1349,9 @@ const RecommendedHubCard = ({
     setPending(`${item.type}:${item.name}`);
     try {
       await remove.mutateAsync({ type: item.type, name: item.name });
-      message.success(`Removed ${item.name}`);
+      feedback.message.success(`Removed ${item.name}`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Remove failed");
+      feedback.message.error(err instanceof Error ? err.message : "Remove failed");
     } finally {
       setPending(null);
     }
@@ -2061,11 +2036,11 @@ const SensitivityCard = () => {
       await apiClient.patch("/admin/settings", { crowdsec_sensitivity: newLevel });
     },
     onSuccess: () => {
-      message.success("Sensitivity preset applied — CrowdSec reloaded");
+      feedback.message.success("Sensitivity preset applied — CrowdSec reloaded");
       qc.invalidateQueries({ queryKey: ["admin-settings"] });
     },
     onError: (e: unknown) => {
-      message.error(e instanceof Error ? e.message : "Failed to apply");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to apply");
     },
   });
 
@@ -2144,11 +2119,11 @@ const BouncerModeCard = () => {
       await apiClient.patch("/admin/settings", { crowdsec_bouncer_mode: newMode });
     },
     onSuccess: () => {
-      message.success("Bouncer mode applied — nginx reloaded");
+      feedback.message.success("Bouncer mode applied — nginx reloaded");
       qc.invalidateQueries({ queryKey: ["admin-settings"] });
     },
     onError: (e: unknown) => {
-      message.error(e instanceof Error ? e.message : "Failed to apply");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to apply");
     },
   });
 
@@ -2232,11 +2207,11 @@ const LoginAllowlistCard = () => {
       });
     },
     onSuccess: () => {
-      message.success("Login allowlist policy applied");
+      feedback.message.success("Login allowlist policy applied");
       qc.invalidateQueries({ queryKey: ["admin-settings"] });
     },
     onError: (e: unknown) => {
-      message.error(e instanceof Error ? e.message : "Failed to apply");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to apply");
     },
   });
 

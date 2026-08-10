@@ -7,14 +7,8 @@
 // loads the secret. Copy + Download buttons let the operator stash
 // it in a password manager / printed sheet / off-host vault.
 import { useTranslation } from "react-i18next";
-import {
-  Alert,
-  Button,
-  Input,
-  Space,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Input, Space, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   CopyOutlined,
   DownloadOutlined,
@@ -54,7 +48,7 @@ export function EncryptionKeyCard() {
       setSecret(resp.data);
       setRevealed(true);
     } catch (err) {
-      message.error(extractApiError(err, "reveal failed"));
+      feedback.message.error(extractApiError(err, "reveal failed"));
     } finally {
       setBusy(false);
     }
@@ -64,9 +58,9 @@ export function EncryptionKeyCard() {
     if (!secret) return;
     try {
       await navigator.clipboard.writeText(secret.password);
-      message.success("password copied to clipboard");
+      feedback.message.success("password copied to clipboard");
     } catch {
-      message.error("clipboard access denied — copy manually from the field");
+      feedback.message.error("clipboard access denied — copy manually from the field");
     }
   };
 

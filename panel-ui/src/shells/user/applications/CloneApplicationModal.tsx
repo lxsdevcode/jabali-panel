@@ -6,14 +6,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import {
-  Modal,
-  Form,
-  Select,
-  Button,
-  message,
-  Typography,
-} from "antd";
+import { Modal, Form, Select, Button, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../apiClient";
 
@@ -82,7 +76,7 @@ export const CloneApplicationModal = ({
       })
       .catch((err) => {
         if (!alive) return;
-        message.error(extractError(err, "Failed to load domains"));
+        feedback.message.error(extractError(err, "Failed to load domains"));
       })
       .finally(() => {
         if (alive) setLoadingDomains(false);
@@ -113,11 +107,11 @@ export const CloneApplicationModal = ({
       await apiClient.post(`/applications/${installId}/clone`, {
         dest_domain_id: vals.dest_domain_id,
       });
-      message.success("Cloning started…");
+      feedback.message.success("Cloning started…");
       refreshLists();
       handleClose();
     } catch (err) {
-      message.error(extractError(err as ApiError, "Failed to clone application"));
+      feedback.message.error(extractError(err as ApiError, "Failed to clone application"));
     } finally {
       setSubmitting(false);
     }

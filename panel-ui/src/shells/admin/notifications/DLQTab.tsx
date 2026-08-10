@@ -6,17 +6,8 @@
 // the stream via XTRIM MAXLEN 0.
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Empty,
-  Popconfirm,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Button, Empty, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useState } from "react";
 
 import { DeleteOutlined, ReloadOutlined, RedoOutlined } from "@icons";
@@ -72,12 +63,12 @@ export const DLQTab = () => {
     setBusyID(row.id);
     try {
       await apiClient.post(`/admin/notifications/dlq/${row.id}/replay`);
-      message.success("Re-queued for delivery");
+      feedback.message.success("Re-queued for delivery");
       qc.invalidateQueries({ queryKey: ["notifications", "dlq"] });
     } catch (err) {
       const apiMsg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      message.error(apiMsg ?? (err instanceof Error ? err.message : "Replay failed"));
+      feedback.message.error(apiMsg ?? (err instanceof Error ? err.message : "Replay failed"));
     } finally {
       setBusyID(null);
     }
@@ -87,10 +78,10 @@ export const DLQTab = () => {
     setBusyID(row.id);
     try {
       await apiClient.delete(`/admin/notifications/dlq/${row.id}`);
-      message.success("Entry dropped");
+      feedback.message.success("Entry dropped");
       qc.invalidateQueries({ queryKey: ["notifications", "dlq"] });
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Drop failed");
+      feedback.message.error(err instanceof Error ? err.message : "Drop failed");
     } finally {
       setBusyID(null);
     }
@@ -99,10 +90,10 @@ export const DLQTab = () => {
   const clearAll = async () => {
     try {
       await apiClient.delete("/admin/notifications/dlq");
-      message.success("DLQ cleared");
+      feedback.message.success("DLQ cleared");
       qc.invalidateQueries({ queryKey: ["notifications", "dlq"] });
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Clear failed");
+      feedback.message.error(err instanceof Error ? err.message : "Clear failed");
     }
   };
 
@@ -118,10 +109,10 @@ export const DLQTab = () => {
         data.skipped > 0
           ? `Replayed ${data.replayed}, skipped ${data.skipped} legacy entries`
           : `Replayed ${data.replayed} envelopes`;
-      message.success(msg);
+      feedback.message.success(msg);
       qc.invalidateQueries({ queryKey: ["notifications", "dlq"] });
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Replay all failed");
+      feedback.message.error(err instanceof Error ? err.message : "Replay all failed");
     } finally {
       setReplayingAll(false);
     }

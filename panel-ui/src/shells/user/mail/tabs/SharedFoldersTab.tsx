@@ -2,22 +2,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import {
-  Button,
-  
-  Checkbox,
-  Empty,
-  Form,
-  message,
-  Modal,
-  Popconfirm,
-  Select,
-  Skeleton,
-  Space,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Button, Checkbox, Empty, Form, Modal, Popconfirm, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../../lib/feedback"; // GH #970: themed toasts
 import { DeleteOutlined, PlusOutlined } from "@icons";
 import { RowActionButton } from "../../../../components/RowActionButton";
 import { useQueries } from "@tanstack/react-query";
@@ -112,13 +98,13 @@ export const SharedFoldersTab = () => {
         sharedWithMailboxID: vals.shared_with_mailbox_id,
         rights,
       });
-      message.success("Share created");
+      feedback.message.success("Share created");
       setOpen(false);
       form.resetFields();
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Failed to create share";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 
@@ -198,11 +184,11 @@ export const SharedFoldersTab = () => {
                         ownerMailboxID: row.owner_mailbox_id,
                         shareID: row.id,
                       });
-                      message.success("Share removed");
+                      feedback.message.success("Share removed");
                     } catch (err) {
                       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
                         ?? "Failed to remove";
-                      message.error(msg);
+                      feedback.message.error(msg);
                     }
                   }}
                   okText={t("sharedfolderstab.remove")}

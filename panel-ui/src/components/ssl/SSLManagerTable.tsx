@@ -1,20 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Input,
-  Table,
-  Tag,
-  Button,
-  Popconfirm,
-  message,
-  Empty,
-  Space,
-  Tooltip,
-  Typography,
-  Modal,
-  Descriptions,
-} from "antd";
+import { Input, Table, Tag, Button, Popconfirm, Empty, Space, Tooltip, Typography, Modal, Descriptions } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 import {
   ReloadOutlined,
   DeleteOutlined,
@@ -166,11 +154,11 @@ export const SSLManagerTable = ({
       await apiClient.post(`/domains/${domainId}/ssl/renew`);
     },
     onSuccess: () => {
-      message.success("Certificate renewal initiated");
+      feedback.message.success("Certificate renewal initiated");
       queryClient.invalidateQueries({ queryKey: ["ssl-manager", endpoint] });
     },
     onError: () => {
-      message.error("Failed to renew certificate");
+      feedback.message.error("Failed to renew certificate");
     },
   });
 
@@ -180,11 +168,11 @@ export const SSLManagerTable = ({
       await apiClient.delete(`/domains/${domainId}/ssl`);
     },
     onSuccess: () => {
-      message.success("Certificate revoked");
+      feedback.message.success("Certificate revoked");
       queryClient.invalidateQueries({ queryKey: ["ssl-manager", endpoint] });
     },
     onError: () => {
-      message.error("Failed to revoke certificate");
+      feedback.message.error("Failed to revoke certificate");
     },
   });
 
@@ -194,15 +182,15 @@ export const SSLManagerTable = ({
       await apiClient.post(`/domains/${domainId}/ssl/retry`);
     },
     onSuccess: () => {
-      message.success("Retry queued");
+      feedback.message.success("Retry queued");
       queryClient.invalidateQueries({ queryKey: ["ssl-manager", endpoint] });
     },
     onError: (error: unknown) => {
       const status = (error as { response?: { status?: number; data?: { error?: string } } })?.response;
       if (status?.status === 409) {
-        message.info("Already retryable — will attempt on next tick");
+        feedback.message.info("Already retryable — will attempt on next tick");
       } else {
-        message.error("Failed to queue retry");
+        feedback.message.error("Failed to queue retry");
       }
     },
   });
@@ -214,11 +202,11 @@ export const SSLManagerTable = ({
       await apiClient.post(`/domains/${domainId}/mail-certificate/reissue`);
     },
     onSuccess: () => {
-      message.success("Mail certificate reissue queued");
+      feedback.message.success("Mail certificate reissue queued");
       queryClient.invalidateQueries({ queryKey: ["ssl-manager", endpoint] });
     },
     onError: () => {
-      message.error("Failed to reissue mail certificate");
+      feedback.message.error("Failed to reissue mail certificate");
     },
   });
 

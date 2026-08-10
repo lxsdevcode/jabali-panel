@@ -10,21 +10,8 @@
 // IMAP carries its own remote login per mailbox and never uploads a
 // tarball. The app-password is sent per-request and never persisted.
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Collapse,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Collapse, Drawer, Form, Input, InputNumber, Space, Switch, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
 
@@ -86,13 +73,13 @@ export function MigrateImapDrawer({ open, onClose }: Props) {
     },
     onSuccess: (f) => {
       setFolders(f);
-      message.success(`Found ${f.length} folder(s) on the remote account`);
+      feedback.message.success(`Found ${f.length} folder(s) on the remote account`);
     },
     onError: (err: AxiosError<{ error?: string }>) => {
       if (err.response?.status === 401) {
-        message.error("The remote server rejected the credentials — check the app-password.");
+        feedback.message.error("The remote server rejected the credentials — check the app-password.");
       } else {
-        message.error("Could not connect to the remote IMAP account.");
+        feedback.message.error("Could not connect to the remote IMAP account.");
       }
     },
   });
@@ -106,18 +93,18 @@ export function MigrateImapDrawer({ open, onClose }: Props) {
       return data;
     },
     onSuccess: async (d) => {
-      message.success(`Migration started (job ${d.job_id}). Track progress in the list below.`);
+      feedback.message.success(`Migration started (job ${d.job_id}). Track progress in the list below.`);
       await qc.invalidateQueries({ queryKey: ["admin-migrations"] });
       handleClose();
     },
     onError: (err: AxiosError<{ error?: string; existing_job_id?: string }>) => {
       const body = err.response?.data;
       if (err.response?.status === 409) {
-        message.error(`A migration is already running for this account (job ${body?.existing_job_id ?? "?"}).`);
+        feedback.message.error(`A migration is already running for this account (job ${body?.existing_job_id ?? "?"}).`);
       } else if (err.response?.status === 401) {
-        message.error("The remote server rejected the credentials — check the app-password.");
+        feedback.message.error("The remote server rejected the credentials — check the app-password.");
       } else {
-        message.error("Could not start the migration.");
+        feedback.message.error("Could not start the migration.");
       }
     },
   });

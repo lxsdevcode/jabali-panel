@@ -4,17 +4,8 @@
 // re-renders the vhost), and exposes a manual purge button.
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  InputNumber,
-  Popconfirm,
-  Select,
-  Skeleton,
-  Space,
-  Switch,
-  message,
-} from "antd";
+import { Alert, Button, InputNumber, Popconfirm, Select, Skeleton, Space, Switch } from "antd";
+import { feedback } from "../lib/feedback"; // GH #970: themed toasts
 import { CheckOutlined, CloseOutlined, ThunderboltOutlined } from "@icons";
 
 import { apiClient } from "../apiClient";
@@ -58,7 +49,7 @@ export const DomainCacheSection = ({ domainId }: Props) => {
       setTtl(res.data.ttl_seconds ?? 600);
       setQAllow(res.data.cache_query_allowlist ?? []);
     } catch {
-      message.error("Failed to load cache status");
+      feedback.message.error("Failed to load cache status");
     } finally {
       setLoading(false);
     }
@@ -76,13 +67,13 @@ export const DomainCacheSection = ({ domainId }: Props) => {
       });
       setState(res.data);
       setTtl(res.data.ttl_seconds ?? 600);
-      message.success(
+      feedback.message.success(
         next
           ? "Caching enabled — applying to the site's nginx config"
           : "Caching disabled",
       );
     } catch {
-      message.error("Failed to toggle caching");
+      feedback.message.error("Failed to toggle caching");
       await fetchState();
     } finally {
       setToggling(false);
@@ -98,9 +89,9 @@ export const DomainCacheSection = ({ domainId }: Props) => {
       });
       setState(res.data);
       setTtl(res.data.ttl_seconds ?? 600);
-      message.success(`Cache TTL set to ${res.data.ttl_seconds}s — re-rendering nginx`);
+      feedback.message.success(`Cache TTL set to ${res.data.ttl_seconds}s — re-rendering nginx`);
     } catch {
-      message.error("Failed to update cache TTL");
+      feedback.message.error("Failed to update cache TTL");
       await fetchState();
     } finally {
       setSavingTtl(false);
@@ -113,11 +104,11 @@ export const DomainCacheSection = ({ domainId }: Props) => {
     );
     const bad = cleaned.find((n) => !QALLOW_NAME_RE.test(n));
     if (bad) {
-      message.error(`Invalid param "${bad}": use lower-case letters, digits, underscore (max 32 chars)`);
+      feedback.message.error(`Invalid param "${bad}": use lower-case letters, digits, underscore (max 32 chars)`);
       return;
     }
     if (cleaned.length > QALLOW_MAX) {
-      message.error(`Too many params (${cleaned.length}); max ${QALLOW_MAX}`);
+      feedback.message.error(`Too many params (${cleaned.length}); max ${QALLOW_MAX}`);
       return;
     }
     setSavingQAllow(true);
@@ -128,13 +119,13 @@ export const DomainCacheSection = ({ domainId }: Props) => {
       });
       setState(res.data);
       setQAllow(res.data.cache_query_allowlist ?? []);
-      message.success(
+      feedback.message.success(
         cleaned.length
           ? "Cacheable query params saved — re-rendering nginx"
           : "Query-param caching disabled",
       );
     } catch {
-      message.error("Failed to save cacheable query params");
+      feedback.message.error("Failed to save cacheable query params");
       await fetchState();
     } finally {
       setSavingQAllow(false);
@@ -145,9 +136,9 @@ export const DomainCacheSection = ({ domainId }: Props) => {
     setPurging(true);
     try {
       await apiClient.post(`/domains/${domainId}/cache/purge`);
-      message.success("Cache purged");
+      feedback.message.success("Cache purged");
     } catch {
-      message.error("Failed to purge cache");
+      feedback.message.error("Failed to purge cache");
     } finally {
       setPurging(false);
     }

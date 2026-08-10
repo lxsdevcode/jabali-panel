@@ -8,7 +8,7 @@
 // sees `?flow=<id>` it fetches the flow and renders the Kratos node
 // tree inline inside the Security card — no extra page, no extra tab.
 import { useTranslation } from "react-i18next";
-import { Alert, Button, Card, Checkbox, Descriptions, Form, Input, Space, Spin, Typography, message } from "antd";
+import { Alert, Button, Card, Checkbox, Descriptions, Form, Input, Space, Spin, Typography } from "antd";
 import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -135,12 +135,12 @@ export function MyProfile() {
       setFlow(result.flow);
       const successMsg = (result.flow.ui.messages ?? []).find((m) => m.type === "success");
       if (successMsg) {
-        message.success(successMsg.text);
+        feedback.message.success(successMsg.text);
       }
       return;
     }
     if (result.kind === "error") {
-      message.error(result.message);
+      feedback.message.error(result.message);
       return;
     }
   };
@@ -341,9 +341,9 @@ function PasskeySettingsCard({
       const fields = await passkeyEnrolFields(flow);
       if (!fields) return;
       await onSubmit(fields);
-      message.success("Passkey added");
+      feedback.message.success("Passkey added");
     } catch {
-      message.error("Passkey registration was cancelled or failed. Please try again.");
+      feedback.message.error("Passkey registration was cancelled or failed. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -429,9 +429,9 @@ function WebauthnSettingsCard({
       if (!fields) return;
       await onSubmit(fields);
       setName("");
-      message.success("Security key added");
+      feedback.message.success("Security key added");
     } catch {
-      message.error("Security-key registration was cancelled or failed. Please try again.");
+      feedback.message.error("Security-key registration was cancelled or failed. Please try again.");
     } finally {
       setBusy(false);
     }

@@ -1,15 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Space,
-  Table,
-  Typography,
-  notification,
-} from "antd";
+import { Alert, Button, Card, Checkbox, Space, Table, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { SaveOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
@@ -67,7 +59,7 @@ export function DNSPermissionsCard() {
         if (!cancelled) setPolicy(normalize(resp.data.dns_user_record_policy));
       } catch {
         if (!cancelled) {
-          notification.error({ message: "Failed to load DNS permissions" });
+          feedback.notification.error({ message: "Failed to load DNS permissions" });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -89,9 +81,9 @@ export function DNSPermissionsCard() {
         dns_user_record_policy: policy,
       });
       setPolicy(normalize(resp.data.dns_user_record_policy));
-      notification.success({ message: "DNS permissions saved" });
+      feedback.notification.success({ message: "DNS permissions saved" });
     } catch {
-      notification.error({ message: "Failed to save DNS permissions" });
+      feedback.notification.error({ message: "Failed to save DNS permissions" });
     } finally {
       setSaving(false);
     }

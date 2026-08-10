@@ -3,22 +3,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import {
-  Button,
-  
-  Empty,
-  Form,
-  Input,
-  message,
-  Modal,
-  Skeleton,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Button, Empty, Form, Input, Modal, Skeleton, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../../lib/feedback"; // GH #970: themed toasts
 import { EditOutlined, FileTextOutlined } from "@icons";
 import { useQueries } from "@tanstack/react-query";
 
@@ -73,12 +59,12 @@ export const DisclaimerTab = () => {
         enabled: vals.enabled,
         text: vals.text,
       });
-      message.success("Disclaimer saved");
+      feedback.message.success("Disclaimer saved");
       setOpen(false);
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Failed to save disclaimer";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

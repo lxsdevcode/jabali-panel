@@ -1,18 +1,6 @@
 import { useTranslation } from "react-i18next";
-import {
-  Tabs,
-  Alert,
-  Button,
-  Card,
-  Form,
-  Row,
-  Col,
-  Select,
-  Space,
-  Spin,
-  Typography,
-  message,
-} from "antd";
+import { Tabs, Alert, Button, Card, Form, Row, Col, Select, Space, Spin, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useEffect, useState } from "react";
 import { CodeOutlined } from "@icons";
 import { UserPHPPerformanceCard } from "./UserPHPPerformanceCard";
@@ -132,7 +120,7 @@ export function UserPHPSettingsPage() {
         );
         setDomains(resp.data?.data ?? []);
       } catch (err) {
-        message.error("Failed to load domains");
+        feedback.message.error("Failed to load domains");
       }
 
       try {
@@ -160,14 +148,14 @@ export function UserPHPSettingsPage() {
     try {
       await apiClient.put("/me/php-cli-version", { version });
       setCliVersion(version);
-      message.success(
+      feedback.message.success(
         version
           ? `CLI default set to PHP ${version}`
           : "CLI default reverted to automatic",
       );
     } catch (err) {
       const e = err as { response?: { data?: { detail?: string; error?: string } } };
-      message.error(
+      feedback.message.error(
         e.response?.data?.detail ?? e.response?.data?.error ?? "Failed to set CLI PHP version",
       );
     } finally {
@@ -186,7 +174,7 @@ export function UserPHPSettingsPage() {
           php_version: version,
         });
       }
-      message.success(
+      feedback.message.success(
         version
           ? `Switched to PHP ${version}`
           : "Reverted to server default PHP version",
@@ -200,7 +188,7 @@ export function UserPHPSettingsPage() {
         response?: { data?: { error?: string } };
         message?: string;
       };
-      message.error(
+      feedback.message.error(
         e.response?.data?.error ?? e.message ?? "Failed to change PHP version",
       );
     } finally {
@@ -233,7 +221,7 @@ export function UserPHPSettingsPage() {
           php_max_input_time: resp.data.php_max_input_time,
         });
       } catch (err) {
-        message.error("Failed to load PHP settings");
+        feedback.message.error("Failed to load PHP settings");
       } finally {
         setLoading(false);
       }
@@ -253,7 +241,7 @@ export function UserPHPSettingsPage() {
         php_max_execution_time: values.php_max_execution_time,
         php_max_input_time: values.php_max_input_time,
       });
-      message.success("PHP settings updated successfully");
+      feedback.message.success("PHP settings updated successfully");
       // Reload settings to confirm
       if (selectedDomain) {
         const resp = await apiClient.get<DomainPHPSettings>(
@@ -262,7 +250,7 @@ export function UserPHPSettingsPage() {
         setPhpSettings(resp.data);
       }
     } catch (err) {
-      message.error("Failed to update PHP settings");
+      feedback.message.error("Failed to update PHP settings");
     } finally {
       setSubmitting(false);
     }

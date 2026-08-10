@@ -3,20 +3,8 @@
 // Form.useForm + useCreateMutation; layout matches the old Refine
 // version (grid of resource limits + feature quotas + two switches).
 import { useTranslation } from "react-i18next";
-import {
-  Button,
-  Card,
-  Col,
-  Divider,
-  Form,
-  Input,
-  InputNumber,
-  Row,
-  Select,
-  Switch,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Col, Divider, Form, Input, InputNumber, Row, Select, Switch, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CheckOutlined, CloseOutlined } from "@icons";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -116,12 +104,12 @@ export const PackageCreate = () => {
           : (values.allowed_backup_destination_kinds ?? ""),
       } as unknown as PackageCreateInput;
       await createMutation.mutateAsync(payload);
-      message.success("Package created");
+      feedback.message.success("Package created");
       navigate("/jabali-admin/packages");
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to create package";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

@@ -7,20 +7,8 @@
 //
 // The admin variant shows an "Owner" column by passing showOwner.
 import { useMemo, useState } from "react";
-import {
-  Alert,
-  Button,
-  Empty,
-  Modal,
-  Space,
-  Spin,
-  Switch,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Empty, Modal, Space, Spin, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 
 import { ShieldCheckOutlined } from "@icons";
 
@@ -182,10 +170,10 @@ function DNSSECToggle({ domainID }: { domainID: string }) {
       onChange={async (checked) => {
         try {
           await mutation.mutateAsync(checked);
-          message.success(checked ? "DNSSEC enabled" : "DNSSEC disabled");
+          feedback.message.success(checked ? "DNSSEC enabled" : "DNSSEC disabled");
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : "Failed";
-          message.error(msg);
+          feedback.message.error(msg);
         }
       }}
     />

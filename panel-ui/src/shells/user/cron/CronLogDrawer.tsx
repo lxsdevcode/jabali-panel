@@ -1,14 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Drawer,
-  Button,
-  Space,
-  Card,
-  Select,
-  Spin,
-  message,
-} from "antd";
+import { Drawer, Button, Space, Card, Select, Spin } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   CopyOutlined,
   ReloadOutlined,
@@ -42,7 +35,7 @@ export const CronLogDrawer = ({
 
   const handleCopyToClipboard = () => {
     navigator.clipboard.writeText(logResponse.log).then(() => {
-      message.success("Log copied to clipboard");
+      feedback.message.success("Log copied to clipboard");
     });
   };
 

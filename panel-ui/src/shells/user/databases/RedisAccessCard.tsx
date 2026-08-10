@@ -6,7 +6,8 @@
 // (idempotent) and returns the credential — so we don't fetch a secret until
 // the user asks for it.
 import { useState } from "react";
-import { Card, Button, Descriptions, Typography, Alert, message } from "antd";
+import { Card, Button, Descriptions, Typography, Alert } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { apiClient } from "../../../apiClient";
 
 const { Text, Paragraph } = Typography;
@@ -33,7 +34,7 @@ export const RedisAccessCard = () => {
       const resp = await apiClient.get<RedisAccess>("/me/redis-access");
       setCreds(resp.data);
     } catch {
-      message.error("Could not load your Redis credentials.");
+      feedback.message.error("Could not load your Redis credentials.");
     } finally {
       setLoading(false);
     }

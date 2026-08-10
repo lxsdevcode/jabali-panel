@@ -9,20 +9,8 @@
 // render as static instructions (empty `status` column).
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Popconfirm,
-  Card,
-  Select,
-  Skeleton,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Popconfirm, Card, Select, Skeleton, Space, Switch, Table, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CopyOutlined } from "@icons";
 
 import {
@@ -42,9 +30,9 @@ type Props = {
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
-    message.success("Copied to clipboard");
+    feedback.message.success("Copied to clipboard");
   } catch {
-    message.error("Copy failed — select the field and copy manually");
+    feedback.message.error("Copy failed — select the field and copy manually");
   }
 }
 
@@ -73,10 +61,10 @@ export const DomainEmailSection = ({ domainId }: Props) => {
     try {
       await apiClient.post(`/domains/${domainId}/email/dkim-rotate`);
       qc.invalidateQueries({ queryKey: ["one", "domain-email", domainId] });
-      message.success("DKIM rotated — new key published; allow time for DNS propagation");
+      feedback.message.success("DKIM rotated — new key published; allow time for DNS propagation");
     } catch (err) {
       const resp = (err as { response?: { data?: { detail?: string; error?: string } } })?.response?.data;
-      message.error(resp?.detail ?? resp?.error ?? "DKIM rotation failed");
+      feedback.message.error(resp?.detail ?? resp?.error ?? "DKIM rotation failed");
     } finally {
       setRotating(false);
     }
@@ -86,9 +74,9 @@ export const DomainEmailSection = ({ domainId }: Props) => {
     try {
       await apiClient.patch(`/domains/${domainId}`, { webmail_enabled: next });
       qc.invalidateQueries({ queryKey: ["one", "domains", domainId] });
-      message.success(next ? "Webmail enabled for this domain" : "Webmail disabled for this domain");
+      feedback.message.success(next ? "Webmail enabled for this domain" : "Webmail disabled for this domain");
     } catch {
-      message.error("Failed to toggle webmail");
+      feedback.message.error("Failed to toggle webmail");
     } finally {
       setWmFlipping(false);
     }
@@ -100,10 +88,10 @@ export const DomainEmailSection = ({ domainId }: Props) => {
     try {
       await apiClient.patch(`/domains/${domainId}`, patch);
       qc.invalidateQueries({ queryKey: ["one", "domains", domainId] });
-      message.success("DMARC settings saved");
+      feedback.message.success("DMARC settings saved");
     } catch (err) {
       const resp = (err as { response?: { data?: { detail?: string; error?: string } } })?.response?.data;
-      message.error(resp?.detail ?? resp?.error ?? "Failed to save DMARC settings");
+      feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to save DMARC settings");
     } finally {
       setDmarcSaving(false);
     }
@@ -114,15 +102,15 @@ export const DomainEmailSection = ({ domainId }: Props) => {
     try {
       if (next) {
         await enableMutation.mutateAsync({ domainId });
-        message.success("Email enabled — publish the DNS records below");
+        feedback.message.success("Email enabled — publish the DNS records below");
       } else {
         await disableMutation.mutateAsync({ domainId });
-        message.success("Email disabled");
+        feedback.message.success("Email disabled");
       }
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string; detail?: string } } })
         ?.response?.data;
-      message.error(resp?.detail ?? resp?.error ?? "Failed to toggle email");
+      feedback.message.error(resp?.detail ?? resp?.error ?? "Failed to toggle email");
     } finally {
       setFlipping(false);
     }

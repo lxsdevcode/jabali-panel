@@ -6,27 +6,8 @@
 // so the page shows real numbers immediately instead of empty placeholders.
 import { useTranslation } from "react-i18next";
 import { useEffect, useState, type CSSProperties } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Collapse,
-  Col,
-  Empty,
-  Row,
-  Segmented,
-  Space,
-  Spin,
-  Switch,
-  Table,
-  Tag,
-  TimePicker,
-  Timeline,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Checkbox, Collapse, Col, Empty, Row, Segmented, Space, Spin, Switch, Table, Tag, TimePicker, Timeline, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import dayjs from "dayjs";
 
 import {
@@ -64,10 +45,10 @@ const ReleaseChannelCard = () => {
     setSaving(true);
     try {
       await apiClient.patch("/admin/settings", { release_channel: next });
-      message.success(`Release channel set to ${next}`);
+      feedback.message.success(`Release channel set to ${next}`);
     } catch (e) {
       setChannel(prev);
-      message.error(e instanceof Error ? e.message : "Failed to set release channel");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to set release channel");
     } finally {
       setSaving(false);
     }
@@ -172,9 +153,9 @@ export const SystemUpdatesPage = () => {
     try {
       await Promise.all([jabali.mutateAsync(), apt.mutateAsync()]);
       await state.refetch();
-      message.success("Checked for updates");
+      feedback.message.success("Checked for updates");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "check failed");
+      feedback.message.error(e instanceof Error ? e.message : "check failed");
     }
   };
 
@@ -390,17 +371,17 @@ function JabaliPanelCard({ check }: { check: ReturnType<typeof useJabaliCheck> }
     try {
       const r = await run.mutateAsync();
       setSince(r.started_at);
-      message.success("Update started");
+      feedback.message.success("Update started");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "run failed");
+      feedback.message.error(e instanceof Error ? e.message : "run failed");
     }
   };
   const onStop = async () => {
     try {
       await stop.mutateAsync();
-      message.success("Stop signal sent");
+      feedback.message.success("Stop signal sent");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "stop failed");
+      feedback.message.error(e instanceof Error ? e.message : "stop failed");
     }
   };
 
@@ -725,17 +706,17 @@ function SystemPackagesCard({ check }: { check: ReturnType<typeof useAptCheck> }
     try {
       const r = await run.mutateAsync();
       setSince(r.started_at);
-      message.success("Apt upgrade started");
+      feedback.message.success("Apt upgrade started");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "run failed");
+      feedback.message.error(e instanceof Error ? e.message : "run failed");
     }
   };
   const onStop = async () => {
     try {
       await stop.mutateAsync();
-      message.success("Stop signal sent");
+      feedback.message.success("Stop signal sent");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "stop failed");
+      feedback.message.error(e instanceof Error ? e.message : "stop failed");
     }
   };
 
@@ -899,9 +880,9 @@ function AutomaticUpdatesCard() {
     try {
       await save.mutateAsync(cfg);
       setDraft(null);
-      message.success("Automatic updates saved");
+      feedback.message.success("Automatic updates saved");
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "save failed");
+      feedback.message.error(e instanceof Error ? e.message : "save failed");
     }
   };
 

@@ -13,22 +13,8 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { shortDateTime } from "../../../utils/datetime";
-import {
-  Grid,
-  Alert,
-  Button,
-  Card,
-  Empty,
-  List,
-  Popconfirm,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Grid, Alert, Button, Card, Empty, List, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
@@ -140,7 +126,7 @@ export const AdminMigrationsPage = () => {
       });
     },
     onSuccess: async (_d, vars) => {
-      message.success(
+      feedback.message.success(
         vars.enabled
           ? "Private-host SSRF override ENABLED (restart panel + agent to pick up)"
           : "Private-host SSRF override disabled",
@@ -151,7 +137,7 @@ export const AdminMigrationsPage = () => {
       const detail =
         (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data?.detail;
-      message.error(detail ?? "Update failed");
+      feedback.message.error(detail ?? "Update failed");
     },
   });
 
@@ -160,14 +146,14 @@ export const AdminMigrationsPage = () => {
       await apiClient.delete(`/admin/migrations/batches/${batchId}`);
     },
     onSuccess: async () => {
-      message.success("Batch cancelled");
+      feedback.message.success("Batch cancelled");
       await qc.invalidateQueries({ queryKey: ["admin-migrations"] });
     },
     onError: (err) => {
       const detail =
         (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data?.detail;
-      message.error(detail ?? "Batch cancel failed");
+      feedback.message.error(detail ?? "Batch cancel failed");
     },
   });
 
@@ -176,14 +162,14 @@ export const AdminMigrationsPage = () => {
       await apiClient.delete(`/admin/migrations/${id}`);
     },
     onSuccess: async () => {
-      message.success("Cancelled");
+      feedback.message.success("Cancelled");
       await qc.invalidateQueries({ queryKey: ["admin-migrations"] });
     },
     onError: (err) => {
       const detail =
         (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data?.detail;
-      message.error(detail ?? "Cancel failed");
+      feedback.message.error(detail ?? "Cancel failed");
     },
   });
 
@@ -192,14 +178,14 @@ export const AdminMigrationsPage = () => {
       await apiClient.post(`/admin/migrations/${id}/pull-source`);
     },
     onSuccess: async () => {
-      message.success("Pull-source re-dispatched");
+      feedback.message.success("Pull-source re-dispatched");
       await qc.invalidateQueries({ queryKey: ["admin-migrations"] });
     },
     onError: (err) => {
       const detail =
         (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data?.detail;
-      message.error(detail ?? "Re-kick failed");
+      feedback.message.error(detail ?? "Re-kick failed");
     },
   });
 
@@ -208,14 +194,14 @@ export const AdminMigrationsPage = () => {
       await apiClient.post(`/admin/migrations/${id}/destroy`);
     },
     onSuccess: async () => {
-      message.success("Destroyed");
+      feedback.message.success("Destroyed");
       await qc.invalidateQueries({ queryKey: ["admin-migrations"] });
     },
     onError: (err) => {
       const detail =
         (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data?.detail;
-      message.error(detail ?? "Destroy failed");
+      feedback.message.error(detail ?? "Destroy failed");
     },
   });
 

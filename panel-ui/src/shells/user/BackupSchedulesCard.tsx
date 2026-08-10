@@ -6,22 +6,8 @@
 // choose a stampede minute. On a single-schedule plan this falls back to the
 // legacy MyProfileScheduleCard.
 import { useTranslation } from "react-i18next";
-import {
-  Alert,
-  Button,
-  Card,
-  Drawer,
-  Form,
-  InputNumber,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Drawer, Form, InputNumber, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 import { ClockCircleOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from "@icons";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -147,11 +133,11 @@ export const BackupSchedulesCard = () => {
       } else {
         await apiClient.post("/me/backup-schedules", body);
       }
-      message.success(editingId ? "Schedule updated" : "Schedule created");
+      feedback.message.success(editingId ? "Schedule updated" : "Schedule created");
       setDrawerOpen(false);
       listQuery.refetch();
     } catch (err) {
-      message.error(extractApiError(err, "Save failed"));
+      feedback.message.error(extractApiError(err, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -170,17 +156,17 @@ export const BackupSchedulesCard = () => {
       });
       listQuery.refetch();
     } catch (err) {
-      message.error(extractApiError(err, "Update failed"));
+      feedback.message.error(extractApiError(err, "Update failed"));
     }
   };
 
   const removeRow = async (id: string) => {
     try {
       await apiClient.delete(`/me/backup-schedules/${id}`);
-      message.success("Schedule removed");
+      feedback.message.success("Schedule removed");
       listQuery.refetch();
     } catch (err) {
-      message.error(extractApiError(err, "Delete failed"));
+      feedback.message.error(extractApiError(err, "Delete failed"));
     }
   };
 

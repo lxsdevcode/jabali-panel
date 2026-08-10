@@ -3,22 +3,8 @@
 // Step 2+: source-specific drive steps (upload / pull / import) — no CLI needed.
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Card,
-  Space,
-  Steps,
-  Tabs,
-  Typography,
-  Upload,
-  message,
-} from "antd";
+import { Alert, Button, Checkbox, Drawer, Form, Input, InputNumber, Card, Space, Steps, Tabs, Typography, Upload } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import type { FormInstance } from "antd";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -119,13 +105,13 @@ function SecretsStep({ jobId, kind, onDone }: { jobId: string; kind?: string; on
       await apiClient.post(`/admin/migrations/${jobId}/secrets`, vals);
     },
     onSuccess: () => {
-      message.success("Credentials saved");
+      feedback.message.success("Credentials saved");
       onDone();
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })
         ?.response?.data?.detail;
-      message.error(detail ?? "Failed to save credentials");
+      feedback.message.error(detail ?? "Failed to save credentials");
     },
   });
 
@@ -282,13 +268,13 @@ function PullStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       await apiClient.post(`/admin/migrations/${jobId}/pull-source`, vals);
     },
     onSuccess: () => {
-      message.success("Pull started — running in the background");
+      feedback.message.success("Pull started — running in the background");
       onDone();
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })
         ?.response?.data?.detail;
-      message.error(detail ?? "Failed to start pull");
+      feedback.message.error(detail ?? "Failed to start pull");
     },
   });
 
@@ -338,12 +324,12 @@ function TarballStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       await apiClient.post(`/admin/migrations/${jobId}/tarball`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      message.success("Tarball uploaded successfully");
+      feedback.message.success("Tarball uploaded successfully");
       onDone();
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string; error?: string } } })
         ?.response?.data?.detail;
-      message.error(detail ?? "Upload failed");
+      feedback.message.error(detail ?? "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -398,13 +384,13 @@ function ImportStep({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       await apiClient.post(`/admin/migrations/${jobId}/import`, vals);
     },
     onSuccess: () => {
-      message.success("Import started — running in the background");
+      feedback.message.success("Import started — running in the background");
       onDone();
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })
         ?.response?.data?.detail;
-      message.error(detail ?? "Failed to start import");
+      feedback.message.error(detail ?? "Failed to start import");
     },
   });
 
@@ -477,12 +463,12 @@ function WordPressImportStep({ jobId, onDone }: { jobId: string; onDone: () => v
       await apiClient.post(`/admin/migrations/${jobId}/import-wp`, vals);
     },
     onSuccess: () => {
-      message.success("Import started");
+      feedback.message.success("Import started");
       onDone();
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      message.error(detail ?? "Import failed to start");
+      feedback.message.error(detail ?? "Import failed to start");
     },
   });
   return (
@@ -556,7 +542,7 @@ export const CreateMigrationDrawer = ({
       return data;
     },
     onSuccess: async (job) => {
-      message.success("Migration job created");
+      feedback.message.success("Migration job created");
       setCreated(job);
       setDriveStep(job.source_kind === "whm_pkgacct" ? "tarball" : "secrets");
       await qc.invalidateQueries({ queryKey: ["admin-migrations"] });
@@ -565,7 +551,7 @@ export const CreateMigrationDrawer = ({
       const detail =
         (err as { response?: { data?: { error?: string; detail?: string } } })
           ?.response?.data?.detail;
-      message.error(detail ?? "Create failed");
+      feedback.message.error(detail ?? "Create failed");
     },
   });
 

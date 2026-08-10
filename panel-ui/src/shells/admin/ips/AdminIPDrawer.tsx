@@ -4,19 +4,8 @@
 // page routes with a Drawer. Per docs/CONVENTIONS.md, create + edit
 // share a single Drawer surface; address is read-only on edit (delete
 // + re-add to change).
-import {
-  Alert,
-  Button,
-  Drawer,
-  Form,
-  Grid,
-  Input,
-  Space,
-  Spin,
-  Switch,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Drawer, Form, Grid, Input, Space, Spin, Switch, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useEffect, useState } from "react";
 
 import { CheckOutlined, CloseOutlined } from "@icons";
@@ -110,7 +99,7 @@ export function AdminIPDrawer({ open, onClose, editingId }: AdminIPDrawerProps) 
             is_default: values.is_default ?? false,
           },
         });
-        message.success("IP updated");
+        feedback.message.success("IP updated");
         onClose();
       } else {
         const result = await create.mutateAsync({
@@ -120,14 +109,14 @@ export function AdminIPDrawer({ open, onClose, editingId }: AdminIPDrawerProps) 
         });
         if (result.warnings && result.warnings.length > 0) {
           setWarnings(result.warnings);
-          message.warning("IP added with warnings — review below");
+          feedback.message.warning("IP added with warnings — review below");
           return;
         }
-        message.success("IP added to pool");
+        feedback.message.success("IP added to pool");
         onClose();
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Save failed");
+      feedback.message.error(err instanceof Error ? err.message : "Save failed");
     }
   };
 

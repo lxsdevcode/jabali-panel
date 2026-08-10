@@ -1,18 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Form,
-  Input,
-  Row,
-  Space,
-  Tag,
-  Typography,
-  notification,
-} from "antd";
+import { Alert, Button, Card, Col, Form, Input, Row, Space, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { SaveOutlined } from "@icons";
 
 import { apiClient } from "../../../apiClient";
@@ -176,7 +165,7 @@ export const DNSResolversCard = () => {
   const [current, setCurrent] = useState<string[]>([]);
   const activePreset = matchingProviderKey(current);
   const notify: NotifyFn = (input) =>
-    notification.open({
+    feedback.notification.open({
       message: input.message,
       description: input.description,
       type: input.type,

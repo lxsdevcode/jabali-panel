@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Breadcrumb, Button, Card, Drawer, Dropdown, Empty, Grid, Input, Modal, Space, Spin, Table, Tag, Tooltip, Tree, Typography, message, theme } from "antd";
+import { Breadcrumb, Button, Card, Drawer, Dropdown, Empty, Grid, Input, Modal, Space, Spin, Table, Tag, Tooltip, Tree, Typography, theme } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import type { DataNode } from "antd/es/tree";
 import {
@@ -389,7 +389,7 @@ export const FileManagerPage = () => {
           );
         }
       } catch (err) {
-        message.error(`Cannot open file manager: ${errMessage(err)}`);
+        feedback.message.error(`Cannot open file manager: ${errMessage(err)}`);
       }
     })();
   }, []);
@@ -408,7 +408,7 @@ export const FileManagerPage = () => {
       const resp = await filesList(path);
       setEntries(sortEntries(resp.entries));
     } catch (err) {
-      message.error(`List failed: ${errMessage(err)}`);
+      feedback.message.error(`List failed: ${errMessage(err)}`);
       setEntries([]);
     } finally {
       setListLoading(false);
@@ -442,9 +442,9 @@ export const FileManagerPage = () => {
       // trees can take a while, so the explicit success + total is the signal
       // the reporter asked for.
       setDirTotal(resp.total);
-      message.success(`Folder sizes calculated — this folder totals ${formatBytes(resp.total)}`);
+      feedback.message.success(`Folder sizes calculated — this folder totals ${formatBytes(resp.total)}`);
     } catch (err) {
-      message.error(`Size calculation failed: ${errMessage(err)}`);
+      feedback.message.error(`Size calculation failed: ${errMessage(err)}`);
     } finally {
       setSizingAll(false);
     }
@@ -460,7 +460,7 @@ export const FileManagerPage = () => {
         const resp = await filesDu(full);
         setFolderSizes((prev) => ({ ...prev, [full]: resp.total }));
       } catch (err) {
-        message.error(`Size calculation failed: ${errMessage(err)}`);
+        feedback.message.error(`Size calculation failed: ${errMessage(err)}`);
       } finally {
         setSizingPaths((prev) => {
           const n = new Set(prev);
@@ -497,7 +497,7 @@ export const FileManagerPage = () => {
       }));
       setTreeData((prev) => updateTreeNode(prev, node.path, children));
     } catch (err) {
-      message.error(`Tree load failed: ${errMessage(err)}`);
+      feedback.message.error(`Tree load failed: ${errMessage(err)}`);
     }
   }, []);
 
@@ -544,7 +544,7 @@ export const FileManagerPage = () => {
       const resp = await filesPreview(path);
       setPreviewContent(resp.content);
     } catch (err) {
-      message.error(`Preview failed: ${errMessage(err)}`);
+      feedback.message.error(`Preview failed: ${errMessage(err)}`);
       setPreviewOpen(false);
     } finally {
       setPreviewLoading(false);
@@ -564,10 +564,10 @@ export const FileManagerPage = () => {
     const path = joinPath(currentPath, entry.name);
     try {
       await filesDelete(path, entry.is_dir);
-      message.success(`Deleted ${entry.name}`);
+      feedback.message.success(`Deleted ${entry.name}`);
       void reloadList(currentPath);
     } catch (err) {
-      message.error(`Delete failed: ${errMessage(err)}`);
+      feedback.message.error(`Delete failed: ${errMessage(err)}`);
     }
   };
 
@@ -608,14 +608,14 @@ export const FileManagerPage = () => {
         // Refuse anything that is not editable text. See isPreviewEditable --
         // extracted so the rule is unit-tested rather than buried in a callback.
         if (!isPreviewEditable(resp)) {
-          message.error("Cannot edit: file is not editable text (binary or non-UTF-8 encoding)");
+          feedback.message.error("Cannot edit: file is not editable text (binary or non-UTF-8 encoding)");
           setEditTarget(null);
           return;
         }
         setEditContent(resp.content);
         setEditOriginal(resp.content);
       } catch (err) {
-        message.error(`Load failed: ${errMessage(err)}`);
+        feedback.message.error(`Load failed: ${errMessage(err)}`);
         setEditTarget(null);
       } finally {
         setEditLoading(false);
@@ -630,17 +630,17 @@ export const FileManagerPage = () => {
     // from a hex dump? browser extension?) refuse rather than silently
     // corrupting what's on disk.
     if (editContent.includes("\u0000")) {
-      message.error("Refusing to save: content contains NUL bytes");
+      feedback.message.error("Refusing to save: content contains NUL bytes");
       return;
     }
     setEditSaving(true);
     try {
       await filesWrite(editTarget, editContent);
-      message.success("Saved");
+      feedback.message.success("Saved");
       setEditTarget(null);
       if (currentPath) void reloadList(currentPath);
     } catch (err) {
-      message.error(`Save failed: ${errMessage(err)}`);
+      feedback.message.error(`Save failed: ${errMessage(err)}`);
     } finally {
       setEditSaving(false);
     }
@@ -650,17 +650,17 @@ export const FileManagerPage = () => {
     if (!chmodTarget || !currentPath) return;
     const mode = chmodTargetMode.trim();
     if (!/^[0-7]{3,4}$/.test(mode)) {
-      message.error("Mode must be an octal string like 644 or 0755");
+      feedback.message.error("Mode must be an octal string like 644 or 0755");
       return;
     }
     const path = joinPath(currentPath, chmodTarget.name);
     try {
       await filesChmod(path, mode);
-      message.success(`Permissions updated`);
+      feedback.message.success(`Permissions updated`);
       setChmodTarget(null);
       void reloadList(currentPath);
     } catch (err) {
-      message.error(`Chmod failed: ${errMessage(err)}`);
+      feedback.message.error(`Chmod failed: ${errMessage(err)}`);
     }
   };
 
@@ -668,18 +668,18 @@ export const FileManagerPage = () => {
     if (!currentPath || !renameTarget || renameSubmitting.current) return;
     const newName = renameNewName.trim();
     if (!newName || newName.includes("/") || newName === "." || newName === "..") {
-      message.error("Invalid new name");
+      feedback.message.error("Invalid new name");
       return;
     }
     renameSubmitting.current = true;
     try {
       const path = joinPath(currentPath, renameTarget.name);
       await filesRename(path, newName);
-      message.success(`Renamed to ${newName}`);
+      feedback.message.success(`Renamed to ${newName}`);
       setRenameOpen(false);
       void reloadList(currentPath);
     } catch (err) {
-      message.error(`Rename failed: ${errMessage(err)}`);
+      feedback.message.error(`Rename failed: ${errMessage(err)}`);
     } finally {
       renameSubmitting.current = false;
     }
@@ -694,17 +694,17 @@ export const FileManagerPage = () => {
     if (!currentPath || mkdirSubmitting.current) return;
     const name = mkdirName.trim();
     if (!name || name.includes("/") || name === "." || name === "..") {
-      message.error("Invalid folder name");
+      feedback.message.error("Invalid folder name");
       return;
     }
     mkdirSubmitting.current = true;
     try {
       await filesMkdir(joinPath(currentPath, name));
-      message.success(`Created ${name}`);
+      feedback.message.success(`Created ${name}`);
       setMkdirOpen(false);
       void reloadList(currentPath);
     } catch (err) {
-      message.error(`Create folder failed: ${errMessage(err)}`);
+      feedback.message.error(`Create folder failed: ${errMessage(err)}`);
     } finally {
       mkdirSubmitting.current = false;
     }
@@ -719,22 +719,22 @@ export const FileManagerPage = () => {
     if (!currentPath || newFileSubmitting.current) return;
     const name = newFileName.trim();
     if (!name || name.includes("/") || name === "." || name === "..") {
-      message.error("Invalid file name");
+      feedback.message.error("Invalid file name");
       return;
     }
     // Guard: never overwrite an existing entry with an empty file.
     if (entries.some((e) => e.name === name)) {
-      message.error(`"${name}" already exists`);
+      feedback.message.error(`"${name}" already exists`);
       return;
     }
     newFileSubmitting.current = true;
     try {
       await filesWrite(joinPath(currentPath, name), "");
-      message.success(`Created ${name}`);
+      feedback.message.success(`Created ${name}`);
       setNewFileOpen(false);
       void reloadList(currentPath);
     } catch (err) {
-      message.error(`Create file failed: ${errMessage(err)}`);
+      feedback.message.error(`Create file failed: ${errMessage(err)}`);
     } finally {
       newFileSubmitting.current = false;
     }
@@ -779,11 +779,11 @@ export const FileManagerPage = () => {
       const ok = results.filter((r) => r.status === "fulfilled").length;
       const fail = results.length - ok;
       if (fail === 0) {
-        message.success(`${verb} ${ok} item${ok === 1 ? "" : "s"}`);
+        feedback.message.success(`${verb} ${ok} item${ok === 1 ? "" : "s"}`);
       } else if (ok === 0) {
-        message.error(`${verb} failed for all ${fail} items`);
+        feedback.message.error(`${verb} failed for all ${fail} items`);
       } else {
-        message.warning(`${verb} ${ok}/${results.length} — ${fail} failed`);
+        feedback.message.warning(`${verb} ${ok}/${results.length} — ${fail} failed`);
       }
       // Log failures for debug — the toast can't surface per-item detail.
       results.forEach((r, i) => {
@@ -820,7 +820,7 @@ export const FileManagerPage = () => {
   const handleBulkMove = useCallback(async () => {
     const dest = bulkMoveDest.trim();
     if (!dest || !dest.startsWith("/")) {
-      message.error("Destination must be an absolute path starting with /");
+      feedback.message.error("Destination must be an absolute path starting with /");
       return;
     }
     setBulkMoveOpen(false);
@@ -831,7 +831,7 @@ export const FileManagerPage = () => {
   const handleBulkChmod = useCallback(async () => {
     const mode = bulkChmodMode.trim();
     if (!/^[0-7]{3,4}$/.test(mode)) {
-      message.error("Mode must be an octal string like 644 or 0755");
+      feedback.message.error("Mode must be an octal string like 644 or 0755");
       return;
     }
     setBulkChmodOpen(false);
@@ -854,16 +854,16 @@ export const FileManagerPage = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      message.success(`Archived ${selectedPaths.length} items`);
+      feedback.message.success(`Archived ${selectedPaths.length} items`);
     } catch (err) {
-      message.error(`Archive failed: ${errMessage(err)}`);
+      feedback.message.error(`Archive failed: ${errMessage(err)}`);
     }
   }, [selectedPaths]);
 
   const handleCopyToClipboard = useCallback(() => {
     if (selectedPaths.length === 0) return;
     setClipboard(selectedPaths);
-    message.success(
+    feedback.message.success(
       `Copied ${selectedPaths.length} item${selectedPaths.length === 1 ? "" : "s"} — switch folders and Paste`,
     );
     setSelectedNames([]);
@@ -886,10 +886,10 @@ export const FileManagerPage = () => {
       if (srcParent === destDir) return;
       try {
         await filesMove(srcPath, destDir);
-        message.success("Moved");
+        feedback.message.success("Moved");
         if (currentPath) void reloadList(currentPath);
       } catch (err) {
-        message.error(`Move failed: ${errMessage(err)}`);
+        feedback.message.error(`Move failed: ${errMessage(err)}`);
       }
     },
     [currentPath, reloadList],
@@ -934,10 +934,10 @@ export const FileManagerPage = () => {
       const res = await filesExtract(path);
       const skipped =
         res.skipped > 0 ? `, ${res.skipped} unsafe entr(y/ies) skipped` : "";
-      message.success(`Extracted ${res.extracted} file(s)${skipped}`);
+      feedback.message.success(`Extracted ${res.extracted} file(s)${skipped}`);
       void reloadList(currentPath);
     } catch (err) {
-      message.error(`Extract failed: ${errMessage(err)}`);
+      feedback.message.error(`Extract failed: ${errMessage(err)}`);
     }
   };
 

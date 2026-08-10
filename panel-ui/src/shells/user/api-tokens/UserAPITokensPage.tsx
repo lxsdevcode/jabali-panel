@@ -12,25 +12,8 @@
 
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Radio,
-  Space,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-  Typography,
-  notification,
-} from "antd";
+import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Modal, Popconfirm, Radio, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import type { ColumnsType } from "antd/es/table";
 
 // GH #245 / ADR-0144: per-area permissions. Empty scopes = full access (the
@@ -134,7 +117,7 @@ export function UserAPITokensPage(): JSX.Element {
       setRows(resp.data.items ?? []);
     } catch (err) {
       const e = err as { message?: string };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to load API tokens",
         description: e.message ?? "Unknown error",
       });
@@ -173,7 +156,7 @@ export function UserAPITokensPage(): JSX.Element {
         if (ddnsSel) scopes.push("ddns");
         if (ddnsSel && ddnsRecordId.trim()) scopes.push(`record:${ddnsRecordId.trim()}`);
         if (scopes.length === 0) {
-          notification.error({
+          feedback.notification.error({
             message: "Select at least one permission",
             description: "Pick some permissions, or choose Full access.",
           });
@@ -190,7 +173,7 @@ export function UserAPITokensPage(): JSX.Element {
       // validateFields throws with a list of errors; nothing to toast.
       if ((err as { errorFields?: unknown }).errorFields) return;
       const e = err as { message?: string };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to create token",
         description: e.message ?? "Unknown error",
       });
@@ -200,11 +183,11 @@ export function UserAPITokensPage(): JSX.Element {
   const onRevoke = async (t: UserAPIToken) => {
     try {
       await apiClient.delete(`/me/api-tokens/${t.id}`);
-      notification.success({ message: `Token "${t.name}" revoked` });
+      feedback.notification.success({ message: `Token "${t.name}" revoked` });
       void load();
     } catch (err) {
       const e = err as { message?: string };
-      notification.error({
+      feedback.notification.error({
         message: "Failed to revoke token",
         description: e.message ?? "Unknown error",
       });
@@ -214,9 +197,9 @@ export function UserAPITokensPage(): JSX.Element {
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      notification.success({ message: "Copied to clipboard" });
+      feedback.notification.success({ message: "Copied to clipboard" });
     } catch {
-      notification.error({
+      feedback.notification.error({
         message: "Copy failed",
         description: "Select the secret and copy manually.",
       });

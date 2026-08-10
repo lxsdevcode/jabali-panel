@@ -4,21 +4,8 @@
 // is intentionally not offered here yet — its send-as path is pending.
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import {
-  Button,
-  Flex,
-  Empty,
-  Form,
-  Input,
-  message,
-  Modal,
-  Segmented,
-  Select,
-  Skeleton,
-  Space,
-  Tag,
-  Typography,
-} from "antd";
+import { Button, Flex, Empty, Form, Input, Modal, Segmented, Select, Skeleton, Space, Tag, Typography } from "antd";
+import { feedback } from "../../../../lib/feedback"; // GH #970: themed toasts
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { DeleteOutlined, PlusOutlined, TeamOutlined } from "@icons";
 
@@ -157,9 +144,9 @@ export const SharedResourcesTab = () => {
                     onClick: async () => {
                       try {
                         await deleteMut.mutateAsync({ id: row.id });
-                        message.success("Deleted");
+                        feedback.message.success("Deleted");
                       } catch {
-                        message.error("Delete failed");
+                        feedback.message.error("Delete failed");
                       }
                     },
                     confirm: { title: `Delete ${row.display_name || row.email}?`, description: "Removes the shared collection and all its grants.", okText: "Delete" },
@@ -197,13 +184,13 @@ function CreateModal({
     const v = await form.validateFields();
     try {
       await createMut.mutateAsync(v);
-      message.success("Shared resource created");
+      feedback.message.success("Shared resource created");
       onClose();
     } catch (err) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         "Create failed";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
   return (
@@ -277,10 +264,10 @@ function GrantsModal({ resource, onClose }: { resource: Row; onClose: () => void
     ];
     try {
       await setGrants.mutateAsync({ id: resource.id, grants });
-      message.success("Grants saved — apply on next sync");
+      feedback.message.success("Grants saved — apply on next sync");
       onClose();
     } catch {
-      message.error("Save failed");
+      feedback.message.error("Save failed");
     }
   };
 

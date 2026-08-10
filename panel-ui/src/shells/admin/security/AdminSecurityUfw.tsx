@@ -7,7 +7,7 @@
 // enable/disable typed-YES gate — that's a destructive confirmation,
 // not a create form, so it's the right antd primitive.
 import { useTranslation } from "react-i18next";
-import { Alert, Button, Card, Drawer, Empty, Form, Grid, Input, message, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Drawer, Empty, Form, Grid, Input, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useState } from "react";
 
@@ -75,20 +75,20 @@ export const AdminSecurityUfw = () => {
         // M43 Step 6: `from` is intentionally not sent. UFW UI is
         // port-policy-only. IP decisions go through CrowdSec.
       });
-      message.success("Rule added");
+      feedback.message.success("Rule added");
       addForm.resetFields();
       setAddOpen(false);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to add rule");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to add rule");
     }
   };
 
   const onDelete = async (rule: UfwRule) => {
     try {
       await deleteRule.mutateAsync(rule.num);
-      message.success(`Removed rule #${rule.num}`);
+      feedback.message.success(`Removed rule #${rule.num}`);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : "Failed to delete rule");
+      feedback.message.error(e instanceof Error ? e.message : "Failed to delete rule");
     }
   };
 
@@ -127,14 +127,14 @@ export const AdminSecurityUfw = () => {
       okButtonProps: { danger: !enable },
       onOk: async () => {
         if (typed !== "YES") {
-          message.warning('Type "YES" exactly to confirm');
+          feedback.message.warning('Type "YES" exactly to confirm');
           return Promise.reject(new Error("not confirmed"));
         }
         try {
           await toggle.mutateAsync({ enable });
-          message.success(enable ? "Firewall enabled" : "Firewall disabled");
+          feedback.message.success(enable ? "Firewall enabled" : "Firewall disabled");
         } catch (e: unknown) {
-          message.error(e instanceof Error ? e.message : "Toggle failed");
+          feedback.message.error(e instanceof Error ? e.message : "Toggle failed");
           throw e;
         }
       },

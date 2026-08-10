@@ -4,21 +4,8 @@
 // and seed the Form once they arrive.
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import {
-  Button,
-  Card,
-  Col,
-  Divider,
-  Form,
-  Input,
-  InputNumber,
-  Row,
-  Select,
-  Spin,
-  Switch,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Col, Divider, Form, Input, InputNumber, Row, Select, Spin, Switch, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CheckOutlined, CloseOutlined } from "@icons";
 import { useNavigate, useParams } from "react-router";
 
@@ -144,12 +131,12 @@ export const PackageEdit = () => {
           : (values.allowed_backup_destination_kinds ?? ""),
       } as unknown as PackageEditInput;
       await updateMutation.mutateAsync({ id, input });
-      message.success("Package updated");
+      feedback.message.success("Package updated");
       navigate("/jabali-admin/packages");
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to update package";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

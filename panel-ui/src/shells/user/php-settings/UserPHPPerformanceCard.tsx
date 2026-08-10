@@ -5,19 +5,8 @@
 // This replaces the old raw UserPHPPoolCard (removed in PR #34) with the
 // package-gated, preset-based model.
 import { useTranslation } from "react-i18next";
-import {
-  Alert,
-  Button,
-  Card,
-  Collapse,
-  Form,
-  InputNumber,
-  Select,
-  Space,
-  Spin,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Collapse, Form, InputNumber, Select, Space, Spin, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiClient } from "../../../apiClient";
@@ -64,11 +53,11 @@ export const UserPHPPerformanceCard = ({
     setSaving(true);
     try {
       await apiClient.put("/me/php-performance-mode", { php_version: version, mode });
-      message.success(`Performance mode set to ${mode}`);
+      feedback.message.success(`Performance mode set to ${mode}`);
       qc.invalidateQueries({ queryKey: ["me-fpm-policy"] });
     } catch (e) {
       const err = e as { response?: { data?: { error?: string; detail?: string } } };
-      message.error(err.response?.data?.detail ?? err.response?.data?.error ?? "Failed");
+      feedback.message.error(err.response?.data?.detail ?? err.response?.data?.error ?? "Failed");
     } finally {
       setSaving(false);
     }
@@ -79,11 +68,11 @@ export const UserPHPPerformanceCard = ({
     setSaving(true);
     try {
       await apiClient.put("/me/php-pool-tuning", { php_version: version, ...vals });
-      message.success("Advanced FPM settings applied (clamped to your plan)");
+      feedback.message.success("Advanced FPM settings applied (clamped to your plan)");
       qc.invalidateQueries({ queryKey: ["me-fpm-policy"] });
     } catch (e) {
       const err = e as { response?: { data?: { error?: string; detail?: string } } };
-      message.error(err.response?.data?.detail ?? err.response?.data?.error ?? "Failed");
+      feedback.message.error(err.response?.data?.detail ?? err.response?.data?.error ?? "Failed");
     } finally {
       setSaving(false);
     }

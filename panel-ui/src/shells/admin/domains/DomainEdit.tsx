@@ -4,19 +4,8 @@
 // (name/doc_root/enabled/custom directives + Save).
 import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Space,
-  Spin,
-  Switch,
-  Tabs,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Form, Input, Space, Spin, Switch, Tabs, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CheckOutlined, CloseOutlined } from "@icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router";
@@ -93,12 +82,12 @@ export const DomainEdit = () => {
     if (!id) return;
     try {
       await updateMutation.mutateAsync({ id, input: values });
-      message.success("Domain updated");
+      feedback.message.success("Domain updated");
       navigate("/jabali-admin/domains");
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to update domain";
-      message.error(msg);
+      feedback.message.error(msg);
     }
   };
 

@@ -1,20 +1,6 @@
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Drawer,
-  Form,
-  Input,
-  Select,
-  Space,
-  Steps,
-  Spin,
-  Radio,
-  Tabs,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Drawer, Form, Input, Select, Space, Steps, Spin, Radio, Tabs, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import { CloudServerOutlined, ApiOutlined } from "@icons";
 import { apiClient } from "../../../apiClient";
 
@@ -89,7 +75,7 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
       setDestDomain(v.dest_domain);
       setStep(2);
     } catch (e) {
-      message.error(errText(e) ?? "Create failed");
+      feedback.message.error(errText(e) ?? "Create failed");
     } finally {
       setBusy(false);
     }
@@ -103,7 +89,7 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
       await apiClient.post(`/migrations/${jobId}/secrets`, v);
       setStep(3);
     } catch (e) {
-      message.error(errText(e) ?? "Failed to save credentials");
+      feedback.message.error(errText(e) ?? "Failed to save credentials");
     } finally {
       setBusy(false);
     }
@@ -149,9 +135,9 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
         {},
       );
       setInstalls(data.installs ?? []);
-      if (!data.installs?.length) message.info("No WordPress installs found on the source.");
+      if (!data.installs?.length) feedback.message.info("No WordPress installs found on the source.");
     } catch (e) {
-      message.error(errText(e) ?? "Scan failed");
+      feedback.message.error(errText(e) ?? "Scan failed");
     } finally {
       setScanning(false);
     }
@@ -160,9 +146,9 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
     if (!jobId) return;
     try {
       await apiClient.post(`/migrations/${jobId}/source-path`, { source_path: root });
-      message.success("Selected " + root);
+      feedback.message.success("Selected " + root);
     } catch (e) {
-      message.error(errText(e) ?? "Could not select");
+      feedback.message.error(errText(e) ?? "Could not select");
     }
   };
 
@@ -172,9 +158,9 @@ export function MigrateRemoteDrawer({ open, onClose, onSuccess }: Props) {
     try {
       await apiClient.post(`/migrations/${jobId}/pull-source`, { ssh_user: "root" });
       setStarted(true);
-      message.success("Migration started in the background.");
+      feedback.message.success("Migration started in the background.");
     } catch (e) {
-      message.error(errText(e) ?? "Failed to start the migration");
+      feedback.message.error(errText(e) ?? "Failed to start the migration");
     } finally {
       setBusy(false);
     }

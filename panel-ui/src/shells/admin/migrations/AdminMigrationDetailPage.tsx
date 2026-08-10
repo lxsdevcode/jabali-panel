@@ -7,26 +7,8 @@
 // operator sees stages advance live while the cobra CLI runs.
 import { useTranslation } from "react-i18next";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Collapse,
-  Descriptions,
-  Empty,
-  Form,
-  Input,
-  message,
-  Modal,
-  Radio,
-  Space,
-  Spin,
-  Progress,
-  Steps,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, Button, Card, Checkbox, Collapse, Descriptions, Empty, Form, Input, Modal, Radio, Space, Spin, Progress, Steps, Tag, Typography } from "antd";
+import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 import {
   ClockCircleOutlined,
   DatabaseOutlined,
@@ -770,11 +752,11 @@ function FailedCard({ jobId, onDestroyed }: { jobId: string; onDestroyed: () => 
       );
     },
     onSuccess: () => {
-      message.success("Retry queued — runner will pick up the job on the next tick.");
+      feedback.message.success("Retry queued — runner will pick up the job on the next tick.");
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      message.error(detail ?? "Retry failed");
+      feedback.message.error(detail ?? "Retry failed");
     },
   });
   const destroy = useMutation({
@@ -782,12 +764,12 @@ function FailedCard({ jobId, onDestroyed }: { jobId: string; onDestroyed: () => 
       await apiClient.post(`/admin/migrations/${jobId}/destroy`);
     },
     onSuccess: () => {
-      message.success("Job destroyed.");
+      feedback.message.success("Job destroyed.");
       onDestroyed();
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      message.error(detail ?? "Destroy failed");
+      feedback.message.error(detail ?? "Destroy failed");
     },
   });
 
@@ -890,12 +872,12 @@ export function DriveCard({
       return data;
     },
     onSuccess: () => {
-      message.success("Secrets uploaded.");
+      feedback.message.success("Secrets uploaded.");
       setSecretsOpen(false);
       secretsForm.resetFields();
     },
     onError: (e: unknown) => {
-      message.error(
+      feedback.message.error(
         `Secrets upload failed: ${(e as Error)?.message ?? "unknown"}`,
       );
     },
@@ -910,7 +892,7 @@ export function DriveCard({
       return data as { unit?: string };
     },
     onSuccess: (d) => {
-      message.success(`Pull started: ${d?.unit ?? "(unit name unavailable)"}`);
+      feedback.message.success(`Pull started: ${d?.unit ?? "(unit name unavailable)"}`);
       refresh();
     },
     onError: (e: unknown) => {
@@ -919,7 +901,7 @@ export function DriveCard({
         (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         (e as Error)?.message ??
         "unknown";
-      message.error(`Pull failed to start: ${detail}`);
+      feedback.message.error(`Pull failed to start: ${detail}`);
     },
   });
 
@@ -954,7 +936,7 @@ export function DriveCard({
       return data as { unit?: string };
     },
     onSuccess: (d) => {
-      message.success(
+      feedback.message.success(
         `Import started: ${d?.unit ?? "(unit name unavailable)"}`,
       );
       setImportOpen(false);
@@ -963,7 +945,7 @@ export function DriveCard({
       refresh();
     },
     onError: (e: unknown) => {
-      message.error(
+      feedback.message.error(
         `Import failed to start: ${(e as Error)?.message ?? "unknown"}`,
       );
     },
@@ -1011,7 +993,7 @@ export function DriveCard({
       return data as { path: string; size_bytes: number };
     },
     onSuccess: (d) => {
-      message.success(
+      feedback.message.success(
         `Tarball uploaded (${(d.size_bytes / (1024 * 1024)).toFixed(1)} MiB)`,
       );
       queryClient.invalidateQueries({
@@ -1019,7 +1001,7 @@ export function DriveCard({
       });
     },
     onError: (e: unknown) => {
-      message.error(
+      feedback.message.error(
         `Tarball upload failed: ${(e as Error)?.message ?? "unknown"}`,
       );
     },

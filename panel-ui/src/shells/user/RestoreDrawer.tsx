@@ -9,16 +9,8 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Drawer,
-  Space,
-  Spin,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Checkbox, Drawer, Space, Spin, Typography } from "antd";
+import { feedback } from "../../lib/feedback"; // GH #970: themed toasts
 
 import { apiClient } from "../../apiClient";
 
@@ -85,7 +77,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
         setDnsDomains(resp.data.dns_domains ?? []);
       })
       .catch((err) =>
-        message.error(
+        feedback.message.error(
           err instanceof Error ? err.message : "Could not read backup contents",
         ),
       )
@@ -103,10 +95,10 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
       );
       setResult(resp.data);
       const n = resp.data.applied?.length ?? 0;
-      if (n > 0) message.success(`Restored ${n} item${n === 1 ? "" : "s"}`);
-      else message.warning("Nothing was restored — see details");
+      if (n > 0) feedback.message.success(`Restored ${n} item${n === 1 ? "" : "s"}`);
+      else feedback.message.warning("Nothing was restored — see details");
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Restore failed");
+      feedback.message.error(err instanceof Error ? err.message : "Restore failed");
     } finally {
       setSubmitting(false);
     }
