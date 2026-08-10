@@ -43,13 +43,18 @@ type Reconciler struct {
 	dnsRecords     repository.DNSRecordRepository
 	sslCerts       repository.SSLCertificateRepository
 	serverSettings repository.ServerSettingsRepository
-	phpPools       repository.PHPPoolRepository
-	sso            sso.SSOInterface
-	cfg            *config.Config
-	agent          agent.AgentInterface
-	dbAdmin        repository.DBAdminRepository
-	log            *slog.Logger
-	interval       time.Duration
+	// dnsPreflight resolves a hostname against EXTERNAL resolvers before an
+	// ACME attempt (GH #896 follow-up). Injectable so unit tests are not
+	// network-dependent; production default is
+	// dnsverify.LookupHostExternalResult (set in New).
+	dnsPreflight func(ctx context.Context, host string) (addrs []string, queried bool)
+	phpPools     repository.PHPPoolRepository
+	sso          sso.SSOInterface
+	cfg          *config.Config
+	agent        agent.AgentInterface
+	dbAdmin      repository.DBAdminRepository
+	log          *slog.Logger
+	interval     time.Duration
 
 	// sslIssueMu serialises certbot-touching work across the JAB-205
 	// domain worker pool AND the out-of-band ReconcileOne path: certbot
@@ -435,12 +440,13 @@ func New(domains repository.DomainRepository, users repository.UserRepository, a
 		cfg.QueueLen = 100
 	}
 	r := &Reconciler{
-		domains:  domains,
-		users:    users,
-		agent:    agentClient,
-		log:      log,
-		interval: cfg.Interval,
-		queue:    make(chan string, cfg.QueueLen),
+		domains:      domains,
+		users:        users,
+		agent:        agentClient,
+		log:          log,
+		dnsPreflight: dnsverify.LookupHostExternalResult,
+		interval:     cfg.Interval,
+		queue:        make(chan string, cfg.QueueLen),
 	}
 	// Initialize default socketReady function
 	r.socketReady = r.waitSocketReady
@@ -2615,6 +2621,39 @@ func (r *Reconciler) tryACMEOrFallback(ctx context.Context, domain *models.Domai
 		return
 	}
 
+	// GH #896 follow-up: pre-flight the BASE name before handing it to
+	// certbot. A freshly created (sub)domain routinely has no public
+	// A/AAAA yet — the operator adds the record at their DNS host minutes
+	// or hours later — and attempting issuance anyway guarantees a
+	// certbot NXDOMAIN failure that surfaces in the panel as a raw
+	// internal error ("certbot issue failed (dns_resolve_failed): …"),
+	// which is exactly what the #896 reporter hit on a fresh subdomain.
+	// The SANs already get this treatment (resolvableSANs); the base
+	// name never did.
+	//
+	// Skipping costs nothing at Let's Encrypt (no attempt = no rate-limit
+	// hit), so a DNS wait deliberately does NOT count toward the
+	// 20-attempt cap and retries on a short fixed delay — DNS propagates
+	// in minutes, and burning the cap while the operator sets up their
+	// records would strand the domain on "failed" without a single real
+	// ACME attempt.
+	// Park ONLY on a definitive empty answer (queried=true): an
+	// inconclusive lookup — every external resolver unreachable, e.g.
+	// outbound :53 blocked — must fall through to the ACME attempt, or a
+	// resolver outage on our side would strand every domain on "waiting
+	// for DNS" without ever trying.
+	{
+		preCtx, preCancel := context.WithTimeout(ctx, 6*time.Second)
+		addrs, queried := r.dnsPreflight(preCtx, domain.Name)
+		preCancel()
+		if queried && len(addrs) == 0 {
+			r.selfSignAndWaitForDNS(ctx, domain, cert,
+				"waiting for DNS: "+domain.Name+" has no public A/AAAA record yet — "+
+					"Let's Encrypt is not attempted until the name resolves (it would fail with NXDOMAIN); retrying automatically")
+			return
+		}
+	}
+
 	staging := false
 	if r.cfg != nil {
 		staging = r.cfg.ACME.StagingOnly
@@ -2702,45 +2741,68 @@ func isWebrootNotReady(err error) bool {
 //
 // The cert row stays in 'pending_acme_retry' status forever until ACME
 // succeeds; the SSL ticker will pick it up at next_retry_at.
-func (r *Reconciler) fallbackToSelfSignAndRetry(ctx context.Context, domain *models.Domain, cert *models.SSLCertificate, lastError string) {
-	var fallbackCertPath *string
-	var fallbackKeyPath *string
-	var fallbackExpiresAt *time.Time
+// ensureSelfSignFallback generates the self-signed placeholder when the cert
+// row has no files yet, so HTTPS answers while ACME is pending. Returns nils
+// when a cert file already exists (nothing to replace) or self-sign failed
+// (logged; the row keeps whatever it had).
+func (r *Reconciler) ensureSelfSignFallback(ctx context.Context, domain *models.Domain, cert *models.SSLCertificate) (certPath, keyPath *string, expiresAt *time.Time) {
+	if cert.CertPath != nil {
+		return nil, nil, nil
+	}
+	selfSignCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
-	if cert.CertPath == nil {
-		// No cert file yet; generate self-signed fallback so HTTPS works
-		// while we keep retrying ACME.
-		selfSignCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-
-		ssParams := map[string]any{
-			"domain": domain.Name,
-			"days":   365,
-		}
-		if extras := sanHostnamesForDomain(domain); len(extras) > 0 {
-			// Self-sign uses the SAME SAN filter so the fallback
-			// cert covers exactly what ACME will retry next tick.
-			if filtered := r.resolvableSANs(selfSignCtx, extras); len(filtered) > 0 {
-				ssParams["hostnames"] = filtered
-			}
-		}
-		raw, sErr := r.agent.Call(selfSignCtx, "ssl.self_sign", ssParams)
-		if sErr != nil {
-			r.log.Warn("ssl: self_sign fallback failed", "domain", domain.Name, "err", sErr)
-		} else {
-			var res sslSelfSignResult
-			if pErr := json.Unmarshal(raw, &res); pErr != nil {
-				r.log.Warn("ssl: parse self_sign result failed", "domain", domain.Name, "err", pErr)
-			} else if expiresAt, tErr := time.Parse(time.RFC3339, res.ExpiresAt); tErr != nil {
-				r.log.Warn("ssl: parse self_sign expires_at failed", "domain", domain.Name, "err", tErr)
-			} else {
-				fallbackCertPath = &res.CertPath
-				fallbackKeyPath = &res.KeyPath
-				fallbackExpiresAt = &expiresAt
-				r.log.Info("ssl: self-signed fallback generated", "domain", domain.Name, "expires_at", expiresAt.Format(time.RFC3339))
-			}
+	ssParams := map[string]any{
+		"domain": domain.Name,
+		"days":   365,
+	}
+	if extras := sanHostnamesForDomain(domain); len(extras) > 0 {
+		// Self-sign uses the SAME SAN filter so the fallback
+		// cert covers exactly what ACME will retry next tick.
+		if filtered := r.resolvableSANs(selfSignCtx, extras); len(filtered) > 0 {
+			ssParams["hostnames"] = filtered
 		}
 	}
+	raw, sErr := r.agent.Call(selfSignCtx, "ssl.self_sign", ssParams)
+	if sErr != nil {
+		r.log.Warn("ssl: self_sign fallback failed", "domain", domain.Name, "err", sErr)
+		return nil, nil, nil
+	}
+	var res sslSelfSignResult
+	if pErr := json.Unmarshal(raw, &res); pErr != nil {
+		r.log.Warn("ssl: parse self_sign result failed", "domain", domain.Name, "err", pErr)
+		return nil, nil, nil
+	}
+	exp, tErr := time.Parse(time.RFC3339, res.ExpiresAt)
+	if tErr != nil {
+		r.log.Warn("ssl: parse self_sign expires_at failed", "domain", domain.Name, "err", tErr)
+		return nil, nil, nil
+	}
+	r.log.Info("ssl: self-signed fallback generated", "domain", domain.Name, "expires_at", exp.Format(time.RFC3339))
+	return &res.CertPath, &res.KeyPath, &exp
+}
+
+// dnsWaitRetryDelay paces re-checks while a domain's DNS record does not
+// exist yet. Short and flat: DNS propagates in minutes, the check is a
+// resolver query (no Let's Encrypt quota involved), and the next passing
+// check goes straight to a real ACME attempt.
+const dnsWaitRetryDelay = 5 * time.Minute
+
+// selfSignAndWaitForDNS parks an LE-mode cert in pending_acme_retry while
+// the base name has no public A/AAAA record, WITHOUT counting toward the
+// acmeMaxRetries cap: no ACME attempt was made, so no Let's Encrypt quota
+// was spent, and a slow DNS setup must not strand the domain on "failed"
+// before its first real attempt (GH #896 follow-up).
+func (r *Reconciler) selfSignAndWaitForDNS(ctx context.Context, domain *models.Domain, cert *models.SSLCertificate, reason string) {
+	fallbackCertPath, fallbackKeyPath, fallbackExpiresAt := r.ensureSelfSignFallback(ctx, domain, cert)
+	nextRetry := time.Now().UTC().Add(dnsWaitRetryDelay)
+	_ = r.sslCerts.UpdateAfterACMEFailure(ctx, cert.ID, reason, nextRetry, cert.RetryCount, fallbackCertPath, fallbackKeyPath, fallbackExpiresAt)
+	r.log.Info("ssl: waiting for DNS before attempting ACME",
+		"domain", domain.Name, "next_check_at", nextRetry.Format(time.RFC3339))
+}
+
+func (r *Reconciler) fallbackToSelfSignAndRetry(ctx context.Context, domain *models.Domain, cert *models.SSLCertificate, lastError string) {
+	fallbackCertPath, fallbackKeyPath, fallbackExpiresAt := r.ensureSelfSignFallback(ctx, domain, cert)
 
 	newRetryCount := cert.RetryCount + 1
 

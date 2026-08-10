@@ -64,8 +64,20 @@ func (f *fakeSSLCertRepo) UpdateSelfSigned(context.Context, string, string, stri
 func (f *fakeSSLCertRepo) UpdateCustom(context.Context, string, string, string, time.Time) error {
 	return nil
 }
-func (f *fakeSSLCertRepo) UpdateAfterACMEFailure(context.Context, string, string, time.Time, int, *string, *string, *time.Time) error {
+func (f *fakeSSLCertRepo) UpdateAfterACMEFailure(_ context.Context, id, lastError string, nextRetryAt time.Time, retryCount int, _, _ *string, _ *time.Time) error {
 	f.acmeFailures++
+	// Record onto the row so tests can assert what the reconciler wrote —
+	// the DNS pre-flight tests (GH #896) check the reason, the retry count,
+	// and the next-retry time.
+	for _, c := range f.byDomain {
+		if c.ID == id {
+			le := lastError
+			nr := nextRetryAt
+			c.LastError = &le
+			c.NextRetryAt = &nr
+			c.RetryCount = retryCount
+		}
+	}
 	return nil
 }
 func (f *fakeSSLCertRepo) UpdateAfterACMEFailureCapped(context.Context, string, string, int, *string, *string, *time.Time) error {

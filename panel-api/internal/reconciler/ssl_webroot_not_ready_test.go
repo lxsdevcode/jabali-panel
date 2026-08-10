@@ -38,6 +38,13 @@ func sslWebrootFixture(t *testing.T, issueErr error) (*Reconciler, *fakeAgent, *
 	r := New(dr, nil, ag, slog.Default(), Config{}).
 		WithSSLCerts(sc).
 		WithDNSRepos(nil, nil, srv)
+	// The DNS pre-flight (GH #896 follow-up) would otherwise do a REAL
+	// external lookup for sub.example.com — authoritative NXDOMAIN — and
+	// park the cert before ssl.issue is ever attempted, which is not what
+	// these tests exercise. Stub it as "resolves".
+	r.dnsPreflight = func(context.Context, string) ([]string, bool) {
+		return []string{"192.0.2.1"}, true
+	}
 	return r, ag, sc, dom
 }
 
