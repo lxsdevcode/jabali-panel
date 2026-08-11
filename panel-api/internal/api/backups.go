@@ -361,6 +361,11 @@ func materializeDest(ctx context.Context, dests repository.BackupDestinationRepo
 // backup commands accept. Mirror of backupscheduler.destWireParams;
 // kept duplicated to avoid the api → backupscheduler import cycle.
 func destWireParams(d *models.BackupDestination) map[string]any {
+	// nil = a legacy job row with no destination — the agent falls back to
+	// its default local repo, which is exactly where such a backup lives.
+	if d == nil {
+		return nil
+	}
 	out := map[string]any{
 		"repo_url":         d.URL,
 		"destination_kind": d.Kind,
@@ -2552,7 +2557,21 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 	// the agent finished the work anyway). The result the drawer used to
 	// read from this response is persisted onto the job row
 	// (warnings_json) instead, and the drawer polls the job.
-	go h.runSelectiveRestoreJob(restoreJob.ID, job.SnapshotID, *owner.Username, req, ownedDomains)
+	// The snapshot lives in the SOURCE backup's destination repo, not the
+	// agent's legacy default. Resolve it here and hand it to the runner —
+	// without this every restore from a per-destination backup failed with
+	// "failed to find snapshot" against /var/lib/jabali-backups/repo (found
+	// live while E2E-testing the async flow; the synchronous version had
+	// the same omission all along).
+	var restoreDest *models.BackupDestination
+	if job.DestinationID != nil && *job.DestinationID != "" && h.cfg.Destinations != nil {
+		if d, derr := h.cfg.Destinations.Get(c.Request.Context(), *job.DestinationID); derr == nil {
+			restoreDest = d
+		} else {
+			h.cfg.logErr("selective restore: destination lookup failed", derr, "dest_id", *job.DestinationID)
+		}
+	}
+	go h.runSelectiveRestoreJob(restoreJob.ID, job.SnapshotID, *owner.Username, req, ownedDomains, restoreDest)
 	c.JSON(http.StatusAccepted, gin.H{"status": "queued", "job_id": restoreJob.ID})
 }
 
@@ -2569,7 +2588,7 @@ type selectiveRestoreOutcome struct {
 // completion and seals the job row with the outcome. Detached from the
 // request; every context is fresh (a status write on the dead request
 // context would be a silent no-op).
-func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username string, req meRestoreSelectiveRequest, ownedDomains map[string]string) {
+func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username string, req meRestoreSelectiveRequest, ownedDomains map[string]string, dest *models.BackupDestination) {
 	ctx, cancel := context.WithTimeout(context.Background(), restoreJobTimeout)
 	defer cancel()
 	seal := func(status, errText string, out selectiveRestoreOutcome) {
@@ -2584,7 +2603,7 @@ func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username s
 	// Databases + home go to the agent (host-side). Only dispatch when one is
 	// requested — the agent rejects an empty db+home set.
 	if len(req.Databases) > 0 || req.Home || len(req.Mailboxes) > 0 {
-		raw, aerr := h.cfg.Agent.Call(ctx, "backup.restore_selective", map[string]any{
+		params := map[string]any{
 			"job_id":               jobID,
 			"manifest_snapshot_id": manifestSnap,
 			"target_username":      username,
@@ -2592,7 +2611,23 @@ func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username s
 			"mailboxes":            req.Mailboxes,
 			"home":                 req.Home,
 			"overwrite":            req.Overwrite,
-		})
+		}
+		// Point the agent at the repo the snapshot actually lives in, and
+		// unseal the per-destination restic password for it (M30.2.x) —
+		// same contract as every backup.create/backup.restore dispatch.
+		for k, v := range destWireParams(dest) {
+			params[k] = v
+		}
+		var raw json.RawMessage
+		aerr := backupwrapperhelpers.WithOptionalDestPassword(ctx, dest, h.cfg.Agent, h.cfg.SSOKey,
+			func(passwordFile string) error {
+				if passwordFile != "" {
+					params["password_file"] = passwordFile
+				}
+				var callErr error
+				raw, callErr = h.cfg.Agent.Call(ctx, "backup.restore_selective", params)
+				return callErr
+			})
 		if aerr != nil {
 			// Agent errors carry restic/host internals — log, don't echo
 			// (JAB-114). The drawer sees the generic failure via the row.
@@ -2617,7 +2652,7 @@ func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username s
 			}
 			out.Warnings = append(out.Warnings, "overwrite=false: DNS not applied. Restoring DNS replaces this domain's custom records; re-send with overwrite=true.")
 		} else {
-			da, dw := h.restoreDNSRecords(ctx, manifestSnap, req.DNSDomains, ownedDomains)
+			da, dw := h.restoreDNSRecords(ctx, manifestSnap, req.DNSDomains, ownedDomains, dest)
 			out.Applied = append(out.Applied, da...)
 			out.Warnings = append(out.Warnings, dw...)
 		}
@@ -2630,17 +2665,32 @@ func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username s
 // (via the agent) and re-inserts them into each domain's zone, replacing the
 // existing NON-managed records. Owner-scoping is enforced by ownedDomains (the
 // caller's name->id map); managed records are left untouched (they re-derive).
-func (h *meBackupHandler) restoreDNSRecords(ctx context.Context, manifestSnap string, domains []string, ownedDomains map[string]string) ([]string, []string) {
+func (h *meBackupHandler) restoreDNSRecords(ctx context.Context, manifestSnap string, domains []string, ownedDomains map[string]string, dest *models.BackupDestination) ([]string, []string) {
 	var applied, warnings []string
 	if h.cfg.DNSZones == nil || h.cfg.DNSRecords == nil {
 		return nil, []string{"dns: not configured on this panel"}
 	}
-	raw, err := h.cfg.Agent.Call(ctx, "backup.dns_read", map[string]any{
+	// GH #1044: read from the SOURCE backup's destination repo, not the
+	// legacy default — same fix as the manifest and selective paths.
+	params := map[string]any{
 		"manifest_snapshot_id": manifestSnap,
 		"domain_names":         domains,
-	})
+	}
+	for k, v := range destWireParams(dest) {
+		params[k] = v
+	}
+	var raw json.RawMessage
+	err := backupwrapperhelpers.WithOptionalDestPassword(ctx, dest, h.cfg.Agent, h.cfg.SSOKey,
+		func(passwordFile string) error {
+			if passwordFile != "" {
+				params["password_file"] = passwordFile
+			}
+			var callErr error
+			raw, callErr = h.cfg.Agent.Call(ctx, "backup.dns_read", params)
+			return callErr
+		})
 	if err != nil {
-		return nil, []string{"dns: read from backup failed: " + err.Error()}
+		return nil, []string{"dns: read from backup failed"}
 	}
 	var rd struct {
 		Domains []struct {
@@ -2725,15 +2775,36 @@ func (h *meBackupHandler) manifest(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "error": "agent_unavailable"})
 		return
 	}
+	// GH #1044: the manifest lives in the SOURCE backup's destination repo.
+	// Without repo_url the agent read the legacy default repo, restic
+	// retried against a snapshot that was never there, and the restore
+	// drawer 502'd for every per-destination backup.
+	var dest *models.BackupDestination
+	if job.DestinationID != nil && *job.DestinationID != "" && h.cfg.Destinations != nil {
+		if d, derr := h.cfg.Destinations.Get(c.Request.Context(), *job.DestinationID); derr == nil {
+			dest = d
+		}
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
-	raw, err := h.cfg.Agent.Call(ctx, "backup.manifest_read", map[string]any{
-		"manifest_snapshot_id": job.SnapshotID,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "error", "error": "manifest_read_failed", "detail": err.Error(),
+	params := map[string]any{"manifest_snapshot_id": job.SnapshotID}
+	for k, v := range destWireParams(dest) {
+		params[k] = v
+	}
+	var raw json.RawMessage
+	err = backupwrapperhelpers.WithOptionalDestPassword(ctx, dest, h.cfg.Agent, h.cfg.SSOKey,
+		func(passwordFile string) error {
+			if passwordFile != "" {
+				params["password_file"] = passwordFile
+			}
+			var callErr error
+			raw, callErr = h.cfg.Agent.Call(ctx, "backup.manifest_read", params)
+			return callErr
 		})
+	if err != nil {
+		// Agent errors carry restic/host internals — log, never echo
+		// (JAB-114; the old response leaked err.Error() to the tenant).
+		respondAgentErr(c, "manifest_read_failed", err)
 		return
 	}
 	// Pass the agent's {kind,user_id,username,stages[]} through verbatim.

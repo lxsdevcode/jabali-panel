@@ -6,10 +6,13 @@
 // already does (backup_restore.go), but as a standalone read-only command the
 // tenant /me/backups/:id/manifest endpoint can call.
 //
-// Uses the default local restic repo (the same simplification as
-// backup.materialize / the tenant download path — remote-destination preview is
-// a follow-up). The manifest snapshot's stdin filename is "manifest.json"
-// (backup_create.go).
+// The read targets the repo the caller names (repo_url + credentials +
+// per-destination password file, same wire contract as backup.create);
+// empty = the legacy default local repo. It originally hardcoded the
+// default repo with "remote-destination preview is a follow-up" — the
+// follow-up that never happened, so the restore drawer 502'd on every
+// per-destination backup (GH #1044 E2E finding). The manifest snapshot's
+// stdin filename is "manifest.json" (backup_create.go).
 package commands
 
 import (
@@ -21,7 +24,11 @@ import (
 )
 
 type backupManifestReadParams struct {
-	ManifestSnapshotID string `json:"manifest_snapshot_id"`
+	ManifestSnapshotID string            `json:"manifest_snapshot_id"`
+	RepoURL            string            `json:"repo_url,omitempty"`
+	CredentialsRef     string            `json:"credentials_ref,omitempty"`
+	PasswordFile       string            `json:"password_file,omitempty"`
+	SFTP               *backupSFTPInputs `json:"sftp,omitempty"`
 }
 
 type backupManifestStageDTO struct {
@@ -47,7 +54,7 @@ func backupManifestReadHandler(ctx context.Context, raw json.RawMessage) (any, e
 		return nil, bkInvalidArg("manifest_snapshot_id is required")
 	}
 
-	cfg, cerr := bkResticConfig("", "", nil)
+	cfg, cerr := bkResticConfigWithPassword(p.RepoURL, p.CredentialsRef, p.PasswordFile, p.SFTP)
 	if cerr != nil {
 		return nil, bkInternal("restic config", cerr)
 	}
