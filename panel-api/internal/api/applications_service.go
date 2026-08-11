@@ -524,6 +524,7 @@ func dispatchInstallKicker(ctx context.Context, appName string, k kickContext, d
 			DBUser:       k.Chain.DBUsername,
 			DBPassword:   k.Chain.DBPassword,
 			SiteTitle:    paramOr(k.Params, "site_title", "InvoiceShelf"),
+			Currency:     paramOr(k.Params, "currency", "USD"),
 			AdminEmail:   k.AdminEmail,
 			AdminPass:    invoicePass,
 			UseWWW:       k.UseWWW,

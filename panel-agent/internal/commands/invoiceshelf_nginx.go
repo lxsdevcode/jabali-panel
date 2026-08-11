@@ -56,7 +56,7 @@ func invoiceShelfSnippetPath(domain, subdir string) string {
 // locations that beat the vhost's `~ \.php$` (nginx precedence: = > ^~ >
 // ~). Subdir installs also get a Laravel front controller since the generic
 // vhost's try_files targets /index.php at the docroot, not /<sub>/index.php.
-func invoiceShelfNginxConf(osUser, subdir string) string {
+func invoiceShelfNginxConf(osUser, subdir, installPath string) string {
 	p := ""
 	if subdir != "" {
 		p = "/" + subdir
@@ -67,7 +67,31 @@ func invoiceShelfNginxConf(osUser, subdir string) string {
 	for _, f := range []string{"/.env", "/artisan", "/composer.json", "/composer.lock"} {
 		fmt.Fprintf(&b, "location = %s%s { deny all; return 404; }\n", p, f)
 	}
-	for _, d := range []string{"/vendor/", "/storage/", "/bootstrap/", "/config/", "/database/", "/app/", "/resources/", "/routes/", "/lang/", "/tests/", "/.git"} {
+	// /storage/ is NOT in the deny list below: it gets its own alias block
+	// instead (same ^~ prefix — a deny AND an alias for the identical
+	// prefix would be an nginx duplicate-location error). The alias remaps
+	// the URL space into storage/app/public/ only, so framework internals
+	// (storage/framework, storage/logs) stay unreachable: a request for
+	// /storage/logs/laravel.log resolves to
+	// storage/app/public/logs/laravel.log, which does not exist.
+	//
+	// GH #1042: uploads (logos, receipts, avatars) land on Laravel's
+	// public disk at storage/app/public and are linked as /storage/<path>;
+	// with the old blanket deny every one of them 404'd after a
+	// successful upload. `artisan storage:link` cannot fix it here — the
+	// public/ flatten leaves no public/ dir, and a `storage` symlink
+	// cannot coexist with the real storage/ directory at the webroot.
+	//
+	// The nested \.php$ deny keeps an uploaded .php from being served
+	// (^~ suppresses only SERVER-level regex locations, nested ones still
+	// apply). No try_files: with alias it re-resolves against root — the
+	// long-standing nginx alias/try_files trap — and a missing file 404s
+	// on its own anyway.
+	fmt.Fprintf(&b, "location ^~ %s/storage/ {\n", p)
+	fmt.Fprintf(&b, "    alias %s/storage/app/public/;\n", installPath)
+	b.WriteString("    location ~ \\.php$ { deny all; return 404; }\n")
+	b.WriteString("}\n")
+	for _, d := range []string{"/vendor/", "/bootstrap/", "/config/", "/database/", "/app/", "/resources/", "/routes/", "/lang/", "/tests/", "/.git"} {
 		fmt.Fprintf(&b, "location ^~ %s%s { deny all; return 404; }\n", p, d)
 	}
 	if subdir != "" {
@@ -83,7 +107,7 @@ func invoiceShelfNginxConf(osUser, subdir string) string {
 	return b.String()
 }
 
-func writeInvoiceShelfNginx(ctx context.Context, domain, osUser, subdir string) error {
+func writeInvoiceShelfNginx(ctx context.Context, domain, osUser, subdir, installPath string) error {
 	if !domainRegex.MatchString(domain) {
 		return fmt.Errorf("invalid domain %q", domain)
 	}
@@ -93,12 +117,20 @@ func writeInvoiceShelfNginx(ctx context.Context, domain, osUser, subdir string) 
 	if !osUserSafeRE.MatchString(osUser) {
 		return fmt.Errorf("invalid os_user %q", osUser)
 	}
+	// installPath lands verbatim in an nginx alias directive; it was
+	// validated upstream (validateDocrootPath + appInstallPath), but this
+	// writer is also reachable on its own, so re-assert the shape: an
+	// absolute clean path with no nginx-meaningful characters.
+	if installPath == "" || !filepath.IsAbs(installPath) || installPath != filepath.Clean(installPath) ||
+		strings.ContainsAny(installPath, " \t\r\n\"';{}") {
+		return fmt.Errorf("invalid install path %q", installPath)
+	}
 	domainDir := filepath.Join(nginxJabaliDir, domain)
 	if err := os.MkdirAll(domainDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", domainDir, err)
 	}
 	dest := invoiceShelfSnippetPath(domain, subdir)
-	if err := os.WriteFile(dest, []byte(invoiceShelfNginxConf(osUser, subdir)), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(invoiceShelfNginxConf(osUser, subdir, installPath)), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", dest, err)
 	}
 	return reloadNginxAfterSnippet(ctx, dest)

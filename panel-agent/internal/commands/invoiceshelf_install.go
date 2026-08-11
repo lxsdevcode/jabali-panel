@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -53,13 +54,17 @@ type invoiceshelfInstallReq struct {
 	Subdirectory string `json:"subdirectory"`
 	SiteURL      string `json:"site_url"`
 	SiteTitle    string `json:"site_title"`
-	AdminEmail   string `json:"admin_email"`
-	AdminPass    string `json:"admin_pass"`
-	DBName       string `json:"db_name"`
-	DBUser       string `json:"db_user"`
-	DBPassword   string `json:"db_password"`
-	DBHost       string `json:"db_host"`
-	UseWWW       bool   `json:"use_www"`
+	// Currency is the ISO 4217 company currency (GH #1042). Optional;
+	// empty falls back to USD. Validated to ^[A-Z]{3}$ before it goes
+	// anywhere near the tinker env.
+	Currency   string `json:"currency"`
+	AdminEmail string `json:"admin_email"`
+	AdminPass  string `json:"admin_pass"`
+	DBName     string `json:"db_name"`
+	DBUser     string `json:"db_user"`
+	DBPassword string `json:"db_password"`
+	DBHost     string `json:"db_host"`
+	UseWWW     bool   `json:"use_www"`
 }
 
 type invoiceshelfInstallResp struct {
@@ -90,6 +95,12 @@ func invoiceshelfInstallHandler(ctx context.Context, params json.RawMessage) (an
 	}
 	if req.SiteTitle == "" {
 		req.SiteTitle = "InvoiceShelf"
+	}
+	if req.Currency == "" {
+		req.Currency = "USD"
+	}
+	if !regexp.MustCompile(`^[A-Z]{3}$`).MatchString(req.Currency) {
+		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: "currency must be a 3-letter ISO 4217 code"}
 	}
 	if err := validateDocrootPath(req.OSUser, req.Docroot); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInvalidArgument, Message: err.Error()}
@@ -209,26 +220,23 @@ func invoiceshelfInstallHandler(ctx context.Context, params json.RawMessage) (an
 	if err := artisan(10*time.Minute, "migrate", "--force", "--seed"); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
-	// NOTE: `artisan storage:link` is intentionally skipped. After the
-	// public/ flatten there is no public/ dir for Laravel's default
-	// public_path()/storage target, so the link errors; it only affects
-	// serving uploaded files over /storage (e.g. a company logo), not the
-	// invoicing core, and is a tracked follow-up.
+	// `artisan storage:link` stays skipped — after the public/ flatten
+	// there is no public/ dir for its target, and a symlink named
+	// `storage` cannot coexist with the real storage/ directory at the
+	// flattened webroot anyway. Uploads are served instead by an nginx
+	// alias in writeInvoiceShelfNginx: /storage/ -> storage/app/public/
+	// (GH #1042 — before that alias existed, the hardening denied
+	// /storage/ outright and every upload 404'd: "we can upload but it
+	// never shows").
 
 	// Patch the seeded super-admin to the operator's identity + mark the
 	// onboarding complete. The stock UsersTableSeeder created a working
 	// admin/company/roles; we only rewrite the login credentials and the
 	// company name, then flip profile_complete so the wizard is skipped.
 	// Password + title travel via env (never argv) into the tinker script.
-	tinker := `$u = App\Models\User::where('role','super admin')->first();` +
-		`$u->email = '` + req.AdminEmail + `';` +
-		`$u->password = getenv('IS_ADMIN_PASS');` +
-		`$u->save();` +
-		`$c = App\Models\Company::where('owner_id',$u->id)->first();` +
-		`if($c){ $c->name = getenv('IS_SITE_TITLE'); $c->save(); }` +
-		`App\Models\Setting::setSetting('profile_complete','COMPLETED');`
+	tinker := invoiceshelfFinaliseTinker(req.AdminEmail)
 	tinkerCmd := buildSystemdRunCmdEnv(ctx, req.OSUser,
-		[]string{"IS_ADMIN_PASS=" + req.AdminPass, "IS_SITE_TITLE=" + req.SiteTitle},
+		[]string{"IS_ADMIN_PASS=" + req.AdminPass, "IS_SITE_TITLE=" + req.SiteTitle, "IS_CURRENCY=" + req.Currency},
 		php, filepath.Join(installPath, "artisan"), "tinker", "--execute="+tinker)
 	tinkerCmd.Dir = installPath
 	if out, err := runBoundedOutput(tinkerCmd, 0); err != nil {
@@ -252,7 +260,7 @@ func invoiceshelfInstallHandler(ctx context.Context, params json.RawMessage) (an
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: err.Error()}
 	}
 
-	if err := writeInvoiceShelfNginx(ctx, domain, req.OSUser, req.Subdirectory); err != nil {
+	if err := writeInvoiceShelfNginx(ctx, domain, req.OSUser, req.Subdirectory, installPath); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("nginx snippet: %v", err)}
 	}
 
@@ -297,4 +305,30 @@ func invoiceshelfDownload(ctx context.Context, dest string) error {
 
 func init() {
 	RegisterAppInstaller("invoiceshelf", invoiceshelfInstallHandler)
+}
+
+// invoiceshelfFinaliseTinker builds the post-seed finalisation script. Only
+// admin_email is interpolated (character-checked upstream); every other
+// value travels via env so it can never break out of a PHP string literal.
+//
+// GH #1042 additions on top of the original credential patch:
+//   - $u->name: the stock UsersTableSeeder ships a placeholder identity
+//     ("Jane Doe") which stayed visible in the UI — the reporter's "random
+//     admin user". The login is the email; the display name becomes a
+//     neutral constant.
+//   - currency: the seeder hardcodes KWD and the skipped onboarding wizard
+//     is where a currency would normally be picked. Resolve the requested
+//     ISO code against the app's own currencies table; an unknown code
+//     leaves the seeded default rather than failing the install.
+func invoiceshelfFinaliseTinker(adminEmail string) string {
+	return `$u = App\Models\User::where('role','super admin')->first();` +
+		`$u->email = '` + adminEmail + `';` +
+		`$u->name = 'Administrator';` +
+		`$u->password = getenv('IS_ADMIN_PASS');` +
+		`$u->save();` +
+		`$c = App\Models\Company::where('owner_id',$u->id)->first();` +
+		`if($c){ $c->name = getenv('IS_SITE_TITLE'); $c->save(); }` +
+		`$cur = App\Models\Currency::where('code', getenv('IS_CURRENCY'))->first();` +
+		`if($c && $cur){ App\Models\CompanySetting::setSettings(['currency' => $cur->id], $c->id); }` +
+		`App\Models\Setting::setSetting('profile_complete','COMPLETED');`
 }
