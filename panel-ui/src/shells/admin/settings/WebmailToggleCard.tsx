@@ -21,7 +21,7 @@ export const WebmailToggleCard = () => {
         const resp = await apiClient.get<{ webmail_enabled?: boolean }>("/admin/settings");
         if (!cancelled) setEnabled(resp.data.webmail_enabled !== false);
       } catch {
-        if (!cancelled) feedback.notification.error({ message: "Failed to load webmail setting" });
+        if (!cancelled) feedback.message.error("Failed to load webmail setting");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -36,14 +36,11 @@ export const WebmailToggleCard = () => {
     try {
       await apiClient.patch("/admin/settings", { webmail_enabled: next });
       setEnabled(next);
-      feedback.notification.success({
-        message: next ? "Webmail enabled" : "Webmail disabled",
-        description: next
+      feedback.message.success(`${next ? "Webmail enabled" : "Webmail disabled"}: ${next
           ? "The webmail vhosts will be (re)served on the next reconcile."
-          : "Webmail vhosts are being torn down and the webmail service stopped.",
-      });
+          : "Webmail vhosts are being torn down and the webmail service stopped."}`);
     } catch {
-      feedback.notification.error({ message: "Failed to update webmail setting" });
+      feedback.message.error("Failed to update webmail setting");
     } finally {
       setSaving(false);
     }

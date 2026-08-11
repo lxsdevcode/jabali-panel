@@ -117,10 +117,7 @@ export function UserAPITokensPage(): JSX.Element {
       setRows(resp.data.items ?? []);
     } catch (err) {
       const e = err as { message?: string };
-      feedback.notification.error({
-        message: "Failed to load API tokens",
-        description: e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to load API tokens: ${e.message ?? "Unknown error"}`);
     } finally {
       setLoading(false);
     }
@@ -156,10 +153,7 @@ export function UserAPITokensPage(): JSX.Element {
         if (ddnsSel) scopes.push("ddns");
         if (ddnsSel && ddnsRecordId.trim()) scopes.push(`record:${ddnsRecordId.trim()}`);
         if (scopes.length === 0) {
-          feedback.notification.error({
-            message: "Select at least one permission",
-            description: "Pick some permissions, or choose Full access.",
-          });
+          feedback.message.error("Select at least one permission — pick some, or choose Full access.");
           return;
         }
         body.scopes = scopes;
@@ -173,36 +167,27 @@ export function UserAPITokensPage(): JSX.Element {
       // validateFields throws with a list of errors; nothing to toast.
       if ((err as { errorFields?: unknown }).errorFields) return;
       const e = err as { message?: string };
-      feedback.notification.error({
-        message: "Failed to create token",
-        description: e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to create token: ${e.message ?? "Unknown error"}`);
     }
   };
 
   const onRevoke = async (t: UserAPIToken) => {
     try {
       await apiClient.delete(`/me/api-tokens/${t.id}`);
-      feedback.notification.success({ message: `Token "${t.name}" revoked` });
+      feedback.message.success(`Token "${t.name}" revoked`);
       void load();
     } catch (err) {
       const e = err as { message?: string };
-      feedback.notification.error({
-        message: "Failed to revoke token",
-        description: e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to revoke token: ${e.message ?? "Unknown error"}`);
     }
   };
 
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      feedback.notification.success({ message: "Copied to clipboard" });
+      feedback.message.success("Copied to clipboard");
     } catch {
-      feedback.notification.error({
-        message: "Copy failed",
-        description: "Select the secret and copy manually.",
-      });
+      feedback.message.error(`Copy failed: Select the secret and copy manually.`);
     }
   };
 

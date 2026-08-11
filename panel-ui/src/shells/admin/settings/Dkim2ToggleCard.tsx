@@ -20,7 +20,7 @@ export const Dkim2ToggleCard = () => {
         const resp = await apiClient.get<{ dkim2_signing_enabled?: boolean }>("/admin/settings");
         if (!cancelled) setEnabled(resp.data.dkim2_signing_enabled === true);
       } catch {
-        if (!cancelled) feedback.notification.error({ message: "Failed to load DKIM2 setting" });
+        if (!cancelled) feedback.message.error("Failed to load DKIM2 setting");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -35,14 +35,11 @@ export const Dkim2ToggleCard = () => {
     try {
       await apiClient.patch("/admin/settings", { dkim2_signing_enabled: next });
       setEnabled(next);
-      feedback.notification.success({
-        message: next ? "DKIM2 signing enabled" : "DKIM2 signing disabled",
-        description: next
+      feedback.message.success(`${next ? "DKIM2 signing enabled" : "DKIM2 signing disabled"}: ${next
           ? "Every mail domain gets a DKIM2 signature on the next reconcile — no DNS changes needed."
-          : "DKIM2 signatures are being removed; classic DKIM keeps signing.",
-      });
+          : "DKIM2 signatures are being removed; classic DKIM keeps signing."}`);
     } catch {
-      feedback.notification.error({ message: "Failed to update DKIM2 setting" });
+      feedback.message.error("Failed to update DKIM2 setting");
     } finally {
       setSaving(false);
     }

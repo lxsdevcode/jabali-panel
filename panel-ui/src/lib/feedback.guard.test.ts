@@ -70,6 +70,26 @@ describe("feedback guard (GH #970)", () => {
     ).toEqual([]);
   });
 
+  it("no file uses the large notification surface", () => {
+    // GH #970 round 3: the pipeline was unified, but ~90 call sites still
+    // used feedback.notification — the LARGE card — while the rest of the
+    // panel used the slim message toast. Same position pipeline, different
+    // size: exactly the reporter's Settings-vs-Domains screenshots. The
+    // house style is feedback.message; rich persistent surfaces should be
+    // a deliberate design decision, not a habit — add an allowlist entry
+    // here if one ever genuinely needs the card.
+    const offenders: string[] = [];
+    for (const f of sourceFiles()) {
+      if (ALLOWED.has(f)) continue;
+      const src = readFileSync(join(SRC, f), "utf8");
+      if (/feedback\.notification\./.test(src)) offenders.push(f);
+    }
+    expect(
+      offenders,
+      "use feedback.message (slim house toast) instead of the large notification card",
+    ).toEqual([]);
+  });
+
   it("no file calls the static Modal methods", () => {
     const offenders: string[] = [];
     for (const f of sourceFiles()) {

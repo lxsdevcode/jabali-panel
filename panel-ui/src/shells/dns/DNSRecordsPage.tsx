@@ -30,11 +30,18 @@ type NotifyInput = {
   description?: React.ReactNode;
 };
 const stableNotifyOpen = (input: NotifyInput) => {
-  feedback.notification.open({
-    message: input.message,
-    description: input.description,
-    type: input.type,
-  });
+  // GH #970: house style is the slim message toast; the old notification
+  // card rendered larger and off-pattern (the reporter's Settings
+  // screenshots). ReactNode descriptions fold into the toast content.
+  feedback.message[input.type ?? "info"](
+    input.description ? (
+      <span>
+        {input.message}: {input.description}
+      </span>
+    ) : (
+      input.message
+    ),
+  );
 };
 const stableNotify = { open: stableNotifyOpen };
 function useNotification() {

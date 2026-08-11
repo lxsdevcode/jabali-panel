@@ -821,10 +821,7 @@ const HtaccessImport = ({
         response?: { data?: { error?: string } };
         message?: string;
       };
-      feedback.notification.error({
-        message: "Could not convert .htaccess",
-        description: e.response?.data?.error ?? e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Could not convert .htaccess: ${e.response?.data?.error ?? e.message ?? "Unknown error"}`);
     } finally {
       setLoading(false);
     }
@@ -833,10 +830,9 @@ const HtaccessImport = ({
   const handleAdd = () => {
     if (!preview || preview.rules.length === 0) return;
     onRulesChange([...rules, ...preview.rules]);
-    feedback.notification.success({
-      message: `Added ${preview.rules.length} rule(s) to the Rule Builder`,
-      description: "Review them on the Rule Builder tab, then Save / Apply.",
-    });
+    feedback.message.success(
+      `Added ${preview.rules.length} rule(s) to the Rule Builder: review them on the Rule Builder tab, then Save / Apply.`,
+    );
     setPreview(null);
     setContent("");
   };
@@ -1016,7 +1012,7 @@ export const DomainSettingsButton = ({
         nginx_custom_directives: directivesValue,
         nginx_rules: rules,
       });
-      feedback.notification.success({ message: "Nginx config saved" });
+      feedback.message.success("Nginx config saved");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       handleCloseModal();
@@ -1025,10 +1021,7 @@ export const DomainSettingsButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      feedback.notification.error({
-        message: "Failed to save",
-        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to save: ${e.response?.data?.detail ?? e.message ?? "Unknown error"}`);
     } finally {
       setIsSaving(false);
     }
@@ -1152,7 +1145,7 @@ export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget })
         nginx_custom_directives: directivesValue,
         nginx_rules: rules,
       });
-      feedback.notification.success({ message: "Nginx config saved" });
+      feedback.message.success("Nginx config saved");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
     } catch (err) {
@@ -1160,10 +1153,7 @@ export const DomainNginxSection = ({ domain }: { domain: DomainSettingsTarget })
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      feedback.notification.error({
-        message: "Failed to save",
-        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to save: ${e.response?.data?.detail ?? e.message ?? "Unknown error"}`);
     } finally {
       setIsSaving(false);
     }
@@ -1270,7 +1260,7 @@ export const TenantNginxRulesButton = ({
     try {
       // Send ONLY nginx_rules — never nginx_custom_directives (admin-only).
       await apiClient.patch(`/domains/${domain.id}`, { nginx_rules: rules });
-      feedback.notification.success({ message: "Rewrite rules saved — applied on the next reconcile" });
+      feedback.message.success("Rewrite rules saved — applied on the next reconcile");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       close();
@@ -1279,10 +1269,7 @@ export const TenantNginxRulesButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      feedback.notification.error({
-        message: "Failed to save rules",
-        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to save rules: ${e.response?.data?.detail ?? e.message ?? "Unknown error"}`);
     } finally {
       setSaving(false);
     }

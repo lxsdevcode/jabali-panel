@@ -53,11 +53,7 @@ export const VersionsTab = () => {
       );
       setStatusData(response.data);
     } catch (error) {
-      feedback.notification.error({
-        message: "Failed to fetch PHP versions",
-        description: extractApiError(error, "Unknown error occurred"),
-        duration: 5,
-      });
+      feedback.message.error(`Failed to fetch PHP versions: ${extractApiError(error, "Unknown error occurred")}`, 5);
     } finally {
       setLoading(false);
     }
@@ -76,12 +72,7 @@ export const VersionsTab = () => {
       while (true) {
         await new Promise((r) => setTimeout(r, 5000));
         if (Date.now() > deadline) {
-          feedback.notification.warning({
-            message: `PHP ${version} is still installing`,
-            description:
-              "The install is taking longer than expected; it will continue in the background. Refresh to check.",
-            duration: 6,
-          });
+          feedback.message.warning(`${`PHP ${version} is still installing`}: The install is taking longer than expected; it will continue in the background. Refresh to check.`, 6);
           return;
         }
         let st;
@@ -93,19 +84,12 @@ export const VersionsTab = () => {
         const v = st.data.versions.find((x) => x.version === version);
         if (v?.installed) {
           setStatusData(st.data);
-          feedback.notification.success({
-            message: `PHP ${version} installed successfully`,
-            duration: 3,
-          });
+          feedback.message.success(`PHP ${version} installed successfully`, 3);
           return;
         }
       }
     } catch (error) {
-      feedback.notification.error({
-        message: `Failed to install PHP ${version}`,
-        description: extractApiError(error, "Installation failed"),
-        duration: 5,
-      });
+      feedback.message.error(`${`Failed to install PHP ${version}`}: ${extractApiError(error, "Installation failed")}`, 5);
     } finally {
       setInstallingVersion(null);
     }
@@ -119,17 +103,10 @@ export const VersionsTab = () => {
       await apiClient.delete(`/admin/php/versions/${version}`, {
         timeout: 5 * 60 * 1000,
       });
-      feedback.notification.success({
-        message: `PHP ${version} uninstalled`,
-        duration: 3,
-      });
+      feedback.message.success(`PHP ${version} uninstalled`, 3);
       await fetchStatus();
     } catch (error) {
-      feedback.notification.error({
-        message: `Failed to uninstall PHP ${version}`,
-        description: extractApiError(error, "Uninstall failed"),
-        duration: 5,
-      });
+      feedback.message.error(`${`Failed to uninstall PHP ${version}`}: ${extractApiError(error, "Uninstall failed")}`, 5);
     } finally {
       setUninstallingVersion(null);
     }
@@ -139,18 +116,11 @@ export const VersionsTab = () => {
     setReloadingVersion(version);
     try {
       await apiClient.post(`/admin/php/versions/${version}/reload`);
-      feedback.notification.success({
-        message: `PHP ${version} reloaded successfully`,
-        duration: 3,
-      });
+      feedback.message.success(`PHP ${version} reloaded successfully`, 3);
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : "Reload failed";
-      feedback.notification.error({
-        message: `Failed to reload PHP ${version}`,
-        description: errorMsg,
-        duration: 5,
-      });
+      feedback.message.error(`${`Failed to reload PHP ${version}`}: ${errorMsg}`, 5);
     } finally {
       setReloadingVersion(null);
     }
@@ -160,21 +130,14 @@ export const VersionsTab = () => {
     setSettingDefaultVersion(version);
     try {
       await apiClient.post(`/admin/php/versions/${version}/default`);
-      feedback.notification.success({
-        message: `PHP ${version} is now the default`,
-        duration: 3,
-      });
+      feedback.message.success(`PHP ${version} is now the default`, 3);
       setStatusData((prev) =>
         prev ? { ...prev, default_version: version } : prev,
       );
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : "Request failed";
-      feedback.notification.error({
-        message: `Could not set PHP ${version} as default`,
-        description: errorMsg,
-        duration: 5,
-      });
+      feedback.message.error(`${`Could not set PHP ${version} as default`}: ${errorMsg}`, 5);
     } finally {
       setSettingDefaultVersion(null);
     }

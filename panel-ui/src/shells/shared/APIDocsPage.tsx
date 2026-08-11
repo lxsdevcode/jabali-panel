@@ -76,10 +76,7 @@ export function APIDocsPage(): JSX.Element {
         setSpec(resp.data);
       } catch (err) {
         const e = err as { message?: string };
-        feedback.notification.error({
-          message: "Failed to load API documentation",
-          description: e.message ?? "Unknown error",
-        });
+        feedback.message.error(`Failed to load API documentation: ${e.message ?? "Unknown error"}`);
       } finally {
         setLoading(false);
       }

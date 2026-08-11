@@ -45,7 +45,7 @@ export const TenantNotificationsCard = () => {
           setKinds(resp.data.tenant_notification_kinds ?? []);
         }
       } catch {
-        if (!cancelled) feedback.notification.error({ message: "Failed to load notification settings" });
+        if (!cancelled) feedback.message.error("Failed to load notification settings");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -60,9 +60,9 @@ export const TenantNotificationsCard = () => {
     try {
       await apiClient.patch("/admin/settings", { tenant_notifications_enabled: next });
       setEnabled(next);
-      feedback.notification.success({ message: next ? "Tenant notifications enabled" : "Tenant notifications disabled" });
+      feedback.message.success(next ? "Tenant notifications enabled" : "Tenant notifications disabled");
     } catch {
-      feedback.notification.error({ message: "Failed to update setting" });
+      feedback.message.error("Failed to update setting");
     } finally {
       setSavingToggle(false);
     }
@@ -76,9 +76,9 @@ export const TenantNotificationsCard = () => {
       });
       // The server sanitizes (drops unknown kinds) and returns the effective set.
       setKinds(resp.data.tenant_notification_kinds ?? next);
-      feedback.notification.success({ message: "Allowed channel kinds updated" });
+      feedback.message.success("Allowed channel kinds updated");
     } catch {
-      feedback.notification.error({ message: "Failed to update allowed kinds" });
+      feedback.message.error("Failed to update allowed kinds");
     } finally {
       setSavingKinds(false);
     }

@@ -22,7 +22,7 @@ import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
 
 // Post-M21 notify shim: matches the Refine useNotification().open
 // contract (`{ type, message, description }`) so callers don't have
-// to change. Forwards to AntD's native `feedback.notification.open`.
+// to change. Forwards to the slim house toast (GH #970).
 type NotifyInput = {
   type?: "success" | "error" | "warning" | "info";
   message: string;
@@ -30,11 +30,18 @@ type NotifyInput = {
 };
 function useNotify() {
   return (input: NotifyInput) => {
-    feedback.notification.open({
-      message: input.message,
-      description: input.description,
-      type: input.type,
-    });
+    // GH #970: house style is the slim message toast; the old notification
+  // card rendered larger and off-pattern (the reporter's Settings
+  // screenshots). ReactNode descriptions fold into the toast content.
+  feedback.message[input.type ?? "info"](
+    input.description ? (
+      <span>
+        {input.message}: {input.description}
+      </span>
+    ) : (
+      input.message
+    ),
+  );
   };
 }
 

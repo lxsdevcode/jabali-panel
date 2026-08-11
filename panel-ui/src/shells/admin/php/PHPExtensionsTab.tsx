@@ -74,10 +74,7 @@ export const PHPExtensionsTab = () => {
           : installed[0] ?? null;
         setSelectedVersion(def);
       } catch (err) {
-        feedback.notification.error({
-          message: "Failed to fetch PHP versions",
-          description: extractApiError(err, "Unknown error"),
-        });
+        feedback.message.error(`Failed to fetch PHP versions: ${extractApiError(err, "Unknown error")}`);
       } finally {
         setLoadingVersions(false);
       }
@@ -101,10 +98,7 @@ export const PHPExtensionsTab = () => {
       );
       setExtensions(data.extensions);
     } catch (err) {
-      feedback.notification.error({
-        message: `Failed to fetch extensions for PHP ${version}`,
-        description: extractApiError(err, "Unknown error"),
-      });
+      feedback.message.error(`${`Failed to fetch extensions for PHP ${version}`}: ${extractApiError(err, "Unknown error")}`);
       setExtensions([]);
     } finally {
       setLoadingExtensions(false);
@@ -119,18 +113,11 @@ export const PHPExtensionsTab = () => {
         `/admin/php/versions/${selectedVersion}/extensions/${ext}/apply`,
         { action }
       );
-      feedback.notification.success({
-        message: `${ext}: ${action} applied for PHP ${selectedVersion}`,
-        duration: 2,
-      });
+      feedback.message.success(`${ext}: ${action} applied for PHP ${selectedVersion}`, 2);
       // Server is source of truth; refetch instead of optimistic update.
       await loadExtensions(selectedVersion);
     } catch (err) {
-      feedback.notification.error({
-        message: `${action} ${ext} failed`,
-        description: extractApiError(err, "Unknown error"),
-        duration: 5,
-      });
+      feedback.message.error(`${`${action} ${ext} failed`}: ${extractApiError(err, "Unknown error")}`, 5);
     } finally {
       setBusyExt(null);
     }

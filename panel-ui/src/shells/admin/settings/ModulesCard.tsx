@@ -83,7 +83,7 @@ export const ModulesCard = () => {
           });
         }
       } catch {
-        if (mounted.current) feedback.notification.error({ message: "Failed to load module settings" });
+        if (mounted.current) feedback.message.error("Failed to load module settings");
       } finally {
         if (mounted.current) setLoading(false);
       }
@@ -119,18 +119,14 @@ export const ModulesCard = () => {
       await apiClient.patch("/admin/settings", { [key]: next });
       setState((prev) => ({ ...prev, [key]: next }));
       const statusKey = STATUS_KEY[key];
-      feedback.notification.success({
-        message: `${label} ${next ? "enabled" : "disabled"}`,
-        description:
-          next && statusKey
+      feedback.message.success(`${`${label} ${next ? "enabled" : "disabled"}`}: ${next && statusKey
             ? "Installing the module in the background — this can take a few minutes."
             : next
               ? "The module's pages are now available."
-              : "The module's pages are hidden; its endpoints return 409.",
-      });
+              : "The module's pages are hidden; its endpoints return 409."}`);
       if (next && statusKey) void pollUntilUp(statusKey);
     } catch {
-      feedback.notification.error({ message: `Failed to update ${label}` });
+      feedback.message.error(`Failed to update ${label}`);
     } finally {
       setSaving(null);
     }
@@ -139,10 +135,10 @@ export const ModulesCard = () => {
   const onRetry = async (statusKey: string, label: string) => {
     try {
       await apiClient.post("/admin/settings/modules/install", { key: statusKey });
-      feedback.notification.info({ message: `Reinstalling ${label}…` });
+      feedback.message.info(`Reinstalling ${label}…`);
       void pollUntilUp(statusKey);
     } catch {
-      feedback.notification.error({ message: `Failed to start install for ${label}` });
+      feedback.message.error(`Failed to start install for ${label}`);
     }
   };
 
