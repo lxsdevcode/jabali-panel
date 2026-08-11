@@ -44,6 +44,11 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const [restoreHome, setRestoreHome] = useState(false);
+  // GH #1044 item 3: only offer "Home directory" when the backup actually
+  // CONTAINS a home stage. A database-only backup skips the home stage
+  // (status=skipped), and offering the checkbox anyway invites a restore
+  // selection that can never do anything.
+  const [hasHome, setHasHome] = useState(false);
   const [mailboxes, setMailboxes] = useState<string[]>([]);
   const [selectedMb, setSelectedMb] = useState<string[]>([]);
   const [dnsDomains, setDnsDomains] = useState<string[]>([]);
@@ -58,6 +63,7 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
     setSelected([]);
     setConfirmOverwrite(false);
     setRestoreHome(false);
+    setHasHome(false);
     setMailboxes([]);
     setSelectedMb([]);
     setDnsDomains([]);
@@ -75,6 +81,11 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
           .flatMap((st) => st.items ?? []);
         setMailboxes(mbs);
         setDnsDomains(resp.data.dns_domains ?? []);
+        setHasHome(
+          (resp.data.stages ?? []).some(
+            (st) => st.name === "home" && st.status === "ok",
+          ),
+        );
       })
       .catch((err) =>
         feedback.message.error(
@@ -84,19 +95,48 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
       .finally(() => setLoading(false));
   }, [open, backupId]);
 
+  // GH #1044: the restore runs as a background job now — the POST returns
+  // 202 + job_id immediately (a large Postgres restore used to outlive the
+  // HTTP request and surface as a bogus client-side timeout while the
+  // server finished the work anyway). Poll the job row until it seals and
+  // render the outcome it recorded.
   const handleRestore = async () => {
     if (!backupId || (selected.length === 0 && !restoreHome && selectedDns.length === 0 && selectedMb.length === 0)) return;
     setSubmitting(true);
     setResult(null);
     try {
-      const resp = await apiClient.post<RestoreResult>(
+      const resp = await apiClient.post<{ job_id: string }>(
         `/me/backups/${backupId}/restore`,
         { databases: selected, home: restoreHome, mailboxes: selectedMb, dns_domains: selectedDns, overwrite: true },
       );
-      setResult(resp.data);
-      const n = resp.data.applied?.length ?? 0;
-      if (n > 0) feedback.message.success(`Restored ${n} item${n === 1 ? "" : "s"}`);
-      else feedback.message.warning("Nothing was restored — see details");
+      const jobId = resp.data.job_id;
+      feedback.message.info("Restore started — this can take a while for large backups");
+      type JobRow = { id: string; status: string; warnings_json?: RestoreResult | null; error_text?: string };
+      const started = Date.now();
+      // Poll until the job seals. The server bounds the job at 60 min; the
+      // drawer gives up politely a bit after that. Closing the drawer just
+      // stops the polling — the job itself keeps running server-side and
+      // stays visible in the backups list.
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 3000));
+        if (Date.now() - started > 65 * 60 * 1000) {
+          feedback.message.warning("Still running — track it in the backups list");
+          break;
+        }
+        const list = await apiClient.get<{ data: JobRow[] }>(`/me/backups`, { params: { limit: 50 } });
+        const row = (list.data.data ?? []).find((j) => j.id === jobId);
+        if (!row || row.status === "queued" || row.status === "running") continue;
+        const outcome: RestoreResult = row.warnings_json ?? {};
+        setResult(outcome);
+        if (row.status === "succeeded") {
+          const n = outcome.applied?.length ?? 0;
+          if (n > 0) feedback.message.success(`Restored ${n} item${n === 1 ? "" : "s"}`);
+          else feedback.message.warning("Nothing was restored — see details");
+        } else {
+          feedback.message.error("Restore failed — see details");
+        }
+        break;
+      }
     } catch (err) {
       feedback.message.error(err instanceof Error ? err.message : "Restore failed");
     } finally {
@@ -126,16 +166,18 @@ export const RestoreDrawer = ({ backupId, open, onClose }: RestoreDrawerProps) =
             restorable here.
           </Typography.Paragraph>
 
-          <Checkbox
-            checked={restoreHome}
-            onChange={(e) => setRestoreHome(e.target.checked)}
-          >
-            Home directory{" "}
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              (adds/overwrites files from the backup; does not delete files you
-              added since)
-            </Typography.Text>
-          </Checkbox>
+          {hasHome && (
+            <Checkbox
+              checked={restoreHome}
+              onChange={(e) => setRestoreHome(e.target.checked)}
+            >
+              Home directory{" "}
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                (adds/overwrites files from the backup; does not delete files
+                you added since)
+              </Typography.Text>
+            </Checkbox>
+          )}
 
           {databases.length === 0 ? (
             <Typography.Text type="secondary">

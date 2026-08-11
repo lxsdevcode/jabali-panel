@@ -29,9 +29,14 @@ import (
 )
 
 const (
-	TickInterval   = 30 * time.Second
-	StallTimeout   = 4 * time.Hour
-	MaxJobsPerTick = 25
+	TickInterval = 30 * time.Second
+	StallTimeout = 4 * time.Hour
+	// RestoreStallTimeout seals `running` RESTORE rows whose background
+	// goroutine died without MarkFinished (GH #1044 — panel restart
+	// mid-restore). The restore goroutine bounds itself at 60 minutes,
+	// so anything past 90 is provably orphaned, not slow.
+	RestoreStallTimeout = 90 * time.Minute
+	MaxJobsPerTick      = 25
 	// statusCallTimeout must exceed a cold remote-repo probe: backup.status
 	// runs `restic snapshots` against the destination, which on SFTP/S3
 	// opens a fresh session and lists the index. At the old 10s the probe
@@ -138,11 +143,24 @@ func (f *Finalizer) tickOnce(ctx context.Context) {
 		if j.Status != models.BackupJobStatusRunning {
 			continue
 		}
-		// Restore jobs are sealed synchronously by the API restore
-		// handler when Agent.Call returns. The finalizer only tracks
-		// fan-out backup jobs that publish a manifest snapshot.
+		// Restore jobs (GH #1044) run as background goroutines sealed by
+		// their own MarkFinished — the finalizer's manifest tracking
+		// (checkOne) does not apply to them, because a restore publishes
+		// no manifest snapshot. But "sealed by the goroutine" fails in
+		// exactly one way: a panel restart kills the goroutine mid-restore
+		// and the row stays `running` forever with nothing left to seal
+		// it. Sweep those. The bound is the restore goroutine's own
+		// timeout plus slack: any restore row still running past it is
+		// provably orphaned, not slow.
 		if j.Kind == models.BackupJobKindAccountRestore ||
 			j.Kind == models.BackupJobKindSystemRestore {
+			if j.StartedAt != nil && now.Sub(*j.StartedAt) > RestoreStallTimeout {
+				f.deps.Log.Warn("restore job orphaned past its bound; sealing failed",
+					"job_id", j.ID, "kind", j.Kind, "started_at", j.StartedAt)
+				_ = f.deps.Jobs.MarkFinished(ctx, j.ID, models.BackupJobStatusFailed,
+					"", "", 0, 0, nil, nil,
+					"restore interrupted — no completion recorded (panel restarted mid-restore?)")
+			}
 			continue
 		}
 		if j.StartedAt != nil && now.Sub(*j.StartedAt) > StallTimeout {

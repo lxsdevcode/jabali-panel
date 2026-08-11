@@ -83,10 +83,17 @@ type BackupHandlerConfig struct {
 
 const backupCallTimeout = 10 * time.Second
 
-// restoreCallTimeout: account restores run synchronously on the agent
-// (no goroutine fork). 10m covers reasonable home-dir + DB + mailbox
-// volumes; larger restores should switch to a background-job model.
-const restoreCallTimeout = 10 * time.Minute
+// restoreJobTimeout bounds a BACKGROUND restore job (GH #1044). Restores
+// used to run synchronously inside the HTTP request, which stacked three
+// unrelated ceilings on top of the real work: the UI client's 15 s axios
+// timeout, nginx's 300 s proxy_read_timeout, and this constant — so a
+// 500 MB Postgres restore died on whichever tripped first while the agent
+// kept restoring anyway. The restore is now a tracked job (the row the
+// jobs list already shows) and this is the only bound left: generous
+// because a large pg_restore plus mailbox imports legitimately runs long,
+// finite because an agent hang must still seal the row. The finalizer
+// seals rows this goroutine never finishes (panel restart mid-restore).
+const restoreJobTimeout = 60 * time.Minute
 
 // RegisterBackupRoutes mounts the admin-scoped backup endpoints under
 // /admin/users/:id/backups + /admin/backups/:job_id. The user-shell
@@ -999,13 +1006,18 @@ func (h *backupHandler) restore(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "db_create"})
 		return
 	}
-	// backup.restore is synchronous on the agent (no goroutine fork like
-	// backup.create). Use a long timeout so real-world account restores
-	// (db dumps + mailbox imports) don't hard-fail at 10s, but cap at a
-	// ceiling that matches operator UX expectations for the "Restore"
-	// button — anything longer should run as a tracked background job.
-	ctx, cancel := context.WithTimeout(c.Request.Context(), restoreCallTimeout)
-	defer cancel()
+	// GH #1044: the restore runs as a BACKGROUND job. It used to run
+	// synchronously inside this request, which chained three unrelated
+	// ceilings onto the real work (UI 15 s axios timeout, nginx 300 s
+	// proxy_read_timeout, the old 10 m server cap) — a large Postgres
+	// restore blew whichever tripped first, the client reported
+	// "timeout", and the agent kept restoring regardless. The job row
+	// the jobs list already shows IS the tracking surface; the HTTP
+	// response only confirms the job was queued.
+	//
+	// Every context inside the goroutine is fresh — the request context
+	// dies when this handler returns, and a status write on a dead
+	// context is a silent no-op (the createCloneAndKickAgent lesson).
 	_ = h.cfg.Jobs.MarkStarted(c.Request.Context(), job.ID)
 	params := map[string]any{
 		"job_id":               job.ID,
@@ -1017,6 +1029,22 @@ func (h *backupHandler) restore(c *gin.Context) {
 	for k, v := range destWireParams(dest) {
 		params[k] = v
 	}
+	go h.runAccountRestoreJob(job.ID, dest, params)
+	c.JSON(http.StatusAccepted, gin.H{"status": "queued", "job_id": job.ID})
+}
+
+// runAccountRestoreJob executes one admin account restore to completion and
+// seals the job row. Runs detached from any HTTP request (GH #1044); the
+// finalizer seals the row if this goroutine dies with it (panel restart).
+func (h *backupHandler) runAccountRestoreJob(jobID string, dest *models.BackupDestination, params map[string]any) {
+	ctx, cancel := context.WithTimeout(context.Background(), restoreJobTimeout)
+	defer cancel()
+	seal := func(status, errText string, raw json.RawMessage) {
+		sctx, scancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer scancel()
+		_ = h.cfg.Jobs.MarkFinished(sctx, jobID, status, "", "", 0, 0, raw, nil, errText)
+	}
+
 	var raw json.RawMessage
 	err := backupwrapperhelpers.WithDestPasswordFile(ctx, dest, h.cfg.Agent, h.cfg.SSOKey,
 		func(passwordFile string) error {
@@ -1028,9 +1056,8 @@ func (h *backupHandler) restore(c *gin.Context) {
 			return callErr
 		})
 	if err != nil {
-		_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), job.ID, models.BackupJobStatusFailed,
-			"", "", 0, 0, nil, nil, err.Error())
-		respondAgentErrStatus(c, "agent_call_failed", err)
+		h.cfg.logErr("account restore job failed", err, "job_id", jobID)
+		seal(models.BackupJobStatusFailed, err.Error(), nil)
 		return
 	}
 	// Parse the agent's restore result so the job row reflects what
@@ -1062,9 +1089,7 @@ func (h *backupHandler) restore(c *gin.Context) {
 			finalStatus = models.BackupJobStatusFailed
 		}
 	}
-	_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), job.ID, finalStatus,
-		"", "", 0, 0, raw, nil, finalErr)
-	c.JSON(http.StatusCreated, gin.H{"status": "ok", "job_id": job.ID})
+	seal(finalStatus, finalErr, raw)
 }
 
 // --- helpers + sentinel below ---
@@ -2521,41 +2546,66 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 	}
 	_ = h.cfg.Jobs.MarkStarted(c.Request.Context(), restoreJob.ID)
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), restoreCallTimeout)
-	defer cancel()
+	// GH #1044: run the restore as a BACKGROUND job — see the admin
+	// handler for the full reasoning (three stacked HTTP-lifetime
+	// ceilings killed any restore that outlived the shortest one, while
+	// the agent finished the work anyway). The result the drawer used to
+	// read from this response is persisted onto the job row
+	// (warnings_json) instead, and the drawer polls the job.
+	go h.runSelectiveRestoreJob(restoreJob.ID, job.SnapshotID, *owner.Username, req, ownedDomains)
+	c.JSON(http.StatusAccepted, gin.H{"status": "queued", "job_id": restoreJob.ID})
+}
 
-	applied := []string{}
-	skipped := []string{}
-	warnings := []string{}
+// selectiveRestoreOutcome is what the tenant restore drawer renders. It is
+// stored verbatim in backup_jobs.warnings_json when the job seals so the
+// result survives the (now-async) HTTP exchange (GH #1044).
+type selectiveRestoreOutcome struct {
+	Applied  []string `json:"applied"`
+	Skipped  []string `json:"skipped"`
+	Warnings []string `json:"warnings"`
+}
+
+// runSelectiveRestoreJob executes one tenant selective restore to
+// completion and seals the job row with the outcome. Detached from the
+// request; every context is fresh (a status write on the dead request
+// context would be a silent no-op).
+func (h *meBackupHandler) runSelectiveRestoreJob(jobID, manifestSnap, username string, req meRestoreSelectiveRequest, ownedDomains map[string]string) {
+	ctx, cancel := context.WithTimeout(context.Background(), restoreJobTimeout)
+	defer cancel()
+	seal := func(status, errText string, out selectiveRestoreOutcome) {
+		sctx, scancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer scancel()
+		outJSON, _ := json.Marshal(out)
+		_ = h.cfg.Jobs.MarkFinished(sctx, jobID, status, "", "", 0, 0, nil, outJSON, errText)
+	}
+
+	out := selectiveRestoreOutcome{Applied: []string{}, Skipped: []string{}, Warnings: []string{}}
 
 	// Databases + home go to the agent (host-side). Only dispatch when one is
 	// requested — the agent rejects an empty db+home set.
 	if len(req.Databases) > 0 || req.Home || len(req.Mailboxes) > 0 {
 		raw, aerr := h.cfg.Agent.Call(ctx, "backup.restore_selective", map[string]any{
-			"job_id":               restoreJob.ID,
-			"manifest_snapshot_id": job.SnapshotID,
-			"target_username":      *owner.Username,
+			"job_id":               jobID,
+			"manifest_snapshot_id": manifestSnap,
+			"target_username":      username,
 			"databases":            req.Databases,
 			"mailboxes":            req.Mailboxes,
 			"home":                 req.Home,
 			"overwrite":            req.Overwrite,
 		})
 		if aerr != nil {
-			_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusFailed,
-				"", "", 0, 0, nil, nil, aerr.Error())
-			// Agent errors carry restic/host internals — log, don't echo (JAB-114).
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "restore_failed"})
+			// Agent errors carry restic/host internals — log, don't echo
+			// (JAB-114). The drawer sees the generic failure via the row.
+			h.cfg.logErr("selective restore job failed", aerr, "job_id", jobID)
+			out.Warnings = append(out.Warnings, "restore failed — the panel log has the detail")
+			seal(models.BackupJobStatusFailed, "restore_failed", out)
 			return
 		}
-		var ar struct {
-			Applied  []string `json:"applied"`
-			Skipped  []string `json:"skipped"`
-			Warnings []string `json:"warnings"`
-		}
+		var ar selectiveRestoreOutcome
 		_ = json.Unmarshal(raw, &ar)
-		applied = append(applied, ar.Applied...)
-		skipped = append(skipped, ar.Skipped...)
-		warnings = append(warnings, ar.Warnings...)
+		out.Applied = append(out.Applied, ar.Applied...)
+		out.Skipped = append(out.Skipped, ar.Skipped...)
+		out.Warnings = append(out.Warnings, ar.Warnings...)
 	}
 
 	// DNS records are panel-side DB rows — restore them here (owner-scoped),
@@ -2563,19 +2613,17 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 	if len(req.DNSDomains) > 0 {
 		if !req.Overwrite {
 			for _, n := range req.DNSDomains {
-				skipped = append(skipped, "dns:"+n)
+				out.Skipped = append(out.Skipped, "dns:"+n)
 			}
-			warnings = append(warnings, "overwrite=false: DNS not applied. Restoring DNS replaces this domain's custom records; re-send with overwrite=true.")
+			out.Warnings = append(out.Warnings, "overwrite=false: DNS not applied. Restoring DNS replaces this domain's custom records; re-send with overwrite=true.")
 		} else {
-			da, dw := h.restoreDNSRecords(ctx, job.SnapshotID, req.DNSDomains, ownedDomains)
-			applied = append(applied, da...)
-			warnings = append(warnings, dw...)
+			da, dw := h.restoreDNSRecords(ctx, manifestSnap, req.DNSDomains, ownedDomains)
+			out.Applied = append(out.Applied, da...)
+			out.Warnings = append(out.Warnings, dw...)
 		}
 	}
 
-	_ = h.cfg.Jobs.MarkFinished(c.Request.Context(), restoreJob.ID, models.BackupJobStatusSucceeded,
-		"", "", 0, 0, nil, nil, "")
-	c.JSON(http.StatusOK, gin.H{"job_id": restoreJob.ID, "applied": applied, "skipped": skipped, "warnings": warnings})
+	seal(models.BackupJobStatusSucceeded, "", out)
 }
 
 // restoreDNSRecords reads the captured user DNS records from the backup metadata
