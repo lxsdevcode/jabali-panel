@@ -3,7 +3,7 @@ popularity: 48
 tenant_installable: true
 name: Linkwarden
 tags: ["Productivity"]
-version: "2.14.1"
+version: "2.16.0"
 description: |
   Self-hosted bookmark and link manager with built-in archiving
   (PDF, screenshot, single-page HTML). Two services: NextJS app +
@@ -12,7 +12,7 @@ icon: icon.svg
 upstream: https://github.com/linkwarden/linkwarden
 documentation: https://docs.linkwarden.app/
 
-image_channel: ghcr.io/linkwarden/linkwarden:v2.14.1@sha256:31cf4bd2a2e111991fa5c9de03174c8698869c83722105c6ce529e4c911e6861
+image_channel: ghcr.io/linkwarden/linkwarden:v2.16.0@sha256:d805877fb707d160b809027c302f84cfba11a248d7fdc12de90b4791f98e6b55
 update_mode: manual
 
 resources:

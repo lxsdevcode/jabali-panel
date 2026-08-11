@@ -3,7 +3,7 @@ popularity: 60
 tenant_installable: true
 name: Mealie
 tags: ["Productivity"]
-version: "3.19.2"
+version: "3.22.0"
 description: |
   Self-hosted recipe manager and meal planner. Single container,
   SQLite-backed by default.
@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/mealie-recipes/mealie
 documentation: https://docs.mealie.io/
 
-image_channel: ghcr.io/mealie-recipes/mealie:v3.19.2@sha256:f68e959bf66f4f458893ea58facac71690fe6f2ac7a31466b5cecb41b4e99c02
+image_channel: ghcr.io/mealie-recipes/mealie:v3.22.0@sha256:36c28f0642fb6c75fae8997a2d55994631b9b4bcffba3016c208fc132a4c1e69
 update_mode: manual
 
 resources:

@@ -2,7 +2,7 @@ slug: jabali-sounder
 popularity: 38
 name: Jabali Sounder
 tags: ["Monitoring"]
-version: "0.5.22"
+version: "0.5.25"
 description: |
   Control plane for managing multiple Jabali Panel servers from one
   place: enroll panels, monitor their health, and run remediation.
@@ -13,7 +13,7 @@ icon: icon.svg
 upstream: https://github.com/shukiv/jabali-sounder
 documentation: https://github.com/shukiv/jabali-sounder/blob/main/docs/DOCKER.md
 
-image_channel: ghcr.io/shukiv/jabali-sounder:0.5.22@sha256:28f10ba9d95661b3fb25c1b671da094c6acdc7e2df20a752cd45c953728e3de9
+image_channel: ghcr.io/shukiv/jabali-sounder:0.5.25@sha256:790d985b8bf552e070689534b38e453421f015007d50a1cf946018ef9eb177e6
 volume_owner: "10001:10001"
 update_mode: manual
 

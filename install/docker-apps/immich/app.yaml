@@ -2,7 +2,7 @@ slug: immich
 popularity: 95
 name: Immich
 tags: ["File sharing"]
-version: "2.7.5"
+version: "3.1.0"
 description: |
   Self-hosted photo + video backup, ML-powered search. Four
   services: web server, ML inference, PostgreSQL (pgvecto.rs
@@ -13,7 +13,7 @@ icon: icon.svg
 upstream: https://github.com/immich-app/immich
 documentation: https://immich.app/docs
 
-image_channel: ghcr.io/immich-app/immich-server:v2.7.5@sha256:c15bff75068effb03f4355997d03dc7e0fc58720c2b54ad6f7f10d1bc57efaa5
+image_channel: ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb
 update_mode: manual
 
 resources:

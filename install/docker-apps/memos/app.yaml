@@ -3,7 +3,7 @@ popularity: 34
 tenant_installable: true
 name: Memos
 tags: ["Productivity"]
-version: "0.29.1"
+version: "0.30.0"
 description: |
   Self-hosted, open-source note-taking platform. Lightweight, single
   container with SQLite by default. Markdown editor, tagging,
@@ -12,7 +12,7 @@ icon: icon.svg
 upstream: https://github.com/usememos/memos
 documentation: https://www.usememos.com/docs
 
-image_channel: neosmemo/memos:0.29.1@sha256:3e1253477066eb2aefa91145f7f9038bb931ed88c8a3ee05310a933594cdba7d
+image_channel: neosmemo/memos:0.30.0@sha256:71a5b4738d1bed96e92112004054f0888e92791b64eb78afd79077c96e6f9327
 update_mode: manual
 
 resources:

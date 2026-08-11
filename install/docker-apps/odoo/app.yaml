@@ -2,7 +2,7 @@ slug: odoo
 popularity: 42
 name: Odoo
 tags: ["ERP", "CRM"]
-version: "18.0"
+version: "19.0"
 description: >-
   Open-source ERP and business suite: CRM, accounting, inventory, sales,
   projects, and a website builder from one platform. Two services here: the
@@ -14,7 +14,7 @@ icon: icon.svg
 upstream: https://github.com/odoo/odoo
 documentation: https://www.odoo.com/documentation/18.0/
 
-image_channel: odoo:18.0@sha256:d263921105082f1793e6598b73779fc9fa4463fbe6add0278e469efaf0b9f7f0
+image_channel: odoo:19.0@sha256:94a4f480b8039dc9ca2bca9e77e59f97d3311f66e2aad663cf2670be9c66d4ea
 update_mode: manual
 
 resources:

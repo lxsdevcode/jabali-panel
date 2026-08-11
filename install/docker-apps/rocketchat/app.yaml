@@ -2,7 +2,7 @@ slug: rocketchat
 popularity: 68
 name: Rocket.Chat
 tags: ["Communication"]
-version: "6.13.1"
+version: "8.7.0"
 description: |
   Self-hosted team chat / collaboration platform — channels, DMs, voice/
   video, file sharing, and integrations. Two services: the Rocket.Chat
@@ -12,7 +12,7 @@ icon: icon.svg
 upstream: https://github.com/RocketChat/Rocket.Chat
 documentation: https://docs.rocket.chat/
 
-image_channel: rocketchat/rocket.chat:6.13.1@sha256:f245efa7c787b686463fdf1d33c71ce61209d538c05b82640d8ccd6e30d1db86
+image_channel: rocketchat/rocket.chat:8.7.0@sha256:4bee1481cecee3e77207fb851743fabc829f0bacf0da1fc3141de3f41b34a4ab
 update_mode: manual
 
 resources:
