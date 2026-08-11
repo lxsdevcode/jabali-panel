@@ -148,12 +148,9 @@ export function PanelSSLCard() {
 
   const doIssue = (kind: PanelCertKind) =>
     issue.mutate(kind, {
-      onSuccess: () => feedback.notification.success({ message: `${kind} cert: issued` }),
+      onSuccess: () => feedback.message.success(`${kind} cert: issued`),
       onError: (e) =>
-        feedback.notification.error({
-          message: `${kind} cert: issue failed`,
-          description: String((e as Error).message),
-        }),
+        feedback.message.error(`${`${kind} cert: issue failed`}: ${String((e as Error).message)}`),
     });
 
   return (
@@ -206,16 +203,11 @@ export function PanelSSLCard() {
                 { use_le: v },
                 {
                   onSuccess: () =>
-                    feedback.notification.success({
-                      message: v
+                    feedback.message.success(v
                         ? "Let's Encrypt enabled — issuance runs on the next reconciler tick"
-                        : "Let's Encrypt disabled — existing certs stay until expiry",
-                    }),
+                        : "Let's Encrypt disabled — existing certs stay until expiry"),
                   onError: (e) =>
-                    feedback.notification.error({
-                      message: "Failed to update toggle",
-                      description: String((e as Error).message),
-                    }),
+                    feedback.message.error(`Failed to update toggle: ${String((e as Error).message)}`),
                 },
               );
             }}

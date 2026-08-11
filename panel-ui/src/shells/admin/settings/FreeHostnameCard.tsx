@@ -46,9 +46,9 @@ export const FreeHostnameCard = () => {
     try {
       await apiClient.post("/admin/settings/free-hostname/register", { email: email.trim() });
       setStep("code_sent");
-      feedback.notification.success({ message: `Verification code sent to ${email.trim()}` });
+      feedback.message.success(`Verification code sent to ${email.trim()}`);
     } catch (e: unknown) {
-      feedback.notification.error({ message: errText(e, "Could not send the code") });
+      feedback.message.error(errText(e, "Could not send the code"));
     } finally {
       setSending(false);
     }
@@ -64,13 +64,9 @@ export const FreeHostnameCard = () => {
       setHostname(resp.data.fqdn);
       setStep("idle");
       setCode("");
-      feedback.notification.success({
-        message: `Hostname activated: ${resp.data.fqdn}`,
-        description:
-          "DNS + TLS are provisioning. The panel URL will change to the new hostname shortly.",
-      });
+      feedback.message.success(`${`Hostname activated: ${resp.data.fqdn}`}: DNS + TLS are provisioning. The panel URL will change to the new hostname shortly.`);
     } catch (e: unknown) {
-      feedback.notification.error({ message: errText(e, "Could not claim the hostname") });
+      feedback.message.error(errText(e, "Could not claim the hostname"));
     } finally {
       setClaiming(false);
     }

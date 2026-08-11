@@ -92,7 +92,7 @@ export const UserDockerAppsPage = () => {
       lifecycleAction(id, action),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user-docker-installed"] }),
     onError: (e: AxiosError<{ detail?: string }>) =>
-      feedback.notification.error({ message: "Action failed", description: e.response?.data?.detail }),
+      feedback.message.error(`Action failed: ${e.response?.data?.detail}`),
   });
   const remove = useMutation({
     mutationFn: (id: string) => deleteApp(id),
@@ -434,15 +434,12 @@ const InstallModal = ({
     mutationFn: (v: { name: string; domain: string }) =>
       installApp({ slug: entry!.slug, name: v.name, domain: v.domain }),
     onSuccess: () => {
-      feedback.notification.success({ message: "Install started" });
+      feedback.message.success("Install started");
       form.resetFields();
       onInstalled();
     },
     onError: (e: AxiosError<{ detail?: string; error?: string }>) =>
-      feedback.notification.error({
-        message: "Install failed",
-        description: e.response?.data?.detail || e.response?.data?.error,
-      }),
+      feedback.message.error(`Install failed: ${e.response?.data?.detail || e.response?.data?.error}`),
   });
 
   return (

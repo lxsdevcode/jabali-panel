@@ -165,11 +165,18 @@ export const DNSResolversCard = () => {
   const [current, setCurrent] = useState<string[]>([]);
   const activePreset = matchingProviderKey(current);
   const notify: NotifyFn = (input) =>
-    feedback.notification.open({
-      message: input.message,
-      description: input.description,
-      type: input.type,
-    });
+    // GH #970: house style is the slim message toast; the old notification
+  // card rendered larger and off-pattern (the reporter's Settings
+  // screenshots). ReactNode descriptions fold into the toast content.
+  feedback.message[input.type ?? "info"](
+    input.description ? (
+      <span>
+        {input.message}: {input.description}
+      </span>
+    ) : (
+      input.message
+    ),
+  );
 
   useEffect(() => {
     let cancelled = false;

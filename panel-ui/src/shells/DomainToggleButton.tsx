@@ -27,16 +27,11 @@ export const DomainToggleButton = ({ domain }: { domain: DomainToggleTarget }) =
       await apiClient.patch(`/domains/${domain.id}`, {
         is_enabled: !domain.is_enabled,
       });
-      feedback.notification.success({
-        message: domain.is_enabled ? "Domain disabled" : "Domain enabled",
-      });
+      feedback.message.success(domain.is_enabled ? "Domain disabled" : "Domain enabled");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
     } catch (err) {
-      feedback.notification.error({
-        message: "Failed to toggle",
-        description: (err as Error).message,
-      });
+      feedback.message.error(`Failed to toggle: ${(err as Error).message}`);
     } finally {
       setLoading(false);
     }

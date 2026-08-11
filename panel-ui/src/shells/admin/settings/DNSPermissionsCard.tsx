@@ -59,7 +59,7 @@ export function DNSPermissionsCard() {
         if (!cancelled) setPolicy(normalize(resp.data.dns_user_record_policy));
       } catch {
         if (!cancelled) {
-          feedback.notification.error({ message: "Failed to load DNS permissions" });
+          feedback.message.error("Failed to load DNS permissions");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -81,9 +81,9 @@ export function DNSPermissionsCard() {
         dns_user_record_policy: policy,
       });
       setPolicy(normalize(resp.data.dns_user_record_policy));
-      feedback.notification.success({ message: "DNS permissions saved" });
+      feedback.message.success("DNS permissions saved");
     } catch {
-      feedback.notification.error({ message: "Failed to save DNS permissions" });
+      feedback.message.error("Failed to save DNS permissions");
     } finally {
       setSaving(false);
     }

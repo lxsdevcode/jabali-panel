@@ -72,7 +72,7 @@ export const DomainIndexButton = ({
       await apiClient.patch(`/domains/${domain.id}`, {
         index_priority: value,
       });
-      feedback.notification.success({ message: "Index priority saved" });
+      feedback.message.success("Index priority saved");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       handleClose();
@@ -81,10 +81,7 @@ export const DomainIndexButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      feedback.notification.error({
-        message: "Failed to save",
-        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to save: ${e.response?.data?.detail ?? e.message ?? "Unknown error"}`);
     } finally {
       setSaving(false);
     }

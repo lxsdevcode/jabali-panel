@@ -381,18 +381,13 @@ export const UserDomainList = () => {
                             await apiClient.patch(`/domains/${r.id}`, {
                               temp_url_enabled: !r.temp_url_enabled,
                             });
-                            feedback.notification.success({
-                              message: r.temp_url_enabled
+                            feedback.message.success(r.temp_url_enabled
                                 ? "Preview URL disabled"
-                                : "Preview URL enabled — live within a minute",
-                            });
+                                : "Preview URL enabled — live within a minute");
                             qc.invalidateQueries({ queryKey: ["list", "domains"] });
                           } catch (err) {
                             const e = err as { response?: { data?: { detail?: string; error?: string } } };
-                            feedback.notification.error({
-                              message: "Failed to toggle preview URL",
-                              description: e.response?.data?.detail ?? e.response?.data?.error ?? (err as Error).message,
-                            });
+                            feedback.message.error(`Failed to toggle preview URL: ${e.response?.data?.detail ?? e.response?.data?.error ?? (err as Error).message}`);
                           }
                         },
                       },
@@ -407,16 +402,11 @@ export const UserDomainList = () => {
                             await apiClient.patch(`/domains/${r.id}`, {
                               is_enabled: !r.is_enabled,
                             });
-                            feedback.notification.success({
-                              message: r.is_enabled ? "Domain disabled" : "Domain enabled",
-                            });
+                            feedback.message.success(r.is_enabled ? "Domain disabled" : "Domain enabled");
                             qc.invalidateQueries({ queryKey: ["list", "domains"] });
                             qc.invalidateQueries({ queryKey: ["one", "domains", r.id] });
                           } catch (err) {
-                            feedback.notification.error({
-                              message: "Failed to toggle",
-                              description: (err as Error).message,
-                            });
+                            feedback.message.error(`Failed to toggle: ${(err as Error).message}`);
                           } finally {
                             setTogglingId(null);
                           }

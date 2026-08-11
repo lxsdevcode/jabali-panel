@@ -212,11 +212,12 @@ function DestinationDrawer({ open, editing, onClose, onSaved }: DestinationDrawe
             resp.data.detail ? `Saved + tested OK — ${resp.data.detail}` : "Saved + tested OK",
           );
         } catch (testErr) {
-          feedback.notification.error({
-            message: editing ? "Saved, but test failed" : "Created, but test failed",
-            description: extractApiError(testErr, "Test failed"),
-            duration: 0,
-          });
+          // Was a duration:0 persistent card; 10 s of the slim house toast
+          // reads the same and matches every other toast (GH #970).
+          feedback.message.error(
+            `${editing ? "Saved, but test failed" : "Created, but test failed"}: ${extractApiError(testErr, "Test failed")}`,
+            10,
+          );
           onSaved();
           return;
         }

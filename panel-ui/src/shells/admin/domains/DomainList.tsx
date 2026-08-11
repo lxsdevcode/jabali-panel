@@ -212,11 +212,11 @@ export const DomainList = () => {
     setTogglingId(r.id);
     try {
       await apiClient.patch(`/domains/${r.id}`, { is_enabled: !r.is_enabled });
-      feedback.notification.success({ message: r.is_enabled ? "Domain disabled" : "Domain enabled" });
+      feedback.message.success(r.is_enabled ? "Domain disabled" : "Domain enabled");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", r.id] });
     } catch (err) {
-      feedback.notification.error({ message: "Failed to toggle", description: (err as Error).message });
+      feedback.message.error(`Failed to toggle: ${(err as Error).message}`);
     } finally {
       setTogglingId(null);
     }

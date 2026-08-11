@@ -286,7 +286,7 @@ export const DomainRedirectsButton = ({
       if (wholeToggle) {
         const url = wholeUrl.trim();
         if (!url) {
-          feedback.notification.error({ message: "Enter a redirect URL" });
+          feedback.message.error("Enter a redirect URL");
           setIsSaving(false);
           return;
         }
@@ -313,7 +313,7 @@ export const DomainRedirectsButton = ({
       body.page_redirects = clean.filter((pr) => pr.source && pr.destination);
 
       await apiClient.patch(`/domains/${domain.id}`, body);
-      feedback.notification.success({ message: "Redirects saved" });
+      feedback.message.success("Redirects saved");
       qc.invalidateQueries({ queryKey: ["list", "domains"] });
       qc.invalidateQueries({ queryKey: ["one", "domains", domain.id] });
       handleCloseModal();
@@ -322,10 +322,7 @@ export const DomainRedirectsButton = ({
         response?: { data?: { detail?: string } };
         message?: string;
       };
-      feedback.notification.error({
-        message: "Failed to save",
-        description: e.response?.data?.detail ?? e.message ?? "Unknown error",
-      });
+      feedback.message.error(`Failed to save: ${e.response?.data?.detail ?? e.message ?? "Unknown error"}`);
     } finally {
       setIsSaving(false);
     }

@@ -26,7 +26,7 @@ export const TenantDomainOptionsCard = () => {
           setDocroot(resp.data.tenant_docroot_editable !== false);
         }
       } catch {
-        if (!cancelled) feedback.notification.error({ message: "Failed to load tenant domain options setting" });
+        if (!cancelled) feedback.message.error("Failed to load tenant domain options setting");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -41,9 +41,9 @@ export const TenantDomainOptionsCard = () => {
     try {
       await apiClient.patch("/admin/settings", { tenant_domain_options_enabled: next });
       setEnabled(next);
-      feedback.notification.success({ message: next ? "Tenant domain options enabled" : "Tenant domain options disabled" });
+      feedback.message.success(next ? "Tenant domain options enabled" : "Tenant domain options disabled");
     } catch {
-      feedback.notification.error({ message: "Failed to update setting" });
+      feedback.message.error("Failed to update setting");
     } finally {
       setSaving(false);
     }
@@ -54,9 +54,9 @@ export const TenantDomainOptionsCard = () => {
     try {
       await apiClient.patch("/admin/settings", { tenant_docroot_editable: next });
       setDocroot(next);
-      feedback.notification.success({ message: next ? "Tenant document-root editing enabled" : "Tenant document-root editing disabled" });
+      feedback.message.success(next ? "Tenant document-root editing enabled" : "Tenant document-root editing disabled");
     } catch {
-      feedback.notification.error({ message: "Failed to update setting" });
+      feedback.message.error("Failed to update setting");
     } finally {
       setSavingDocroot(false);
     }
