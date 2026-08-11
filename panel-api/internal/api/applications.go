@@ -1669,9 +1669,12 @@ type invoiceShelfKickArgs struct {
 	DBUser       string
 	DBPassword   string
 	SiteTitle    string
-	AdminEmail   string
-	AdminPass    string
-	UseWWW       bool
+	// Currency is the ISO 4217 code for the company currency (GH #1042);
+	// enum-gated by the descriptor, defaulted to USD by the service.
+	Currency   string
+	AdminEmail string
+	AdminPass  string
+	UseWWW     bool
 }
 
 // createInvoiceShelfInstallAndKickAgent flips the install row to
@@ -1701,6 +1704,7 @@ func createInvoiceShelfInstallAndKickAgent(parentCtx context.Context, args invoi
 		"db_password":  args.DBPassword,
 		"db_host":      "localhost",
 		"site_title":   args.SiteTitle,
+		"currency":     args.Currency,
 		"admin_email":  args.AdminEmail,
 		"admin_pass":   args.AdminPass,
 		"use_www":      args.UseWWW,
