@@ -16,11 +16,16 @@ import (
 type backupDNSReadParams struct {
 	ManifestSnapshotID string   `json:"manifest_snapshot_id"`
 	DomainNames        []string `json:"domain_names"`
+
+	RepoURL        string            `json:"repo_url,omitempty"`
+	CredentialsRef string            `json:"credentials_ref,omitempty"`
+	PasswordFile   string            `json:"password_file,omitempty"`
+	SFTP           *backupSFTPInputs `json:"sftp,omitempty"`
 }
 
 type backupDNSDomain struct {
-	Name       string                       `json:"name"`
-	DNSRecords []backup.MetadataDNSRecord    `json:"dns_records"`
+	Name       string                     `json:"name"`
+	DNSRecords []backup.MetadataDNSRecord `json:"dns_records"`
 }
 
 type backupDNSReadResult struct {
@@ -39,7 +44,10 @@ func backupDNSReadHandler(ctx context.Context, raw json.RawMessage) (any, error)
 		return nil, bkInvalidArg("domain_names required")
 	}
 
-	cfg, cerr := bkResticConfig("", "", nil)
+	// Same destination wire contract as backup.create — empty falls back
+	// to the legacy default repo (GH #1044: hardcoding the default made
+	// DNS restore read the wrong repo for per-destination backups).
+	cfg, cerr := bkResticConfigWithPassword(p.RepoURL, p.CredentialsRef, p.PasswordFile, p.SFTP)
 	if cerr != nil {
 		return nil, bkInternal("restic config", cerr)
 	}

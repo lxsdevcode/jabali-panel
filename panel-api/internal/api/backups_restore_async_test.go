@@ -100,7 +100,7 @@ func TestRunSelectiveRestoreJob_PersistsOutcomeForTheDrawer(t *testing.T) {
 			`{"applied":["db → alice_pg (postgres)"],"skipped":[],"warnings":["mail: 1 message already existed"]}`)},
 	}}
 	h.runSelectiveRestoreJob("job-2", "snap", "alice",
-		meRestoreSelectiveRequest{Databases: []string{"alice_pg"}, Overwrite: true}, nil)
+		meRestoreSelectiveRequest{Databases: []string{"alice_pg"}, Overwrite: true}, nil, nil)
 	jobs.wait(t)
 	if jobs.status != models.BackupJobStatusSucceeded {
 		t.Fatalf("status = %q, want succeeded", jobs.status)
@@ -126,7 +126,7 @@ func TestRunSelectiveRestoreJob_AgentFailureIsGenericOnTheRow(t *testing.T) {
 		Agent: restoreAgent{err: errors.New("restic: /var/lib secret path leaked")},
 	}}
 	h.runSelectiveRestoreJob("job-3", "snap", "alice",
-		meRestoreSelectiveRequest{Databases: []string{"x"}, Overwrite: true}, nil)
+		meRestoreSelectiveRequest{Databases: []string{"x"}, Overwrite: true}, nil, nil)
 	jobs.wait(t)
 	if jobs.status != models.BackupJobStatusFailed {
 		t.Fatalf("status = %q, want failed", jobs.status)
@@ -135,5 +135,43 @@ func TestRunSelectiveRestoreJob_AgentFailureIsGenericOnTheRow(t *testing.T) {
 	// must NOT echo them.
 	if strings.Contains(jobs.errText, "/var/lib") {
 		t.Errorf("agent internals leaked onto the tenant-visible row: %q", jobs.errText)
+	}
+}
+
+// recordingAgent captures the params of the last call so wire-contract
+// assertions can look inside.
+type recordingAgent struct {
+	reply  json.RawMessage
+	mu     sync.Mutex
+	params map[string]any
+}
+
+func (a *recordingAgent) Call(_ context.Context, _ string, p any) (json.RawMessage, error) {
+	a.mu.Lock()
+	if m, ok := p.(map[string]any); ok {
+		a.params = m
+	}
+	a.mu.Unlock()
+	return a.reply, nil
+}
+
+// The snapshot lives in the SOURCE backup's destination repo. Found live:
+// without repo_url on the wire, the agent read the legacy default repo and
+// every restore from a per-destination backup failed with "failed to find
+// snapshot" — a bug the synchronous version had all along.
+func TestRunSelectiveRestoreJob_SendsTheSourceDestinationRepo(t *testing.T) {
+	jobs := newSealCapture()
+	ag := &recordingAgent{reply: json.RawMessage(`{"applied":["db → x"],"skipped":[],"warnings":[]}`)}
+	h := &meBackupHandler{cfg: MeBackupsHandlerConfig{Jobs: jobs, Agent: ag}}
+	dest := &models.BackupDestination{ID: "d1", Kind: "local", URL: "/var/lib/jabali-backups/custom"}
+
+	h.runSelectiveRestoreJob("job-4", "snap", "alice",
+		meRestoreSelectiveRequest{Databases: []string{"x"}, Overwrite: true}, nil, dest)
+	jobs.wait(t)
+
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	if ag.params["repo_url"] != "/var/lib/jabali-backups/custom" {
+		t.Errorf("repo_url did not reach the agent — the restore reads the WRONG repo: %#v", ag.params["repo_url"])
 	}
 }
