@@ -22,6 +22,7 @@ import { RestoreDrawer } from "./RestoreDrawer";
 
 type MyBackup = {
   id: string;
+  kind?: string;
   status: string;
   content?: string;
   bytes_total: number;
@@ -200,14 +201,16 @@ export const MyProfileBackupCard = () => {
             render: (t: string) => shortDateTime(t),
           },
           {
-            // GH #454: show what each backup captured (full / database / files).
-            // Tenant backups are always account_backup, so the label is
-            // content-driven.
+            // GH #454: show what each backup captured (full / database /
+            // files). GH #1044: the kind is REAL, not assumed — restore
+            // jobs share this list (kind=account_restore) and were being
+            // labelled "Account Backup", which is exactly what the
+            // reporter flagged.
             title: "Type",
             dataIndex: "content",
             render: (_: unknown, row: MyBackup) => (
-              <Tag color={backupTypeColor("account_backup", row.content)}>
-                {backupTypeLabel("account_backup", row.content)}
+              <Tag color={backupTypeColor(row.kind ?? "account_backup", row.content)}>
+                {backupTypeLabel(row.kind ?? "account_backup", row.content)}
               </Tag>
             ),
           },
