@@ -209,7 +209,11 @@ func sslMailIssueHandler(ctx context.Context, params json.RawMessage) (any, erro
 				Domain:  p.Domain,
 				SANs:    allSANs,
 				DNS:     dns,
-				Detail:  fmt.Sprintf("%s must resolve to %s before a mail certificate can be issued", allSANs[0], p.PublicIP),
+				// GH #723: two reporters read this as a dead-end error and
+				// waited/worried. Say the recheck out loud — the panel
+				// retries every 3 minutes (MarkDNSMissing) and issues the
+				// moment public DNS shows the record.
+				Detail: fmt.Sprintf("%s must resolve to %s before a mail certificate can be issued; rechecked automatically every few minutes", allSANs[0], p.PublicIP),
 			}, nil
 		}
 		// Fold in autoconfig/autodiscover/mta-sts only when each
