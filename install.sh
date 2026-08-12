@@ -514,29 +514,116 @@ reconstruct_server_env_from_db() {
          JABALI_SRV_NS1_NAME JABALI_SRV_NS1_IPV4 JABALI_SRV_NS2_NAME JABALI_SRV_NS2_IPV4
 }
 
+# ---------- policy-rc.d guard ------------------------------------------------
+# dpkg's start-suppression shim (/usr/sbin/policy-rc.d, exit 101) is written
+# around apt batches so package postinsts don't auto-start half-configured
+# services. A LEAKED shim is a host-wide outage in slow motion: every
+# invoke-rc.d service action is denied SILENTLY (invoke-rc.d exits 0), so
+# nginx's logrotate postrotate never signals a log reopen and every vhost
+# access log flatlines at 0 bytes until some unrelated reload. Found on
+# jabalitests 2026-08-12: 23 vhost logs empty, the shim months old.
+#
+# The old inline mv/rm pairs restored the shim only on the happy path: _die,
+# _spin's `exit`, and the ERR trap all exit(1) mid-batch without reaching the
+# restore lines placed after the apt call. These helpers arm an EXIT trap
+# instead, so the shim is removed on EVERY exit path.
+_POLICY_RC_MARKER="jabali-panel install.sh"
+_policy_rc_path=/usr/sbin/policy-rc.d
+_policy_rc_armed=0
+_policy_rc_had_foreign=0
+
+_policy_rc_restore() {
+  [[ "$_policy_rc_armed" == "1" ]] || return 0
+  rm -f "$_policy_rc_path"
+  if [[ "$_policy_rc_had_foreign" == "1" && -e "${_policy_rc_path}.jabali-bak" ]]; then
+    mv "${_policy_rc_path}.jabali-bak" "$_policy_rc_path"
+  else
+    rm -f "${_policy_rc_path}.jabali-bak"
+  fi
+  _policy_rc_armed=0
+  _policy_rc_had_foreign=0
+  trap - EXIT
+}
+
+_policy_rc_install() {
+  # $1 — short "why" note embedded in the shim for anyone who finds it live.
+  local why="${1:-package batch}"
+  if [[ -e "$_policy_rc_path" ]]; then
+    if grep -q "$_POLICY_RC_MARKER" "$_policy_rc_path" 2>/dev/null; then
+      # Our own shim leaked from an earlier run — replace it, don't preserve
+      # it as an "operator original". That earlier run may itself have
+      # displaced a real operator file into .jabali-bak before dying: keep
+      # a foreign backup for restore, discard a jabali-authored one.
+      rm -f "$_policy_rc_path"
+      if [[ -e "${_policy_rc_path}.jabali-bak" ]]; then
+        if grep -q "$_POLICY_RC_MARKER" "${_policy_rc_path}.jabali-bak" 2>/dev/null; then
+          rm -f "${_policy_rc_path}.jabali-bak"
+        else
+          _policy_rc_had_foreign=1
+        fi
+      fi
+    else
+      _policy_rc_had_foreign=1
+      mv "$_policy_rc_path" "${_policy_rc_path}.jabali-bak"
+    fi
+  fi
+  cat > "$_policy_rc_path" <<POLICYEOF
+#!/bin/sh
+# TEMPORARY deny-all shim written by ${_POLICY_RC_MARKER} (${why}).
+# Suppresses dpkg service auto-starts during a package batch; install.sh
+# removes it on every exit path. If no install is currently running, this
+# file has leaked — delete it: it silently denies ALL invoke-rc.d service
+# actions host-wide (including nginx's logrotate reopen).
+exit 101
+POLICYEOF
+  chmod 0755 "$_policy_rc_path"
+  _policy_rc_armed=1
+  trap '_policy_rc_restore' EXIT
+}
+
+# sweep_leaked_policy_rcd — heal a host where an earlier install.sh died
+# mid-batch (before the EXIT-trap fix) and left its policy-rc.d behind.
+# Runs from provision_new_software so every `jabali update` sweeps it.
+# Only touches files carrying our marker — an operator's own policy-rc.d
+# is none of our business.
+sweep_leaked_policy_rcd() {
+  local f=/usr/sbin/policy-rc.d
+  if [[ -f "$f" ]] && grep -q "$_POLICY_RC_MARKER" "$f" 2>/dev/null; then
+    # Age-gate: a young shim belongs to a concurrently-running install.sh
+    # (agent-triggered --install-module runs re-enter this script). Real
+    # batches live minutes; only treat an hour-old shim as leaked.
+    if [[ -n "$(find "$f" -mmin +60 2>/dev/null)" ]]; then
+      _warn "leaked policy-rc.d found (denies ALL invoke-rc.d service actions) — removing"
+      rm -f "$f"
+      if [[ -f "${f}.jabali-bak" ]]; then
+        if grep -q "$_POLICY_RC_MARKER" "${f}.jabali-bak" 2>/dev/null; then
+          rm -f "${f}.jabali-bak"
+        else
+          _log "restoring operator policy-rc.d displaced by the leaked run"
+          mv "${f}.jabali-bak" "$f"
+        fi
+      fi
+      # nginx has likely been writing to rotated .1 files since the leak
+      # (logrotate's `invoke-rc.d nginx rotate` was denied) — reopen its
+      # logs now rather than waiting for the next full reload.
+      if systemctl is-active --quiet nginx 2>/dev/null; then
+        nginx -s reopen 2>/dev/null || true
+        _ok "nginx signalled to reopen logs (leaked policy-rc.d had blocked logrotate)"
+      fi
+    fi
+  fi
+}
+
 # _install_dns_packages — apt-install the PowerDNS packages on a host that didn't
 # get them in the base batch (a --minimal install). The pdns postinst would try
 # to start pdns before its MySQL backend is wired, so a policy-rc.d start-
 # suppression shim is dropped for the duration (identical to install_base_packages).
-# CRITICAL: the shim is restored on EVERY exit path — a leftover `exit 101`
-# policy-rc.d blocks ALL service starts host-wide. We capture apt's rc, restore
-# the shim, THEN _die, so the die never fires while the shim is live.
+# CRITICAL: the shim must not outlive this function — a leftover `exit 101`
+# policy-rc.d blocks ALL service starts host-wide. The _policy_rc_* guard
+# owns that via an EXIT trap; we still restore explicitly on the happy path.
 _install_dns_packages() {
   _log "installing PowerDNS packages (dns module runtime install)"
-  local policy_rc=/usr/sbin/policy-rc.d
-  local policy_rc_preexisted=0
-  if [[ -e "$policy_rc" ]]; then
-    policy_rc_preexisted=1
-    mv "$policy_rc" "${policy_rc}.jabali-bak"
-  fi
-  cat > "$policy_rc" <<'POLICYEOF'
-#!/bin/sh
-# Temporarily installed by jabali-panel install.sh (--install-module dns).
-# Suppresses pdns service auto-start during the package install; the config
-# functions start it explicitly once the MySQL backend is wired.
-exit 101
-POLICYEOF
-  chmod 0755 "$policy_rc"
+  _policy_rc_install "--install-module dns"
 
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq || _warn "apt update failed; proceeding with cached package lists"
@@ -544,9 +631,9 @@ POLICYEOF
   apt-get install -y -qq --no-install-recommends \
     pdns-server pdns-backend-mysql pdns-recursor bind9-dnsutils || _rc=$?
 
-  # Restore policy-rc.d before any exit path (die included).
-  rm -f "$policy_rc"
-  [[ "$policy_rc_preexisted" == "1" ]] && mv "${policy_rc}.jabali-bak" "$policy_rc"
+  # Restore policy-rc.d before any exit path (the EXIT trap also covers
+  # _die and set -e exits).
+  _policy_rc_restore
 
   [[ $_rc -eq 0 ]] || _die "apt install of PowerDNS packages failed (exit $_rc)"
 
@@ -1501,21 +1588,11 @@ install_base_packages() {
   # a policy-rc.d that tells dpkg to skip service starts during this
   # install — every service in the batch (nginx, php-fpm, pdns) is
   # explicitly enabled+started later in its own step, so "don't auto-
-  # start" is harmless across the board.
-  local policy_rc=/usr/sbin/policy-rc.d
-  local policy_rc_preexisted=0
-  if [[ -e "$policy_rc" ]]; then
-    policy_rc_preexisted=1
-    mv "$policy_rc" "${policy_rc}.jabali-bak"
-  fi
-  cat > "$policy_rc" <<'POLICYEOF'
-#!/bin/sh
-# Temporarily installed by jabali-panel install.sh during the one-shot
-# package batch. Tells dpkg to skip service start during install — every
-# service is explicitly enabled+started later.
-exit 101
-POLICYEOF
-  chmod 0755 "$policy_rc"
+  # start" is harmless across the board. The guard arms an EXIT trap so
+  # the shim cannot leak if the apt batch dies (_die/_spin/ERR trap all
+  # exit mid-function — that leak silently killed logrotate's nginx log
+  # reopen host-wide on jabalitests).
+  _policy_rc_install "one-shot base package batch"
 
   # Sury's PHP extension packaging drifts between versions (8.5 ships
   # OPcache inside -common instead of as a standalone -opcache package).
@@ -1589,13 +1666,9 @@ POLICYEOF
       apt-get install -y -qq --no-install-recommends "${_base_pkgs[@]}"
   fi
 
-  # Undo the policy-rc.d trap regardless of exit path above (set -e would
-  # have left the trap in place — restore is best-effort but ordered so
-  # the original file comes back if one existed).
-  rm -f "$policy_rc"
-  if [[ "$policy_rc_preexisted" == "1" ]]; then
-    mv "${policy_rc}.jabali-bak" "$policy_rc"
-  fi
+  # Happy-path restore; the EXIT trap armed by _policy_rc_install covers
+  # every other exit (die/_spin/ERR/signal).
+  _policy_rc_restore
 
   # M6.3 Debian packaging fact-check (2026-04-22): pdns-server and
   # pdns-recursor both run as `pdns:pdns` on Debian — the recursor
@@ -14318,6 +14391,12 @@ provision_php_extensions() {
 }
 
 provision_new_software() {
+  # Sweep a leaked policy-rc.d BEFORE anything else — while it sits there,
+  # every invoke-rc.d action this provision chain (and logrotate, and dpkg
+  # postinsts) performs is silently denied. Found leaked on jabalitests
+  # 2026-08-12 (nginx access logs 0-byte for months).
+  sweep_leaked_policy_rcd
+
   # Heal /etc/jabali-panel traversal FIRST — a 0750 parent here means
   # every per-user PHP-FPM is crash-looping right now; fix it before
   # anything else in the provision chain touches PHP.
