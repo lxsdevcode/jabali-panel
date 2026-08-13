@@ -24,6 +24,12 @@ type BackupJobRepository interface {
 	Create(ctx context.Context, job *models.BackupJob) error
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*models.BackupJob, error)
+	// FindBySnapshotID returns the BACKUP job that produced the given restic
+	// snapshot (GH #1044 — a restore inherits its Content so a restore of a
+	// database-only backup reads "Database Restore"). Restore jobs carry no
+	// snapshot, so this only ever matches the source backup. ErrNotFound when
+	// no backup owns that snapshot (deleted, or a cross-host snapshot).
+	FindBySnapshotID(ctx context.Context, snapshotID string) (*models.BackupJob, error)
 	ListForUser(ctx context.Context, userID string, limit, offset int) ([]models.BackupJob, int64, error)
 	// OldestAccountBackupForUser returns the caller's OLDEST account_backup job
 	// (created_at ASC) for auto-prune retention (GH #454), or ErrNotFound when
@@ -69,11 +75,11 @@ type BackupJobRepository interface {
 // the columns the admin UI needs for its parent rows. Per-job detail
 // loads on demand via ListByRun.
 type BackupRunSummary struct {
-	RunID         string    `json:"run_id"`
-	ScheduleID    *string   `json:"schedule_id,omitempty"`
-	Kind          string    `json:"kind"`
-	Content       string    `json:"content"`
-	HasAccounts   bool      `json:"has_accounts"`
+	RunID       string  `json:"run_id"`
+	ScheduleID  *string `json:"schedule_id,omitempty"`
+	Kind        string  `json:"kind"`
+	Content     string  `json:"content"`
+	HasAccounts bool    `json:"has_accounts"`
 	// Accounts is the number of per-account snapshots in the run (GH #502) — so
 	// the UI can label a Full Server run "system + N accounts" on the collapsed
 	// row instead of making the admin expand it to count.
@@ -114,6 +120,25 @@ func (r *backupJobRepo) Create(ctx context.Context, job *models.BackupJob) error
 func (r *backupJobRepo) Get(ctx context.Context, id string) (*models.BackupJob, error) {
 	var out models.BackupJob
 	if err := r.db.WithContext(ctx).First(&out, "id = ?", id).Error; err != nil {
+		return nil, translate(err)
+	}
+	return &out, nil
+}
+
+// FindBySnapshotID returns the backup job that produced snapshotID. Scoped to
+// backup kinds (restores carry an empty snapshot, so they never collide); when
+// more than one backup shares a snapshot the oldest wins deterministically.
+func (r *backupJobRepo) FindBySnapshotID(ctx context.Context, snapshotID string) (*models.BackupJob, error) {
+	if snapshotID == "" {
+		return nil, ErrNotFound
+	}
+	var out models.BackupJob
+	err := r.db.WithContext(ctx).
+		Where("snapshot_id = ? AND kind IN ?", snapshotID,
+			[]string{models.BackupJobKindAccountBackup, models.BackupJobKindSystemBackup}).
+		Order("created_at ASC").
+		First(&out).Error
+	if err != nil {
 		return nil, translate(err)
 	}
 	return &out, nil

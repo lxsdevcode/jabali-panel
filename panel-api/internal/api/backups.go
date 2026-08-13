@@ -586,7 +586,10 @@ func (h *backupHandler) delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
 		return
 	}
-	if h.cfg.Agent != nil {
+	// GH #1044: a restore job owns no restic snapshot, so there is nothing to
+	// forget — skip straight to dropping the row. Calling backup.forget for it
+	// would ask the agent to prune a snapshot that never existed.
+	if h.cfg.Agent != nil && !isRestoreKind(job.Kind) {
 		if err := h.forgetBackup(c, job); err != nil {
 			return // forgetBackup wrote the response; leave the row
 		}
@@ -743,6 +746,15 @@ func (h *backupHandler) logs(c *gin.Context) {
 	job, err := h.cfg.Jobs.Get(c.Request.Context(), jobID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
+		return
+	}
+	// GH #1044: a restore never writes the agent's per-job backup log file — its
+	// result (applied/skipped/warnings for selective, stages for full) lives on
+	// the job row. Render that as the log body instead of asking the agent for a
+	// file that is always "no log available". Before the agent check so the Logs
+	// action works even when the agent is momentarily unavailable.
+	if isRestoreKind(job.Kind) {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"log_text": formatRestoreLog(job)}})
 		return
 	}
 	if h.cfg.Agent == nil {
@@ -998,11 +1010,20 @@ func (h *backupHandler) restore(c *gin.Context) {
 	}
 
 	destID := dest.ID
+	// GH #1044: inherit the SOURCE backup's content so restoring a
+	// database-only backup reads "Database Restore", not a generic "Account
+	// Restore". A missing source (snapshot deleted, or a cross-host snapshot)
+	// falls back to "full".
+	restoreContent := models.BackupContentFull
+	if src, serr := h.cfg.Jobs.FindBySnapshotID(c.Request.Context(), req.ManifestSnapshotID); serr == nil && src != nil && src.Content != "" {
+		restoreContent = models.NormalizeBackupContent(src.Content)
+	}
 	job := &models.BackupJob{
 		ID:            ids.NewULID(),
 		UserID:        req.TargetUserID,
 		DestinationID: &destID,
 		Kind:          models.BackupJobKindAccountRestore,
+		Content:       restoreContent,
 		CreatedAt:     time.Now().UTC(),
 		Status:        models.BackupJobStatusQueued,
 	}
@@ -1508,7 +1529,9 @@ func (h *meBackupHandler) delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "not_found"})
 		return
 	}
-	if h.cfg.Agent != nil {
+	// GH #1044: a restore job owns no restic snapshot — skip the forget and just
+	// drop the row (forgetting would prune a snapshot that never existed).
+	if h.cfg.Agent != nil && !isRestoreKind(job.Kind) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), backupCallTimeout)
 		defer cancel()
 		if _, err := h.cfg.Agent.Call(ctx, "backup.forget", map[string]any{
@@ -2538,9 +2561,12 @@ func (h *meBackupHandler) restoreSelective(c *gin.Context) {
 
 	// Track the restore as its own job so the jobs list + notifications cover it.
 	restoreJob := &models.BackupJob{
-		ID:        ids.NewULID(),
-		UserID:    claims.UserID,
-		Kind:      models.BackupJobKindAccountRestore,
+		ID:     ids.NewULID(),
+		UserID: claims.UserID,
+		Kind:   models.BackupJobKindAccountRestore,
+		// GH #1044: record what this restore actually touches so the list reads
+		// "Database Restore" (etc.) rather than the generic "Account Restore".
+		Content:   restoreContentFromSelective(req.Databases, req.Mailboxes, req.DNSDomains, req.Home),
 		CreatedAt: time.Now().UTC(),
 		Status:    models.BackupJobStatusQueued,
 	}
