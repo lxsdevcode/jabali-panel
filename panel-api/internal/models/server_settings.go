@@ -193,7 +193,7 @@ type ServerSettings struct {
 	// the jabali-country-allowlist LAPI AllowList (CIDR sets synced by
 	// panel-api's countryexempt syncer). Wins over the geoblock deny-list
 	// (AllowLists evaluate before AppSec pre_eval — ADR-0061).
-	CountryExemptCountries string `gorm:"column:country_exempt_countries;type:varchar(1000);not null;default:''" json:"country_exempt_countries"`
+	CountryExemptCountries string `gorm:"column:country_exempt_countries;type:text;not null;default:''" json:"country_exempt_countries"`
 	// CrowdsecSensitivity preset (M27 follow-up). Applied via agent's
 	// security.crowdsec.sensitivity.apply verb which writes:
 	//   /etc/crowdsec/profiles.yaml          (ban duration)

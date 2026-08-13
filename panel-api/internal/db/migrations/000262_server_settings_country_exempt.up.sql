@@ -8,7 +8,11 @@
 -- internal/countryexempt syncer). DB is the source of truth;
 -- empty = feature off.
 
+-- TEXT (not VARCHAR) on purpose: server_settings is close to InnoDB's
+-- 65535-byte row-size ceiling — a VARCHAR(1000) trips Error 1118 on
+-- hosts carrying the full column set (hit on testserver 2026-08-13).
+
 ALTER TABLE server_settings
-    ADD COLUMN country_exempt_countries VARCHAR(1000) NOT NULL DEFAULT '';
+    ADD COLUMN country_exempt_countries TEXT NOT NULL DEFAULT ('');
 ALTER TABLE server_settings
     DROP COLUMN country_exempt_countries;
