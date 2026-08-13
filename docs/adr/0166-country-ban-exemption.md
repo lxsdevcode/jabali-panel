@@ -69,7 +69,15 @@ appears in both lists.
 - Existing bans are not retroactively removed (CrowdSec semantics); the
   runbook documents `cscli decisions delete` for cleanup.
 - AppSec inband exemption via LAPI AllowLists is claimed by CrowdSec docs;
-  flagged for live end-to-end verification on a test box before the feature
-  is called prod-proven (trigger a benign AppSec match from an exempted IP).
+  **verified live on testserver (2026-08-13)**: the AppSec acquisition layer
+  logs `… is allowlisted by <ip> from jabali-country-allowlist (country:IL),
+  skipping` and does not evaluate the request.
+- The two layers use different geo data sources: the parser whitelist reads
+  MaxMind (geoip-enrich `IsoCode`), the CIDR sets come from ipdeny. An IP can
+  geo-locate to an exempt country in MaxMind while ipdeny's aggregated set
+  does not cover it (observed: 182.54.236.64 = IL in MaxMind, absent from
+  ipdeny's IL zone). Consequence: such an IP escapes *locally-generated*
+  decisions but could still be hit by CAPI/community blocklist decisions.
+  Accepted as residual risk; the parser layer is the primary guard.
 - The US-scale initial import takes minutes; it runs as a background sync
   with operator-visible progress, never inline in the PUT request.
