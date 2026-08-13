@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/agent"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/countryexempt"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/middleware"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
@@ -610,7 +611,88 @@ func RegisterSecurityAppSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterface,
 		}
 		c.JSON(http.StatusOK, appsecGeoblockResponse(s))
 	})
+
+	// ADR-0166 — country ban exemption. State lives in server_settings;
+	// the agent renders the s02-enrich GeoIP parser whitelist, and a
+	// background sync (countryexempt) keeps the jabali-country-allowlist
+	// LAPI AllowList seeded with the selected countries' CIDR sets.
+	ce := rg.Group("/admin/security/crowdsec/country-exemption", middleware.RequireAdmin())
+
+	ce.GET("", func(c *gin.Context) {
+		s, err := settings.Get(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error", "error": "settings_read", "detail": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, countryExemptResponse(s))
+	})
+
+	ce.PUT("", func(c *gin.Context) {
+		var body struct {
+			Countries []string `json:"countries"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid_json"})
+			return
+		}
+		cleaned, errResp := cleanCountries(body.Countries)
+		if errResp != nil {
+			c.JSON(http.StatusBadRequest, errResp)
+			return
+		}
+		// Empty list = feature off; the agent removes the whitelist file.
+		// Dispatch agent first so a failed host write never drifts the DB
+		// (geoblock ordering).
+		ctx, cancel := context.WithTimeout(c.Request.Context(), csCallTimeout)
+		defer cancel()
+		if _, err := cli.Call(ctx, "security.crowdsec.country_exempt.set", map[string]any{
+			"countries": cleaned,
+		}); err != nil {
+			status, errBody := translateAgentError(err)
+			c.JSON(status, errBody)
+			return
+		}
+		s, err := settings.Get(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error", "error": "settings_read", "detail": err.Error(),
+			})
+			return
+		}
+		s.CountryExemptCountries = strings.Join(cleaned, ",")
+		if err := settings.Upsert(c.Request.Context(), s); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error", "error": "settings_write", "detail": err.Error(),
+			})
+			return
+		}
+		// CIDR sync runs in the background — a US-scale import takes
+		// minutes and must not block the request. Uses the snapshot cache;
+		// the refresher handles staleness.
+		countryExemptKick(nil, countryexempt.NewSyncer(cli, nil), cleaned, false)
+		c.JSON(http.StatusOK, countryExemptResponse(s))
+	})
+
+	// Operator-forced re-sync: refetch zones even when snapshots are fresh.
+	ce.POST("/sync", func(c *gin.Context) {
+		s, err := settings.Get(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error", "error": "settings_read", "detail": err.Error(),
+			})
+			return
+		}
+		countryExemptKick(nil, countryexempt.NewSyncer(cli, nil),
+			countryexempt.SplitCountries(s.CountryExemptCountries), true)
+		c.Status(http.StatusAccepted)
+	})
 }
+
+// countryExemptKick is a seam for tests — the background CIDR sync trigger
+// (countryexempt.KickBackground in production).
+var countryExemptKick = countryexempt.KickBackground
 
 // appsecGeoblockModes mirrors the agent + CONVENTIONS list. Duplicated
 // at the API edge so bad input gets a 400 without a round-trip.
@@ -629,6 +711,16 @@ func appsecGeoblockResponse(s *models.ServerSettings) gin.H {
 		"mode":      s.AppSecGeoblockMode,
 		"countries": countries,
 	}
+}
+
+// countryExemptResponse renders the ADR-0166 state. Empty selection is
+// reported as [] (never null) so the UI Select renders consistently.
+func countryExemptResponse(s *models.ServerSettings) gin.H {
+	countries := countryexempt.SplitCountries(s.CountryExemptCountries)
+	if countries == nil {
+		countries = []string{}
+	}
+	return gin.H{"countries": countries}
 }
 
 func cleanCountries(in []string) ([]string, gin.H) {

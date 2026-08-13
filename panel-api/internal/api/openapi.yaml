@@ -1976,6 +1976,26 @@ paths:
       requestBody: { content: { application/json: { schema: { type: object } } } }
       responses: { "200": { description: OK } }
 
+  /admin/security/crowdsec/country-exemption:
+    get:
+      tags: [CrowdSec]
+      summary: Get country ban exemption (ADR-0166)
+      security: [ { KratosSession: [] } ]
+      responses: { "200": { description: OK } }
+    put:
+      tags: [CrowdSec]
+      summary: Set country ban exemption (empty list = off)
+      security: [ { KratosSession: [] } ]
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses: { "200": { description: OK } }
+
+  /admin/security/crowdsec/country-exemption/sync:
+    post:
+      tags: [CrowdSec]
+      summary: Force a country CIDR re-sync (refetches zone snapshots)
+      security: [ { KratosSession: [] } ]
+      responses: { "202": { description: Accepted } }
+
   # --- Directory Privacy ---
 
   /domains/{id}/directory-privacy:

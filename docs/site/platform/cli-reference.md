@@ -946,6 +946,42 @@ jabali crowdsec captcha set [flags]
 - `--secret-key` — captcha secret key (write-only; empty keeps existing)
 - `--site-key` — captcha site key
 
+#### `jabali crowdsec country-exempt`
+
+Never block the selected countries (get / set / sync)
+
+```
+jabali crowdsec country-exempt
+```
+
+##### `jabali crowdsec country-exempt get`
+
+Show exempt countries
+
+```
+jabali crowdsec country-exempt get
+```
+
+##### `jabali crowdsec country-exempt set`
+
+Set exempt countries (empty = feature off)
+
+```
+jabali crowdsec country-exempt set [flags]
+```
+
+**Flags:**
+
+- `--country` — 2-letter ISO code (repeatable); omit all to disable (default `[]`)
+
+##### `jabali crowdsec country-exempt sync`
+
+Force a CIDR re-sync (refetch zones)
+
+```
+jabali crowdsec country-exempt sync
+```
+
 #### `jabali crowdsec decisions`
 
 List / add / delete CrowdSec decisions

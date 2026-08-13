@@ -184,6 +184,16 @@ type ServerSettings struct {
 	// (see plans/m26-security-tab-runbook.md).
 	AppSecGeoblockMode      string `gorm:"column:appsec_geoblock_mode;type:varchar(10);not null;default:'off'"    json:"appsec_geoblock_mode"`
 	AppSecGeoblockCountries string `gorm:"column:appsec_geoblock_countries;type:varchar(1000);not null;default:''" json:"appsec_geoblock_countries"`
+
+	// Country ban exemption (ADR-0166, migration 000262). Countries whose
+	// IPs must never be blocked by CrowdSec from any decision source
+	// (scenario bans, AppSec inband, CAPI/console blocklists, captchas).
+	// Comma-separated ISO 3166-1 alpha-2 codes; empty = feature off.
+	// Applied by the agent via the s02-enrich GeoIP parser whitelist and
+	// the jabali-country-allowlist LAPI AllowList (CIDR sets synced by
+	// panel-api's countryexempt syncer). Wins over the geoblock deny-list
+	// (AllowLists evaluate before AppSec pre_eval — ADR-0061).
+	CountryExemptCountries string `gorm:"column:country_exempt_countries;type:varchar(1000);not null;default:''" json:"country_exempt_countries"`
 	// CrowdsecSensitivity preset (M27 follow-up). Applied via agent's
 	// security.crowdsec.sensitivity.apply verb which writes:
 	//   /etc/crowdsec/profiles.yaml          (ban duration)

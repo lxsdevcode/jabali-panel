@@ -267,6 +267,50 @@ export function useUpdateAppSecGeoblock() {
   });
 }
 
+// Country ban exemption (ADR-0166) — selected countries are never blocked
+// from any CrowdSec decision source (scenario bans, AppSec inband, CAPI/
+// console blocklists, captchas). server_settings is truth; the agent renders
+// the s02-enrich GeoIP whitelist and a background sync seeds the
+// jabali-country-allowlist LAPI AllowList with per-country CIDR sets.
+export type CountryExemption = {
+  countries: string[];
+};
+
+export function useCountryExemption() {
+  return useQuery({
+    queryKey: ["security", "crowdsec", "country-exemption"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<CountryExemption>(`${BASE}/country-exemption`);
+      return data;
+    },
+  });
+}
+
+export function useUpdateCountryExemption() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CountryExemption) => {
+      const { data } = await apiClient.put<CountryExemption>(
+        `${BASE}/country-exemption`,
+        input,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["security", "crowdsec", "country-exemption"] });
+    },
+  });
+}
+
+// Force a CIDR re-sync (refetches the ipdeny zone snapshots server-side).
+export function useSyncCountryExemption() {
+  return useMutation({
+    mutationFn: async () => {
+      await apiClient.post(`${BASE}/country-exemption/sync`);
+    },
+  });
+}
+
 // Allowlists (ADR-0061) — server-wide IP/CIDR never-ban list. Single
 // allowlist named "jabali-admin-allowlist" lives in LAPI; jabali shells
 // to cscli via the agent. LAPI is truth (not jabali DB).

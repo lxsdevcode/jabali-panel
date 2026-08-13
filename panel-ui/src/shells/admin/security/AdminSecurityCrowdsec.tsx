@@ -34,6 +34,7 @@ import {
   useAddCrowdsecAllowlist,
   useAddCrowdsecDecision,
   useAppSecGeoblock,
+  useCountryExemption,
   useCrowdsecAlert,
   useCrowdsecAlerts,
   useCrowdsecAllowlists,
@@ -50,7 +51,9 @@ import {
   useCrowdsecStatus,
   useDeleteCrowdsecDecision,
   useRemoveCrowdsecAllowlist,
+  useSyncCountryExemption,
   useUpdateAppSecGeoblock,
+  useUpdateCountryExemption,
   useUpdateCrowdsecCaptcha,
   useUpdateCrowdsecProfiles,
   type AppSecGeoblockMode,
@@ -323,7 +326,7 @@ export const AdminSecurityCrowdsec = () => {
           { key: "overview", label: "Overview", children: overviewPanel },
           { key: "hub", label: "Hub", children: hubPanel },
           { key: "decisions", label: "Active decisions", children: decisionsPanel },
-          { key: "allowlist", label: "Allowlist", children: <AllowlistsCard /> },
+          { key: "allowlist", label: "Allowlist", children: (<><AllowlistsCard /><CountryExemptCard /></>) },
           { key: "alerts", label: "Alerts", children: <AlertsCard /> },
           { key: "captcha", label: "Captcha", children: <CaptchaPanel /> },
           { key: "appsec", label: "Block Country", children: <AppSecGeoblockCard /> },
@@ -820,6 +823,149 @@ const AllowlistsCard = () => {
         </Form>
       </Drawer>
     </>
+  );
+};
+
+// CountryExemptCard — countries that must NEVER be blocked by CrowdSec from
+// any decision source: scenario bans, AppSec inband 403s, CAPI/community
+// blocklists, captchas (ADR-0166). Two layers server-side: the
+// jabali-country-allowlist LAPI AllowList (per-country CIDR sets synced in
+// the background from ipdeny) + a GeoIP parser whitelist that discards
+// matching events before scenarios. The exemption wins over the geoblock
+// deny-list (AllowLists evaluate before AppSec pre_eval) — the operator is
+// warned when a country sits in both.
+const CountryExemptCard = () => {
+  const { t } = useTranslation();
+  const exemption = useCountryExemption();
+  const updateExemption = useUpdateCountryExemption();
+  const syncExemption = useSyncCountryExemption();
+  const geoblock = useAppSecGeoblock();
+
+  const [countries, setCountries] = useState<string[]>([]);
+
+  // Same memoised option set as AppSecGeoblockCard (ISO3166_COUNTRIES is a
+  // frozen literal; useMemo keeps Select.options stable across renders).
+  const countryOptions = useMemo(
+    () =>
+      ISO3166_COUNTRIES.map((c) => ({
+        value: c.code,
+        label: `${c.flag}  ${c.name} (${c.code})`,
+        searchKey: `${c.name} ${c.code}`.toLowerCase(),
+      })),
+    [],
+  );
+
+  useEffect(() => {
+    if (exemption.data) {
+      setCountries(exemption.data.countries);
+    }
+  }, [exemption.data]);
+
+  const dirty =
+    exemption.data !== undefined &&
+    countries.join(",") !== exemption.data.countries.join(",");
+
+  const geoblockDeny = geoblock.data?.mode === "deny" ? geoblock.data.countries : [];
+  const geoblockDenyOverlap = countries.filter((c) => geoblockDeny.includes(c));
+
+  const apply = async () => {
+    try {
+      await updateExemption.mutateAsync({ countries });
+      feedback.message.success(t("adminsecuritycrowdsec.country_exemption_applied"));
+    } catch (e: unknown) {
+      feedback.message.error(e instanceof Error ? e.message : "Failed to apply country exemption");
+    }
+  };
+
+  const resync = async () => {
+    try {
+      await syncExemption.mutateAsync();
+      feedback.message.success(t("adminsecuritycrowdsec.country_exemption_sync_started"));
+    } catch (e: unknown) {
+      feedback.message.error(e instanceof Error ? e.message : "Failed to start re-sync");
+    }
+  };
+
+  return (
+    <Card
+      size="small"
+      title={t("adminsecuritycrowdsec.country_ban_exemption")}
+      loading={exemption.isLoading}
+      style={{ marginTop: 16 }}
+    >
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          {t("adminsecuritycrowdsec.country_exemption_description")}
+        </Typography.Paragraph>
+        <div>
+          <Typography.Text strong>{t("adminsecuritycrowdsec.countries")}: </Typography.Text>
+          <Select<string[]>
+            mode="multiple"
+            style={{ width: "100%", maxWidth: 720 }}
+            placeholder={t("adminsecuritycrowdsec.type_a_country_name_or_code_or_pick_from_the")}
+            value={countries}
+            onChange={(next) =>
+              setCountries(
+                next
+                  .map((c) => c.toUpperCase().trim())
+                  .filter((c) => /^[A-Z]{2}$/.test(c)),
+              )
+            }
+            options={countryOptions}
+            showSearch
+            optionFilterProp="searchKey"
+            filterOption={(input, opt) =>
+              (opt?.searchKey ?? "").includes(input.toLowerCase())
+            }
+            maxTagCount="responsive"
+            allowClear
+          />
+        </div>
+        {geoblockDenyOverlap.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t("adminsecuritycrowdsec.country_exemption_geoblock_overlap", {
+              countries: geoblockDenyOverlap.join(", "),
+            })}
+          />
+        )}
+        <Space>
+          <Popconfirm
+            title={t("adminsecuritycrowdsec.apply_country_exemption")}
+            description={t("adminsecuritycrowdsec.country_exemption_apply_hint", {
+              count: countries.length,
+            })}
+            okText={t("adminsecuritycrowdsec.apply")}
+            onConfirm={apply}
+            disabled={!dirty || updateExemption.isPending}
+          >
+            <Button type="primary" disabled={!dirty} loading={updateExemption.isPending}>
+              {t("adminsecuritycrowdsec.apply")}
+            </Button>
+          </Popconfirm>
+          {dirty && (
+            <Button
+              onClick={() => {
+                if (exemption.data) {
+                  setCountries(exemption.data.countries);
+                }
+              }}
+            >
+              {t("adminsecuritycrowdsec.reset")}
+            </Button>
+          )}
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={resync}
+            loading={syncExemption.isPending}
+            disabled={(exemption.data?.countries.length ?? 0) === 0}
+          >
+            {t("adminsecuritycrowdsec.resync_cidrs")}
+          </Button>
+        </Space>
+      </Space>
+    </Card>
   );
 };
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/countryexempt"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
@@ -37,6 +38,7 @@ func newCrowdsecCmd() *cobra.Command {
 		newCsHubCmd(),
 		newCsAlertsCmd(),
 		newCsGeoblockCmd(),
+		newCsCountryExemptCmd(),
 		newCsCaptchaCmd(),
 		newCsProfilesCmd(),
 	)
@@ -436,6 +438,105 @@ func newCsGeoblockSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&mode, "mode", "", "off|allow|deny (required)")
 	cmd.Flags().StringArrayVar(&countries, "country", nil, "2-letter ISO code (repeatable)")
+	return cmd
+}
+
+// ---- country-exemption (ADR-0166) -------------------------------------------
+
+func newCsCountryExemptCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "country-exempt",
+		Short: "Never block the selected countries (get / set / sync)",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use: "get", Short: "Show exempt countries", Args: cobra.NoArgs, PreRunE: requireDB,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
+				defer cancel()
+				s, err := repository.NewServerSettingsRepository(sharedDB).Get(ctx)
+				if err != nil {
+					return err
+				}
+				countries := countryexempt.SplitCountries(s.CountryExemptCountries)
+				if jsonOutput {
+					return printJSON(map[string]any{"countries": countries})
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "countries=%s\n", strings.Join(countries, ","))
+				return nil
+			},
+		},
+		newCsCountryExemptSetCmd(),
+		&cobra.Command{
+			Use: "sync", Short: "Force a CIDR re-sync (refetch zones)", Args: cobra.NoArgs, PreRunE: requireDBAndAgent,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
+				defer cancel()
+				s, err := repository.NewServerSettingsRepository(sharedDB).Get(ctx)
+				if err != nil {
+					return err
+				}
+				countries := countryexempt.SplitCountries(s.CountryExemptCountries)
+				if len(countries) == 0 {
+					return fmt.Errorf("no exempt countries configured — set some first")
+				}
+				countryexempt.KickBackground(nil, countryexempt.NewSyncer(sharedAgent, nil), countries, true)
+				fmt.Fprintln(cmd.OutOrStdout(), "CIDR re-sync started in the background (watch journalctl -u jabali-panel -t countryexempt)")
+				return nil
+			},
+		},
+	)
+	return cmd
+}
+
+func newCsCountryExemptSetCmd() *cobra.Command {
+	var countries []string
+	cmd := &cobra.Command{
+		Use:     "set",
+		Short:   "Set exempt countries (empty = feature off)",
+		Args:    cobra.NoArgs,
+		PreRunE: requireDBAndAgent,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cleaned := []string{}
+			seen := map[string]bool{}
+			for _, c := range countries {
+				code := strings.ToUpper(strings.TrimSpace(c))
+				if code == "" {
+					continue
+				}
+				if !cliCountryRE.MatchString(code) {
+					return fmt.Errorf("invalid country code %q (expected 2-letter ISO)", c)
+				}
+				if !seen[code] {
+					seen[code] = true
+					cleaned = append(cleaned, code)
+				}
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+			// Agent first so a whitelist-write failure doesn't drift the DB.
+			if _, err := sharedAgent.Call(ctx, "security.crowdsec.country_exempt.set", map[string]any{
+				"countries": cleaned,
+			}); err != nil {
+				return err
+			}
+			repo := repository.NewServerSettingsRepository(sharedDB)
+			s, err := repo.Get(ctx)
+			if err != nil {
+				return err
+			}
+			s.CountryExemptCountries = strings.Join(cleaned, ",")
+			if err := repo.Upsert(ctx, s); err != nil {
+				return fmt.Errorf("persist country-exempt settings: %w", err)
+			}
+			cliAuditOK(ctx, "crowdsec.country_exempt_set", "server_settings", "1", nil)
+			// CIDR sync in the background — a US-scale import takes minutes.
+			countryexempt.KickBackground(nil, countryexempt.NewSyncer(sharedAgent, nil), cleaned, false)
+			fmt.Fprintf(cmd.OutOrStdout(), "country-exempt countries=%s (CIDR sync running in background)\n", strings.Join(cleaned, ","))
+			return nil
+		},
+	}
+	cmd.Flags().StringArrayVar(&countries, "country", nil, "2-letter ISO code (repeatable); omit all to disable")
 	return cmd
 }
 
