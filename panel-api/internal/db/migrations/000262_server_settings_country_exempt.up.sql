@@ -14,5 +14,3 @@
 
 ALTER TABLE server_settings
     ADD COLUMN country_exempt_countries TEXT NOT NULL DEFAULT ('');
-ALTER TABLE server_settings
-    DROP COLUMN country_exempt_countries;
