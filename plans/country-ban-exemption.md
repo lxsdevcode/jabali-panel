@@ -64,8 +64,11 @@ which is an HTTP-layer allow/deny gate and says nothing about bans.
      `/var/lib/jabali-panel/country-zones/`, diff vs `cscli allowlists
      inspect` (LAPI truth), push deltas to the agent in ≤4000-entry chunks.
      Fetch failure → keep last good snapshot, log + retry next tick.
-   - Refresh goroutine (in-process, ctx-tied — repo convention): daily tick,
-     re-sync when the snapshot is older than 7 days or the selection changed.
+   - Refresher goroutine (in-process, ctx-tied — repo convention): 60s
+     convergence tick — syncs when the selection changed (covers
+     CLI-originated edits, which can't background-sync from a short-lived
+     process) or the last sync failed; snapshots self-manage their 7-day
+     staleness on read. CLI `sync` runs the sync inline.
 5. **CLI** — `jabali crowdsec country-exempt get|set|sync` in
    `crowdsec_cmd.go`, mirroring geoblock; audits `crowdsec.country_exempt_set`.
 6. **UI** — "Country ban exemption" card on the Allowlist tab

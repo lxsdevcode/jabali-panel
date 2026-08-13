@@ -468,11 +468,9 @@ func newCsCountryExemptCmd() *cobra.Command {
 		},
 		newCsCountryExemptSetCmd(),
 		&cobra.Command{
-			Use: "sync", Short: "Force a CIDR re-sync (refetch zones)", Args: cobra.NoArgs, PreRunE: requireDBAndAgent,
+			Use: "sync", Short: "Force a CIDR re-sync (refetch zones, runs inline)", Args: cobra.NoArgs, PreRunE: requireDBAndAgent,
 			RunE: func(cmd *cobra.Command, _ []string) error {
-				ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
-				defer cancel()
-				s, err := repository.NewServerSettingsRepository(sharedDB).Get(ctx)
+				s, err := repository.NewServerSettingsRepository(sharedDB).Get(cmd.Context())
 				if err != nil {
 					return err
 				}
@@ -480,8 +478,17 @@ func newCsCountryExemptCmd() *cobra.Command {
 				if len(countries) == 0 {
 					return fmt.Errorf("no exempt countries configured — set some first")
 				}
-				countryexempt.KickBackground(nil, countryexempt.NewSyncer(sharedAgent, nil), countries, true)
-				fmt.Fprintln(cmd.OutOrStdout(), "CIDR re-sync started in the background (watch journalctl -u jabali-panel -t countryexempt)")
+				// Inline, not KickBackground: a CLI exits and would kill the
+				// background goroutine before it does any work. A US-scale
+				// import can take minutes — generous timeout, operator is
+				// watching.
+				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
+				defer cancel()
+				fmt.Fprintln(cmd.OutOrStdout(), "syncing country CIDR sets (this can take minutes for large countries)…")
+				if err := countryexempt.NewSyncer(sharedAgent, nil).RunSync(ctx, countries, true); err != nil {
+					return fmt.Errorf("country CIDR sync: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "country CIDR sync complete")
 				return nil
 			},
 		},
@@ -530,9 +537,10 @@ func newCsCountryExemptSetCmd() *cobra.Command {
 				return fmt.Errorf("persist country-exempt settings: %w", err)
 			}
 			cliAuditOK(ctx, "crowdsec.country_exempt_set", "server_settings", "1", nil)
-			// CIDR sync in the background — a US-scale import takes minutes.
-			countryexempt.KickBackground(nil, countryexempt.NewSyncer(sharedAgent, nil), cleaned, false)
-			fmt.Fprintf(cmd.OutOrStdout(), "country-exempt countries=%s (CIDR sync running in background)\n", strings.Join(cleaned, ","))
+			// No background kick here — a CLI exits and would kill the
+			// goroutine before it works. The panel's refresher converges
+			// the CIDR allowlist within ~60s; `sync` runs it inline now.
+			fmt.Fprintf(cmd.OutOrStdout(), "country-exempt countries=%s (panel converges the CIDR allowlist within ~60s; `jabali crowdsec country-exempt sync` runs it now)\n", strings.Join(cleaned, ","))
 			return nil
 		},
 	}

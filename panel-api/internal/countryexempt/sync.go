@@ -132,6 +132,14 @@ type allowlistItem struct {
 	Reason string `json:"reason"`
 }
 
+// RunSync performs a full sync synchronously in the caller's process —
+// used by the `jabali crowdsec country-exempt sync` CLI, which cannot use
+// KickBackground: a CLI exits, killing the background goroutine before it
+// does any work (observed on testserver 2026-08-13).
+func (s *Syncer) RunSync(ctx context.Context, countries []string, forceRefresh bool) error {
+	return s.syncLocked(ctx, countries, forceRefresh)
+}
+
 // listCurrent returns value → comment for every entry in the country
 // allowlist. A missing allowlist reads as empty (first run).
 func (s *Syncer) listCurrent(ctx context.Context) (map[string]string, error) {

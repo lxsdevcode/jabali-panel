@@ -976,7 +976,7 @@ jabali crowdsec country-exempt set [flags]
 
 ##### `jabali crowdsec country-exempt sync`
 
-Force a CIDR re-sync (refetch zones)
+Force a CIDR re-sync (refetch zones, runs inline)
 
 ```
 jabali crowdsec country-exempt sync

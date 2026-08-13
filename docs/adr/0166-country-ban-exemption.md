@@ -41,7 +41,8 @@ Two layers, reconciled from `server_settings`:
    the zones (agent never opens outbound — ADR-0050), snapshots them under
    `/var/lib/jabali-panel/country-zones/`, diffs against `cscli allowlists
    inspect` (LAPI is truth — ADR-0061) and pushes only deltas to the agent.
-   Refreshed on a weekly staleness check by an in-process goroutine.
+   Converged by a 60s refresher tick (selection change or last-sync
+   failure); snapshots self-manage 7-day staleness on read.
 2. **GeoIP parser whitelist** rendered by the agent at
    `/etc/crowdsec/parsers/s02-enrich/zz-jabali-country-allowlist.yaml`,
    atomic tmp+rename + SIGHUP reload (same write discipline as the geoblock

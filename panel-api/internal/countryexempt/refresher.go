@@ -7,20 +7,26 @@ import (
 	"time"
 )
 
-// refreshInterval is the refresher tick. Each tick re-syncs when the CIDR
-// snapshots are older than snapshotMaxAge (zone churn) or the last sync
-// failed — a successful converged sync costs one agent round-trip.
-const refreshInterval = 24 * time.Hour
+// refreshInterval is the refresher tick. 60s matches the reconciler's
+// convergence model: a CLI-originated change to the country selection is
+// picked up within a minute (the CLI process can't run the background
+// sync itself — it exits). Zone snapshots only refetch when stale, so a
+// converged tick costs one agent round-trip.
+const refreshInterval = time.Minute
 
-// StartRefresher runs the weekly-staleness CIDR refresh until ctx is done
+// StartRefresher converges the country CIDR allowlist until ctx is done
 // (in-process goroutine — repo convention, no external queue). countries
-// come from settings on every tick so a PUT takes effect without a restart.
+// come from settings on every tick so a PUT or CLI set takes effect
+// without a restart. A tick syncs when the selection changed, the last
+// sync failed, or the snapshots are stale; a converged steady state
+// costs one agent round-trip per minute.
 func StartRefresher(ctx context.Context, s *Syncer, countriesFn func(ctx context.Context) []string, log *slog.Logger) {
 	if log == nil {
 		log = slog.Default()
 	}
 	t := time.NewTicker(refreshInterval)
 	defer t.Stop()
+	lastSelection := ""
 	for {
 		select {
 		case <-ctx.Done():
@@ -28,19 +34,20 @@ func StartRefresher(ctx context.Context, s *Syncer, countriesFn func(ctx context
 		case <-t.C:
 		}
 		countries := countriesFn(ctx)
-		if len(countries) == 0 {
-			continue // feature off
-		}
-		lastSuccess, lastErr, running := Status()
+		selection := strings.Join(countries, ",")
+		changed := selection != lastSelection
+		_, lastErr, running := Status()
 		if running {
 			continue
 		}
-		// Refetch when the last successful sync never happened, failed, or
-		// the snapshot may be stale; otherwise a cheap no-op convergence
-		// check (one agent call) is enough.
-		force := lastErr != nil || lastSuccess.IsZero() || time.Since(lastSuccess) > snapshotMaxAge
-		log.Info("countryexempt: refresh tick", "countries", len(countries), "force", force)
-		KickBackground(log, s, countries, force)
+		if !changed && lastErr == nil {
+			continue
+		}
+		lastSelection = selection
+		// forceRefresh=false: loadCountry refetches expired snapshots
+		// itself; force is reserved for the operator's explicit /sync.
+		log.Info("countryexempt: refresh tick", "countries", len(countries), "changed", changed, "retry", lastErr != nil)
+		KickBackground(log, s, countries, false)
 	}
 }
 
