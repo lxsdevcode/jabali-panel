@@ -990,51 +990,6 @@ fi
 			}
 			return nil
 		}},
-		{"sync jabali-agent + jabali-panel units", func() error {
-			// Re-render the jabali-agent.service and jabali-panel.service
-			// unit files from install.sh's writers so hardening/env
-			// changes (PrivateTmp drops, SupplementaryGroups additions,
-			// RestartSec tweaks) reach existing hosts. Without this,
-			// `jabali update` only copies binaries — the running unit
-			// keeps the install-time directives until the operator
-			// manually re-runs install.sh.
-			//
-			// The cascade is delicate: jabali-panel.service Requires=
-			// jabali-agent.service, so restarting the agent restarts
-			// panel-api (us). To avoid suicide-during-update, we
-			// daemon-reload here and schedule the restart via a transient
-			// one-shot 5s in the future — by then the parent shell has
-			// returned and the cascade is harmless.
-			//
-			// Detection of "did anything change?" is by sha256 over the
-			// before/after file content; we only schedule the restart
-			// when content actually drifted.
-			installSh := repoDir + "/install.sh"
-			if _, err := os.Stat(installSh); err != nil {
-				return nil
-			}
-			script := `set -e
-sha_before_a=$(sha256sum /etc/systemd/system/jabali-agent.service 2>/dev/null | awk '{print $1}' || echo "")
-sha_before_p=$(sha256sum /etc/systemd/system/jabali-panel.service 2>/dev/null | awk '{print $1}' || echo "")
-source ` + installSh + `
-write_agent_systemd_unit
-write_systemd_unit
-systemctl daemon-reload
-sha_after_a=$(sha256sum /etc/systemd/system/jabali-agent.service 2>/dev/null | awk '{print $1}' || echo "")
-sha_after_p=$(sha256sum /etc/systemd/system/jabali-panel.service 2>/dev/null | awk '{print $1}' || echo "")
-if [ "$sha_before_a" != "$sha_after_a" ] || [ "$sha_before_p" != "$sha_after_p" ]; then
-  # Schedule a deferred restart so the cascade (panel-api Requires= agent)
-  # doesn't kill us mid-update. 5s gives the parent shell ample time to
-  # return.
-  systemd-run --on-active=5s --unit=jabali-agent-deferred-restart /bin/systemctl restart jabali-agent.service >/dev/null 2>&1 || true
-  echo "  (agent/panel unit content changed — restart scheduled in 5s)"
-fi
-`
-			if err := run("", "bash", "-c", script); err != nil {
-				fmt.Printf("  (unit sync failed: %v — continuing)\n", err)
-			}
-			return nil
-		}},
 		{"sync static assets", func() error {
 			// Mirror the file-writing half of install_php_pool_template(),
 			// ensure_user_and_dirs(), and install_phpmyadmin() from
@@ -1612,6 +1567,69 @@ test -x node_modules/.bin/tsc || {
 			// snapshot is only taking up disk.
 			preUpdateBinaries.cleanup()
 			preUpdateBinaries = nil
+			return nil
+		}},
+		{"sync jabali-agent + jabali-panel units", func() error {
+			// Re-render the jabali-agent.service and jabali-panel.service
+			// unit files from install.sh's writers so hardening/env
+			// changes (PrivateTmp drops, SupplementaryGroups additions,
+			// ExecStart flag changes) reach existing hosts. Without this,
+			// `jabali update` only copies binaries — the running unit
+			// keeps the install-time directives until the operator
+			// manually re-runs install.sh.
+			//
+			// ORDER IS LOAD-BEARING (puzzle incident 2026-08-13). This step
+			// must run AFTER "install binaries" and AFTER "run migrations",
+			// immediately before "restart services":
+			//
+			//  - Go flag parsing is asymmetric: a unit passing a flag the
+			//    binary doesn't know is FATAL (exit 2 crash-loop), while a
+			//    binary with a flag the unit doesn't pass just takes the
+			//    default. So old-binary+new-unit kills the agent;
+			//    new-binary+old-unit merely degrades. Units must never get
+			//    ahead of binaries. This step used to run before the build
+			//    and schedule its own restart via a 5s systemd-run timer —
+			//    which restarted the agent into a unit demanding -pty-gid
+			//    minutes before the binary knowing that flag was installed:
+			//    a crash-looping agent for the whole build, or forever if
+			//    the build failed.
+			//  - "run migrations" can roll the binaries BACK (JAB-210). If
+			//    units were re-rendered before that step, a failed migrate
+			//    would leave new units pointing at restored old binaries
+			//    with no restart to reconcile them — fatal skew at the next
+			//    unrelated crash or reboot. After the migrate step, the
+			//    binaries on disk are final for this run.
+			//
+			// No deferred restart needed: "restart services" is the very
+			// next step and this whole list runs inside the
+			// jabali-update-oneshot unit, which survives the
+			// Requires=cascade (the inline restarts below prove it).
+			//
+			// sha256 before/after detection is informational only — the
+			// restart below runs unconditionally either way.
+			installSh := repoDir + "/install.sh"
+			if _, err := os.Stat(installSh); err != nil {
+				return nil
+			}
+			script := `set -e
+sha_before_a=$(sha256sum /etc/systemd/system/jabali-agent.service 2>/dev/null | awk '{print $1}' || echo "")
+sha_before_p=$(sha256sum /etc/systemd/system/jabali-panel.service 2>/dev/null | awk '{print $1}' || echo "")
+source ` + installSh + `
+write_agent_systemd_unit
+write_systemd_unit
+systemctl daemon-reload
+sha_after_a=$(sha256sum /etc/systemd/system/jabali-agent.service 2>/dev/null | awk '{print $1}' || echo "")
+sha_after_p=$(sha256sum /etc/systemd/system/jabali-panel.service 2>/dev/null | awk '{print $1}' || echo "")
+if [ "$sha_before_a" != "$sha_after_a" ] || [ "$sha_before_p" != "$sha_after_p" ]; then
+  echo "  (agent/panel unit content changed — applied by the restart below)"
+fi
+`
+			// Non-fatal: a failed render leaves the OLD unit in place, and
+			// the restart below runs new binary + old unit — the mild side
+			// of the asymmetry (missing flags fall back to defaults).
+			if err := run("", "bash", "-c", script); err != nil {
+				fmt.Printf("  (unit sync failed: %v — continuing)\n", err)
+			}
 			return nil
 		}},
 		{"restart services", func() error {
