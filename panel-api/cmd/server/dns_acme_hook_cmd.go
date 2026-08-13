@@ -99,12 +99,64 @@ func acmeChallengeName(domain string) string {
 	return "_acme-challenge." + domain
 }
 
-// cfChallengeSettle gives Cloudflare's edge a moment to serve a freshly
-// written TXT before certbot tells Let's Encrypt to validate — CF's API
-// writes propagate to its authoritative nameservers in seconds, but a
-// failed validation costs rate-limited quota while a short sleep is free
-// (same reasoning as the pdns path's 3s).
-const cfChallengeSettle = 10 * time.Second
+// Cloudflare propagation wait (JAB-235 follow-up). The first version slept a
+// flat 10s after the API write — and lost a real race on hoff.co.il
+// (2026-08-13): the apex TXT, written 23s before validation, passed; the www
+// TXT, written 11s before, was NXDOMAIN at LE's resolver. CF's API→edge
+// propagation is usually seconds but not bounded by any constant we can
+// hardcode, and every lost race burns rate-limited LE quota (5 failed authz
+// per hostname per hour). So instead of sleeping blind, poll the zone's OWN
+// authoritative nameservers until the value is actually served, then add a
+// short grace for cross-PoP skew (our anycast query and LE's may hit
+// different edges).
+//
+// On timeout we proceed rather than fail: the record may still land before
+// LE queries, and the old behaviour (fixed sleep, then hope) is the floor,
+// not the ceiling.
+const (
+	cfChallengePollInterval = 3 * time.Second
+	cfChallengePollBudget   = 60 * time.Second // hook ctx is 90s — leave room for the write + grace
+	cfChallengeGrace        = 5 * time.Second
+)
+
+// waitForChallengeTXT polls each authoritative NS host for name's TXT RRset
+// until one of them serves value. lookupNS/lookupTXT are injected for tests;
+// production passes dnsverify.LookupNSExternal / dnsverify.LookupTXTOnServer.
+// Returns true when the record was confirmed visible.
+func waitForChallengeTXT(
+	ctx context.Context,
+	zone, name, value string,
+	lookupNS func(ctx context.Context, name string) ([]string, bool),
+	lookupTXT func(ctx context.Context, server, name string) ([]string, error),
+	pollInterval, budget time.Duration,
+) bool {
+	hosts, queried := lookupNS(ctx, zone)
+	if !queried || len(hosts) == 0 {
+		return false // can't confirm — caller falls back to hoping
+	}
+	deadline := time.Now().Add(budget)
+	for {
+		for _, ns := range hosts {
+			txts, err := lookupTXT(ctx, ns, name)
+			if err != nil {
+				continue
+			}
+			for _, txt := range txts {
+				if txt == value {
+					return true
+				}
+			}
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(pollInterval):
+		}
+	}
+}
 
 // hookDNS01Setup builds the shared provider-decision config (JAB-235). The
 // Cloudflare client is non-nil only when a token is stored AND the sso key
@@ -171,8 +223,15 @@ func acmeHookAuth(ctx context.Context, domain, validation string) error {
 		if err := cf.SetChallengeTXT(ctx, route.CFZoneID, name, validation); err != nil {
 			return fmt.Errorf("cloudflare challenge write for %s: %w", domain, err)
 		}
-		time.Sleep(cfChallengeSettle)
-		fmt.Printf("acme-hook: TXT %s set at Cloudflare (zone %s)\n", name, route.Zone)
+		if waitForChallengeTXT(ctx, route.Zone, name, validation,
+			dnsverify.LookupNSExternal, dnsverify.LookupTXTOnServer,
+			cfChallengePollInterval, cfChallengePollBudget) {
+			time.Sleep(cfChallengeGrace)
+			fmt.Printf("acme-hook: TXT %s set at Cloudflare (zone %s) — confirmed on the zone's nameservers\n", name, route.Zone)
+		} else {
+			fmt.Printf("acme-hook: TXT %s set at Cloudflare (zone %s) — NOT yet visible on the zone's nameservers after %s; proceeding anyway\n",
+				name, route.Zone, cfChallengePollBudget)
+		}
 		return nil
 	}
 

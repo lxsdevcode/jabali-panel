@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
@@ -60,5 +61,88 @@ func TestFindZoneForName_RefusesForeignZone(t *testing.T) {
 func TestAcmeChallengeName(t *testing.T) {
 	if got := acmeChallengeName("preview.host.tld"); got != "_acme-challenge.preview.host.tld" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// --- waitForChallengeTXT (JAB-235 follow-up: hoff.co.il propagation race) ---
+
+func TestWaitForChallengeTXT_VisibleImmediately(t *testing.T) {
+	lookupNS := func(_ context.Context, _ string) ([]string, bool) {
+		return []string{"ns1.example.net", "ns2.example.net"}, true
+	}
+	lookupTXT := func(_ context.Context, server, name string) ([]string, error) {
+		return []string{"other-value", "the-value"}, nil
+	}
+	if !waitForChallengeTXT(context.Background(), "example.com",
+		"_acme-challenge.www.example.com", "the-value",
+		lookupNS, lookupTXT, 0, 0) {
+		t.Fatal("expected immediate visibility to return true")
+	}
+}
+
+func TestWaitForChallengeTXT_VisibleAfterRetries(t *testing.T) {
+	lookupNS := func(_ context.Context, _ string) ([]string, bool) {
+		return []string{"ns1.example.net"}, true
+	}
+	calls := 0
+	lookupTXT := func(_ context.Context, _, _ string) ([]string, error) {
+		calls++
+		if calls >= 3 {
+			return []string{"the-value"}, nil
+		}
+		return nil, nil
+	}
+	if !waitForChallengeTXT(context.Background(), "example.com",
+		"_acme-challenge.example.com", "the-value",
+		lookupNS, lookupTXT, time.Millisecond, time.Second) {
+		t.Fatal("expected visibility on the 3rd poll to return true")
+	}
+	if calls < 3 {
+		t.Fatalf("expected >=3 lookups, got %d", calls)
+	}
+}
+
+func TestWaitForChallengeTXT_TimesOut(t *testing.T) {
+	lookupNS := func(_ context.Context, _ string) ([]string, bool) {
+		return []string{"ns1.example.net"}, true
+	}
+	lookupTXT := func(_ context.Context, _, _ string) ([]string, error) {
+		return []string{"never-the-right-value"}, nil
+	}
+	if waitForChallengeTXT(context.Background(), "example.com",
+		"_acme-challenge.example.com", "the-value",
+		lookupNS, lookupTXT, time.Millisecond, 10*time.Millisecond) {
+		t.Fatal("expected timeout to return false")
+	}
+}
+
+func TestWaitForChallengeTXT_InconclusiveNSFailsOpen(t *testing.T) {
+	lookupNS := func(_ context.Context, _ string) ([]string, bool) {
+		return nil, false // resolvers unreachable
+	}
+	lookupTXT := func(_ context.Context, _, _ string) ([]string, error) {
+		t.Fatal("lookupTXT must not be called when NS is inconclusive")
+		return nil, nil
+	}
+	if waitForChallengeTXT(context.Background(), "example.com",
+		"_acme-challenge.example.com", "the-value",
+		lookupNS, lookupTXT, time.Millisecond, time.Second) {
+		t.Fatal("expected inconclusive NS to return false (caller proceeds anyway)")
+	}
+}
+
+func TestWaitForChallengeTXT_CancelledContext(t *testing.T) {
+	lookupNS := func(_ context.Context, _ string) ([]string, bool) {
+		return []string{"ns1.example.net"}, true
+	}
+	lookupTXT := func(_ context.Context, _, _ string) ([]string, error) {
+		return nil, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if waitForChallengeTXT(ctx, "example.com",
+		"_acme-challenge.example.com", "the-value",
+		lookupNS, lookupTXT, time.Hour, time.Hour) {
+		t.Fatal("expected cancelled context to return false promptly")
 	}
 }
