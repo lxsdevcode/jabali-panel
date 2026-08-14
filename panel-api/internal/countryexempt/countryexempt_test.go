@@ -23,15 +23,18 @@ func TestParseZone(t *testing.T) {
 
 func TestZoneCacheRoundTrip(t *testing.T) {
 	zc := zoneCache{dir: t.TempDir()}
-	if err := zc.write("IL", []string{"1.0.0.0/8", "2.0.0.0/8"}); err != nil {
+	if err := zc.write("IL", []string{"1.0.0.0/8", "2.0.0.0/8"}, snapshotMeta{source: sourceMMDB, mmdbMTime: 1234}); err != nil {
 		t.Fatal(err)
 	}
-	got, mtime, err := zc.read("IL")
+	got, meta, mtime, err := zc.read("IL")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 2 || got[0] != "1.0.0.0/8" {
 		t.Fatalf("got %v", got)
+	}
+	if meta.source != sourceMMDB || meta.mmdbMTime != 1234 {
+		t.Fatalf("meta = %+v", meta)
 	}
 	if time.Since(mtime) > time.Minute {
 		t.Fatalf("mtime should be fresh: %v", mtime)
@@ -118,11 +121,18 @@ func TestLoadCountry_NoSnapshotNoNetwork_IsError(t *testing.T) {
 	}
 }
 
-// fakeAgent records Call verbs/params and returns canned responses.
+// fakeAgent records Call verbs/params and returns canned responses. The
+// derive verb returns deriveErr / deriveZones so tests can pick between the
+// mmdb path and the ipdeny fallback; stat returns statErr / statMTime.
 type fakeAgent struct {
-	t        *testing.T
-	calls    []fakeCall
-	listJSON any
+	t          *testing.T
+	calls      []fakeCall
+	listJSON   any
+	deriveErr  error
+	deriveZone map[string][]string
+	deriveMT   int64
+	statErr    error
+	statMTime  int64
 }
 
 type fakeCall struct {
@@ -131,9 +141,21 @@ type fakeCall struct {
 }
 
 func (f *fakeAgent) Call(_ context.Context, verb string, params any) (json.RawMessage, error) {
-	f.calls = append(f.calls, fakeCall{verb: verb, params: params.(map[string]any)})
-	if verb == "security.crowdsec.allowlists.list" {
+	p, _ := params.(map[string]any)
+	f.calls = append(f.calls, fakeCall{verb: verb, params: p})
+	switch verb {
+	case "security.crowdsec.allowlists.list":
 		return json.Marshal(f.listJSON)
+	case "security.crowdsec.country_zones.derive":
+		if f.deriveErr != nil {
+			return nil, f.deriveErr
+		}
+		return json.Marshal(mmdbDeriveResponse{Path: "/fake.mmdb", MTime: f.deriveMT, Zones: f.deriveZone})
+	case "security.crowdsec.mmdb.stat":
+		if f.statErr != nil {
+			return nil, f.statErr
+		}
+		return json.Marshal(map[string]any{"path": "/fake.mmdb", "mtime": f.statMTime, "size": 1})
 	}
 	return json.RawMessage(`{}`), nil
 }
@@ -161,7 +183,7 @@ func TestSync_FullFlow_AddsOnlyNew(t *testing.T) {
 	}}
 	s, fa := newTestSyncer(t, srv, listJSON)
 
-	if err := s.syncLocked(context.Background(), []string{"IL"}, false); err != nil {
+	if err := s.syncLocked(context.Background(), []string{"IL"}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -202,7 +224,7 @@ func TestSync_EmptySelection_RemovesOnlyOurs(t *testing.T) {
 	}}
 	s, fa := newTestSyncer(t, srv, listJSON)
 
-	if err := s.syncLocked(context.Background(), nil, false); err != nil {
+	if err := s.syncLocked(context.Background(), nil, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	var removedValues []string
@@ -224,7 +246,7 @@ func TestSync_Converged_NoAgentSyncCalls(t *testing.T) {
 	}}
 	s, fa := newTestSyncer(t, srv, listJSON)
 
-	if err := s.syncLocked(context.Background(), []string{"IL"}, false); err != nil {
+	if err := s.syncLocked(context.Background(), []string{"IL"}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range fa.calls {
@@ -241,5 +263,181 @@ func TestSplitCountries(t *testing.T) {
 	got := SplitCountries("IL, US ,,")
 	if len(got) != 2 || got[0] != "IL" || got[1] != "US" {
 		t.Fatalf("got %v", got)
+	}
+}
+
+// ---- mmdb-backed derivation (ADR-0166 amendment) ----------------------------
+
+func TestLoadAll_PrefersMMDBOverIPDeny(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		fmt.Fprint(w, "9.9.9.0/24\n")
+	}))
+	withZoneURLs(t, srv)
+	fa := &fakeAgent{t: t, listJSON: map[string]any{"items": []any{}},
+		deriveZone: map[string][]string{"IL": {"1.0.0.0/25", "1.0.0.128/25"}},
+		deriveMT:   42}
+	s := &Syncer{Agent: fa, HTTP: srv.Client(), CacheDir: t.TempDir(), Log: slog.Default()}
+
+	if err := s.syncLocked(context.Background(), []string{"IL"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if hits != 0 {
+		t.Fatalf("ipdeny must not be consulted when derive succeeds (hits=%d)", hits)
+	}
+	// Siblings must arrive merged, tagged with the country.
+	var adds []csSyncEntry
+	for _, c := range fa.calls {
+		if c.verb == "security.crowdsec.country_allowlist.sync" {
+			adds = append(adds, c.params["adds"].([]csSyncEntry)...)
+		}
+	}
+	if len(adds) != 1 || adds[0].Value != "1.0.0.0/24" || adds[0].Comment != "country:IL" {
+		t.Fatalf("adds = %+v, want merged 1.0.0.0/24 country:IL", adds)
+	}
+	// Snapshot must be mmdb-sourced with the marker.
+	_, meta, _, err := zoneCache{dir: s.CacheDir}.read("IL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.source != sourceMMDB || meta.mmdbMTime != 42 {
+		t.Fatalf("snapshot meta = %+v", meta)
+	}
+}
+
+func TestLoadAll_DeriveFailure_FallsBackToIPDeny(t *testing.T) {
+	srv := zoneTestServer(t, "1.0.0.0/8\n", "", false)
+	fa := &fakeAgent{t: t, listJSON: map[string]any{"items": []any{}},
+		deriveErr: fmt.Errorf("no mmdb")}
+	s := &Syncer{Agent: fa, HTTP: srv.Client(), CacheDir: t.TempDir(), Log: slog.Default()}
+	withZoneURLs(t, srv)
+
+	if err := s.syncLocked(context.Background(), []string{"IL"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	var adds []csSyncEntry
+	for _, c := range fa.calls {
+		if c.verb == "security.crowdsec.country_allowlist.sync" {
+			adds = append(adds, c.params["adds"].([]csSyncEntry)...)
+		}
+	}
+	if len(adds) != 1 || adds[0].Value != "1.0.0.0/8" {
+		t.Fatalf("adds = %+v, want ipdeny 1.0.0.0/8", adds)
+	}
+}
+
+func TestLoadAll_MMDBNewerThanSnapshot_ReDerives(t *testing.T) {
+	zc := zoneCache{dir: t.TempDir()}
+	if err := zc.write("IL", []string{"1.0.0.0/8"}, snapshotMeta{source: sourceMMDB, mmdbMTime: 100}); err != nil {
+		t.Fatal(err)
+	}
+	srv := zoneTestServer(t, "", "", false)
+	fa := &fakeAgent{t: t, listJSON: map[string]any{"items": []any{}},
+		statMTime:  200, // classifier DB updated after the snapshot
+		deriveZone: map[string][]string{"IL": {"2.0.0.0/8"}},
+		deriveMT:   200}
+	s := &Syncer{Agent: fa, HTTP: srv.Client(), CacheDir: zc.dir, Log: slog.Default()}
+	withZoneURLs(t, srv)
+
+	if err := s.syncLocked(context.Background(), []string{"IL"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	derived := false
+	for _, c := range fa.calls {
+		if c.verb == "security.crowdsec.country_zones.derive" {
+			derived = true
+		}
+	}
+	if !derived {
+		t.Fatal("mmdb newer than snapshot must trigger re-derivation")
+	}
+	var adds []csSyncEntry
+	for _, c := range fa.calls {
+		if c.verb == "security.crowdsec.country_allowlist.sync" {
+			adds = append(adds, c.params["adds"].([]csSyncEntry)...)
+		}
+	}
+	if len(adds) != 1 || adds[0].Value != "2.0.0.0/8" {
+		t.Fatalf("adds = %+v, want re-derived 2.0.0.0/8", adds)
+	}
+}
+
+func TestLoadAll_MMDBUnchanged_KeepsSnapshot(t *testing.T) {
+	zc := zoneCache{dir: t.TempDir()}
+	if err := zc.write("IL", []string{"1.0.0.0/8"}, snapshotMeta{source: sourceMMDB, mmdbMTime: 100}); err != nil {
+		t.Fatal(err)
+	}
+	srv := zoneTestServer(t, "", "", false)
+	fa := &fakeAgent{t: t, listJSON: map[string]any{"items": []any{
+		map[string]string{"value": "1.0.0.0/8", "reason": "country:IL"},
+	}}, statMTime: 100} // same mtime — snapshot still valid
+	s := &Syncer{Agent: fa, HTTP: srv.Client(), CacheDir: zc.dir, Log: slog.Default()}
+	withZoneURLs(t, srv)
+
+	if err := s.syncLocked(context.Background(), []string{"IL"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fa.calls {
+		if c.verb == "security.crowdsec.country_zones.derive" {
+			t.Fatal("unchanged mmdb must not re-derive")
+		}
+		if c.verb == "security.crowdsec.country_allowlist.sync" {
+			t.Fatal("converged state must not sync")
+		}
+	}
+}
+
+func TestSync_ExtraCIDRs_ManagedAsCountryExtra(t *testing.T) {
+	srv := zoneTestServer(t, "1.0.0.0/8\n", "", false)
+	listJSON := map[string]any{"items": []map[string]string{
+		{"value": "8.8.8.8/32", "reason": "country:extra"}, // stale extra — must go
+		{"value": "10.0.0.0/8", "reason": "office LAN"},    // manual — must stay
+	}}
+	s, fa := newTestSyncer(t, srv, listJSON)
+
+	err := s.syncLocked(context.Background(), []string{"IL"}, []string{"203.0.113.7", "192.0.2.0/25"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var adds []csSyncEntry
+	var removes []string
+	for _, c := range fa.calls {
+		if c.verb != "security.crowdsec.country_allowlist.sync" {
+			continue
+		}
+		adds = append(adds, c.params["adds"].([]csSyncEntry)...)
+		removes = append(removes, c.params["removes"].([]string)...)
+	}
+	var extraAdds []string
+	for _, a := range adds {
+		if a.Comment == "country:extra" {
+			extraAdds = append(extraAdds, a.Value)
+		}
+	}
+	if len(extraAdds) != 2 {
+		t.Fatalf("extra adds = %v, want 203.0.113.7/32 + 192.0.2.0/25", extraAdds)
+	}
+	if len(removes) != 1 || removes[0] != "8.8.8.8/32" {
+		t.Fatalf("removes = %v, want [8.8.8.8/32]", removes)
+	}
+}
+
+func TestSync_InvalidExtraCIDR_Skipped(t *testing.T) {
+	srv := zoneTestServer(t, "1.0.0.0/8\n", "", false)
+	s, fa := newTestSyncer(t, srv, map[string]any{"items": []any{}})
+
+	err := s.syncLocked(context.Background(), []string{"IL"}, []string{"garbage"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fa.calls {
+		if c.verb == "security.crowdsec.country_allowlist.sync" {
+			for _, a := range c.params["adds"].([]csSyncEntry) {
+				if a.Comment == "country:extra" {
+					t.Fatalf("invalid extra must not be synced: %+v", a)
+				}
+			}
+		}
 	}
 }

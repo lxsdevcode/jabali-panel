@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -631,13 +632,19 @@ func RegisterSecurityAppSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterface,
 
 	ce.PUT("", func(c *gin.Context) {
 		var body struct {
-			Countries []string `json:"countries"`
+			Countries  []string `json:"countries"`
+			ExtraCIDRs []string `json:"extra_cidrs"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "invalid_json"})
 			return
 		}
 		cleaned, errResp := cleanCountries(body.Countries)
+		if errResp != nil {
+			c.JSON(http.StatusBadRequest, errResp)
+			return
+		}
+		extras, errResp := cleanExtraCIDRs(body.ExtraCIDRs)
 		if errResp != nil {
 			c.JSON(http.StatusBadRequest, errResp)
 			return
@@ -662,6 +669,7 @@ func RegisterSecurityAppSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterface,
 			return
 		}
 		s.CountryExemptCountries = strings.Join(cleaned, ",")
+		s.CountryExemptExtraCIDRs = strings.Join(extras, ",")
 		if err := settings.Upsert(c.Request.Context(), s); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status": "error", "error": "settings_write", "detail": err.Error(),
@@ -671,7 +679,7 @@ func RegisterSecurityAppSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterface,
 		// CIDR sync runs in the background — a US-scale import takes
 		// minutes and must not block the request. Uses the snapshot cache;
 		// the refresher handles staleness.
-		countryExemptKick(nil, countryexempt.NewSyncer(cli, nil), cleaned, false)
+		countryExemptKick(nil, countryexempt.NewSyncer(cli, nil), cleaned, extras, false)
 		c.JSON(http.StatusOK, countryExemptResponse(s))
 	})
 
@@ -685,7 +693,8 @@ func RegisterSecurityAppSecRoutes(rg *gin.RouterGroup, cli agent.AgentInterface,
 			return
 		}
 		countryExemptKick(nil, countryexempt.NewSyncer(cli, nil),
-			countryexempt.SplitCountries(s.CountryExemptCountries), true)
+			countryexempt.SplitCountries(s.CountryExemptCountries),
+			countryexempt.SplitCountries(s.CountryExemptExtraCIDRs), true)
 		c.Status(http.StatusAccepted)
 	})
 }
@@ -720,7 +729,47 @@ func countryExemptResponse(s *models.ServerSettings) gin.H {
 	if countries == nil {
 		countries = []string{}
 	}
-	return gin.H{"countries": countries}
+	extras := countryexempt.SplitCountries(s.CountryExemptExtraCIDRs)
+	if extras == nil {
+		extras = []string{}
+	}
+	return gin.H{"countries": countries, "extra_cidrs": extras}
+}
+
+// maxExtraCIDRs caps the supplemental list — it is merged into the same
+// LAPI allowlist as the country zones; a runaway list would bloat LAPI.
+const maxExtraCIDRs = 1000
+
+// cleanExtraCIDRs validates and normalizes the operator's supplemental
+// entries (CIDRs masked to canonical form, bare IPs → host prefixes).
+func cleanExtraCIDRs(in []string) ([]string, gin.H) {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		norm, err := countryexempt.NormalizeCIDR(v)
+		if err != nil {
+			return nil, gin.H{
+				"status": "error", "error": "invalid_cidr",
+				"detail": "extra_cidrs entry " + v + " must be an IP or CIDR",
+			}
+		}
+		if _, dup := seen[norm]; dup {
+			continue
+		}
+		seen[norm] = struct{}{}
+		out = append(out, norm)
+	}
+	if len(out) > maxExtraCIDRs {
+		return nil, gin.H{
+			"status": "error", "error": "too_many_cidrs",
+			"detail": fmt.Sprintf("extra_cidrs is capped at %d entries", maxExtraCIDRs),
+		}
+	}
+	return out, nil
 }
 
 func cleanCountries(in []string) ([]string, gin.H) {

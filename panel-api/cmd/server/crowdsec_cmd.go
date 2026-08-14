@@ -459,10 +459,11 @@ func newCsCountryExemptCmd() *cobra.Command {
 					return err
 				}
 				countries := countryexempt.SplitCountries(s.CountryExemptCountries)
+				extras := countryexempt.SplitCountries(s.CountryExemptExtraCIDRs)
 				if jsonOutput {
-					return printJSON(map[string]any{"countries": countries})
+					return printJSON(map[string]any{"countries": countries, "extra_cidrs": extras})
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "countries=%s\n", strings.Join(countries, ","))
+				fmt.Fprintf(cmd.OutOrStdout(), "countries=%s\nextra_cidrs=%s\n", strings.Join(countries, ","), strings.Join(extras, ","))
 				return nil
 			},
 		},
@@ -475,8 +476,9 @@ func newCsCountryExemptCmd() *cobra.Command {
 					return err
 				}
 				countries := countryexempt.SplitCountries(s.CountryExemptCountries)
-				if len(countries) == 0 {
-					return fmt.Errorf("no exempt countries configured — set some first")
+				extras := countryexempt.SplitCountries(s.CountryExemptExtraCIDRs)
+				if len(countries) == 0 && len(extras) == 0 {
+					return fmt.Errorf("no exempt countries or extra CIDRs configured — set some first")
 				}
 				// Inline, not KickBackground: a CLI exits and would kill the
 				// background goroutine before it does any work. A US-scale
@@ -485,7 +487,7 @@ func newCsCountryExemptCmd() *cobra.Command {
 				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
 				defer cancel()
 				fmt.Fprintln(cmd.OutOrStdout(), "syncing country CIDR sets (this can take minutes for large countries)…")
-				if err := countryexempt.NewSyncer(sharedAgent, nil).RunSync(ctx, countries, true); err != nil {
+				if err := countryexempt.NewSyncer(sharedAgent, nil).RunSync(ctx, countries, extras, true); err != nil {
 					return fmt.Errorf("country CIDR sync: %w", err)
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "country CIDR sync complete")
@@ -497,10 +499,10 @@ func newCsCountryExemptCmd() *cobra.Command {
 }
 
 func newCsCountryExemptSetCmd() *cobra.Command {
-	var countries []string
+	var countries, extraCIDRs []string
 	cmd := &cobra.Command{
 		Use:     "set",
-		Short:   "Set exempt countries (empty = feature off)",
+		Short:   "Set exempt countries and/or extra CIDRs (both empty = feature off)",
 		Args:    cobra.NoArgs,
 		PreRunE: requireDBAndAgent,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -519,6 +521,18 @@ func newCsCountryExemptSetCmd() *cobra.Command {
 					cleaned = append(cleaned, code)
 				}
 			}
+			extras := []string{}
+			seenExtra := map[string]bool{}
+			for _, raw := range extraCIDRs {
+				norm, err := countryexempt.NormalizeCIDR(raw)
+				if err != nil {
+					return fmt.Errorf("invalid --extra-cidr %q (expected IP or CIDR)", raw)
+				}
+				if !seenExtra[norm] {
+					seenExtra[norm] = true
+					extras = append(extras, norm)
+				}
+			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
 			// Agent first so a whitelist-write failure doesn't drift the DB.
@@ -533,6 +547,7 @@ func newCsCountryExemptSetCmd() *cobra.Command {
 				return err
 			}
 			s.CountryExemptCountries = strings.Join(cleaned, ",")
+			s.CountryExemptExtraCIDRs = strings.Join(extras, ",")
 			if err := repo.Upsert(ctx, s); err != nil {
 				return fmt.Errorf("persist country-exempt settings: %w", err)
 			}
@@ -540,11 +555,12 @@ func newCsCountryExemptSetCmd() *cobra.Command {
 			// No background kick here — a CLI exits and would kill the
 			// goroutine before it works. The panel's refresher converges
 			// the CIDR allowlist within ~60s; `sync` runs it inline now.
-			fmt.Fprintf(cmd.OutOrStdout(), "country-exempt countries=%s (panel converges the CIDR allowlist within ~60s; `jabali crowdsec country-exempt sync` runs it now)\n", strings.Join(cleaned, ","))
+			fmt.Fprintf(cmd.OutOrStdout(), "country-exempt countries=%s extra_cidrs=%s (panel converges the CIDR allowlist within ~60s; `jabali crowdsec country-exempt sync` runs it now)\n", strings.Join(cleaned, ","), strings.Join(extras, ","))
 			return nil
 		},
 	}
 	cmd.Flags().StringArrayVar(&countries, "country", nil, "2-letter ISO code (repeatable); omit all to disable")
+	cmd.Flags().StringArrayVar(&extraCIDRs, "extra-cidr", nil, "additional never-block IP or CIDR (repeatable); omit all to clear")
 	return cmd
 }
 
