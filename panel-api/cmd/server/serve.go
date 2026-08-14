@@ -25,11 +25,11 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/auth"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/backupfinalizer"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/backupscheduler"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/countryexempt"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/db"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/diskusagesweeper"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/dockerapp"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/drsync"
-	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/countryexempt"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/eventsources"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/mailscan"
@@ -1124,17 +1124,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// ADR-0166 country ban exemption refresher. Reads the country
-	// selection from server_settings each tick and re-syncs the country
-	// CIDR allowlist when snapshots go stale (>7d) or the last sync
-	// failed. Cheap no-op when converged or the feature is off.
+	// selection + supplemental CIDRs from server_settings each tick and
+	// re-syncs the country CIDR allowlist when snapshots go stale (>7d),
+	// the classifier's mmdb changed, or the last sync failed. Cheap no-op
+	// when converged or the feature is off.
 	if deps.ServerSettings != nil && deps.Agent != nil {
 		go countryexempt.StartRefresher(ctx, countryexempt.NewSyncer(deps.Agent, log),
-			func(ctx context.Context) []string {
+			func(ctx context.Context) ([]string, []string) {
 				s, err := deps.ServerSettings.Get(ctx)
 				if err != nil {
-					return nil
+					return nil, nil
 				}
-				return countryexempt.SplitCountries(s.CountryExemptCountries)
+				return countryexempt.SplitCountries(s.CountryExemptCountries),
+					countryexempt.SplitCountries(s.CountryExemptExtraCIDRs)
 			}, log)
 	}
 

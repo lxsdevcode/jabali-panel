@@ -842,6 +842,7 @@ const CountryExemptCard = () => {
   const geoblock = useAppSecGeoblock();
 
   const [countries, setCountries] = useState<string[]>([]);
+  const [extraCIDRs, setExtraCIDRs] = useState<string[]>([]);
 
   // Same memoised option set as AppSecGeoblockCard (ISO3166_COUNTRIES is a
   // frozen literal; useMemo keeps Select.options stable across renders).
@@ -858,19 +859,21 @@ const CountryExemptCard = () => {
   useEffect(() => {
     if (exemption.data) {
       setCountries(exemption.data.countries);
+      setExtraCIDRs(exemption.data.extra_cidrs);
     }
   }, [exemption.data]);
 
   const dirty =
     exemption.data !== undefined &&
-    countries.join(",") !== exemption.data.countries.join(",");
+    (countries.join(",") !== exemption.data.countries.join(",") ||
+      extraCIDRs.join(",") !== exemption.data.extra_cidrs.join(","));
 
   const geoblockDeny = geoblock.data?.mode === "deny" ? geoblock.data.countries : [];
   const geoblockDenyOverlap = countries.filter((c) => geoblockDeny.includes(c));
 
   const apply = async () => {
     try {
-      await updateExemption.mutateAsync({ countries });
+      await updateExemption.mutateAsync({ countries, extra_cidrs: extraCIDRs });
       feedback.message.success(t("adminsecuritycrowdsec.country_exemption_applied"));
     } catch (e: unknown) {
       feedback.message.error(e instanceof Error ? e.message : "Failed to apply country exemption");
@@ -921,6 +924,26 @@ const CountryExemptCard = () => {
             allowClear
           />
         </div>
+        <div>
+          <Typography.Text strong>{t("adminsecuritycrowdsec.extra_cidrs")}: </Typography.Text>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 4 }}>
+            {t("adminsecuritycrowdsec.extra_cidrs_hint")}
+          </Typography.Paragraph>
+          <Input.TextArea
+            style={{ width: "100%", maxWidth: 720 }}
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            placeholder="203.0.113.7&#10;192.0.2.0/25"
+            value={extraCIDRs.join("\n")}
+            onChange={(e) =>
+              setExtraCIDRs(
+                e.target.value
+                  .split(/[\n,]+/)
+                  .map((v) => v.trim())
+                  .filter((v) => v !== ""),
+              )
+            }
+          />
+        </div>
         {geoblockDenyOverlap.length > 0 && (
           <Alert
             type="warning"
@@ -949,6 +972,7 @@ const CountryExemptCard = () => {
               onClick={() => {
                 if (exemption.data) {
                   setCountries(exemption.data.countries);
+                  setExtraCIDRs(exemption.data.extra_cidrs);
                 }
               }}
             >
@@ -959,7 +983,10 @@ const CountryExemptCard = () => {
             icon={<ReloadOutlined />}
             onClick={resync}
             loading={syncExemption.isPending}
-            disabled={(exemption.data?.countries.length ?? 0) === 0}
+            disabled={
+              (exemption.data?.countries.length ?? 0) === 0 &&
+              (exemption.data?.extra_cidrs.length ?? 0) === 0
+            }
           >
             {t("adminsecuritycrowdsec.resync_cidrs")}
           </Button>

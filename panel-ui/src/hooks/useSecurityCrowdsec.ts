@@ -271,9 +271,12 @@ export function useUpdateAppSecGeoblock() {
 // from any CrowdSec decision source (scenario bans, AppSec inband, CAPI/
 // console blocklists, captchas). server_settings is truth; the agent renders
 // the s02-enrich GeoIP whitelist and a background sync seeds the
-// jabali-country-allowlist LAPI AllowList with per-country CIDR sets.
+// jabali-country-allowlist LAPI AllowList with per-country CIDR sets
+// (derived from the local MaxMind mmdb, ipdeny fallback) plus the
+// operator's supplemental extra_cidrs.
 export type CountryExemption = {
   countries: string[];
+  extra_cidrs: string[];
 };
 
 export function useCountryExemption() {
@@ -302,7 +305,7 @@ export function useUpdateCountryExemption() {
   });
 }
 
-// Force a CIDR re-sync (refetches the ipdeny zone snapshots server-side).
+// Force a CIDR re-sync (re-derives the mmdb zone snapshots server-side).
 export function useSyncCountryExemption() {
   return useMutation({
     mutationFn: async () => {

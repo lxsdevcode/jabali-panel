@@ -964,7 +964,7 @@ jabali crowdsec country-exempt get
 
 ##### `jabali crowdsec country-exempt set`
 
-Set exempt countries (empty = feature off)
+Set exempt countries and/or extra CIDRs (both empty = feature off)
 
 ```
 jabali crowdsec country-exempt set [flags]
@@ -973,6 +973,7 @@ jabali crowdsec country-exempt set [flags]
 **Flags:**
 
 - `--country` — 2-letter ISO code (repeatable); omit all to disable (default `[]`)
+- `--extra-cidr` — additional never-block IP or CIDR (repeatable); omit all to clear (default `[]`)
 
 ##### `jabali crowdsec country-exempt sync`
 

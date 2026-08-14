@@ -900,6 +900,8 @@
     "duration": "Duration",
     "enabled": "Enabled",
     "events": "Events",
+    "extra_cidrs": "Additional never-block IPs / CIDRs",
+    "extra_cidrs_hint": "One per line (IPs or CIDRs, v4 + v6). Always allowed, from any CrowdSec decision source — use for stragglers a country's zone data misses or known-good hosts abroad.",
     "how_this_is_enforced": "How this is enforced",
     "ip_or_cidr": "IP or CIDR",
     "ip_value": "IP / value",

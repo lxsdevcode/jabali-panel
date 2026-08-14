@@ -20,6 +20,7 @@ var runner struct {
 	pending     bool
 	force       bool
 	countries   []string
+	extras      []string
 	syncer      *Syncer
 	lastSuccess time.Time
 	lastErr     error
@@ -28,13 +29,14 @@ var runner struct {
 // KickBackground starts a sync in the background (or marks the latest
 // state pending when one is already running) and returns immediately.
 // The PUT handler uses this so a US-scale import never blocks the request.
-func KickBackground(log *slog.Logger, s *Syncer, countries []string, forceRefresh bool) {
+func KickBackground(log *slog.Logger, s *Syncer, countries []string, extras []string, forceRefresh bool) {
 	if log == nil {
 		log = slog.Default()
 	}
 	runner.mu.Lock()
 	runner.syncer = s
 	runner.countries = append([]string(nil), countries...)
+	runner.extras = append([]string(nil), extras...)
 	runner.force = runner.force || forceRefresh
 	runner.pending = true
 	if runner.running {
@@ -55,12 +57,13 @@ func KickBackground(log *slog.Logger, s *Syncer, countries []string, forceRefres
 			runner.pending = false
 			s := runner.syncer
 			countries := append([]string(nil), runner.countries...)
+			extras := append([]string(nil), runner.extras...)
 			force := runner.force
 			runner.force = false
 			runner.mu.Unlock()
 
 			ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
-			err := s.syncLocked(ctx, countries, force)
+			err := s.syncLocked(ctx, countries, extras, force)
 			cancel()
 
 			runner.mu.Lock()

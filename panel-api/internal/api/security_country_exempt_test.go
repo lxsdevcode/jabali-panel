@@ -26,7 +26,7 @@ func countryExemptRouter(t *testing.T, mock agent.AgentInterface, repo *mockServ
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	orig := countryExemptKick
-	countryExemptKick = func(_ *slog.Logger, _ *countryexempt.Syncer, _ []string, _ bool) {}
+	countryExemptKick = func(_ *slog.Logger, _ *countryexempt.Syncer, _, _ []string, _ bool) {}
 	t.Cleanup(func() { countryExemptKick = orig })
 
 	r := gin.New()
@@ -160,4 +160,60 @@ func TestCountryExempt_Sync_Returns202(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusAccepted, rec.Code)
+}
+
+func TestCountryExempt_Get_IncludesExtraCIDRs(t *testing.T) {
+
+	repo := &mockServerSettingsRepo{getResult: &models.ServerSettings{
+		CountryExemptCountries:  "IL",
+		CountryExemptExtraCIDRs: "203.0.113.7/32,192.0.2.0/25",
+	}}
+	r := countryExemptRouter(t, agent.NewMockClient(), repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/security/crowdsec/country-exemption", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, []any{"203.0.113.7/32", "192.0.2.0/25"}, body["extra_cidrs"])
+}
+
+func TestCountryExempt_Put_ExtraCIDRs_Normalized(t *testing.T) {
+
+	mock := agent.NewMockClient().On("security.crowdsec.country_exempt.set",
+		map[string]any{"countries": []any{"IL"}})
+	repo := &mockServerSettingsRepo{getResult: &models.ServerSettings{}}
+	r := countryExemptRouter(t, mock, repo)
+
+	// Bare IP → host prefix; unmasked CIDR → canonical form; dup dropped.
+	body := bytes.NewBufferString(`{"countries":["IL"],"extra_cidrs":["203.0.113.7","192.0.2.10/25","192.0.2.0/25"]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/security/crowdsec/country-exemption", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "203.0.113.7/32,192.0.2.0/25", repo.getResult.CountryExemptExtraCIDRs)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, []any{"203.0.113.7/32", "192.0.2.0/25"}, resp["extra_cidrs"])
+}
+
+func TestCountryExempt_Put_InvalidExtraCIDR_NoAgentCall(t *testing.T) {
+
+	mock := agent.NewMockClient()
+	repo := &mockServerSettingsRepo{getResult: &models.ServerSettings{}}
+	r := countryExemptRouter(t, mock, repo)
+
+	body := bytes.NewBufferString(`{"countries":["IL"],"extra_cidrs":["not-a-cidr"]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/security/crowdsec/country-exemption", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, mock.Calls(), "agent must not be called on pre-validation failure")
+	assert.Empty(t, repo.getResult.CountryExemptExtraCIDRs, "settings must not be persisted")
 }

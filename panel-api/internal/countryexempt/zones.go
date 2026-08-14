@@ -1,14 +1,18 @@
 // Package countryexempt keeps CrowdSec from ever blocking the operator's
 // chosen countries (ADR-0166). It owns the panel-api half of the feature:
 //
-//   - fetching per-country CIDR sets (ipdeny aggregated zones, IPv4 + IPv6)
-//     with a snapshot cache under /var/lib/jabali-panel/country-zones —
-//     panel-api does outbound HTTPS because the agent never may (ADR-0050);
+//   - resolving per-country CIDR sets — primarily derived by the agent from
+//     the local MaxMind mmdb (the same DB the GeoIP enricher classifies
+//     with, so coverage is exact by construction), with ipdeny aggregated
+//     zones (IPv4 + IPv6) as fallback; snapshots live under
+//     /var/lib/jabali-panel/country-zones — panel-api does outbound HTTPS
+//     because the agent never may (ADR-0050);
 //   - diffing the desired CIDR set against the jabali-country-allowlist
 //     LAPI AllowList (LAPI is truth — ADR-0061) and pushing deltas to the
 //     agent in ≤4000-entry chunks;
 //   - a weekly-staleness refresher goroutine (in-process, ctx-tied — repo
-//     convention, no external queue).
+//     convention, no external queue) that also re-derives when the mmdb
+//     itself changes.
 //
 // The agent owns the host side: the s02-enrich GeoIP parser whitelist
 // (security.crowdsec.country_exempt.set) and the cscli mechanics
@@ -22,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,6 +47,23 @@ var zoneURLTemplates = []string{
 	"https://www.ipdeny.com/ipv6/ipaddresses/aggregated/%s-aggregated.zone",
 }
 
+// zoneSource records where a snapshot came from.
+type zoneSource string
+
+const (
+	sourceUnknown zoneSource = ""       // legacy snapshot without a header
+	sourceIPDeny  zoneSource = "ipdeny" // registry-allocation data (fallback)
+	sourceMMDB    zoneSource = "mmdb"   // derived from the classifier's own DB
+)
+
+// snapshotMeta rides along with a cached zone file. mmdbMTime is the mmdb
+// mtime (unix) at derivation time — the refresher re-derives when the
+// classifier's DB is newer than this marker. 0 for ipdeny snapshots.
+type snapshotMeta struct {
+	source    zoneSource
+	mmdbMTime int64
+}
+
 // zoneCache pairs the two snapshot files for a country.
 type zoneCache struct {
 	dir string
@@ -51,27 +73,44 @@ func (zc zoneCache) path(code string) string {
 	return filepath.Join(zc.dir, strings.ToUpper(code)+".zone")
 }
 
-func (zc zoneCache) read(code string) ([]string, time.Time, error) {
+func (zc zoneCache) read(code string) ([]string, snapshotMeta, time.Time, error) {
+	var meta snapshotMeta
 	body, err := os.ReadFile(zc.path(code))
 	if err != nil {
-		return nil, time.Time{}, err
+		return nil, meta, time.Time{}, err
 	}
 	var st os.FileInfo
 	if st, err = os.Stat(zc.path(code)); err != nil {
-		return nil, time.Time{}, err
+		return nil, meta, time.Time{}, err
 	}
-	return parseZone(string(body)), st.ModTime(), nil
+	for _, line := range strings.Split(string(body), "\n") {
+		if rest, ok := strings.CutPrefix(line, "# source: "); ok {
+			meta.source = zoneSource(strings.TrimSpace(rest))
+		}
+		if rest, ok := strings.CutPrefix(line, "# mmdb-mtime: "); ok {
+			meta.mmdbMTime, _ = strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
+		}
+	}
+	return parseZone(string(body)), meta, st.ModTime(), nil
 }
 
-func (zc zoneCache) write(code string, cidrs []string) error {
-	// #nosec G301 — zone snapshots are public data (ipdeny CIDR lists);
-	// 0755 matches the neighbouring /var/lib/jabali-panel state dirs.
+func (zc zoneCache) write(code string, cidrs []string, meta snapshotMeta) error {
+	// #nosec G301 — zone snapshots are public data (GeoIP/registry CIDR
+	// lists); 0755 matches the neighbouring /var/lib/jabali-panel state dirs.
 	if err := os.MkdirAll(zc.dir, 0o755); err != nil {
 		return err
 	}
+	var b strings.Builder
+	if meta.source != sourceUnknown {
+		fmt.Fprintf(&b, "# source: %s\n", meta.source)
+	}
+	if meta.mmdbMTime > 0 {
+		fmt.Fprintf(&b, "# mmdb-mtime: %d\n", meta.mmdbMTime)
+	}
+	b.WriteString(strings.Join(cidrs, "\n") + "\n")
 	tmp := zc.path(code) + ".tmp"
 	// #nosec G306 — same rationale: public, non-secret snapshot data.
-	if err := os.WriteFile(tmp, []byte(strings.Join(cidrs, "\n")+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, zc.path(code))
@@ -130,20 +169,20 @@ func fetchCountry(ctx context.Context, client *http.Client, code string) ([]stri
 // from a fallback snapshot.
 func loadCountry(ctx context.Context, client *http.Client, zc zoneCache, code string, forceRefresh bool) (cidrs []string, stale bool, err error) {
 	if !forceRefresh {
-		if cached, mtime, rerr := zc.read(code); rerr == nil && time.Since(mtime) < snapshotMaxAge {
+		if cached, _, mtime, rerr := zc.read(code); rerr == nil && time.Since(mtime) < snapshotMaxAge {
 			return cached, false, nil
 		}
 	}
 	fresh, ferr := fetchCountry(ctx, client, code)
 	if ferr == nil {
-		if werr := zc.write(code, fresh); werr != nil {
+		if werr := zc.write(code, fresh, snapshotMeta{source: sourceIPDeny}); werr != nil {
 			// Cache write failure is non-fatal: the sync can proceed with
 			// the in-memory set; next tick retries the write.
 			return fresh, true, nil
 		}
 		return fresh, false, nil
 	}
-	if cached, _, rerr := zc.read(code); rerr == nil {
+	if cached, _, _, rerr := zc.read(code); rerr == nil {
 		return cached, true, nil
 	}
 	return nil, false, ferr

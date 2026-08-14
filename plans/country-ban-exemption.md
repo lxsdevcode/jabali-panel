@@ -13,6 +13,25 @@ CAPI/community blocklists, console blocklists, captchas.
 This is the complement of the existing AppSec geoblock ("Block Country" tab),
 which is an HTTP-layer allow/deny gate and says nothing about bans.
 
+## Amendment 2026-08-14 — mmdb-derived zones + supplemental CIDRs
+
+Shipped fix for the MaxMind-vs-ipdeny coverage gap (182.54.236.64 = IL in
+MaxMind, absent from ipdeny's IL zone → still exposed to community
+decisions):
+
+- CIDR source is now the **local MaxMind mmdb** walked by the agent
+  (`security.crowdsec.country_zones.derive`, exact `GeoIpCity` IsoCode
+  precedence), merged panel-side (`mergeCIDRs`) — allowlist ≡ classifier
+  by construction. ipdeny is fallback only (no mmdb / country with no
+  data-bearing networks). Snapshots carry a `# source:` + `# mmdb-mtime:`
+  header; mmdb-sourced snapshots expire when the mmdb mtime advances
+  (`security.crowdsec.mmdb.stat`), checked on the refresher's 15-min
+  verify tick.
+- **Supplemental CIDRs** (`server_settings.country_exempt_extra_cidrs`,
+  migration 000263): operator IPs/CIDRs merged into the allowlist tagged
+  `country:extra`, managed like country entries. API/CLI/UI surface;
+  `NormalizeCIDR` validation (bare IP → host prefix), 1000-entry cap.
+
 ## Mechanism (two layers)
 
 1. **LAPI AllowList `jabali-country-allowlist`** seeded with each selected
