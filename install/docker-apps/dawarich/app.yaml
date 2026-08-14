@@ -1,7 +1,7 @@
 slug: dawarich
 name: Dawarich
 tags: ["Productivity", "Analytics"]
-version: "1.10.0"
+version: "1.11.0"
 description: |
   Self-hosted location history and timeline, a privacy-first replacement
   for Google Timeline / Maps history. Import your data, visualize trips
@@ -11,7 +11,7 @@ icon: icon.svg
 upstream: https://github.com/Freika/dawarich
 documentation: https://dawarich.app
 
-image_channel: freikin/dawarich:1.10.0@sha256:25ba1dc02e5571cc915bd104aae9c4c28929848ad1741c1829f5c40f86489a16
+image_channel: freikin/dawarich:1.11.0@sha256:4e3c55c4cd572373624e75c9e02075ff436c83a3ea952595ae0d4ffc4c7ae52b
 update_mode: manual
 
 resources:

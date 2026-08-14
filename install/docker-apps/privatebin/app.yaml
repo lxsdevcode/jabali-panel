@@ -3,7 +3,7 @@ popularity: 36
 tenant_installable: true
 name: PrivateBin
 tags: ["Developer tools"]
-version: "2.0.4"
+version: "2.0.6"
 description: |
   Minimalist, open-source pastebin where the server has zero
   knowledge of pasted data. AES-256 client-side encryption. Single
@@ -12,7 +12,7 @@ icon: icon.svg
 upstream: https://github.com/PrivateBin/PrivateBin
 documentation: https://github.com/PrivateBin/PrivateBin/wiki
 
-image_channel: privatebin/nginx-fpm-alpine:2.0.4@sha256:96171f34dd07f6c655cb3a311de24c1e9bafd05307ea9b6d38443863f6b48153
+image_channel: privatebin/nginx-fpm-alpine:2.0.6@sha256:13290e2f04bfd98cf8fc7e8d216fb76b2b2d12373d4923b859cd41c2d984fde8
 update_mode: manual
 
 resources:
