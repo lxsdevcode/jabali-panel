@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   Book,
   Bug,
   CalendarCheck,
@@ -254,6 +255,7 @@ export const UpOutlined = shim(ChevronUp);
 export const LeftOutlined = shim(ChevronLeft);
 export const RightOutlined = shim(ChevronRight);
 export const ArrowLeftOutlined = shim(ArrowLeft);
+export const ArrowRightOutlined = shim(ArrowRight);
 
 // --- Files ---
 export const FileOutlined = shim(File);

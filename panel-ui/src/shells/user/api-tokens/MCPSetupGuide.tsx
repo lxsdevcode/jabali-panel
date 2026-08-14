@@ -1,8 +1,9 @@
 // MCPSetupGuide — a companion to the API Tokens page that turns a token into a
-// working jabali-mcp setup: it lets the tenant assemble one or more Jabali
-// instances (this panel is pre-filled), generates the panels.json for the
-// jabali-mcp server, and shows the one-line registration for the major MCP
-// clients. No new backend — it reuses the token minted on the Tokens tab.
+// working jabali-mcp setup, as a four-step wizard: it lets the tenant assemble
+// one or more Jabali instances (this panel is pre-filled), generates the
+// panels.json for the jabali-mcp server, and shows the one-line registration
+// for the major MCP clients. No new backend — it reuses the token minted on
+// the Tokens tab.
 //
 // Security: tokens entered here are assembled into the config IN THE BROWSER and
 // are never sent to or stored by the panel. The generated config is a secret —
@@ -15,10 +16,13 @@ import {
   Input,
   Segmented,
   Space,
+  Steps,
   Typography,
 } from "antd";
 import {
   ApiOutlined,
+  ArrowLeftOutlined,
+  ArrowRightOutlined,
   CloudServerOutlined,
   DeleteOutlined,
   DownloadOutlined,
@@ -105,6 +109,7 @@ function clientSnippet(client: ClientKey, access: AccessMode): string {
 export function MCPSetupGuide(): JSX.Element {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "https://<panel-host>";
+  const [step, setStep] = useState(0);
   const [instances, setInstances] = useState<Instance[]>([
     { name: "default", url: `${origin}/api/v1`, token: "" },
   ]);
@@ -147,47 +152,55 @@ export function MCPSetupGuide(): JSX.Element {
 
   const ready = instances.every((i) => i.url.trim() && i.token.trim());
 
-  return (
-    <Card
-      title="Use this panel from an AI assistant (MCP)"
-      size="small"
-      style={{ marginTop: 24 }}
-    >
-      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        <Alert
-          type="info"
-          showIcon
-          icon={<CloudServerOutlined />}
-          message="jabali-mcp exposes this panel's API as tools an AI assistant can use."
-          description={
-            <>
-              It authenticates with an API token and inherits your account's
-              isolation — it can only touch resources you own. It is{" "}
-              <Text strong>read-only by default</Text>; mutating tools are opt-in
-              and destructive ones ask for confirmation. Install it from{" "}
-              <Link href="https://github.com/shukiv/jabali-mcp" target="_blank" rel="noreferrer">
-                github.com/shukiv/jabali-mcp
-              </Link>
-              .
-            </>
-          }
-        />
+  // The wizard gates forward navigation only where a later step would be
+  // useless without the earlier one: the config step needs every instance
+  // filled in. Backward navigation (and revisiting) is always free.
+  const canNext = step !== 1 || ready;
 
-        <div>
-          <Text strong>1. Get a token</Text>
-          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            Create one on the <Text strong>Tokens</Text> tab (a read-only token is
-            safest — Custom → the read permissions you want), then paste it below.
-          </Paragraph>
-        </div>
-
-        <div>
-          <Text strong>2. Your instances</Text>
-          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            This panel is pre-filled. Add more Jabali panels to manage a fleet from
-            one place — each needs its own token from that panel.
-          </Paragraph>
+  const stepBody = ((): JSX.Element => {
+    switch (step) {
+      case 0:
+        return (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Alert
+              type="info"
+              showIcon
+              icon={<CloudServerOutlined />}
+              message="jabali-mcp exposes this panel's API as tools an AI assistant can use."
+              description={
+                <>
+                  It authenticates with an API token and inherits your account's
+                  isolation — it can only touch resources you own. It is{" "}
+                  <Text strong>read-only by default</Text>; mutating tools are
+                  opt-in and destructive ones ask for confirmation. Install it
+                  from{" "}
+                  <Link
+                    href="https://github.com/shukiv/jabali-mcp"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    github.com/shukiv/jabali-mcp
+                  </Link>
+                  .
+                </>
+              }
+            />
+            <Paragraph style={{ marginBottom: 0 }}>
+              First, create an API token on the <Text strong>Tokens</Text> tab (a
+              read-only token is safest — Custom → the read permissions you
+              want). The plaintext <Text code>jat_…</Text> is shown once — copy
+              it, you'll paste it in the next step.
+            </Paragraph>
+          </Space>
+        );
+      case 1:
+        return (
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              This panel is pre-filled — paste its token. Add more Jabali panels
+              to manage a fleet from one place; each needs its own token from
+              that panel.
+            </Paragraph>
             {instances.map((it, idx) => (
               <Space.Compact key={idx} style={{ width: "100%" }} block>
                 <Input
@@ -218,98 +231,142 @@ export function MCPSetupGuide(): JSX.Element {
             <Button icon={<PlusOutlined />} onClick={addRow}>
               Add instance
             </Button>
+            {!ready && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Fill in a URL and token for every instance to continue."
+              />
+            )}
           </Space>
-        </div>
-
-        <div>
-          <Text strong>3. Save the config</Text>
-          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            Save this as <Text code>{DEFAULT_PATH}</Text> (mode 600) on the machine
-            that runs the assistant. jabali-mcp finds it there automatically.
-          </Paragraph>
-          {!ready && (
+        );
+      case 2:
+        return (
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              Save this as <Text code>{DEFAULT_PATH}</Text> (mode 600) on the
+              machine that runs the assistant. jabali-mcp finds it there
+              automatically.
+            </Paragraph>
+            <CodeBlock text={panelsJson} />
+            <Button icon={<DownloadOutlined />} onClick={download}>
+              Download panels.json
+            </Button>
             <Alert
               type="warning"
               showIcon
-              style={{ marginBottom: 8 }}
-              message="Fill in a URL and token for every instance to complete the config."
+              icon={<ApiOutlined />}
+              message="The generated config contains your tokens."
+              description="It is assembled here in your browser and never sent to the panel. Treat the copied text and the downloaded file like a password."
             />
-          )}
-          <CodeBlock text={panelsJson} />
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={download}
-            style={{ marginTop: 8 }}
-          >
-            Download panels.json
-          </Button>
-        </div>
+          </Space>
+        );
+      default:
+        return (
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              Because the config is at the default path, no environment variables
+              are needed for it. (Saved elsewhere? Add{" "}
+              <Text code>--env JABALI_PANELS_FILE=/your/path</Text>.)
+            </Paragraph>
 
-        <div>
-          <Text strong>4. Register with your client</Text>
-          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            Because the config is at the default path, no environment variables are
-            needed for it. (Saved elsewhere? Add{" "}
-            <Text code>--env JABALI_PANELS_FILE=/your/path</Text>.)
-          </Paragraph>
+            <div>
+              <Text type="secondary" style={{ marginRight: 8 }}>
+                Access:
+              </Text>
+              <Segmented<AccessMode>
+                value={access}
+                onChange={(v) => setAccess(v)}
+                options={[
+                  { label: "Read-only", value: "read" },
+                  { label: "Read-write", value: "write" },
+                ]}
+              />
+            </div>
+            {access === "write" ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="Read-write enables mutating tools (create/update)."
+                description={
+                  <>
+                    Destructive tools (delete, restore, password) still require
+                    an explicit <Text code>confirm: true</Text> per call. To
+                    preview every write before it runs, also add{" "}
+                    <Text code>JABALI_MCP_DRY_RUN=1</Text>.
+                  </>
+                }
+              />
+            ) : (
+              <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                Read-only exposes only list/get tools — the assistant can see
+                your account but change nothing.
+              </Paragraph>
+            )}
 
-          <div style={{ marginBottom: 8 }}>
-            <Text type="secondary" style={{ marginRight: 8 }}>
-              Access:
-            </Text>
-            <Segmented<AccessMode>
-              value={access}
-              onChange={(v) => setAccess(v)}
+            <Segmented<ClientKey>
+              value={client}
+              onChange={(v) => setClient(v)}
               options={[
-                { label: "Read-only", value: "read" },
-                { label: "Read-write", value: "write" },
+                { label: "Claude Code", value: "claude-code" },
+                { label: "Claude Desktop", value: "claude-desktop" },
+                { label: "Codex", value: "codex" },
+                { label: "OpenCode", value: "opencode" },
+                { label: "Kimi", value: "kimi" },
               ]}
             />
-          </div>
-          {access === "write" ? (
+            <CodeBlock text={clientSnippet(client, access)} />
             <Alert
-              type="warning"
+              type="success"
               showIcon
-              style={{ marginBottom: 8 }}
-              message="Read-write enables mutating tools (create/update)."
-              description={
-                <>
-                  Destructive tools (delete, restore, password) still require an
-                  explicit <Text code>confirm: true</Text> per call. To preview
-                  every write before it runs, also add{" "}
-                  <Text code>JABALI_MCP_DRY_RUN=1</Text>.
-                </>
-              }
+              message="That's it — restart your MCP client and it will pick up the jabali tools."
             />
-          ) : (
-            <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-              Read-only exposes only list/get tools — the assistant can see your
-              account but change nothing.
-            </Paragraph>
-          )}
+          </Space>
+        );
+    }
+  })();
 
-          <Segmented<ClientKey>
-            value={client}
-            onChange={(v) => setClient(v)}
-            style={{ marginBottom: 8 }}
-            options={[
-              { label: "Claude Code", value: "claude-code" },
-              { label: "Claude Desktop", value: "claude-desktop" },
-              { label: "Codex", value: "codex" },
-              { label: "OpenCode", value: "opencode" },
-              { label: "Kimi", value: "kimi" },
-            ]}
-          />
-          <CodeBlock text={clientSnippet(client, access)} />
-        </div>
-
-        <Alert
-          type="warning"
-          showIcon
-          icon={<ApiOutlined />}
-          message="The generated config contains your tokens."
-          description="It is assembled here in your browser and never sent to the panel. Treat the copied text and the downloaded file like a password."
+  return (
+    <Card
+      title="Use this panel from an AI assistant (MCP)"
+      size="small"
+      style={{ marginTop: 24 }}
+    >
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Steps
+          size="small"
+          current={step}
+          onChange={(next) => {
+            // Free to go back; forward only one step at a time and only when
+            // the current step's gate is satisfied.
+            if (next < step || (next === step + 1 && canNext)) setStep(next);
+          }}
+          items={[
+            { title: "Get a token" },
+            { title: "Your instances" },
+            { title: "Save the config" },
+            { title: "Register" },
+          ]}
         />
+
+        {stepBody}
+
+        <Space>
+          {step > 0 && (
+            <Button icon={<ArrowLeftOutlined />} onClick={() => setStep(step - 1)}>
+              Back
+            </Button>
+          )}
+          {step < 3 && (
+            <Button
+              type="primary"
+              disabled={!canNext}
+              onClick={() => setStep(step + 1)}
+            >
+              Next <ArrowRightOutlined />
+            </Button>
+          )}
+        </Space>
       </Space>
     </Card>
   );
