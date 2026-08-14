@@ -925,22 +925,9 @@ func csAppSecGeoblockSetHandler(ctx context.Context, params json.RawMessage) (an
 	if _, ok := csAppSecGeoblockModes[p.Mode]; !ok {
 		return nil, csInvalidArg("mode must be off|allow|deny")
 	}
-	// Uppercase + dedupe + validate country codes.
-	seen := map[string]struct{}{}
-	cleaned := make([]string, 0, len(p.Countries))
-	for _, c := range p.Countries {
-		code := strings.ToUpper(strings.TrimSpace(c))
-		if code == "" {
-			continue
-		}
-		if !csCountryCodeRE.MatchString(code) {
-			return nil, csInvalidArg(fmt.Sprintf("country %q must be a 2-letter ISO 3166-1 code", c))
-		}
-		if _, dup := seen[code]; dup {
-			continue
-		}
-		seen[code] = struct{}{}
-		cleaned = append(cleaned, code)
+	cleaned, cerr := csCleanCountries(p.Countries)
+	if cerr != nil {
+		return nil, csInvalidArg(cerr.Error())
 	}
 	if (p.Mode == "allow" || p.Mode == "deny") && len(cleaned) == 0 {
 		return nil, csInvalidArg("mode " + p.Mode + " requires at least one country")
@@ -958,17 +945,46 @@ func csAppSecGeoblockSetHandler(ctx context.Context, params json.RawMessage) (an
 	if err := os.Rename(tmp, appsecRulePath); err != nil {
 		return nil, csInternal("rename appsec rule", err)
 	}
-	// Reload — SIGHUP re-reads rules without dropping the LAPI socket.
-	// `systemctl reload crowdsec` sends SIGHUP when ExecReload is set
-	// (crowdsec.service ships that). If reload is not wired (older
-	// packaging) fall back to restart.
+	if err := reloadCrowdsec(ctx); err != nil {
+		return nil, err
+	}
+	return csAppSecGeoblockGetResponse{Mode: p.Mode, Countries: cleaned}, nil
+}
+
+// reloadCrowdsec asks crowdsec to re-read its config. SIGHUP re-reads rules
+// without dropping the LAPI socket. `systemctl reload crowdsec` sends SIGHUP
+// when ExecReload is set (crowdsec.service ships that). If reload is not
+// wired (older packaging) fall back to restart.
+func reloadCrowdsec(ctx context.Context) error {
 	if out, err := exec.CommandContext(ctx, "systemctl", "reload", "crowdsec").CombinedOutput(); err != nil {
 		if out2, err2 := exec.CommandContext(ctx, "systemctl", "restart", "crowdsec").CombinedOutput(); err2 != nil {
-			return nil, csInternal("systemctl reload/restart crowdsec",
+			return csInternal("systemctl reload/restart crowdsec",
 				fmt.Errorf("reload: %v %s; restart: %v %s", err, out, err2, out2))
 		}
 	}
-	return csAppSecGeoblockGetResponse{Mode: p.Mode, Countries: cleaned}, nil
+	return nil
+}
+
+// csCleanCountries uppercases, trims, dedupes and validates ISO 3166-1
+// alpha-2 codes. Shared by the geoblock and country-exemption set handlers.
+func csCleanCountries(in []string) ([]string, error) {
+	seen := map[string]struct{}{}
+	cleaned := make([]string, 0, len(in))
+	for _, c := range in {
+		code := strings.ToUpper(strings.TrimSpace(c))
+		if code == "" {
+			continue
+		}
+		if !csCountryCodeRE.MatchString(code) {
+			return nil, fmt.Errorf("country %q must be a 2-letter ISO 3166-1 code", c)
+		}
+		if _, dup := seen[code]; dup {
+			continue
+		}
+		seen[code] = struct{}{}
+		cleaned = append(cleaned, code)
+	}
+	return cleaned, nil
 }
 
 // renderAppSecGeoblockRule emits the YAML rule body. The filter uses
@@ -1024,8 +1040,27 @@ type rawAllowlistInspect struct {
 	} `json:"items"`
 }
 
-func csAllowlistsListHandler(ctx context.Context, _ json.RawMessage) (any, error) {
-	out, err := runCscliJSON(ctx, "allowlists", "inspect", jabaliAllowlistName)
+type csAllowlistsListParams struct {
+	// Name optionally selects which jabali-managed allowlist to inspect
+	// (ADR-0166 added jabali-country-allowlist). Empty = admin allowlist.
+	Name string `json:"name,omitempty"`
+}
+
+func csAllowlistsListHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	name := jabaliAllowlistName
+	if len(params) > 0 {
+		var p csAllowlistsListParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, csInvalidArg(fmt.Sprintf("parse params: %v", err))
+		}
+		if p.Name != "" {
+			if !jabaliManagedAllowlist(p.Name) {
+				return nil, csInvalidArg("name must be a jabali-managed allowlist")
+			}
+			name = p.Name
+		}
+	}
+	out, err := runCscliJSON(ctx, "allowlists", "inspect", name)
 	if err != nil {
 		// cscli exits nonzero when the allowlist doesn't exist. Surface
 		// as empty list — first list before first add is a normal state.
@@ -1054,17 +1089,17 @@ type csAllowlistAddParams struct {
 	Expiration string `json:"expiration,omitempty"`
 }
 
-// ensureJabaliAllowlist creates the named allowlist if missing. Idempotent:
+// ensureAllowlist creates the named allowlist if missing. Idempotent:
 // if cscli reports "already exists" (nonzero exit + distinctive stderr)
 // we treat it as success. We don't rely on the exit code alone because
 // cscli versions differ.
-func ensureJabaliAllowlist(ctx context.Context) error {
-	check := exec.CommandContext(ctx, "cscli", "allowlists", "inspect", jabaliAllowlistName)
+func ensureAllowlist(ctx context.Context, name, description string) error {
+	check := exec.CommandContext(ctx, "cscli", "allowlists", "inspect", name)
 	if err := check.Run(); err == nil {
 		return nil
 	}
 	create := exec.CommandContext(ctx, "cscli", "allowlists", "create",
-		jabaliAllowlistName, "-d", "jabali-managed admin allowlist")
+		name, "-d", description)
 	out, err := create.CombinedOutput()
 	if err != nil {
 		if strings.Contains(strings.ToLower(string(out)), "already exists") {
@@ -1114,15 +1149,23 @@ func csAllowlistsAddHandler(ctx context.Context, params json.RawMessage) (any, e
 // and expiration format; this focuses on the idempotent cscli mechanics.
 // A re-add of an existing value is treated as success.
 func addToJabaliAllowlist(ctx context.Context, value, reason, expiration string) error {
-	if err := ensureJabaliAllowlist(ctx); err != nil {
+	return addToAllowlist(ctx, jabaliAllowlistName, value, reason, expiration)
+}
+
+// addToAllowlist is addToJabaliAllowlist parameterized on the allowlist name
+// (ADR-0166 introduced a second jabali-managed allowlist). Same mechanics:
+// TTL refresh = remove-then-re-add, failed re-add retries once then restores
+// without the TTL flag, re-add of an existing value is a no-op success.
+func addToAllowlist(ctx context.Context, name, value, reason, expiration string) error {
+	if err := ensureAllowlist(ctx, name, allowlistDescription(name)); err != nil {
 		return fmt.Errorf("ensure allowlist: %w", err)
 	}
-	args := []string{"allowlists", "add", jabaliAllowlistName, value, "-d", reason}
+	args := []string{"allowlists", "add", name, value, "-d", reason}
 	if expiration != "" {
 		// cscli `add` of an existing value is a no-op and does NOT refresh the
 		// expiration. For the time-boxed login path we want each re-login to
 		// slide the TTL forward, so best-effort remove first, then re-add.
-		_ = exec.CommandContext(ctx, "cscli", "allowlists", "remove", jabaliAllowlistName, value).Run()
+		_ = exec.CommandContext(ctx, "cscli", "allowlists", "remove", name, value).Run()
 		args = append(args, "-e", expiration)
 	}
 	out, err := exec.CommandContext(ctx, "cscli", args...).CombinedOutput()
@@ -1155,6 +1198,15 @@ func addToJabaliAllowlist(ctx context.Context, value, reason, expiration string)
 	return nil
 }
 
+// allowlistDescription returns the create-time description for each
+// jabali-managed allowlist (used by ensureAllowlist).
+func allowlistDescription(name string) string {
+	if name == jabaliCountryAllowlistName {
+		return "jabali-managed country ban exemption (ADR-0166)"
+	}
+	return "jabali-managed admin allowlist"
+}
+
 type csAllowlistRemoveParams struct {
 	Value string `json:"value"`
 }
@@ -1178,6 +1230,170 @@ func csAllowlistsRemoveHandler(ctx context.Context, params json.RawMessage) (any
 		return nil, csInternal(fmt.Sprintf("cscli allowlists remove: %s", strings.TrimSpace(string(out))), err)
 	}
 	return map[string]any{}, nil
+}
+
+// ---- Country ban exemption (ADR-0166) -------------------------------------
+
+// jabaliCountryAllowlistName is the second jabali-managed LAPI AllowList:
+// per-country CIDR sets for the country ban exemption. Kept separate from
+// jabali-admin-allowlist so admin trust entries and country CIDRs never
+// mix — a country removal must not be able to drop an admin IP.
+const jabaliCountryAllowlistName = "jabali-country-allowlist"
+
+// countryExemptWhitelistPath is the GeoIP parser whitelist that discards
+// events from exempt countries before scenarios (layer 2 of ADR-0166).
+const countryExemptWhitelistPath = "/etc/crowdsec/parsers/s02-enrich/zz-jabali-country-allowlist.yaml"
+
+// jabaliManagedAllowlist guards the optional `name` param of the list verb:
+// only jabali-managed allowlists may be inspected through the agent.
+func jabaliManagedAllowlist(name string) bool {
+	return name == jabaliAllowlistName || name == jabaliCountryAllowlistName
+}
+
+type csCountryExemptSetParams struct {
+	Countries []string `json:"countries"`
+}
+
+func csCountryExemptSetHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p csCountryExemptSetParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, csInvalidArg(fmt.Sprintf("parse params: %v", err))
+	}
+	cleaned, cerr := csCleanCountries(p.Countries)
+	if cerr != nil {
+		return nil, csInvalidArg(cerr.Error())
+	}
+	if len(cleaned) == 0 {
+		// Feature off: remove the whitelist file if present.
+		if err := os.Remove(countryExemptWhitelistPath); err != nil && !os.IsNotExist(err) {
+			return nil, csInternal("remove country whitelist", err)
+		}
+	} else {
+		if err := os.MkdirAll("/etc/crowdsec/parsers/s02-enrich", 0o755); err != nil {
+			return nil, csInternal("mkdir s02-enrich", err)
+		}
+		tmp := countryExemptWhitelistPath + ".tmp"
+		if err := os.WriteFile(tmp, []byte(renderCountryExemptWhitelist(cleaned)), 0o644); err != nil {
+			return nil, csInternal("write country whitelist tmp", err)
+		}
+		if err := os.Rename(tmp, countryExemptWhitelistPath); err != nil {
+			return nil, csInternal("rename country whitelist", err)
+		}
+	}
+	if err := reloadCrowdsec(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"countries": cleaned}, nil
+}
+
+// renderCountryExemptWhitelist emits the s02-enrich parser whitelist. The
+// zz- prefix sorts it after crowdsecurity/geoip-enrich within the stage so
+// evt.Enriched.IsoCode is already populated (verified live with
+// `cscli explain`, 2026-08-13). Country codes are pinned to ^[A-Z]{2}$ by
+// csCleanCountries, so %q quoting is safe.
+func renderCountryExemptWhitelist(countries []string) string {
+	quoted := make([]string, 0, len(countries))
+	for _, c := range countries {
+		quoted = append(quoted, fmt.Sprintf("%q", c))
+	}
+	return fmt.Sprintf(`# Managed by jabali — country ban exemption (ADR-0166).
+# Regenerated from DB by security.crowdsec.country_exempt.set.
+# Hand edits are overwritten. An empty selection removes this file.
+name: jabali/country-allowlist
+description: "Never create alerts for IPs from jabali-exempt countries"
+whitelist:
+  reason: "jabali country exemption"
+  expression:
+    - evt.Enriched.IsoCode in [%s]
+`, strings.Join(quoted, ", "))
+}
+
+// csCountryAllowlistSyncEntry is one CIDR to add, tagged with the country it
+// came from (comment "country:<CC>") so per-country diff/removal is possible
+// without a local snapshot — LAPI is truth (ADR-0061).
+type csCountryAllowlistSyncEntry struct {
+	Value   string `json:"value"`
+	Comment string `json:"comment"`
+}
+
+type csCountryAllowlistSyncParams struct {
+	Adds    []csCountryAllowlistSyncEntry `json:"adds"`
+	Removes []string                      `json:"removes"`
+}
+
+// csCountryAllowlistSyncHandler applies a diff computed by panel-api's
+// countryexempt syncer. Everything is validated before the first cscli call.
+// Adds are grouped by comment because cscli applies one -d to every value in
+// the call; panel-api chunks each country into ≤4000-entry calls.
+func csCountryAllowlistSyncHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	var p csCountryAllowlistSyncParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, csInvalidArg(fmt.Sprintf("parse params: %v", err))
+	}
+	if len(p.Adds) == 0 && len(p.Removes) == 0 {
+		return nil, csInvalidArg("adds or removes required")
+	}
+	for _, a := range p.Adds {
+		v := strings.TrimSpace(a.Value)
+		if v == "" {
+			return nil, csInvalidArg("add values must be non-empty")
+		}
+		if net.ParseIP(v) == nil {
+			if _, _, err := net.ParseCIDR(v); err != nil {
+				return nil, csInvalidArg(fmt.Sprintf("add value %q must be an IP or CIDR", a.Value))
+			}
+		}
+		if l := len(a.Comment); l < 3 || l > 200 {
+			return nil, csInvalidArg("add comment length must be 3..200")
+		}
+	}
+	for _, r := range p.Removes {
+		if strings.TrimSpace(r) == "" {
+			return nil, csInvalidArg("remove values must be non-empty")
+		}
+	}
+	if err := ensureAllowlist(ctx, jabaliCountryAllowlistName, allowlistDescription(jabaliCountryAllowlistName)); err != nil {
+		return nil, csInternal("ensure country allowlist", err)
+	}
+	removed := 0
+	for _, r := range p.Removes {
+		cmd := exec.CommandContext(ctx, "cscli", "allowlists", "remove",
+			jabaliCountryAllowlistName, strings.TrimSpace(r))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			msg := strings.ToLower(string(out))
+			if strings.Contains(msg, "not found") || strings.Contains(msg, "no such") {
+				continue // already gone — idempotent
+			}
+			return nil, csInternal(fmt.Sprintf("cscli allowlists remove %s: %s", r, strings.TrimSpace(string(out))), err)
+		}
+		removed++
+	}
+	added := 0
+	byComment := map[string][]string{}
+	order := []string{}
+	for _, a := range p.Adds {
+		if _, ok := byComment[a.Comment]; !ok {
+			order = append(order, a.Comment)
+		}
+		byComment[a.Comment] = append(byComment[a.Comment], strings.TrimSpace(a.Value))
+	}
+	for _, comment := range order {
+		values := byComment[comment]
+		args := append([]string{"allowlists", "add", jabaliCountryAllowlistName}, values...)
+		args = append(args, "-d", comment)
+		out, err := exec.CommandContext(ctx, "cscli", args...).CombinedOutput()
+		if err != nil {
+			// panel-api computes adds as exact deltas, so "already exists"
+			// means a race with a concurrent sync, not a logic error.
+			if strings.Contains(strings.ToLower(string(out)), "already") {
+				added += len(values)
+				continue
+			}
+			return nil, csInternal(fmt.Sprintf("cscli allowlists add (%d values): %s", len(values), strings.TrimSpace(string(out))), err)
+		}
+		added += len(values)
+	}
+	return map[string]any{"added": added, "removed": removed}, nil
 }
 
 // ---- M27 Step 3: security.crowdsec.alerts.{list,inspect} -----------------
@@ -1796,6 +2012,8 @@ func init() {
 	Default.Register("security.crowdsec.allowlists.list", csAllowlistsListHandler)
 	Default.Register("security.crowdsec.allowlists.add", csAllowlistsAddHandler)
 	Default.Register("security.crowdsec.allowlists.remove", csAllowlistsRemoveHandler)
+	Default.Register("security.crowdsec.country_exempt.set", csCountryExemptSetHandler)
+	Default.Register("security.crowdsec.country_allowlist.sync", csCountryAllowlistSyncHandler)
 	Default.Register("security.crowdsec.alerts.list", csAlertsListHandler)
 	Default.Register("security.crowdsec.alerts.inspect", csAlertsInspectHandler)
 	Default.Register("security.crowdsec.alerts.timeseries", csAlertsTimeseriesHandler)
