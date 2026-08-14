@@ -31,6 +31,11 @@ import { extractApiError } from "../../../apiErrors";
 import { useListQuery } from "../../../hooks/useQueries";
 import { BackupLogModal } from "./BackupLogModal";
 import { BackupLogsTab } from "./BackupLogsTab";
+
+// GH #1044: restore jobs share the backup list (kind=account_restore). They own
+// no snapshot, so their size/added read 0 and Download is meaningless.
+const isRestoreKind = (kind: string): boolean =>
+  kind === "account_restore" || kind === "system_restore";
 import { BackupSettingsTab } from "./BackupSettingsTab";
 import { CreateBackupDrawer } from "./CreateBackupDrawer";
 import { DestinationsTab } from "./DestinationsTab";
@@ -406,7 +411,7 @@ export const AdminBackupsPage = () => {
                 // GH #502: Download is the most common action after a backup completes —
                 // make it the primary (first, visible) action; Log + the rest collapse
                 // into the overflow menu.
-                { key: "download", label: "Download", icon: <DownloadOutlined />, hidden: row.status !== "succeeded" && row.status !== "partial", onClick: () => handleDownload(row) },
+                { key: "download", label: "Download", icon: <DownloadOutlined />, hidden: isRestoreKind(row.kind) || (row.status !== "succeeded" && row.status !== "partial"), onClick: () => handleDownload(row) },
                 { key: "log", label: "Log", icon: <FileTextOutlined />, onClick: () => setLogJob(row) },
                 {
                   key: "restore",
@@ -607,13 +612,17 @@ export const AdminBackupsPage = () => {
                 title: "Added (dedup win)",
                 sorter: (a, b) => (a.isRun ? a.run.bytes_added : a.job.bytes_added) - (b.isRun ? b.run.bytes_added : b.job.bytes_added),
                 render: (_: unknown, row: TableRow) =>
-                  formatBytes(row.isRun ? row.run.bytes_added : row.job.bytes_added),
+                  !row.isRun && isRestoreKind(row.job.kind)
+                    ? "—"
+                    : formatBytes(row.isRun ? row.run.bytes_added : row.job.bytes_added),
               },
               {
                 title: "Logical size",
                 sorter: (a, b) => (a.isRun ? a.run.bytes_total : a.job.bytes_total) - (b.isRun ? b.run.bytes_total : b.job.bytes_total),
                 render: (_: unknown, row: TableRow) =>
-                  formatBytes(row.isRun ? row.run.bytes_total : row.job.bytes_total),
+                  !row.isRun && isRestoreKind(row.job.kind)
+                    ? "—"
+                    : formatBytes(row.isRun ? row.run.bytes_total : row.job.bytes_total),
               },
               {
                 title: "Started",

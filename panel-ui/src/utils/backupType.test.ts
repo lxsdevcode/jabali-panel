@@ -28,10 +28,18 @@ describe("backupTypeLabel (GH #454)", () => {
     expect(backupTypeLabel("account_backup", null)).toBe("Account Backup");
   });
 
-  it("labels system backups/restores by kind regardless of content", () => {
+  it("labels system backups by kind regardless of content", () => {
     // GH #502: a bare system_backup (no fanned-out accounts) is System-only.
     expect(backupTypeLabel("system_backup", "full")).toBe("System Backup");
     expect(backupTypeLabel("system_restore", "full")).toBe("Server Restore");
-    expect(backupTypeLabel("account_restore", "database")).toBe("Account Restore");
+  });
+
+  it("GH #1044: labels an account restore by what it restored", () => {
+    expect(backupTypeLabel("account_restore", "database")).toBe("Database Restore");
+    expect(backupTypeLabel("account_restore", "files")).toBe("Files Restore");
+    expect(backupTypeLabel("account_restore", "folders")).toBe("Files Restore");
+    expect(backupTypeLabel("account_restore", "full")).toBe("Account Restore");
+    expect(backupTypeLabel("account_restore", "")).toBe("Account Restore");
+    expect(backupTypeLabel("account_restore", undefined)).toBe("Account Restore");
   });
 });

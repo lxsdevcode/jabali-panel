@@ -19,7 +19,19 @@ export function backupTypeLabel(kind: string, content?: string | null, hasAccoun
     case "system_restore":
       return "Server Restore";
     case "account_restore":
-      return "Account Restore";
+      // GH #1044: describe a restore by WHAT it restored, mirroring the backup
+      // labels — a database-only restore reads "Database Restore", not the
+      // generic "Account Restore" the reporter flagged. Colour stays orange
+      // (see backupTypeColor) so restores remain visually distinct in the list.
+      switch (content) {
+        case "database":
+          return "Database Restore";
+        case "files":
+        case "folders":
+          return "Files Restore";
+        default:
+          return "Account Restore";
+      }
   }
   // account_backup (and any unknown backup kind) — describe by content.
   switch (content) {

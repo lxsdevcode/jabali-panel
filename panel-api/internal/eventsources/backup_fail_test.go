@@ -55,6 +55,9 @@ func (f *fakeBackupJobs) ListByRun(context.Context, string) ([]models.BackupJob,
 func (f *fakeBackupJobs) ListManual(context.Context, int, int) ([]models.BackupJob, int64, error) {
 	return nil, 0, nil
 }
+func (f *fakeBackupJobs) FindBySnapshotID(context.Context, string) (*models.BackupJob, error) {
+	return nil, nil
+}
 func (f *fakeBackupJobs) ListByStatusSince(_ context.Context, status string, since time.Time, _ int) ([]models.BackupJob, error) {
 	var out []models.BackupJob
 	for _, r := range f.rows {

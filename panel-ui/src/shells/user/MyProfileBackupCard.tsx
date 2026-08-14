@@ -31,6 +31,12 @@ type MyBackup = {
   error_text?: string;
 };
 
+// GH #1044: restore jobs share this list (kind=account_restore). A restore is
+// not a downloadable/deletable backup artifact and has no size — its row drops
+// the backup-only bits.
+const isRestoreRow = (row: MyBackup): boolean =>
+  row.kind === "account_restore" || row.kind === "system_restore";
+
 const statusColor = (status: string): string => {
   switch (status) {
     case "succeeded":
@@ -234,7 +240,8 @@ export const MyProfileBackupCard = () => {
           {
             title: "Size",
             dataIndex: "bytes_total",
-            render: (n: number) => formatBytes(n),
+            // GH #1044: a restore has no artifact size — the 0 read as noise.
+            render: (n: number, row: MyBackup) => (isRestoreRow(row) ? "—" : formatBytes(n)),
           },
           {
             title: "Actions",
@@ -242,7 +249,11 @@ export const MyProfileBackupCard = () => {
             render: (_, row) => (
               <RowActions
                 actions={[
-                  ...(row.status === "succeeded"
+                  // GH #1044: Download + Restore only make sense on a backup
+                  // artifact. A restore row has no snapshot to download and
+                  // isn't itself restorable — gate both off it (Download would
+                  // hard-fail, no snapshot).
+                  ...(!isRestoreRow(row) && row.status === "succeeded"
                     ? [
                         { key: "download", label: "Download", icon: <DownloadOutlined />, onClick: () => { const act = getActAs(); downloadUrl(`/api/v1/me/backups/${row.id}/download${act ? `?act_as=${encodeURIComponent(act.id)}` : ""}`); } },
                         { key: "restore", label: "Restore", icon: <ReloadOutlined />, onClick: () => setRestoreId(row.id) },
@@ -250,11 +261,15 @@ export const MyProfileBackupCard = () => {
                     : []),
                   {
                     key: "delete",
-                    label: "Delete",
+                    label: isRestoreRow(row) ? "Remove" : "Delete",
                     icon: <DeleteOutlined />,
                     danger: true,
                     onClick: () => handleDelete(row.id),
-                    confirm: { title: "Delete this backup?", description: "This permanently removes the backup's snapshots from the repository and cannot be undone.", okText: "Delete" },
+                    // A restore row owns no snapshots — deleting it only clears
+                    // the history entry; say that instead of the backup copy.
+                    confirm: isRestoreRow(row)
+                      ? { title: "Remove this restore from the list?", description: "This clears the restore entry from your history. It does not undo the restore or touch any backup.", okText: "Remove" }
+                      : { title: "Delete this backup?", description: "This permanently removes the backup's snapshots from the repository and cannot be undone.", okText: "Delete" },
                   },
                 ]}
               />
