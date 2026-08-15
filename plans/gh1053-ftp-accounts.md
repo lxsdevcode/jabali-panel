@@ -1,6 +1,8 @@
 # GH #1053 — FTP / SFTP accounts for tenants
 
-**Status:** planned (blueprint only, nothing built)
+**Status:** SHIPPED 2026-08-15 — all 7 steps merged (#1094 #1096 #1098 #1099
+#1101 #1104 #1105, + row-size hotfix #1103). Live E2E on jabalitests: 31/31
+(opt-in module cycle, sftp/ftps protocol matrix, stray-alias sweep).
 **Issue:** GH #1053 "Feature: Create a normal ftp user"
 **Decided:** 2026-08-15 — extend the native OpenSSH path + add vsftpd as an
 opt-in module. SFTPGo evaluated and rejected (see "Why not SFTPGo" below).
