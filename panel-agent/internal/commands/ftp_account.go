@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -202,18 +203,40 @@ func requireFtpSubaccount(tenant *ftpTenant, sub string) (*user.User, *agentwire
 		}
 	}
 	uid, _ := strconv.Atoi(u.Uid)
-	if uid != tenant.UID {
-		return nil, &agentwire.AgentError{
-			Code:    agentwire.CodePermissionDenied,
-			Message: fmt.Sprintf("passwd entry %q has uid %d, expected tenant uid %d — refusing to touch a non-subaccount user", sub, uid, tenant.UID),
-		}
-	}
-	// Ownership marker: name+uid alone can match an operator's hand-made
-	// alias — those are never ours to re-password, lock, or delete.
-	if u.Name != ftpAliasGecos {
+	// Ownership: the GECOS marker (bare or owner-encoded) is authoritative.
+	// Owner-encoded aliases match by owner regardless of uid (isolated accounts
+	// have their OWN uid); bare-marker legacy aliases must still share the
+	// tenant uid. os/user parses User.Name as the pre-comma GECOS segment, which
+	// is exactly what ftpMarkerOwner expects. Both the marker AND the tenant
+	// binding must hold, so a caller can never lock/re-password/delete an
+	// operator's alias or another tenant's subaccount.
+	owner, marked := ftpMarkerOwner(u.Name)
+	if !marked {
 		return nil, &agentwire.AgentError{
 			Code:    agentwire.CodePermissionDenied,
 			Message: fmt.Sprintf("passwd entry %q lacks the %q ownership marker — operator-managed account, refusing", sub, ftpAliasGecos),
+		}
+	}
+	if owner != "" {
+		if owner != tenant.Username {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodePermissionDenied,
+				Message: fmt.Sprintf("passwd entry %q is owned by tenant %q, not %q — refusing", sub, owner, tenant.Username),
+			}
+		}
+		// Owner match is authoritative, but never touch a system uid: an owned
+		// subaccount is the tenant uid (owner-encoded legacy) or an isolated uid
+		// in the reserved range. Blocks a mistaken owner marker on uid 0.
+		if uid != tenant.UID && uid < ftpSubaccountUIDMin {
+			return nil, &agentwire.AgentError{
+				Code:    agentwire.CodePermissionDenied,
+				Message: fmt.Sprintf("passwd entry %q has out-of-range uid %d for an owned subaccount — refusing", sub, uid),
+			}
+		}
+	} else if uid != tenant.UID {
+		return nil, &agentwire.AgentError{
+			Code:    agentwire.CodePermissionDenied,
+			Message: fmt.Sprintf("passwd entry %q has uid %d, expected tenant uid %d — refusing to touch a non-subaccount user", sub, uid, tenant.UID),
 		}
 	}
 	return u, nil
@@ -283,12 +306,39 @@ type ftpAccountCreateParams struct {
 	HomePath       string `json:"home_path"`
 	Password       string `json:"password"`
 	FTPAccess      bool   `json:"ftp_access"`
+	// Isolated selects the separate-uid jailed model (GH #1145). When false
+	// the legacy same-uid alias path runs. The fields below are required only
+	// when Isolated is true; the panel allocates the uid + computes the split.
+	Isolated   bool   `json:"isolated"`
+	UID        uint32 `json:"uid"`
+	QuotaMB    uint32 `json:"quota_mb"`
+	QuotaMount string `json:"quota_mount"`
+	JailPath   string `json:"jail_path"`
 }
 
 type ftpAccountCreateResponse struct {
 	Username string `json:"username"`
 	UID      int    `json:"uid"`
 	HomePath string `json:"home_path"`
+}
+
+// ensureTenantOwnedDir makes homePath exist and be tenant-owned, created
+// through the openat2-confined scope (JAB-251) so a tenant symlink swap under
+// the tenant-writable home cannot redirect the root chown. No-op when homePath
+// IS the tenant home root (already provisioned, no in-scope parent to open).
+// Used by both the legacy and the isolated create paths.
+func ensureTenantOwnedDir(tenant *ftpTenant, homePath string) *agentwire.AgentError {
+	if filepath.Clean(homePath) == filepath.Clean(tenant.HomeDir) {
+		return nil
+	}
+	scope, serr := filesafe.NewScope(tenant.Username, tenant.Username, []string{tenant.HomeDir})
+	if serr != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("home scope for %q: %v", tenant.HomeDir, serr)}
+	}
+	if err := scope.MkdirChownInScope(homePath, 0o755, true, tenant.UID, tenant.GID); err != nil {
+		return &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("create+chown home %q (confined): %v", homePath, err)}
+	}
+	return nil
 }
 
 func ftpAccountCreateHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -312,6 +362,30 @@ func ftpAccountCreateHandler(ctx context.Context, params json.RawMessage) (any, 
 	}
 	if _, err := user.Lookup(p.Username); err == nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeAlreadyExists, Message: fmt.Sprintf("user %q already exists", p.Username)}
+	}
+
+	// GH #1145 isolated (separate-uid) path: create the selected dir confined,
+	// then build the root-owned jail + own-uid user + ACL + per-uid quota. The
+	// legacy same-uid alias path below is skipped entirely for isolated rows.
+	if p.Isolated {
+		if aerr := ensureTenantOwnedDir(tenant, homePath); aerr != nil {
+			return nil, aerr
+		}
+		rollback, aerr := provisionIsolatedJail(ctx, tenant, p)
+		if aerr != nil {
+			return nil, aerr
+		}
+		if aerr := chpasswdStdin(ctx, p.Username, p.Password); aerr != nil {
+			rollback()
+			return nil, aerr
+		}
+		if p.FTPAccess {
+			if aerr := setFtpGroupMembership(ctx, p.Username, true); aerr != nil {
+				rollback()
+				return nil, aerr
+			}
+		}
+		return ftpAccountCreateResponse{Username: p.Username, UID: int(p.UID), HomePath: homePath}, nil
 	}
 
 	// Same-uid alias. --no-create-home: the directory is the tenant's
@@ -341,7 +415,7 @@ func ftpAccountCreateHandler(ctx context.Context, params json.RawMessage) (any, 
 		"--no-create-home",
 		"--no-user-group",
 		"--shell", "/usr/sbin/nologin",
-		"--comment", ftpAliasGecos,
+		"--comment", ftpAliasGecosFor(tenant.Username),
 		p.Username,
 	}
 	if out, err := exec.CommandContext(ctx, "useradd", args...).CombinedOutput(); err != nil {
@@ -364,20 +438,9 @@ func ftpAccountCreateHandler(ctx context.Context, params json.RawMessage) (any, 
 	// follows it. MkdirChownInScope holds the resolved parent fd across
 	// mkdirat + O_NOFOLLOW re-open + Fchown, so no post-validation
 	// pathname re-resolution occurs and a swapped leaf is refused (ELOOP).
-	if filepath.Clean(homePath) == filepath.Clean(tenant.HomeDir) {
-		// Home IS the tenant home root: it already exists and is
-		// tenant-owned from provisioning — nothing to create or chown,
-		// and it has no in-scope parent to open.
-	} else {
-		scope, serr := filesafe.NewScope(tenant.Username, tenant.Username, []string{tenant.HomeDir})
-		if serr != nil {
-			rollback()
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("home scope for %q: %v", tenant.HomeDir, serr)}
-		}
-		if err := scope.MkdirChownInScope(homePath, 0o755, true, tenant.UID, tenant.GID); err != nil {
-			rollback()
-			return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("create+chown home %q (confined): %v", homePath, err)}
-		}
+	if aerr := ensureTenantOwnedDir(tenant, homePath); aerr != nil {
+		rollback()
+		return nil, aerr
 	}
 	if aerr := chpasswdStdin(ctx, p.Username, p.Password); aerr != nil {
 		rollback()
@@ -526,13 +589,27 @@ func ftpAccountDeleteHandler(ctx context.Context, params json.RawMessage) (any, 
 	if aerr != nil {
 		return nil, aerr
 	}
-	if _, aerr := requireFtpSubaccount(tenant, p.Username); aerr != nil {
+	u, aerr := requireFtpSubaccount(tenant, p.Username)
+	if aerr != nil {
 		// Idempotent delete: a passwd entry that is already gone is success.
+		// But a PRIOR delete may have failed AFTER userdel and BEFORE jail
+		// teardown, leaving an orphaned jail + live bind mount of tenant data
+		// that nothing else sweeps (the reaper keys on passwd, the reconciler
+		// on DB rows — both gone). Tear the jail down here too; idempotent and
+		// ENOENT-safe, so it no-ops for a legacy account that never had one.
 		if aerr.Code == agentwire.CodeNotFound {
+			if terr := teardownIsolatedJail(ctx, ftpJailPathFor(tenant, p.Username)); terr != nil {
+				return nil, terr
+			}
 			return map[string]any{"username": p.Username, "deleted": false, "absent": true}, nil
 		}
 		return nil, aerr
 	}
+	// Isolated accounts own a uid in the reserved range and a root-owned jail;
+	// remember whether to tear it down after userdel. Legacy same-uid aliases
+	// share the tenant uid and have no jail.
+	delUID, _ := strconv.Atoi(u.Uid)
+	isolated := delUID >= ftpSubaccountUIDMin
 	_ = setFtpGroupMembership(ctx, p.Username, false)
 	// -f is REQUIRED, not defensive: the alias shares the tenant's uid, so
 	// the tenant's always-running processes (per-user FPM master, cron)
@@ -542,6 +619,14 @@ func ftpAccountDeleteHandler(ctx context.Context, params json.RawMessage) (any, 
 	// live tenant directory, usually a docroot).
 	if out, err := exec.CommandContext(ctx, "userdel", "-f", p.Username).CombinedOutput(); err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("userdel %q: %v: %s", p.Username, err, strings.TrimSpace(string(out)))}
+	}
+	// Isolated account: unmount + remove its jail AFTER the user is gone. The
+	// teardown never touches the bind-mount source (tenant data); it is
+	// idempotent and safe on a legacy path that has no jail.
+	if isolated {
+		if terr := teardownIsolatedJail(ctx, ftpJailPathFor(tenant, p.Username)); terr != nil {
+			return nil, terr
+		}
 	}
 	return map[string]any{"username": p.Username, "deleted": true}, nil
 }
@@ -582,11 +667,9 @@ func ftpAccountListHandler(ctx context.Context, params json.RawMessage) (any, er
 		if len(parts) < 6 || !strings.HasPrefix(parts[0], prefix) {
 			continue
 		}
-		if uid, _ := strconv.Atoi(parts[2]); uid != tenant.UID {
-			continue // same prefix but not our alias — not ours to report
-		}
-		if gecosName(parts[4]) != ftpAliasGecos {
-			continue // operator-made alias — invisible to the panel
+		uid, _ := strconv.Atoi(parts[2])
+		if !ftpAliasOwnedBy(parts[4], uid, tenant) {
+			continue // same prefix but not our alias (or an operator's) — skip
 		}
 		name := parts[0]
 		isFtp, _ := isUserInGroup(ctx, name, ftpGroupName)
@@ -612,22 +695,29 @@ func ftpTenantAliasNames(tenant *ftpTenant) ([]string, *agentwire.AgentError) {
 	if err != nil {
 		return nil, &agentwire.AgentError{Code: agentwire.CodeInternal, Message: fmt.Sprintf("read passwd: %v", err)}
 	}
+	return ftpOwnedAliasNames(string(passwd), tenant), nil
+}
+
+// ftpOwnedAliasNames is the pure filter behind ftpTenantAliasNames (and thus
+// the JAB-254 suspension lock path). Owner-aware: includes isolated
+// (separate-uid) aliases — which no longer share the tenant uid — while staying
+// collision-proof for prefix-colliding tenants, so tenant suspension covers
+// every owned alias regardless of isolation mode.
+func ftpOwnedAliasNames(passwd string, tenant *ftpTenant) []string {
 	prefix := tenant.Username + "_"
 	var names []string
-	for _, line := range strings.Split(string(passwd), "\n") {
+	for _, line := range strings.Split(passwd, "\n") {
 		parts := strings.Split(line, ":")
 		if len(parts) < 6 || !strings.HasPrefix(parts[0], prefix) {
 			continue
 		}
-		if uid, _ := strconv.Atoi(parts[2]); uid != tenant.UID {
-			continue
-		}
-		if gecosName(parts[4]) != ftpAliasGecos {
+		uid, _ := strconv.Atoi(parts[2])
+		if !ftpAliasOwnedBy(parts[4], uid, tenant) {
 			continue
 		}
 		names = append(names, parts[0])
 	}
-	return names, nil
+	return names
 }
 
 // ftpAccountLockTenantHandler locks EVERY panel-owned FTP/SFTP alias of a
@@ -713,19 +803,51 @@ func classifyFtpAliases(passwd string) (owned []ftpAccountListAllEntry, skippedU
 	}
 	owned = []ftpAccountListAllEntry{}
 	for _, name := range order {
+		owner, marked := ftpMarkerOwner(byName[name].gecos)
+		if marked && owner != "" {
+			// Owner-encoded: ownership is explicit — no uid/shape inference
+			// (isolated aliases do NOT share the tenant uid). Report it even if
+			// the owner tenant is gone; a rowless alias is exactly what the
+			// reaper must surface. A SYSTEM uid with an owner marker is never
+			// ours (mirrors the legacy walk's minTenantUID guard) — ignore it.
+			// Otherwise require the namespaced-username prefix to match the
+			// encoded owner: a mismatch is a corrupted/forged marker (only root
+			// writes passwd), never attributed to a tenant.
+			if byName[name].uid < minTenantUID {
+				continue
+			}
+			if strings.HasPrefix(name, owner+"_") {
+				owned = append(owned, ftpAccountListAllEntry{
+					TenantUsername: owner,
+					Username:       name,
+					HomePath:       byName[name].home,
+				})
+			} else {
+				// Owner-encoded marker whose username is NOT namespaced under
+				// the encoded owner. Not attacker-reachable (only root writes
+				// passwd), but a PANEL stamping bug here would hide a live alias
+				// from the reaper — the one thing the reaper must never do — so
+				// surface it loudly instead of silently dropping the credential.
+				slog.Warn("ftp reaper: owner-encoded alias with mismatched username prefix — possible stamping bug",
+					"username", name, "encoded_owner", owner)
+			}
+			continue
+		}
+		// Legacy path (bare marker or no marker): needs the <tenant>_<label>
+		// shape + a same-uid tenant entry to identify the owner. Walk every "_"
+		// split point — tenant names may themselves contain underscores
+		// (user_01k…), so "a_b_c" must try tenants "a_b" and "a".
 		i := strings.LastIndex(name, "_")
 		if i <= 0 {
 			continue
 		}
-		// Walk every "_" split point: tenant names may themselves contain
-		// underscores (user_01k…), so "a_b_c" must try tenants "a_b" and "a".
 		for j := i; j > 0; j = strings.LastIndex(name[:j], "_") {
 			tenant := name[:j]
 			te, ok := byName[tenant]
 			if !ok || te.uid < minTenantUID || te.uid != byName[name].uid || tenant == name {
 				continue
 			}
-			if gecosName(byName[name].gecos) != ftpAliasGecos {
+			if !marked {
 				// Same shape, no marker: an operator's hand-made alias.
 				skippedUnmarked++
 				break
@@ -767,4 +889,5 @@ func init() {
 	Default.Register("ftpaccount.list", ftpAccountListHandler)
 	Default.Register("ftpaccount.list_all", ftpAccountListAllHandler)
 	Default.Register("ftpaccount.lock_tenant", ftpAccountLockTenantHandler)
+	Default.Register("ftpaccount.ensure_jail", ftpEnsureJailHandler)
 }

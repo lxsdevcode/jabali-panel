@@ -28,6 +28,10 @@ import (
 
 const ftpAccountsReDispatchInterval = 15 * time.Minute
 
+// ftpJailMountpointDir is the bind-mount subdir inside a GH #1145 isolated
+// jail. MUST match panel-agent ftpJailMountpoint and panel-api api.ftpJailMountpoint.
+const ftpJailMountpointDir = "data"
+
 type ftpDispatchState struct {
 	Hash string
 	At   time.Time
@@ -42,6 +46,9 @@ func desiredFtpHash(rows []models.FtpAccount, tenantByUserID map[string]string) 
 		lines = append(lines, strings.Join([]string{
 			a.ID, a.Username, tenantByUserID[a.UserID], a.HomePath,
 			fmt.Sprintf("%t|%t|%t", a.FTPAccess, a.SFTPAccess, a.IsEnabled),
+			// GH #1145: isolation mode + jail path change the rendered sshd
+			// chroot and the recreate params, so they must move the hash.
+			fmt.Sprintf("%t|%s", a.Isolated, a.JailPath),
 		}, "^"))
 	}
 	sort.Strings(lines)
@@ -224,15 +231,23 @@ func (r *Reconciler) reconcileFtpAccounts(ctx context.Context) {
 	}
 	desired := []syncAccount{}
 	for tenant, accts := range rowsByTenant {
-		chroot := "/home/" + tenant
 		eff := ftpEffectiveEnabled(accts, eligByTenant[tenant])
 		for _, a := range accts {
 			if !eff[a.Username] || !a.SFTPAccess {
 				continue
 			}
-			start := "/"
-			if rel, rerr := filepath.Rel(chroot, a.HomePath); rerr == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-				start = "/" + rel
+			var chroot, start string
+			if a.Isolated && a.JailPath != "" {
+				// GH #1145: isolated accounts chroot to their root-owned jail;
+				// the selected sub-tree is bind-mounted at /<mountpoint>.
+				chroot = a.JailPath
+				start = "/" + ftpJailMountpointDir
+			} else {
+				chroot = "/home/" + tenant
+				start = "/"
+				if rel, rerr := filepath.Rel(chroot, a.HomePath); rerr == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+					start = "/" + rel
+				}
 			}
 			desired = append(desired, syncAccount{Username: a.Username, ChrootDir: chroot, StartDir: start})
 		}
@@ -335,13 +350,30 @@ func (r *Reconciler) reconcileFtpTenant(ctx context.Context, tenant string, acct
 				r.log.Error("ftp: throwaway password", "err", perr)
 				return false
 			}
-			if _, err := r.agent.Call(ctx, "ftpaccount.create", map[string]any{
+			createParams := map[string]any{
 				"tenant_username": tenant,
 				"username":        name,
 				"home_path":       want.HomePath,
 				"password":        pw,
 				"ftp_access":      want.FTPAccess,
-			}); err != nil {
+			}
+			// GH #1145: an isolated row must be recreated ISOLATED, not as a
+			// legacy same-uid alias — otherwise a DR restore silently drops the
+			// kernel boundary. Reuse the row's STORED uid (never re-allocate:
+			// the uid is the row's identity and its owned files carry it).
+			if want.Isolated {
+				if r.quotaMount == "" || want.UID == nil {
+					r.log.Warn("ftp: cannot recreate isolated alias without a quota mount and stored uid — leaving absent", "account", name)
+					ok = false
+					continue
+				}
+				createParams["isolated"] = true
+				createParams["uid"] = *want.UID
+				createParams["quota_mb"] = want.QuotaMB
+				createParams["quota_mount"] = r.quotaMount
+				createParams["jail_path"] = want.JailPath
+			}
+			if _, err := r.agent.Call(ctx, "ftpaccount.create", createParams); err != nil {
 				r.log.Warn("ftp: recreate missing alias failed", "account", name, "err", err)
 				ok = false
 				continue
@@ -366,6 +398,26 @@ func (r *Reconciler) reconcileFtpTenant(ctx context.Context, tenant string, acct
 			}
 		}
 	}
+	// GH #1145: isolated jails are plain bind mounts — NOT reboot-persistent.
+	// Re-assert each enabled isolated account's mount every pass (idempotent:
+	// ensure_jail no-ops when already mounted). The in-memory dispatch cache
+	// clears on panel restart, so the first tick after a reboot runs this and
+	// self-heals the mounts before the tenant notices an empty jail.
+	for _, a := range accts {
+		if !a.Isolated || a.JailPath == "" || !eff[a.Username] {
+			continue
+		}
+		if _, err := r.agent.Call(ctx, "ftpaccount.ensure_jail", map[string]any{
+			"tenant_username": tenant,
+			"username":        a.Username,
+			"home_path":       a.HomePath,
+			"jail_path":       a.JailPath,
+		}); err != nil {
+			r.log.Warn("ftp: ensure_jail failed (mount may be stale until next pass)", "account", a.Username, "err", err)
+			ok = false
+		}
+	}
+
 	// Stray-alias removal deliberately does NOT live here: the per-tenant
 	// diff can only see tenants that still have rows. sweepStrayFtpAliases
 	// (one ftpaccount.list_all per pass) owns stray removal host-wide.
