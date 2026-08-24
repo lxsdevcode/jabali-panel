@@ -17,6 +17,7 @@ import (
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/backupwrapperhelpers"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/ids"
 	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/models"
+	"git.jabali-panel.com/shukivaknin/jabali2/panel-api/internal/repository"
 )
 
 // GH #331 Step 4 — `jabali dr promote`. Turns a DR standby into the live primary:
@@ -117,6 +118,46 @@ func newDRPromoteCmd() *cobra.Command {
 				}
 			}
 
+			// GH #1169 gap 1 — IP re-point (cutover-critical). Done AFTER the
+			// restore (StagePanelDB replaces the panel DB, so any earlier write
+			// would be wiped) and folded into the role-flip Upsert below, while
+			// the panel is still fenced. managed_ips + public_ipv4 replicate the
+			// OLD primary's address; without this every rebuilt vhost binds an IP
+			// this box doesn't own and nothing serves.
+			if own, derr := detectOwnIPv4(ctx); derr != nil {
+				fmt.Printf("WARNING: could not detect this box's IPv4 (%v).\n", derr)
+				fmt.Println("  The replicated managed IP / public_ipv4 still point at the OLD primary —")
+				fmt.Println("  re-point them by hand (`jabali ip …`) before traffic will serve.")
+			} else if !yes {
+				cur, _ := ipRepoFromDB().FindDefaultByFamily(ctx, "ipv4")
+				curIP := "none"
+				if cur != nil {
+					curIP = cur.Address
+				}
+				fmt.Printf("Re-point the default IPv4 from %s (old primary) to %s (this box)? "+
+					"public_ipv4 is currently %q.\n", orDefault(curIP, "none"), own, s.PublicIPv4)
+				ok, cerr := confirmYes(os.Stdin, "Type 'yes' to re-point (anything else keeps the replicated IPs): ")
+				if cerr != nil {
+					return cerr
+				}
+				if ok {
+					if msg, rerr := repointDefaultIP(ctx, ipRepoFromDB(), s, own); rerr != nil {
+						return fmt.Errorf("IP re-point failed (box NOT promoted; fix and re-run): %w", rerr)
+					} else {
+						fmt.Println("  " + msg)
+					}
+				} else {
+					fmt.Println("  Skipped IP re-point — the replicated IPs stay; re-point manually before serving.")
+				}
+			} else {
+				// Scriptable (--yes): re-point without prompting.
+				if msg, rerr := repointDefaultIP(ctx, ipRepoFromDB(), s, own); rerr != nil {
+					return fmt.Errorf("IP re-point failed (box NOT promoted; fix and re-run): %w", rerr)
+				} else {
+					fmt.Println(msg)
+				}
+			}
+
 			// Flip the role. Clearing the DR pairing makes drsync inert (it re-reads
 			// role each tick) and StandbyReadOnly pass again; the reconciler wakes on
 			// its next tick and converges serving config. Last-sync history is kept.
@@ -125,6 +166,16 @@ func newDRPromoteCmd() *cobra.Command {
 			s.DRPairedAt = nil
 			if err := repo.Upsert(ctx, s); err != nil {
 				return fmt.Errorf("flip role to primary: %w", err)
+			}
+
+			// GH #1169 gap 5 — converge PHP. The replicated pools demand PHP
+			// versions this empty box may lack and are marked active (which the
+			// reconciler skips); install what's missing and flip pools to pending
+			// so the reconciler renders them. Best-effort: a failure here logs a
+			// warning but does not un-promote (the role flip already committed).
+			fmt.Println("Converging PHP pools for this host…")
+			if err := promoteConvergePHP(ctx, repository.NewPHPPoolRepository(sharedDB), sharedAgent); err != nil {
+				fmt.Printf("  WARNING: PHP pool convergence incomplete (%v); run `jabali php pool reapply-all` after fixing.\n", err)
 			}
 
 			fmt.Println("PROMOTED: this box is now the PRIMARY.")
@@ -211,8 +262,33 @@ func promoteRestoreAccounts(ctx context.Context, s *models.ServerSettings) error
 				for _, a := range out.Applied {
 					fmt.Println("  applied:", a)
 				}
+				zeroAccounts := false
 				for _, w := range out.ApplyWarnings {
 					fmt.Println("  WARNING:", w)
+					if strings.Contains(w, "no account_backup manifest snapshots found") {
+						zeroAccounts = true
+					}
+				}
+				// GH #1169 gap 3 — hard-warn on an empty account restore. The
+				// drill's first promote "succeeded" while restoring ZERO tenant
+				// data, because `dr feed` ships only system_backup and no
+				// account_backup manifests ever reach the DR repo. That is a
+				// silent data-loss cutover: the box comes up, the reconciler
+				// builds vhosts, and every tenant's home/mail/DB is empty. Make
+				// it impossible to miss.
+				if zeroAccounts {
+					fmt.Println("")
+					fmt.Println("  ============================================================")
+					fmt.Println("  ⚠  NO TENANT DATA WAS RESTORED — the DR repo has no")
+					fmt.Println("     account_backup manifests. Every tenant's home directory,")
+					fmt.Println("     mail, and per-user databases will be EMPTY after promote.")
+					fmt.Println("")
+					fmt.Println("     Cause: the DR feed shipped only system backups. Ensure")
+					fmt.Println("     account-backup coverage to the DR destination (see")
+					fmt.Println("     `jabali dr feed`), let a cycle run, then re-restore before")
+					fmt.Println("     pointing live traffic here.")
+					fmt.Println("  ============================================================")
+					fmt.Println("")
 				}
 			}
 			return nil
