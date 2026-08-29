@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useTabParam } from "../../../hooks/useTabParam";
 import { Badge, Button, Card, Input, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { feedback } from "../../../lib/feedback"; // GH #970: themed toasts
-import { DeleteOutlined, EditOutlined, LoginOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SearchOutlined, TeamOutlined } from "@icons";
+import { ContainerOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, GlobalOutlined, LoginOutlined, MailOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyOutlined, SaveOutlined, SearchOutlined, TeamOutlined } from "@icons";
 import { RowActions, type RowAction } from "../../../components/RowActions";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -64,6 +64,8 @@ type User = {
     docker_apps: number;
     backups: number;
     bandwidth_bytes: number;
+    db_bytes: number;
+    mail_bytes: number;
   };
 };
 
@@ -395,7 +397,7 @@ function UsersShellTable({
       />
       {showDiskUsageColumn && (
         <Table.Column<User>
-          title={t("users.col.disk_usage")}
+          title={t("users.col.usage")}
           dataIndex="disk_used_kb"
           key="disk_used_kb"
           // Server-side sort (same form as the other columns): the sweeper
@@ -403,10 +405,34 @@ function UsersShellTable({
           // per-row fetch was impossible — it only ever held the current
           // page's resolved rows.
           sorter
-          render={(_: unknown, r: User) => (
+          render={(_: unknown, r: User) => {
+            // GH #1242 (johnnyq): total storage = home files + databases + mail.
+            // Databases/mail live outside /home, so they're summed in from the
+            // swept resource stats; the home-vs-quota bar stays as the detail.
+            const homeBytes = (r.disk_used_kb ?? 0) * 1024;
+            const dbBytes = r.resources?.db_bytes ?? 0;
+            const mailBytes = r.resources?.mail_bytes ?? 0;
+            const total = homeBytes + dbBytes + mailBytes;
+            return (
             <div>
               {r.disk_checked_at ? (
-                <UserDiskUsageCell usedKB={r.disk_used_kb ?? 0} limitKB={r.disk_limit_kb ?? 0} />
+                <>
+                  <Tooltip
+                    title={
+                      <div style={{ whiteSpace: "pre" }}>
+                        {`Home files: ${fmtBytes(homeBytes)}\nDatabases: ${fmtBytes(dbBytes)}\nMail: ${fmtBytes(mailBytes)}`}
+                      </div>
+                    }
+                  >
+                    <Typography.Text
+                      strong
+                      style={{ fontSize: 12, whiteSpace: "nowrap", display: "block" }}
+                    >
+                      {fmtBytes(total)} total
+                    </Typography.Text>
+                  </Tooltip>
+                  <UserDiskUsageCell usedKB={r.disk_used_kb ?? 0} limitKB={r.disk_limit_kb ?? 0} />
+                </>
               ) : (
                 // Never swept (fresh upgrade, or the sweeper has not reached
                 // this row yet) — fall back to the live per-row fetch so the
@@ -424,7 +450,8 @@ function UsersShellTable({
                 </Tooltip>
               )}
             </div>
-          )}
+            );
+          }}
         />
       )}
       {showDiskUsageColumn && (
@@ -434,19 +461,20 @@ function UsersShellTable({
         render={(_: unknown, r: User) => {
           const R = r.resources;
           if (!R) return <Typography.Text type="secondary">—</Typography.Text>;
-          const chips: Array<[string, string, number]> = [
-            [t("users.res.domains"), "Dom", R.domains],
-            [t("users.res.mailboxes"), "Mbx", R.mailboxes],
-            [t("users.res.databases"), "DB", R.databases],
-            [t("users.res.docker"), "Dkr", R.docker_apps],
-            [t("users.res.backups"), "Bkp", R.backups],
+          // GH #1242 (johnnyq): icons instead of short codes, tooltip kept.
+          const chips: Array<[string, React.ReactNode, number]> = [
+            [t("users.res.domains"), <GlobalOutlined />, R.domains],
+            [t("users.res.mailboxes"), <MailOutlined />, R.mailboxes],
+            [t("users.res.databases"), <DatabaseOutlined />, R.databases],
+            [t("users.res.docker"), <ContainerOutlined />, R.docker_apps],
+            [t("users.res.backups"), <SaveOutlined />, R.backups],
           ];
           return (
-            <Space size={8} wrap>
-              {chips.map(([full, abbr, n]) => (
-                <Tooltip key={abbr} title={full}>
+            <Space size={10} wrap>
+              {chips.map(([full, icon, n]) => (
+                <Tooltip key={full} title={full}>
                   <span style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                    <Typography.Text type="secondary">{abbr}</Typography.Text> {n}
+                    <Typography.Text type="secondary">{icon}</Typography.Text> {n}
                   </span>
                 </Tooltip>
               ))}
