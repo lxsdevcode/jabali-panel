@@ -447,32 +447,9 @@ func (s *Scheduler) enqueueBackup(ctx context.Context, sched models.BackupSchedu
 		if err != nil {
 			return false, fmt.Errorf("load schedule users: %w", err)
 		}
-		var targets []models.User
-		if len(explicitIDs) == 0 {
-			notAdmin := false
-			users, _, err := s.deps.Users.List(ctx, repository.ListOptions{
-				Limit:   10000,
-				IsAdmin: &notAdmin,
-			})
-			if err != nil {
-				return false, fmt.Errorf("list users: %w", err)
-			}
-			targets = users
-		} else {
-			for _, uid := range explicitIDs {
-				u, err := s.deps.Users.FindByID(ctx, uid)
-				if err != nil || u == nil {
-					s.deps.Log.Warn("schedule references missing user; skipping",
-						"schedule_id", sched.ID, "user_id", uid)
-					continue
-				}
-				if u.IsAdmin {
-					s.deps.Log.Warn("schedule references admin; skipping",
-						"schedule_id", sched.ID, "user_id", uid)
-					continue
-				}
-				targets = append(targets, *u)
-			}
+		targets, err := resolveAccountTargets(ctx, s.deps.Users, sched.ID, explicitIDs, s.deps.Log)
+		if err != nil {
+			return false, err
 		}
 		for i := range targets {
 			u := &targets[i]
@@ -769,7 +746,7 @@ func (s *Scheduler) dispatchAccount(ctx context.Context, j models.BackupJob) {
 		"databases":          dbs,
 		"databases_postgres": pgDbs,
 		"mailboxes":          mbs,
-		"docker_apps":        userDockerApps(callCtx, s.deps, user.ID, logger),
+		"docker_apps":        userDockerApps(callCtx, s.deps, user.ID, user.IsAdmin, logger),
 		"content":            content,
 		"metadata":           meta,
 		"schedule_id":        scheduleID,
@@ -932,10 +909,41 @@ func buildScheduleMetadata(ctx context.Context, deps Deps, user *models.User, lo
 // userMailboxes returns the email addresses of every mailbox under
 // every domain owned by the user. Two-step: domain.list_by_user →
 // mailbox.list_by_domain. Errors per-domain are tolerated.
+// resolveAccountTargets resolves the users an account-backup schedule fans out
+// to. An empty explicit set = the default sweep of every TENANT (admins are
+// not hosting accounts, so a blanket schedule never touches them). An
+// explicitly named user is honored even when admin (GH #1360): server-level
+// docker apps (UserID NULL) have no tenant account, so an admin's own account
+// backup is the per-account path that covers them on a schedule. Missing users
+// are warn-skipped, not fatal.
+func resolveAccountTargets(ctx context.Context, users repository.UserRepository, scheduleID string, explicitIDs []string, log *slog.Logger) ([]models.User, error) {
+	if len(explicitIDs) == 0 {
+		notAdmin := false
+		list, _, err := users.List(ctx, repository.ListOptions{Limit: 10000, IsAdmin: &notAdmin})
+		if err != nil {
+			return nil, fmt.Errorf("list users: %w", err)
+		}
+		return list, nil
+	}
+	var targets []models.User
+	for _, uid := range explicitIDs {
+		u, err := users.FindByID(ctx, uid)
+		if err != nil || u == nil {
+			if log != nil {
+				log.Warn("schedule references missing user; skipping",
+					"schedule_id", scheduleID, "user_id", uid)
+			}
+			continue
+		}
+		targets = append(targets, *u)
+	}
+	return targets, nil
+}
+
 // userDockerApps returns the slugs of the account's docker apps. Their
 // data trees live outside the home, so the agent has to be told about
 // them explicitly or the scheduled backup omits the app (GH #954).
-func userDockerApps(ctx context.Context, deps Deps, userID string, logger *slog.Logger) []string {
+func userDockerApps(ctx context.Context, deps Deps, userID string, isAdmin bool, logger *slog.Logger) []string {
 	if deps.DockerApps == nil {
 		return nil
 	}
@@ -959,6 +967,23 @@ func userDockerApps(ctx context.Context, deps Deps, userID string, logger *slog.
 			continue
 		}
 		out = append(out, slug)
+	}
+	// GH #1360: a scheduled admin account backup also covers server-level
+	// docker apps (UserID NULL), whose only prior cover was a system backup.
+	if isAdmin {
+		all, aerr := deps.DockerApps.ListAll(ctx)
+		if aerr != nil {
+			logger.Warn("list server-level docker apps for backup failed", "err", aerr)
+		} else {
+			for _, r := range all {
+				if r == nil || r.UserID != nil || r.Status == models.DockerAppStatusDeleted {
+					continue
+				}
+				if slug := r.EffectiveSlug(); slug != "" {
+					out = append(out, slug)
+				}
+			}
+		}
 	}
 	return out
 }
